@@ -1,0 +1,83 @@
+{
+  "name": "@blumint/template-gitpod",
+  "version": "0.1.0",
+  "description": "TODO Template repository for Gitpod-based development",
+  "author": {
+    "name": "Joseph Gerard O'Connor III",
+    "email": "joe@blumint.io"
+  },
+  "publishConfig": {
+    "access": "restricted"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BluMintInc/template-gitpod.git"
+  },
+  "bugs": {
+    "url": "https://github.com/BluMintInc/template-gitpod/issues"
+  },
+  "homepage": "https://github.com/BluMintInc/template-gitpod#readme",
+  "private": true,
+  "scripts": {
+    "prepare": "husky install && git config gitflow.path.hooks .husky && chmod ug+x .husky/* && chmod ug+x .git/hooks/*",
+    "lint-ts": "tsc && eslint src/**/*",
+    "lint-md": "remark .",
+    "lint-shell": "shellcheck .husky/**/* .devcontainer/git-flow-completion.bash",
+    "lint": "npm run lint-ts && npm run lint-md && npm run lint-shell",
+    "lint:fix": "tsc && eslint src/**/* --quiet --fix",
+    "test": "jest --passWithNoTests --reporters=default --reporters=jest-junit",
+    "test:ci": "jest --ci  --passWithNoTests --reporters=default --reporters=jest-junit",
+    "version": "git add -A src",
+    "postversion": "git push && git push --tags",
+    "remove-hooks": "del-cli ./.husky/"
+  },
+  "dependencies": {
+    "reflect-metadata": "0.1.13",
+    "typescript-memoize": "1.1.0"
+  },
+  "devDependencies": {
+    "@semantic-release/changelog": "6.0.1",
+    "@semantic-release/commit-analyzer": "9.0.2",
+    "@semantic-release/git": "10.0.1",
+    "@semantic-release/npm": "9.0.1",
+    "@semantic-release/release-notes-generator": "10.0.3",
+    "@types/node": "16.11.26",
+    "@typescript-eslint/eslint-plugin": "5.15.0",
+    "@typescript-eslint/parser": "5.15.0",
+    "chai": "4.3.6",
+    "chai-as-promised": "7.1.1",
+    "cross-env": "7.0.3",
+    "cz-conventional-changelog": "3.3.0",
+    "del-cli": "4.0.1",
+    "dotenv-cli": "5.0.0",
+    "eslint": "8.11.0",
+    "eslint-config-prettier": "8.5.0",
+    "eslint-plugin-prettier": "4.0.0",
+    "eslint-plugin-security": "1.4.0",
+    "fs": "0.0.1-security",
+    "husky": "7.0.4",
+    "prettier": "2.6.0",
+    "remark-cli": "10.0.1",
+    "remark-lint": "9.1.1",
+    "remark-preset-lint-recommended": "6.1.2",
+    "semantic-release": "19.0.3",
+    "ts-node": "10.7.0",
+    "jest": "28.1.0",
+    "jest-junit": "^14.0.0",
+    "typescript": "4.6.4"
+  },
+  "config": {
+    "commitizen": {
+      "path": "./node_modules/cz-conventional-changelog"
+    }
+  },
+  "jest-junit": {
+    "outputDirectory": "reports",
+    "outputName": "jest-junit.xml",
+    "ancestorSeparator": " › ",
+    "uniqueOutputName": "false",
+    "suiteNameTemplate": "{filepath}",
+    "classNameTemplate": "{classname}",
+    "titleTemplate": "{title}"
+  }
+}

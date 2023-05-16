@@ -1,0 +1,20 @@
+## Compiled JavaScript files
+lib
+lib/**/*
+**/*.js.map
+
+# Typescript v1 declaration files
+typings/
+
+node_modules/
+
+# logs
+**/*.log
+.nyc_output
+.nyc_output/**/*
+*.DS_Store
+reports/jest-*.xml
+
+# coverage output
+coverage
+coverage/**/*

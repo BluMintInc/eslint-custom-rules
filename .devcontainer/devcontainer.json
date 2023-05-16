@@ -1,0 +1,24 @@
+{
+  "name": "TODO TEMPLATE",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "extensions": [
+    "dbaeumer.vscode-eslint",
+    "redhat.vscode-yaml",
+    "mjmlio.vscode-mjml",
+    "tht13.html-preview-vscode",
+    "ms-azuretools.vscode-docker",
+    "timonwong.shellcheck"
+  ],
+  "forwardPorts": [
+    8080,
+    4000,
+    9099,
+    5001,
+    9000,
+    9005,
+    9229
+  ],
+  "remoteUser": "gitpod"
+}

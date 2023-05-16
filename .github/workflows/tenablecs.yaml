@@ -1,0 +1,20 @@
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+jobs:
+  tenablecs-scan:
+    runs-on: ubuntu-latest
+    name: tenablecs-scan
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Tenable.cs Scan
+        id: tenablecs-scan
+        uses: docker://accurics/terrascan-action:latest
+        with:
+          only_warn: true
+          verbose: true
+          webhook_url: https://app.accurics.com/v1/api/terrascan
+          webhook_token: 00817f81-3656-4d14-bbe0-a939f36d5c50

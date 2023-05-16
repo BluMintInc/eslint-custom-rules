@@ -1,0 +1,15 @@
+{
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": true,
+    "source.fixAll.tslint": true
+  },
+  "editor.maxTokenizationLineLength": 20000,
+  "files.autoSaveDelay": 500,
+  "files.autoSave": "afterDelay",
+  "extensions.ignoreRecommendations": true,
+  "debug.allowBreakpointsEverywhere": true,
+  "html.autoClosingTags": false,
+  "git.autofetch": true,
+  "js/ts.implicitProjectConfig.experimentalDecorators": true,
+  "js/ts.implicitProjectConfig.strictNullChecks": true
+}
