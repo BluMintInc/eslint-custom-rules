@@ -67,6 +67,7 @@
   "compileOnSave": true,
   "include": [
     "*.js",
+    "**/*.test.ts",
     "**/*.ts",
     "**/*.js",
     "**/*.tsx",

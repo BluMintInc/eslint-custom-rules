@@ -1,0 +1,8 @@
+.**
+*.log
+jest.*
+*.xml
+**/tests/**
+tsconfig.json
+*.map
+src

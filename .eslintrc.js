@@ -11,7 +11,7 @@ module.exports = {
     node: true,
     es6: true,
   },
-  plugins: ['security', 'blumint'],
+  plugins: ['security', 'import', 'blumint'],
   extends: [
     // Enfore all basic, error-prevention, and recommended Typescript rules
     // (https://eslint.vuejs.org/rules/)
@@ -21,6 +21,8 @@ module.exports = {
     'plugin:prettier/recommended',
     // Ennforces NextJS opinionated styling (https://nextjs.org/docs/basic-features/eslint#core-web-vitals)
     'plugin:security/recommended',
+    'plugin:import/recommended',
+    'plugin:import/typescript',
   ],
   settings: {
     'import/resolver': {
