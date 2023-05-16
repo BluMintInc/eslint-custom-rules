@@ -11,7 +11,7 @@ module.exports = {
     node: true,
     es6: true,
   },
-  plugins: ['security'],
+  plugins: ['security', 'import', 'blumint'],
   extends: [
     // Enfore all basic, error-prevention, and recommended Typescript rules
     // (https://eslint.vuejs.org/rules/)
@@ -19,8 +19,17 @@ module.exports = {
     // Enforces Prettier opinionated style (https://prettier.io/) ruleset on TypeScript files
     // and Prettier's recommended ruleset
     'plugin:prettier/recommended',
+    // Ennforces NextJS opinionated styling (https://nextjs.org/docs/basic-features/eslint#core-web-vitals)
     'plugin:security/recommended',
+    'plugin:import/recommended',
+    'plugin:import/typescript',
   ],
+  settings: {
+    'import/resolver': {
+      typescript: true,
+      node: true,
+    },
+  },
   // Specifies fine-configuration of individual linting rules
   rules: {
     'prettier/prettier': ['error', { endOfLine: 'auto' }],
@@ -45,8 +54,27 @@ module.exports = {
     'no-redeclare': 0,
     // Do not warn about specified interfaces whose names begin with 'I'
     '@typescript-eslint/interface-name-prefix': 0,
+    '@typescript-eslint/no-unused-vars': 'error',
+    'prefer-const': 'warn',
+    //'import/no-unused-modules': [1, { unusedExports: true }],
+    'lines-between-class-members': [
+      'error',
+      'always',
+      { exceptAfterSingleLine: true },
+    ],
+    'blumint/no-async-array-filter': 'error',
+    'blumint/no-unpinned-dependencies': 'error',
   },
-  // Allows ESLint to support TypeScript instead of just JavaScript
-  // (https://github.com/typescript-eslint/typescript-eslint)
-  parser: '@typescript-eslint/parser',
+  overrides: [
+    {
+      files: ['*.json'],
+      parser: 'jsonc-eslint-parser',
+    },
+    {
+      // Allows ESLint to support TypeScript instead of just JavaScript
+      // (https://github.com/typescript-eslint/typescript-eslint)
+      files: ['*.ts'],
+      parser: '@typescript-eslint/parser',
+    },
+  ],
 };

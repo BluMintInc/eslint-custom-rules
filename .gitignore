@@ -1,12 +1,9 @@
-## Compiled JavaScript files
-lib
-lib/**/*
-**/*.js.map
-
 # Typescript v1 declaration files
 typings/
 
 node_modules/
+
+.vscode
 
 # logs
 **/*.log
@@ -18,3 +15,9 @@ reports/jest-*.xml
 # coverage output
 coverage
 coverage/**/*
+*.xml
+
+#built js files
+plugin/lib/**
+**/*.js
+**/*.js.map
