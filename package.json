@@ -57,7 +57,7 @@
     "del-cli": "4.0.1",
     "dotenv-cli": "5.0.0",
     "eslint": "8.11.0",
-    "eslint-config-prettier": "8.5.0",
+    "eslint-config-prettier": "8.8.0",
     "eslint-plugin-blumintinc": "file:plugin",
     "eslint-plugin-import": "2.26.0",
     "eslint-plugin-jsdoc": "44.0.0",
