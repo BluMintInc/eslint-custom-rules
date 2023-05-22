@@ -1,4 +1,6 @@
-# Enforce TypeScript generic types to start with T (`blumint/generic-starts-with-t`)
+# Enforce TypeScript generic types to start with T (`@blumintinc/blumint/generic-starts-with-t`)
+
+⚠️ This rule _warns_ in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
 
