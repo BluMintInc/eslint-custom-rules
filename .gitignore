@@ -21,3 +21,4 @@ coverage/**/*
 plugin/lib/**
 **/*.js
 **/*.js.map
+*.tsbuildinfo

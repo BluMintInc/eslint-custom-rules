@@ -11,7 +11,7 @@ module.exports = {
     node: true,
     es6: true,
   },
-  plugins: ['security', 'import', 'blumint'],
+  plugins: ['security', 'import', '@blumintinc/blumint'],
   extends: [
     // Enfore all basic, error-prevention, and recommended Typescript rules
     // (https://eslint.vuejs.org/rules/)
@@ -23,6 +23,7 @@ module.exports = {
     'plugin:security/recommended',
     'plugin:import/recommended',
     'plugin:import/typescript',
+    'plugin:@blumintinc/blumint/recommended',
   ],
   settings: {
     'import/resolver': {
@@ -62,12 +63,10 @@ module.exports = {
       'always',
       { exceptAfterSingleLine: true },
     ],
-    'blumint/no-async-array-filter': 'error',
-    'blumint/no-unpinned-dependencies': 'error',
   },
   overrides: [
     {
-      files: ['*.json'],
+      files: ['package.json'],
       parser: 'jsonc-eslint-parser',
     },
     {

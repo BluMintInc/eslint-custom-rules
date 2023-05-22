@@ -1,4 +1,6 @@
-# Prefer using type alias over interface (`blumint/prefer-type-over-interface`)
+# Prefer using type alias over interface (`@blumintinc/blumint/prefer-type-over-interface`)
+
+⚠️ This rule _warns_ in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
 

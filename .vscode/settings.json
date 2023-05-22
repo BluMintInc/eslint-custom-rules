@@ -11,5 +11,17 @@
   "html.autoClosingTags": false,
   "git.autofetch": true,
   "js/ts.implicitProjectConfig.experimentalDecorators": true,
-  "js/ts.implicitProjectConfig.strictNullChecks": true
+  "js/ts.implicitProjectConfig.strictNullChecks": true,
+  "eslint.options": {
+    "extensions": [".html", ".js", ".ts", ".tsx",".json"]
+},
+"eslint.validate": [
+  "html",
+  "javascript",
+  "typescript",
+  "javascriptreact",
+  "typescriptreact",
+  "json",
+],
+"eslint.lintTask.options": "--ext .ts,.js,.jsx,.tsx,.json .",
 }

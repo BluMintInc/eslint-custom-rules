@@ -1,4 +1,8 @@
-# Disallow 'this' context in array methods (`blumint/array-methods-this-context`)
+# Prevent misuse of Array methods in OOP (`@blumintinc/blumint/array-methods-this-context`)
+
+⚠️ This rule _warns_ in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 This rule disallows the direct use of class methods in Array methods like 'map', 'filter', 'forEach', 'reduce', 'some', 'every'. Instead, arrow functions should be used to preserve the 'this' context.
 

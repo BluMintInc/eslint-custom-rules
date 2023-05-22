@@ -1,35 +1,23 @@
-import { ESLintUtils } from '@typescript-eslint/utils';
 import { preferFragmentShorthand } from '../rules/prefer-fragment-shorthand';
+import { ruleTesterJsx } from '../utils/ruleTester';
 
-const ruleTester = new ESLintUtils.RuleTester({
-    parser: '@typescript-eslint/parser',
-    parserOptions: {
-        ecmaFeatures: {
-            jsx: true,
-        },
+ruleTesterJsx.run('prefer-fragment-shorthand', preferFragmentShorthand, {
+  valid: ['<>Hello World</>', '<><ChildComponent /></>'],
+  invalid: [
+    {
+      code: '<React.Fragment>Hello World</React.Fragment>',
+      errors: [{ messageId: 'preferShorthand' }],
+      output: '<>Hello World</>',
     },
-});
-
-ruleTester.run('prefer-fragment-shorthand', preferFragmentShorthand, {
-    valid: [
-        '<>Hello World</>',
-        '<><ChildComponent /></>',
-    ],
-    invalid: [
-        {
-            code: '<React.Fragment>Hello World</React.Fragment>',
-            errors: [{ messageId: 'preferShorthand' }],
-            output: '<>Hello World</>',
-        },
-        {
-            code: '<React.Fragment><ChildComponent /></React.Fragment>',
-            errors: [{ messageId: 'preferShorthand' }],
-            output: '<><ChildComponent /></>',
-        },
-        {
-            code: '<React.Fragment><NestedComponent><ChildComponent /></NestedComponent></React.Fragment>',
-            errors: [{ messageId: 'preferShorthand' }],
-            output: '<><NestedComponent><ChildComponent /></NestedComponent></>',
-        },
-    ],
+    {
+      code: '<React.Fragment><ChildComponent /></React.Fragment>',
+      errors: [{ messageId: 'preferShorthand' }],
+      output: '<><ChildComponent /></>',
+    },
+    {
+      code: '<React.Fragment><NestedComponent><ChildComponent /></NestedComponent></React.Fragment>',
+      errors: [{ messageId: 'preferShorthand' }],
+      output: '<><NestedComponent><ChildComponent /></NestedComponent></>',
+    },
+  ],
 });

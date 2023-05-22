@@ -1,4 +1,6 @@
-# Disallow Array.filter callbacks without an explicit return (if part of a block statement) (`blumint/no-filter-without-return`)
+# Disallow Array.filter callbacks without an explicit return (if part of a block statement) (`@blumintinc/blumint/no-filter-without-return`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
 

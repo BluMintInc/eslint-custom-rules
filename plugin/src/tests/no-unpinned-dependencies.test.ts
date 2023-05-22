@@ -1,37 +1,33 @@
-
 import { noUnpinnedDependencies } from '../rules/no-unpinned-dependencies';
-import { RuleTester, Rule } from "eslint";
+import { Rule } from 'eslint';
+import { ruleTesterJson } from '../utils/ruleTester';
 
-const ruleTester = new RuleTester({
-  parser: require.resolve("jsonc-eslint-parser"),
-  parserOptions: {
-    ecmaVersion: 2020,
-  },
-});
-
-ruleTester.run('no-unpinned-dependencies', noUnpinnedDependencies as unknown as Rule.RuleModule, {
+ruleTesterJson.run(
+  'no-unpinned-dependencies',
+  noUnpinnedDependencies as unknown as Rule.RuleModule,
+  {
     valid: [`{dependencies: {eslint: "8.19.0"}}`],
     invalid: [
-        {
-          code: '{dependencies: {eslint: "^8.19.0"}}',
-          errors: [
-            {
-              messageId:'unexpected'
-            },
-          ],
-          output: '{dependencies: {eslint: "8.19.0"}}'
-        },
-        {
-          code: `{dependencies: {eslint: "~8.19.0"}}`,
-          errors: [
-            {
-              messageId:'unexpected'
-            },
-          ],
-          output: '{dependencies: {eslint: "8.19.0"}}'
-        },
-        {
-          code: `{
+      {
+        code: '{dependencies: {eslint: "^8.19.0"}}',
+        errors: [
+          {
+            messageId: 'unexpected',
+          },
+        ],
+        output: '{dependencies: {eslint: "8.19.0"}}',
+      },
+      {
+        code: `{dependencies: {eslint: "~8.19.0"}}`,
+        errors: [
+          {
+            messageId: 'unexpected',
+          },
+        ],
+        output: '{dependencies: {eslint: "8.19.0"}}',
+      },
+      {
+        code: `{
             "name": "eslint-plugin-blumint",
             "version": "0.0.0",
             "description": "Custom eslint rules for use at BluMint",
@@ -55,15 +51,15 @@ ruleTester.run('no-unpinned-dependencies', noUnpinnedDependencies as unknown as 
             "license": "ISC"
           }
           `,
-          errors: [
-            {
-              messageId:'unexpected'
-            },
-            {
-              messageId:'unexpected'
-            },
-          ],
-          output: `{
+        errors: [
+          {
+            messageId: 'unexpected',
+          },
+          {
+            messageId: 'unexpected',
+          },
+        ],
+        output: `{
             "name": "eslint-plugin-blumint",
             "version": "0.0.0",
             "description": "Custom eslint rules for use at BluMint",
@@ -86,6 +82,8 @@ ruleTester.run('no-unpinned-dependencies', noUnpinnedDependencies as unknown as 
             },
             "license": "ISC"
           }
-          `
-        }],
-});
+          `,
+      },
+    ],
+  },
+);
