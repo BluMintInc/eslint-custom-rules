@@ -64,7 +64,7 @@ Or use the recommended config:
 | [generic-starts-with-t](docs/rules/generic-starts-with-t.md)           | Enforce TypeScript generic types to start with T                                          |    | ✅  |    |
 | [no-async-array-filter](docs/rules/no-async-array-filter.md)           | Disallow async callbacks for Array.filter                                                 | ✅  |    |    |
 | [no-filter-without-return](docs/rules/no-filter-without-return.md)     | Disallow Array.filter callbacks without an explicit return (if part of a block statement) | ✅  |    |    |
-| [no-misused-switch-case](docs/rules/no-misused-switch-case.md)         | Prevent misuse of logical OR (||) in switch case statements                               | ✅  |    |    |
+| [no-misused-switch-case](docs/rules/no-misused-switch-case.md)         | Prevent misuse of logical OR in switch case statements                               | ✅  |    |    |
 | [no-unpinned-dependencies](docs/rules/no-unpinned-dependencies.md)     | Enforces pinned dependencies                                                              | ✅  |    | 🔧 |
 | [prefer-fragment-shorthand](docs/rules/prefer-fragment-shorthand.md)   | Prefer <> shorthand for <React.Fragment>                                                  |    | ✅  | 🔧 |
 | [prefer-type-over-interface](docs/rules/prefer-type-over-interface.md) | Prefer using type alias over interface                                                    |    | ✅  |    |
