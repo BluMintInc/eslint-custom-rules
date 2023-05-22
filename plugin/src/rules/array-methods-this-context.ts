@@ -58,7 +58,7 @@ export const arrayMethodsThisContext: TSESLint.RuleModule<
   meta: {
     type: 'problem',
     docs: {
-      description: 'Disallow async callbacks for Array.filter',
+      description: 'Prevent misuse of Array methods in OOP',
       recommended: 'error',
     },
     schema: [],
