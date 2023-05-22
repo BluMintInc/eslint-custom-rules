@@ -1,15 +1,11 @@
-import { ESLintUtils } from '@typescript-eslint/utils';
 import { noFilterWithoutReturn } from '../rules/no-filter-without-return';
+import { ruleTesterTs } from '../utils/ruleTester';
 
-const ruleTester = new ESLintUtils.RuleTester({
-    parser: '@typescript-eslint/parser',
-});
-
-ruleTester.run('no-filter-without-return', noFilterWithoutReturn, {
-    valid: [
-        `['a'].filter((x) => !x)`,
-        `['a'].filter((x) => !!x)`,
-        `['a'].filter((x) => {
+ruleTesterTs.run('no-filter-without-return', noFilterWithoutReturn, {
+  valid: [
+    `['a'].filter((x) => !x)`,
+    `['a'].filter((x) => !!x)`,
+    `['a'].filter((x) => {
             if (x === 'test') {
                 return true
             }
@@ -17,42 +13,42 @@ ruleTester.run('no-filter-without-return', noFilterWithoutReturn, {
                 return false
             }
         })`,
-        `['a'].filter(function (x) {
+    `['a'].filter(function (x) {
           return true
         })`,
-        `['a'].filter((x) => x === 'a' ? true : false)`,
-    ],
-    invalid: [
+    `['a'].filter((x) => x === 'a' ? true : false)`,
+  ],
+  invalid: [
+    {
+      code: `['a'].filter((x) => {console.log(x)})`,
+      errors: [
         {
-            code: `['a'].filter((x) => {console.log(x)})`,
-            errors: [
-                {
-                    messageId: 'unexpected'
-                },
-            ],
+          messageId: 'unexpected',
         },
-        {
-            code: `['a'].filter((x) => {if (x) {
+      ],
+    },
+    {
+      code: `['a'].filter((x) => {if (x) {
                 return true
             }
         else {
             
         }})`,
-            errors: [
-                {
-                    messageId: 'unexpected'
-                },
-            ],
-        },
+      errors: [
         {
-            code:
-                // If-else with return only in the else branch
-                "['a'].filter((x) => { if (x !== 'a') { console.log(x) } else { return true } })",
-            errors: [
-                {
-                    messageId: 'unexpected'
-                },
-            ],
+          messageId: 'unexpected',
         },
-    ],
+      ],
+    },
+    {
+      code:
+        // If-else with return only in the else branch
+        "['a'].filter((x) => { if (x !== 'a') { console.log(x) } else { return true } })",
+      errors: [
+        {
+          messageId: 'unexpected',
+        },
+      ],
+    },
+  ],
 });
