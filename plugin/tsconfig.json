@@ -9,6 +9,7 @@
       "strict": true,
       "target": "ES2021",
       "skipLibCheck": true,
+      "jsx": "react",
     },
     "compileOnSave": true,
     "include": [
