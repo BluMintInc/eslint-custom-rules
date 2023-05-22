@@ -1,4 +1,6 @@
-# Disallow async callbacks for Array.filter (`blumint/no-async-array-filter`)
+# Disallow async callbacks for Array.filter (`@blumintinc/blumint/no-async-array-filter`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
 

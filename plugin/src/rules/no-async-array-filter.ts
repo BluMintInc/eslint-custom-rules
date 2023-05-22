@@ -1,7 +1,7 @@
 import { createRule } from '../utils/createRule';
 import { TSESLint } from '@typescript-eslint/utils';
 
-const noAsyncArrayFilter: TSESLint.RuleModule<'unexpected', never[]> =
+export const noAsyncArrayFilter: TSESLint.RuleModule<'unexpected', never[]> =
   createRule({
     create(context) {
       return {
@@ -43,5 +43,3 @@ const noAsyncArrayFilter: TSESLint.RuleModule<'unexpected', never[]> =
     },
     defaultOptions: [],
   });
-
-export {noAsyncArrayFilter}
