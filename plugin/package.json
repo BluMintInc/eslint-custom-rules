@@ -1,6 +1,6 @@
 {
   "name": "@blumintinc/eslint-plugin-blumint",
-  "version": "0.1.5",
+  "version": "0.1.11",
   "description": "Custom eslint rules for use at BluMint",
   "keywords": [
     "eslint",
@@ -36,7 +36,7 @@
     "ts-jest": "29.0.5"
   },
   "engines": {
-    "node": "16.0.0"
+    "node": "^16.0.0"
   },
   "peerDependencies": {
     "eslint": ">=7"

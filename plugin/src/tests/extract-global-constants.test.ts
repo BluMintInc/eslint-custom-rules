@@ -81,6 +81,65 @@ ruleTesterJsx.run('extract-global-constants', extractGlobalConstants, {
       const a = input?.a;
       return a;
     };`,
+    `export const updateCurrentGame = https.onCall(
+      async ({
+        uid,
+        gameId,
+        playing,
+      }: UpdateCurrentGameParams): UpdateCurrentGameResponse => {
+        const gameRef = db.doc(\`Game/\${gameId}\`);
+        const gameDoc = await gameRef.get();
+        const game = gameDoc.data() as Game;
+        const userStatusDatabaseRef = realtimeDb.ref(\`/status/\${uid}\`);
+        const currentRealtimeData = await userStatusDatabaseRef
+          .get()
+          .then((snap) => snap.val());
+      });`,
+    `export class StreamSecretary {
+      constructor(private readonly req: https.Request) {}
+    
+      public async verifySignature(): Promise<number | undefined> {
+        const { headers, body } = this.req;
+        const [foo,bar] = this.req
+        const { someThing } = await this.fake(this.req)
+        try {
+          Moralis.Streams.verifySignature({
+            body,
+            signature: headers['x-signature'] as string,
+          });
+          return;
+        } catch (error) {
+          logger.error(error);
+          return 401;
+        }
+      }
+    }`,
+    `class Foo {
+      private get participantsChanged(): ParticipantTeam[] {
+        if (!this.tournamentBefore || !this.tournamentBefore) {
+          return [];
+        }
+    
+        const { participantsAggregated: participantsBefore = [] } =
+          this.tournamentBefore!;
+        const { participantsAggregated: participantsAfter = [] } =
+          this.tournamentAfter!;
+    
+        return participantsAfter.filter((teamAfter) => {
+          const teamBefore = participantsBefore.find(
+            (team) => team.id === teamAfter.id,
+          );
+          return teamBefore && !equal(teamAfter, teamBefore);
+        });
+      }
+    }`,
+    `class Foo {
+      private readonly something: string;
+      public static bar() {
+        const baz = this.something
+        return \`2*\${baz}\`;
+      }
+    }`,
   ],
   invalid: [
     // Case 1: Constants inside function components that don't depend on anything
@@ -95,14 +154,13 @@ ruleTesterJsx.run('extract-global-constants', extractGlobalConstants, {
     }`,
     // Case 3: Constants as functions inside hooks that don't depend on anything
     'function useHook() { const someExtractableFunction = (input: any) => `${input}2`}',
-    `function useHook() { const someExtractableFunction = (input: any) => {
-        const isValid = validator(input)
+    `function useHook() {
         if (isValid) {
-          const shouldBeGlobal = 'IF_VALID_MESSAGE'
-          return 'ERROR:' + shouldBeGlobal
+          const shouldBeGlobal = 'IF_VALID_MESSAGE';
+          return 'ERROR:' + shouldBeGlobal;
         }
-        return
-      }}`,
+        return;
+      };`,
     `const someFunc = (a,b) => {
       if (a > 0) {
           const shouldBeInvalid = 'HELLO'
