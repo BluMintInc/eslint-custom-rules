@@ -14,7 +14,7 @@ import { preferTypeOverInterface } from './rules/prefer-type-over-interface';
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '0.1.10',
+    version: '0.1.11',
   },
   parseOptions: {
     ecmaVersion: 2020,
