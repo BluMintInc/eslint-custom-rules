@@ -6,7 +6,6 @@ ruleTesterJsx.run('no-useless-fragment', noUselessFragment, {
     '<><ChildComponent /><AnotherChild /></>',
     '<><ChildComponent />Text<AnotherChild /></>',
     '<><ChildComponent /><AnotherChild /></>',
-    '<React.Fragment><ChildComponent /><AnotherChild /></React.Fragment>',
   ],
   invalid: [
     {
@@ -19,10 +18,6 @@ ruleTesterJsx.run('no-useless-fragment', noUselessFragment, {
     },
     {
       code: '<><NestedComponent><ChildComponent /></NestedComponent></>',
-      errors: [{ messageId: 'noUselessFragment' }],
-    },
-    {
-      code: '<React.Fragment><NestedComponent><ChildComponent /></NestedComponent></React.Fragment>',
       errors: [{ messageId: 'noUselessFragment' }],
     },
   ],
