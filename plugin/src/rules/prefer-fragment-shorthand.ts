@@ -34,7 +34,8 @@ export const preferFragmentShorthand: TSESLint.RuleModule<
       recommended: 'warn',
     },
     messages: {
-      preferShorthand: 'Use <> shorthand for <React.Fragment>',
+      preferShorthand:
+        'Use <> shorthand for <React.Fragment>, unless a key is required for an iterator',
     },
     schema: [],
     fixable: 'code',

@@ -58,9 +58,9 @@ Or use the recommended config:
 
 | Name                                                                   | Description                                                                               | 💼 | ⚠️ | 🔧 |
 | :--------------------------------------------------------------------- | :---------------------------------------------------------------------------------------- | :- | :- | :- |
-| [array-methods-this-context](docs/rules/array-methods-this-context.md) | Disallow async callbacks for Array.filter                                                 |    | ✅  |    |
+| [array-methods-this-context](docs/rules/array-methods-this-context.md) | Prevent misuse of Array methods in OOP                                                    |    | ✅  |    |
 | [export-if-in-doubt](docs/rules/export-if-in-doubt.md)                 | All top-level const definitions, type definitions, and functions should be exported       |    | ✅  |    |
-| [extract-global-constants](docs/rules/extract-global-constants.md)     | Extract constants/functions from React components to the global scope when possible       |    | ✅  |    |
+| [extract-global-constants](docs/rules/extract-global-constants.md)     | Extract constants/functions to the global scope when possible                             |    | ✅  |    |
 | [generic-starts-with-t](docs/rules/generic-starts-with-t.md)           | Enforce TypeScript generic types to start with T                                          |    | ✅  |    |
 | [no-async-array-filter](docs/rules/no-async-array-filter.md)           | Disallow async callbacks for Array.filter                                                 | ✅  |    |    |
 | [no-filter-without-return](docs/rules/no-filter-without-return.md)     | Disallow Array.filter callbacks without an explicit return (if part of a block statement) | ✅  |    |    |

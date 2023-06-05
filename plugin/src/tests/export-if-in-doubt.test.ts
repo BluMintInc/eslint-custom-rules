@@ -14,6 +14,12 @@ ruleTesterTs.run('export-if-in-doubt', exportIfInDoubt, {
 
     // Function body (should not enforce rule within function bodies)
     "export function myFunction() { const myConst = 'Hello'; }",
+    // Named export
+    "function myFunction() { const myConst = 'Hello'; }; export { myFunction };",
+    // Default export
+    "export default function myFunction() { const myConst = 'Hello'; }",
+    // Named as default export
+    "function myFunction() { const myConst = 'Hello'; }; export { myFunction as default };",
 
     `import { https } from 'firebase-functions';
         import { UserItem } from '../../types/firestore/User/UserItem';

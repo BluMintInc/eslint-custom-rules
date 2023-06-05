@@ -1,14 +1,14 @@
-# Prevent Misuse of Logical OR in Switch Case Statements (`@blumintinc/blumint/no-misused-switch-case`)
+# Prevent misuse of logical OR in switch case statements (`@blumintinc/blumint/no-misused-switch-case`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
 
-This rule prevents the misuse of logical OR (`||`) in switch case statements. Instead, cascading cases should be used. This improves code readability and understanding.
+This rule prevents the misuse of logical OR in switch case statements. Instead, cascading cases should be used. This improves code readability and understanding.
 
 ## Rule Details
 
-This rule specifically targets `SwitchStatement` and issues a warning if a case uses a logical OR (`||`) in its test.
+This rule specifically targets `SwitchStatement` and issues a warning if a case uses a logical OR in its test.
 
 ### Examples of incorrect code for this rule:
 

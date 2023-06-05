@@ -6,3 +6,5 @@ jest.*
 tsconfig.json
 *.map
 src
+scripts
+*.sh

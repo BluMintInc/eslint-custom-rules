@@ -9,14 +9,13 @@ export const noMisusedSwitchCase: TSESLint.RuleModule<
   meta: {
     type: 'problem',
     docs: {
-      description:
-        'Prevent misuse of logical OR (||) in switch case statements',
+      description: 'Prevent misuse of logical OR in switch case statements',
       recommended: 'error',
     },
     schema: [],
     messages: {
       noMisusedSwitchCase:
-        'Avoid using logical OR (||) in switch case. Use cascading cases instead.',
+        'Avoid using logical OR  in switch case. Use cascading cases instead.',
     },
   },
   defaultOptions: [],
