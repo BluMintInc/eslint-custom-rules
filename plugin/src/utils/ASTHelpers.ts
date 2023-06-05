@@ -19,6 +19,27 @@ export class ASTHelpers {
       return false;
     }
     switch (node.type) {
+      case 'TSNonNullExpression':
+        return this.declarationIncludesIdentifier(node.expression);
+      case 'ArrayPattern':
+        return node.elements.some((element) =>
+          ASTHelpers.declarationIncludesIdentifier(element),
+        );
+      case 'ObjectPattern':
+        return node.properties.some((property) =>
+          this.declarationIncludesIdentifier(property.value || null),
+        );
+      case 'AssignmentPattern':
+        return this.declarationIncludesIdentifier(node.left);
+      case 'RestElement':
+        return this.declarationIncludesIdentifier(node.argument);
+      case 'AwaitExpression':
+        return this.declarationIncludesIdentifier(node.argument);
+      case 'AssignmentExpression':
+        return (
+          this.declarationIncludesIdentifier(node.left) ||
+          this.declarationIncludesIdentifier(node.right)
+        );
       case 'BlockStatement':
         return node.body.some(
           (statement) =>
@@ -31,6 +52,8 @@ export class ASTHelpers {
           this.declarationIncludesIdentifier(node.consequent) ||
           this.declarationIncludesIdentifier(node.alternate)
         );
+      case 'TSTypeAssertion':
+        return this.declarationIncludesIdentifier(node.expression);
       case 'Identifier':
         return true;
       case 'SpreadElement':
@@ -69,11 +92,18 @@ export class ASTHelpers {
       case 'UpdateExpression':
         return this.declarationIncludesIdentifier(node.argument);
       case 'MemberExpression':
-        return this.declarationIncludesIdentifier(node.object);
+        if (node.object.type === 'ThisExpression') {
+          return true;
+        }
+        return (
+          this.declarationIncludesIdentifier(node.object) ||
+          this.declarationIncludesIdentifier(node.property)
+        );
 
       case 'CallExpression':
       case 'NewExpression':
         // For function and constructor calls, we care about both the callee and the arguments.
+
         return (
           this.declarationIncludesIdentifier(node.callee) ||
           node.arguments.some((arg) => this.declarationIncludesIdentifier(arg))
@@ -85,6 +115,8 @@ export class ASTHelpers {
           this.declarationIncludesIdentifier(node.consequent) ||
           this.declarationIncludesIdentifier(node.alternate)
         );
+      case 'TSAsExpression':
+        return this.declarationIncludesIdentifier(node.expression);
 
       default:
         return false;
@@ -125,6 +157,34 @@ export class ASTHelpers {
           return true;
         }
       }
+    }
+
+    return false;
+  }
+
+  public static isNodeExported(node: TSESTree.Node) {
+    // Checking if the node is exported as a named export.
+    if (node.parent && node.parent.type === 'ExportNamedDeclaration') {
+      return true;
+    }
+
+    // Checking if the node is exported as default.
+    if (
+      node.parent &&
+      node.parent.parent &&
+      node.parent.parent.type === 'ExportDefaultDeclaration'
+    ) {
+      return true;
+    }
+
+    // Checking if the node is exported in a list of exports.
+    if (
+      node.parent &&
+      node.parent.parent &&
+      node.parent.parent.type === 'ExportSpecifier' &&
+      node.parent.parent.exported.name === (node as TSESTree.Identifier).name
+    ) {
+      return true;
     }
 
     return false;
