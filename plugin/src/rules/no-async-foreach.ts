@@ -26,7 +26,7 @@ export const noAsyncForEach: TSESLint.RuleModule<'noAsyncForEach', []> = {
     type: 'problem',
     docs: {
       description: 'Disallow Array.forEach with an async callback function',
-      recommended: 'warn',
+      recommended: 'error',
     },
     messages: {
       noAsyncForEach:

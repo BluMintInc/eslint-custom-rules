@@ -1,4 +1,4 @@
-# Extract Constants/Functions to the Global Scope When Possible (`@blumintinc/blumint/extract-global-constants`)
+# Extract constants/functions to the global scope when possible (`@blumintinc/blumint/extract-global-constants`)
 
 ⚠️ This rule _warns_ in the ✅ `recommended` config.
 
