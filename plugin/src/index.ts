@@ -4,6 +4,7 @@ import { extractGlobalConstants } from './rules/extract-global-constants';
 import { genericStartsWithT } from './rules/generic-starts-with-t';
 import { noAsyncArrayFilter } from './rules/no-async-array-filter';
 import { noAsyncForEach } from './rules/no-async-foreach';
+import { noConditionalLiteralsInJsx } from './rules/no-conditional-literals-in-jsx';
 import { noFilterWithoutReturn } from './rules/no-filter-without-return';
 import { noMisusedSwitchCase } from './rules/no-misused-switch-case';
 import { noUnpinnedDependencies } from './rules/no-unpinned-dependencies';
@@ -14,7 +15,7 @@ import { preferTypeOverInterface } from './rules/prefer-type-over-interface';
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '0.1.11',
+    version: '0.1.12',
   },
   parseOptions: {
     ecmaVersion: 2020,
@@ -29,6 +30,7 @@ module.exports = {
         '@blumintinc/blumint/generic-starts-with-t': 'warn',
         '@blumintinc/blumint/no-async-array-filter': 'error',
         '@blumintinc/blumint/no-async-foreach': 'error',
+        '@blumincinc/blumint/no-conditional-literals-in-jsx': 'error',
         '@blumintinc/blumint/no-filter-without-return': 'error',
         '@blumintinc/blumint/no-misused-switch-case': 'error',
         '@blumintinc/blumint/no-unpinned-dependencies': 'error',
@@ -45,6 +47,7 @@ module.exports = {
     'generic-starts-with-t': genericStartsWithT,
     'no-async-array-filter': noAsyncArrayFilter,
     'no-async-foreach': noAsyncForEach,
+    'no-conditional-literals-in-jsx': noConditionalLiteralsInJsx,
     'no-filter-without-return': noFilterWithoutReturn,
     'no-misused-switch-case': noMisusedSwitchCase,
     'no-unpinned-dependencies': noUnpinnedDependencies,
