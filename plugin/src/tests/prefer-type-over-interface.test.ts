@@ -10,10 +10,13 @@ ruleTesterTs.run('prefer-type-over-interface', preferTypeOverInterface, {
     {
       code: 'interface SomeInterface { field: string; }',
       errors: [{ messageId: 'preferType' }],
+      output: 'type SomeInterface = { field: string; }',
     },
     {
       code: 'interface AnotherInterface extends SomeInterface { otherField: number; }',
       errors: [{ messageId: 'preferType' }],
+      output:
+        'type AnotherInterface =  SomeInterface & { otherField: number; }',
     },
   ],
 });
