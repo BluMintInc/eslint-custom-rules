@@ -8,6 +8,21 @@ export const noUselessFragment: TSESLint.RuleModule<'noUselessFragment', []> = {
           context.report({
             node,
             messageId: 'noUselessFragment',
+            fix(fixer) {
+              const sourceCode = context.getSourceCode();
+              const openingFragment = sourceCode.getFirstToken(node)!;
+              const closingFragment = sourceCode.getLastToken(node)!;
+              return [
+                fixer.removeRange([
+                  openingFragment.range[0],
+                  openingFragment.range[0] + 2,
+                ]),
+                fixer.removeRange([
+                  closingFragment.range[0] - 3,
+                  closingFragment.range[0],
+                ]),
+              ];
+            },
           });
         }
       },
@@ -24,6 +39,7 @@ export const noUselessFragment: TSESLint.RuleModule<'noUselessFragment', []> = {
         'React fragment is unnecessary when wrapping a single child',
     },
     schema: [],
+    fixable: 'code',
   },
   defaultOptions: [],
 };
