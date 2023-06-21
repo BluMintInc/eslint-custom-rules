@@ -30,7 +30,7 @@ module.exports = {
         '@blumintinc/blumint/generic-starts-with-t': 'warn',
         '@blumintinc/blumint/no-async-array-filter': 'error',
         '@blumintinc/blumint/no-async-foreach': 'error',
-        '@blumincinc/blumint/no-conditional-literals-in-jsx': 'error',
+        '@blumintinc/blumint/no-conditional-literals-in-jsx': 'error',
         '@blumintinc/blumint/no-filter-without-return': 'error',
         '@blumintinc/blumint/no-misused-switch-case': 'error',
         '@blumintinc/blumint/no-unpinned-dependencies': 'error',
