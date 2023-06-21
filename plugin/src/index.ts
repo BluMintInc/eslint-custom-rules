@@ -15,7 +15,7 @@ import { preferTypeOverInterface } from './rules/prefer-type-over-interface';
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '0.1.12',
+    version: '0.1.13',
   },
   parseOptions: {
     ecmaVersion: 2020,
@@ -25,8 +25,8 @@ module.exports = {
       plugins: ['@blumintinc/blumint'],
       rules: {
         '@blumintinc/blumint/array-methods-this-context': 'warn',
-        '@blumintinc/blumint/export-if-in-doubt': 'warn',
-        '@blumintinc/blumint/extract-global-constants': 'warn',
+        // '@blumintinc/blumint/export-if-in-doubt': 'warn',
+        // '@blumintinc/blumint/extract-global-constants': 'warn',
         '@blumintinc/blumint/generic-starts-with-t': 'warn',
         '@blumintinc/blumint/no-async-array-filter': 'error',
         '@blumintinc/blumint/no-async-foreach': 'error',

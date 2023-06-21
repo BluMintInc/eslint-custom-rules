@@ -11,14 +11,12 @@ ruleTesterJsx.run('no-useless-fragment', noUselessFragment, {
     {
       code: '<><ChildComponent /></>',
       errors: [{ messageId: 'noUselessFragment' }],
-    },
-    {
-      code: '<><ChildComponent /></>',
-      errors: [{ messageId: 'noUselessFragment' }],
+      output: '<ChildComponent />',
     },
     {
       code: '<><NestedComponent><ChildComponent /></NestedComponent></>',
       errors: [{ messageId: 'noUselessFragment' }],
+      output: '<NestedComponent><ChildComponent /></NestedComponent>',
     },
   ],
 });
