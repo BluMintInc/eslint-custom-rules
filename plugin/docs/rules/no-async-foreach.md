@@ -1,4 +1,4 @@
-# Disallow Array.forEach with an async callback function (`@blumintinc/blumint/no-async-forEach`)
+# Disallow Array.forEach with an async callback function (`@blumintinc/blumint/no-async-foreach`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
