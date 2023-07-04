@@ -3,11 +3,11 @@
 import { createRule } from '../utils/createRule';
 import { TSESLint, TSESTree } from '@typescript-eslint/utils';
 
-export const noConditionalLiteralsInJsx: TSESLint.RuleModule<
-  'unexpected',
+export const disallowConditionalLiteralsInJsx: TSESLint.RuleModule<
+  'conditionalLiteralInJsx',
   any[]
 > = createRule({
-  name: 'no-conditional-literals-in-jsx',
+  name: 'disallowConditionalLiteralsInJsx',
   meta: {
     type: 'problem',
     docs: {
@@ -16,7 +16,7 @@ export const noConditionalLiteralsInJsx: TSESLint.RuleModule<
     },
     schema: [],
     messages: {
-      unexpected:
+      conditionalLiteralInJsx:
         'Conditional expression is a sibling of raw text and must be wrapped in <div> or <span>',
     },
   },
@@ -66,9 +66,10 @@ export const noConditionalLiteralsInJsx: TSESLint.RuleModule<
           siblingTextNodes.concat(siblingExpressionNodes).length > 0 &&
           expressionOperandTypes.includes(TSESTree.AST_NODE_TYPES.Literal)
         ) {
-          context.report({ node, messageId: 'unexpected' });
+          context.report({ node, messageId: 'conditionalLiteralInJsx' });
         }
       },
     };
   },
 });
+
