@@ -1,13 +1,13 @@
 import { TSESLint, TSESTree } from '@typescript-eslint/utils';
 
-export const noUselessFragment: TSESLint.RuleModule<'noUselessFragment', []> = {
+export const disallowUselessFragment: TSESLint.RuleModule<'uselessFragment', []> = {
   create(context) {
     return {
       JSXFragment(node: TSESTree.JSXFragment) {
         if (node.children.length === 1) {
           context.report({
             node,
-            messageId: 'noUselessFragment',
+            messageId: 'uselessFragment',
             fix(fixer) {
               const sourceCode = context.getSourceCode();
               const openingFragment = sourceCode.getFirstToken(node)!;
@@ -35,7 +35,7 @@ export const noUselessFragment: TSESLint.RuleModule<'noUselessFragment', []> = {
       recommended: 'warn',
     },
     messages: {
-      noUselessFragment:
+      uselessFragment:
         'React fragment is unnecessary when wrapping a single child',
     },
     schema: [],
@@ -43,3 +43,4 @@ export const noUselessFragment: TSESLint.RuleModule<'noUselessFragment', []> = {
   },
   defaultOptions: [],
 };
+

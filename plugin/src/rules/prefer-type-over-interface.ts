@@ -1,11 +1,11 @@
 import { createRule } from '../utils/createRule';
 import { TSESLint, TSESTree } from '@typescript-eslint/utils';
 
-export const preferTypeOverInterface: TSESLint.RuleModule<
-  'preferType',
+export const enforceTypeOverInterface: TSESLint.RuleModule<
+  'typeOverInterface',
   never[]
 > = createRule({
-  name: 'prefer-type-over-interface',
+  name: 'enforceTypeOverInterface',
   meta: {
     type: 'suggestion',
     docs: {
@@ -14,7 +14,7 @@ export const preferTypeOverInterface: TSESLint.RuleModule<
     },
     schema: [],
     messages: {
-      preferType: 'Prefer using type alias over interface.',
+      typeOverInterface: 'Prefer using type alias over interface.',
     },
     fixable: 'code',
   },
@@ -25,7 +25,7 @@ export const preferTypeOverInterface: TSESLint.RuleModule<
       TSInterfaceDeclaration(node: TSESTree.TSInterfaceDeclaration) {
         context.report({
           node,
-          messageId: 'preferType',
+          messageId: 'typeOverInterface',
           fix(fixer) {
             const sourceCode = context.getSourceCode();
             const openingBrace = sourceCode.getTokenAfter(node.id, {
@@ -57,3 +57,4 @@ export const preferTypeOverInterface: TSESLint.RuleModule<
     };
   },
 });
+
