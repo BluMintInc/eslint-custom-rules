@@ -84,6 +84,32 @@ ruleTesterJsx.run('requireMemo', requireMemo, {
       code: `function Component({foo}) { return <div>{foo}</div>; }`,
     },
     {
+      code: `export const TeamMemberDetails = ({ member }: TeamMemberDetailsProps) => {
+        const { user } = useAuth();
+        const { checkedIn, imgUrl, status, tournamentId, ...memberRest } = member;
+        const { username, userId } = memberRest;
+        return (
+          <>
+            {!!Object.keys(memberRest).length && (
+              <>
+                <ChipUser
+                  username={truncateIfTooLong(username)}
+                  avatarUrl={imgUrl}
+                  href={\`/profile/\${userId}\`}
+                />,
+                {isAdmin(user?.email) && !!memberRest && (
+                  <ParticipantAdminDetails
+                    {...memberRest}
+                    sx={{ wordWrap: 'break-word' }}
+                  />
+                )}
+              </>
+            )}
+          </>
+        );
+      };`,
+    },
+    {
       code: `const FooBar: FC<{baz: string}> = ({baz}) => {
             return (
                 <SomeOtherComponent baz={baz}/>
