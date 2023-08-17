@@ -11,11 +11,12 @@ import { noUnpinnedDependencies } from './rules/no-unpinned-dependencies';
 import { noUselessFragment } from './rules/no-useless-fragment';
 import { preferFragmentShorthand } from './rules/prefer-fragment-shorthand';
 import { preferTypeOverInterface } from './rules/prefer-type-over-interface';
+import { requireMemo } from './rules/require-memo';
 
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '0.1.14',
+    version: '0.1.15',
   },
   parseOptions: {
     ecmaVersion: 2020,
@@ -37,6 +38,7 @@ module.exports = {
         '@blumintinc/blumint/no-useless-fragment': 'warn',
         '@blumintinc/blumint/prefer-fragment-shorthand': 'warn',
         '@blumintinc/blumint/prefer-type-over-interface': 'warn',
+        '@blumintinc/blumint/require-memo': 'error',
       },
     },
   },
@@ -54,5 +56,6 @@ module.exports = {
     'no-useless-fragment': noUselessFragment,
     'prefer-fragment-shorthand': preferFragmentShorthand,
     'prefer-type-over-interface': preferTypeOverInterface,
+    'require-memo': requireMemo,
   },
 };
