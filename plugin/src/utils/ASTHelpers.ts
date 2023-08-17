@@ -191,7 +191,7 @@ export class ASTHelpers {
   }
 
   public static returnsJSX(node: TSESTree.Node) {
-    if (node.type === 'JSXElement') {
+    if (node.type === 'JSXElement' || node.type === 'JSXFragment') {
       return true;
     }
 
@@ -199,7 +199,8 @@ export class ASTHelpers {
       for (const statement of node.body) {
         if (
           statement.type === 'ReturnStatement' &&
-          statement.argument?.type === 'JSXElement'
+          (statement.argument?.type === 'JSXElement' ||
+            statement.argument?.type === 'JSXFragment')
         ) {
           return true;
         }
