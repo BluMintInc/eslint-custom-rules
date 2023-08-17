@@ -189,4 +189,32 @@ export class ASTHelpers {
 
     return false;
   }
+
+  public static returnsJSX(node: TSESTree.Node) {
+    if (node.type === 'JSXElement') {
+      return true;
+    }
+
+    if (node.type === 'BlockStatement') {
+      for (const statement of node.body) {
+        if (
+          statement.type === 'ReturnStatement' &&
+          statement.argument?.type === 'JSXElement'
+        ) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  public static hasParameters(
+    node:
+      | TSESTree.ArrowFunctionExpression
+      | TSESTree.FunctionExpression
+      | TSESTree.FunctionDeclaration,
+  ): boolean {
+    return node.params && node.params.length > 0;
+  }
 }
