@@ -4,6 +4,9 @@ import { ASTHelpers } from '../utils/ASTHelpers';
 
 export type NodeWithParent = TSESTree.Node & { parent: NodeWithParent };
 
+const isComponentExplicitlyUnmemoized = (componentName: string) =>
+  componentName.toLowerCase().includes('unmemoized');
+
 function isMemoCallExpression(node: TSESTree.Node) {
   if (node.type !== 'CallExpression') return false;
   if (node.callee.type === 'MemberExpression') {
@@ -68,13 +71,15 @@ function checkFunction(
   if (ASTHelpers.returnsJSX(node.body) && ASTHelpers.hasParameters(node)) {
     if (
       currentNode.type === 'VariableDeclarator' &&
-      currentNode.id.type === 'Identifier'
+      currentNode.id.type === 'Identifier' &&
+      !isComponentExplicitlyUnmemoized(currentNode.id.name)
     ) {
       context.report({ node, messageId: 'requireMemo' });
     } else if (
       node.type === 'FunctionDeclaration' &&
       currentNode.type === 'Program' &&
-      node.id
+      node.id &&
+      !isComponentExplicitlyUnmemoized(node.id.name)
     ) {
       context.report({ node, messageId: 'requireMemo' });
     }

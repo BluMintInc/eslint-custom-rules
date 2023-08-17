@@ -2,14 +2,14 @@
 
 <!-- end auto-generated rule header -->
 
-This rule enforces that React components (that are not pure) to be memoized.
+This rule enforces that React components (that are not pure) to be memoized. If the component name includes "Unmemoized", then this rule is ignored.
 
 ## Rule Details
 
 Examples of **incorrect** code for this rule:
 
 ```jsx
-const UnmemoizedComponent = ({foo, bar}) => return (
+const Component = ({foo, bar}) => return (
     <SomeOtherComponent>{foo}{bar}</SomeOtherComponent>
 )
 ```
@@ -17,10 +17,13 @@ const UnmemoizedComponent = ({foo, bar}) => return (
 Examples of **correct** code for this rule:
 
 ```jsx
-const MemoizedComponent = memo(function UnmemoizedComponent({foo, bar}) {
+const MemoizedComponent = memo(function BigComponent({foo, bar}) {
     return (
         <SomeOtherComponent>{foo}{bar}</SomeOtherComponent>
     )
 })
+const ComponentUnmemoized = ({foo, bar}) => return (
+    <SomeOtherComponent>{foo}{bar}</SomeOtherComponent>
+)
 ```
 

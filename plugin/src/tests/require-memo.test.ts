@@ -8,6 +8,16 @@ ruleTesterJsx.run('requireMemo', requireMemo, {
       code: `const Component = React.memo(() => <div />)`,
     },
     {
+      code: `const ComponentUnmemoized = ({foo}) => <div>{foo}</div>`,
+    },
+    {
+      code: `export function UnmemoizedThing({foo}) {
+                return (
+                  <div>{foo}</div>
+                )
+              }`,
+    },
+    {
       code: `const Component = memo(({foo}) => <div>{foo}</div>)`,
     },
     {
