@@ -2,7 +2,7 @@ import { requireMemo } from '../rules/require-memo';
 import { ruleTesterJsx } from '../utils/ruleTester';
 
 ruleTesterJsx.run('requireMemo', requireMemo, {
-  //   valid: [],
+  // valid: [],
   valid: [
     {
       code: `const Component = React.memo(() => <div />)`,
@@ -52,6 +52,18 @@ ruleTesterJsx.run('requireMemo', requireMemo, {
     },
     {
       code: `const Component = () => <div />`,
+    },
+    {
+      code: `export const Wizard = wrappedWithHOF(
+        (props) => {
+         return <Component {...props} />;
+       })`,
+    },
+    {
+      code: `export const Wizard = wrappedWithHOF(
+        function (props) {
+         return <Component {...props} />;
+       })`,
     },
     {
       code: `function withHOC(Component) {
@@ -110,6 +122,13 @@ ruleTesterJsx.run('requireMemo', requireMemo, {
       };`,
     },
     {
+      code: `const FooBar = ({baz}) => {
+            return (
+                <SomeOtherComponent baz={baz}/>
+            )
+        }`,
+    },
+    {
       code: `const FooBar: FC<{baz: string}> = ({baz}) => {
             return (
                 <SomeOtherComponent baz={baz}/>
@@ -122,6 +141,18 @@ ruleTesterJsx.run('requireMemo', requireMemo, {
     {
       code: `function DefaultPropComponent({ foo = 'default' }) { return <div>{foo}</div>; }
         `,
+    },
+    {
+      code: `const Component = ({ someFunc }) => <div>{someFunc()}</div>;`,
+    },
+    {
+      code: `const Component = ({ foo, shouldRender }) => { return shouldRender ? <div>{foo}</div> : null; };`,
+    },
+    {
+      code: `const Component = ({ foo, ...rest }) => <div>{foo}{Object.values(rest).join()}</div>;`,
+    },
+    {
+      code: `const Component = ({ onClick = () => {} }) => <button onClick={onClick}>Click me</button>;`,
     },
   ].map((testCase) => {
     return {
