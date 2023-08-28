@@ -1,5 +1,4 @@
 import { TSESTree } from '@typescript-eslint/utils';
-
 export class ASTHelpers {
   public static blockIncludesIdentifier(
     block: TSESTree.BlockStatement,
@@ -190,7 +189,7 @@ export class ASTHelpers {
     return false;
   }
 
-  public static returnsJSX(node: TSESTree.Node) {
+  public static returnsJSX(node: TSESTree.Node): boolean {
     if (node.type === 'JSXElement' || node.type === 'JSXFragment') {
       return true;
     }
@@ -204,7 +203,26 @@ export class ASTHelpers {
         ) {
           return true;
         }
+        // Handle conditional returns
+        if (
+          statement.type === 'ReturnStatement' &&
+          statement.argument?.type === 'ConditionalExpression'
+        ) {
+          const conditionalExpr = statement.argument;
+          if (
+            ASTHelpers.returnsJSX(conditionalExpr.consequent) ||
+            ASTHelpers.returnsJSX(conditionalExpr.alternate)
+          ) {
+            return true;
+          }
+        }
       }
+    }
+
+    if (node.type === 'ConditionalExpression') {
+      return (
+        this.returnsJSX(node.consequent) || this.returnsJSX(node.alternate)
+      );
     }
 
     return false;
