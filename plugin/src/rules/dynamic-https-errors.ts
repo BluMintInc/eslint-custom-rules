@@ -31,7 +31,7 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<
     schema: [],
     messages: {
       dynamicHttpsErrors:
-        'Found dynamic error details in the "message" field. Move any dynamic details third argument.',
+        'Found dynamic error details in the second argument of the HttpsError constructor - the "message" field. This field is hashed to produce a unique id for error monitoring. Move any dynamic details to the third argument - the "details" field - to preserve the unique id and to monitor the error correctly.',
     },
   },
   defaultOptions: [],
