@@ -1,6 +1,6 @@
 {
   "name": "custom-eslint-rules",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "description": "Custom eslint rules for use within BluMint",
   "author": {
     "name": "Brodie McGuire",
