@@ -1,6 +1,6 @@
 {
   "name": "@blumintinc/eslint-plugin-blumint",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "description": "Custom eslint rules for use at BluMint",
   "keywords": [
     "eslint",
