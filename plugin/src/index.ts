@@ -1,4 +1,5 @@
 import { arrayMethodsThisContext } from './rules/array-methods-this-context';
+import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
 import { exportIfInDoubt } from './rules/export-if-in-doubt';
 import { extractGlobalConstants } from './rules/extract-global-constants';
 import { genericStartsWithT } from './rules/generic-starts-with-t';
@@ -26,6 +27,7 @@ module.exports = {
       plugins: ['@blumintinc/blumint'],
       rules: {
         '@blumintinc/blumint/array-methods-this-context': 'warn',
+        '@blumintinc/blumint/dynamic-https-errors': 'warn',
         // '@blumintinc/blumint/export-if-in-doubt': 'warn',
         // '@blumintinc/blumint/extract-global-constants': 'warn',
         '@blumintinc/blumint/generic-starts-with-t': 'warn',
@@ -44,6 +46,7 @@ module.exports = {
   },
   rules: {
     'array-methods-this-context': arrayMethodsThisContext,
+    'dynamic-https-errors': dynamicHttpsErrors,
     'export-if-in-doubt': exportIfInDoubt,
     'extract-global-constants': extractGlobalConstants,
     'generic-starts-with-t': genericStartsWithT,
