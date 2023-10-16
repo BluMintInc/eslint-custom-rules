@@ -20,7 +20,10 @@ jobs:
     - name: Set Environment Variables
       run: |
         echo "_GIT_PATHSPEC=':!package-lock.json'" >> $GITHUB_ENV
-        echo "_GIT_SINCE=$(date --date='last Saturday' +%Y-%m-%d)" >> $GITHUB_ENV
+        # Weekly: 
+        # echo "_GIT_SINCE=$(date --date='last Saturday' +%Y-%m-%d)" >> $GITHUB_ENV
+        # Yearly:
+        echo "_GIT_SINCE=$(date --date='January 1' +%Y-%m-%d)" >> $GITHUB_ENV
         echo "_GIT_UNTIL=$(date +%Y-%m-%d)" >> $GITHUB_ENV
 
     - name: Display Environment Variables
