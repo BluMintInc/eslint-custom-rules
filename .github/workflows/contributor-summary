@@ -1,0 +1,52 @@
+name: Weekly LOC Report
+
+on:
+  schedule:
+    - cron: '59 23 * * 5' # Every Friday at 11:59pm UTC
+  workflow_dispatch:
+
+jobs:
+  generate-report:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Install git-quick-stats
+      run: |
+        bash <(curl -s https://git-quick-stats.sh/install)
+
+    - name: Set Environment Variables
+      run: |
+        echo "_GIT_PATHSPEC=':!package-lock.json'" >> $GITHUB_ENV
+        echo "_GIT_SINCE=$(date --date='last Saturday' +%Y-%m-%d)" >> $GITHUB_ENV
+        echo "_GIT_UNTIL=$(date +%Y-%m-%d)" >> $GITHUB_ENV
+
+    - name: Display Environment Variables
+      run: |
+        echo "GIT_PATHSPEC=${{ env._GIT_PATHSPEC }}"
+        echo "GIT_SINCE=${{ env._GIT_SINCE }}"
+        echo "GIT_UNTIL=${{ env._GIT_UNTIL }}"
+    
+    - name: Display git-quick-stats
+      run: |
+        git-quick-stats -T
+
+    - name: Fetch Contribution Stats
+      id: stats
+      run: |
+        stats_output=$(git-quick-stats -T)
+        csv_output="Developer, Lines of Code Changed\n"
+        while IFS= read -r line; do
+            # Capture author details
+            if [[ $line =~ ^[[:space:]]+([^<]+)\< ]]; then
+                author="${BASH_REMATCH[1]}"
+            fi
+            # Capture "lines changed" details and append to CSV
+            if [[ $line =~ lines\ changed:\ ([0-9]+) ]]; then
+                csv_output+="$author, ${BASH_REMATCH[1]}\n"
+            fi
+        done <<< "$stats_output"
+        echo "CSV_OUTPUT=$csv_output" >> $GITHUB_ENV
+        echo "CSV_OUTPUT=${{ env.CSV_OUTPUT }}"
