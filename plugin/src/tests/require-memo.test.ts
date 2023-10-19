@@ -154,6 +154,13 @@ ruleTesterJsx.run('requireMemo', requireMemo, {
     {
       code: `const Component = ({ onClick = () => {} }) => <button onClick={onClick}>Click me</button>;`,
     },
+    {
+      code: `export function ShouldBeMemoized({foo}) {
+                return (
+                  <div>{foo}</div>
+                )
+              }`,
+    },
   ].map((testCase) => {
     return {
       ...testCase,
