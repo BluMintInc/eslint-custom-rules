@@ -94,6 +94,8 @@ ruleTesterJsx.run('requireMemo', requireMemo, {
   invalid: [
     {
       code: `function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `import { memo } from 'react';
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; })`,
     },
     {
       code: `export const TeamMemberDetails = ({ member }: TeamMemberDetailsProps) => {
@@ -137,10 +139,13 @@ ruleTesterJsx.run('requireMemo', requireMemo, {
     },
     {
       code: `function MultiplePropsComponent({ foo, bar }) { return <div>{foo}{bar}</div>; }`,
+      output: `import { memo } from 'react';
+const MultiplePropsComponent = memo(function MultiplePropsComponentUnmemoized({ foo, bar }) { return <div>{foo}{bar}</div>; })`,
     },
     {
-      code: `function DefaultPropComponent({ foo = 'default' }) { return <div>{foo}</div>; }
-        `,
+      code: `function DefaultPropComponent({ foo = 'default' }) { return <div>{foo}</div>; }`,
+      output: `import { memo } from 'react';
+const DefaultPropComponent = memo(function DefaultPropComponentUnmemoized({ foo = 'default' }) { return <div>{foo}</div>; })`,
     },
     {
       code: `const Component = ({ someFunc }) => <div>{someFunc()}</div>;`,
@@ -154,12 +159,66 @@ ruleTesterJsx.run('requireMemo', requireMemo, {
     {
       code: `const Component = ({ onClick = () => {} }) => <button onClick={onClick}>Click me</button>;`,
     },
+    // NOTE: for autofix, whitespace formatting matters!
     {
       code: `export function ShouldBeMemoized({foo}) {
-                return (
-                  <div>{foo}</div>
-                )
-              }`,
+        return (
+          <div>{foo}</div>
+        )
+      }`,
+      output: `import { memo } from 'react';
+export const ShouldBeMemoized = memo(function ShouldBeMemoizedUnmemoized({foo}) {
+        return (
+          <div>{foo}</div>
+        )
+      })`,
+    },
+    {
+      code: `export function ShouldBeMemoized({ foo }: { foo: string }): JSX.Element {
+            return (
+              <div>{foo}</div>
+            )
+          }`,
+      output: `import { memo } from 'react';
+export const ShouldBeMemoized = memo(function ShouldBeMemoizedUnmemoized({ foo }: { foo: string }): JSX.Element {
+            return (
+              <div>{foo}</div>
+            )
+          })`,
+    },
+    // existing react import
+    {
+      code: `import { useState } from 'react';
+    
+    export function ShouldBeMemoized({foo}) {
+            return (
+              <div>{foo}</div>
+            )
+          }`,
+      output: `import { useState, memo } from 'react';
+    
+    export const ShouldBeMemoized = memo(function ShouldBeMemoizedUnmemoized({foo}) {
+            return (
+              <div>{foo}</div>
+            )
+          })`,
+    },
+    //existing memo import
+    {
+      code: `import { memo } from 'react';
+    
+    export function ShouldStillBeMemoized({foo}) {
+            return (
+              <div>{foo}</div>
+            )
+          }`,
+      output: `import { memo } from 'react';
+    
+    export const ShouldStillBeMemoized = memo(function ShouldStillBeMemoizedUnmemoized({foo}) {
+            return (
+              <div>{foo}</div>
+            )
+          })`,
     },
   ].map((testCase) => {
     return {
