@@ -4,6 +4,11 @@ import { ASTHelpers } from '../utils/ASTHelpers';
 
 export type NodeWithParent = TSESTree.Node & { parent: NodeWithParent };
 
+export type ComponentNode =
+  | TSESTree.ArrowFunctionExpression
+  | TSESTree.FunctionExpression
+  | TSESTree.FunctionDeclaration;
+
 const isComponentExplicitlyUnmemoized = (componentName: string) =>
   componentName.toLowerCase().includes('unmemoized');
 
@@ -35,47 +40,61 @@ function isHigherOrderFunctionReturningJSX(node: TSESTree.Node): boolean {
   return false;
 }
 
+const isUnmemoizedArrowFunction = (parentNode: TSESTree.Node) => {
+  return (
+    parentNode.type === 'VariableDeclarator' &&
+    parentNode.id.type === 'Identifier' &&
+    !isComponentExplicitlyUnmemoized(parentNode.id.name)
+  );
+};
+
+const isUnmemoizedFunctionComponent = (
+  parentNode: TSESTree.Node,
+  node: TSESTree.Node,
+) => {
+  return (
+    node.type === 'FunctionDeclaration' &&
+    parentNode.type === 'Program' &&
+    node.id &&
+    !isComponentExplicitlyUnmemoized(node.id.name)
+  );
+};
+
+const isUnmemoizedExportedFunctionComponent = (
+  parentNode: TSESTree.Node,
+  node: TSESTree.Node,
+) => {
+  return (
+    node.type === 'FunctionDeclaration' &&
+    parentNode.type === 'ExportNamedDeclaration' &&
+    node.id &&
+    !isComponentExplicitlyUnmemoized(node.id.name)
+  );
+};
+
 function checkFunction(
   context: Readonly<RuleContext<'requireMemo', []>>,
-  node: (
-    | TSESTree.ArrowFunctionExpression
-    | TSESTree.FunctionExpression
-    | TSESTree.FunctionDeclaration
-  ) &
-    NodeWithParent,
+  node: ComponentNode & NodeWithParent,
 ) {
   const fileName = context.getFilename();
   if (!fileName.endsWith('.tsx')) {
     return;
   }
   if (isHigherOrderFunctionReturningJSX(node)) {
-    console.log('Found HOF');
     return;
   }
-  const currentNode = node.parent;
+  const parentNode = node.parent;
   if (node.parent.type === 'CallExpression') {
     return;
   }
 
-  // while (currentNode.type === 'CallExpression') {
-  //   if (isMemoCallExpression(currentNode) || true) {
-  //     return;
-  //   }
-
-  //   currentNode = currentNode.parent;
-  // }
   if (ASTHelpers.returnsJSX(node.body) && ASTHelpers.hasParameters(node)) {
     if (
-      currentNode.type === 'VariableDeclarator' &&
-      currentNode.id.type === 'Identifier' &&
-      !isComponentExplicitlyUnmemoized(currentNode.id.name)
-    ) {
-      context.report({ node, messageId: 'requireMemo' });
-    } else if (
-      node.type === 'FunctionDeclaration' &&
-      currentNode.type === 'Program' &&
-      node.id &&
-      !isComponentExplicitlyUnmemoized(node.id.name)
+      [
+        isUnmemoizedArrowFunction,
+        isUnmemoizedFunctionComponent,
+        isUnmemoizedExportedFunctionComponent,
+      ].some((fn) => fn(parentNode, node))
     ) {
       context.report({ node, messageId: 'requireMemo' });
     }
