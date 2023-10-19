@@ -17,7 +17,7 @@ import { requireMemo } from './rules/require-memo';
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '0.1.20',
+    version: '0.1.21',
   },
   parseOptions: {
     ecmaVersion: 2020,
