@@ -89,14 +89,88 @@ function checkFunction(
   }
 
   if (ASTHelpers.returnsJSX(node.body) && ASTHelpers.hasParameters(node)) {
-    if (
-      [
-        isUnmemoizedArrowFunction,
-        isUnmemoizedFunctionComponent,
-        isUnmemoizedExportedFunctionComponent,
-      ].some((fn) => fn(parentNode, node))
-    ) {
-      context.report({ node, messageId: 'requireMemo' });
+    const results = [
+      isUnmemoizedArrowFunction,
+      isUnmemoizedFunctionComponent,
+      isUnmemoizedExportedFunctionComponent,
+    ].map((fn) => fn(parentNode, node));
+    if (results.some((result) => !!result)) {
+      context.report({
+        node,
+        messageId: 'requireMemo',
+        fix:
+          results[2] || results[1]
+            ? function fix(fixer) {
+                const sourceCode = context.getSourceCode();
+                let importFix: TSESLint.RuleFix | null = null;
+
+                // Search for React import statement
+                const importDeclarations = sourceCode.ast.body.filter(
+                  (node) => node.type === 'ImportDeclaration',
+                ) as TSESTree.ImportDeclaration[];
+
+                const reactImport = importDeclarations.find(
+                  (importDeclaration) =>
+                    importDeclaration.source.value === 'react',
+                );
+
+                if (reactImport) {
+                  // Check if memo is already imported
+                  if (
+                    !reactImport.specifiers.some(
+                      (specifier) => specifier.local.name === 'memo',
+                    )
+                  ) {
+                    // Add memo to existing import statement
+                    const lastSpecifier =
+                      reactImport.specifiers[reactImport.specifiers.length - 1];
+                    importFix = fixer.insertTextAfter(lastSpecifier, ', memo');
+                  }
+                } else {
+                  // Add new import statement for memo
+                  const importStatement = "import { memo } from 'react';\n";
+                  importFix = fixer.insertTextBeforeRange(
+                    [sourceCode.ast.range[0], sourceCode.ast.range[0]],
+                    importStatement,
+                  );
+                }
+
+                const functionKeywordRange: Readonly<[number, number]> = [
+                  node.range[0],
+                  node.range[0] + 'function'.length,
+                ];
+                const functionKeywordReplacement = `const ${
+                  node.id!.name
+                } = memo(`;
+
+                // Step 3: Rename function
+                const functionNameReplacement = `function ${
+                  node.id!.name
+                }Unmemoized`;
+
+                const fixes = [
+                  fixer.replaceTextRange(
+                    functionKeywordRange,
+                    functionKeywordReplacement,
+                  ),
+                  fixer.insertTextAfterRange(
+                    [node.range[1], node.range[1]],
+                    ')',
+                  ),
+                  fixer.replaceTextRange(
+                    [node.id!.range[0] - 1, node.id!.range[1]],
+                    functionNameReplacement,
+                  ),
+                ];
+
+                if (importFix) {
+                  fixes.push(importFix);
+                }
+
+                return fixes;
+              }
+            : undefined,
+      });
     }
   }
 }
