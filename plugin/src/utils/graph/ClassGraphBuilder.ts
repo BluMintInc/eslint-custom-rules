@@ -1,10 +1,8 @@
 /* eslint-disable security/detect-object-injection */
 import { ASTUtils, TSESTree } from '@typescript-eslint/utils';
-import {
-  ClassGraphSorter,
-  ClassGraphSorterReadability,
-} from './ClassGraphSorter';
-import { ASTHelpers } from './ASTHelpers';
+import { ClassGraphSorterReadability } from './ClassGraphSorterReadability';
+import { ASTHelpers } from '../ASTHelpers';
+import { ClassGraphSorter } from './ClassGraphSorter';
 
 export type GraphNode = {
   name: string;
