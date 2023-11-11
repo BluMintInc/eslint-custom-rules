@@ -118,7 +118,7 @@ export class ClassGraphBuilder {
       node,
       this.graph,
       this.className,
-    ).filter((name) => !!this.graph[name]);
+    ).filter((name) => !!this.graph[name] && name !== methodName);
 
     if (this.graph[methodName]) {
       this.graph[methodName].dependencies.push(...newDependencies);
