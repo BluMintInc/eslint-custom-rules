@@ -1,4 +1,5 @@
 import { TSESTree } from '@typescript-eslint/utils';
+import { Graph } from './graph/ClassGraphBuilder';
 export class ASTHelpers {
   public static blockIncludesIdentifier(
     block: TSESTree.BlockStatement,
@@ -122,6 +123,307 @@ export class ASTHelpers {
     }
   }
 
+  public static classMethodDependenciesOf(
+    node: TSESTree.Node | null,
+    graph: Graph,
+    className: string,
+  ): string[] {
+    const dependencies: string[] = [];
+
+    if (!node) {
+      return dependencies;
+    }
+    switch (node.type) {
+      case 'MethodDefinition':
+        const functionBody = node.value.body;
+        return (functionBody?.body || [])
+          .map((statement) =>
+            ASTHelpers.classMethodDependenciesOf(statement, graph, className),
+          )
+          .flat();
+
+      case 'Identifier':
+        dependencies.push(node.name);
+        break;
+
+      case 'ExpressionStatement':
+        return ASTHelpers.classMethodDependenciesOf(
+          node.expression,
+          graph,
+          className,
+        );
+
+      case 'MemberExpression':
+        if (
+          (node.object.type === 'ThisExpression' &&
+            node.property.type === 'Identifier') ||
+          (node.object.type === 'Identifier' &&
+            node.object.name === className &&
+            node.property.type === 'Identifier')
+        ) {
+          dependencies.push(node.property.name);
+        } else {
+          return [
+            ...ASTHelpers.classMethodDependenciesOf(
+              node.object,
+              graph,
+              className,
+            ),
+            ...ASTHelpers.classMethodDependenciesOf(
+              node.property,
+              graph,
+              className,
+            ),
+          ];
+        }
+        break;
+
+      case 'TSNonNullExpression':
+        return ASTHelpers.classMethodDependenciesOf(
+          node.expression,
+          graph,
+          className,
+        );
+      case 'ArrayPattern':
+        return node.elements
+          .map((element) =>
+            ASTHelpers.classMethodDependenciesOf(element, graph, className),
+          )
+          .flat();
+      case 'ObjectPattern':
+        return node.properties
+          .map((property) =>
+            ASTHelpers.classMethodDependenciesOf(
+              property.value || null,
+              graph,
+              className,
+            ),
+          )
+          .flat();
+      case 'AssignmentPattern':
+        return ASTHelpers.classMethodDependenciesOf(
+          node.left,
+          graph,
+          className,
+        );
+      case 'RestElement':
+        return ASTHelpers.classMethodDependenciesOf(
+          node.argument,
+          graph,
+          className,
+        );
+      case 'AwaitExpression':
+        return ASTHelpers.classMethodDependenciesOf(
+          node.argument,
+          graph,
+          className,
+        );
+      case 'AssignmentExpression':
+        return [
+          ...ASTHelpers.classMethodDependenciesOf(node.left, graph, className),
+          ...ASTHelpers.classMethodDependenciesOf(node.right, graph, className),
+        ];
+      case 'BlockStatement':
+        return node.body
+          .map((statement) =>
+            ASTHelpers.classMethodDependenciesOf(statement, graph, className),
+          )
+          .flat()
+          .filter(Boolean) as string[];
+      case 'IfStatement':
+        return [
+          ...ASTHelpers.classMethodDependenciesOf(node.test, graph, className),
+          ...ASTHelpers.classMethodDependenciesOf(
+            node.consequent,
+            graph,
+            className,
+          ),
+          ...ASTHelpers.classMethodDependenciesOf(
+            node.alternate,
+            graph,
+            className,
+          ),
+        ];
+      case 'TSTypeAssertion':
+        return ASTHelpers.classMethodDependenciesOf(
+          node.expression,
+          graph,
+          className,
+        );
+      case 'Identifier':
+        return dependencies;
+      case 'SpreadElement':
+        return ASTHelpers.classMethodDependenciesOf(
+          node.argument,
+          graph,
+          className,
+        );
+      case 'ChainExpression':
+        return ASTHelpers.classMethodDependenciesOf(
+          node.expression,
+          graph,
+          className,
+        );
+      case 'ArrayExpression':
+        return node.elements
+          .map(
+            (element) =>
+              element &&
+              (element.type === 'SpreadElement'
+                ? ASTHelpers.classMethodDependenciesOf(
+                    element.argument,
+                    graph,
+                    className,
+                  )
+                : ASTHelpers.classMethodDependenciesOf(
+                    element,
+                    graph,
+                    className,
+                  )),
+          )
+          .flat()
+          .filter(Boolean) as string[];
+      case 'ObjectExpression':
+        return node.properties
+          .map((property) => {
+            if (property.type === 'Property') {
+              return ASTHelpers.classMethodDependenciesOf(
+                property.value,
+                graph,
+                className,
+              );
+            } else if (property.type === 'SpreadElement') {
+              return ASTHelpers.classMethodDependenciesOf(
+                property.argument,
+                graph,
+                className,
+              );
+            }
+            return false;
+          })
+          .flat()
+          .filter(Boolean) as string[];
+
+      case 'Property':
+        return ASTHelpers.classMethodDependenciesOf(
+          node.value,
+          graph,
+          className,
+        );
+
+      case 'BinaryExpression':
+      case 'LogicalExpression':
+        return [
+          ...ASTHelpers.classMethodDependenciesOf(node.left, graph, className),
+          ...ASTHelpers.classMethodDependenciesOf(node.right, graph, className),
+        ];
+
+      case 'UnaryExpression':
+      case 'UpdateExpression':
+        return ASTHelpers.classMethodDependenciesOf(
+          node.argument,
+          graph,
+          className,
+        );
+      case 'CallExpression':
+      case 'NewExpression':
+        // For function and constructor calls, we care about both the callee and the arguments.
+
+        return [
+          ...ASTHelpers.classMethodDependenciesOf(
+            node.callee,
+            graph,
+            className,
+          ),
+          ...node.arguments
+            .map((arg) =>
+              ASTHelpers.classMethodDependenciesOf(arg, graph, className),
+            )
+            .flat(),
+        ];
+
+      case 'ConditionalExpression':
+        return [
+          ...ASTHelpers.classMethodDependenciesOf(node.test, graph, className),
+          ...ASTHelpers.classMethodDependenciesOf(
+            node.consequent,
+            graph,
+            className,
+          ),
+          ...ASTHelpers.classMethodDependenciesOf(
+            node.alternate,
+            graph,
+            className,
+          ),
+        ];
+      case 'TSAsExpression':
+        return ASTHelpers.classMethodDependenciesOf(
+          node.expression,
+          graph,
+          className,
+        );
+      case 'VariableDeclaration':
+        return node.declarations
+          .map((declaration) =>
+            ASTHelpers.classMethodDependenciesOf(declaration, graph, className),
+          )
+          .flat()
+          .filter(Boolean);
+      case 'VariableDeclarator':
+        return ASTHelpers.classMethodDependenciesOf(
+          node.init,
+          graph,
+          className,
+        );
+      case 'ForOfStatement':
+        return [
+          ...ASTHelpers.classMethodDependenciesOf(node.left, graph, className),
+          ...ASTHelpers.classMethodDependenciesOf(node.body, graph, className),
+          ...ASTHelpers.classMethodDependenciesOf(node.right, graph, className),
+        ];
+      case 'ForStatement':
+        return [node.body, node.init, node.test, node.update]
+          .map((node) =>
+            ASTHelpers.classMethodDependenciesOf(node, graph, className),
+          )
+          .flat();
+      case 'ThrowStatement':
+        return ASTHelpers.classMethodDependenciesOf(
+          node.argument,
+          graph,
+          className,
+        );
+      case 'TemplateLiteral':
+        return node.expressions
+          .map((expression) =>
+            ASTHelpers.classMethodDependenciesOf(expression, graph, className),
+          )
+          .flat();
+      case 'ReturnStatement':
+        return ASTHelpers.classMethodDependenciesOf(
+          node.argument,
+          graph,
+          className,
+        );
+      case 'ArrowFunctionExpression':
+        return [
+          ...node.params.flatMap((param) =>
+            ASTHelpers.classMethodDependenciesOf(param, graph, className),
+          ),
+          ...ASTHelpers.classMethodDependenciesOf(node.body, graph, className),
+        ];
+      default:
+        break;
+    }
+
+    // Removing duplicates
+    return [
+      ...new Set(
+        dependencies.filter((dep) => graph?.[dep]?.type !== 'property'),
+      ),
+    ];
+  }
+
   public static isNode(value: unknown): value is TSESTree.Node {
     return typeof value === 'object' && value !== null && 'type' in value;
   }
@@ -221,7 +523,8 @@ export class ASTHelpers {
 
     if (node.type === 'ConditionalExpression') {
       return (
-        this.returnsJSX(node.consequent) || this.returnsJSX(node.alternate)
+        ASTHelpers.returnsJSX(node.consequent) ||
+        ASTHelpers.returnsJSX(node.alternate)
       );
     }
 
