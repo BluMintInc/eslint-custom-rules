@@ -1,4 +1,5 @@
 import { arrayMethodsThisContext } from './rules/array-methods-this-context';
+import { classMethodsReadTopToBottom } from './rules/class-methods-read-top-to-bottom';
 import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
 import { exportIfInDoubt } from './rules/export-if-in-doubt';
 import { extractGlobalConstants } from './rules/extract-global-constants';
@@ -17,7 +18,7 @@ import { requireMemo } from './rules/require-memo';
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '0.1.22',
+    version: '0.1.23',
   },
   parseOptions: {
     ecmaVersion: 2020,
@@ -27,6 +28,7 @@ module.exports = {
       plugins: ['@blumintinc/blumint'],
       rules: {
         '@blumintinc/blumint/array-methods-this-context': 'warn',
+        '@blumintinc/blumint/class-methods-read-top-to-bottom': 'warn',
         '@blumintinc/blumint/dynamic-https-errors': 'warn',
         // '@blumintinc/blumint/export-if-in-doubt': 'warn',
         // '@blumintinc/blumint/extract-global-constants': 'warn',
@@ -46,6 +48,7 @@ module.exports = {
   },
   rules: {
     'array-methods-this-context': arrayMethodsThisContext,
+    'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
     'dynamic-https-errors': dynamicHttpsErrors,
     'export-if-in-doubt': exportIfInDoubt,
     'extract-global-constants': extractGlobalConstants,
