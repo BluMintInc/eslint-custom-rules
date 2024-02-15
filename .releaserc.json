@@ -25,5 +25,5 @@
     ],
     "@semantic-release/github"
   ],
-  "repositoryUrl": "https://github.com/BluMintInc/template-gitpod"
+  "repositoryUrl": "https://github.com/BluMintInc/eslint-custom-rules"
 }
