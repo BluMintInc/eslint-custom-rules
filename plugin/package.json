@@ -1,6 +1,6 @@
 {
   "name": "@blumintinc/eslint-plugin-blumint",
-  "version": "0.1.23",
+  "version": "0.1.24",
   "description": "Custom eslint rules for use at BluMint",
   "keywords": [
     "eslint",
@@ -13,7 +13,7 @@
   "scripts": {
     "lint": "npm-run-all \"lint:*\"",
     "lint:eslint-docs": "npm-run-all \"update:eslint-docs -- --check\"",
-    "lint:js": "eslint .",
+    "lint:js": "eslint ./src",
     "test": "jest",
     "docs": "./scripts/make-docs.sh && npm run update:eslint-docs",
     "update:eslint-docs": "eslint-doc-generator"
@@ -36,7 +36,7 @@
     "ts-jest": "29.0.5"
   },
   "engines": {
-    "node": "^16.0.0"
+    "node": "^20.0.0"
   },
   "peerDependencies": {
     "eslint": ">=7"

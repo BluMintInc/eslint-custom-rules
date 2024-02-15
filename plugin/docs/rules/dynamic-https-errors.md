@@ -1,4 +1,4 @@
-# Dynamic elements of errors should be in the 'details' field (`@blumintinc/blumint/dynamic-https-errors`)
+# Dynamic error details should only be in the third argument of the HttpsError constructor. The second argument is hashed to produce a unique id (`@blumintinc/blumint/dynamic-https-errors`)
 
 ⚠️ This rule _warns_ in the ✅ `recommended` config.
 

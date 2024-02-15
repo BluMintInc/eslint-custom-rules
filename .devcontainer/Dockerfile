@@ -1,4 +1,4 @@
-FROM gitpod/workspace-full@sha256:b484ad49d47bf70776de1d1333379d6b5f1d56c0a3fc1f31a24eb273ef772e3e
+FROM gitpod/workspace-full@sha256:658b2803b55bd2424ccaf0ae7b1cb970ecc559c48f05392dcaabd3d57d12c2ef
 
 USER root
 RUN apt-get update \
@@ -12,7 +12,7 @@ COPY ./git-flow-completion.bash /home/gitpod/
 USER gitpod
 RUN echo "source ~/git-flow-completion.bash" >> ~/.bashrc
 
-RUN npm install -g npm
+RUN npm install -g npm@10.4.0
 
 RUN npm install -g dotenv-cli
 RUN npm install -g commitizen
