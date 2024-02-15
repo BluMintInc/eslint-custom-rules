@@ -32,7 +32,8 @@
     "test": "jest --passWithNoTests --reporters=default --reporters=jest-junit",
     "test:ci": "jest --ci  --passWithNoTests --reporters=default --reporters=jest-junit",
     "version": "git add -A src",
-    "postversion": "git push && git push --tags"
+    "postversion": "git push && git push --tags",
+    "remove-hooks": "del-cli ./.husky/"
   },
   "dependencies": {
     "reflect-metadata": "0.1.13",
