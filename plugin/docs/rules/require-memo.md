@@ -1,4 +1,8 @@
-# Requires memoization of react components (`@blumintinc/blumint/require-memo`)
+# React components must be memoized (`@blumintinc/blumint/require-memo`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
 
 <!-- end auto-generated rule header -->
 
