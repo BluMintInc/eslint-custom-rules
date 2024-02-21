@@ -540,3 +540,4 @@ export class ASTHelpers {
     return node.params && node.params.length > 0;
   }
 }
+
