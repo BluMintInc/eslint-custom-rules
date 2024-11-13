@@ -1,3 +1,11 @@
+## [1.0.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.0.0...v1.0.1) (2024-11-13)
+
+
+### Bug Fixes
+
+* **package.json:** change package name ([8a44bd7](https://github.com/BluMintInc/eslint-custom-rules/commit/8a44bd74c8f4c908fea404a69a02c6ac8f1df407))
+* **package.json:** remove np char ([39ec15d](https://github.com/BluMintInc/eslint-custom-rules/commit/39ec15d21b76f79086dc245d487ee9f605fbf839))
+
 # 1.0.0 (2024-11-13)
 
 
