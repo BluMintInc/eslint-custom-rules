@@ -6,7 +6,7 @@
 
 <!-- end auto-generated rule header -->
 
-This rule enforces that React components (that are not pure) to be memoized. If the component name includes "Unmemoized", then this rule is ignored.
+This rule enforces that React components (that are not pure) to be memoized using our custom `memo` implementation. The rule supports both absolute imports (`src/util/memo`) and relative imports (`../util/memo`) based on the file location. If the component name includes "Unmemoized", then this rule is ignored.
 
 ## Rule Details
 
@@ -21,11 +21,14 @@ const Component = ({foo, bar}) => return (
 Examples of **correct** code for this rule:
 
 ```jsx
+import { memo } from 'src/util/memo';
+
 const MemoizedComponent = memo(function BigComponent({foo, bar}) {
     return (
         <SomeOtherComponent>{foo}{bar}</SomeOtherComponent>
     )
 })
+
 const ComponentUnmemoized = ({foo, bar}) => return (
     <SomeOtherComponent>{foo}{bar}</SomeOtherComponent>
 )
