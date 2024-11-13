@@ -1,3 +1,12 @@
+## [1.0.3](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.0.2...v1.0.3) (2024-11-13)
+
+
+### Bug Fixes
+
+* **.gitignore:** don't forget scripts ([8280b88](https://github.com/BluMintInc/eslint-custom-rules/commit/8280b88e935091a66c78c4d9c62f377e1c263268))
+* **repo:** collapse plugin/ directory into root directory ([b698bbd](https://github.com/BluMintInc/eslint-custom-rules/commit/b698bbd6be96648ff29131f2870b4b56eb3d0b8e))
+* **semantic-release.yml:** include build command ([fcc57e3](https://github.com/BluMintInc/eslint-custom-rules/commit/fcc57e38b8c127932a1d6b223b8f7368599f95f2))
+
 ## [1.0.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.0.1...v1.0.2) (2024-11-13)
 
 
