@@ -31,7 +31,7 @@
     "lint:fix": "tsc && eslint ./**/* --quiet --fix",
     "test": "jest --passWithNoTests --reporters=default --reporters=jest-junit",
     "test:ci": "jest --ci  --passWithNoTests --reporters=default --reporters=jest-junit",
-    "version": "git add -A src",
+    "version": "git add -A plugin/src",
     "postversion": "git push && git push --tags",
     "remove-hooks": "del-cli ./.husky/"
   },
