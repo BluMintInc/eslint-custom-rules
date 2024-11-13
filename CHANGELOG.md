@@ -1,3 +1,10 @@
+## [1.0.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.0.1...v1.0.2) (2024-11-13)
+
+
+### Bug Fixes
+
+* **package.json:** use public access ([6d78460](https://github.com/BluMintInc/eslint-custom-rules/commit/6d78460c8b28cd852229b0b59759d48620ab483d))
+
 ## [1.0.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.0.0...v1.0.1) (2024-11-13)
 
 
