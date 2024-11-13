@@ -1,3 +1,21 @@
-.**
+# Ignore everything by default
+*
+
+# Then whitelist only what should be published
+!lib/**/*.js
+!lib/**/*.d.ts
+!lib/**/*.js.map
+
+# Ensure package.json stays in root only
+lib/package.json
+
+# Log files
 *.log
+jest.*
+*.xml
+**/tests/**
+tsconfig.json
+*.map
+src
+scripts
 *.sh

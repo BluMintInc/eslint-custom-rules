@@ -1,24 +1,30 @@
 # Typescript v1 declaration files
 typings/
 
+# Dependencies
 node_modules/
 
+# IDE
 .vscode
 
-# logs
+# Logs
 **/*.log
 .nyc_output
 .nyc_output/**/*
 *.DS_Store
 reports/jest-*.xml
 
-# coverage output
+# Coverage output
 coverage
 coverage/**/*
 *.xml
 
-#built js files
-plugin/lib/**
+# Built files
+lib/
+lib/**/*
+lib/package.json
 **/*.js
 **/*.js.map
 *.tsbuildinfo
+
+.env
