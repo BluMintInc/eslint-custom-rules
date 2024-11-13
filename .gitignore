@@ -27,4 +27,7 @@ lib/package.json
 **/*.js.map
 *.tsbuildinfo
 
+# But don't ignore scripts
+!scripts/**/*.js
+
 .env
