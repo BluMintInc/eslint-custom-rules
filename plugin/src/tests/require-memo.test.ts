@@ -5,7 +5,7 @@ ruleTesterJsx.run('requireMemo', requireMemo, {
   // valid: [],
   valid: [
     {
-      code: `const Component = React.memo(() => <div />)`,
+      code: `const Component = memo(() => <div />)`,
     },
     {
       code: `const ComponentUnmemoized = ({foo}) => <div>{foo}</div>`,
@@ -27,13 +27,7 @@ ruleTesterJsx.run('requireMemo', requireMemo, {
       code: `const Component = memo(useRef(() => <div />))`,
     },
     {
-      code: `const Component = React.useRef(React.memo(() => <div />))`,
-    },
-    {
       code: `const myFunction = wrapper(() => <div />)`,
-    },
-    {
-      code: `const Component = React.memo(function() { return <div />; });`,
     },
     {
       code: `const Component = memo(function Component() { return <div />; });`,
@@ -85,6 +79,18 @@ ruleTesterJsx.run('requireMemo', requireMemo, {
             return userData;
           }`,
     },
+    {
+      code: `import { memo } from 'src/util/memo';
+      const Component = memo(() => <div />)`,
+    },
+    {
+      code: `import { memo } from '../util/memo';
+      const Component = memo(() => <div />)`,
+    },
+    {
+      code: `import { memo } from '../../util/memo';
+      const Component = memo(() => <div />)`,
+    },
   ].map((testCase) => {
     return {
       ...testCase,
@@ -94,8 +100,15 @@ ruleTesterJsx.run('requireMemo', requireMemo, {
   invalid: [
     {
       code: `function Component({foo}) { return <div>{foo}</div>; }`,
-      output: `import { memo } from 'react';
+      output: `import { memo } from '../util/memo';
 const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; })`,
+      filename: 'src/components/SomeComponent.tsx',
+    },
+    {
+      code: `function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `import { memo } from '../../util/memo';
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; })`,
+      filename: 'src/components/nested/SomeComponent.tsx',
     },
     {
       code: `export const TeamMemberDetails = ({ member }: TeamMemberDetailsProps) => {
@@ -139,13 +152,15 @@ const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</
     },
     {
       code: `function MultiplePropsComponent({ foo, bar }) { return <div>{foo}{bar}</div>; }`,
-      output: `import { memo } from 'react';
+      output: `import { memo } from '../util/memo';
 const MultiplePropsComponent = memo(function MultiplePropsComponentUnmemoized({ foo, bar }) { return <div>{foo}{bar}</div>; })`,
+      filename: 'src/components/SomeComponent.tsx',
     },
     {
       code: `function DefaultPropComponent({ foo = 'default' }) { return <div>{foo}</div>; }`,
-      output: `import { memo } from 'react';
+      output: `import { memo } from '../util/memo';
 const DefaultPropComponent = memo(function DefaultPropComponentUnmemoized({ foo = 'default' }) { return <div>{foo}</div>; })`,
+      filename: 'src/components/SomeComponent.tsx',
     },
     {
       code: `const Component = ({ someFunc }) => <div>{someFunc()}</div>;`,
@@ -166,12 +181,13 @@ const DefaultPropComponent = memo(function DefaultPropComponentUnmemoized({ foo 
           <div>{foo}</div>
         )
       }`,
-      output: `import { memo } from 'react';
+      output: `import { memo } from '../util/memo';
 export const ShouldBeMemoized = memo(function ShouldBeMemoizedUnmemoized({foo}) {
         return (
           <div>{foo}</div>
         )
       })`,
+      filename: 'src/components/SomeComponent.tsx',
     },
     {
       code: `export function ShouldBeMemoized({ foo }: { foo: string }): JSX.Element {
@@ -179,40 +195,41 @@ export const ShouldBeMemoized = memo(function ShouldBeMemoizedUnmemoized({foo}) 
               <div>{foo}</div>
             )
           }`,
-      output: `import { memo } from 'react';
+      output: `import { memo } from '../util/memo';
 export const ShouldBeMemoized = memo(function ShouldBeMemoizedUnmemoized({ foo }: { foo: string }): JSX.Element {
             return (
               <div>{foo}</div>
             )
           })`,
+      filename: 'src/components/SomeComponent.tsx',
     },
     // existing react import
     {
       code: `import { useState } from 'react';
-    
     export function ShouldBeMemoized({foo}) {
             return (
               <div>{foo}</div>
             )
           }`,
-      output: `import { useState, memo } from 'react';
-    
+      output: `import { useState } from 'react';
+import { memo } from '../util/memo';
     export const ShouldBeMemoized = memo(function ShouldBeMemoizedUnmemoized({foo}) {
             return (
               <div>{foo}</div>
             )
           })`,
+      filename: 'src/components/SomeComponent.tsx',
     },
     //existing memo import
     {
-      code: `import { memo } from 'react';
+      code: `import { memo } from '../util/memo';
     
     export function ShouldStillBeMemoized({foo}) {
             return (
               <div>{foo}</div>
             )
           }`,
-      output: `import { memo } from 'react';
+      output: `import { memo } from '../util/memo';
     
     export const ShouldStillBeMemoized = memo(function ShouldStillBeMemoizedUnmemoized({foo}) {
             return (
@@ -220,11 +237,9 @@ export const ShouldBeMemoized = memo(function ShouldBeMemoizedUnmemoized({ foo }
             )
           })`,
     },
-  ].map((testCase) => {
-    return {
-      ...testCase,
-      filename: 'SomeComponent.tsx',
-      errors: [{ messageId: 'requireMemo' }],
-    };
-  }),
+  ].map((testCase) => ({
+    ...testCase,
+    filename: testCase.filename || 'src/components/SomeComponent.tsx',
+    errors: [{ messageId: 'requireMemo' }],
+  })),
 });

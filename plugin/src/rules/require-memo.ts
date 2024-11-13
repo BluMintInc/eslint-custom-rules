@@ -72,6 +72,11 @@ const isUnmemoizedExportedFunctionComponent = (
   );
 };
 
+function isMemoImport(importPath: string): boolean {
+  // Match both absolute and relative paths ending with util/memo
+  return /(?:^|\/)util\/memo$/.test(importPath);
+}
+
 function checkFunction(
   context: Readonly<RuleContext<'requireMemo', []>>,
   node: ComponentNode & NodeWithParent,
@@ -104,35 +109,51 @@ function checkFunction(
                 const sourceCode = context.getSourceCode();
                 let importFix: TSESLint.RuleFix | null = null;
 
-                // Search for React import statement
+                // Search for memo import statement
                 const importDeclarations = sourceCode.ast.body.filter(
                   (node) => node.type === 'ImportDeclaration',
                 ) as TSESTree.ImportDeclaration[];
 
-                const reactImport = importDeclarations.find(
-                  (importDeclaration) =>
-                    importDeclaration.source.value === 'react',
+                const memoImport = importDeclarations.find(
+                  (importDeclaration) => isMemoImport(importDeclaration.source.value)
                 );
 
-                if (reactImport) {
+                if (memoImport) {
                   // Check if memo is already imported
                   if (
-                    !reactImport.specifiers.some(
+                    !memoImport.specifiers.some(
                       (specifier) => specifier.local.name === 'memo',
                     )
                   ) {
                     // Add memo to existing import statement
                     const lastSpecifier =
-                      reactImport.specifiers[reactImport.specifiers.length - 1];
+                      memoImport.specifiers[memoImport.specifiers.length - 1];
                     importFix = fixer.insertTextAfter(lastSpecifier, ', memo');
                   }
                 } else {
+                  // Calculate relative path based on current file location
+                  const currentFilePath = context.getFilename();
+                  const importPath = calculateImportPath(currentFilePath);
+                  
+                  // Find the first import statement to insert after
+                  const firstImport = importDeclarations[0];
+                  
                   // Add new import statement for memo
-                  const importStatement = "import { memo } from 'react';\n";
-                  importFix = fixer.insertTextBeforeRange(
-                    [sourceCode.ast.range[0], sourceCode.ast.range[0]],
-                    importStatement,
-                  );
+                  const importStatement = `import { memo } from '${importPath}';\n`;
+                  
+                  if (firstImport) {
+                    // Insert after the first import with a single newline
+                    importFix = fixer.insertTextAfter(
+                      firstImport,
+                      '\n' + importStatement.trim()
+                    );
+                  } else {
+                    // Insert at the start of the file
+                    importFix = fixer.insertTextBeforeRange(
+                      [sourceCode.ast.range[0], sourceCode.ast.range[0]],
+                      importStatement.trim() + '\n'
+                    );
+                  }
                 }
 
                 const functionKeywordRange: Readonly<[number, number]> = [
@@ -173,6 +194,25 @@ function checkFunction(
       });
     }
   }
+}
+
+function calculateImportPath(currentFilePath: string): string {
+  // Default to absolute path if we can't calculate relative path
+  if (!currentFilePath) return 'src/util/memo';
+
+  // Split the current file path into parts and normalize
+  const parts = currentFilePath.split(/[\\/]/); // Handle both Unix and Windows paths
+  const srcIndex = parts.indexOf('src');
+  
+  if (srcIndex === -1) {
+    // If we're not in a src directory, use absolute path
+    return 'src/util/memo';
+  }
+
+  // Calculate relative path based on current file depth from src
+  // Subtract 1 from depth to exclude the filename itself
+  const depth = parts.length - (srcIndex + 1) - 1;
+  return '../'.repeat(depth) + 'util/memo';
 }
 
 export const requireMemo: TSESLint.RuleModule<'requireMemo', []> = {
