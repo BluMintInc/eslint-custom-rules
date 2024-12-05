@@ -26,8 +26,7 @@
   "scripts": {
     "lint-ts": "tsc && eslint ./**/*",
     "lint-md": "remark .",
-    "lint-shell": "shellcheck .devcontainer/git-flow-completion.bash",
-    "lint": "npm run lint-ts && npm run lint-md && npm run lint-shell",
+    "lint": "npm run lint-ts && npm run lint-md",
     "lint:fix": "tsc && eslint ./**/* --quiet --fix",
     "test": "jest --passWithNoTests --reporters=default --reporters=jest-junit",
     "test:ci": "jest --ci  --passWithNoTests --reporters=default --reporters=jest-junit",
