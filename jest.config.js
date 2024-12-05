@@ -2,12 +2,24 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
-  verbose: true,
-  reporters: ['default', 'jest-junit'],
-  testEnvironment: 'node',
-  roots: ['<rootDir>'],
-  testPathIgnorePatterns: ['<rootDir>/node_modules/'],
-  moduleNameMapper: {
-    '^src/(.*)$': '<rootDir>/src/$1',
+  testMatch: ['<rootDir>/src/**/*.test.ts'],
+  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
+  transform: {
+    '^.+\\.tsx?$': 'ts-jest'
   },
+  modulePathIgnorePatterns: [
+    '<rootDir>/lib/'
+  ],
+  reporters: [
+    'default',
+    'jest-junit'
+  ],
+  collectCoverage: true,
+  coverageDirectory: 'coverage',
+  coverageReporters: ['text', 'lcov'],
+  coveragePathIgnorePatterns: [
+    '/node_modules/',
+    '/lib/',
+    '.*\\.test\\.ts$'
+  ]
 };

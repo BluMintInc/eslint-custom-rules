@@ -15,10 +15,11 @@ import { preferFragmentShorthand } from './rules/prefer-fragment-shorthand';
 import { preferTypeOverInterface } from './rules/prefer-type-over-interface';
 import { requireMemo } from './rules/require-memo';
 
+
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '0.1.24',
+    version: '1.0.3',
   },
   parseOptions: {
     ecmaVersion: 2020,
