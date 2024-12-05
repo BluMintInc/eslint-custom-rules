@@ -27,7 +27,11 @@ lib/package.json
 **/*.js.map
 *.tsbuildinfo
 
+.env
+.env*
+.flaskenv*
+!.env.project
+!.env.vault
+
 # But don't ignore scripts
 !scripts/**/*.js
-
-.env

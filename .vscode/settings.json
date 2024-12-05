@@ -1,9 +1,13 @@
 {
+  "typescript.preferences.importModuleSpecifier": "relative",
+  "typescript.validate.enable": true,
   "editor.codeActionsOnSave": {
     "source.fixAll.eslint": "explicit",
     "source.fixAll.tslint": "explicit"
   },
+  "terminal.integrated.scrollback": 100000,
   "editor.maxTokenizationLineLength": 20000,
+  "editor.tabSize": 2,
   "files.autoSaveDelay": 500,
   "files.autoSave": "afterDelay",
   "extensions.ignoreRecommendations": true,
@@ -12,6 +16,23 @@
   "git.autofetch": true,
   "js/ts.implicitProjectConfig.experimentalDecorators": true,
   "js/ts.implicitProjectConfig.strictNullChecks": true,
+  "githubPullRequests.ignoredPullRequestBranches": [
+    "develop"
+  ],
+  "totalTypeScript.hideAllTips": true,
+  "jest.rootPath": "functions",
+  "jest.jestCommandLine": "npm run test --",
+  "jest.autoRun": "off",
+  "files.exclude": {
+    "**/.git": true,
+    "**/.svn": true,
+    "**/.hg": true,
+    "**/CVS": true,
+    "**/.DS_Store": true,
+    "**/Thumbs.db": true,
+    "**/*.crswap": true,
+    "**/node_modules": true
+  },
   "eslint.options": {
     "extensions": [".html", ".js", ".ts", ".tsx",".json"]
 },
@@ -24,4 +45,15 @@
   "json",
 ],
 "eslint.lintTask.options": "--ext .ts,.js,.jsx,.tsx,.json .",
+"python.linting.enabled": true,
+"python.linting.pylintEnabled": true,
+"python.globalModuleInstallation": true,
+"typescript.tsdk": "node_modules/typescript/lib",
+"cSpell.words": [
+  "firestore",
+  "guestlist",
+  "Unmemoized",
+  "waitlist"
+],
+"cSpell.enabled": false,
 }

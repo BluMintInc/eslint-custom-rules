@@ -1,16 +1,21 @@
 {
-  "name": "TODO TEMPLATE",
+  "name": "eslint-custom-rules",
   "build": {
     "dockerfile": "Dockerfile"
   },
-  "extensions": [
-    "dbaeumer.vscode-eslint",
-    "redhat.vscode-yaml",
-    "mjmlio.vscode-mjml",
-    "tht13.html-preview-vscode",
-    "ms-azuretools.vscode-docker",
-    "timonwong.shellcheck"
-  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "mattpocock.ts-error-translator",
+        "Orta.vscode-jest",
+        "redhat.vscode-yaml",
+        "eamodio.gitlens",
+        "ambar.bundle-size",
+        "streetsidesoftware.code-spell-checker"
+      ]
+    }
+  },
   "forwardPorts": [
     8080,
     4000,
@@ -20,5 +25,6 @@
     9005,
     9229
   ],
-  "remoteUser": "gitpod"
+  "remoteUser": "gitpod",
+  "postStartCommand": "if [ -z \"${GITPOD_WORKSPACE_ID}\" ]; then git config --global user.name \"${GIT_USER_NAME}\" && git config --global user.email \"${GIT_USER_EMAIL}\" && git config pull.rebase false && git config rerere.enabled true && rm -f .git/hooks/prepare-commit-msg && npx opencommit hook set; fi"
 }

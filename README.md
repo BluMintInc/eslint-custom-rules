@@ -76,5 +76,3 @@ Or use the recommended config:
 | [require-memo](docs/rules/require-memo.md)                                         | React components must be memoized                                                                                                               | ✅  |    | 🔧 |
 
 <!-- end auto-generated rules list -->
-
-
