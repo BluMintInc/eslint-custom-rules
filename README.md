@@ -6,18 +6,18 @@
 <br />
 <p align="center">
   <!---TODO: Update below with repository URL -->
-  <a href="https://github.com/BluMintInc/template-gitpod">
+  <a href="https://github.com/BluMintInc/eslint-custom-rules">
     <img src="assets/logo.svg" alt="Logo" height=100>
   </a>
   <p align="center">
     <!---TODO: Update below with repository name -->
-    TEMPLATE
+    eslint-custom-rules
     <br />
     <!---TODO: Update below with repository URL -->
-    <a href="https://github.com/BluMintInc/template-gitpod/issues">Report Bug</a>
+    <a href="https://github.com/BluMintInc/eslint-custom-rules/issues">Report Bug</a>
     ·
     <!---TODO: Update below with repository URL -->
-    <a href="https://github.com/BluMintInc/template-gitpod/issues">Request Feature</a>
+    <a href="https://github.com/BluMintInc/eslint-custom-rules/issues">Request Feature</a>
   </p>
 </p>
 <br />
@@ -74,7 +74,7 @@ interacting with this repository:
 
 <!---TODO: Update below with repository URL -->
 
-[![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#https://github.com/BluMintInc/template-gitpod)
+[![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#https://github.com/BluMintInc/eslint-custom-rules)
 
 It is highly recommended to conduct development of this repository
 via [Gitpod's online IDE](https://www.gitpod.io/docs/ide/). Click the following to
@@ -82,7 +82,7 @@ get started with zero installation requirements:
 
 <p>
   <!---TODO: Update below with repository URL -->
-  <a href="https://gitpod.io/#https://github.com/BluMintInc/template-gitpod" target="_blank" rel="nofollow noopener noreferrer">
+  <a href="https://gitpod.io/#https://github.com/BluMintInc/eslint-custom-rules" target="_blank" rel="nofollow noopener noreferrer">
     <img src="https://gitpod.io/button/open-in-gitpod.svg" alt="Open in Gitpod">
   </a>
 </p>
@@ -150,7 +150,7 @@ docker run hello-world
 
 <!---TODO: Update below with repository URL -->
 
-**Step #4**: Enter this repository's Git URI: https://github.com/BluMintInc/template-gitpod.git.
+**Step #4**: Enter this repository's Git URI: https://github.com/BluMintInc/eslint-custom-rules.git.
 VS Code will install all required dependencies and set up the environment from the Dockerfile configuration.
 
 <br />
@@ -217,10 +217,6 @@ the [Gitflow Workflow](https://nvie.com/posts/a-successful-git-branching-model/)
 Gitflow was architectured by Vincent Driesssen in 2010 and since has been adopted with massive
 popularity as a very effective development workflow under distributed version control.
 
-This project makes use of the [git-flow](https://github.com/nvie/gitflow) integration setup in
-the Docker container, which lets you execute `git flow` commands on the terminal rather than 
-`git` commands directly.
-
 The project also utilizes [githooks](https://git-scm.com/docs/githooks/en) to enforce gitflow and 
 prevent users from accidently pushing to the main branch.
 
@@ -255,16 +251,16 @@ automations as well as several organizational [Github Integrations](https://gith
 Pre-commit [githooks](https://git-scm.com/docs/githooks/en) lint the codebase and then run all the 
 project's [Jest](https://jestjs.io/) tests to prevent regressions from even being checked into 
 the codebase. On top of this, the 
-[Test](https://github.com/BluMintInc/template-gitpod/blob/master/.github/workflows/test-report.yml) 
+[Test](https://github.com/BluMintInc/eslint-custom-rules/blob/master/.github/workflows/test-report.yml) 
 Action runs the project's [Jest](https://jestjs.io/) tests to check PRs before they are merged.
 
 ### CD
 <!---TODO: Update below paragraph with repository URLs -->
-The [Release](https://github.com/BluMintInc/template-gitpod/blob/master/.github/workflows/semantic-release.yml) 
+The [Release](https://github.com/BluMintInc/eslint-custom-rules/blob/master/.github/workflows/semantic-release.yml) 
 Action triggers on commits to the main branch utilzing the repository's 
 [Commitizen](https://commitizen-tools.github.io/commitizen/) commit style to automatically version published 
 code according to [SemVar](https://semver.org/). The 
-[Release](https://github.com/BluMintInc/template-gitpod/blob/master/.github/workflows/semantic-release.yml) 
+[Release](https://github.com/BluMintInc/eslint-custom-rules/blob/master/.github/workflows/semantic-release.yml) 
 Action also publishes the project to our private npmjs repository scoped under [@blumint](https://www.npmjs.com/settings/minimap-inc/packages).
 
 This repository also makes use of the [Semantic Pull Probot](https://github.com/zeke/semantic-pull-requests) to 
@@ -296,4 +292,4 @@ No license is included, as all work is proprietary.
 
 [gitpod-shield]: https://img.shields.io/badge/setup-automated-blue?logo=gitpod
 <!---TODO: Update below with repository URL -->
-[gitpod-url]: https://gitpod.io/#https://github.com/BluMintInc/template-gitpod
+[gitpod-url]: https://gitpod.io/#https://github.com/BluMintInc/eslint-custom-rules
