@@ -19,7 +19,7 @@ import { requireMemo } from './rules/require-memo';
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.0.3',
+    version: '1.0.4',
   },
   parseOptions: {
     ecmaVersion: 2020,
