@@ -55,6 +55,7 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
             const newClassBody = sortedOrder
               .map((n) => {
                 // Fetch the actual AST node corresponding to the name
+                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
                 const memberNode = node.body.find(
                   (member) => getMemberName(member) === n,
                 )!;

@@ -8,6 +8,7 @@ import {
   JSONStringLiteral,
 } from 'jsonc-eslint-parser/lib/parser/ast';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const noUnpinnedDependencies: TSESLint.RuleModule<'unexpected', any[]> =
   createRule({
     meta: {

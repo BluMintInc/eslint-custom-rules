@@ -15,7 +15,6 @@ import { preferFragmentShorthand } from './rules/prefer-fragment-shorthand';
 import { preferTypeOverInterface } from './rules/prefer-type-over-interface';
 import { requireMemo } from './rules/require-memo';
 
-
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',

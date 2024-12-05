@@ -45,6 +45,7 @@ export const preferTypeOverInterface: TSESLint.RuleModule<
                 { filter: (token) => token.value === 'extends' },
               );
               fixes.push(
+                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
                 fixer.remove(extendsKeyword!),
                 fixer.insertTextBefore(openingBrace, '& '),
               );

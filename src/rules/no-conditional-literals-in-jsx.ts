@@ -1,10 +1,10 @@
-/* eslint-disable @blumintinc/blumint/extract-global-constants */
 // import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
 import { TSESLint, TSESTree } from '@typescript-eslint/utils';
 
 export const noConditionalLiteralsInJsx: TSESLint.RuleModule<
   'unexpected',
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any[]
 > = createRule({
   name: 'no-conditional-literals-in-jsx',
