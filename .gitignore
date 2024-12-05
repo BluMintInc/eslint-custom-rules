@@ -22,3 +22,9 @@ plugin/lib/**
 **/*.js
 **/*.js.map
 *.tsbuildinfo
+
+.env
+.env*
+.flaskenv*
+!.env.project
+!.env.vault
