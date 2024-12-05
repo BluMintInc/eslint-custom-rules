@@ -6,7 +6,6 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends shellcheck \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
-COPY ./git-flow-completion.bash /home/gitpod/
 
 USER gitpod
 
