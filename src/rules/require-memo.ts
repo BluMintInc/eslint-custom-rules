@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { RuleContext } from '@typescript-eslint/utils/dist/ts-eslint';
 import { ASTHelpers } from '../utils/ASTHelpers';
@@ -115,7 +117,8 @@ function checkFunction(
                 ) as TSESTree.ImportDeclaration[];
 
                 const memoImport = importDeclarations.find(
-                  (importDeclaration) => isMemoImport(importDeclaration.source.value)
+                  (importDeclaration) =>
+                    isMemoImport(importDeclaration.source.value),
                 );
 
                 if (memoImport) {
@@ -134,24 +137,24 @@ function checkFunction(
                   // Calculate relative path based on current file location
                   const currentFilePath = context.getFilename();
                   const importPath = calculateImportPath(currentFilePath);
-                  
+
                   // Find the first import statement to insert after
                   const firstImport = importDeclarations[0];
-                  
+
                   // Add new import statement for memo
                   const importStatement = `import { memo } from '${importPath}';\n`;
-                  
+
                   if (firstImport) {
                     // Insert after the first import with a single newline
                     importFix = fixer.insertTextAfter(
                       firstImport,
-                      '\n' + importStatement.trim()
+                      '\n' + importStatement.trim(),
                     );
                   } else {
                     // Insert at the start of the file
                     importFix = fixer.insertTextBeforeRange(
                       [sourceCode.ast.range[0], sourceCode.ast.range[0]],
-                      importStatement.trim() + '\n'
+                      importStatement.trim() + '\n',
                     );
                   }
                 }
@@ -203,7 +206,7 @@ function calculateImportPath(currentFilePath: string): string {
   // Split the current file path into parts and normalize
   const parts = currentFilePath.split(/[\\/]/); // Handle both Unix and Windows paths
   const srcIndex = parts.indexOf('src');
-  
+
   if (srcIndex === -1) {
     // If we're not in a src directory, use absolute path
     return 'src/util/memo';

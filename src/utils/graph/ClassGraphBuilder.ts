@@ -1,4 +1,3 @@
-/* eslint-disable security/detect-object-injection */
 import { ASTUtils, TSESTree } from '@typescript-eslint/utils';
 import { ClassGraphSorterReadability } from './ClassGraphSorterReadability';
 import { ASTHelpers } from '../ASTHelpers';

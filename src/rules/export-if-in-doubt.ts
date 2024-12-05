@@ -1,4 +1,3 @@
-/* eslint-disable @blumintinc/blumint/extract-global-constants */
 // import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
 import { TSESLint, TSESTree } from '@typescript-eslint/utils';

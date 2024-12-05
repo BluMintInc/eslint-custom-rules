@@ -20,6 +20,7 @@ export const preferFragmentShorthand: TSESLint.RuleModule<
             messageId: 'preferShorthand',
             fix: (fixer) => [
               fixer.replaceTextRange(openingElement.range, '<>'),
+              // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
               fixer.replaceTextRange(node.closingElement!.range, '</>'),
             ],
           });

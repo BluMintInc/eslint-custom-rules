@@ -9,6 +9,7 @@ export class ClassGraphSorterReadability extends ClassGraphSorter {
     // This typing makes me sad. The idea is to have an array of values for each
     // field of GraphNode, where all possible values are represented, and
     // the order in the array represents the priority
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     any[]
   > = {
     isStatic: [true, false],

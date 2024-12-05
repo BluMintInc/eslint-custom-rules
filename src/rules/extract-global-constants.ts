@@ -22,6 +22,7 @@ export const extractGlobalConstants: TSESLint.RuleModule<
           !hasDependencies &&
           (scope.type === 'function' || scope.type === 'block')
         ) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const constName = (node.declarations[0].id as any).name;
           context.report({
             node,
@@ -42,6 +43,7 @@ export const extractGlobalConstants: TSESLint.RuleModule<
           const scope = context.getScope();
           const hasDependencies = ASTHelpers.blockIncludesIdentifier(node.body);
           if (!hasDependencies && scope.type === 'function') {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const funcName = (node.id as any).name;
             context.report({
               node,
