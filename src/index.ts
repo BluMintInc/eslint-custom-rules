@@ -1,5 +1,6 @@
 import { arrayMethodsThisContext } from './rules/array-methods-this-context';
 import { classMethodsReadTopToBottom } from './rules/class-methods-read-top-to-bottom';
+import { default as consistentCallbackNaming } from './rules/consistent-callback-naming';
 import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
 import { exportIfInDoubt } from './rules/export-if-in-doubt';
 import { extractGlobalConstants } from './rules/extract-global-constants';
@@ -30,6 +31,7 @@ module.exports = {
       rules: {
         '@blumintinc/blumint/array-methods-this-context': 'warn',
         '@blumintinc/blumint/class-methods-read-top-to-bottom': 'warn',
+        '@blumintinc/blumint/consistent-callback-naming': 'error',
         '@blumintinc/blumint/dynamic-https-errors': 'warn',
         // '@blumintinc/blumint/export-if-in-doubt': 'warn',
         // '@blumintinc/blumint/extract-global-constants': 'warn',
@@ -51,6 +53,7 @@ module.exports = {
   rules: {
     'array-methods-this-context': arrayMethodsThisContext,
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
+    'consistent-callback-naming': consistentCallbackNaming,
     'dynamic-https-errors': dynamicHttpsErrors,
     'export-if-in-doubt': exportIfInDoubt,
     'extract-global-constants': extractGlobalConstants,
