@@ -1,3 +1,21 @@
+## [1.0.5](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.0.4...v1.0.5) (2024-12-05)
+
+
+### Bug Fixes
+
+* **.ts:** resolve eslint errors ([0e0af23](https://github.com/BluMintInc/eslint-custom-rules/commit/0e0af2361cfdc9e6b193fcdae2e6053160cdae98))
+
+## [1.0.4](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.0.3...v1.0.4) (2024-12-05)
+
+
+### Bug Fixes
+
+* **.gitignore:** ignore .env vars properly ([009b4e5](https://github.com/BluMintInc/eslint-custom-rules/commit/009b4e542e77d57e22d7dc035f366172c9dd442d))
+* **devcontainer.json:** add postStartCommand, refactor extensions to customizations.vscode subdirectory ([90536a6](https://github.com/BluMintInc/eslint-custom-rules/commit/90536a67ff3b8a0caa2b12ce27056ee456946ba3))
+* **devcontainer.json:** remove unnecessary firebase extension ([0a69b90](https://github.com/BluMintInc/eslint-custom-rules/commit/0a69b904fee183891349c213ed4e232bb24236a0))
+* **Dockerfile:** remove git-flow ([e87d3ce](https://github.com/BluMintInc/eslint-custom-rules/commit/e87d3ce1714947a21351881ef421d4c990d49722))
+* **package.json:** remove git-flow ([a9706a7](https://github.com/BluMintInc/eslint-custom-rules/commit/a9706a7aa8ecbe108f6b7f3dd0e02db9b6b1fa4e))
+
 ## [1.0.3](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.0.2...v1.0.3) (2024-11-13)
 
 
