@@ -18,22 +18,22 @@ ruleTester.run('use-custom-router', useCustomRouter, {
   invalid: [
     {
       code: `import { useRouter } from 'next/router';`,
-      output: `import { useRouter } from 'src/hooks/useRouter';`,
+      output: `import { useRouter } from 'src/hooks/routing/useRouter';`,
       errors: [{ messageId: 'useCustomRouter' }],
     },
     {
       code: `import { useRouter as NextRouter } from 'next/router';`,
-      output: `import { useRouter as NextRouter } from 'src/hooks/useRouter';`,
+      output: `import { useRouter as NextRouter } from 'src/hooks/routing/useRouter';`,
       errors: [{ messageId: 'useCustomRouter' }],
     },
     {
       code: `import { useRouter, something } from 'next/router';`,
-      output: `import { useRouter } from 'src/hooks/useRouter';\nimport { something } from 'next/router';`,
+      output: `import { useRouter } from 'src/hooks/routing/useRouter';\nimport { something } from 'next/router';`,
       errors: [{ messageId: 'useCustomRouter' }],
     },
     {
       code: `import { something, useRouter } from 'next/router';`,
-      output: `import { useRouter } from 'src/hooks/useRouter';\nimport { something } from 'next/router';`,
+      output: `import { useRouter } from 'src/hooks/routing/useRouter';\nimport { something } from 'next/router';`,
       errors: [{ messageId: 'useCustomRouter' }],
     },
   ],
