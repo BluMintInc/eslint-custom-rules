@@ -15,6 +15,7 @@ import { noUselessFragment } from './rules/no-useless-fragment';
 import { preferFragmentShorthand } from './rules/prefer-fragment-shorthand';
 import { preferTypeOverInterface } from './rules/prefer-type-over-interface';
 import { requireMemo } from './rules/require-memo';
+import noFirebaseAdminInFrontend from './rules/no-firebase-admin-in-frontend';
 
 module.exports = {
   meta: {
