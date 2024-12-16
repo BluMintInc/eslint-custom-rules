@@ -8,13 +8,13 @@ export const useCustomRouter = createRule<[], MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce using src/hooks/useRouter instead of next/router',
+      description: 'Enforce using src/hooks/routing/useRouter instead of next/router',
       recommended: 'error',
     },
     fixable: 'code',
     schema: [],
     messages: {
-      useCustomRouter: 'Import useRouter from src/hooks/useRouter instead of next/router',
+      useCustomRouter: 'Import useRouter from src/hooks/routing/useRouter instead of next/router',
     },
   },
   defaultOptions: [],
@@ -52,7 +52,7 @@ export const useCustomRouter = createRule<[], MessageIds>({
                           ? `useRouter as ${s.local.name}`
                           : 'useRouter'
                       )
-                      .join(', ')} } from 'src/hooks/useRouter';`
+                      .join(', ')} } from 'src/hooks/routing/useRouter';`
                   );
                 } else {
                   // Create a new import for useRouter and keep other imports
@@ -62,7 +62,7 @@ export const useCustomRouter = createRule<[], MessageIds>({
                         ? `useRouter as ${s.local.name}`
                         : 'useRouter'
                     )
-                    .join(', ')} } from 'src/hooks/useRouter';\n`;
+                    .join(', ')} } from 'src/hooks/routing/useRouter';\n`;
 
                   const otherImports = `import { ${otherSpecifiers
                     .map((s) => s.local.name)
