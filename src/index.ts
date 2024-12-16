@@ -15,6 +15,7 @@ import { noUselessFragment } from './rules/no-useless-fragment';
 import { preferFragmentShorthand } from './rules/prefer-fragment-shorthand';
 import { preferTypeOverInterface } from './rules/prefer-type-over-interface';
 import { requireMemo } from './rules/require-memo';
+import { default as requireImageOverlayed } from './rules/require-image-overlayed';
 
 module.exports = {
   meta: {
@@ -45,6 +46,7 @@ module.exports = {
         '@blumintinc/blumint/prefer-fragment-shorthand': 'warn',
         '@blumintinc/blumint/prefer-type-over-interface': 'warn',
         '@blumintinc/blumint/require-memo': 'error',
+        '@blumintinc/blumint/require-image-overlayed': 'error',
       },
     },
   },
@@ -66,5 +68,6 @@ module.exports = {
     'prefer-fragment-shorthand': preferFragmentShorthand,
     'prefer-type-over-interface': preferTypeOverInterface,
     'require-memo': requireMemo,
+    'require-image-overlayed': requireImageOverlayed,
   },
 };
