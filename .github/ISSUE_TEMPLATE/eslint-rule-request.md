@@ -1,7 +1,7 @@
 ---
 name: ESLint Rule Request
 about: Propose a new custom ESLint rule
-title: "[RULE] [ESLint]"
+title: "[RULE]"
 labels: enhancement, fix-me
 assignees: ''
 
