@@ -4,6 +4,7 @@ import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
 import { exportIfInDoubt } from './rules/export-if-in-doubt';
 import { extractGlobalConstants } from './rules/extract-global-constants';
 import { genericStartsWithT } from './rules/generic-starts-with-t';
+import { default as globalConstStyle } from './rules/global-const-style';
 import { noAsyncArrayFilter } from './rules/no-async-array-filter';
 import { noAsyncForEach } from './rules/no-async-foreach';
 import { noConditionalLiteralsInJsx } from './rules/no-conditional-literals-in-jsx';
@@ -33,6 +34,7 @@ module.exports = {
         // '@blumintinc/blumint/export-if-in-doubt': 'warn',
         // '@blumintinc/blumint/extract-global-constants': 'warn',
         '@blumintinc/blumint/generic-starts-with-t': 'warn',
+        '@blumintinc/blumint/global-const-style': 'error',
         '@blumintinc/blumint/no-async-array-filter': 'error',
         '@blumintinc/blumint/no-async-foreach': 'error',
         '@blumintinc/blumint/no-conditional-literals-in-jsx': 'error',
@@ -53,6 +55,7 @@ module.exports = {
     'export-if-in-doubt': exportIfInDoubt,
     'extract-global-constants': extractGlobalConstants,
     'generic-starts-with-t': genericStartsWithT,
+    'global-const-style': globalConstStyle,
     'no-async-array-filter': noAsyncArrayFilter,
     'no-async-foreach': noAsyncForEach,
     'no-conditional-literals-in-jsx': noConditionalLiteralsInJsx,
