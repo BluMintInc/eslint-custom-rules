@@ -15,6 +15,7 @@ import { noUselessFragment } from './rules/no-useless-fragment';
 import { preferFragmentShorthand } from './rules/prefer-fragment-shorthand';
 import { preferTypeOverInterface } from './rules/prefer-type-over-interface';
 import { requireMemo } from './rules/require-memo';
+import { noJsxWhitespaceLiteral } from './rules/no-jsx-whitespace-literal';
 
 module.exports = {
   meta: {
@@ -28,6 +29,7 @@ module.exports = {
     recommended: {
       plugins: ['@blumintinc/blumint'],
       rules: {
+        '@blumintinc/blumint/no-jsx-whitespace-literal': 'error',
         '@blumintinc/blumint/array-methods-this-context': 'warn',
         '@blumintinc/blumint/class-methods-read-top-to-bottom': 'warn',
         '@blumintinc/blumint/dynamic-https-errors': 'warn',
@@ -66,5 +68,6 @@ module.exports = {
     'prefer-fragment-shorthand': preferFragmentShorthand,
     'prefer-type-over-interface': preferTypeOverInterface,
     'require-memo': requireMemo,
+    'no-jsx-whitespace-literal': noJsxWhitespaceLiteral,
   },
 };
