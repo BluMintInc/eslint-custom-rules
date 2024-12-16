@@ -237,7 +237,7 @@ export const requireMemo: TSESLint.RuleModule<'requireMemo', []> = {
       recommended: 'error',
     },
     messages: {
-      requireMemo: 'Component definition not wrapped in React.memo()',
+      requireMemo: 'Component definition not wrapped in memo()',
     },
     schema: [],
     fixable: 'code',
