@@ -19,6 +19,9 @@ permissions:
 
 jobs:
   call-openhands-resolver:
+    concurrency:
+      group: resolve-issue-openhands # Ensures only one job in this group runs at a time
+      cancel-in-progress: false # Queues new jobs instead of canceling in-progress ones
     uses: All-Hands-AI/OpenHands/.github/workflows/openhands-resolver.yml@main
     with:
       macro: ${{ vars.OPENHANDS_MACRO || '@openhands-agent' }}
