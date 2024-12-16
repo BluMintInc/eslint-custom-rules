@@ -1,6 +1,7 @@
 import { arrayMethodsThisContext } from './rules/array-methods-this-context';
 import { classMethodsReadTopToBottom } from './rules/class-methods-read-top-to-bottom';
 import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
+import { default as enforceCallbackMemo } from './rules/enforce-callback-memo';
 import { exportIfInDoubt } from './rules/export-if-in-doubt';
 import { extractGlobalConstants } from './rules/extract-global-constants';
 import { genericStartsWithT } from './rules/generic-starts-with-t';
@@ -31,6 +32,7 @@ module.exports = {
         '@blumintinc/blumint/array-methods-this-context': 'warn',
         '@blumintinc/blumint/class-methods-read-top-to-bottom': 'warn',
         '@blumintinc/blumint/dynamic-https-errors': 'warn',
+        '@blumintinc/blumint/enforce-callback-memo': 'error',
         // '@blumintinc/blumint/export-if-in-doubt': 'warn',
         // '@blumintinc/blumint/extract-global-constants': 'warn',
         '@blumintinc/blumint/generic-starts-with-t': 'warn',
@@ -52,6 +54,7 @@ module.exports = {
     'array-methods-this-context': arrayMethodsThisContext,
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
     'dynamic-https-errors': dynamicHttpsErrors,
+    'enforce-callback-memo': enforceCallbackMemo,
     'export-if-in-doubt': exportIfInDoubt,
     'extract-global-constants': extractGlobalConstants,
     'generic-starts-with-t': genericStartsWithT,
