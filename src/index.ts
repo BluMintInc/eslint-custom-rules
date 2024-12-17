@@ -13,6 +13,7 @@ import { noConditionalLiteralsInJsx } from './rules/no-conditional-literals-in-j
 import { noFilterWithoutReturn } from './rules/no-filter-without-return';
 import { noMisusedSwitchCase } from './rules/no-misused-switch-case';
 import { noUnpinnedDependencies } from './rules/no-unpinned-dependencies';
+import { noUnusedProps } from './rules/no-unused-props';
 import { noUselessFragment } from './rules/no-useless-fragment';
 import { preferFragmentShorthand } from './rules/prefer-fragment-shorthand';
 import { preferTypeOverInterface } from './rules/prefer-type-over-interface';
@@ -48,6 +49,7 @@ module.exports = {
         '@blumintinc/blumint/no-filter-without-return': 'error',
         '@blumintinc/blumint/no-misused-switch-case': 'error',
         '@blumintinc/blumint/no-unpinned-dependencies': 'error',
+        '@blumintinc/blumint/no-unused-props': 'error',
         '@blumintinc/blumint/no-useless-fragment': 'warn',
         '@blumintinc/blumint/prefer-fragment-shorthand': 'warn',
         '@blumintinc/blumint/prefer-type-over-interface': 'warn',
@@ -74,6 +76,7 @@ module.exports = {
     'no-filter-without-return': noFilterWithoutReturn,
     'no-misused-switch-case': noMisusedSwitchCase,
     'no-unpinned-dependencies': noUnpinnedDependencies,
+    'no-unused-props': noUnusedProps,
     'no-useless-fragment': noUselessFragment,
     'prefer-fragment-shorthand': preferFragmentShorthand,
     'prefer-type-over-interface': preferTypeOverInterface,
