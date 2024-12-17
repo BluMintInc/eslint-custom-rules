@@ -1,7 +1,7 @@
-import { ruleTester } from '../utils/ruleTester';
-import rule = require('../rules/require-https-error');
+import { ruleTesterTs } from '../utils/ruleTester';
+import requireHttpsError from '../rules/require-https-error';
 
-ruleTester.run('require-https-error', rule, {
+ruleTesterTs.run('require-https-error', requireHttpsError, {
   valid: [
     // Should allow throw new Error outside functions/src
     {

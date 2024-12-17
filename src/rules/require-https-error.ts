@@ -6,12 +6,14 @@ export = createRule({
   meta: {
     type: 'problem',
     docs: {
-      description: 'Enforce using HttpsError instead of throw new Error in functions/src',
+      description:
+        'Enforce using HttpsError instead of throw new Error in functions/src',
       recommended: 'error',
     },
     schema: [],
     messages: {
-      useHttpsError: 'Use HttpsError instead of throw new Error in functions/src directory',
+      useHttpsError:
+        'Use HttpsError instead of throw new Error in functions/src directory',
     },
   },
   defaultOptions: [],
@@ -25,11 +27,13 @@ export = createRule({
 
     return {
       ThrowStatement(node: TSESTree.ThrowStatement) {
+        const argument = node.argument as unknown as TSESTree.NewExpression;
         if (
-          node.argument &&
-          node.argument.type === AST_NODE_TYPES.NewExpression &&
-          node.argument.callee.type === AST_NODE_TYPES.Identifier &&
-          node.argument.callee.name === 'Error'
+          argument &&
+          argument.type === AST_NODE_TYPES.NewExpression &&
+          argument.callee &&
+          argument.callee.type === AST_NODE_TYPES.Identifier &&
+          argument.callee.name === 'Error'
         ) {
           context.report({
             node,
