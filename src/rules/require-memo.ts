@@ -201,7 +201,7 @@ function checkFunction(
 
 function calculateImportPath(currentFilePath: string): string {
   // Default to absolute path if we can't calculate relative path
-  if (!currentFilePath) return '@/util/memo';
+  if (!currentFilePath) return 'src/util/memo';
 
   // Split the current file path into parts and normalize
   const parts = currentFilePath.split(/[\\/]/); // Handle both Unix and Windows paths
