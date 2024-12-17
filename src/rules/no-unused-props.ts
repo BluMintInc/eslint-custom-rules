@@ -11,25 +11,32 @@ export const noUnusedProps = createRule({
     },
     schema: [],
     messages: {
-      unusedProp: 'Prop "{{propName}}" is defined in type but not used in component',
+      unusedProp:
+        'Prop "{{propName}}" is defined in type but not used in component',
     },
     fixable: 'code',
   },
   defaultOptions: [],
   create(context) {
-    let propsType: Record<string, TSESTree.Node> = {};
-    let usedProps: Set<string> = new Set();
-    let currentComponent: TSESTree.Node | null = null;
+    const propsTypes: Map<string, Record<string, TSESTree.Node>> = new Map();
+    const usedProps: Map<string, Set<string>> = new Map();
+    let currentComponent: { node: TSESTree.Node; typeName: string } | null =
+      null;
 
     return {
       TSTypeAliasDeclaration(node) {
-        if (node.id.name === 'Props') {
+        if (node.id.name.endsWith('Props')) {
           if (node.typeAnnotation.type === AST_NODE_TYPES.TSTypeLiteral) {
+            const props: Record<string, TSESTree.Node> = {};
             node.typeAnnotation.members.forEach((member) => {
-              if (member.type === AST_NODE_TYPES.TSPropertySignature && member.key.type === AST_NODE_TYPES.Identifier) {
-                propsType[member.key.name] = member.key;
+              if (
+                member.type === AST_NODE_TYPES.TSPropertySignature &&
+                member.key.type === AST_NODE_TYPES.Identifier
+              ) {
+                props[member.key.name] = member.key;
               }
             });
+            propsTypes.set(node.id.name, props);
           }
         }
       },
@@ -37,17 +44,31 @@ export const noUnusedProps = createRule({
       VariableDeclaration(node) {
         if (node.declarations.length === 1) {
           const declaration = node.declarations[0];
-          if (declaration.init?.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+          if (
+            declaration.init?.type === AST_NODE_TYPES.ArrowFunctionExpression
+          ) {
             const param = declaration.init.params[0];
-            if (param?.type === AST_NODE_TYPES.ObjectPattern && param.typeAnnotation?.typeAnnotation.type === AST_NODE_TYPES.TSTypeReference) {
-              const typeName = param.typeAnnotation.typeAnnotation.typeName;
-              if (typeName.type === AST_NODE_TYPES.Identifier && typeName.name === 'Props') {
-                currentComponent = node;
+            if (
+              param?.type === AST_NODE_TYPES.ObjectPattern &&
+              param.typeAnnotation?.typeAnnotation.type ===
+                AST_NODE_TYPES.TSTypeReference &&
+              param.typeAnnotation.typeAnnotation.typeName.type ===
+                AST_NODE_TYPES.Identifier
+            ) {
+              const typeName =
+                param.typeAnnotation.typeAnnotation.typeName.name;
+              if (typeName.endsWith('Props')) {
+                currentComponent = { node, typeName };
+                const used = new Set<string>();
                 param.properties.forEach((prop) => {
-                  if (prop.type === AST_NODE_TYPES.Property && prop.key.type === AST_NODE_TYPES.Identifier) {
-                    usedProps.add(prop.key.name);
+                  if (
+                    prop.type === AST_NODE_TYPES.Property &&
+                    prop.key.type === AST_NODE_TYPES.Identifier
+                  ) {
+                    used.add(prop.key.name);
                   }
                 });
+                usedProps.set(typeName, used);
               }
             }
           }
@@ -55,20 +76,26 @@ export const noUnusedProps = createRule({
       },
 
       'VariableDeclaration:exit'(node) {
-        if (node === currentComponent) {
-          Object.keys(propsType).forEach((prop) => {
-            if (!usedProps.has(prop)) {
-              context.report({
-                node: propsType[prop],
-                messageId: 'unusedProp',
-                data: { propName: prop },
-              });
-            }
-          });
+        if (currentComponent?.node === node) {
+          const { typeName } = currentComponent;
+          const propsType = propsTypes.get(typeName);
+          const used = usedProps.get(typeName);
 
-          // Reset state
-          propsType = {};
-          usedProps.clear();
+          if (propsType && used) {
+            Object.keys(propsType).forEach((prop) => {
+              if (!used.has(prop)) {
+                context.report({
+                  node: propsType[prop],
+                  messageId: 'unusedProp',
+                  data: { propName: prop },
+                });
+              }
+            });
+          }
+
+          // Reset state for this component
+          propsTypes.delete(typeName);
+          usedProps.delete(typeName);
           currentComponent = null;
         }
       },
