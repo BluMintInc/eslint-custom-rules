@@ -1,5 +1,6 @@
 import { arrayMethodsThisContext } from './rules/array-methods-this-context';
 import { classMethodsReadTopToBottom } from './rules/class-methods-read-top-to-bottom';
+import { default as consistentCallbackNaming } from './rules/consistent-callback-naming';
 import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
 import { default as enforceCallbackMemo } from './rules/enforce-callback-memo';
 import { exportIfInDoubt } from './rules/export-if-in-doubt';
@@ -32,6 +33,7 @@ module.exports = {
       rules: {
         '@blumintinc/blumint/array-methods-this-context': 'warn',
         '@blumintinc/blumint/class-methods-read-top-to-bottom': 'warn',
+        '@blumintinc/blumint/consistent-callback-naming': 'error',
         '@blumintinc/blumint/dynamic-https-errors': 'warn',
         '@blumintinc/blumint/enforce-callback-memo': 'error',
         // '@blumintinc/blumint/export-if-in-doubt': 'warn',
@@ -55,6 +57,7 @@ module.exports = {
   rules: {
     'array-methods-this-context': arrayMethodsThisContext,
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
+    'consistent-callback-naming': consistentCallbackNaming,
     'dynamic-https-errors': dynamicHttpsErrors,
     'enforce-callback-memo': enforceCallbackMemo,
     'export-if-in-doubt': exportIfInDoubt,
