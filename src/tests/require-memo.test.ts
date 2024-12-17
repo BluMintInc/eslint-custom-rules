@@ -237,6 +237,27 @@ import { memo } from '../util/memo';
             )
           })`,
     },
+    // Test absolute path import
+    {
+      code: `function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `import { memo } from 'src/util/memo';
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; })`,
+      filename: 'pages/SomeComponent.tsx',
+    },
+    // Test same directory import
+    {
+      code: `function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `import { memo } from './util/memo';
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; })`,
+      filename: 'src/SomeComponent.tsx',
+    },
+    // Test Windows-style paths
+    {
+      code: `function Component({foo}) { return <div>{foo}</div>; }`,
+      output: `import { memo } from '../util/memo';
+const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; })`,
+      filename: 'src\\components\\SomeComponent.tsx',
+    },
   ].map((testCase) => ({
     ...testCase,
     filename: testCase.filename || 'src/components/SomeComponent.tsx',
