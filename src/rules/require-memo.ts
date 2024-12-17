@@ -209,7 +209,7 @@ function calculateImportPath(currentFilePath: string): string {
 
   if (srcIndex === -1) {
     // If we're not in a src directory, use absolute path
-    return '@/util/memo';
+    return 'src/util/memo';
   }
 
   // Calculate relative path based on current file depth from src
