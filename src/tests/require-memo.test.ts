@@ -240,7 +240,7 @@ import { memo } from '../util/memo';
     // Test absolute path import
     {
       code: `function Component({foo}) { return <div>{foo}</div>; }`,
-      output: `import { memo } from '@/util/memo';
+      output: `import { memo } from 'src/util/memo';
 const Component = memo(function ComponentUnmemoized({foo}) { return <div>{foo}</div>; })`,
       filename: 'pages/SomeComponent.tsx',
     },
