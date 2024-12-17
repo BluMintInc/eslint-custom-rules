@@ -1,6 +1,8 @@
 import { arrayMethodsThisContext } from './rules/array-methods-this-context';
 import { classMethodsReadTopToBottom } from './rules/class-methods-read-top-to-bottom';
+import { default as consistentCallbackNaming } from './rules/consistent-callback-naming';
 import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
+import { default as enforceCallbackMemo } from './rules/enforce-callback-memo';
 import { exportIfInDoubt } from './rules/export-if-in-doubt';
 import { extractGlobalConstants } from './rules/extract-global-constants';
 import { genericStartsWithT } from './rules/generic-starts-with-t';
@@ -16,6 +18,7 @@ import { preferFragmentShorthand } from './rules/prefer-fragment-shorthand';
 import { preferTypeOverInterface } from './rules/prefer-type-over-interface';
 import { requireMemo } from './rules/require-memo';
 import { default as requireImageOverlayed } from './rules/require-image-overlayed';
+import { requireUseMemoObjectLiterals } from './rules/require-usememo-object-literals';
 
 module.exports = {
   meta: {
@@ -31,7 +34,9 @@ module.exports = {
       rules: {
         '@blumintinc/blumint/array-methods-this-context': 'warn',
         '@blumintinc/blumint/class-methods-read-top-to-bottom': 'warn',
+        '@blumintinc/blumint/consistent-callback-naming': 'error',
         '@blumintinc/blumint/dynamic-https-errors': 'warn',
+        '@blumintinc/blumint/enforce-callback-memo': 'error',
         // '@blumintinc/blumint/export-if-in-doubt': 'warn',
         // '@blumintinc/blumint/extract-global-constants': 'warn',
         '@blumintinc/blumint/generic-starts-with-t': 'warn',
@@ -47,13 +52,16 @@ module.exports = {
         '@blumintinc/blumint/prefer-type-over-interface': 'warn',
         '@blumintinc/blumint/require-memo': 'error',
         '@blumintinc/blumint/require-image-overlayed': 'error',
+        '@blumintinc/blumint/require-usememo-object-literals': 'error',
       },
     },
   },
   rules: {
     'array-methods-this-context': arrayMethodsThisContext,
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
+    'consistent-callback-naming': consistentCallbackNaming,
     'dynamic-https-errors': dynamicHttpsErrors,
+    'enforce-callback-memo': enforceCallbackMemo,
     'export-if-in-doubt': exportIfInDoubt,
     'extract-global-constants': extractGlobalConstants,
     'generic-starts-with-t': genericStartsWithT,
@@ -69,5 +77,6 @@ module.exports = {
     'prefer-type-over-interface': preferTypeOverInterface,
     'require-memo': requireMemo,
     'require-image-overlayed': requireImageOverlayed,
+    'require-usememo-object-literals': requireUseMemoObjectLiterals,
   },
 };
