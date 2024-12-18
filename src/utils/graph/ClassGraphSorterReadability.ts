@@ -116,13 +116,18 @@ export class ClassGraphSorterReadability extends ClassGraphSorter {
     const visited = new Set<string>();
     const dfsSortedNodes: GraphNode[] = [];
     const dfs = (node: GraphNode) => {
-      if (visited.has(node.name) || !node) {
+      if (!node || visited.has(node.name)) {
         return;
       }
       visited.add(node.name);
       dfsSortedNodes.push(node);
-      for (const dep of node.dependencies) {
-        dfs(this.graph[String(dep)]);
+      // Ensure node.dependencies exists and is an array before iterating
+      const dependencies = Array.isArray(node.dependencies) ? node.dependencies : [];
+      for (const dep of dependencies) {
+        const depNode = this.graph[String(dep)];
+        if (depNode) {
+          dfs(depNode);
+        }
       }
     };
     searchNodes.forEach((node) => dfs(node));
