@@ -2,6 +2,28 @@ import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
 import { TSESLint, TSESTree } from '@typescript-eslint/utils';
 
+function isInsideFunction(node: TSESTree.Node): boolean {
+  let current: TSESTree.Node | undefined = node;
+  while (current) {
+    if (
+      current.type === 'FunctionDeclaration' ||
+      current.type === 'FunctionExpression' ||
+      current.type === 'ArrowFunctionExpression'
+    ) {
+      return true;
+    }
+    current = current.parent as TSESTree.Node;
+  }
+  return false;
+}
+
+function isFunctionDefinition(node: TSESTree.Expression | null): boolean {
+  return (
+    node?.type === 'FunctionExpression' ||
+    node?.type === 'ArrowFunctionExpression'
+  );
+}
+
 export const extractGlobalConstants: TSESLint.RuleModule<
   'extractGlobalConstants',
   never[]
@@ -12,18 +34,27 @@ export const extractGlobalConstants: TSESLint.RuleModule<
         if (node.kind !== 'const') {
           return;
         }
+
+        // Skip if any of the declarations are function definitions
+        if (node.declarations.some((d) => isFunctionDefinition(d.init))) {
+          return;
+        }
+
         const scope = context.getScope();
         const hasDependencies = node.declarations.some(
           (declaration) =>
             declaration.init &&
             ASTHelpers.declarationIncludesIdentifier(declaration.init),
         );
+
+        // Only check function/block scoped constants without dependencies
         if (
           !hasDependencies &&
-          (scope.type === 'function' || scope.type === 'block')
+          (scope.type === 'function' || scope.type === 'block') &&
+          isInsideFunction(node)
         ) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const constName = (node.declarations[0].id as any).name;
+          const constName = (node.declarations[0].id as TSESTree.Identifier)
+            .name;
           context.report({
             node,
             messageId: 'extractGlobalConstants',
@@ -43,8 +74,7 @@ export const extractGlobalConstants: TSESLint.RuleModule<
           const scope = context.getScope();
           const hasDependencies = ASTHelpers.blockIncludesIdentifier(node.body);
           if (!hasDependencies && scope.type === 'function') {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const funcName = (node.id as any).name;
+            const funcName = node.id?.name;
             context.report({
               node,
               messageId: 'extractGlobalConstants',
@@ -63,7 +93,7 @@ export const extractGlobalConstants: TSESLint.RuleModule<
     type: 'suggestion',
     docs: {
       description:
-        'Extract constants/functions to the global scope when possible',
+        'Extract static constants and functions to the global scope when possible',
       recommended: 'error',
     },
     schema: [],
