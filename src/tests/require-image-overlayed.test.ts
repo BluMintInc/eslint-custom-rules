@@ -2,7 +2,6 @@ import { ruleTesterJsx } from '../utils/ruleTester';
 import rule from '../rules/require-image-overlayed';
 
 ruleTesterJsx.run('require-image-overlayed', rule, {
-
   valid: [
     {
       code: `

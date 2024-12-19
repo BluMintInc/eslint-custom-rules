@@ -12,11 +12,14 @@ const ruleTester = new ESLintUtils.RuleTester({
   },
 });
 
-ruleTester.run('require-usememo-object-literals', requireUseMemoObjectLiterals, {
-  valid: [
-    // Valid case: using useMemo for object literal
-    {
-      code: `
+ruleTester.run(
+  'require-usememo-object-literals',
+  requireUseMemoObjectLiterals,
+  {
+    valid: [
+      // Valid case: using useMemo for object literal
+      {
+        code: `
         function Component() {
           const buttons = useMemo(() => [
             {
@@ -29,37 +32,37 @@ ruleTester.run('require-usememo-object-literals', requireUseMemoObjectLiterals, 
           return <DialogActions buttons={buttons} />;
         }
       `,
-    },
-    // Valid case: non-literal prop
-    {
-      code: `
+      },
+      // Valid case: non-literal prop
+      {
+        code: `
         function Component() {
           const config = { foo: 'bar' };
           return <MyComponent prop={config} />;
         }
       `,
-    },
-    // Valid case: primitive prop
-    {
-      code: `
+      },
+      // Valid case: primitive prop
+      {
+        code: `
         function Component() {
           return <MyComponent prop={42} />;
         }
       `,
-    },
-    // Valid case: lowercase component (HTML element)
-    {
-      code: `
+      },
+      // Valid case: lowercase component (HTML element)
+      {
+        code: `
         function Component() {
           return <div style={{ color: 'red' }} />;
         }
       `,
-    },
-  ],
-  invalid: [
-    // Invalid case: inline object literal
-    {
-      code: `
+      },
+    ],
+    invalid: [
+      // Invalid case: inline object literal
+      {
+        code: `
         function Component() {
           return <DialogActions buttons={[{
             isAsync: false,
@@ -69,25 +72,26 @@ ruleTester.run('require-usememo-object-literals', requireUseMemoObjectLiterals, 
           }]} />;
         }
       `,
-      errors: [{ messageId: 'requireUseMemo' }],
-    },
-    // Invalid case: inline object literal in prop
-    {
-      code: `
+        errors: [{ messageId: 'requireUseMemo' }],
+      },
+      // Invalid case: inline object literal in prop
+      {
+        code: `
         function Component() {
           return <MyComponent config={{ foo: 'bar', baz: 42 }} />;
         }
       `,
-      errors: [{ messageId: 'requireUseMemo' }],
-    },
-    // Invalid case: inline array literal
-    {
-      code: `
+        errors: [{ messageId: 'requireUseMemo' }],
+      },
+      // Invalid case: inline array literal
+      {
+        code: `
         function Component() {
           return <MyList items={['a', 'b', 'c']} />;
         }
       `,
-      errors: [{ messageId: 'requireUseMemo' }],
-    },
-  ],
-});
+        errors: [{ messageId: 'requireUseMemo' }],
+      },
+    ],
+  },
+);
