@@ -78,7 +78,8 @@ export default createRule({
 
         if (
           typeof importSource === 'string' &&
-          isFirebaseImport(importSource)
+          isFirebaseImport(importSource) &&
+          !node.importKind?.includes('type')
         ) {
           context.report({
             node,
