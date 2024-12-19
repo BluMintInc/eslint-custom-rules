@@ -19,6 +19,7 @@ import { noUselessFragment } from './rules/no-useless-fragment';
 import { preferFragmentShorthand } from './rules/prefer-fragment-shorthand';
 import { preferTypeOverInterface } from './rules/prefer-type-over-interface';
 import { requireMemo } from './rules/require-memo';
+import { default as requireHttpsError } from './rules/require-https-error';
 import { useCustomRouter } from './rules/use-custom-router';
 import { default as requireImageOverlayed } from './rules/require-image-overlayed';
 import { requireUseMemoObjectLiterals } from './rules/require-usememo-object-literals';
@@ -56,6 +57,7 @@ module.exports = {
         '@blumintinc/blumint/prefer-fragment-shorthand': 'warn',
         '@blumintinc/blumint/prefer-type-over-interface': 'warn',
         '@blumintinc/blumint/require-memo': 'error',
+        '@blumintinc/blumint/require-https-error': 'error',
         '@blumintinc/blumint/use-custom-router': 'error',
         '@blumintinc/blumint/require-image-overlayed': 'error',
         '@blumintinc/blumint/require-usememo-object-literals': 'error',
@@ -84,6 +86,7 @@ module.exports = {
     'prefer-fragment-shorthand': preferFragmentShorthand,
     'prefer-type-over-interface': preferTypeOverInterface,
     'require-memo': requireMemo,
+    'require-https-error': requireHttpsError,
     'use-custom-router': useCustomRouter,
     'require-image-overlayed': requireImageOverlayed,
     'require-usememo-object-literals': requireUseMemoObjectLiterals,
