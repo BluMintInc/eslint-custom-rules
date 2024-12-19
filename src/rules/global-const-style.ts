@@ -25,10 +25,31 @@ export default createRule({
     return {
       VariableDeclaration(node) {
         // Only check top-level const declarations
-        if (
-          node.kind !== 'const' ||
-          node.parent?.type !== AST_NODE_TYPES.Program
-        ) {
+        if (node.kind !== 'const') {
+          return;
+        }
+
+        // Skip if not at program level
+        if (node.parent?.type !== AST_NODE_TYPES.Program) {
+          return;
+        }
+
+        // Skip if any declaration is a function component or arrow function
+        const shouldSkip = node.declarations.some(declaration => {
+          if (declaration.id.type !== AST_NODE_TYPES.Identifier) {
+            return false;
+          }
+          const name = declaration.id.name;
+          const init = declaration.init;
+          return (
+            // Skip function components (uppercase name + arrow function)
+            (/^[A-Z]/.test(name) && init?.type === AST_NODE_TYPES.ArrowFunctionExpression) ||
+            // Skip any arrow function
+            init?.type === AST_NODE_TYPES.ArrowFunctionExpression
+          );
+        });
+
+        if (shouldSkip) {
           return;
         }
 
@@ -66,12 +87,31 @@ export default createRule({
           }
 
           // Check for as const
-          if (
-            init.type !== AST_NODE_TYPES.TSAsExpression ||
-            init.typeAnnotation.type !== AST_NODE_TYPES.TSTypeReference ||
-            (init.typeAnnotation.typeName as TSESTree.Identifier).name !==
-              'const'
-          ) {
+          const isAsConstExpression = (node: TSESTree.Node): boolean => {
+            if (node.type === AST_NODE_TYPES.TSAsExpression) {
+              return (
+                node.typeAnnotation?.type === AST_NODE_TYPES.TSTypeReference &&
+                (node.typeAnnotation?.typeName as TSESTree.Identifier)?.name === 'const'
+              );
+            }
+            return false;
+          };
+
+          const shouldHaveAsConst = (node: TSESTree.Node): boolean => {
+            // Skip if it's already an as const expression
+            if (isAsConstExpression(node)) {
+              return false;
+            }
+
+            // Check if it's a literal, array, or object that should have as const
+            return (
+              node.type === AST_NODE_TYPES.Literal ||
+              node.type === AST_NODE_TYPES.ArrayExpression ||
+              node.type === AST_NODE_TYPES.ObjectExpression
+            );
+          };
+
+          if (shouldHaveAsConst(init)) {
             context.report({
               node: init,
               messageId: 'asConst',
