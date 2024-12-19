@@ -58,6 +58,30 @@ ruleTester.run(
         }
       `,
       },
+      // Valid case: sx prop
+      {
+        code: `
+        function Component() {
+          return <Stack sx={{
+            borderRadius: '4px',
+            background: theme.palette.background.shades.opacity60,
+            '& .MuiTypography-root': textSx,
+            ...sx,
+          }} />;
+        }
+      `,
+      },
+      // Valid case: customSx prop
+      {
+        code: `
+        function Component() {
+          return <CustomComponent customSx={{
+            padding: '8px',
+            margin: '16px',
+          }} />;
+        }
+      `,
+      },
     ],
     invalid: [
       // Invalid case: inline object literal
