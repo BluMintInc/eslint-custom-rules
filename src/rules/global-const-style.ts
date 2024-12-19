@@ -1,14 +1,16 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
-const isUpperSnakeCase = (str: string): boolean => /^[A-Z][A-Z0-9_]*$/.test(str);
+const isUpperSnakeCase = (str: string): boolean =>
+  /^[A-Z][A-Z0-9_]*$/.test(str);
 
 export default createRule({
   name: 'global-const-style',
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce UPPER_SNAKE_CASE and as const for global static constants',
+      description:
+        'Enforce UPPER_SNAKE_CASE and as const for global static constants',
       recommended: 'error',
     },
     fixable: 'code',
@@ -23,7 +25,10 @@ export default createRule({
     return {
       VariableDeclaration(node) {
         // Only check top-level const declarations
-        if (node.kind !== 'const' || node.parent?.type !== AST_NODE_TYPES.Program) {
+        if (
+          node.kind !== 'const' ||
+          node.parent?.type !== AST_NODE_TYPES.Program
+        ) {
           return;
         }
 
@@ -37,7 +42,11 @@ export default createRule({
           const init = declaration.init;
 
           // Skip if no initializer or if it's a dynamic value
-          if (!init || init.type === AST_NODE_TYPES.CallExpression || init.type === AST_NODE_TYPES.BinaryExpression) {
+          if (
+            !init ||
+            init.type === AST_NODE_TYPES.CallExpression ||
+            init.type === AST_NODE_TYPES.BinaryExpression
+          ) {
             return;
           }
 
@@ -57,9 +66,12 @@ export default createRule({
           }
 
           // Check for as const
-          if (init.type !== AST_NODE_TYPES.TSAsExpression || 
-              init.typeAnnotation.type !== AST_NODE_TYPES.TSTypeReference ||
-              (init.typeAnnotation.typeName as TSESTree.Identifier).name !== 'const') {
+          if (
+            init.type !== AST_NODE_TYPES.TSAsExpression ||
+            init.typeAnnotation.type !== AST_NODE_TYPES.TSTypeReference ||
+            (init.typeAnnotation.typeName as TSESTree.Identifier).name !==
+              'const'
+          ) {
             context.report({
               node: init,
               messageId: 'asConst',
