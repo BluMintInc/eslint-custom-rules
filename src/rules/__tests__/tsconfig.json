@@ -1,0 +1,24 @@
+{
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "types": ["jest"],
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "*": ["*", "../*", "../../*", "../../../*"]
+    }
+  },
+  "include": [
+    ".",
+    "../**/*.ts",
+    "../../**/*.ts",
+    "estree.ts",
+    "*.ts",
+    "../../../src/**/*.ts",
+    "../../../tests/**/*.ts",
+    "../../../**/*.ts"
+  ],
+  "files": [
+    "estree.ts"
+  ]
+}
