@@ -12,6 +12,11 @@ ruleTesterJsx.run('extract-global-constants', extractGlobalConstants, {
       const params = [\`w-\${width}\`];
       return <div>{params}</div>;
     }`,
+    // Case 1c: Template literal constant that depends on a prop
+    `function Component({ name }) {
+      const greeting = \`Hello \${name}!\`;
+      return <div>{greeting}</div>;
+    }`,
     `function Component({ prop }) {
           const dependentConst = [prop];
           return <div>{dependentConst}</div>;
