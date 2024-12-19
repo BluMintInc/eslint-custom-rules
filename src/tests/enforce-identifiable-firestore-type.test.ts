@@ -40,6 +40,23 @@ ruleTesterTs.run(
       `,
         filename: 'functions/src/types/firestore/AdCampaign/index.ts',
       },
+      {
+        code: `
+        import { Resolve } from '../../../utility-types';
+        export type UserItem = Resolve<{
+          /**
+           * id should be \`chainId-contractAddress-itemId\`
+           */
+          id: string;
+          itemId: number;
+          amount: number;
+          address: string;
+          chainId: number;
+          provider: NftProvider;
+        }>;
+      `,
+        filename: 'functions/src/types/firestore/UserItem/index.ts',
+      },
     ],
     invalid: [
       {
