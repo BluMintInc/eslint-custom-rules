@@ -48,10 +48,7 @@ ruleTesterTs.run('global-const-style', rule, {
     // Missing both
     {
       code: 'const apiEndpoint = "https://api.example.com";',
-      errors: [
-        { messageId: 'upperSnakeCase' },
-        { messageId: 'asConst' },
-      ],
+      errors: [{ messageId: 'upperSnakeCase' }, { messageId: 'asConst' }],
       output: 'const API_ENDPOINT = "https://api.example.com" as const;',
     },
   ],
