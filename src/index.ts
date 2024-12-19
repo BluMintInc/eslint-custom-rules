@@ -4,6 +4,7 @@ import { default as consistentCallbackNaming } from './rules/consistent-callback
 import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
 import { enforceIdentifiableFirestoreType } from './rules/enforce-identifiable-firestore-type';
 import { default as enforceCallbackMemo } from './rules/enforce-callback-memo';
+import { enforceCallableTypes } from './rules/enforce-callable-types';
 import { enforceFirebaseImports } from './rules/enforce-dynamic-firebase-imports';
 import { exportIfInDoubt } from './rules/export-if-in-doubt';
 import { extractGlobalConstants } from './rules/extract-global-constants';
@@ -46,9 +47,10 @@ module.exports = {
         '@blumintinc/blumint/dynamic-https-errors': 'warn',
         '@blumintinc/blumint/enforce-identifiable-firestore-type': 'error',
         '@blumintinc/blumint/enforce-callback-memo': 'error',
+        '@blumintinc/blumint/enforce-callable-types': 'error',
         '@blumintinc/blumint/enforce-dynamic-firebase-imports': 'error',
         // '@blumintinc/blumint/export-if-in-doubt': 'warn',
-        // '@blumintinc/blumint/extract-global-constants': 'warn',
+        '@blumintinc/blumint/extract-global-constants': 'warn',
         '@blumintinc/blumint/generic-starts-with-t': 'warn',
         '@blumintinc/blumint/global-const-style': 'error',
         '@blumintinc/blumint/no-async-array-filter': 'error',
@@ -77,6 +79,7 @@ module.exports = {
     'dynamic-https-errors': dynamicHttpsErrors,
     'enforce-identifiable-firestore-type': enforceIdentifiableFirestoreType,
     'enforce-callback-memo': enforceCallbackMemo,
+    'enforce-callable-types': enforceCallableTypes,
     'enforce-dynamic-firebase-imports': enforceFirebaseImports,
     'export-if-in-doubt': exportIfInDoubt,
     'extract-global-constants': extractGlobalConstants,
