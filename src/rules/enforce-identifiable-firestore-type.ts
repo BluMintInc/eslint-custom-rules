@@ -2,24 +2,30 @@ import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import path from 'path';
 
-export const enforceIdentifiableFirestoreType = createRule({
+type MessageIds = 'missingType' | 'notExtendingIdentifiable';
+
+export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
   name: 'enforce-identifiable-firestore-type',
   meta: {
     type: 'problem',
     docs: {
-      description: 'Enforce that Firestore type definitions extend Identifiable and match their folder name',
+      description:
+        'Enforce that Firestore type definitions extend Identifiable and match their folder name',
       recommended: 'error',
     },
     schema: [],
     messages: {
-      missingType: 'Expected exported type "{{ typeName }}" in index.ts under folder "{{ folderName }}"',
-      notExtendingIdentifiable: 'Type "{{ typeName }}" must extend "Identifiable", including an "id: string" field',
+      missingType:
+        'Expected exported type "{{ typeName }}" in index.ts under folder "{{ folderName }}"',
+      notExtendingIdentifiable:
+        'Type "{{ typeName }}" must extend "Identifiable", including an "id: string" field',
     },
   },
   defaultOptions: [],
   create(context) {
     const filename = context.getFilename();
-    const firestoreTypesPattern = /functions\/src\/types\/firestore\/.*\/index\.ts$/;
+    const firestoreTypesPattern =
+      /functions\/src\/types\/firestore\/.*\/index\.ts$/;
 
     // Only apply rule to index.ts files in the firestore types directory
     if (!firestoreTypesPattern.test(filename)) {
@@ -64,16 +70,20 @@ export const enforceIdentifiableFirestoreType = createRule({
           // Check if type extends Identifiable
           // Check if type extends Identifiable directly or through a generic type
           const checkIdentifiable = (type: any): boolean => {
-            if (type.type === AST_NODE_TYPES.TSTypeReference &&
-                type.typeName.type === AST_NODE_TYPES.Identifier &&
-                type.typeName.name === 'Identifiable') {
+            if (
+              type.type === AST_NODE_TYPES.TSTypeReference &&
+              type.typeName.type === AST_NODE_TYPES.Identifier &&
+              type.typeName.name === 'Identifiable'
+            ) {
               return true;
             }
             if (type.type === AST_NODE_TYPES.TSIntersectionType) {
               return type.types.some(checkIdentifiable);
             }
-            if (type.type === AST_NODE_TYPES.TSTypeReference &&
-                type.typeParameters?.params) {
+            if (
+              type.type === AST_NODE_TYPES.TSTypeReference &&
+              type.typeParameters?.params
+            ) {
               return type.typeParameters.params.some(checkIdentifiable);
             }
             return false;
