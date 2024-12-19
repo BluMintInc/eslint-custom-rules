@@ -1,4 +1,4 @@
-import { TSESTree } from '@typescript-eslint/utils';
+import { TSESTree, AST_NODE_TYPES } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 const NON_SERIALIZABLE_TYPES = new Set([
@@ -17,7 +17,8 @@ export default createRule({
   meta: {
     type: 'problem',
     docs: {
-      description: 'Enforce serializable parameters in Firebase Callable/HTTPS Cloud Functions',
+      description:
+        'Enforce serializable parameters in Firebase Callable/HTTPS Cloud Functions',
       recommended: 'error',
     },
     schema: [
@@ -39,7 +40,8 @@ export default createRule({
     ],
     messages: {
       nonSerializableParam: 'Parameter type "{{ type }}" is not serializable',
-      nonSerializableProperty: 'Property "{{ prop }}" has non-serializable type "{{ type }}"',
+      nonSerializableProperty:
+        'Property "{{ prop }}" has non-serializable type "{{ type }}"',
     },
   },
   defaultOptions: [
@@ -54,48 +56,83 @@ export default createRule({
       ...(options.additionalNonSerializableTypes || []),
     ]);
 
+    const typeAliasMap = new Map<string, TSESTree.TSTypeAliasDeclaration>();
+
     function isNonSerializableType(typeName: string): boolean {
       return allNonSerializableTypes.has(typeName);
     }
 
-    function checkTypeNode(node: TSESTree.TypeNode | undefined, propName?: string) {
+    function checkTypeNode(
+      node: TSESTree.TypeNode | TSESTree.TSTypeAnnotation | undefined,
+      propName?: string,
+    ): void {
       if (!node) return;
 
-      if (node.type === 'TSTypeReference') {
-        const typeName = (node.typeName as TSESTree.Identifier).name;
-        if (isNonSerializableType(typeName)) {
-          context.report({
-            node,
-            messageId: propName ? 'nonSerializableProperty' : 'nonSerializableParam',
-            data: {
-              type: typeName,
-              prop: propName,
-            },
-          });
-        }
-      } else if (node.type === 'TSArrayType') {
-        checkTypeNode(node.elementType, propName);
-      } else if (node.type === 'TSTypeAnnotation') {
-        checkTypeNode(node.typeAnnotation, propName);
-      } else if (node.type === 'TSTypeLiteral') {
-        node.members.forEach((member) => {
-          if (member.type === 'TSPropertySignature') {
-            const propertyName = (member.key as TSESTree.Identifier).name;
-            checkTypeNode(member.typeAnnotation, propertyName);
+      switch (node.type) {
+        case AST_NODE_TYPES.TSTypeReference: {
+          const typeName = (node.typeName as TSESTree.Identifier).name;
+          if (isNonSerializableType(typeName)) {
+            context.report({
+              node,
+              messageId: propName
+                ? 'nonSerializableProperty'
+                : 'nonSerializableParam',
+              data: {
+                type: typeName,
+                prop: propName,
+              },
+            });
           }
-        });
-      } else if (node.type === 'TSUnionType') {
-        node.types.forEach((type) => checkTypeNode(type, propName));
+          // Check type parameters of generic types (like Array<T>)
+          if (node.typeParameters) {
+            node.typeParameters.params.forEach((param) =>
+              checkTypeNode(param, propName),
+            );
+          }
+          break;
+        }
+        case AST_NODE_TYPES.TSArrayType:
+          checkTypeNode(node.elementType, propName);
+          break;
+        case AST_NODE_TYPES.TSTypeAnnotation:
+          checkTypeNode(node.typeAnnotation, propName);
+          break;
+        case AST_NODE_TYPES.TSTypeLiteral:
+          node.members.forEach((member) => {
+            if (member.type === AST_NODE_TYPES.TSPropertySignature) {
+              const propertyName = (member.key as TSESTree.Identifier).name;
+              checkTypeNode(member.typeAnnotation, propertyName);
+            }
+          });
+          break;
+        case AST_NODE_TYPES.TSUnionType:
+          node.types.forEach((type) => checkTypeNode(type, propName));
+          break;
       }
     }
 
     return {
+      TSTypeAliasDeclaration(node) {
+        typeAliasMap.set(node.id.name, node);
+      },
       TSTypeReference(node) {
         const typeName = (node.typeName as TSESTree.Identifier).name;
-        if (options.functionTypes.includes(typeName)) {
-          // Check type parameters (generic arguments)
-          if (node.typeParameters?.params[0]) {
-            checkTypeNode(node.typeParameters.params[0]);
+        if (
+          options.functionTypes.includes(typeName) &&
+          node.typeParameters?.params[0]
+        ) {
+          const typeParam = node.typeParameters.params[0];
+
+          if (typeParam.type === AST_NODE_TYPES.TSTypeReference) {
+            const referencedTypeName = (
+              typeParam.typeName as TSESTree.Identifier
+            ).name;
+            const typeAlias = typeAliasMap.get(referencedTypeName);
+            if (typeAlias) {
+              checkTypeNode(typeAlias.typeAnnotation);
+            }
+          } else {
+            checkTypeNode(typeParam);
           }
         }
       },

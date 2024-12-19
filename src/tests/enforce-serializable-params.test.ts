@@ -1,17 +1,7 @@
-import { RuleTester } from '@typescript-eslint/rule-tester';
+import { ruleTesterTs } from '../utils/ruleTester';
 import rule from '../rules/enforce-serializable-params';
 
-const ruleTester = new RuleTester({
-  parser: '@typescript-eslint/parser',
-  parserOptions: {
-    project: './tsconfig.json',
-    tsconfigRootDir: __dirname,
-    ecmaVersion: 2018,
-    sourceType: 'module',
-  },
-});
-
-ruleTester.run('enforce-serializable-params', rule, {
+ruleTesterTs.run('enforce-serializable-params', rule, {
   valid: [
     {
       code: `
@@ -45,8 +35,14 @@ ruleTester.run('enforce-serializable-params', rule, {
         };
       `,
       errors: [
-        { messageId: 'nonSerializableProperty', data: { type: 'DocumentReference', prop: 'userRef' } },
-        { messageId: 'nonSerializableProperty', data: { type: 'Date', prop: 'createdAt' } },
+        {
+          messageId: 'nonSerializableProperty',
+          data: { type: 'DocumentReference', prop: 'userRef' },
+        },
+        {
+          messageId: 'nonSerializableProperty',
+          data: { type: 'Date', prop: 'createdAt' },
+        },
       ],
     },
     {
@@ -63,8 +59,14 @@ ruleTester.run('enforce-serializable-params', rule, {
         };
       `,
       errors: [
-        { messageId: 'nonSerializableProperty', data: { type: 'Timestamp', prop: 'timestamp' } },
-        { messageId: 'nonSerializableProperty', data: { type: 'DocumentReference', prop: 'users' } },
+        {
+          messageId: 'nonSerializableProperty',
+          data: { type: 'Timestamp', prop: 'timestamp' },
+        },
+        {
+          messageId: 'nonSerializableProperty',
+          data: { type: 'DocumentReference', prop: 'users' },
+        },
       ],
     },
     {
@@ -80,8 +82,14 @@ ruleTester.run('enforce-serializable-params', rule, {
         };
       `,
       errors: [
-        { messageId: 'nonSerializableProperty', data: { type: 'Map', prop: 'cache' } },
-        { messageId: 'nonSerializableProperty', data: { type: 'Set', prop: 'set' } },
+        {
+          messageId: 'nonSerializableProperty',
+          data: { type: 'Map', prop: 'cache' },
+        },
+        {
+          messageId: 'nonSerializableProperty',
+          data: { type: 'Set', prop: 'set' },
+        },
       ],
     },
   ],
