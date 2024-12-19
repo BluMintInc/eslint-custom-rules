@@ -19,6 +19,39 @@ ruleTesterTs.run('global-const-style', rule, {
         }
       `,
     },
+    // Constants inside React function components should not be flagged
+    {
+      code: `
+        import { FC } from 'react';
+        const MyComponent: FC = () => {
+          const startingFormValues = {
+            agreedTermsOfUse: get('agreedTermsOfUse'),
+            agreedPrivacyPolicy: get('agreedPrivacyPolicy'),
+          };
+          return <div>{startingFormValues.agreedTermsOfUse}</div>;
+        };
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+        ecmaVersion: 2020,
+      },
+    },
+    // Constants inside arrow functions should not be flagged
+    {
+      code: `
+        const handler = () => {
+          const defaultConfig = { timeout: 1000 };
+          return defaultConfig;
+        };
+      `,
+      parserOptions: {
+        ecmaVersion: 2020,
+      },
+    },
+
+
     // Dynamic values should be ignored
     {
       code: 'const API_VERSION = getVersion();',
