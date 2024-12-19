@@ -68,8 +68,8 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
           hasExpectedType = true;
 
           // Check if type extends Identifiable
-          // Check if type extends Identifiable directly or through a generic type
-          const checkIdentifiable = (type: any): boolean => {
+          const checkIdentifiableExtension = (type: any): boolean => {
+            // Check for direct Identifiable extension
             if (
               type.type === AST_NODE_TYPES.TSTypeReference &&
               type.typeName.type === AST_NODE_TYPES.Identifier &&
@@ -77,19 +77,78 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
             ) {
               return true;
             }
+
+            // Check intersection types
             if (type.type === AST_NODE_TYPES.TSIntersectionType) {
-              return type.types.some(checkIdentifiable);
+              return type.types.some(checkIdentifiableExtension);
             }
+
+            // Check generic type parameters
             if (
               type.type === AST_NODE_TYPES.TSTypeReference &&
               type.typeParameters?.params
             ) {
-              return type.typeParameters.params.some(checkIdentifiable);
+              return type.typeParameters.params.some(checkIdentifiableExtension);
             }
+
             return false;
           };
 
-          typeHasIdentifiable = checkIdentifiable(node.typeAnnotation);
+          // Check if type has id: string field
+          const checkIdField = (type: any): boolean => {
+            // Check for id: string field in type literal
+            if (type.type === AST_NODE_TYPES.TSTypeLiteral) {
+              return type.members.some(
+                (member: any) =>
+                  member.type === AST_NODE_TYPES.TSPropertySignature &&
+                  member.key.type === AST_NODE_TYPES.Identifier &&
+                  member.key.name === 'id' &&
+                  member.typeAnnotation?.typeAnnotation.type === AST_NODE_TYPES.TSStringKeyword
+              );
+            }
+
+            // Check intersection types
+            if (type.type === AST_NODE_TYPES.TSIntersectionType) {
+              return type.types.some(checkIdField);
+            }
+
+            return false;
+          };
+
+          // Check if type is wrapped in a utility type
+          const isUtilityType = (type: any): boolean => {
+            return (
+              type.type === AST_NODE_TYPES.TSTypeReference &&
+              type.typeName.type === AST_NODE_TYPES.Identifier &&
+              type.typeName.name === 'Resolve'
+            );
+          };
+
+          // Recursively check the type and its parameters
+          const checkType = (type: any): boolean => {
+            // Check if type extends Identifiable
+            if (checkIdentifiableExtension(type)) {
+              return true;
+            }
+
+            // Check if type has id: string field (only for utility types)
+            if (isUtilityType(type) && checkIdField(type.typeParameters.params[0])) {
+              return true;
+            }
+
+            // Check if type is wrapped in a utility type
+            if (
+              type.type === AST_NODE_TYPES.TSTypeReference &&
+              type.typeParameters?.params?.[0]
+            ) {
+              return checkType(type.typeParameters.params[0]);
+            }
+
+            // For direct type definitions, require extending Identifiable
+            return false;
+          };
+
+          typeHasIdentifiable = checkType(node.typeAnnotation);
         }
       },
     };
