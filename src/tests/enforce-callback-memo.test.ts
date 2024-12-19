@@ -95,4 +95,3 @@ ruleTester.run('enforce-callback-memo', rule, {
     },
   ],
 });
-

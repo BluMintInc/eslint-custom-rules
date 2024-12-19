@@ -2,6 +2,7 @@ import { arrayMethodsThisContext } from './rules/array-methods-this-context';
 import { classMethodsReadTopToBottom } from './rules/class-methods-read-top-to-bottom';
 import { default as consistentCallbackNaming } from './rules/consistent-callback-naming';
 import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
+import { enforceIdentifiableFirestoreType } from './rules/enforce-identifiable-firestore-type';
 import { default as enforceCallbackMemo } from './rules/enforce-callback-memo';
 import { enforceFirebaseImports } from './rules/enforce-dynamic-firebase-imports';
 import { exportIfInDoubt } from './rules/export-if-in-doubt';
@@ -41,6 +42,7 @@ module.exports = {
         '@blumintinc/blumint/class-methods-read-top-to-bottom': 'warn',
         '@blumintinc/blumint/consistent-callback-naming': 'error',
         '@blumintinc/blumint/dynamic-https-errors': 'warn',
+        '@blumintinc/blumint/enforce-identifiable-firestore-type': 'error',
         '@blumintinc/blumint/enforce-callback-memo': 'error',
         '@blumintinc/blumint/enforce-dynamic-firebase-imports': 'error',
         // '@blumintinc/blumint/export-if-in-doubt': 'warn',
@@ -71,6 +73,7 @@ module.exports = {
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
     'consistent-callback-naming': consistentCallbackNaming,
     'dynamic-https-errors': dynamicHttpsErrors,
+    'enforce-identifiable-firestore-type': enforceIdentifiableFirestoreType,
     'enforce-callback-memo': enforceCallbackMemo,
     'enforce-dynamic-firebase-imports': enforceFirebaseImports,
     'export-if-in-doubt': exportIfInDoubt,
