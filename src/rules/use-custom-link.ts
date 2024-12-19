@@ -1,6 +1,9 @@
 import { createRule } from '../utils/createRule';
 
-export const useCustomLink = createRule({
+type Options = [];
+type MessageIds = 'useCustomLink';
+
+export const useCustomLink = createRule<Options, MessageIds>({
   name: 'use-custom-link',
   meta: {
     type: 'problem',
@@ -11,7 +14,8 @@ export const useCustomLink = createRule({
     fixable: 'code',
     schema: [],
     messages: {
-      useCustomLink: 'Import Link from src/components/Link instead of next/link',
+      useCustomLink:
+        'Import Link from src/components/Link instead of next/link',
     },
   },
   defaultOptions: [],
@@ -20,26 +24,32 @@ export const useCustomLink = createRule({
       ImportDeclaration(node) {
         if (node.source.value === 'next/link') {
           const importSpecifiers = node.specifiers;
-          
+
           // Handle different import types (default, named, namespace)
-          const hasDefaultImport = importSpecifiers.some(
-            (specifier) => specifier.type === 'ImportDefaultSpecifier'
+          const defaultSpecifier = importSpecifiers.find(
+            (specifier) => specifier.type === 'ImportDefaultSpecifier',
           );
-          
-          if (hasDefaultImport) {
+
+          const defaultAsSpecifier = importSpecifiers.find(
+            (specifier) =>
+              specifier.type === 'ImportSpecifier' &&
+              specifier.imported.name === 'default',
+          );
+
+          if (defaultSpecifier || defaultAsSpecifier) {
             context.report({
               node,
               messageId: 'useCustomLink',
               fix(fixer) {
                 // Get the local name of the imported Link component
-                const defaultSpecifier = importSpecifiers.find(
-                  (specifier) => specifier.type === 'ImportDefaultSpecifier'
-                );
-                const localName = defaultSpecifier?.local?.name || 'Link';
+                const localName =
+                  defaultSpecifier?.local?.name ||
+                  defaultAsSpecifier?.local?.name ||
+                  'Link';
 
                 // Create the new import statement
                 const newImport = `import ${localName} from 'src/components/Link';`;
-                
+
                 return fixer.replaceText(node, newImport);
               },
             });

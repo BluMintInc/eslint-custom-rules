@@ -1,18 +1,7 @@
-import { RuleTester } from '../utils/ruleTester';
+import { ruleTesterJsx } from '../utils/ruleTester';
 import { useCustomLink } from '../rules/use-custom-link';
 
-const ruleTester = new RuleTester({
-  parser: '@typescript-eslint/parser',
-  parserOptions: {
-    ecmaVersion: 2018,
-    sourceType: 'module',
-    ecmaFeatures: {
-      jsx: true,
-    },
-  },
-});
-
-ruleTester.run('use-custom-link', useCustomLink, {
+ruleTesterJsx.run('use-custom-link', useCustomLink, {
   valid: [
     {
       code: `import Link from 'src/components/Link';`,
