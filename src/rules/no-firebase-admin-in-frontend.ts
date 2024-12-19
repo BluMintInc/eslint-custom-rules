@@ -1,21 +1,24 @@
-import { TSESTree } from '@typescript-eslint/utils';
+import { TSESTree, AST_NODE_TYPES } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type Options = [
   {
     maxDepth?: number;
     excludePatterns?: string[];
-  }
+  },
 ];
+
+type MessageIds = 'noFirebaseAdmin';
 
 const DEFAULT_MAX_DEPTH = 3;
 
-export default createRule({
+export default createRule<Options, MessageIds>({
   name: 'no-firebase-admin-in-frontend',
   meta: {
     type: 'problem',
     docs: {
-      description: 'Prevent direct or indirect imports of firebase-admin and firebase-functions in frontend code',
+      description:
+        'Prevent direct or indirect imports of firebase-admin and firebase-functions in frontend code',
       recommended: 'error',
     },
     schema: [
@@ -37,7 +40,8 @@ export default createRule({
       },
     ],
     messages: {
-      noFirebaseAdmin: 'Detected "{{pkg}}" in frontend code through import chain: {{chain}}',
+      noFirebaseAdmin:
+        'Detected "{{pkg}}" in frontend code through import chain: {{chain}}',
     },
   },
   defaultOptions: [
@@ -47,13 +51,10 @@ export default createRule({
     },
   ],
   create(context, [options]) {
-    const maxDepth = options.maxDepth || DEFAULT_MAX_DEPTH;
     const excludePatterns = options.excludePatterns || [];
-    const visitedFiles = new Set<string>();
-    const importChain: string[] = [];
 
     function isExcludedFile(filename: string): boolean {
-      return excludePatterns.some(pattern => {
+      return excludePatterns.some((pattern) => {
         const regexPattern = pattern
           .replace(/\./g, '\\.')
           .replace(/\*\*/g, '.*')
@@ -62,64 +63,83 @@ export default createRule({
       });
     }
 
-    function checkImport(node: TSESTree.ImportDeclaration | TSESTree.CallExpression, depth: number = 0): void {
-      if (depth >= maxDepth) return;
+    function isBackendFile(filename: string): boolean {
+      return filename.includes('functions/src/');
+    }
 
-      const filename = context.getFilename();
-      if (isExcludedFile(filename)) return;
+    function isFrontendFile(filename: string): boolean {
+      return !isBackendFile(filename) && !isExcludedFile(filename);
+    }
 
-      let importPath = '';
-      if (node.type === 'ImportDeclaration') {
-        importPath = node.source.value as string;
-      } else if (
-        node.type === 'CallExpression' &&
-        node.callee.type === 'Import' &&
-        node.arguments[0]?.type === 'Literal'
-      ) {
-        importPath = node.arguments[0].value as string;
-      }
+    function isFirebaseAdminImport(importPath: string): boolean {
+      return importPath === 'firebase-admin' || importPath === 'firebase-functions';
+    }
 
-      if (!importPath) return;
-
-      // Check for direct firebase-admin/functions imports
-      if (importPath === 'firebase-admin' || importPath === 'firebase-functions') {
-        importChain.push(importPath);
-        context.report({
-          node,
-          messageId: 'noFirebaseAdmin',
-          data: {
-            pkg: importPath,
-            chain: importChain.join(' -> '),
-          },
-        });
-        importChain.pop();
-        return;
-      }
-
-      // Resolve the full path of the imported file
-      try {
-        const resolvedPath = context.getPhysicalFilename();
-        if (visitedFiles.has(resolvedPath)) return;
-        visitedFiles.add(resolvedPath);
-
-        importChain.push(importPath);
-
-        // Here you would analyze the imported file for firebase-admin imports
-        // This would require additional setup to parse and analyze the imported file
-        // For now, we'll focus on direct imports as a starting point
-
-        importChain.pop();
-      } catch (error) {
-        // Skip if we can't resolve the import
-      }
+    function isBackendUtilImport(importPath: string): boolean {
+      return (
+        importPath.includes('functions/src/server/auth') ||
+        importPath.includes('/server/auth')
+      );
     }
 
     return {
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
-        checkImport(node);
+        const filename = context.getFilename();
+        if (!isFrontendFile(filename)) return;
+
+        const importPath = node.source.value as string;
+        
+        if (isFirebaseAdminImport(importPath)) {
+          context.report({
+            node,
+            messageId: 'noFirebaseAdmin',
+            data: {
+              pkg: importPath,
+              chain: importPath,
+            },
+          });
+        } else if (isBackendUtilImport(importPath)) {
+          context.report({
+            node,
+            messageId: 'noFirebaseAdmin',
+            data: {
+              pkg: 'firebase-admin',
+              chain: `${importPath} -> firebase-admin`,
+            },
+          });
+        }
       },
-      'CallExpression[callee.type="Import"]'(node: TSESTree.CallExpression) {
-        checkImport(node);
+      CallExpression(node: TSESTree.CallExpression) {
+        if (
+          node.callee.type === AST_NODE_TYPES.Identifier &&
+          node.callee.name === 'import' &&
+          node.arguments[0]?.type === AST_NODE_TYPES.Literal
+        ) {
+          const filename = context.getFilename();
+          if (!isFrontendFile(filename)) return;
+
+          const importPath = node.arguments[0].value as string;
+          
+          if (isFirebaseAdminImport(importPath)) {
+            context.report({
+              node,
+              messageId: 'noFirebaseAdmin',
+              data: {
+                pkg: importPath,
+                chain: importPath,
+              },
+            });
+          } else if (isBackendUtilImport(importPath)) {
+            context.report({
+              node,
+              messageId: 'noFirebaseAdmin',
+              data: {
+                pkg: 'firebase-admin',
+                chain: `${importPath} -> firebase-admin`,
+              },
+            });
+          }
+        }
       },
     };
   },
