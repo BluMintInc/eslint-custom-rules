@@ -14,19 +14,23 @@ export default createRule({
     fixable: 'code',
     schema: [],
     messages: {
-      requireDynamicImport: 'Firebase dependencies must be imported dynamically to reduce bundle size',
+      requireDynamicImport:
+        'Firebase dependencies must be imported dynamically to reduce bundle size',
     },
   },
   defaultOptions: [],
   create(context) {
     const isFirebaseImport = (source: string): boolean => {
-      return source.startsWith('firebase/') || source.includes('config/firebase-client');
+      return (
+        source.startsWith('firebase/') ||
+        source.includes('config/firebase-client')
+      );
     };
 
     const createDynamicImport = (node: TSESTree.ImportDeclaration): string => {
       const importSource = node.source.value;
       const importSpecifiers = node.specifiers;
-      
+
       if (importSpecifiers.length === 0) {
         // For side-effect imports like 'firebase/auth'
         return `await import('${importSource}');`;
@@ -45,7 +49,7 @@ export default createRule({
           if (importedName === localName) {
             return `const { ${localName} } = await import('${importSource}');`;
           }
-          return `const { ${importedName} as ${localName} } = await import('${importSource}');`;
+          return `const { ${importedName}: ${localName} } = await import('${importSource}');`;
         }
       }
 
@@ -56,7 +60,9 @@ export default createRule({
           if (spec.type === 'ImportSpecifier') {
             const importedName = spec.imported.name;
             const localName = spec.local.name;
-            return importedName === localName ? localName : `${importedName} as ${localName}`;
+            return importedName === localName
+              ? localName
+              : `${importedName}: ${localName}`;
           }
           return '';
         })
@@ -70,7 +76,10 @@ export default createRule({
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
         const importSource = node.source.value;
 
-        if (typeof importSource === 'string' && isFirebaseImport(importSource)) {
+        if (
+          typeof importSource === 'string' &&
+          isFirebaseImport(importSource)
+        ) {
           context.report({
             node,
             messageId: 'requireDynamicImport',

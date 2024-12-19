@@ -51,7 +51,7 @@ ruleTester.run(RULE_NAME, rule, {
     {
       code: `import { getAuth as auth } from 'firebase/auth';`,
       errors: [{ messageId: 'requireDynamicImport' }],
-      output: `const { getAuth as auth } = await import('firebase/auth');`,
+      output: `const { getAuth: auth } = await import('firebase/auth');`,
     },
   ],
 });
