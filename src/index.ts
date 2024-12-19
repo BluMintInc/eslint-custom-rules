@@ -3,6 +3,7 @@ import { classMethodsReadTopToBottom } from './rules/class-methods-read-top-to-b
 import { default as consistentCallbackNaming } from './rules/consistent-callback-naming';
 import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
 import { default as enforceCallbackMemo } from './rules/enforce-callback-memo';
+import { enforceFirebaseImports } from './rules/enforce-dynamic-firebase-imports';
 import { exportIfInDoubt } from './rules/export-if-in-doubt';
 import { extractGlobalConstants } from './rules/extract-global-constants';
 import { genericStartsWithT } from './rules/generic-starts-with-t';
@@ -39,6 +40,7 @@ module.exports = {
         '@blumintinc/blumint/consistent-callback-naming': 'error',
         '@blumintinc/blumint/dynamic-https-errors': 'warn',
         '@blumintinc/blumint/enforce-callback-memo': 'error',
+        '@blumintinc/blumint/enforce-dynamic-firebase-imports': 'error',
         // '@blumintinc/blumint/export-if-in-doubt': 'warn',
         // '@blumintinc/blumint/extract-global-constants': 'warn',
         '@blumintinc/blumint/generic-starts-with-t': 'warn',
@@ -66,6 +68,7 @@ module.exports = {
     'consistent-callback-naming': consistentCallbackNaming,
     'dynamic-https-errors': dynamicHttpsErrors,
     'enforce-callback-memo': enforceCallbackMemo,
+    'enforce-dynamic-firebase-imports': enforceFirebaseImports,
     'export-if-in-doubt': exportIfInDoubt,
     'extract-global-constants': extractGlobalConstants,
     'generic-starts-with-t': genericStartsWithT,
