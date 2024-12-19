@@ -1,4 +1,5 @@
 import { createRule } from '../utils/createRule';
+import { TSESTree } from '@typescript-eslint/utils';
 
 export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
   name: 'consistent-callback-naming',
@@ -13,34 +14,51 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
     schema: [],
     messages: {
       callbackPropPrefix:
-        'Callback props must be prefixed with "on" (e.g., onClick, onChange)',
+        'Callback props (function type props) must be prefixed with "on" (e.g., onClick, onChange)',
       callbackFunctionPrefix:
         'Callback functions should not use "handle" prefix, use descriptive verb phrases instead',
     },
   },
   defaultOptions: [],
   create(context) {
+    const parserServices = context.parserServices;
+
+    // Check if we have access to TypeScript services
+    if (!parserServices?.program || !parserServices?.esTreeNodeToTSNodeMap) {
+      throw new Error(
+        'You have to enable the `project` setting in parser options to use this rule',
+      );
+    }
+
+    const checker = parserServices.program.getTypeChecker();
+
+    function isFunctionType(node: TSESTree.Node): boolean {
+      const tsNode = parserServices!.esTreeNodeToTSNodeMap.get(node);
+      const type = checker.getTypeAtLocation(tsNode);
+
+      return type.getCallSignatures().length > 0;
+    }
+
     return {
       // Check JSX attributes for callback props
-      JSXAttribute(node: any) {
+      JSXAttribute(node: TSESTree.JSXAttribute) {
         if (
-          node.value &&
-          node.value.type === 'JSXExpressionContainer' &&
+          node.value?.type === 'JSXExpressionContainer' &&
           node.value.expression.type === 'Identifier'
         ) {
-          const propName = node.name.name;
-          const valueName = node.value.expression.name;
+          const propName =
+            node.name.type === 'JSXIdentifier' ? node.name.name : undefined;
 
           // Skip React's built-in event handlers
-          if (propName.match(/^on[A-Z]/)) {
+          if (propName?.match(/^on[A-Z]/)) {
             return;
           }
 
-          // Check if it's a function prop but doesn't follow the 'on' prefix convention
+          // Check if the value is a function type
           if (
-            valueName &&
-            typeof valueName === 'string' &&
-            (valueName.startsWith('handle') || valueName.match(/^[a-z]+[A-Z]/))
+            isFunctionType(node.value.expression) &&
+            propName &&
+            !propName.startsWith('on')
           ) {
             context.report({
               node,
@@ -57,10 +75,13 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
       },
 
       // Check function declarations and variable declarations for callback functions
-      'FunctionDeclaration, VariableDeclarator'(node: any) {
-        const functionName = node.id?.name;
+      'FunctionDeclaration, VariableDeclarator'(
+        node: TSESTree.FunctionDeclaration | TSESTree.VariableDeclarator,
+      ) {
+        const functionName =
+          node.id?.type === 'Identifier' ? node.id.name : undefined;
 
-        if (functionName && functionName.startsWith('handle')) {
+        if (functionName && functionName.startsWith('handle') && node.id) {
           context.report({
             node,
             messageId: 'callbackFunctionPrefix',
@@ -69,27 +90,29 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
               const newName =
                 functionName.slice(6).charAt(0).toLowerCase() +
                 functionName.slice(7);
-              return fixer.replaceText(node.id, newName);
+              return fixer.replaceText(node.id!, newName);
             },
           });
         }
       },
 
-      // Check object property methods
-      Property(node: any) {
+      // Check class methods and object methods
+      'MethodDefinition, Property'(
+        node: TSESTree.MethodDefinition | TSESTree.Property,
+      ) {
         if (
-          node.method &&
+          node.key.type === 'Identifier' &&
           node.key.name &&
           node.key.name.startsWith('handle')
         ) {
+          const name = node.key.name;
           context.report({
             node: node.key,
             messageId: 'callbackFunctionPrefix',
             fix(fixer) {
               // Remove 'handle' prefix and convert first character to lowercase
               const newName =
-                node.key.name.slice(6).charAt(0).toLowerCase() +
-                node.key.name.slice(7);
+                name.slice(6).charAt(0).toLowerCase() + name.slice(7);
               return fixer.replaceText(node.key, newName);
             },
           });

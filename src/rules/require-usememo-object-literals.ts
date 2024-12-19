@@ -25,6 +25,12 @@ export const requireUseMemoObjectLiterals = createRule({
           return;
         }
 
+        // Skip if the prop name is 'sx' or ends with 'Sx'
+        const propName = node.name.name;
+        if (typeof propName === 'string' && (propName === 'sx' || propName.endsWith('Sx'))) {
+          return;
+        }
+
         const { expression } = node.value;
 
         // Check if the expression is an object or array literal
