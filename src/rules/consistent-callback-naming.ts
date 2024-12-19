@@ -36,12 +36,11 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
             return;
           }
 
-          // Check if it's a function prop but doesn't follow the 'on' prefix convention
-          if (
-            valueName &&
-            typeof valueName === 'string' &&
-            (valueName.startsWith('handle') || valueName.match(/^[a-z]+[A-Z]/))
-          ) {
+          // Check if the value name indicates it's a callback function
+          const isCallbackValue = valueName.startsWith('handle') || 
+                                valueName.match(/^(on|set)[A-Z]/);
+
+          if (isCallbackValue && !propName.startsWith('on')) {
             context.report({
               node,
               messageId: 'callbackPropPrefix',

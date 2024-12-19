@@ -35,6 +35,39 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
     {
       code: '<div onClick={handleClick} onMouseOver={mouseOver} />;',
     },
+    // Non-callback props should be valid
+    {
+      code: `
+        function MyComponent() {
+          const errorMessage = 'Error occurred';
+          const autoFocus = true;
+          return (
+            <Input
+              errorMessage={errorMessage}
+              autoFocus={autoFocus}
+              placeholder="Enter text"
+            />
+          );
+        }
+      `,
+    },
+    // Props with non-function values should be valid
+    {
+      code: `
+        function MyComponent() {
+          const message = 'Hello';
+          const isEnabled = true;
+          const count = 42;
+          return (
+            <Example
+              message={message}
+              enabled={isEnabled}
+              count={count}
+            />
+          );
+        }
+      `,
+    },
   ],
   invalid: [
     // Invalid callback props without 'on' prefix
