@@ -118,6 +118,10 @@ export class ClassGraphBuilder {
     ).filter((name) => !!this.graph[name] && name !== methodName);
 
     if (this.graph[methodName]) {
+      // Ensure dependencies is initialized as an array
+      if (!Array.isArray(this.graph[methodName].dependencies)) {
+        this.graph[methodName].dependencies = [];
+      }
       this.graph[methodName].dependencies.push(...newDependencies);
     }
   }

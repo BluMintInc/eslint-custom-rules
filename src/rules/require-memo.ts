@@ -76,7 +76,7 @@ const isUnmemoizedExportedFunctionComponent = (
 
 function isMemoImport(importPath: string): boolean {
   // Match both absolute and relative paths ending with util/memo
-  return /(?:^|\/)util\/memo$/.test(importPath);
+  return /(?:^|\/|\\)util\/memo$/.test(importPath);
 }
 
 function checkFunction(
@@ -215,7 +215,7 @@ function calculateImportPath(currentFilePath: string): string {
   // Calculate relative path based on current file depth from src
   // Subtract 1 from depth to exclude the filename itself
   const depth = parts.length - (srcIndex + 1) - 1;
-  return '../'.repeat(depth) + 'util/memo';
+  return depth > 0 ? '../'.repeat(depth) + 'util/memo' : './util/memo';
 }
 
 export const requireMemo: TSESLint.RuleModule<'requireMemo', []> = {
@@ -237,7 +237,7 @@ export const requireMemo: TSESLint.RuleModule<'requireMemo', []> = {
       recommended: 'error',
     },
     messages: {
-      requireMemo: 'Component definition not wrapped in React.memo()',
+      requireMemo: 'Component definition not wrapped in memo()',
     },
     schema: [],
     fixable: 'code',
