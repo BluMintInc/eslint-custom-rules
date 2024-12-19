@@ -1,20 +1,31 @@
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
-export const enforceCallableTypes = createRule({
+type Options = [];
+type MessageIds =
+  | 'missingParamsType'
+  | 'missingResponseType'
+  | 'unusedParamsType'
+  | 'unusedResponseType';
+
+export const enforceCallableTypes = createRule<Options, MessageIds>({
   name: 'enforce-callable-types',
   meta: {
     type: 'problem',
     docs: {
-      description: 'Enforce Params and Response type exports in callable functions',
+      description:
+        'Enforce Params and Response type exports in callable functions',
       recommended: 'error',
     },
     schema: [],
     messages: {
       missingParamsType: 'Missing Params type export in callable function file',
-      missingResponseType: 'Missing Response type export in callable function file',
-      unusedParamsType: 'Params type is exported but not used in the callable function',
-      unusedResponseType: 'Response type is exported but not used in the callable function',
+      missingResponseType:
+        'Missing Response type export in callable function file',
+      unusedParamsType:
+        'Params type is exported but not used in the callable function',
+      unusedResponseType:
+        'Response type is exported but not used in the callable function',
     },
   },
   defaultOptions: [],

@@ -75,7 +75,7 @@ ruleTester.run('enforce-callable-types', enforceCallableTypes, {
       filename: 'src/callable/myFunction.f.ts',
       errors: [
         { messageId: 'missingParamsType' },
-        { messageId: 'unusedResponseType' }
+        { messageId: 'unusedResponseType' },
       ],
     },
     {
