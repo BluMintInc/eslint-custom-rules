@@ -2,6 +2,58 @@ import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
 import { TSESLint, TSESTree } from '@typescript-eslint/utils';
 
+function isReactComponent(node: TSESTree.Node): boolean {
+  if (node.type === 'FunctionDeclaration' || node.type === 'ArrowFunctionExpression') {
+    // Check if function name starts with uppercase (React component convention)
+    const funcName = node.type === 'FunctionDeclaration' 
+      ? node.id?.name 
+      : node.parent?.type === 'VariableDeclarator' 
+        ? (node.parent.id as TSESTree.Identifier)?.name 
+        : undefined;
+    
+    if (funcName && /^[A-Z]/.test(funcName)) {
+      return true;
+    }
+
+    // Check if function returns JSX
+    const body = node.type === 'FunctionDeclaration' ? node.body : node.body;
+    if (body.type === 'BlockStatement') {
+      const returnStmt = body.body.find(stmt => stmt.type === 'ReturnStatement') as TSESTree.ReturnStatement | undefined;
+      if (returnStmt?.argument?.type === 'JSXElement' || returnStmt?.argument?.type === 'JSXFragment') {
+        return true;
+      }
+    } else if (body.type === 'JSXElement' || body.type === 'JSXFragment') {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isReactHook(node: TSESTree.Node): boolean {
+  if (node.type === 'FunctionDeclaration' || node.type === 'ArrowFunctionExpression') {
+    const funcName = node.type === 'FunctionDeclaration' 
+      ? node.id?.name 
+      : node.parent?.type === 'VariableDeclarator' 
+        ? (node.parent.id as TSESTree.Identifier)?.name 
+        : undefined;
+    return !!funcName && /^use[A-Z]/.test(funcName);
+  }
+  return false;
+}
+
+function isInsideReactComponentOrHook(node: TSESTree.Node): boolean {
+  let current: TSESTree.Node | undefined = node;
+  while (current) {
+    if (current.type === 'FunctionDeclaration' || current.type === 'ArrowFunctionExpression') {
+      if (isReactComponent(current) || isReactHook(current)) {
+        return true;
+      }
+    }
+    current = current.parent as TSESTree.Node;
+  }
+  return false;
+}
+
 export const extractGlobalConstants: TSESLint.RuleModule<
   'extractGlobalConstants',
   never[]
@@ -12,18 +64,26 @@ export const extractGlobalConstants: TSESLint.RuleModule<
         if (node.kind !== 'const') {
           return;
         }
+
+        // Skip if inside a React component or hook
+        if (isInsideReactComponentOrHook(node)) {
+          return;
+        }
+
         const scope = context.getScope();
         const hasDependencies = node.declarations.some(
           (declaration) =>
             declaration.init &&
             ASTHelpers.declarationIncludesIdentifier(declaration.init),
         );
+
+        // Only check function/block scoped constants without dependencies
         if (
           !hasDependencies &&
           (scope.type === 'function' || scope.type === 'block')
         ) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const constName = (node.declarations[0].id as any).name;
+          // Report the issue
+          const constName = (node.declarations[0].id as TSESTree.Identifier).name;
           context.report({
             node,
             messageId: 'extractGlobalConstants',
@@ -34,6 +94,16 @@ export const extractGlobalConstants: TSESLint.RuleModule<
         }
       },
       FunctionDeclaration(node: TSESTree.FunctionDeclaration) {
+        // Skip if the function is a React component or hook
+        if (isReactComponent(node) || isReactHook(node)) {
+          return;
+        }
+
+        // Skip if inside a React component or hook
+        if (isInsideReactComponentOrHook(node)) {
+          return;
+        }
+
         if (
           node.parent &&
           (node.parent.type === 'FunctionDeclaration' ||
