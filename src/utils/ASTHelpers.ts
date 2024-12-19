@@ -115,6 +115,8 @@ export class ASTHelpers {
           this.declarationIncludesIdentifier(node.consequent) ||
           this.declarationIncludesIdentifier(node.alternate)
         );
+      case 'TemplateLiteral':
+        return node.expressions.some((expr) => this.declarationIncludesIdentifier(expr));
       case 'TSAsExpression':
         return this.declarationIncludesIdentifier(node.expression);
 
