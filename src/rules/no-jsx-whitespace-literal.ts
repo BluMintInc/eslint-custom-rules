@@ -1,6 +1,9 @@
 import { createRule } from '../utils/createRule';
 
-export const noJsxWhitespaceLiteral = createRule({
+type Options = [];
+type MessageIds = 'noWhitespaceLiteral';
+
+export const noJsxWhitespaceLiteral = createRule<Options, MessageIds>({
   name: 'no-jsx-whitespace-literal',
   meta: {
     type: 'suggestion',
