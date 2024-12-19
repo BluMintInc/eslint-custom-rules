@@ -1,3 +1,27 @@
+# [1.1.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.0.5...v1.1.0) (2024-12-19)
+
+
+### Bug Fixes
+
+* **enforce-callable-types:** pass missing generic arguments ([80b4615](https://github.com/BluMintInc/eslint-custom-rules/commit/80b46153f5090c7931986c0e0187ac3bf714d677))
+* **enforce-identifiable-firestore-type:** fix type alias detection ([a50c99c](https://github.com/BluMintInc/eslint-custom-rules/commit/a50c99c7117033fe459f0a05743f8cc609dd798a))
+* **enforce-serializable-params:** fix type alias detection, stop unnecessary testing dependency ([aa0f1a2](https://github.com/BluMintInc/eslint-custom-rules/commit/aa0f1a24b5bc625c95a803615f64a58c4c6f7a39))
+* **no-jsx-whitespace-literal:** add missing generic arguments ([bb588ca](https://github.com/BluMintInc/eslint-custom-rules/commit/bb588cae42c830ed5b77c018fb80cc32e9ca7900))
+* **openhands-resolver.yml:** remove concurrency queue ([4a63567](https://github.com/BluMintInc/eslint-custom-rules/commit/4a63567fb5c942971ea8604d6f3111944095e7af))
+* **require-dynamic-firebase-imports:** fix alias import ([0eaab73](https://github.com/BluMintInc/eslint-custom-rules/commit/0eaab73b5ac5ae47192cb0ade19ac1fb4229f26c))
+* **require-https-error:** cast befire comparison ([7280ac8](https://github.com/BluMintInc/eslint-custom-rules/commit/7280ac8823209d92aad79ef883d87f0af6db6b38))
+* **require-https-error:** throw an error for Firebase HttpsError usage; enforce on frontend as well ([7919118](https://github.com/BluMintInc/eslint-custom-rules/commit/79191180987fe83ecf5a9e24ce872b14d6a82845))
+* **use-custom-link:** use ruleTester correctly. Support default export ([fe2b0bd](https://github.com/BluMintInc/eslint-custom-rules/commit/fe2b0bd4bbae4bbbd18cea98717bdc46e9f1be84))
+* **use-custom-router.test.ts:** use routing subdirectory ([838f63c](https://github.com/BluMintInc/eslint-custom-rules/commit/838f63c9cc5ea8585632654cb0080c8a85002db6))
+* **use-custom-router.ts:** use routing subdirectory ([0eec277](https://github.com/BluMintInc/eslint-custom-rules/commit/0eec277f9669493c50ae0f28a963c15d936f7d49))
+
+
+### Features
+
+* **extract-global-constants:** add tests for direct template literals ([ccfa0da](https://github.com/BluMintInc/eslint-custom-rules/commit/ccfa0dac6cb4893bd64b17a46c1cab49770332c8))
+* **no-unused-props:** support any name for props ending with "Props" ([130d4d5](https://github.com/BluMintInc/eslint-custom-rules/commit/130d4d5e0d6ccd6ed730d130aba4a81fa2d8bb80))
+* **openhands-resolver.yml:** only run one at a time to reduce Anthropic API limit errors ([07d9fbd](https://github.com/BluMintInc/eslint-custom-rules/commit/07d9fbd02fbeda10e5d3ed99bd95c169ad02433d))
+
 ## [1.0.5](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.0.4...v1.0.5) (2024-12-05)
 
 
