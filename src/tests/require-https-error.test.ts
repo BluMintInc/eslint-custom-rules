@@ -3,14 +3,9 @@ import requireHttpsError from '../rules/require-https-error';
 
 ruleTesterTs.run('require-https-error', requireHttpsError, {
   valid: [
-    // Should allow throw new Error outside functions/src
+    // Should allow throw new HttpsError
     {
-      code: 'throw new Error("test error");',
-      filename: 'src/components/test.ts',
-    },
-    // Should allow throw new HttpsError in functions/src
-    {
-      code: 'throw new HttpsError("INVALID_ARGUMENT", "test error");',
+      code: 'import { HttpsError } from "@our-company/errors"; throw new HttpsError("INVALID_ARGUMENT", "test error");',
       filename: 'functions/src/test.ts',
     },
     // Should allow throw new CustomError in functions/src
@@ -31,6 +26,42 @@ ruleTesterTs.run('require-https-error', requireHttpsError, {
       code: 'throw new Error("test error", "additional info");',
       filename: 'functions/src/test.ts',
       errors: [{ messageId: 'useHttpsError' }],
+    },
+    // Should not allow firebase-admin HttpsError import
+    {
+      code: 'import { HttpsError } from "firebase-admin"; throw new HttpsError("failed-precondition", "test error");',
+      filename: 'functions/src/test.ts',
+      errors: [
+        { messageId: 'useProprietaryHttpsError' },
+        { messageId: 'useProprietaryHttpsError' },
+      ],
+    },
+    // Should not allow firebase-admin/lib/https-error import
+    {
+      code: 'import { HttpsError } from "firebase-admin/lib/https-error"; throw new HttpsError("failed-precondition", "test error");',
+      filename: 'functions/src/test.ts',
+      errors: [
+        { messageId: 'useProprietaryHttpsError' },
+        { messageId: 'useProprietaryHttpsError' },
+      ],
+    },
+    // Should not allow firebase-admin https.HttpsError usage
+    {
+      code: 'import { https } from "firebase-admin"; throw new https.HttpsError("failed-precondition", "test error");',
+      filename: 'functions/src/test.ts',
+      errors: [
+        { messageId: 'useProprietaryHttpsError' },
+        { messageId: 'useProprietaryHttpsError' },
+      ],
+    },
+    // Should not allow renamed firebase-admin https import
+    {
+      code: 'import { https as firebaseHttps } from "firebase-admin"; throw new firebaseHttps.HttpsError("failed-precondition", "test error");',
+      filename: 'functions/src/test.ts',
+      errors: [
+        { messageId: 'useProprietaryHttpsError' },
+        { messageId: 'useProprietaryHttpsError' },
+      ],
     },
   ],
 });
