@@ -100,10 +100,12 @@ export class ASTHelpers {
           this.declarationIncludesIdentifier(node.property)
         );
 
+      case 'ImportExpression':
+        // Dynamic imports should be considered as having dependencies
+        return true;
       case 'CallExpression':
       case 'NewExpression':
         // For function and constructor calls, we care about both the callee and the arguments.
-
         return (
           this.declarationIncludesIdentifier(node.callee) ||
           node.arguments.some((arg) => this.declarationIncludesIdentifier(arg))
