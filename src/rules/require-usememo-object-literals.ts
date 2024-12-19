@@ -6,11 +6,13 @@ export const requireUseMemoObjectLiterals = createRule({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce using useMemo for inline object literals passed as props to JSX components',
+      description:
+        'Enforce using useMemo for inline object literals passed as props to JSX components',
       recommended: 'error',
     },
     messages: {
-      requireUseMemo: 'Inline object/array literals in JSX props should be wrapped in useMemo to prevent unnecessary re-renders',
+      requireUseMemo:
+        'Inline object/array literals in JSX props should be wrapped in useMemo to prevent unnecessary re-renders',
     },
     schema: [],
   },
@@ -27,19 +29,26 @@ export const requireUseMemoObjectLiterals = createRule({
 
         // Check if the expression is an object or array literal
         if (
-          (expression.type === 'ObjectExpression' || expression.type === 'ArrayExpression') &&
+          (expression.type === 'ObjectExpression' ||
+            expression.type === 'ArrayExpression') &&
           // Ensure we're in a function component context
-          context.getAncestors().some(ancestor => 
-            ancestor.type === 'FunctionDeclaration' || 
-            ancestor.type === 'ArrowFunctionExpression' ||
-            ancestor.type === 'FunctionExpression'
-          )
+          context
+            .getAncestors()
+            .some(
+              (ancestor) =>
+                ancestor.type === 'FunctionDeclaration' ||
+                ancestor.type === 'ArrowFunctionExpression' ||
+                ancestor.type === 'FunctionExpression',
+            )
         ) {
           // Check if the parent component name starts with an uppercase letter
           // to ensure it's a React component
           const jsxElement = node.parent as TSESTree.JSXOpeningElement;
-          const elementName = jsxElement.name.type === 'JSXIdentifier' ? jsxElement.name.name : '';
-          
+          const elementName =
+            jsxElement.name.type === 'JSXIdentifier'
+              ? jsxElement.name.name
+              : '';
+
           if (elementName && /^[A-Z]/.test(elementName)) {
             context.report({
               node: expression,

@@ -5,7 +5,8 @@ export = createRule({
   meta: {
     type: 'problem',
     docs: {
-      description: 'Enforce using ImageOverlayed component instead of next/image or img tags',
+      description:
+        'Enforce using ImageOverlayed component instead of next/image or img tags',
       recommended: 'error',
     },
     fixable: 'code',
@@ -22,13 +23,16 @@ export = createRule({
       },
     ],
     messages: {
-      useImageOverlayed: 'Use ImageOverlayed component from {{ componentPath }} instead of {{ component }}',
+      useImageOverlayed:
+        'Use ImageOverlayed component from {{ componentPath }} instead of {{ component }}',
     },
   },
   defaultOptions: [{ componentPath: 'src/components/ImageOverlayed' }],
 
   create(context) {
-    const options = context.options[0] || { componentPath: 'src/components/ImageOverlayed' };
+    const options = context.options[0] || {
+      componentPath: 'src/components/ImageOverlayed',
+    };
     const sourceCode = context.getSourceCode();
 
     return {
@@ -48,7 +52,7 @@ export = createRule({
                 .join(' ');
               return fixer.replaceText(
                 node,
-                `<ImageOverlayed ${attributes} />`
+                `<ImageOverlayed ${attributes} />`,
               );
             },
           });
@@ -57,14 +61,12 @@ export = createRule({
 
       // Handle next/image imports and usage
       ImportDeclaration(node: any) {
-        if (
-          node.source.value === 'next/image' &&
-          node.specifiers.length > 0
-        ) {
+        if (node.source.value === 'next/image' && node.specifiers.length > 0) {
           const imageSpecifier = node.specifiers.find(
             (spec: any) =>
-              (spec.type === 'ImportDefaultSpecifier' || spec.type === 'ImportSpecifier') &&
-              (spec.local.name === 'Image' || spec.imported?.name === 'Image')
+              (spec.type === 'ImportDefaultSpecifier' ||
+                spec.type === 'ImportSpecifier') &&
+              (spec.local.name === 'Image' || spec.imported?.name === 'Image'),
           );
 
           if (imageSpecifier) {
@@ -80,9 +82,9 @@ export = createRule({
               },
               fix(fixer) {
                 return fixer.replaceText(
-                node,
-                `import ${localName} from '${options.componentPath}';`
-              );
+                  node,
+                  `import ${localName} from '${options.componentPath}';`,
+                );
               },
             });
           }
