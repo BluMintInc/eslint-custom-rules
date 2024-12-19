@@ -45,6 +45,17 @@ ruleTesterJsx.run('extract-global-constants', extractGlobalConstants, {
     'const someFunc = (input: any) => `${input}`;',
     // Case 5: Functions as constants that are not in function components or hooks
     'const someFunc = (input: {a?: number}) => input?.a',
+    // Case 6: Dynamic imports should be considered as having dependencies
+    `function Component() {
+      const signOutFirebase = useCallback(async () => {
+        const authImport = import('../../config/firebase-client/auth');
+        const { auth } = await authImport;
+        const firebaseAuthImport = import('firebase/auth');
+        const { signOut: signOutUser } = await firebaseAuthImport;
+        return await signOutUser(auth);
+      }, []);
+      return <div>Sign Out</div>;
+    }`,
     // For completeness
     `export const noFilterWithoutReturn: TSESLint.RuleModule<'unexpected', never[]> =
       createRule({
