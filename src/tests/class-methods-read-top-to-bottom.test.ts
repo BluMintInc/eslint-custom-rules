@@ -20,6 +20,23 @@ ruleTesterTs.run(
               this.methodA();
             }
             methodA() {
+              // Test TypeScript 5.7.2 compatibility with undefined dependencies
+              const obj = { dependencies: undefined };
+              this.methodB();
+            }
+            methodB() {}
+          }
+          `,
+      },
+      {
+        code: `
+          class TestClass {
+            field1: string;
+            field2: number;
+            constructor() {
+              this.methodA();
+            }
+            methodA() {
               this.methodB();
             }
             methodB() {}
