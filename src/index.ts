@@ -31,7 +31,7 @@ import { requireUseMemoObjectLiterals } from './rules/require-usememo-object-lit
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.1.0',
+    version: '1.1.1',
   },
   parseOptions: {
     ecmaVersion: 2020,

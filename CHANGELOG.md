@@ -1,3 +1,11 @@
+## [1.1.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.1.0...v1.1.1) (2024-12-19)
+
+
+### Bug Fixes
+
+* **consistent-callback-naming:** check that type of prop is a function ([9ce81e1](https://github.com/BluMintInc/eslint-custom-rules/commit/9ce81e1db2c949091260d3972a86b74860a9bec2))
+* **extract-global-constants:** fix issue with functions misfiring ([72fd64b](https://github.com/BluMintInc/eslint-custom-rules/commit/72fd64b11f4bd0194396f3ce8148c87d0f32d850))
+
 # [1.1.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.0.5...v1.1.0) (2024-12-19)
 
 
