@@ -50,10 +50,17 @@ ruleTesterJsx.run('extract-global-constants', extractGlobalConstants, {
           };
           return <div onClick={inverseScale}></div>;
         }`,
-    // Case 3: Local constants in React components (should be valid)
-    `function FilterDropdownSlider() {
-          const localConst = 'value';
-          return <div>{localConst}</div>;
+    // Case 2a: Local async functions
+    `function FilterDropdownSlider({ marks }) {
+          const inverseScale = async (value) => {
+            const closest = marks.reduce((a, b) => {
+              const aDiff = Math.abs(a.scaledValue - value);
+              const bDiff = Math.abs(b.scaledValue - value);
+              return bDiff < aDiff ? b : a;
+            });
+            return closest;
+          };
+          return <div onClick={inverseScale}></div>;
         }`,
     // Case 4: Arrow function components with local functions
     `const MyComponent = ({ data }) => {
@@ -197,6 +204,7 @@ ruleTesterJsx.run('extract-global-constants', extractGlobalConstants, {
         return \`2*\${baz}\`;
       }
     }`,
+    'function useHook() { const someExtractableFunction = (input: any) => `${input}2`}',
   ],
   invalid: [
     // Case 1: Constants inside function components that don't depend on anything
@@ -210,7 +218,6 @@ ruleTesterJsx.run('extract-global-constants', extractGlobalConstants, {
       return independentConst;
     }`,
     // Case 3: Constants as functions inside hooks that don't depend on anything
-    'function useHook() { const someExtractableFunction = (input: any) => `${input}2`}',
     `function useHook() {
         if (isValid) {
           const shouldBeGlobal = 'IF_VALID_MESSAGE';
@@ -223,6 +230,11 @@ ruleTesterJsx.run('extract-global-constants', extractGlobalConstants, {
           const shouldBeInvalid = 'HELLO'
       }
     }`,
+    // Case 4: Local constants in React components (should be valid)
+    `function FilterDropdownSlider() {
+          const localConst = 'value';
+          return <div>{localConst}</div>;
+        }`,
   ].map((testCase) => {
     return {
       code: testCase,
