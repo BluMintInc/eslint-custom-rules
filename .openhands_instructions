@@ -1,0 +1,1 @@
+Always use `import { ruleTesterTs } from '../utils/ruleTester';` instead of some RuleTester import from `@typescript-eslint/`
