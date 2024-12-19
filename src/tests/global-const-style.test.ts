@@ -84,5 +84,29 @@ ruleTesterTs.run('global-const-style', rule, {
       errors: [{ messageId: 'upperSnakeCase' }, { messageId: 'asConst' }],
       output: 'const API_ENDPOINT = "https://api.example.com" as const;',
     },
+    // Array literal missing as const
+    {
+      code: 'const SHADOWS = ["none", "0px 0px 1px rgba(0,0,0,0.2)"];',
+      errors: [{ messageId: 'asConst' }],
+      output: 'const SHADOWS = ["none", "0px 0px 1px rgba(0,0,0,0.2)"] as const;',
+    },
+    // Object literal missing as const
+    {
+      code: 'const COLORS = { primary: "#000", secondary: "#fff" };',
+      errors: [{ messageId: 'asConst' }],
+      output: 'const COLORS = { primary: "#000", secondary: "#fff" } as const;',
+    },
+    // Array with type annotation missing as const
+    {
+      code: 'const SHADOWS: Shadows = ["none", "0px 0px 1px rgba(0,0,0,0.2)"];',
+      errors: [{ messageId: 'asConst' }],
+      output: 'const SHADOWS: Shadows = ["none", "0px 0px 1px rgba(0,0,0,0.2)"] as const;',
+    },
+    // Object with type annotation missing as const
+    {
+      code: 'const COLORS: Colors = { primary: "#000", secondary: "#fff" };',
+      errors: [{ messageId: 'asConst' }],
+      output: 'const COLORS: Colors = { primary: "#000", secondary: "#fff" } as const;',
+    },
   ],
 });
