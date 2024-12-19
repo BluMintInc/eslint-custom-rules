@@ -15,6 +15,16 @@ ruleTester.run(RULE_NAME, rule, {
     {
       code: `import apiClient from '@/utils/apiClient';`,
     },
+    // Type imports should be valid
+    {
+      code: `import type { UserInfo } from 'firebase/auth';`,
+    },
+    {
+      code: `import type { FirebaseApp } from 'firebase/app';`,
+    },
+    {
+      code: `import type { User as FirebaseUser } from 'firebase/auth';`,
+    },
   ],
   invalid: [
     // Default import from firebase
