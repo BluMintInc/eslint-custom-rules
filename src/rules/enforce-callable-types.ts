@@ -32,8 +32,12 @@ export const enforceCallableTypes = createRule<Options, MessageIds>({
   create(context) {
     const filename = context.getFilename();
 
-    // Only apply to .f.ts files in the callable directory
-    if (!filename.endsWith('.f.ts') || !filename.includes('/callable/')) {
+    // Only apply to .f.ts files in the callable directory, but ignore scripts directory
+    if (
+      !filename.endsWith('.f.ts') ||
+      !filename.includes('/callable/') ||
+      filename.includes('/callable/scripts/')
+    ) {
       return {};
     }
 
