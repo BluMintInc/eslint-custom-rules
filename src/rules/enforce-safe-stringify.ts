@@ -9,13 +9,15 @@ export const enforceStableStringify = createRule<Options, MessageIds>({
   meta: {
     type: 'problem',
     docs: {
-      description: 'Enforce using safe-stable-stringify instead of JSON.stringify',
+      description:
+        'Enforce using safe-stable-stringify instead of JSON.stringify',
       recommended: 'error',
     },
     fixable: 'code',
     schema: [],
     messages: {
-      useStableStringify: 'Use safe-stable-stringify instead of JSON.stringify for safer serialization',
+      useStableStringify:
+        'Use safe-stable-stringify instead of JSON.stringify for safer serialization',
     },
   },
   defaultOptions: [],
@@ -29,7 +31,7 @@ export const enforceStableStringify = createRule<Options, MessageIds>({
           node.specifiers.some(
             (specifier) =>
               specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier &&
-              specifier.local.name === 'stringify'
+              specifier.local.name === 'stringify',
           )
         ) {
           hasStringifyImport = true;
@@ -47,24 +49,24 @@ export const enforceStableStringify = createRule<Options, MessageIds>({
             messageId: 'useStableStringify',
             fix(fixer) {
               const fixes: TSESLint.RuleFix[] = [];
-              
+
               // Add import if not present
               if (!hasStringifyImport) {
                 const program = context.getSourceCode().ast;
                 const firstImport = program.body.find(
-                  (node) => node.type === AST_NODE_TYPES.ImportDeclaration
+                  (node) => node.type === AST_NODE_TYPES.ImportDeclaration,
                 );
-                const sourceCode = context.getSourceCode();
-                const lines = sourceCode.getText().split('\n');
-                const firstNonEmptyLine = lines.find(line => line.trim());
-                const match = firstNonEmptyLine ? firstNonEmptyLine.match(/^\s+/) : null;
-                const indentation = match ? match[0] : '        ';
-                const importStatement = `${indentation}import stringify from 'safe-stable-stringify';\n`;
-                
+                const importStatement =
+                  "import stringify from 'safe-stable-stringify';\n";
+
                 if (firstImport) {
-                  fixes.push(fixer.insertTextBefore(firstImport, importStatement));
+                  fixes.push(
+                    fixer.insertTextBefore(firstImport, importStatement),
+                  );
                 } else {
-                  fixes.push(fixer.insertTextBefore(program.body[0], importStatement));
+                  fixes.push(
+                    fixer.insertTextBefore(program.body[0], importStatement),
+                  );
                 }
                 hasStringifyImport = true;
               }
