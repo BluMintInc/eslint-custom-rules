@@ -55,6 +55,19 @@ ruleTester.run('enforce-callable-types', enforceCallableTypes, {
       `,
       filename: 'src/utils/helper.ts',
     },
+    {
+      // Files in callable/scripts directory should be ignored
+      code: `
+        import { onCall } from '../../v2/https/onCall';
+
+        export function scriptHandler(req, res) {
+          return { success: true };
+        }
+
+        export default onCall(scriptHandler);
+      `,
+      filename: 'src/callable/scripts/example.f.ts',
+    },
   ],
   invalid: [
     {
