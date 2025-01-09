@@ -1,3 +1,10 @@
+## [1.1.3](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.1.2...v1.1.3) (2025-01-09)
+
+
+### Bug Fixes
+
+* **consistent-callback-naming:** trigger npmjs release ([b742069](https://github.com/BluMintInc/eslint-custom-rules/commit/b742069dd22b0699d3bb2533a11182deb951a696))
+
 ## [1.1.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.1.1...v1.1.2) (2024-12-20)
 
 

@@ -32,7 +32,7 @@ import { enforceStableStringify } from './rules/enforce-safe-stringify';
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.1.2',
+    version: '1.1.3',
   },
   parseOptions: {
     ecmaVersion: 2020,
