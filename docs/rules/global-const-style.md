@@ -1,4 +1,10 @@
-# Enforce UPPER_SNAKE_CASE and as const for Global Constants (global-const-style)
+# Enforce UPPER_SNAKE_CASE and as const for global static constants (`@blumintinc/blumint/global-const-style`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
 
 This rule enforces a consistent format for global static constants in BluMint's codebase. Global constants declared in the top-level scope of a file (not inside any function or block) must follow these two conventions:
 
