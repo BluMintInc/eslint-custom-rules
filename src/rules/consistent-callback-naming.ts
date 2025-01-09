@@ -1,6 +1,8 @@
 import { createRule } from '../utils/createRule';
 import { TSESTree } from '@typescript-eslint/utils';
 
+// Temp
+
 export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
   name: 'consistent-callback-naming',
   meta: {
