@@ -42,7 +42,19 @@ function isMutableValue(node: TSESTree.Expression | null): boolean {
     const callee = node.callee;
     if (callee.type === 'MemberExpression') {
       const methodName = (callee.property as TSESTree.Identifier).name;
-      const mutatingMethods = ['slice', 'map', 'filter', 'concat', 'from'];
+      const mutatingMethods = [
+        'slice',
+        'map',
+        'filter',
+        'concat',
+        'from',
+        'reduce',
+        'flatMap',
+        'splice',
+        'reverse',
+        'sort',
+        'fill'
+      ];
       return mutatingMethods.includes(methodName);
     }
   }

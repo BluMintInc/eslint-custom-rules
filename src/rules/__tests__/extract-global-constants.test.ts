@@ -77,6 +77,49 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
         }, [MenuItemEdit, MenuItemRemove]);
       `,
     },
+    // Should allow nested array/object initialization
+    {
+      code: `
+        function Component() {
+          const nested = { arr: [1, 2, { items: [] }] };
+          nested.arr[2].items.push(3);
+          return nested;
+        }
+      `,
+    },
+    // Should allow array/object destructuring with mutation
+    {
+      code: `
+        function Component() {
+          const { items = [] } = props;
+          items.push(1);
+          return items;
+        }
+      `,
+    },
+    // Should allow class instance creation
+    {
+      code: `
+        function Component() {
+          const instance = new MyClass();
+          instance.configure();
+          return instance;
+        }
+      `,
+    },
+    // Should allow Promise chain returning mutable values
+    {
+      code: `
+        function Component() {
+          const result = Promise.resolve([])
+            .then(arr => {
+              arr.push(1);
+              return arr;
+            });
+          return result;
+        }
+      `,
+    },
   ],
   invalid: [
     // Should flag immutable string constants
@@ -106,6 +149,36 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
         {
           messageId: 'extractGlobalConstants',
           data: { declarationName: 'MAX_COUNT' },
+        },
+      ],
+    },
+    // Should flag immutable boolean constants
+    {
+      code: `
+        function Component() {
+          const ENABLED = true;
+          return ENABLED;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'extractGlobalConstants',
+          data: { declarationName: 'ENABLED' },
+        },
+      ],
+    },
+    // Should flag immutable RegExp constants
+    {
+      code: `
+        function Component() {
+          const REGEX = /test/;
+          return REGEX;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'extractGlobalConstants',
+          data: { declarationName: 'REGEX' },
         },
       ],
     },
