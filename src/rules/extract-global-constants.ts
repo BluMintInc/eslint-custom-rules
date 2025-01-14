@@ -24,6 +24,32 @@ function isFunctionDefinition(node: TSESTree.Expression | null): boolean {
   );
 }
 
+function isMutableValue(node: TSESTree.Expression | null): boolean {
+  if (!node) return false;
+
+  // Check for array literals and object expressions
+  if (node.type === 'ArrayExpression' || node.type === 'ObjectExpression') {
+    return true;
+  }
+
+  // Check for new expressions (e.g., new Map(), new Set())
+  if (node.type === 'NewExpression') {
+    return true;
+  }
+
+  // Check for array/object methods that return mutable values
+  if (node.type === 'CallExpression') {
+    const callee = node.callee;
+    if (callee.type === 'MemberExpression') {
+      const methodName = (callee.property as TSESTree.Identifier).name;
+      const mutatingMethods = ['slice', 'map', 'filter', 'concat', 'from'];
+      return mutatingMethods.includes(methodName);
+    }
+  }
+
+  return false;
+}
+
 export const extractGlobalConstants: TSESLint.RuleModule<
   'extractGlobalConstants',
   never[]
@@ -35,8 +61,8 @@ export const extractGlobalConstants: TSESLint.RuleModule<
           return;
         }
 
-        // Skip if any of the declarations are function definitions
-        if (node.declarations.some((d) => isFunctionDefinition(d.init))) {
+        // Skip if any of the declarations are function definitions or mutable values
+        if (node.declarations.some((d) => isFunctionDefinition(d.init) || isMutableValue(d.init))) {
           return;
         }
 
