@@ -56,11 +56,12 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
             return;
           }
 
-          // Check if the value is a function type
+          // Check if the value is a function type and not a React component prop
           if (
             isFunctionType(node.value.expression) &&
             propName &&
-            !propName.startsWith('on')
+            !propName.startsWith('on') &&
+            !propName.endsWith('Component')
           ) {
             context.report({
               node,
