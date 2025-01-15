@@ -1,5 +1,6 @@
 import { createRule } from '../utils/createRule';
 import { TSESTree } from '@typescript-eslint/utils';
+import * as ts from 'typescript';
 
 // Temp
 
@@ -42,16 +43,21 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
       if (!symbol) return false;
 
       // Check if type is a React component type
-      const isComponent = symbol.declarations?.some(decl => {
-        // Check if the declaration has a name property (e.g., Identifier)
-        if ('name' in decl && decl.name) {
-          const name = decl.name.getText();
+      const isComponent = symbol.declarations?.some((decl) => {
+        const declaration = decl as
+          | ts.ClassDeclaration
+          | ts.InterfaceDeclaration;
+        if (
+          ts.isClassDeclaration(declaration) ||
+          ts.isInterfaceDeclaration(declaration)
+        ) {
+          const name = declaration.name?.text ?? '';
           return (
             // Check for common React component patterns
             name.includes('Component') ||
             name.includes('Element') ||
-            name.endsWith('FC') ||
-            name.endsWith('FunctionComponent')
+            name.includes('FC') ||
+            name.includes('FunctionComponent')
           );
         }
         return false;
