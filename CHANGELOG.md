@@ -1,3 +1,11 @@
+## [1.1.4](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.1.3...v1.1.4) (2025-01-15)
+
+
+### Bug Fixes
+
+* **consistent-callback-naming rule:** resolve TS error ([355e95d](https://github.com/BluMintInc/eslint-custom-rules/commit/355e95dbe3dcfcee914982e5e24104732e3b904d))
+* **extract-global-constants tests:** Migrate tests from __tests__ to tests directory and remove redundant cases. Consolidate valid and invalid test cases for improved clarity and maintainability. ([fa3bb54](https://github.com/BluMintInc/eslint-custom-rules/commit/fa3bb54d30b530b48433604f1dd1723248ce2383))
+
 ## [1.1.3](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.1.2...v1.1.3) (2025-01-09)
 
 
