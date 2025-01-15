@@ -33,7 +33,7 @@ import { avoidUtilsDirectory } from './rules/avoid-utils-directory';
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.1.4',
+    version: '1.1.5',
   },
   parseOptions: {
     ecmaVersion: 2020,

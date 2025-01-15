@@ -1,3 +1,10 @@
+## [1.1.5](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.1.4...v1.1.5) (2025-01-15)
+
+
+### Bug Fixes
+
+* **.openhands_instructions:** emphasize commit standard ([fb31b89](https://github.com/BluMintInc/eslint-custom-rules/commit/fb31b899256adf87024cef601557db25e20dab14))
+
 ## [1.1.4](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.1.3...v1.1.4) (2025-01-15)
 
 
