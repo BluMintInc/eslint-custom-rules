@@ -1,11 +1,7 @@
-import { RuleTester } from '../utils/ruleTester';
+import { ruleTesterTs } from '../utils/ruleTester';
 import { avoidUtilsDirectory } from '../rules/avoid-utils-directory';
 
-const ruleTester = new RuleTester({
-  parser: '@typescript-eslint/parser',
-});
-
-ruleTester.run('avoid-utils-directory', avoidUtilsDirectory, {
+ruleTesterTs.run('avoid-utils-directory', avoidUtilsDirectory, {
   valid: [
     {
       code: 'const x = 1;',

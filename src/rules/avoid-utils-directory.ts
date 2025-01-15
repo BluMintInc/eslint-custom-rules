@@ -1,4 +1,3 @@
-import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'avoidUtils';
@@ -35,7 +34,7 @@ export const avoidUtilsDirectory = createRule<[], MessageIds>({
           context.report({
             node,
             messageId: 'avoidUtils',
-            fix(fixer) {
+            fix() {
               // We can't provide an auto-fix since directory renaming is beyond ESLint's scope
               return null;
             },
