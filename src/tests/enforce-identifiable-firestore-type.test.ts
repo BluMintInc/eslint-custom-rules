@@ -18,6 +18,21 @@ ruleTesterTs.run(
       },
       {
         code: `
+        import { Identifiable } from '../../Identifiable';
+        import { Timestamp } from 'firebase-admin/firestore';
+
+        export type GroupInfo<T = Timestamp> = Identifiable & {
+          username: string;
+          imgUrl: string;
+          dateCreated: T;
+        };
+
+        export type Guild<T = Timestamp> = GroupInfo<T>;
+      `,
+        filename: 'functions/src/types/firestore/Guild/index.ts',
+      },
+      {
+        code: `
         import { Identifiable } from 'path-to-identifiable';
         export type GroupInfo<T = Timestamp> = Resolve<Identifiable & {
           username: string;
