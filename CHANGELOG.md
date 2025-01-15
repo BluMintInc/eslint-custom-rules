@@ -1,3 +1,10 @@
+## [1.1.6](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.1.5...v1.1.6) (2025-01-15)
+
+
+### Bug Fixes
+
+* **.openhands_instructions:** mention `npx jest <filename>` ([08210ed](https://github.com/BluMintInc/eslint-custom-rules/commit/08210ed1ba6dbb929b2028256f259023238f8ef1))
+
 ## [1.1.5](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.1.4...v1.1.5) (2025-01-15)
 
 

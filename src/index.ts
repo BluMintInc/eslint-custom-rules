@@ -35,7 +35,7 @@ import { enforceFirestorePathUtils } from './rules/enforce-firestore-path-utils'
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.1.5',
+    version: '1.1.6',
   },
   parseOptions: {
     ecmaVersion: 2020,
