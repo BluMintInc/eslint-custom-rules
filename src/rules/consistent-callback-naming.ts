@@ -34,6 +34,28 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
 
     const checker = parserServices.program.getTypeChecker();
 
+    function isReactComponentType(node: TSESTree.Node): boolean {
+      const tsNode = parserServices!.esTreeNodeToTSNodeMap.get(node);
+      const type = checker.getTypeAtLocation(tsNode);
+      const symbol = type.getSymbol();
+
+      if (!symbol) return false;
+
+      // Check if type is a React component type
+      const isComponent = symbol.declarations?.some(decl => {
+        const name = decl.name?.getText();
+        return (
+          // Check for common React component patterns
+          name?.includes('Component') ||
+          name?.includes('Element') ||
+          name?.endsWith('FC') ||
+          name?.endsWith('FunctionComponent')
+        );
+      });
+
+      return isComponent || false;
+    }
+
     function isFunctionType(node: TSESTree.Node): boolean {
       const tsNode = parserServices!.esTreeNodeToTSNodeMap.get(node);
       const type = checker.getTypeAtLocation(tsNode);
@@ -56,12 +78,12 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
             return;
           }
 
-          // Check if the value is a function type and not a React component prop
+          // Check if the value is a function type and not a React component
           if (
             isFunctionType(node.value.expression) &&
             propName &&
             !propName.startsWith('on') &&
-            !propName.endsWith('Component')
+            !isReactComponentType(node.value.expression)
           ) {
             context.report({
               node,
