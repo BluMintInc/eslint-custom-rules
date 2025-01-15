@@ -43,14 +43,18 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
 
       // Check if type is a React component type
       const isComponent = symbol.declarations?.some(decl => {
-        const name = decl.name?.getText();
-        return (
-          // Check for common React component patterns
-          name?.includes('Component') ||
-          name?.includes('Element') ||
-          name?.endsWith('FC') ||
-          name?.endsWith('FunctionComponent')
-        );
+        // Check if the declaration has a name property (e.g., Identifier)
+        if ('name' in decl && decl.name) {
+          const name = decl.name.getText();
+          return (
+            // Check for common React component patterns
+            name.includes('Component') ||
+            name.includes('Element') ||
+            name.endsWith('FC') ||
+            name.endsWith('FunctionComponent')
+          );
+        }
+        return false;
       });
 
       return isComponent || false;
