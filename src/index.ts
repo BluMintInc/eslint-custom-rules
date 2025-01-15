@@ -29,6 +29,7 @@ import { default as requireImageOverlayed } from './rules/require-image-overlaye
 import { requireUseMemoObjectLiterals } from './rules/require-usememo-object-literals';
 import { enforceStableStringify } from './rules/enforce-safe-stringify';
 import { avoidUtilsDirectory } from './rules/avoid-utils-directory';
+import { noEntireObjectHookDeps } from './rules/no-entire-object-hook-deps';
 import { enforceFirestorePathUtils } from './rules/enforce-firestore-path-utils';
 
 module.exports = {
@@ -75,6 +76,7 @@ module.exports = {
         '@blumintinc/blumint/require-image-overlayed': 'error',
         '@blumintinc/blumint/require-usememo-object-literals': 'error',
         '@blumintinc/blumint/enforce-safe-stringify': 'error',
+        '@blumintinc/blumint/no-entire-object-hook-deps': 'error',
       },
     },
   },
@@ -110,6 +112,7 @@ module.exports = {
     'require-usememo-object-literals': requireUseMemoObjectLiterals,
     'enforce-safe-stringify': enforceStableStringify,
     'avoid-utils-directory': avoidUtilsDirectory,
+    'no-entire-object-hook-deps': noEntireObjectHookDeps,
     'enforce-firestore-path-utils': enforceFirestorePathUtils,
   },
 };
