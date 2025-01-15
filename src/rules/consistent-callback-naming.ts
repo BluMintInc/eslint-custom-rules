@@ -113,6 +113,36 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
             return;
           }
 
+          // Skip common non-callback props
+          const commonNonCallbackProps = new Set([
+            'theme', // MUI ThemeProvider theme prop
+            'style', // React style prop
+            'className', // React className prop
+            'ref', // React ref prop
+            'key', // React key prop
+            'component', // MUI component prop
+            'as', // Styled-components/Emotion as prop
+            'sx', // MUI sx prop
+            'css', // Emotion css prop
+          ]);
+          if (propName && commonNonCallbackProps.has(propName)) {
+            return;
+          }
+
+          // Skip props on components that commonly use function props that aren't callbacks
+          const parentName = (node.parent as TSESTree.JSXOpeningElement)?.name;
+          const componentName = parentName?.type === 'JSXIdentifier' ? parentName.name : undefined;
+          const componentsWithFunctionProps = new Set([
+            'ThemeProvider', // MUI ThemeProvider
+            'Transition', // React Transition Group
+            'CSSTransition', // React Transition Group
+            'TransitionGroup', // React Transition Group
+            'SwitchTransition', // React Transition Group
+          ]);
+          if (componentName && componentsWithFunctionProps.has(componentName)) {
+            return;
+          }
+
           // Check if the value is a function type and not a React component
           if (
             isFunctionType(node.value.expression) &&
