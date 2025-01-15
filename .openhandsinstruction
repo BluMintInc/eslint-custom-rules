@@ -1,0 +1,6 @@
+# Commits
+**We use Angular Commit Message Conventions to write our commit messages**. This is very important as incorrectly structured commit messages will not trigger semantic-release properly.
+Examples:
+fix(pencil): stop graphite breaking when too much pressure applied
+feat(pencil): add 'graphiteWidth' option
+perf(pencil): remove graphiteWidth option
