@@ -46,24 +46,44 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
       const isComponent = symbol.declarations?.some((decl) => {
         const declaration = decl as
           | ts.ClassDeclaration
-          | ts.InterfaceDeclaration;
-        if (
-          ts.isClassDeclaration(declaration) ||
-          ts.isInterfaceDeclaration(declaration)
-        ) {
+          | ts.InterfaceDeclaration
+          | ts.TypeAliasDeclaration
+          | ts.FunctionDeclaration;
+
+        // Check for JSX element types
+        if (ts.isTypeAliasDeclaration(declaration)) {
+          const typeText = declaration.type.getText();
+          return typeText.includes('JSX.Element') || typeText.includes('ReactElement');
+        }
+
+        // Check for class/interface component patterns
+        if (ts.isClassDeclaration(declaration) || ts.isInterfaceDeclaration(declaration)) {
           const name = declaration.name?.text ?? '';
           return (
-            // Check for common React component patterns
             name.includes('Component') ||
             name.includes('Element') ||
             name.includes('FC') ||
             name.includes('FunctionComponent')
           );
         }
+
         return false;
       });
 
-      return isComponent || false;
+      // Check if the type itself is a component or element type
+      const typeString = checker.typeToString(type);
+      const isComponentType = (
+        typeString.includes('JSX.Element') ||
+        typeString.includes('ReactElement') ||
+        typeString.includes('Component') ||
+        typeString.includes('FC')
+      );
+
+      return isComponent || isComponentType;
+    }
+
+    function isPascalCase(str: string): boolean {
+      return /^[A-Z][a-zA-Z0-9]*$/.test(str);
     }
 
     function isFunctionType(node: TSESTree.Node): boolean {
@@ -85,6 +105,11 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
 
           // Skip React's built-in event handlers
           if (propName?.match(/^on[A-Z]/)) {
+            return;
+          }
+
+          // Skip PascalCase props as they typically represent components or component-related props
+          if (propName && isPascalCase(propName)) {
             return;
           }
 

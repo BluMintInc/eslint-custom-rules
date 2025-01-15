@@ -79,6 +79,32 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         );
       `,
     },
+    // PascalCase props should not require 'on' prefix
+    {
+      code: `
+        type Props = {
+          Message: React.ReactNode;
+          IconComponent: React.ComponentType;
+          CustomElement: JSX.Element;
+        };
+
+        const Example = ({ Message, IconComponent, CustomElement }: Props) => (
+          <div>
+            <StreamThread
+              autoFocus
+              enableDateSeparator
+              Message={Message}
+              additionalMessageInputProps={additionalMessageInputProps}
+            />
+            <GradientIcon
+              IconComponent={PersonIcon}
+              sx={{ width: '20px', height: '20px' }}
+            />
+            {CustomElement}
+          </div>
+        );
+      `,
+    },
     // Function props with 'on' prefix should be valid
     {
       code: `
