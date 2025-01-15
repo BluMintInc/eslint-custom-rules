@@ -29,6 +29,7 @@ import { default as requireImageOverlayed } from './rules/require-image-overlaye
 import { requireUseMemoObjectLiterals } from './rules/require-usememo-object-literals';
 import { enforceStableStringify } from './rules/enforce-safe-stringify';
 import { avoidUtilsDirectory } from './rules/avoid-utils-directory';
+import { enforceFirestorePathUtils } from './rules/enforce-firestore-path-utils';
 
 module.exports = {
   meta: {
@@ -43,6 +44,7 @@ module.exports = {
       plugins: ['@blumintinc/blumint'],
       rules: {
         '@blumintinc/blumint/avoid-utils-directory': 'error',
+        '@blumintinc/blumint/enforce-firestore-path-utils': 'error',
         '@blumintinc/blumint/no-jsx-whitespace-literal': 'error',
         '@blumintinc/blumint/array-methods-this-context': 'warn',
         '@blumintinc/blumint/class-methods-read-top-to-bottom': 'warn',
@@ -108,5 +110,6 @@ module.exports = {
     'require-usememo-object-literals': requireUseMemoObjectLiterals,
     'enforce-safe-stringify': enforceStableStringify,
     'avoid-utils-directory': avoidUtilsDirectory,
+    'enforce-firestore-path-utils': enforceFirestorePathUtils,
   },
 };
