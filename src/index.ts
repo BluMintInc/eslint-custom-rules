@@ -30,6 +30,7 @@ import { requireUseMemoObjectLiterals } from './rules/require-usememo-object-lit
 import { enforceStableStringify } from './rules/enforce-safe-stringify';
 import { avoidUtilsDirectory } from './rules/avoid-utils-directory';
 import { noEntireObjectHookDeps } from './rules/no-entire-object-hook-deps';
+import { enforceFirestorePathUtils } from './rules/enforce-firestore-path-utils';
 
 module.exports = {
   meta: {
@@ -44,6 +45,7 @@ module.exports = {
       plugins: ['@blumintinc/blumint'],
       rules: {
         '@blumintinc/blumint/avoid-utils-directory': 'error',
+        '@blumintinc/blumint/enforce-firestore-path-utils': 'error',
         '@blumintinc/blumint/no-jsx-whitespace-literal': 'error',
         '@blumintinc/blumint/array-methods-this-context': 'warn',
         '@blumintinc/blumint/class-methods-read-top-to-bottom': 'warn',
@@ -111,5 +113,6 @@ module.exports = {
     'enforce-safe-stringify': enforceStableStringify,
     'avoid-utils-directory': avoidUtilsDirectory,
     'no-entire-object-hook-deps': noEntireObjectHookDeps,
+    'enforce-firestore-path-utils': enforceFirestorePathUtils,
   },
 };
