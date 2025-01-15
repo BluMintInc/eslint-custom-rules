@@ -105,6 +105,19 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         );
       `,
     },
+    // Theme props in ThemeProvider should not require 'on' prefix
+    {
+      code: `
+        import { ThemeProvider } from '@mui/material';
+        import { defaultTheme } from './theme';
+
+        const App = () => (
+          <ThemeProvider theme={defaultTheme}>
+            <div>Content</div>
+          </ThemeProvider>
+        );
+      `,
+    },
     // Function props with 'on' prefix should be valid
     {
       code: `

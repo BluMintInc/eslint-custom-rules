@@ -203,7 +203,7 @@ When writing tests for ESLint rules, follow these guidelines:
 2. **Development**:
    - Write rule implementation and tests
    - Run `npm run build` to compile TypeScript
-   - Run `npm test` to run tests
+   - Run `npm test` to run all tests or `npx jest <filename>` to test a specific test suite file
    - Run `npm run lint:fix` to fix any linting issues
 3. **Documentation**:
    - Run `npm run docs` to generate/update documentation
