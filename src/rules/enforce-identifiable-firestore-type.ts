@@ -67,31 +67,49 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
         if (node.id.name === folderName) {
           hasExpectedType = true;
 
-          // Check if type extends Identifiable
-          const checkIdentifiableExtension = (type: any): boolean => {
-            // Check for direct Identifiable extension
-            if (
-              type.type === AST_NODE_TYPES.TSTypeReference &&
-              type.typeName.type === AST_NODE_TYPES.Identifier &&
-              type.typeName.name === 'Identifiable'
-            ) {
-              return true;
-            }
+          // Find Identifiable in type's dependencies
+          const findIdentifiable = (type: any, checkedTypes = new Set<string>()): boolean => {
+            if (!type) return false;
 
-            // Check intersection types
-            if (type.type === AST_NODE_TYPES.TSIntersectionType) {
-              return type.types.some(checkIdentifiableExtension);
-            }
-
-            // Check generic type parameters
-            if (
-              type.type === AST_NODE_TYPES.TSTypeReference &&
-              type.typeParameters?.params
-            ) {
-              return type.typeParameters.params.some(checkIdentifiableExtension);
+            if (type.type === AST_NODE_TYPES.TSTypeReference && type.typeName.type === AST_NODE_TYPES.Identifier) {
+              const typeName = type.typeName.name;
+              if (typeName === 'Identifiable') {
+                return true;
+              }
+              if (!checkedTypes.has(typeName)) {
+                checkedTypes.add(typeName);
+                // Look for the type in all scopes
+                const scope = context.getScope();
+                const variable = scope.variables.find(v => v.name === typeName);
+                if (variable) {
+                  const def = variable.defs.find(d => d.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration);
+                  if (def && 'typeAnnotation' in def.node && def.node.typeAnnotation) {
+                    return findIdentifiable(def.node.typeAnnotation, checkedTypes);
+                  }
+                }
+                // Try looking in the parent scope
+                if (scope.upper) {
+                  const parentVariable = scope.upper.variables.find(v => v.name === typeName);
+                  if (parentVariable) {
+                    const def = parentVariable.defs.find(d => d.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration);
+                    if (def && 'typeAnnotation' in def.node && def.node.typeAnnotation) {
+                      return findIdentifiable(def.node.typeAnnotation, checkedTypes);
+                    }
+                  }
+                }
+              }
+            } else if (type.type === AST_NODE_TYPES.TSIntersectionType) {
+              // For intersection types, check each part
+              return type.types.some(part => findIdentifiable(part, checkedTypes));
             }
 
             return false;
+          };
+
+          // Check if type extends Identifiable
+          const checkIdentifiableExtension = (type: any): boolean => {
+            if (!type) return false;
+            return findIdentifiable(type);
           };
 
           // Check if type has id: string field
