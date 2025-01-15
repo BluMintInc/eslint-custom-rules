@@ -1,0 +1,227 @@
+**As an agent, use as many steps as you need to get to a solution, and do not stop until you are VERY confident in a solution.**
+
+Here is some background on the repository:
+-----
+
+# BluMint ESLint Plugin Development Guidelines
+
+This repository contains custom ESLint rules for BluMint. When contributing, please follow these guidelines to maintain consistency and quality.
+
+## Repository Purpose
+This is an ESLint plugin that provides custom rules for BluMint's TypeScript/React codebase. The rules enforce coding standards, prevent common mistakes, and maintain code quality across BluMint's projects.
+
+## Project Structure
+- `src/rules/`: Contains individual ESLint rule implementations
+- `src/tests/`: Contains test files for each rule
+- `src/utils/`: Contains shared utilities and helper functions
+- `docs/rules/`: Contains auto-generated documentation for each rule
+
+## Documentation
+Documentation is automatically generated using `eslint-doc-generator`. Never modify the docs manually. Instead:
+1. Write comprehensive metadata in your rule file:
+   - Clear description
+   - Recommended configuration status
+   - Fixable status
+   - Examples of valid/invalid code
+2. Run `npm run docs` to:
+   - Generate rule documentation in `docs/rules/`
+   - Update the rules table in README.md
+3. Run `npm run lint:eslint-docs` to verify documentation
+
+## Creating New Rules
+When creating a new rule:
+1. Use the standard ESLint rule structure with `createRule` utility
+2. Include comprehensive test cases
+3. Write thorough rule metadata for documentation generation
+4. Consider whether it should be in the 'recommended' configuration
+5. Implement auto-fix functionality where appropriate
+6. Run `npm run docs` to generate documentation
+
+## Rule Implementation Guidelines
+1. **Rule Structure**
+   - Import and use the `createRule` utility from '../utils/createRule'
+   - Define a `MessageIds` type for your rule's error message IDs
+   - Use the following boilerplate:
+   ```typescript
+   import { createRule } from '../utils/createRule';
+
+   type MessageIds = 'yourMessageId';
+
+   export const yourRuleName = createRule<[], MessageIds>({
+     name: 'your-rule-name',
+     meta: {
+       type: 'suggestion', // or 'problem' or 'layout'
+       docs: {
+         description: 'Clear description of what the rule enforces',
+         recommended: 'error', // or 'warn' or false
+       },
+       fixable: 'code', // or null if not auto-fixable
+       schema: [], // or your options schema
+       messages: {
+         yourMessageId: 'Your error message here',
+       },
+     },
+     defaultOptions: [],
+     create(context) {
+       return {
+         // Your AST visitor methods here
+       };
+     },
+   });
+   ```
+
+2. **Rule Naming and Organization**
+   - Use kebab-case
+   - Be descriptive and action-oriented (e.g., 'enforce-', 'require-', 'no-')
+   - Group related rules with common prefixes
+
+3. **AST Handling**
+   - Use TypeScript's AST types from '@typescript-eslint/utils'
+   - Create helper functions for complex AST traversal or checks
+   - Consider using the ASTHelpers utility for common operations
+   - When working with nodes, properly type them:
+   ```typescript
+   import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+
+   // Type guards for node types
+   function isTargetNode(node: TSESTree.Node): node is TSESTree.SpecificNodeType {
+     return node.type === AST_NODE_TYPES.SpecificNodeType;
+   }
+
+   // Parent traversal helpers
+   function checkParent(node: TSESTree.Node): boolean {
+     let current: TSESTree.Node | undefined = node;
+     while (current) {
+       if (isTargetNode(current)) {
+         return true;
+       }
+       current = current.parent as TSESTree.Node;
+     }
+     return false;
+   }
+   ```
+
+4. **Rule Configuration**
+   - Define schema for rule options when needed:
+   ```typescript
+   schema: [
+     {
+       type: 'object',
+       properties: {
+         yourOption: {
+           type: 'array',
+           items: { type: 'string' },
+           default: ['defaultValue'],
+         },
+       },
+       additionalProperties: false,
+     },
+   ],
+   ```
+   - Access options in create function:
+   ```typescript
+   create(context, [options]) {
+     const userOptions = {
+       ...defaultOptions,
+       ...options,
+     };
+   }
+   ```
+   - Consider maintaining constants at the top of the file for reusable values
+
+5. **Error Reporting**
+   - Use `context.report()` with messageId for errors
+   - When implementing fixes:
+   ```typescript
+   context.report({
+     node,
+     messageId: 'yourMessageId',
+     fix(fixer) {
+       // Return null if fix isn't possible in some cases
+       if (!canFix) return null;
+       return fixer.replaceText(node, newText);
+     },
+   });
+   ```
+
+6. **Performance Considerations**
+   - Cache repeated calculations
+   - Skip unnecessary processing (e.g., files in node_modules)
+   - Use early returns when possible
+   - Consider the scope of AST traversal
+   - Reuse type checking functions and constants
+   - Use Sets for O(1) lookups of constant values:
+   ```typescript
+   const CONSTANT_SET = new Set(['value1', 'value2']);
+   ```
+
+# Writing ESLint Rule Tests
+When writing tests for ESLint rules, follow these guidelines:
+
+1. **Test File Structure**
+   - Create test files in the `src/tests` directory
+   - Name the test file the same as the rule file with `.test.ts` extension
+   - Use the following import boilerplate:
+   ```typescript
+   import { ruleTesterTs } from '../utils/ruleTester';
+   import { yourRuleName } from '../rules/your-rule-name';
+   ```
+
+2. **Test Setup**
+   - Use `ruleTesterTs.run()` to run your tests
+   - DO NOT create a new RuleTester instance
+   - Basic structure:
+   ```typescript
+   ruleTesterTs.run('rule-name', ruleObject, {
+     valid: [
+       // valid test cases
+     ],
+     invalid: [
+       // invalid test cases with expected errors
+     ],
+   });
+   ```
+
+3. **Test Cases**
+   - Valid cases: Code that should pass the rule
+   - Invalid cases: Code that should fail with specific error messages
+   - Include filename if testing path-related rules
+   - Example:
+   ```typescript
+   valid: [
+     {
+       code: 'const x = 1;',
+       filename: 'src/valid/path.ts',
+     }
+   ],
+   invalid: [
+     {
+       code: 'const x = 1;',
+       filename: 'src/invalid/path.ts',
+       errors: [{ messageId: 'yourMessageId' }],
+     }
+   ]
+   ```
+
+# Development Workflow
+1. **Setup**: Run `npm install` to set up all dependencies
+2. **Development**:
+   - Write rule implementation and tests
+   - Run `npm run build` to compile TypeScript
+   - Run `npm test` to run tests
+   - Run `npm run lint:fix` to fix any linting issues
+3. **Documentation**:
+   - Run `npm run docs` to generate/update documentation
+   - Run `npm run lint:eslint-docs` to verify documentation
+4. **Commit**:
+   - Follow Angular Commit Message Conventions
+   - Commits trigger semantic-release for versioning
+
+# Commits
+**We use Angular Commit Message Conventions to write our commit messages**. This is very important as incorrectly structured commit messages will not trigger semantic-release properly.
+Examples:
+- `fix(rule-name)`: Bug fixes
+- `feat(rule-name)`: New features or rules
+- `docs(rule-name)`: Documentation updates
+- `test(rule-name)`: Adding or updating tests
+- `refactor(rule-name)`: Code changes that neither fix bugs nor add features

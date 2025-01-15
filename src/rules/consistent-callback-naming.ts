@@ -1,5 +1,6 @@
 import { createRule } from '../utils/createRule';
 import { TSESTree } from '@typescript-eslint/utils';
+import * as ts from 'typescript';
 
 // Temp
 
@@ -34,6 +35,37 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
 
     const checker = parserServices.program.getTypeChecker();
 
+    function isReactComponentType(node: TSESTree.Node): boolean {
+      const tsNode = parserServices!.esTreeNodeToTSNodeMap.get(node);
+      const type = checker.getTypeAtLocation(tsNode);
+      const symbol = type.getSymbol();
+
+      if (!symbol) return false;
+
+      // Check if type is a React component type
+      const isComponent = symbol.declarations?.some((decl) => {
+        const declaration = decl as
+          | ts.ClassDeclaration
+          | ts.InterfaceDeclaration;
+        if (
+          ts.isClassDeclaration(declaration) ||
+          ts.isInterfaceDeclaration(declaration)
+        ) {
+          const name = declaration.name?.text ?? '';
+          return (
+            // Check for common React component patterns
+            name.includes('Component') ||
+            name.includes('Element') ||
+            name.includes('FC') ||
+            name.includes('FunctionComponent')
+          );
+        }
+        return false;
+      });
+
+      return isComponent || false;
+    }
+
     function isFunctionType(node: TSESTree.Node): boolean {
       const tsNode = parserServices!.esTreeNodeToTSNodeMap.get(node);
       const type = checker.getTypeAtLocation(tsNode);
@@ -56,11 +88,12 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
             return;
           }
 
-          // Check if the value is a function type
+          // Check if the value is a function type and not a React component
           if (
             isFunctionType(node.value.expression) &&
             propName &&
-            !propName.startsWith('on')
+            !propName.startsWith('on') &&
+            !isReactComponentType(node.value.expression)
           ) {
             context.report({
               node,

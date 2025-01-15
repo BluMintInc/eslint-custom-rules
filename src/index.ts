@@ -28,6 +28,7 @@ import { useCustomRouter } from './rules/use-custom-router';
 import { default as requireImageOverlayed } from './rules/require-image-overlayed';
 import { requireUseMemoObjectLiterals } from './rules/require-usememo-object-literals';
 import { enforceStableStringify } from './rules/enforce-safe-stringify';
+import { avoidUtilsDirectory } from './rules/avoid-utils-directory';
 
 module.exports = {
   meta: {
@@ -41,6 +42,7 @@ module.exports = {
     recommended: {
       plugins: ['@blumintinc/blumint'],
       rules: {
+        '@blumintinc/blumint/avoid-utils-directory': 'error',
         '@blumintinc/blumint/no-jsx-whitespace-literal': 'error',
         '@blumintinc/blumint/array-methods-this-context': 'warn',
         '@blumintinc/blumint/class-methods-read-top-to-bottom': 'warn',
@@ -105,5 +107,6 @@ module.exports = {
     'require-image-overlayed': requireImageOverlayed,
     'require-usememo-object-literals': requireUseMemoObjectLiterals,
     'enforce-safe-stringify': enforceStableStringify,
+    'avoid-utils-directory': avoidUtilsDirectory,
   },
 };
