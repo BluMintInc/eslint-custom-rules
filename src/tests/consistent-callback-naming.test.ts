@@ -33,6 +33,52 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         const Example = (props: Props) => <div {...props} />;
       `,
     },
+    // React component props ending with 'Component' should not require 'on' prefix
+    {
+      code: `
+        import { PersonIcon } from '@mui/icons-material';
+
+        type Props = {
+          IconComponent: React.ComponentType;
+          HeaderComponent: React.FC;
+          FooterComponent: React.ComponentType<{ text: string }>;
+        };
+
+        const Example = ({ IconComponent, HeaderComponent, FooterComponent }: Props) => (
+          <div>
+            <GradientIcon
+              IconComponent={PersonIcon}
+              sx={{ width: '20px', height: '20px' }}
+            />
+            <HeaderComponent />
+            <FooterComponent text="Hello" />
+          </div>
+        );
+      `,
+    },
+    // React component props NOT ending with 'Component' should not require 'on' prefix
+    {
+      code: `
+        import { PersonIcon } from '@mui/icons-material';
+
+        type Props = {
+          Icon: React.ComponentType;
+          Header: React.FC;
+          Footer: React.ComponentType<{ text: string }>;
+        };
+
+        const Example = ({ IconComponent, HeaderComponent, FooterComponent }: Props) => (
+          <div>
+            <GradientIcon
+              IconComponent={PersonIcon}
+              sx={{ width: '20px', height: '20px' }}
+            />
+            <HeaderComponent />
+            <FooterComponent text="Hello" />
+          </div>
+        );
+      `,
+    },
     // Function props with 'on' prefix should be valid
     {
       code: `
