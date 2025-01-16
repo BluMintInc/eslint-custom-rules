@@ -60,16 +60,18 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
                   (member) => getMemberName(member) === n,
                 )!;
                 const comments = sourceCode.getCommentsBefore(memberNode);
-                memberNode.range = [
-                  Math.min(
-                    memberNode.range[0],
-                    Math.min(...comments.map((comment) => comment.range[0])),
-                  ),
-                  Math.max(
-                    memberNode.range[1],
-                    Math.max(...comments.map((comment) => comment.range[1])),
-                  ),
-                ];
+                memberNode.range = comments.length
+                  ? [
+                      Math.min(
+                        memberNode.range[0],
+                        Math.min(...comments.map((comment) => comment.range[0])),
+                      ),
+                      Math.max(
+                        memberNode.range[1],
+                        Math.max(...comments.map((comment) => comment.range[1])),
+                      ),
+                    ]
+                  : memberNode.range;
                 return sourceCode.getText(memberNode);
               })
               .join('\n');
