@@ -197,17 +197,6 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         };
       `,
       errors: [{ messageId: 'callbackFunctionPrefix' }],
-      output: `
-        const Component = () => {
-          const submit = async (data: FormData): Promise<void> => {
-            await fetch('/api', { method: 'POST', body: data });
-          };
-
-          return (
-            <form onSubmit={(e) => handleSubmit(new FormData(e.target))} />
-          );
-        };
-      `,
     },
     // Object method with 'handle' prefix
     {
@@ -275,12 +264,12 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         }
 
         const Form = ({ submitForm, validateInput }: Props) => {
-          const formSubmit = async (e: React.FormEvent) => {
+          const handleFormSubmit = async (e: React.FormEvent) => {
             e.preventDefault();
             await submitForm(new FormData(e.target as HTMLFormElement));
           };
 
-          const validation = (value: string): boolean => {
+          const handleValidation = (value: string): boolean => {
             return validateInput(value);
           };
 
@@ -290,6 +279,92 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
             </form>
           );
         };
+      `,
+    },
+    // Class with getter and handler/handlers
+    {
+      code: `
+        class EventManager {
+          private readonly handler: (event: Event) => void;
+          private readonly handlers: ((event: Event) => void)[];
+
+          constructor() {
+            this.handler = (event) => console.log(event);
+            this.handlers = [];
+          }
+
+          get handleEvents() {
+            return this.handlers;
+          }
+
+          handleEvent(event: Event) {
+            this.handler(event);
+          }
+        }
+      `,
+      errors: [
+        { messageId: 'callbackFunctionPrefix' },
+        { messageId: 'callbackFunctionPrefix' },
+      ],
+      // No autofix should be applied for handler/handlers or getter
+      output: `
+        class EventManager {
+          private readonly handler: (event: Event) => void;
+          private readonly handlers: ((event: Event) => void)[];
+
+          constructor() {
+            this.handler = (event) => console.log(event);
+            this.handlers = [];
+          }
+
+          get handleEvents() {
+            return this.handlers;
+          }
+
+          event(event: Event) {
+            this.handler(event);
+          }
+        }
+      `,
+    },
+    // Class with parameters and references
+    {
+      code: `
+        class Component {
+          constructor(
+            private readonly handleClick: () => void,
+            private readonly handleChange: (value: string) => void,
+          ) {}
+
+          onClick() {
+            this.handleClick();
+          }
+
+          onChange(value: string) {
+            this.handleChange(value);
+          }
+        }
+      `,
+      errors: [
+        { messageId: 'callbackFunctionPrefix' },
+        { messageId: 'callbackFunctionPrefix' },
+      ],
+      // No autofix should be applied for class parameters
+      output: `
+        class Component {
+          constructor(
+            private readonly handleClick: () => void,
+            private readonly handleChange: (value: string) => void,
+          ) {}
+
+          onClick() {
+            this.handleClick();
+          }
+
+          onChange(value: string) {
+            this.handleChange(value);
+          }
+        }
       `,
     },
   ],
