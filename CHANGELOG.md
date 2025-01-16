@@ -1,3 +1,10 @@
+## [1.1.7](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.1.6...v1.1.7) (2025-01-16)
+
+
+### Bug Fixes
+
+* **.openhands_instructions:** instructions for commit messages WONT work ([fb9893b](https://github.com/BluMintInc/eslint-custom-rules/commit/fb9893b2eb4c9a969a440fe99a746e0f319a242b))
+
 ## [1.1.6](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.1.5...v1.1.6) (2025-01-15)
 
 
