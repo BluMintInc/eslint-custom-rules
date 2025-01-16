@@ -59,8 +59,8 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
                 const memberNode = node.body.find(
                   (member) => getMemberName(member) === n,
                 )!;
-                const comments = sourceCode.getCommentsBefore(memberNode);
-                memberNode.range = comments.length
+                const comments = sourceCode.getCommentsBefore(memberNode) || [];
+                memberNode.range = comments.length > 0
                   ? [
                       Math.min(
                         memberNode.range[0],
