@@ -211,12 +211,3 @@ When writing tests for ESLint rules, follow these guidelines:
 4. **Commit**:
    - Follow Angular Commit Message Conventions
    - Commits trigger semantic-release for versioning
-
-# Commits
-**We use Angular Commit Message Conventions to write our commit messages. This is very important as incorrectly structured commit messages will not trigger semantic-release properly.**
-Examples:
-- `fix(rule-name)`: Bug fixes
-- `feat(rule-name)`: New features or rules
-- `docs(rule-name)`: Documentation updates
-- `test(rule-name)`: Adding or updating tests
-- `refactor(rule-name)`: Code changes that neither fix bugs nor add features
