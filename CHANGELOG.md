@@ -1,3 +1,10 @@
+## [1.1.8](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.1.7...v1.1.8) (2025-01-16)
+
+
+### Bug Fixes
+
+* **.cursorrules:** remove unnecessary commit message formatting instructions ([f96b4d5](https://github.com/BluMintInc/eslint-custom-rules/commit/f96b4d511fdae65461baf009441acd6ddc95fb94))
+
 ## [1.1.7](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.1.6...v1.1.7) (2025-01-16)
 
 
