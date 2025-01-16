@@ -1,5 +1,5 @@
 import { createRule } from '../utils/createRule';
-import { TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import * as ts from 'typescript';
 
 // Temp
@@ -172,15 +172,94 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
           node.id?.type === 'Identifier' ? node.id.name : undefined;
 
         if (functionName && functionName.startsWith('handle') && node.id) {
+          // Skip autofixing for "handler" and "handlers"
+          if (functionName === 'handler' || functionName === 'handlers') {
+            context.report({
+              node,
+              messageId: 'callbackFunctionPrefix',
+            });
+            return;
+          }
+
+          // Skip autofixing for class parameters and getters
+          const parent = node.parent;
+          if (parent?.type === AST_NODE_TYPES.PropertyDefinition || parent?.type === AST_NODE_TYPES.MethodDefinition) {
+            context.report({
+              node,
+              messageId: 'callbackFunctionPrefix',
+            });
+            return;
+          }
+
+          // Get all references to this variable
+          const scope = context.getScope();
+          const variable = scope.variables.find(v => v.name === functionName);
+          const references = new Set(variable?.references ?? []);
+
+          // Get references from all scopes
+          const allScopes = [scope];
+          let currentScope = scope;
+          while (currentScope.upper) {
+            currentScope = currentScope.upper;
+            allScopes.push(currentScope);
+          }
+
+          // Get references from all scopes and their children
+          for (const s of allScopes) {
+            // Get references from current scope
+            const currentVar = s.variables.find(v => v.name === functionName);
+            if (currentVar) {
+              currentVar.references.forEach(ref => references.add(ref));
+            }
+
+            // Get references from child scopes
+            const childScopes = s.childScopes;
+            for (const childScope of childScopes) {
+              const childVar = childScope.variables.find(v => v.name === functionName);
+              if (childVar) {
+                childVar.references.forEach(ref => references.add(ref));
+              }
+            }
+          }
+
+          // Get references from sibling scopes
+          const siblingScopes = scope.upper?.childScopes ?? [];
+          for (const siblingScope of siblingScopes) {
+            if (siblingScope !== scope) {
+              const siblingVar = siblingScope.variables.find(v => v.name === functionName);
+              if (siblingVar) {
+                siblingVar.references.forEach(ref => references.add(ref));
+              }
+            }
+          }
+
+          // Get references from global scope
+          const sourceCode = context.getSourceCode();
+          if (sourceCode.scopeManager?.globalScope) {
+            const globalVar = sourceCode.scopeManager.globalScope.variables.find(v => v.name === functionName);
+            if (globalVar) {
+              globalVar.references.forEach(ref => references.add(ref));
+            }
+          }
+
           context.report({
             node,
             messageId: 'callbackFunctionPrefix',
-            fix(fixer) {
+            *fix(fixer) {
               // Remove 'handle' prefix and convert first character to lowercase
               const newName =
                 functionName.slice(6).charAt(0).toLowerCase() +
                 functionName.slice(7);
-              return fixer.replaceText(node.id!, newName);
+
+              // Fix the declaration and all references
+              const fixes: Array<import('@typescript-eslint/utils').TSESLint.RuleFix> = [];
+              fixes.push(fixer.replaceText(node.id!, newName));
+              for (const ref of references) {
+                if (ref.identifier !== node.id) {
+                  fixes.push(fixer.replaceText(ref.identifier, newName));
+                }
+              }
+              return fixes;
             },
           });
         }
@@ -196,6 +275,25 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
           node.key.name.startsWith('handle')
         ) {
           const name = node.key.name;
+
+          // Skip autofixing for "handler" and "handlers"
+          if (name === 'handler' || name === 'handlers') {
+            context.report({
+              node: node.key,
+              messageId: 'callbackFunctionPrefix',
+            });
+            return;
+          }
+
+          // Skip autofixing for class parameters and getters
+          if (node.type === 'MethodDefinition' && node.kind === 'get') {
+            context.report({
+              node: node.key,
+              messageId: 'callbackFunctionPrefix',
+            });
+            return;
+          }
+
           context.report({
             node: node.key,
             messageId: 'callbackFunctionPrefix',
@@ -205,6 +303,19 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
                 name.slice(6).charAt(0).toLowerCase() + name.slice(7);
               return fixer.replaceText(node.key, newName);
             },
+          });
+        }
+      },
+
+      // Check constructor parameters
+      'TSParameterProperty'(node: TSESTree.TSParameterProperty) {
+        if (
+          node.parameter.type === 'Identifier' &&
+          node.parameter.name.startsWith('handle')
+        ) {
+          context.report({
+            node,
+            messageId: 'callbackFunctionPrefix',
           });
         }
       },
