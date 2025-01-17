@@ -91,8 +91,12 @@ export const extractGlobalConstants: TSESLint.RuleModule<
           (scope.type === 'function' || scope.type === 'block') &&
           isInsideFunction(node)
         ) {
-          const constName = (node.declarations[0].id as TSESTree.Identifier)
-            .name;
+          const firstDeclaration = node.declarations[0];
+          // Skip if the declaration is not a simple identifier
+          if (firstDeclaration.id.type !== 'Identifier') {
+            return;
+          }
+          const constName = firstDeclaration.id.name;
           context.report({
             node,
             messageId: 'extractGlobalConstants',

@@ -77,6 +77,16 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
         }, [MenuItemEdit, MenuItemRemove]);
       `,
     },
+    // Should handle destructuring patterns without error
+    {
+      code: `
+        function mockFirestore(rootCollections: MockCollections) {
+          mockFirebase(rootCollections);
+          const { resetModules } = jest;
+          resetModules();
+        }
+      `,
+    },
     // Should allow nested array/object initialization
     {
       code: `
