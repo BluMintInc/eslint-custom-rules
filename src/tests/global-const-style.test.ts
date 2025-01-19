@@ -64,6 +64,14 @@ ruleTesterTs.run('global-const-style', rule, {
     {
       code: 'const TIMEOUT_MS = 1000 * 60;',
     },
+    // Class instances should be ignored
+    {
+      code: `
+        class FirebaseAdmin {}
+        const firebaseAdminInstance = new FirebaseAdmin();
+        const { adminApp, db, realtimeDb, storage, bucket, auth, messaging } = firebaseAdminInstance;
+      `,
+    },
   ],
   invalid: [
     // Missing UPPER_SNAKE_CASE

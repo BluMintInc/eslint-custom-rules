@@ -62,11 +62,12 @@ export default createRule({
           const { name } = declaration.id;
           const init = declaration.init;
 
-          // Skip if no initializer or if it's a dynamic value
+          // Skip if no initializer or if it's a dynamic value or class instance
           if (
             !init ||
             init.type === AST_NODE_TYPES.CallExpression ||
-            init.type === AST_NODE_TYPES.BinaryExpression
+            init.type === AST_NODE_TYPES.BinaryExpression ||
+            init.type === AST_NODE_TYPES.NewExpression
           ) {
             return;
           }
