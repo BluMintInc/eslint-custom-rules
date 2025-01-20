@@ -41,7 +41,11 @@ function isMutableValue(node: TSESTree.Expression | null): boolean {
   if (node.type === 'CallExpression') {
     const callee = node.callee;
     if (callee.type === 'MemberExpression') {
-      const methodName = (callee.property as TSESTree.Identifier).name;
+      // Handle both Identifier and non-Identifier property nodes
+      if (callee.property.type !== 'Identifier') {
+        return false;
+      }
+      const methodName = callee.property.name;
       const mutatingMethods = [
         'slice',
         'map',
