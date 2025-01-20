@@ -34,19 +34,47 @@ export default createRule({
           return;
         }
 
-        // Skip if any declaration is a function component or arrow function
+        // Skip if any declaration is a function component, arrow function, forwardRef, or memo
         const shouldSkip = node.declarations.some(declaration => {
           if (declaration.id.type !== AST_NODE_TYPES.Identifier) {
             return false;
           }
+
           const name = declaration.id.name;
           const init = declaration.init;
-          return (
-            // Skip function components (uppercase name + arrow function)
-            (/^[A-Z]/.test(name) && init?.type === AST_NODE_TYPES.ArrowFunctionExpression) ||
-            // Skip any arrow function
-            init?.type === AST_NODE_TYPES.ArrowFunctionExpression
-          );
+
+          // Skip if no initializer
+          if (!init) {
+            return false;
+          }
+
+          // Skip function components (uppercase name + arrow function)
+          if (/^[A-Z]/.test(name) && init.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+            return true;
+          }
+
+          // Skip any arrow function
+          if (init.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+            return true;
+          }
+
+          // Skip forwardRef and memo calls
+          if (init.type === AST_NODE_TYPES.CallExpression) {
+            if (init.callee.type === AST_NODE_TYPES.Identifier) {
+              return ['forwardRef', 'memo'].includes(init.callee.name);
+            }
+          }
+
+          // Skip type assertions on forwardRef and memo calls
+          if (init.type === AST_NODE_TYPES.TSAsExpression) {
+            const expression = init.expression;
+            if (expression.type === AST_NODE_TYPES.CallExpression &&
+                expression.callee.type === AST_NODE_TYPES.Identifier) {
+              return ['forwardRef', 'memo'].includes(expression.callee.name);
+            }
+          }
+
+          return false;
         });
 
         if (shouldSkip) {
