@@ -22,6 +22,9 @@ export default createRule({
   },
   defaultOptions: [],
   create(context) {
+    // Check if the file is a TypeScript file
+    const isTypeScript = context.getFilename().endsWith('.ts') || context.getFilename().endsWith('.tsx');
+
     return {
       VariableDeclaration(node) {
         // Only check top-level const declarations
@@ -34,19 +37,47 @@ export default createRule({
           return;
         }
 
-        // Skip if any declaration is a function component or arrow function
+        // Skip if any declaration is a function component, arrow function, forwardRef, or memo
         const shouldSkip = node.declarations.some(declaration => {
           if (declaration.id.type !== AST_NODE_TYPES.Identifier) {
             return false;
           }
+
           const name = declaration.id.name;
           const init = declaration.init;
-          return (
-            // Skip function components (uppercase name + arrow function)
-            (/^[A-Z]/.test(name) && init?.type === AST_NODE_TYPES.ArrowFunctionExpression) ||
-            // Skip any arrow function
-            init?.type === AST_NODE_TYPES.ArrowFunctionExpression
-          );
+
+          // Skip if no initializer
+          if (!init) {
+            return false;
+          }
+
+          // Skip function components (uppercase name + arrow function)
+          if (/^[A-Z]/.test(name) && init.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+            return true;
+          }
+
+          // Skip any arrow function
+          if (init.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+            return true;
+          }
+
+          // Skip forwardRef and memo calls
+          if (init.type === AST_NODE_TYPES.CallExpression) {
+            if (init.callee.type === AST_NODE_TYPES.Identifier) {
+              return ['forwardRef', 'memo'].includes(init.callee.name);
+            }
+          }
+
+          // Skip type assertions on forwardRef and memo calls
+          if (init.type === AST_NODE_TYPES.TSAsExpression) {
+            const expression = init.expression;
+            if (expression.type === AST_NODE_TYPES.CallExpression &&
+                expression.callee.type === AST_NODE_TYPES.Identifier) {
+              return ['forwardRef', 'memo'].includes(expression.callee.name);
+            }
+          }
+
+          return false;
         });
 
         if (shouldSkip) {
@@ -62,11 +93,12 @@ export default createRule({
           const { name } = declaration.id;
           const init = declaration.init;
 
-          // Skip if no initializer or if it's a dynamic value
+          // Skip if no initializer or if it's a dynamic value or class instance
           if (
             !init ||
             init.type === AST_NODE_TYPES.CallExpression ||
-            init.type === AST_NODE_TYPES.BinaryExpression
+            init.type === AST_NODE_TYPES.BinaryExpression ||
+            init.type === AST_NODE_TYPES.NewExpression
           ) {
             return;
           }
@@ -86,41 +118,43 @@ export default createRule({
             });
           }
 
-          // Check for as const
-          const isAsConstExpression = (node: TSESTree.Node): boolean => {
-            if (node.type === AST_NODE_TYPES.TSAsExpression) {
-              return (
-                node.typeAnnotation?.type === AST_NODE_TYPES.TSTypeReference &&
-                (node.typeAnnotation?.typeName as TSESTree.Identifier)?.name === 'const'
-              );
-            }
-            return false;
-          };
-
-          const shouldHaveAsConst = (node: TSESTree.Node): boolean => {
-            // Skip if it's already an as const expression
-            if (isAsConstExpression(node)) {
+          // Only check for as const in TypeScript files
+          if (isTypeScript) {
+            const isAsConstExpression = (node: TSESTree.Node): boolean => {
+              if (node.type === AST_NODE_TYPES.TSAsExpression) {
+                return (
+                  node.typeAnnotation?.type === AST_NODE_TYPES.TSTypeReference &&
+                  (node.typeAnnotation?.typeName as TSESTree.Identifier)?.name === 'const'
+                );
+              }
               return false;
+            };
+
+            const shouldHaveAsConst = (node: TSESTree.Node): boolean => {
+              // Skip if it's already an as const expression
+              if (isAsConstExpression(node)) {
+                return false;
+              }
+
+              // Check if it's a literal, array, or object that should have as const
+              return (
+                node.type === AST_NODE_TYPES.Literal ||
+                node.type === AST_NODE_TYPES.ArrayExpression ||
+                node.type === AST_NODE_TYPES.ObjectExpression
+              );
+            };
+
+            if (shouldHaveAsConst(init)) {
+              context.report({
+                node: init,
+                messageId: 'asConst',
+                fix(fixer) {
+                  const sourceCode = context.getSourceCode();
+                  const initText = sourceCode.getText(init);
+                  return fixer.replaceText(init, `${initText} as const`);
+                },
+              });
             }
-
-            // Check if it's a literal, array, or object that should have as const
-            return (
-              node.type === AST_NODE_TYPES.Literal ||
-              node.type === AST_NODE_TYPES.ArrayExpression ||
-              node.type === AST_NODE_TYPES.ObjectExpression
-            );
-          };
-
-          if (shouldHaveAsConst(init)) {
-            context.report({
-              node: init,
-              messageId: 'asConst',
-              fix(fixer) {
-                const sourceCode = context.getSourceCode();
-                const initText = sourceCode.getText(init);
-                return fixer.replaceText(init, `${initText} as const`);
-              },
-            });
           }
         });
       },
