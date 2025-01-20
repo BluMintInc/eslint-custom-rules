@@ -5,7 +5,7 @@ Here is some background on the repository:
 
 # BluMint ESLint Plugin Development Guidelines
 
-This repository contains custom ESLint rules for BluMint. When contributing, please follow these guidelines to maintain consistency and quality.
+This repository contains custom ESLint rules for BluMint. When contributing, please follow these guidelines to maintain consistency and quality. 
 
 ## Repository Purpose
 This is an ESLint plugin that provides custom rules for BluMint's TypeScript/React codebase. The rules enforce coding standards, prevent common mistakes, and maintain code quality across BluMint's projects.
