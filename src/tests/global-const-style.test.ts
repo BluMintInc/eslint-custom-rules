@@ -61,6 +61,34 @@ ruleTesterTs.run('global-const-style', rule, {
         ecmaVersion: 2020,
       },
     },
+    // forwardRef components should not be flagged
+    {
+      code: `
+        import { forwardRef } from 'react';
+        const EditableWrapperFileUnmemoized = forwardRef<HTMLElement, EditableWrapperFileProps>(
+          EditableWrapperFileReflessUnmemoized,
+        ) as typeof EditableWrapperFileReflessUnmemoized;
+      `,
+      parserOptions: {
+        ecmaVersion: 2020,
+      },
+    },
+    // forwardRef with memo should not be flagged
+    {
+      code: `
+        import { forwardRef, memo } from 'react';
+        const EditableWrapperFileUnmemoized = forwardRef<HTMLElement, EditableWrapperFileProps>(
+          EditableWrapperFileReflessUnmemoized,
+        ) as typeof EditableWrapperFileReflessUnmemoized;
+        export const EditableWrapperFile = memo(
+          EditableWrapperFileUnmemoized,
+          withDeepCompareOf('link', 'file'),
+        ) as typeof EditableWrapperFileReflessUnmemoized;
+      `,
+      parserOptions: {
+        ecmaVersion: 2020,
+      },
+    },
 
 
     // Dynamic values should be ignored
