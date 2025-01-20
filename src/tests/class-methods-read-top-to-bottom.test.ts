@@ -12,6 +12,35 @@ ruleTesterTs.run(
   {
     valid: [
       {
+        code: `export class TokenIssuerOAuth implements TokenIssuer<OAuthUserResponse> {
+          constructor(
+            public providerId: CustomSignInMethod,
+            public authCode: string,
+            private platform: BlumintPlatform,
+            private axiosClient: typeof axios = axios,
+            private db: Firestore = dbDefault,
+            private auth: Auth = authDefault(),
+          ) {}
+
+          public async getTokenFromAuthCode(): Promise<string> {
+            const PARAMS = {
+              client_id: this.clientId || '',
+              client_secret: this.clientSecret || '',
+              grant_type: 'authorization_code',
+              code: this.authCode,
+              redirect_uri: oAuthRedirectUri(this.platform, this.providerId),
+              scope: this.scope,
+            };
+            const responseData = await this.axiosClient.post(
+              this.accessTokenEndpoint,
+              new URLSearchParams(PARAMS).toString(),
+              { headers: this.headers },
+            );
+            return responseData.data.access_token;
+          }
+        }`,
+      },
+      {
         code: `
           class TestClass {
             field1: string;

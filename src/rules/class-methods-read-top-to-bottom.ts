@@ -55,25 +55,29 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
             const newClassBody = sortedOrder
               .map((n) => {
                 // Fetch the actual AST node corresponding to the name
-                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
                 const memberNode = node.body.find(
                   (member) => getMemberName(member) === n,
-                )!;
+                );
+                if (!memberNode) {
+                  return '';
+                }
                 const comments = sourceCode.getCommentsBefore(memberNode) || [];
-                memberNode.range = comments.length > 0
+                const nodeRange = memberNode.range;
+                const newRange: [number, number] = comments.length > 0
                   ? [
                       Math.min(
-                        memberNode.range[0],
+                        nodeRange[0],
                         Math.min(...comments.map((comment) => comment.range[0])),
                       ),
                       Math.max(
-                        memberNode.range[1],
+                        nodeRange[1],
                         Math.max(...comments.map((comment) => comment.range[1])),
                       ),
                     ]
-                  : memberNode.range;
-                return sourceCode.getText(memberNode);
+                  : nodeRange;
+                return sourceCode.getText({ ...memberNode, range: newRange });
               })
+              .filter(Boolean)
               .join('\n');
             return context.report({
               node,
