@@ -1,3 +1,11 @@
+## [1.1.9](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.1.8...v1.1.9) (2025-01-20)
+
+
+### Bug Fixes
+
+* **.cursorrules:** force update patch version ([54dd68d](https://github.com/BluMintInc/eslint-custom-rules/commit/54dd68d10b554b0c9cff0cfbf58ba269450f613a))
+* **.openhands_instructions:** force dummy release build ([b5eb40b](https://github.com/BluMintInc/eslint-custom-rules/commit/b5eb40b8626cc12ce8beec1a70402a2a353df65b))
+
 ## [1.1.8](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.1.7...v1.1.8) (2025-01-16)
 
 
