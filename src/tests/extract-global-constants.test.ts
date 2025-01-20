@@ -77,6 +77,23 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
         }, [MenuItemEdit, MenuItemRemove]);
       `,
     },
+    // Should handle jest.resetModules() without throwing TypeError
+    {
+      code: `
+        export async function mockFirestore(rootCollections: MockCollections) {
+          mockFirebase(rootCollections);
+          const mockFirebaseAdmin = await import('firebase-admin');
+          jest.mock('../../../../functions/src/config/firebaseAdmin', () => {
+            return {
+              db: mockFirebaseAdmin.firestore(),
+            };
+          });
+
+          // Clear the module cache to ensure the new mock is used
+          jest.resetModules();
+        }
+      `,
+    },
     // Should allow nested array/object initialization
     {
       code: `
