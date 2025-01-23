@@ -43,35 +43,91 @@ function isHigherOrderFunctionReturningJSX(node: TSESTree.Node): boolean {
 }
 
 const isUnmemoizedArrowFunction = (parentNode: TSESTree.Node) => {
-  return (
-    parentNode.type === 'VariableDeclarator' &&
-    parentNode.id.type === 'Identifier' &&
-    !isComponentExplicitlyUnmemoized(parentNode.id.name)
-  );
+  if (parentNode.type !== 'VariableDeclarator' || parentNode.id.type !== 'Identifier') {
+    return false;
+  }
+
+  // Check if component is explicitly unmemoized
+  if (isComponentExplicitlyUnmemoized(parentNode.id.name)) {
+    return false;
+  }
+
+  // Check if component is already wrapped in memo
+  if (parentNode.init?.type === 'CallExpression' &&
+      parentNode.init.callee.type === 'Identifier' &&
+      parentNode.init.callee.name === 'memo') {
+    return false;
+  }
+
+  return true;
 };
 
 const isUnmemoizedFunctionComponent = (
   parentNode: TSESTree.Node,
   node: TSESTree.Node,
 ) => {
-  return (
-    node.type === 'FunctionDeclaration' &&
-    parentNode.type === 'Program' &&
-    node.id &&
-    !isComponentExplicitlyUnmemoized(node.id.name)
-  );
+  if (!(node.type === 'FunctionDeclaration' &&
+        parentNode.type === 'Program' &&
+        node.id)) {
+    return false;
+  }
+
+  // Check if component is explicitly unmemoized
+  if (isComponentExplicitlyUnmemoized(node.id.name)) {
+    return false;
+  }
+
+  // Check if component is already wrapped in memo
+  const program = parentNode as TSESTree.Program;
+  const variableDeclarations = program.body.filter(
+    stmt => stmt.type === 'VariableDeclaration'
+  ) as TSESTree.VariableDeclaration[];
+
+  for (const decl of variableDeclarations) {
+    for (const declarator of decl.declarations) {
+      if (declarator.init?.type === 'CallExpression' &&
+          declarator.init.callee.type === 'Identifier' &&
+          declarator.init.callee.name === 'memo' &&
+          declarator.init.arguments[0]?.type === 'FunctionExpression' &&
+          declarator.init.arguments[0].id?.name === node.id.name) {
+        return false;
+      }
+    }
+  }
+
+  return true;
 };
 
 const isUnmemoizedExportedFunctionComponent = (
   parentNode: TSESTree.Node,
   node: TSESTree.Node,
 ) => {
-  return (
-    node.type === 'FunctionDeclaration' &&
-    parentNode.type === 'ExportNamedDeclaration' &&
-    node.id &&
-    !isComponentExplicitlyUnmemoized(node.id.name)
-  );
+  if (!(node.type === 'FunctionDeclaration' &&
+        parentNode.type === 'ExportNamedDeclaration' &&
+        node.id)) {
+    return false;
+  }
+
+  // Check if component is explicitly unmemoized
+  if (isComponentExplicitlyUnmemoized(node.id.name)) {
+    return false;
+  }
+
+  // Check if component is already wrapped in memo
+  const exportDecl = parentNode as TSESTree.ExportNamedDeclaration;
+  if (exportDecl.declaration?.type === 'VariableDeclaration') {
+    for (const declarator of exportDecl.declaration.declarations) {
+      if (declarator.init?.type === 'CallExpression' &&
+          declarator.init.callee.type === 'Identifier' &&
+          declarator.init.callee.name === 'memo' &&
+          declarator.init.arguments[0]?.type === 'FunctionExpression' &&
+          declarator.init.arguments[0].id?.name === node.id.name) {
+        return false;
+      }
+    }
+  }
+
+  return true;
 };
 
 function isMemoImport(importPath: string): boolean {
