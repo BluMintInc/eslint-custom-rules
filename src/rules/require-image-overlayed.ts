@@ -8,6 +8,7 @@ export = createRule({
       description:
         'Enforce using ImageOverlayed component instead of next/image or img tags',
       recommended: 'error',
+      requiresTypeChecking: false,
     },
     fixable: 'code',
     schema: [
@@ -16,6 +17,7 @@ export = createRule({
         properties: {
           componentPath: {
             type: 'string',
+            description: 'The import path for the ImageOverlayed component',
             default: 'src/components/ImageOverlayed',
           },
         },

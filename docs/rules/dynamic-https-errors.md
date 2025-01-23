@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+⚠️ This rule _warns_ in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 This rule warns against the use of template literals in the `message` field of the `HttpsError` constructor, and suggests their use in the `details` field instead.
 
 ## Rule Details
