@@ -66,7 +66,7 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
         if (normalizedName === 'opacity') {
           if (!propertyValue) return false;
           const numValue = Number.parseFloat(propertyValue);
-          if (isNaN(numValue)) return false;
+          if (Number.isNaN(numValue)) return false;
           return numValue > 0 && numValue < 1;
         }
         return true;
