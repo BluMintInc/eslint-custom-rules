@@ -65,7 +65,8 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
         // Special case for opacity - only warn if it's animated or fractional
         if (normalizedName === 'opacity') {
           if (!propertyValue) return false;
-          const numValue = parseFloat(propertyValue);
+          const numValue = Number.parseFloat(propertyValue);
+          if (isNaN(numValue)) return false;
           return numValue > 0 && numValue < 1;
         }
         return true;

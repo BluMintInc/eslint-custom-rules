@@ -27,6 +27,13 @@ ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
         };
       `,
     },
+    {
+      code: `
+        const style = {
+          opacity: 'invalid',
+        };
+      `,
+    },
     // Valid JSX styles
     {
       code: `
