@@ -4,6 +4,14 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 Async callbacks in array filters are dangerous and not picked up by the standard eslint rules.
 
 ## Rule Details

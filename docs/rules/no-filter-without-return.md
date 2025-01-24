@@ -4,6 +4,14 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 This rule disallows the use of `Array.filter` callbacks that are part of a block statement but do not contain an explicit return statement. When using `Array.filter`, it's common to return a boolean value directly from a concise arrow function. However, if you're using a block statement (enclosed in `{}`), an explicit `return` statement is required.
 
 ## Rule Details

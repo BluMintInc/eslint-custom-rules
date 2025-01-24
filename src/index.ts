@@ -31,6 +31,7 @@ import { enforceStableStringify } from './rules/enforce-safe-stringify';
 import { avoidUtilsDirectory } from './rules/avoid-utils-directory';
 import { noEntireObjectHookDeps } from './rules/no-entire-object-hook-deps';
 import { enforceFirestorePathUtils } from './rules/enforce-firestore-path-utils';
+import { noCompositingLayerProps } from './rules/no-compositing-layer-props';
 
 module.exports = {
   meta: {
@@ -77,6 +78,7 @@ module.exports = {
         '@blumintinc/blumint/require-usememo-object-literals': 'error',
         '@blumintinc/blumint/enforce-safe-stringify': 'error',
         '@blumintinc/blumint/no-entire-object-hook-deps': 'error',
+        '@blumintinc/blumint/no-compositing-layer-props': 'warn',
       },
     },
   },
@@ -114,5 +116,6 @@ module.exports = {
     'avoid-utils-directory': avoidUtilsDirectory,
     'no-entire-object-hook-deps': noEntireObjectHookDeps,
     'enforce-firestore-path-utils': enforceFirestorePathUtils,
+    'no-compositing-layer-props': noCompositingLayerProps,
   },
 };

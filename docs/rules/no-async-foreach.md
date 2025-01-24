@@ -4,6 +4,14 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 This rule disallows the use of `Array.forEach` callbacks with the async keyword. These are typically found when sequential promise execution is desired, but in fact these will execute almost concurrently. The use of a standard `for` loop is suggested instead, which will execute sequentially. If concurrent execution is required, `Promise.all` or `Promise.allSettled` should be used.
 
 ## Rule Details

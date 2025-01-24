@@ -2,6 +2,10 @@
 
 <!-- end auto-generated rule header -->
 
+<!-- end auto-generated rule header -->
+
+<!-- end auto-generated rule header -->
+
 This rule enforces that all top-level const definitions, type definitions, and functions should always be exported. If not done, this rule will trigger a warning message suggesting to export the declaration.
 
 ## Rule Details
