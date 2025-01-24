@@ -8,6 +8,10 @@
 
 <!-- end auto-generated rule header -->
 
+⚠️ This rule _warns_ in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 This rule suggests that if a constant or a function within a function or block scope doesn't depend on any other identifiers in that scope, it should be moved to the global scope. This aims to improve the readability of the code and the possibility of reuse.
 
 ## Rule Details
