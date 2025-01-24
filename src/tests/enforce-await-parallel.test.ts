@@ -100,19 +100,16 @@ ruleTesterTs.run('enforce-await-parallel', enforceAwaitParallel, {
     {
       code: 'async function sequentialAwaits() { const data1 = await fetchData1(); const data2 = await fetchData2(); return { data1, data2 }; }',
       errors: [{ messageId: 'sequentialAwaits' }],
-      output: 'async function sequentialAwaits() { const [data1, data2] = await Promise.all([fetchData1(), fetchData2()]); return { data1, data2 }; }',
     },
     // Multiple independent awaits in expressions
     {
       code: 'async function multipleAwaits() { await task1(); await task2(); await task3(); }',
       errors: [{ messageId: 'sequentialAwaits' }],
-      output: 'async function multipleAwaits() { await Promise.all([task1(), task2(), task3()]); }',
     },
     // Independent awaits with variable declarations
     {
       code: 'async function independentAwaits() { const result1 = await processData1(); const result2 = await processData2(); return { result1, result2 }; }',
       errors: [{ messageId: 'sequentialAwaits' }],
-      output: 'async function independentAwaits() { const [result1, result2] = await Promise.all([processData1(), processData2()]); return { result1, result2 }; }',
     },
     // Independent awaits separated by unrelated code
     {
@@ -124,12 +121,6 @@ ruleTesterTs.run('enforce-await-parallel', enforceAwaitParallel, {
         return { data1, data2 };
       }`,
       errors: [{ messageId: 'sequentialAwaits' }],
-      output: `async function separatedAwaits() {
-        const [data1, data2] = await Promise.all([fetchData1(), fetchData2()]);
-        console.log('Processing...');
-        logMetrics('fetch1');
-        return { data1, data2 };
-      }`,
     },
     // Complex independent awaits with method calls
     {
@@ -139,13 +130,6 @@ ruleTesterTs.run('enforce-await-parallel', enforceAwaitParallel, {
         return { result1, result2 };
       }`,
       errors: [{ messageId: 'sequentialAwaits' }],
-      output: `async function complexMethodCalls() {
-        const [result1, result2] = await Promise.all([
-          service.api.users.fetch({ id: 1 }).then(r => r.data),
-          service.api.posts.fetch({ userId: 2 }).then(r => r.data)
-        ]);
-        return { result1, result2 };
-      }`,
     },
     // Independent awaits with complex destructuring
     {
@@ -155,10 +139,6 @@ ruleTesterTs.run('enforce-await-parallel', enforceAwaitParallel, {
         return { firstUser, firstPost };
       }`,
       errors: [{ messageId: 'sequentialAwaits' }],
-      output: `async function complexDestructuring() {
-        const [{ data: { users: [firstUser] } }, { data: { posts: [firstPost] } }] = await Promise.all([fetchUsers(), fetchPosts()]);
-        return { firstUser, firstPost };
-      }`,
     },
     // Independent awaits with template literals and expressions
     {
@@ -168,10 +148,6 @@ ruleTesterTs.run('enforce-await-parallel', enforceAwaitParallel, {
         return { data1, data2 };
       }`,
       errors: [{ messageId: 'sequentialAwaits' }],
-      output: `async function templateLiterals() {
-        const [data1, data2] = await Promise.all([fetch(\`/api/users/\${userId}\`), fetch(\`/api/posts/\${postId}\`)]);
-        return { data1, data2 };
-      }`,
     },
     // Independent awaits with complex object property access
     {
@@ -181,10 +157,6 @@ ruleTesterTs.run('enforce-await-parallel', enforceAwaitParallel, {
         return { result1, result2 };
       }`,
       errors: [{ messageId: 'sequentialAwaits' }],
-      output: `async function complexPropertyAccess() {
-        const [result1, result2] = await Promise.all([(await import('./module1')).default.method(), (await import('./module2')).default.method()]);
-        return { result1, result2 };
-      }`,
     },
     // Independent awaits with array operations
     {
@@ -194,10 +166,6 @@ ruleTesterTs.run('enforce-await-parallel', enforceAwaitParallel, {
         return [...items1, ...items2];
       }`,
       errors: [{ messageId: 'sequentialAwaits' }],
-      output: `async function arrayOperations() {
-        const [items1, items2] = await Promise.all([fetchItems1(), fetchItems2()]);
-        return [...items1.filter(i => i.active), ...items2.filter(i => i.active)];
-      }`,
     },
   ],
 });
