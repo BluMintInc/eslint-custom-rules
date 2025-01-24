@@ -122,6 +122,24 @@ export class ASTHelpers {
       case 'TSAsExpression':
         return this.declarationIncludesIdentifier(node.expression);
 
+      case 'TSTypeReference':
+        // Handle type references (e.g., T in generic types)
+        return false;
+
+      case 'TSTypeParameterDeclaration':
+        // Handle type parameter declarations (e.g., <T extends ...>)
+        return false;
+
+      case 'TSTypeParameterInstantiation':
+        // Handle type parameter instantiations (e.g., <string>)
+        return false;
+
+      case 'TSIntersectionType':
+      case 'TSUnionType':
+      case 'TSTypeLiteral':
+        // Handle type constraints and literals
+        return false;
+
       default:
         return false;
     }
