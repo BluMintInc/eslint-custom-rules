@@ -36,7 +36,7 @@ import { noCompositingLayerProps } from './rules/no-compositing-layer-props';
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.1.9',
+    version: '1.2.0',
   },
   parseOptions: {
     ecmaVersion: 2020,

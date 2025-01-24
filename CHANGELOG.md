@@ -1,3 +1,11 @@
+# [1.2.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.1.9...v1.2.0) (2025-01-24)
+
+
+### Features
+
+* **eslint:** Add new rules and update documentation ([9f6afbd](https://github.com/BluMintInc/eslint-custom-rules/commit/9f6afbdffa763da7f5357f490784341a57c94669))
+* **eslint:** Add rule to enforce using custom memo from src/util/memo ([bd223a0](https://github.com/BluMintInc/eslint-custom-rules/commit/bd223a0e95be3829a80ef03d35bb868b4e861d4b))
+
 ## [1.1.9](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.1.8...v1.1.9) (2025-01-20)
 
 
