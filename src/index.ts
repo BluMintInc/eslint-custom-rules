@@ -32,6 +32,7 @@ import { avoidUtilsDirectory } from './rules/avoid-utils-directory';
 import { noEntireObjectHookDeps } from './rules/no-entire-object-hook-deps';
 import { enforceFirestorePathUtils } from './rules/enforce-firestore-path-utils';
 import { enforceAwaitParallel } from './rules/enforce-await-parallel';
+import { noCompositingLayerProps } from './rules/no-compositing-layer-props';
 
 module.exports = {
   meta: {
@@ -79,6 +80,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-safe-stringify': 'error',
         '@blumintinc/blumint/no-entire-object-hook-deps': 'error',
         '@blumintinc/blumint/enforce-await-parallel': 'error',
+        '@blumintinc/blumint/no-compositing-layer-props': 'warn',
       },
     },
   },
@@ -117,5 +119,6 @@ module.exports = {
     'no-entire-object-hook-deps': noEntireObjectHookDeps,
     'enforce-firestore-path-utils': enforceFirestorePathUtils,
     'enforce-await-parallel': enforceAwaitParallel,
+    'no-compositing-layer-props': noCompositingLayerProps,
   },
 };

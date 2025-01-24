@@ -137,6 +137,23 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
         }
       `,
     },
+    // Should handle generic type constraints
+    {
+      code: `
+        import { DocumentData, DocumentReference } from 'firebase-admin/firestore';
+        import { PartialWithFieldValue } from 'firebase-admin/firestore';
+
+        export class DocSetter<T extends { id: string } & DocumentData> {
+          public set = async (documentData: DocumentDataPartial<T>) => {
+            const ref = this.collectionRef.doc(documentData.id) as DocumentReference<T>;
+            await this.converterApplier
+              .toDocumentRef(ref)
+              .set(documentData as PartialWithFieldValue<T>, { merge: true });
+            return ref;
+          };
+        }
+      `,
+    },
   ],
   invalid: [
     // Should flag immutable string constants
