@@ -53,35 +53,50 @@ export = createRule({
         }
       },
       ThrowStatement(node: TSESTree.ThrowStatement) {
+        if (!node.argument) {
+          return;
+        }
+
         const argument = node.argument as unknown as TSESTree.NewExpression;
+        if (argument.type !== AST_NODE_TYPES.NewExpression) {
+          return;
+        }
+
+        const callee = argument.callee;
+
+        // Check for direct Error usage
         if (
-          argument &&
-          argument.type === AST_NODE_TYPES.NewExpression &&
-          argument.callee
+          callee.type === AST_NODE_TYPES.Identifier &&
+          callee.name === 'Error'
         ) {
-          if (
-            argument.callee.type === AST_NODE_TYPES.Identifier &&
-            argument.callee.name === 'Error'
-          ) {
-            context.report({
-              node,
-              messageId: 'useHttpsError',
-            });
-          } else if (
-            hasFirebaseAdminImport &&
-            ((argument.callee.type === AST_NODE_TYPES.Identifier &&
-              argument.callee.name === 'HttpsError') ||
-              (argument.callee.type === AST_NODE_TYPES.MemberExpression &&
-                argument.callee.object.type === AST_NODE_TYPES.Identifier &&
-                argument.callee.object.name === httpsIdentifier &&
-                argument.callee.property.type === AST_NODE_TYPES.Identifier &&
-                argument.callee.property.name === 'HttpsError'))
-          ) {
-            context.report({
-              node,
-              messageId: 'useProprietaryHttpsError',
-            });
-          }
+          context.report({
+            node,
+            messageId: 'useHttpsError',
+          });
+          return;
+        }
+
+        // Check for firebase-admin HttpsError usage
+        if (!hasFirebaseAdminImport) {
+          return;
+        }
+
+        const isHttpsError =
+          callee.type === AST_NODE_TYPES.Identifier &&
+          callee.name === 'HttpsError';
+
+        const isFirebaseHttpsError =
+          callee.type === AST_NODE_TYPES.MemberExpression &&
+          callee.object.type === AST_NODE_TYPES.Identifier &&
+          callee.object.name === httpsIdentifier &&
+          callee.property.type === AST_NODE_TYPES.Identifier &&
+          callee.property.name === 'HttpsError';
+
+        if (isHttpsError || isFirebaseHttpsError) {
+          context.report({
+            node,
+            messageId: 'useProprietaryHttpsError',
+          });
         }
       },
     };
