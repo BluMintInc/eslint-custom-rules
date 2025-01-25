@@ -50,6 +50,29 @@ ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
         },
       },
     },
+    // Non-style objects with matching property names should be ignored
+    {
+      code: `
+        const config = {
+          transform: 'module-alias',
+          filter: ['src/**/*.ts'],
+          opacity: 0.5,
+          perspective: 'test',
+        };
+      `,
+    },
+    {
+      code: `
+        const jestConfig = {
+          transform: {
+            '^.+\\.tsx?$': 'ts-jest',
+          },
+          filter: ['src/**/*.ts'],
+          opacity: 0.5,
+          perspective: 'test',
+        };
+      `,
+    },
   ],
   invalid: [
     // Invalid inline styles

@@ -84,10 +84,42 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
       return false;
     }
 
+    function isStyleContext(node: TSESTree.Node): boolean {
+      let current: TSESTree.Node | undefined = node;
+      while (current?.parent) {
+        // Check for JSX style attribute
+        if (current.parent.type === AST_NODE_TYPES.JSXAttribute &&
+            current.parent.name.type === AST_NODE_TYPES.JSXIdentifier &&
+            current.parent.name.name === 'style') {
+          return true;
+        }
+
+        // Check for style-related variable names or properties
+        if (current.type === AST_NODE_TYPES.VariableDeclarator &&
+            current.id.type === AST_NODE_TYPES.Identifier &&
+            /style/i.test(current.id.name)) {
+          return true;
+        }
+
+        // Check for style-related object property assignments
+        if (current.parent.type === AST_NODE_TYPES.Property &&
+            current.parent.key.type === AST_NODE_TYPES.Identifier &&
+            /style/i.test(current.parent.key.name)) {
+          return true;
+        }
+
+        current = current.parent;
+      }
+      return false;
+    }
+
     function checkNode(node: TSESTree.Property): void {
       // Skip if we've already processed this node
       if (seenNodes.has(node)) return;
       seenNodes.add(node);
+
+      // Skip if not in a style context
+      if (!isStyleContext(node)) return;
 
       let propertyName = '';
       let propertyValue = '';
