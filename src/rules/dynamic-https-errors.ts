@@ -25,7 +25,7 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<
     docs: {
       description:
         'Dynamic error details should only be in the third argument of the HttpsError constructor. The second argument is hashed to produce a unique id.',
-      recommended: 'warn',
+      recommended: 'error',
     },
     schema: [],
     messages: {

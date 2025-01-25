@@ -5,7 +5,7 @@ type MessageIds = 'compositingLayer';
 
 // Convert camelCase to kebab-case
 function toKebabCase(str: string): string {
-  return str.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`);
+  return str.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
 }
 
 // Normalize property name to kebab-case for consistent lookup
@@ -40,12 +40,14 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Warn when using CSS properties that trigger compositing layers',
-      recommended: 'warn',
+      description:
+        'Warn when using CSS properties that trigger compositing layers',
+      recommended: 'error',
     },
     schema: [],
     messages: {
-      compositingLayer: '{{property}} may trigger a new compositing layer which can impact performance. Consider using alternative properties or add an eslint-disable comment if the layer promotion is intentional.',
+      compositingLayer:
+        '{{property}} may trigger a new compositing layer which can impact performance. Consider using alternative properties or add an eslint-disable comment if the layer promotion is intentional.',
     },
   },
   defaultOptions: [],
@@ -53,13 +55,18 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
     const seenNodes = new WeakSet<TSESTree.Node>();
 
     function checkPropertyValue(value: string): boolean {
-      return COMPOSITING_VALUES.has(value) ||
+      return (
+        COMPOSITING_VALUES.has(value) ||
         value.includes('translate3d') ||
         value.includes('scale3d') ||
-        value.includes('translateZ');
+        value.includes('translateZ')
+      );
     }
 
-    function checkProperty(propertyName: string, propertyValue?: string): boolean {
+    function checkProperty(
+      propertyName: string,
+      propertyValue?: string,
+    ): boolean {
       const normalizedName = normalizePropertyName(propertyName);
       if (COMPOSITING_PROPERTIES.has(normalizedName)) {
         // Special case for opacity - only warn if it's animated or fractional
@@ -119,8 +126,10 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
       JSXAttribute(node: TSESTree.JSXAttribute) {
         if (node.name.name !== 'style') return;
 
-        if (node.value?.type === AST_NODE_TYPES.JSXExpressionContainer &&
-            node.value.expression.type === AST_NODE_TYPES.ObjectExpression) {
+        if (
+          node.value?.type === AST_NODE_TYPES.JSXExpressionContainer &&
+          node.value.expression.type === AST_NODE_TYPES.ObjectExpression
+        ) {
           node.value.expression.properties.forEach((prop) => {
             if (prop.type === AST_NODE_TYPES.Property) {
               checkNode(prop);
