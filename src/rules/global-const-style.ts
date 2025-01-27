@@ -113,7 +113,9 @@ export default createRule({
                   .replace(/([A-Z])/g, '_$1')
                   .toUpperCase()
                   .replace(/^_/, '');
-                return fixer.replaceText(declaration.id, newName);
+                const sourceCode = context.getSourceCode();
+                const typeAnnotation = declaration.id.typeAnnotation ? sourceCode.getText(declaration.id.typeAnnotation) : '';
+                return fixer.replaceText(declaration.id, newName + typeAnnotation);
               },
             });
           }
@@ -140,7 +142,8 @@ export default createRule({
               return (
                 node.type === AST_NODE_TYPES.Literal ||
                 node.type === AST_NODE_TYPES.ArrayExpression ||
-                node.type === AST_NODE_TYPES.ObjectExpression
+                node.type === AST_NODE_TYPES.ObjectExpression ||
+                (node.type === AST_NODE_TYPES.TSAsExpression && shouldHaveAsConst(node.expression))
               );
             };
 

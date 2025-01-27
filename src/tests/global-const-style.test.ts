@@ -169,6 +169,20 @@ ruleTesterTs.run('global-const-style', rule, {
       errors: [{ messageId: 'asConst' }],
       output: 'const COLORS: Colors = { primary: "#000", secondary: "#fff" } as const;',
     },
+    // Array with type annotation and type assertion missing as const
+    {
+      code: 'const displayableNotificationModes: Record<NotificationMode, string> = { sms: "SMS", email: "Email", push: "Push" };',
+      filename: 'test.ts',
+      errors: [{ messageId: 'upperSnakeCase' }, { messageId: 'asConst' }],
+      output: 'const DISPLAYABLE_NOTIFICATION_MODES: Record<NotificationMode, string> = { sms: "SMS", email: "Email", push: "Push" } as const;',
+    },
+    // Array with type annotation missing as const
+    {
+      code: 'const NOTIFICATION_MODES: NotificationMode[] = ["sms", "email", "push"];',
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }],
+      output: 'const NOTIFICATION_MODES: NotificationMode[] = ["sms", "email", "push"] as const;',
+    },
     // Array literal in JavaScript (no as const error)
     {
       code: 'const shadows = ["none", "0px 0px 1px rgba(0,0,0,0.2)"];',
