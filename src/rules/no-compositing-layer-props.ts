@@ -108,6 +108,13 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
           return true;
         }
 
+        // Skip if we're in a TypeScript type definition
+        if (current.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
+            current.type === AST_NODE_TYPES.TSInterfaceDeclaration ||
+            current.type === AST_NODE_TYPES.TSPropertySignature) {
+          return false;
+        }
+
         current = current.parent;
       }
       return false;

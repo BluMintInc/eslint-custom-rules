@@ -61,6 +61,27 @@ ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
         };
       `,
     },
+    // TypeScript type definitions with filter property should be ignored
+    {
+      code: `
+        export type ListNotificationsProps = {
+          status: DisplayableNotificationStatus;
+          limit?: number;
+          filter?: NotificationKind;
+          negativeFilter?: NotificationKind;
+          initialNotifications?: Notification<Date>[];
+        };
+      `,
+    },
+    {
+      code: `
+        interface FilterableProps {
+          filter: string;
+          transform: string;
+          opacity: number;
+        }
+      `,
+    },
     {
       code: `
         const jestConfig = {
