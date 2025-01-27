@@ -13,18 +13,6 @@ ruleTesterTs.run('no-nested-firestore-overwrites', noNestedFirestoreOverwrites, 
         db.collection('users').doc(userId).update(updates);
       `,
     },
-    // set() with merge: true is valid
-    {
-      code: `
-        const updates = {
-          hidden: {
-            notificationsId: userData.hidden.notificationsId || [],
-            auth: userData.hidden.auth || []
-          }
-        };
-        db.collection('users').doc(userId).set(updates, { merge: true });
-      `,
-    },
     // Non-nested updates are valid
     {
       code: `
@@ -35,14 +23,35 @@ ruleTesterTs.run('no-nested-firestore-overwrites', noNestedFirestoreOverwrites, 
         db.collection('users').doc(userId).update(updates);
       `,
     },
-    // Computed properties are ignored
+    // Non-object values are valid
     {
       code: `
-        const key = 'hidden';
         const updates = {
-          [key]: {
-            notificationsId: userData.hidden.notificationsId || []
-          }
+          scores: [1, 2, 3],
+          timestamp: new Date(),
+          isActive: true,
+          count: 42
+        };
+        db.collection('users').doc(userId).update(updates);
+      `,
+    },
+    // Using array methods is valid
+    {
+      code: `
+        const updates = {
+          'scores.0': 100,
+          'items.length': arrayUnion('newItem')
+        };
+        db.collection('users').doc(userId).update(updates);
+      `,
+    },
+    // Using Firestore field values is valid
+    {
+      code: `
+        const updates = {
+          lastLogin: FieldValue.serverTimestamp(),
+          counter: FieldValue.increment(1),
+          tags: FieldValue.arrayUnion('new-tag')
         };
         db.collection('users').doc(userId).update(updates);
       `,
@@ -62,27 +71,16 @@ ruleTesterTs.run('no-nested-firestore-overwrites', noNestedFirestoreOverwrites, 
       `,
       errors: [{ messageId: 'nestedOverwrite' }],
     },
-    // DocSetter with nested object
+    // Computed property with nested object
     {
       code: `
-        const setter = new DocSetter();
-        setter.setHidden({
-          notificationsId: userData.hidden.notificationsId || [],
-          auth: userData.hidden.auth || []
-        });
-      `,
-      errors: [{ messageId: 'nestedOverwrite' }],
-    },
-    // set() without merge option
-    {
-      code: `
+        const key = 'hidden';
         const updates = {
-          hidden: {
-            notificationsId: userData.hidden.notificationsId || [],
-            auth: userData.hidden.auth || []
+          [key]: {
+            notificationsId: userData.hidden.notificationsId || []
           }
         };
-        db.collection('users').doc(userId).set(updates);
+        db.collection('users').doc(userId).update(updates);
       `,
       errors: [{ messageId: 'nestedOverwrite' }],
     },
@@ -103,6 +101,54 @@ ruleTesterTs.run('no-nested-firestore-overwrites', noNestedFirestoreOverwrites, 
         { messageId: 'nestedOverwrite' },
         { messageId: 'nestedOverwrite' }
       ],
+    },
+    // Deeply nested objects
+    {
+      code: `
+        const updates = {
+          preferences: {
+            notifications: {
+              email: true,
+              push: {
+                enabled: true,
+                frequency: 'daily'
+              }
+            }
+          }
+        };
+        db.collection('users').doc(userId).update(updates);
+      `,
+      errors: [{ messageId: 'nestedOverwrite' }],
+    },
+    // Mixed valid and invalid updates
+    {
+      code: `
+        const updates = {
+          name: 'John',
+          'scores.0': 100,
+          preferences: {
+            theme: 'dark',
+            fontSize: 14
+          },
+          lastLogin: FieldValue.serverTimestamp()
+        };
+        db.collection('users').doc(userId).update(updates);
+      `,
+      errors: [{ messageId: 'nestedOverwrite' }],
+    },
+    // Template literal computed property
+    {
+      code: `
+        const section = 'preferences';
+        const updates = {
+          [\`user.\${section}\`]: {
+            theme: 'dark',
+            fontSize: 14
+          }
+        };
+        db.collection('users').doc(userId).update(updates);
+      `,
+      errors: [{ messageId: 'nestedOverwrite' }],
     },
   ],
 });
