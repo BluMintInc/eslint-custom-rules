@@ -51,9 +51,43 @@ ruleTesterTs.run('no-nested-firestore-overwrites', noNestedFirestoreOverwrites, 
         const updates = {
           lastLogin: FieldValue.serverTimestamp(),
           counter: FieldValue.increment(1),
-          tags: FieldValue.arrayUnion('new-tag')
+          tags: FieldValue.arrayUnion('new-tag'),
+          removedTags: FieldValue.arrayRemove('old-tag'),
+          deletedField: FieldValue.delete()
         };
         db.collection('users').doc(userId).update(updates);
+      `,
+    },
+    // Using set() with merge: true is valid
+    {
+      code: `
+        const data = {
+          preferences: {
+            theme: 'dark',
+            fontSize: 14
+          }
+        };
+        db.collection('users').doc(userId).set(data, { merge: true });
+      `,
+    },
+    // Using DocSetter with dot notation is valid
+    {
+      code: `
+        const setter = new DocSetter();
+        setter.set({
+          'preferences.theme': 'dark',
+          'preferences.fontSize': 14
+        });
+      `,
+    },
+    // Using Firebase frontend SDK with dot notation is valid
+    {
+      code: `
+        const docRef = doc(db, 'users', userId);
+        await updateDoc(docRef, {
+          'preferences.theme': 'dark',
+          'preferences.fontSize': 14
+        });
       `,
     },
   ],
@@ -147,6 +181,58 @@ ruleTesterTs.run('no-nested-firestore-overwrites', noNestedFirestoreOverwrites, 
           }
         };
         db.collection('users').doc(userId).update(updates);
+      `,
+      errors: [{ messageId: 'nestedOverwrite' }],
+    },
+    // Firebase frontend SDK with nested object
+    {
+      code: `
+        const docRef = doc(db, 'users', userId);
+        await updateDoc(docRef, {
+          preferences: {
+            theme: 'dark',
+            fontSize: 14
+          }
+        });
+      `,
+      errors: [{ messageId: 'nestedOverwrite' }],
+    },
+    // DocSetter with nested object
+    {
+      code: `
+        const setter = new DocSetter();
+        setter.set({
+          preferences: {
+            theme: 'dark',
+            fontSize: 14
+          }
+        });
+      `,
+      errors: [{ messageId: 'nestedOverwrite' }],
+    },
+    // set() without merge option
+    {
+      code: `
+        const data = {
+          preferences: {
+            theme: 'dark',
+            fontSize: 14
+          }
+        };
+        db.collection('users').doc(userId).set(data);
+      `,
+      errors: [{ messageId: 'nestedOverwrite' }],
+    },
+    // set() with merge: false
+    {
+      code: `
+        const data = {
+          preferences: {
+            theme: 'dark',
+            fontSize: 14
+          }
+        };
+        db.collection('users').doc(userId).set(data, { merge: false });
       `,
       errors: [{ messageId: 'nestedOverwrite' }],
     },
