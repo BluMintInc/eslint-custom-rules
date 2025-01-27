@@ -141,8 +141,11 @@ export default createRule<[], MessageIds>({
               );
             };
 
-            // Only require as const if there's no type annotation
-            if (shouldHaveAsConst(init) && !typeAnnotation) {
+            // Only require as const if it's not a Record type
+            const isRecordType = typeAnnotation?.typeAnnotation?.type === AST_NODE_TYPES.TSTypeReference &&
+              (typeAnnotation.typeAnnotation.typeName as TSESTree.Identifier)?.name === 'Record';
+
+            if (shouldHaveAsConst(init) && !isRecordType) {
               context.report({
                 node: declaration,
                 messageId: 'asConst',
