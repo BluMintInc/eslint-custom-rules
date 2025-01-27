@@ -4,7 +4,9 @@ import { createRule } from '../utils/createRule';
 const isUpperSnakeCase = (str: string): boolean =>
   /^[A-Z][A-Z0-9_]*$/.test(str);
 
-export default createRule({
+type MessageIds = 'upperSnakeCase' | 'asConst';
+
+export default createRule<[], MessageIds>({
   name: 'global-const-style',
   meta: {
     type: 'suggestion',
@@ -103,20 +105,10 @@ export default createRule({
             return;
           }
 
-          // Check for UPPER_SNAKE_CASE
-          if (!isUpperSnakeCase(name)) {
-            context.report({
-              node: declaration.id,
-              messageId: 'upperSnakeCase',
-              fix(fixer) {
-                const newName = name
-                  .replace(/([A-Z])/g, '_$1')
-                  .toUpperCase()
-                  .replace(/^_/, '');
-                return fixer.replaceText(declaration.id, newName);
-              },
-            });
-          }
+          const sourceCode = context.getSourceCode();
+          const initText = sourceCode.getText(init);
+          const typeAnnotation = declaration.id.typeAnnotation;
+          const typeText = typeAnnotation ? sourceCode.getText(typeAnnotation) : '';
 
           // Only check for as const in TypeScript files
           if (isTypeScript) {
@@ -136,6 +128,11 @@ export default createRule({
                 return false;
               }
 
+              // Handle type assertions
+              if (node.type === AST_NODE_TYPES.TSTypeAssertion || node.type === AST_NODE_TYPES.TSAsExpression) {
+                return shouldHaveAsConst(node.expression);
+              }
+
               // Check if it's a literal, array, or object that should have as const
               return (
                 node.type === AST_NODE_TYPES.Literal ||
@@ -146,15 +143,37 @@ export default createRule({
 
             if (shouldHaveAsConst(init)) {
               context.report({
-                node: init,
+                node: declaration,
                 messageId: 'asConst',
                 fix(fixer) {
-                  const sourceCode = context.getSourceCode();
-                  const initText = sourceCode.getText(init);
-                  return fixer.replaceText(init, `${initText} as const`);
+                  if (typeAnnotation) {
+                    return fixer.replaceText(declaration, `${isUpperSnakeCase(name) ? name : name.replace(/([A-Z])/g, '_$1').toUpperCase().replace(/^_/, '')}${typeText} = ${initText} as const`);
+                  } else {
+                    return fixer.replaceText(init, `${initText} as const`);
+                  }
                 },
               });
             }
+          }
+
+          // Check for UPPER_SNAKE_CASE
+          if (!isUpperSnakeCase(name)) {
+            const newName = name
+              .replace(/([A-Z])/g, '_$1')
+              .toUpperCase()
+              .replace(/^_/, '');
+
+            context.report({
+              node: declaration,
+              messageId: 'upperSnakeCase',
+              fix(fixer) {
+                if (typeAnnotation) {
+                  return fixer.replaceText(declaration, `${newName}${typeText} = ${initText}${isTypeScript ? ' as const' : ''}`);
+                } else {
+                  return fixer.replaceText(declaration.id, newName);
+                }
+              },
+            });
           }
         });
       },

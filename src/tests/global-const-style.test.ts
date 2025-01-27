@@ -131,7 +131,7 @@ ruleTesterTs.run('global-const-style', rule, {
     {
       code: 'const apiEndpoint = "https://api.example.com";',
       filename: 'test.ts',
-      errors: [{ messageId: 'upperSnakeCase' }, { messageId: 'asConst' }],
+      errors: [{ messageId: 'asConst' }, { messageId: 'upperSnakeCase' }],
       output: 'const API_ENDPOINT = "https://api.example.com" as const;',
     },
     // Missing UPPER_SNAKE_CASE in JavaScript (no as const error)
@@ -168,6 +168,13 @@ ruleTesterTs.run('global-const-style', rule, {
       filename: 'test.ts',
       errors: [{ messageId: 'asConst' }],
       output: 'const COLORS: Colors = { primary: "#000", secondary: "#fff" } as const;',
+    },
+    // Object with Record type annotation missing UPPER_SNAKE_CASE and as const
+    {
+      code: 'const displayableNotificationModes: Record<NotificationMode, string> = { sms: "SMS", email: "Email", push: "Push" };',
+      filename: 'test.ts',
+      errors: [{ messageId: 'asConst' }, { messageId: 'upperSnakeCase' }],
+      output: 'const DISPLAYABLE_NOTIFICATION_MODES: Record<NotificationMode, string> = { sms: "SMS", email: "Email", push: "Push" } as const;',
     },
     // Array literal in JavaScript (no as const error)
     {
