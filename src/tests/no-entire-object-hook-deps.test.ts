@@ -58,6 +58,26 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    // Using array dependencies should be valid
+    {
+      code: `
+        const MyComponent = ({ options }) => {
+          const selectOptions = useMemo(() => {
+            if (!Array.isArray(options)) {
+              return null;
+            }
+            return options.map((option) => {
+              return (
+                <MenuItem key={option} value={option}>
+                  {option}
+                </MenuItem>
+              );
+            });
+          }, [options]);
+          return <div>{selectOptions}</div>;
+        };
+      `,
+    },
   ],
   invalid: [
     // Basic case - using entire object when only name is needed

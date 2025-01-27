@@ -164,6 +164,32 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
             element.type === AST_NODE_TYPES.Identifier
           ) {
             const objectName = element.name;
+
+            // Check if the identifier is used in an Array.isArray() call
+            let isArrayCheck = false;
+            const scope = context.getScope();
+            const variable = scope.references.find(ref => ref.identifier === element)?.resolved;
+            if (variable) {
+              variable.references.forEach(ref => {
+                const parent = ref.identifier.parent;
+                if (
+                  parent?.type === AST_NODE_TYPES.CallExpression &&
+                  parent.callee.type === AST_NODE_TYPES.MemberExpression &&
+                  parent.callee.object.type === AST_NODE_TYPES.Identifier &&
+                  parent.callee.object.name === 'Array' &&
+                  parent.callee.property.type === AST_NODE_TYPES.Identifier &&
+                  parent.callee.property.name === 'isArray'
+                ) {
+                  isArrayCheck = true;
+                }
+              });
+            }
+
+            // Skip array dependencies
+            if (isArrayCheck) {
+              return;
+            }
+
             const usages = getObjectUsagesInHook(callbackArg.body, objectName);
 
             // If we found specific field usages and the entire object is in deps
