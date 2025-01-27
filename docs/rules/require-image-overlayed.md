@@ -6,28 +6,24 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
-
-<!-- end auto-generated rule header -->
-
-This rule enforces the use of the `ImageOverlayed` component instead of using `next/image` or HTML `img` tags directly.
+This rule enforces the use of the `ImageOverlayed` component from `src/components/ImageOverlayed` instead of using `next/image` or `img` tags directly.
 
 ## Rule Details
 
-This rule aims to ensure consistent image handling across the application by requiring the use of a custom `ImageOverlayed` component.
+The `ImageOverlayed` component provides consistent image handling with overlay capabilities across the application.
 
 Examples of **incorrect** code for this rule:
 
 ```jsx
 import Image from 'next/image';
 
-// Using next/image
-<Image src="/path/to/image.jpg" alt="description" />
+function Component() {
+  return <Image src="/example.jpg" alt="Example" />;
+}
 
-// Using HTML img tag
-<img src="/path/to/image.jpg" alt="description" />
+function AnotherComponent() {
+  return <img src="/example.jpg" alt="Example" />;
+}
 ```
 
 Examples of **correct** code for this rule:
@@ -35,40 +31,33 @@ Examples of **correct** code for this rule:
 ```jsx
 import ImageOverlayed from 'src/components/ImageOverlayed';
 
-<ImageOverlayed src="/path/to/image.jpg" alt="description" />
+function Component() {
+  return <ImageOverlayed src="/example.jpg" alt="Example" overlayText="Overlay Text" />;
+}
+
+import { ImageOverlayed as CustomImage } from 'src/components/ImageOverlayed';
+
+function AnotherComponent() {
+  return <CustomImage src="/example.jpg" alt="Example" overlayText="Overlay Text" />;
+}
 ```
 
 ## Options
 
-This rule accepts an options object with the following properties:
+This rule has no configurable options.
 
-```ts
-interface Options {
-  componentPath?: string;
-}
-```
+## Config
 
-### `componentPath`
-
-The import path for the ImageOverlayed component.
-
-- Type: `string`
-- Default: `'src/components/ImageOverlayed'`
-
-Example configuration:
+This rule is enabled by default in the recommended configuration with the following settings:
 
 ```json
 {
   "rules": {
-    "@blumintinc/blumint/require-image-overlayed": ["error", {
-      "componentPath": "@components/ImageOverlayed"
-    }]
+    "@blumintinc/blumint/require-image-overlayed": "error"
   }
 }
 ```
 
-## When Not To Use It
+## componentPath
 
-If you don't have a standardized image component or need to use native image elements for specific cases, you can disable this rule.
-
-💼 This rule is enabled in the ✅ `
+The rule enforces importing the `ImageOverlayed` component from `src/components/ImageOverlayed`. This path is hardcoded in the rule implementation and cannot be configured.

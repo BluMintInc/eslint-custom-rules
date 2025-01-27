@@ -1,8 +1,20 @@
+/**
+ * @fileoverview Enforce generic argument for Firestore DocumentReference
+ * @author BluMint
+ */
+
+/**
+ * @type {import('eslint').Rule.RuleModule}
+ */
+
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'missingGeneric' | 'invalidGeneric';
 
+/**
+ * @type {import('eslint').Rule.RuleModule}
+ */
 export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
   name: 'enforce-firestore-doc-ref-generic',
   meta: {
@@ -10,11 +22,13 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
     docs: {
       description: 'Enforce generic argument for Firestore DocumentReference',
       recommended: 'error',
+      requiresTypeChecking: true,
     },
     schema: [],
     messages: {
       missingGeneric: 'DocumentReference must specify a generic type argument',
-      invalidGeneric: 'DocumentReference must not use "any" or "{}" as generic type argument',
+      invalidGeneric:
+        'DocumentReference must not use "any" or "{}" as generic type argument',
     },
   },
   defaultOptions: [],
@@ -31,8 +45,11 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
           if (!node.members || node.members.length === 0) {
             return true;
           }
-          return node.members.some(member => {
-            if (member.type === AST_NODE_TYPES.TSPropertySignature && member.typeAnnotation) {
+          return node.members.some((member) => {
+            if (
+              member.type === AST_NODE_TYPES.TSPropertySignature &&
+              member.typeAnnotation
+            ) {
               return hasInvalidType(member.typeAnnotation.typeAnnotation);
             }
             return false;
@@ -44,6 +61,7 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
           if (node.typeName.type === AST_NODE_TYPES.Identifier) {
             const typeName = node.typeName.name;
             if (typeCache.has(typeName)) {
+              // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
               return typeCache.get(typeName)!;
             }
             // Prevent infinite recursion
@@ -51,11 +69,15 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
             const program = context.getSourceCode().ast;
             const interfaceDecl = program.body.find(
               (n): n is TSESTree.TSInterfaceDeclaration =>
-                n.type === AST_NODE_TYPES.TSInterfaceDeclaration && n.id.name === typeName
+                n.type === AST_NODE_TYPES.TSInterfaceDeclaration &&
+                n.id.name === typeName,
             );
             if (interfaceDecl) {
-              const result = interfaceDecl.body.body.some(member => {
-                if (member.type === AST_NODE_TYPES.TSPropertySignature && member.typeAnnotation) {
+              const result = interfaceDecl.body.body.some((member) => {
+                if (
+                  member.type === AST_NODE_TYPES.TSPropertySignature &&
+                  member.typeAnnotation
+                ) {
                   return hasInvalidType(member.typeAnnotation.typeAnnotation);
                 }
                 return false;
@@ -79,7 +101,9 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
           }
           return false;
         case AST_NODE_TYPES.TSIndexedAccessType:
-          return hasInvalidType(node.objectType) || hasInvalidType(node.indexType);
+          return (
+            hasInvalidType(node.objectType) || hasInvalidType(node.indexType)
+          );
         case AST_NODE_TYPES.TSConditionalType:
           return (
             hasInvalidType(node.checkType) ||
