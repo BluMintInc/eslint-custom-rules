@@ -25,7 +25,9 @@ export default createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     // Check if the file is a TypeScript file
-    const isTypeScript = context.getFilename().endsWith('.ts') || context.getFilename().endsWith('.tsx');
+    const isTypeScript =
+      context.getFilename().endsWith('.ts') ||
+      context.getFilename().endsWith('.tsx');
 
     return {
       VariableDeclaration(node) {
@@ -40,7 +42,7 @@ export default createRule<[], MessageIds>({
         }
 
         // Skip if any declaration is a function component, arrow function, forwardRef, or memo
-        const shouldSkip = node.declarations.some(declaration => {
+        const shouldSkip = node.declarations.some((declaration) => {
           if (declaration.id.type !== AST_NODE_TYPES.Identifier) {
             return false;
           }
@@ -54,7 +56,10 @@ export default createRule<[], MessageIds>({
           }
 
           // Skip function components (uppercase name + arrow function)
-          if (/^[A-Z]/.test(name) && init.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+          if (
+            /^[A-Z]/.test(name) &&
+            init.type === AST_NODE_TYPES.ArrowFunctionExpression
+          ) {
             return true;
           }
 
@@ -73,8 +78,10 @@ export default createRule<[], MessageIds>({
           // Skip type assertions on forwardRef and memo calls
           if (init.type === AST_NODE_TYPES.TSAsExpression) {
             const expression = init.expression;
-            if (expression.type === AST_NODE_TYPES.CallExpression &&
-                expression.callee.type === AST_NODE_TYPES.Identifier) {
+            if (
+              expression.type === AST_NODE_TYPES.CallExpression &&
+              expression.callee.type === AST_NODE_TYPES.Identifier
+            ) {
               return ['forwardRef', 'memo'].includes(expression.callee.name);
             }
           }
@@ -108,15 +115,19 @@ export default createRule<[], MessageIds>({
           const sourceCode = context.getSourceCode();
           const initText = sourceCode.getText(init);
           const typeAnnotation = declaration.id.typeAnnotation;
-          const typeText = typeAnnotation ? sourceCode.getText(typeAnnotation) : '';
+          const typeText = typeAnnotation
+            ? sourceCode.getText(typeAnnotation)
+            : '';
 
           // Only check for as const in TypeScript files
           if (isTypeScript) {
             const isAsConstExpression = (node: TSESTree.Node): boolean => {
               if (node.type === AST_NODE_TYPES.TSAsExpression) {
                 return (
-                  node.typeAnnotation?.type === AST_NODE_TYPES.TSTypeReference &&
-                  (node.typeAnnotation?.typeName as TSESTree.Identifier)?.name === 'const'
+                  node.typeAnnotation?.type ===
+                    AST_NODE_TYPES.TSTypeReference &&
+                  (node.typeAnnotation?.typeName as TSESTree.Identifier)
+                    ?.name === 'const'
                 );
               }
               return false;
@@ -129,8 +140,16 @@ export default createRule<[], MessageIds>({
               }
 
               // Handle type assertions
-              if (node.type === AST_NODE_TYPES.TSTypeAssertion || node.type === AST_NODE_TYPES.TSAsExpression) {
+              if (
+                node.type === AST_NODE_TYPES.TSTypeAssertion ||
+                node.type === AST_NODE_TYPES.TSAsExpression
+              ) {
                 return shouldHaveAsConst(node.expression);
+              }
+
+              // Skip if there's an explicit type annotation
+              if (declaration.id.typeAnnotation) {
+                return false;
               }
 
               // Check if it's a literal, array, or object that should have as const
@@ -164,7 +183,10 @@ export default createRule<[], MessageIds>({
               messageId: 'upperSnakeCase',
               fix(fixer) {
                 if (typeAnnotation) {
-                  return fixer.replaceText(declaration, `${newName}${typeText} = ${initText}`);
+                  return fixer.replaceText(
+                    declaration,
+                    `${newName}${typeText} = ${initText}`,
+                  );
                 } else {
                   return fixer.replaceText(declaration.id, newName);
                 }
