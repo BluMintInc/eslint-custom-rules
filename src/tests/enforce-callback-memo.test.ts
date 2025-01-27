@@ -55,6 +55,20 @@ ruleTester.run('enforce-callback-memo', rule, {
         };
       `,
     },
+    // Valid: JSX element with function prop wrapped in useMemo
+    {
+      code: `
+        const Component = () => {
+          const control = useMemo(() => (
+            <EditableBoolean
+              value={enabled}
+              onChange={updateGroupNotificationSettings(preferences, mode)}
+            />
+          ), [enabled, updateGroupNotificationSettings, preferences, mode]);
+          return <FormControlLabel control={control} label="Toggle" />;
+        };
+      `,
+    },
   ],
   invalid: [
     // Invalid: Inline function
@@ -92,6 +106,25 @@ ruleTester.run('enforce-callback-memo', rule, {
         };
       `,
       errors: [{ messageId: 'enforceMemo' }],
+    },
+    // Invalid: JSX element with function prop as control
+    {
+      code: `
+        const Component = () => {
+          return (
+            <FormControlLabel
+              control={
+                <EditableBoolean
+                  value={enabled}
+                  onChange={() => console.log('changed')}
+                />
+              }
+              label="Toggle"
+            />
+          );
+        };
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
     },
   ],
 });
