@@ -26,18 +26,30 @@ export const noUnusedProps = createRule({
     return {
       TSTypeAliasDeclaration(node) {
         if (node.id.name.endsWith('Props')) {
-          if (node.typeAnnotation.type === AST_NODE_TYPES.TSTypeLiteral) {
-            const props: Record<string, TSESTree.Node> = {};
-            node.typeAnnotation.members.forEach((member) => {
-              if (
-                member.type === AST_NODE_TYPES.TSPropertySignature &&
-                member.key.type === AST_NODE_TYPES.Identifier
-              ) {
-                props[member.key.name] = member.key;
+          const props: Record<string, TSESTree.Node> = {};
+
+          function extractProps(typeNode: TSESTree.TypeNode) {
+            if (typeNode.type === AST_NODE_TYPES.TSTypeLiteral) {
+              typeNode.members.forEach((member) => {
+                if (
+                  member.type === AST_NODE_TYPES.TSPropertySignature &&
+                  member.key.type === AST_NODE_TYPES.Identifier
+                ) {
+                  props[member.key.name] = member.key;
+                }
+              });
+            } else if (typeNode.type === AST_NODE_TYPES.TSIntersectionType) {
+              typeNode.types.forEach(extractProps);
+            } else if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
+              // For referenced types like FormControlLabelProps, we need to track that these props should be forwarded
+              if (typeNode.typeName.type === AST_NODE_TYPES.Identifier) {
+                props[`...${typeNode.typeName.name}`] = typeNode.typeName;
               }
-            });
-            propsTypes.set(node.id.name, props);
+            }
           }
+
+          extractProps(node.typeAnnotation);
+          propsTypes.set(node.id.name, props);
         }
       },
 
@@ -66,6 +78,20 @@ export const noUnusedProps = createRule({
                     prop.key.type === AST_NODE_TYPES.Identifier
                   ) {
                     used.add(prop.key.name);
+                  } else if (
+                    prop.type === AST_NODE_TYPES.RestElement &&
+                    prop.argument.type === AST_NODE_TYPES.Identifier
+                  ) {
+                    // Handle rest spread operator {...rest}
+                    // When a rest operator is used, all remaining props are considered used
+                    const propsType = propsTypes.get(typeName);
+                    if (propsType) {
+                      Object.keys(propsType).forEach((key) => {
+                        if (key.startsWith('...')) {
+                          used.add(key);
+                        }
+                      });
+                    }
                   }
                 });
                 usedProps.set(typeName, used);

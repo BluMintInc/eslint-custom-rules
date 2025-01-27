@@ -1,5 +1,7 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { TypeFlags, isArrayTypeNode, isTupleTypeNode } from 'typescript';
+import type { TypeChecker, Node } from 'typescript';
 
 type MessageIds = 'avoidEntireObject';
 
@@ -8,9 +10,50 @@ const HOOK_NAMES = new Set(['useEffect', 'useCallback', 'useMemo']);
 function isHookCall(node: TSESTree.CallExpression): boolean {
   const callee = node.callee;
   return (
-    callee.type === AST_NODE_TYPES.Identifier &&
-    HOOK_NAMES.has(callee.name)
+    callee.type === AST_NODE_TYPES.Identifier && HOOK_NAMES.has(callee.name)
   );
+}
+
+function isArrayOrPrimitive(
+  checker: TypeChecker,
+  esTreeNode: TSESTree.Node,
+  nodeMap: { get(node: TSESTree.Node): Node | undefined },
+): boolean {
+  const tsNode = nodeMap.get(esTreeNode);
+  if (!tsNode) return false;
+
+  const type = checker.getTypeAtLocation(tsNode);
+
+  // Check if it's a primitive type
+  if (
+    type.flags &
+    (TypeFlags.String |
+      TypeFlags.Number |
+      TypeFlags.Boolean |
+      TypeFlags.Null |
+      TypeFlags.Undefined |
+      TypeFlags.Void |
+      TypeFlags.Never |
+      TypeFlags.Any |
+      TypeFlags.Unknown |
+      TypeFlags.BigInt |
+      TypeFlags.ESSymbol)
+  ) {
+    return true;
+  }
+
+  // Check if it's an array type
+  const typeNode = checker.typeToTypeNode(type, undefined, undefined);
+  if (
+    type.symbol?.name === 'Array' ||
+    type.symbol?.escapedName === 'Array' ||
+    (typeNode && (isArrayTypeNode(typeNode) || isTupleTypeNode(typeNode)))
+  ) {
+    return true;
+  }
+
+  // If it's not a primitive or array, and has properties, it's an object
+  return false;
 }
 
 function getObjectUsagesInHook(
@@ -35,8 +78,10 @@ function getObjectUsagesInHook(
       current = current.object;
     }
 
-    if (current.type === AST_NODE_TYPES.Identifier && current.name === objectName) {
-      parts.unshift(objectName);
+    if (
+      current.type === AST_NODE_TYPES.Identifier &&
+      current.name === objectName
+    ) {
       return parts.join('.');
     }
 
@@ -44,63 +89,31 @@ function getObjectUsagesInHook(
   }
 
   function visit(node: TSESTree.Node): void {
-    if (visited.has(node)) {
-      return;
-    }
+    if (visited.has(node)) return;
     visited.add(node);
 
-    if (node.type === AST_NODE_TYPES.MemberExpression && !node.computed) {
-      const accessPath = buildAccessPath(node);
-      if (accessPath) {
-        usages.add(accessPath);
+    if (node.type === AST_NODE_TYPES.MemberExpression) {
+      const path = buildAccessPath(node);
+      if (path) {
+        usages.add(`${objectName}.${path}`);
       }
     }
 
-    // Visit children
-    switch (node.type) {
-      case AST_NODE_TYPES.BlockStatement:
-      case AST_NODE_TYPES.Program:
-        node.body.forEach(child => visit(child));
-        break;
-      case AST_NODE_TYPES.ExpressionStatement:
-        visit(node.expression);
-        break;
-      case AST_NODE_TYPES.CallExpression:
-        visit(node.callee);
-        node.arguments.forEach(arg => visit(arg));
-        break;
-      case AST_NODE_TYPES.MemberExpression:
-        visit(node.object);
-        if (!node.computed) {
-          visit(node.property);
+    // Visit all child nodes
+    for (const key in node) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const child = (node as any)[key];
+      if (child && typeof child === 'object') {
+        if (Array.isArray(child)) {
+          child.forEach((item) => {
+            if (item && typeof item === 'object') {
+              visit(item);
+            }
+          });
+        } else if ('type' in child) {
+          visit(child);
         }
-        break;
-      case AST_NODE_TYPES.ArrowFunctionExpression:
-      case AST_NODE_TYPES.FunctionExpression:
-        if (node.body.type === AST_NODE_TYPES.BlockStatement) {
-          visit(node.body);
-        } else {
-          visit(node.body);
-        }
-        break;
-      case AST_NODE_TYPES.ReturnStatement:
-        if (node.argument) {
-          visit(node.argument);
-        }
-        break;
-      case AST_NODE_TYPES.ConditionalExpression:
-        visit(node.test);
-        visit(node.consequent);
-        visit(node.alternate);
-        break;
-      case AST_NODE_TYPES.LogicalExpression:
-      case AST_NODE_TYPES.BinaryExpression:
-        visit(node.left);
-        visit(node.right);
-        break;
-      case AST_NODE_TYPES.TemplateLiteral:
-        node.expressions.forEach(expr => visit(expr));
-        break;
+      }
     }
   }
 
@@ -108,11 +121,13 @@ function getObjectUsagesInHook(
 
   // Filter out intermediate paths
   const paths = Array.from(usages);
-  const filteredPaths = paths.filter(path =>
-    !paths.some(otherPath =>
-      otherPath !== path && otherPath.startsWith(path + '.')
-    )
+  const filteredPaths = paths.filter(
+    (path) =>
+      !paths.some(
+        (otherPath) => otherPath !== path && otherPath.startsWith(path + '.'),
+      ),
   );
+
   return new Set(filteredPaths);
 }
 
@@ -121,17 +136,31 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Avoid using entire objects in React hook dependency arrays when only specific fields are used',
+      description:
+        'Avoid using entire objects in React hook dependency arrays when only specific fields are used',
       recommended: 'error',
     },
     fixable: 'code',
     schema: [],
     messages: {
-      avoidEntireObject: 'Avoid using entire object "{{objectName}}" in dependency array. Use specific fields: {{fields}}',
+      avoidEntireObject:
+        'Avoid using entire object "{{objectName}}" in dependency array. Use specific fields: {{fields}}',
     },
   },
   defaultOptions: [],
   create(context) {
+    const parserServices = context.parserServices;
+
+    // Check if we have access to TypeScript services
+    if (!parserServices?.program || !parserServices?.esTreeNodeToTSNodeMap) {
+      throw new Error(
+        'You have to enable the `project` setting in parser options to use this rule',
+      );
+    }
+
+    const checker = parserServices.program.getTypeChecker();
+    const nodeMap = parserServices.esTreeNodeToTSNodeMap;
+
     return {
       CallExpression(node) {
         if (!isHookCall(node)) {
@@ -140,10 +169,7 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
 
         // Get the dependency array argument
         const depsArg = node.arguments[node.arguments.length - 1];
-        if (
-          !depsArg ||
-          depsArg.type !== AST_NODE_TYPES.ArrayExpression
-        ) {
+        if (!depsArg || depsArg.type !== AST_NODE_TYPES.ArrayExpression) {
           return;
         }
 
@@ -158,35 +184,12 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
         }
 
         // Check each dependency in the array
-        depsArg.elements.forEach(element => {
-          if (
-            element &&
-            element.type === AST_NODE_TYPES.Identifier
-          ) {
+        depsArg.elements.forEach((element) => {
+          if (element && element.type === AST_NODE_TYPES.Identifier) {
             const objectName = element.name;
 
-            // Check if the identifier is used in an Array.isArray() call
-            let isArrayCheck = false;
-            const scope = context.getScope();
-            const variable = scope.references.find(ref => ref.identifier === element)?.resolved;
-            if (variable) {
-              variable.references.forEach(ref => {
-                const parent = ref.identifier.parent;
-                if (
-                  parent?.type === AST_NODE_TYPES.CallExpression &&
-                  parent.callee.type === AST_NODE_TYPES.MemberExpression &&
-                  parent.callee.object.type === AST_NODE_TYPES.Identifier &&
-                  parent.callee.object.name === 'Array' &&
-                  parent.callee.property.type === AST_NODE_TYPES.Identifier &&
-                  parent.callee.property.name === 'isArray'
-                ) {
-                  isArrayCheck = true;
-                }
-              });
-            }
-
-            // Skip array dependencies
-            if (isArrayCheck) {
+            // Skip if the dependency is an array or primitive type
+            if (isArrayOrPrimitive(checker, element, nodeMap)) {
               return;
             }
 
@@ -207,7 +210,7 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
                   if (usages.size > 0) {
                     return fixer.replaceText(
                       element,
-                      Array.from(usages).join(', ')
+                      Array.from(usages).join(', '),
                     );
                   }
                   return null;
