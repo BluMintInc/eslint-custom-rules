@@ -37,7 +37,7 @@ import { enforceFirestoreDocRefGeneric } from './rules/enforce-firestore-doc-ref
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.2.0',
+    version: '1.2.1',
   },
   parseOptions: {
     ecmaVersion: 2020,

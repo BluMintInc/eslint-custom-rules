@@ -1,3 +1,11 @@
+## [1.2.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.2.0...v1.2.1) (2025-01-27)
+
+
+### Bug Fixes
+
+* **.cursorrules:** trigger next release ([c9a34ad](https://github.com/BluMintInc/eslint-custom-rules/commit/c9a34ad941fb0a117a783134ab99f0ab91e435f6))
+* **Add enforce-firestore-doc-ref-generic rule documentation and implementation:** add ([5b0f60f](https://github.com/BluMintInc/eslint-custom-rules/commit/5b0f60fda08544e954528b81625cc04b89195068))
+
 # [1.2.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.1.9...v1.2.0) (2025-01-24)
 
 
