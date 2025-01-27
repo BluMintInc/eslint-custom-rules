@@ -83,7 +83,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
     // Basic case - using entire object when only name is needed
     {
       code: `
-        const MyComponent = ({ user }) => {
+        const MyComponent = ({ user }: { user: { name: string } }) => {
           const greetUser = useCallback(() => {
             console.log(user.name);
           }, [user]);
@@ -100,7 +100,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         },
       ],
       output: `
-        const MyComponent = ({ user }) => {
+        const MyComponent = ({ user }: { user: { name: string } }) => {
           const greetUser = useCallback(() => {
             console.log(user.name);
           }, [user.name]);
@@ -111,7 +111,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
     // Multiple field access
     {
       code: `
-        const MyComponent = ({ user }) => {
+        const MyComponent = ({ user }: { user: { name: string; age: number } }) => {
           const greetUser = useCallback(() => {
             console.log(user.name);
             console.log(user.age);
@@ -129,7 +129,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         },
       ],
       output: `
-        const MyComponent = ({ user }) => {
+        const MyComponent = ({ user }: { user: { name: string; age: number } }) => {
           const greetUser = useCallback(() => {
             console.log(user.name);
             console.log(user.age);
@@ -141,7 +141,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
     // Nested field access
     {
       code: `
-        const MyComponent = ({ user }) => {
+        const MyComponent = ({ user }: { user: { address: { city: string } } }) => {
           const showAddress = useCallback(() => {
             console.log(user.address.city);
           }, [user]);
@@ -158,7 +158,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         },
       ],
       output: `
-        const MyComponent = ({ user }) => {
+        const MyComponent = ({ user }: { user: { address: { city: string } } }) => {
           const showAddress = useCallback(() => {
             console.log(user.address.city);
           }, [user.address.city]);
