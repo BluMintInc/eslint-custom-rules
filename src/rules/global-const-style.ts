@@ -141,16 +141,13 @@ export default createRule<[], MessageIds>({
               );
             };
 
-            if (shouldHaveAsConst(init)) {
+            // Only require as const if there's no type annotation
+            if (shouldHaveAsConst(init) && !typeAnnotation) {
               context.report({
                 node: declaration,
                 messageId: 'asConst',
                 fix(fixer) {
-                  if (typeAnnotation) {
-                    return fixer.replaceText(declaration, `${isUpperSnakeCase(name) ? name : name.replace(/([A-Z])/g, '_$1').toUpperCase().replace(/^_/, '')}${typeText} = ${initText} as const`);
-                  } else {
-                    return fixer.replaceText(init, `${initText} as const`);
-                  }
+                  return fixer.replaceText(init, `${initText} as const`);
                 },
               });
             }
@@ -168,7 +165,7 @@ export default createRule<[], MessageIds>({
               messageId: 'upperSnakeCase',
               fix(fixer) {
                 if (typeAnnotation) {
-                  return fixer.replaceText(declaration, `${newName}${typeText} = ${initText}${isTypeScript ? ' as const' : ''}`);
+                  return fixer.replaceText(declaration, `${newName}${typeText} = ${initText}`);
                 } else {
                   return fixer.replaceText(declaration.id, newName);
                 }

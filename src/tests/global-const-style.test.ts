@@ -169,12 +169,12 @@ ruleTesterTs.run('global-const-style', rule, {
       errors: [{ messageId: 'asConst' }],
       output: 'const COLORS: Colors = { primary: "#000", secondary: "#fff" } as const;',
     },
-    // Object with Record type annotation missing UPPER_SNAKE_CASE and as const
+    // Object with Record type annotation missing UPPER_SNAKE_CASE (should not require as const)
     {
       code: 'const displayableNotificationModes: Record<NotificationMode, string> = { sms: "SMS", email: "Email", push: "Push" };',
       filename: 'test.ts',
-      errors: [{ messageId: 'asConst' }, { messageId: 'upperSnakeCase' }],
-      output: 'const DISPLAYABLE_NOTIFICATION_MODES: Record<NotificationMode, string> = { sms: "SMS", email: "Email", push: "Push" } as const;',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output: 'const DISPLAYABLE_NOTIFICATION_MODES: Record<NotificationMode, string> = { sms: "SMS", email: "Email", push: "Push" };',
     },
     // Array literal in JavaScript (no as const error)
     {
