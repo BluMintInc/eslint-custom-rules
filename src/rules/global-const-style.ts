@@ -4,7 +4,9 @@ import { createRule } from '../utils/createRule';
 const isUpperSnakeCase = (str: string): boolean =>
   /^[A-Z][A-Z0-9_]*$/.test(str);
 
-export default createRule({
+type MessageIds = 'upperSnakeCase' | 'asConst';
+
+export default createRule<[], MessageIds>({
   name: 'global-const-style',
   meta: {
     type: 'suggestion',
@@ -23,7 +25,9 @@ export default createRule({
   defaultOptions: [],
   create(context) {
     // Check if the file is a TypeScript file
-    const isTypeScript = context.getFilename().endsWith('.ts') || context.getFilename().endsWith('.tsx');
+    const isTypeScript =
+      context.getFilename().endsWith('.ts') ||
+      context.getFilename().endsWith('.tsx');
 
     return {
       VariableDeclaration(node) {
@@ -38,7 +42,7 @@ export default createRule({
         }
 
         // Skip if any declaration is a function component, arrow function, forwardRef, or memo
-        const shouldSkip = node.declarations.some(declaration => {
+        const shouldSkip = node.declarations.some((declaration) => {
           if (declaration.id.type !== AST_NODE_TYPES.Identifier) {
             return false;
           }
@@ -52,7 +56,10 @@ export default createRule({
           }
 
           // Skip function components (uppercase name + arrow function)
-          if (/^[A-Z]/.test(name) && init.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+          if (
+            /^[A-Z]/.test(name) &&
+            init.type === AST_NODE_TYPES.ArrowFunctionExpression
+          ) {
             return true;
           }
 
@@ -71,8 +78,10 @@ export default createRule({
           // Skip type assertions on forwardRef and memo calls
           if (init.type === AST_NODE_TYPES.TSAsExpression) {
             const expression = init.expression;
-            if (expression.type === AST_NODE_TYPES.CallExpression &&
-                expression.callee.type === AST_NODE_TYPES.Identifier) {
+            if (
+              expression.type === AST_NODE_TYPES.CallExpression &&
+              expression.callee.type === AST_NODE_TYPES.Identifier
+            ) {
               return ['forwardRef', 'memo'].includes(expression.callee.name);
             }
           }
@@ -103,28 +112,22 @@ export default createRule({
             return;
           }
 
-          // Check for UPPER_SNAKE_CASE
-          if (!isUpperSnakeCase(name)) {
-            context.report({
-              node: declaration.id,
-              messageId: 'upperSnakeCase',
-              fix(fixer) {
-                const newName = name
-                  .replace(/([A-Z])/g, '_$1')
-                  .toUpperCase()
-                  .replace(/^_/, '');
-                return fixer.replaceText(declaration.id, newName);
-              },
-            });
-          }
+          const sourceCode = context.getSourceCode();
+          const initText = sourceCode.getText(init);
+          const typeAnnotation = declaration.id.typeAnnotation;
+          const typeText = typeAnnotation
+            ? sourceCode.getText(typeAnnotation)
+            : '';
 
           // Only check for as const in TypeScript files
           if (isTypeScript) {
             const isAsConstExpression = (node: TSESTree.Node): boolean => {
               if (node.type === AST_NODE_TYPES.TSAsExpression) {
                 return (
-                  node.typeAnnotation?.type === AST_NODE_TYPES.TSTypeReference &&
-                  (node.typeAnnotation?.typeName as TSESTree.Identifier)?.name === 'const'
+                  node.typeAnnotation?.type ===
+                    AST_NODE_TYPES.TSTypeReference &&
+                  (node.typeAnnotation?.typeName as TSESTree.Identifier)
+                    ?.name === 'const'
                 );
               }
               return false;
@@ -133,6 +136,19 @@ export default createRule({
             const shouldHaveAsConst = (node: TSESTree.Node): boolean => {
               // Skip if it's already an as const expression
               if (isAsConstExpression(node)) {
+                return false;
+              }
+
+              // Handle type assertions
+              if (
+                node.type === AST_NODE_TYPES.TSTypeAssertion ||
+                node.type === AST_NODE_TYPES.TSAsExpression
+              ) {
+                return shouldHaveAsConst(node.expression);
+              }
+
+              // Skip if there's an explicit type annotation
+              if (declaration.id.typeAnnotation) {
                 return false;
               }
 
@@ -146,15 +162,36 @@ export default createRule({
 
             if (shouldHaveAsConst(init)) {
               context.report({
-                node: init,
+                node: declaration,
                 messageId: 'asConst',
                 fix(fixer) {
-                  const sourceCode = context.getSourceCode();
-                  const initText = sourceCode.getText(init);
                   return fixer.replaceText(init, `${initText} as const`);
                 },
               });
             }
+          }
+
+          // Check for UPPER_SNAKE_CASE
+          if (!isUpperSnakeCase(name)) {
+            const newName = name
+              .replace(/([A-Z])/g, '_$1')
+              .toUpperCase()
+              .replace(/^_/, '');
+
+            context.report({
+              node: declaration,
+              messageId: 'upperSnakeCase',
+              fix(fixer) {
+                if (typeAnnotation) {
+                  return fixer.replaceText(
+                    declaration,
+                    `${newName}${typeText} = ${initText}`,
+                  );
+                } else {
+                  return fixer.replaceText(declaration.id, newName);
+                }
+              },
+            });
           }
         });
       },
