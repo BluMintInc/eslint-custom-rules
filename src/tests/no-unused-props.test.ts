@@ -59,6 +59,28 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         sourceType: 'module',
       },
     },
+    {
+      code: `
+        import { FormControlLabelProps } from '@mui/material';
+        type GroupModeTogglesProps = {
+          mode: string;
+          preferences: Record<string, any>;
+        } & FormControlLabelProps;
+        const GroupModeToggles = ({ mode, preferences, label, ...rest }: GroupModeTogglesProps) => (
+          <FormControlLabel
+            {...rest}
+            control={<div />}
+            label={label}
+          />
+        );
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
   ],
   invalid: [
     {
@@ -115,6 +137,34 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         {
           messageId: 'unusedProp',
           data: { propName: 'disabled' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        import { FormControlLabelProps } from '@mui/material';
+        type GroupModeTogglesProps = {
+          mode: string;
+          preferences: Record<string, any>;
+        } & FormControlLabelProps;
+        const GroupModeToggles = ({ mode, preferences, label }: GroupModeTogglesProps) => (
+          <FormControlLabel
+            control={<div />}
+            label={label}
+          />
+        );
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: '...FormControlLabelProps' },
           type: AST_NODE_TYPES.Identifier,
         },
       ],
