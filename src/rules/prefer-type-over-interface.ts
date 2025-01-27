@@ -10,7 +10,7 @@ export const preferTypeOverInterface: TSESLint.RuleModule<
     type: 'suggestion',
     docs: {
       description: 'Prefer using type alias over interface',
-      recommended: 'warn',
+      recommended: 'error',
     },
     schema: [],
     messages: {

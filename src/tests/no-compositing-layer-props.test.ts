@@ -50,6 +50,50 @@ ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
         },
       },
     },
+    // Non-style objects with matching property names should be ignored
+    {
+      code: `
+        const config = {
+          transform: 'module-alias',
+          filter: ['src/**/*.ts'],
+          opacity: 0.5,
+          perspective: 'test',
+        };
+      `,
+    },
+    // TypeScript type definitions with filter property should be ignored
+    {
+      code: `
+        export type ListNotificationsProps = {
+          status: DisplayableNotificationStatus;
+          limit?: number;
+          filter?: NotificationKind;
+          negativeFilter?: NotificationKind;
+          initialNotifications?: Notification<Date>[];
+        };
+      `,
+    },
+    {
+      code: `
+        interface FilterableProps {
+          filter: string;
+          transform: string;
+          opacity: number;
+        }
+      `,
+    },
+    {
+      code: `
+        const jestConfig = {
+          transform: {
+            '^.+\\.tsx?$': 'ts-jest',
+          },
+          filter: ['src/**/*.ts'],
+          opacity: 0.5,
+          perspective: 'test',
+        };
+      `,
+    },
   ],
   invalid: [
     // Invalid inline styles

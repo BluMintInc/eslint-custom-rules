@@ -5,7 +5,7 @@ type MessageIds = 'compositingLayer';
 
 // Convert camelCase to kebab-case
 function toKebabCase(str: string): string {
-  return str.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`);
+  return str.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
 }
 
 // Normalize property name to kebab-case for consistent lookup
@@ -40,12 +40,14 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Warn when using CSS properties that trigger compositing layers',
-      recommended: 'warn',
+      description:
+        'Warn when using CSS properties that trigger compositing layers',
+      recommended: 'error',
     },
     schema: [],
     messages: {
-      compositingLayer: '{{property}} may trigger a new compositing layer which can impact performance. Consider using alternative properties or add an eslint-disable comment if the layer promotion is intentional.',
+      compositingLayer:
+        '{{property}} may trigger a new compositing layer which can impact performance. Consider using alternative properties or add an eslint-disable comment if the layer promotion is intentional.',
     },
   },
   defaultOptions: [],
@@ -53,13 +55,18 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
     const seenNodes = new WeakSet<TSESTree.Node>();
 
     function checkPropertyValue(value: string): boolean {
-      return COMPOSITING_VALUES.has(value) ||
+      return (
+        COMPOSITING_VALUES.has(value) ||
         value.includes('translate3d') ||
         value.includes('scale3d') ||
-        value.includes('translateZ');
+        value.includes('translateZ')
+      );
     }
 
-    function checkProperty(propertyName: string, propertyValue?: string): boolean {
+    function checkProperty(
+      propertyName: string,
+      propertyValue?: string,
+    ): boolean {
       const normalizedName = normalizePropertyName(propertyName);
       if (COMPOSITING_PROPERTIES.has(normalizedName)) {
         // Special case for opacity - only warn if it's animated or fractional
@@ -77,10 +84,49 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
       return false;
     }
 
+    function isStyleContext(node: TSESTree.Node): boolean {
+      let current: TSESTree.Node | undefined = node;
+      while (current?.parent) {
+        // Check for JSX style attribute
+        if (current.parent.type === AST_NODE_TYPES.JSXAttribute &&
+            current.parent.name.type === AST_NODE_TYPES.JSXIdentifier &&
+            current.parent.name.name === 'style') {
+          return true;
+        }
+
+        // Check for style-related variable names or properties
+        if (current.type === AST_NODE_TYPES.VariableDeclarator &&
+            current.id.type === AST_NODE_TYPES.Identifier &&
+            /style/i.test(current.id.name)) {
+          return true;
+        }
+
+        // Check for style-related object property assignments
+        if (current.parent.type === AST_NODE_TYPES.Property &&
+            current.parent.key.type === AST_NODE_TYPES.Identifier &&
+            /style/i.test(current.parent.key.name)) {
+          return true;
+        }
+
+        // Skip if we're in a TypeScript type definition
+        if (current.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
+            current.type === AST_NODE_TYPES.TSInterfaceDeclaration ||
+            current.type === AST_NODE_TYPES.TSPropertySignature) {
+          return false;
+        }
+
+        current = current.parent;
+      }
+      return false;
+    }
+
     function checkNode(node: TSESTree.Property): void {
       // Skip if we've already processed this node
       if (seenNodes.has(node)) return;
       seenNodes.add(node);
+
+      // Skip if not in a style context
+      if (!isStyleContext(node)) return;
 
       let propertyName = '';
       let propertyValue = '';
@@ -119,8 +165,10 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
       JSXAttribute(node: TSESTree.JSXAttribute) {
         if (node.name.name !== 'style') return;
 
-        if (node.value?.type === AST_NODE_TYPES.JSXExpressionContainer &&
-            node.value.expression.type === AST_NODE_TYPES.ObjectExpression) {
+        if (
+          node.value?.type === AST_NODE_TYPES.JSXExpressionContainer &&
+          node.value.expression.type === AST_NODE_TYPES.ObjectExpression
+        ) {
           node.value.expression.properties.forEach((prop) => {
             if (prop.type === AST_NODE_TYPES.Property) {
               checkNode(prop);

@@ -21,6 +21,17 @@ ruleTesterTs.run('require-https-error', requireHttpsError, {
       filename: 'functions/src/test.ts',
       errors: [{ messageId: 'useHttpsError' }],
     },
+    // Should not allow throw new Error in type assertion functions
+    {
+      code: `
+export function assertPositiveInteger(value: number): asserts value is PositiveInteger {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(\`Value \${value} must be a positive integer\`);
+  }
+}`,
+      filename: 'functions/src/test.ts',
+      errors: [{ messageId: 'useHttpsError' }],
+    },
     // Should not allow throw new Error with multiple arguments in functions/src
     {
       code: 'throw new Error("test error", "additional info");',

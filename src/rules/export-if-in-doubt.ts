@@ -10,7 +10,7 @@ export const exportIfInDoubt: TSESLint.RuleModule<'exportIfInDoubt', never[]> =
       docs: {
         description:
           'All top-level const definitions, type definitions, and functions should be exported',
-        recommended: 'warn',
+        recommended: 'error',
       },
       schema: [],
       messages: {

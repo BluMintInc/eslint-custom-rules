@@ -34,7 +34,7 @@ export const noUselessFragment: TSESLint.RuleModule<'noUselessFragment', []> = {
     type: 'suggestion',
     docs: {
       description: 'Prevent unnecessary use of React fragments',
-      recommended: 'warn',
+      recommended: 'error',
     },
     messages: {
       noUselessFragment:

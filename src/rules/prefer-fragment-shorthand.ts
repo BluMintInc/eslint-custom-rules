@@ -32,7 +32,7 @@ export const preferFragmentShorthand: TSESLint.RuleModule<
     type: 'suggestion',
     docs: {
       description: 'Prefer <> shorthand for <React.Fragment>',
-      recommended: 'warn',
+      recommended: 'error',
     },
     messages: {
       preferShorthand:

@@ -90,7 +90,6 @@ ruleTesterTs.run('global-const-style', rule, {
       },
     },
 
-
     // Dynamic values should be ignored
     {
       code: 'const API_VERSION = getVersion();',
@@ -113,7 +112,7 @@ ruleTesterTs.run('global-const-style', rule, {
     },
   ],
   invalid: [
-    // Missing UPPER_SNAKE_CASE in TypeScript
+    // Missing UPPER_SNAKE_CASE and as const in TypeScript
     {
       code: 'const apiEndpoint = "https://api.example.com" as const;',
       filename: 'test.ts',
@@ -131,7 +130,7 @@ ruleTesterTs.run('global-const-style', rule, {
     {
       code: 'const apiEndpoint = "https://api.example.com";',
       filename: 'test.ts',
-      errors: [{ messageId: 'upperSnakeCase' }, { messageId: 'asConst' }],
+      errors: [{ messageId: 'asConst' }, { messageId: 'upperSnakeCase' }],
       output: 'const API_ENDPOINT = "https://api.example.com" as const;',
     },
     // Missing UPPER_SNAKE_CASE in JavaScript (no as const error)
@@ -146,7 +145,8 @@ ruleTesterTs.run('global-const-style', rule, {
       code: 'const SHADOWS = ["none", "0px 0px 1px rgba(0,0,0,0.2)"];',
       filename: 'test.ts',
       errors: [{ messageId: 'asConst' }],
-      output: 'const SHADOWS = ["none", "0px 0px 1px rgba(0,0,0,0.2)"] as const;',
+      output:
+        'const SHADOWS = ["none", "0px 0px 1px rgba(0,0,0,0.2)"] as const;',
     },
     // Object literal missing as const in TypeScript
     {
@@ -155,19 +155,29 @@ ruleTesterTs.run('global-const-style', rule, {
       errors: [{ messageId: 'asConst' }],
       output: 'const COLORS = { primary: "#000", secondary: "#fff" } as const;',
     },
-    // Array with type annotation missing as const in TypeScript
+    // Object with Record type annotation missing UPPER_SNAKE_CASE (no as const error)
     {
-      code: 'const SHADOWS: Shadows = ["none", "0px 0px 1px rgba(0,0,0,0.2)"];',
+      code: 'const displayableNotificationModes: Record<NotificationMode, string> = { sms: "SMS", email: "Email", push: "Push" };',
       filename: 'test.ts',
-      errors: [{ messageId: 'asConst' }],
-      output: 'const SHADOWS: Shadows = ["none", "0px 0px 1px rgba(0,0,0,0.2)"] as const;',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output:
+        'const DISPLAYABLE_NOTIFICATION_MODES: Record<NotificationMode, string> = { sms: "SMS", email: "Email", push: "Push" };',
     },
-    // Object with type annotation missing as const in TypeScript
+    // Object with explicit type annotation should not get as const error
     {
-      code: 'const COLORS: Colors = { primary: "#000", secondary: "#fff" };',
+      code: 'const colors: { primary: string; secondary: string } = { primary: "#000", secondary: "#fff" };',
       filename: 'test.ts',
-      errors: [{ messageId: 'asConst' }],
-      output: 'const COLORS: Colors = { primary: "#000", secondary: "#fff" } as const;',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output:
+        'const COLORS: { primary: string; secondary: string } = { primary: "#000", secondary: "#fff" };',
+    },
+    // Array with explicit type annotation should not get as const error
+    {
+      code: 'const shadows: string[] = ["none", "0px 0px 1px rgba(0,0,0,0.2)"];',
+      filename: 'test.ts',
+      errors: [{ messageId: 'upperSnakeCase' }],
+      output:
+        'const SHADOWS: string[] = ["none", "0px 0px 1px rgba(0,0,0,0.2)"];',
     },
     // Array literal in JavaScript (no as const error)
     {
@@ -176,7 +186,7 @@ ruleTesterTs.run('global-const-style', rule, {
       errors: [{ messageId: 'upperSnakeCase' }],
       output: 'const SHADOWS = ["none", "0px 0px 1px rgba(0,0,0,0.2)"];',
     },
-    // Object literal in JavaScript (no as const error)
+    // Object literal in JavaScript
     {
       code: 'const colors = { primary: "#000", secondary: "#fff" };',
       filename: 'test.js',
