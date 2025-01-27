@@ -57,6 +57,21 @@ export default createRule<[], MessageIds>({
       return false;
     }
 
+    function hasJSXWithFunction(node: TSESTree.Node): boolean {
+      if (node.type === TSESTree.AST_NODE_TYPES.JSXElement) {
+        return (node as TSESTree.JSXElement).openingElement.attributes.some((attr) => {
+          if (attr.type === TSESTree.AST_NODE_TYPES.JSXAttribute && attr.value) {
+            if (attr.value.type === TSESTree.AST_NODE_TYPES.JSXExpressionContainer) {
+              return containsFunction(attr.value.expression);
+            }
+          }
+          return false;
+        });
+      }
+
+      return false;
+    }
+
     function checkJSXAttribute(node: TSESTree.JSXAttribute) {
       if (
         !node.value ||
@@ -86,12 +101,17 @@ export default createRule<[], MessageIds>({
         return;
       }
 
-      // Check for objects/arrays containing functions
+      // Check for objects/arrays/JSX elements containing functions
       if (
         (expression.type === TSESTree.AST_NODE_TYPES.ObjectExpression ||
-          expression.type === TSESTree.AST_NODE_TYPES.ArrayExpression) &&
-        containsFunction(expression)
+          expression.type === TSESTree.AST_NODE_TYPES.ArrayExpression ||
+          expression.type === TSESTree.AST_NODE_TYPES.JSXElement) &&
+        (containsFunction(expression) || hasJSXWithFunction(expression))
       ) {
+        // Skip reporting if this is a JSX element and we already reported an inline function
+        if (expression.type === TSESTree.AST_NODE_TYPES.JSXElement && hasJSXWithFunction(expression)) {
+          return;
+        }
         context.report({
           node,
           messageId: 'enforceMemo',
