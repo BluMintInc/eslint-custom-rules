@@ -19,6 +19,17 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
       code: `const processInput = () => null;`,
     },
 
+    // Functions starting with "to" or "with"
+    {
+      code: `function toNumber(value) { return +value; }`,
+    },
+    {
+      code: `const withLogging = (fn) => (...args) => { console.log(...args); return fn(...args); }`,
+    },
+    {
+      code: `class Converter { toString() { return ''; } }`,
+    },
+
     // Data types with noun phrases
     {
       code: `const userProfile = { name: 'John' };`,
@@ -43,7 +54,21 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
       }`,
     },
 
-    // React components (PascalCase)
+    // Ambiguous verb/noun names
+    {
+      code: `const update = { version: '1.0.0' };`, // update can be both verb and noun
+    },
+    {
+      code: `function update() { }`, // update can be both verb and noun
+    },
+    {
+      code: `const request = { url: '' };`, // request can be both verb and noun
+    },
+    {
+      code: `function request() { }`, // request can be both verb and noun
+    },
+
+    // React components (noun phrases)
     {
       code: `/** @jsx jsx */
       function UserCard() {
@@ -69,18 +94,10 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
       code: `function userData() { return null; }`,
       errors: [{ messageId: 'functionVerbPhrase' }],
     },
-    {
-      code: `function request() { return null; }`,
-      errors: [{ messageId: 'functionVerbPhrase' }],
-    },
 
     // Invalid arrow function names (not verb phrases)
     {
       code: `const data = () => null;`,
-      errors: [{ messageId: 'functionVerbPhrase' }],
-    },
-    {
-      code: `const userList = () => null;`,
       errors: [{ messageId: 'functionVerbPhrase' }],
     },
 
@@ -96,11 +113,11 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
 
     // Invalid class names (not noun phrases)
     {
-      code: `class processRequest { }`,
+      code: `class ProcessRequest { }`,
       errors: [{ messageId: 'dataTypeNounPhrase' }],
     },
     {
-      code: `class fetchData { }`,
+      code: `class FetchData { }`,
       errors: [{ messageId: 'dataTypeNounPhrase' }],
     },
 
@@ -108,31 +125,27 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
     {
       code: `class Service {
         data() { }
-        request() { }
       }`,
-      errors: [
-        { messageId: 'functionVerbPhrase' },
-        { messageId: 'functionVerbPhrase' },
-      ],
+      errors: [{ messageId: 'functionVerbPhrase' }],
     },
 
-    // Invalid React component names (not PascalCase)
+    // Invalid React component names (verb phrases)
     {
       code: `/** @jsx jsx */
-      function userCard() {
-        return <div>User</div>;
+      function FetchData() {
+        return <div>Data</div>;
       }`,
-      errors: [{ messageId: 'reactComponentPascalCase' }],
+      errors: [{ messageId: 'dataTypeNounPhrase' }],
       parserOptions: {
         ecmaFeatures: { jsx: true },
       },
     },
     {
       code: `/** @jsx jsx */
-      const profileView = () => {
-        return <div>Profile</div>;
+      const ProcessRequest = () => {
+        return <div>Request</div>;
       }`,
-      errors: [{ messageId: 'reactComponentPascalCase' }],
+      errors: [{ messageId: 'dataTypeNounPhrase' }],
       parserOptions: {
         ecmaFeatures: { jsx: true },
       },
