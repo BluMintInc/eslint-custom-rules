@@ -33,6 +33,7 @@ import { noEntireObjectHookDeps } from './rules/no-entire-object-hook-deps';
 import { enforceFirestorePathUtils } from './rules/enforce-firestore-path-utils';
 import { noCompositingLayerProps } from './rules/no-compositing-layer-props';
 import { enforceFirestoreDocRefGeneric } from './rules/enforce-firestore-doc-ref-generic';
+import { semanticFunctionPrefixes } from './rules/semantic-function-prefixes';
 
 module.exports = {
   meta: {
@@ -49,17 +50,17 @@ module.exports = {
         '@blumintinc/blumint/avoid-utils-directory': 'error',
         '@blumintinc/blumint/enforce-firestore-path-utils': 'error',
         '@blumintinc/blumint/no-jsx-whitespace-literal': 'error',
-        '@blumintinc/blumint/array-methods-this-context': 'warn',
-        '@blumintinc/blumint/class-methods-read-top-to-bottom': 'warn',
+        '@blumintinc/blumint/array-methods-this-context': 'error',
+        '@blumintinc/blumint/class-methods-read-top-to-bottom': 'error',
         '@blumintinc/blumint/consistent-callback-naming': 'error',
-        '@blumintinc/blumint/dynamic-https-errors': 'warn',
+        '@blumintinc/blumint/dynamic-https-errors': 'error',
         '@blumintinc/blumint/enforce-identifiable-firestore-type': 'error',
         '@blumintinc/blumint/enforce-callback-memo': 'error',
         '@blumintinc/blumint/enforce-callable-types': 'error',
         '@blumintinc/blumint/enforce-dynamic-firebase-imports': 'error',
         // '@blumintinc/blumint/export-if-in-doubt': 'warn',
-        '@blumintinc/blumint/extract-global-constants': 'warn',
-        '@blumintinc/blumint/generic-starts-with-t': 'warn',
+        '@blumintinc/blumint/extract-global-constants': 'error',
+        '@blumintinc/blumint/generic-starts-with-t': 'error',
         '@blumintinc/blumint/global-const-style': 'error',
         '@blumintinc/blumint/no-async-array-filter': 'error',
         '@blumintinc/blumint/no-async-foreach': 'error',
@@ -68,9 +69,9 @@ module.exports = {
         '@blumintinc/blumint/no-misused-switch-case': 'error',
         '@blumintinc/blumint/no-unpinned-dependencies': 'error',
         '@blumintinc/blumint/no-unused-props': 'error',
-        '@blumintinc/blumint/no-useless-fragment': 'warn',
-        '@blumintinc/blumint/prefer-fragment-shorthand': 'warn',
-        '@blumintinc/blumint/prefer-type-over-interface': 'warn',
+        //'@blumintinc/blumint/no-useless-fragment': 'error',
+        '@blumintinc/blumint/prefer-fragment-shorthand': 'error',
+        '@blumintinc/blumint/prefer-type-over-interface': 'error',
         '@blumintinc/blumint/require-memo': 'error',
         '@blumintinc/blumint/require-dynamic-firebase-imports': 'error',
         '@blumintinc/blumint/require-https-error': 'error',
@@ -79,8 +80,9 @@ module.exports = {
         '@blumintinc/blumint/require-usememo-object-literals': 'error',
         '@blumintinc/blumint/enforce-safe-stringify': 'error',
         '@blumintinc/blumint/no-entire-object-hook-deps': 'error',
-        '@blumintinc/blumint/no-compositing-layer-props': 'warn',
+        '@blumintinc/blumint/no-compositing-layer-props': 'error',
         '@blumintinc/blumint/enforce-firestore-doc-ref-generic': 'error',
+        '@blumintinc/blumint/semantic-function-prefixes': 'error',
       },
     },
   },
@@ -120,5 +122,6 @@ module.exports = {
     'enforce-firestore-path-utils': enforceFirestorePathUtils,
     'no-compositing-layer-props': noCompositingLayerProps,
     'enforce-firestore-doc-ref-generic': enforceFirestoreDocRefGeneric,
+    'semantic-function-prefixes': semanticFunctionPrefixes,
   },
 };
