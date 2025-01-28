@@ -33,6 +33,7 @@ import { noEntireObjectHookDeps } from './rules/no-entire-object-hook-deps';
 import { enforceFirestorePathUtils } from './rules/enforce-firestore-path-utils';
 import { noCompositingLayerProps } from './rules/no-compositing-layer-props';
 import { enforceFirestoreDocRefGeneric } from './rules/enforce-firestore-doc-ref-generic';
+import { semanticFunctionPrefixes } from './rules/semantic-function-prefixes';
 
 module.exports = {
   meta: {
@@ -81,6 +82,7 @@ module.exports = {
         '@blumintinc/blumint/no-entire-object-hook-deps': 'error',
         '@blumintinc/blumint/no-compositing-layer-props': 'warn',
         '@blumintinc/blumint/enforce-firestore-doc-ref-generic': 'error',
+        '@blumintinc/blumint/semantic-function-prefixes': 'error',
       },
     },
   },
@@ -120,5 +122,6 @@ module.exports = {
     'enforce-firestore-path-utils': enforceFirestorePathUtils,
     'no-compositing-layer-props': noCompositingLayerProps,
     'enforce-firestore-doc-ref-generic': enforceFirestoreDocRefGeneric,
+    'semantic-function-prefixes': semanticFunctionPrefixes,
   },
 };
