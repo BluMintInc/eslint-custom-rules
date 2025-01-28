@@ -2,6 +2,12 @@
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
+💭 This rule requires type information.
+
+<!-- end auto-generated rule header -->
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
 🔧💭 This rule requires type information.
 
 <!-- end auto-generated rule header -->
