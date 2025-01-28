@@ -3,7 +3,7 @@ import { enforceFirestoreDocRefGeneric } from '../rules/enforce-firestore-doc-re
 
 ruleTesterTs.run('enforce-firestore-doc-ref-generic', enforceFirestoreDocRefGeneric, {
   valid: [
-    // Basic interface usage
+    // Basic interface usage with all reference types
     {
       code: `
         interface User {
@@ -11,6 +11,8 @@ ruleTesterTs.run('enforce-firestore-doc-ref-generic', enforceFirestoreDocRefGene
           age: number;
         }
         const userRef: DocumentReference<User> = db.collection('users').doc(userId);
+        const usersRef: CollectionReference<User> = db.collection('users');
+        const userGroups: CollectionGroup<User> = db.collectionGroup('users');
       `,
     },
     // Basic type alias usage
@@ -175,20 +177,44 @@ ruleTesterTs.run('enforce-firestore-doc-ref-generic', enforceFirestoreDocRefGene
     },
   ],
   invalid: [
-    // Missing generic type
+    // Missing generic type for all reference types
     {
       code: `const userRef: DocumentReference = db.collection('users').doc(userId);`,
-      errors: [{ messageId: 'missingGeneric' }],
+      errors: [{ messageId: 'missingGeneric', data: { typeName: 'DocumentReference' } }],
     },
-    // Using any
+    {
+      code: `const usersRef: CollectionReference = db.collection('users');`,
+      errors: [{ messageId: 'missingGeneric', data: { typeName: 'CollectionReference' } }],
+    },
+    {
+      code: `const userGroups: CollectionGroup = db.collectionGroup('users');`,
+      errors: [{ messageId: 'missingGeneric', data: { typeName: 'CollectionGroup' } }],
+    },
+    // Using any for all reference types
     {
       code: `const userRef: DocumentReference<any> = db.collection('users').doc(userId);`,
-      errors: [{ messageId: 'invalidGeneric' }],
+      errors: [{ messageId: 'invalidGeneric', data: { typeName: 'DocumentReference' } }],
     },
-    // Using empty object type
+    {
+      code: `const usersRef: CollectionReference<any> = db.collection('users');`,
+      errors: [{ messageId: 'invalidGeneric', data: { typeName: 'CollectionReference' } }],
+    },
+    {
+      code: `const userGroups: CollectionGroup<any> = db.collectionGroup('users');`,
+      errors: [{ messageId: 'invalidGeneric', data: { typeName: 'CollectionGroup' } }],
+    },
+    // Using empty object type for all reference types
     {
       code: `const userRef: DocumentReference<{}> = db.collection('users').doc(userId);`,
-      errors: [{ messageId: 'invalidGeneric' }],
+      errors: [{ messageId: 'invalidGeneric', data: { typeName: 'DocumentReference' } }],
+    },
+    {
+      code: `const usersRef: CollectionReference<{}> = db.collection('users');`,
+      errors: [{ messageId: 'invalidGeneric', data: { typeName: 'CollectionReference' } }],
+    },
+    {
+      code: `const userGroups: CollectionGroup<{}> = db.collectionGroup('users');`,
+      errors: [{ messageId: 'invalidGeneric', data: { typeName: 'CollectionGroup' } }],
     },
     // Using any in nested type
     {
