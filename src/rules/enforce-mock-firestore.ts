@@ -3,7 +3,11 @@ import { createRule } from '../utils/createRule';
 
 type MessageIds = 'noManualFirestoreMock' | 'noMockFirebase';
 
-const FIRESTORE_ADMIN_PATH = 'functions/src/config/firebaseAdmin';
+const FIRESTORE_PATHS = [
+  'functions/src/config/firebaseAdmin',
+  'firebase-admin',
+  'firebase-admin/firestore',
+];
 
 export const enforceFirestoreMock = createRule<[], MessageIds>({
   name: 'enforce-mock-firestore',
@@ -13,11 +17,12 @@ export const enforceFirestoreMock = createRule<[], MessageIds>({
       description: 'Enforce using mockFirestore over manual Firestore mocking',
       recommended: 'error',
     },
-    fixable: 'code',
     schema: [],
     messages: {
-      noManualFirestoreMock: 'Use mockFirestore from __mocks__/functions/src/config/mockFirestore instead of manually mocking Firestore',
-      noMockFirebase: 'Use mockFirestore from __mocks__/functions/src/config/mockFirestore instead of mockFirebase',
+      noManualFirestoreMock:
+        'Use mockFirestore from __mocks__/functions/src/config/mockFirestore instead of manually mocking Firestore',
+      noMockFirebase:
+        'Use mockFirestore from __mocks__/functions/src/config/mockFirestore instead of mockFirebase',
     },
   },
   defaultOptions: [],
@@ -34,11 +39,19 @@ export const enforceFirestoreMock = createRule<[], MessageIds>({
           node.arguments.length > 0 &&
           node.arguments[0].type === AST_NODE_TYPES.Literal &&
           typeof node.arguments[0].value === 'string' &&
-          node.arguments[0].value.includes(FIRESTORE_ADMIN_PATH)
+          FIRESTORE_PATHS.some(
+            (path) =>
+              node.arguments[0].type === AST_NODE_TYPES.Literal &&
+              typeof node.arguments[0].value === 'string' &&
+              node.arguments[0].value?.includes(path),
+          )
         ) {
           // Check if the mock includes Firestore-related properties
           const mockFn = node.arguments[1];
-          if (mockFn && mockFn.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+          if (
+            mockFn &&
+            mockFn.type === AST_NODE_TYPES.ArrowFunctionExpression
+          ) {
             const returnStmt = mockFn.body;
             if (
               returnStmt.type === AST_NODE_TYPES.ObjectExpression &&
@@ -46,18 +59,14 @@ export const enforceFirestoreMock = createRule<[], MessageIds>({
                 (prop) =>
                   prop.type === AST_NODE_TYPES.Property &&
                   prop.key.type === AST_NODE_TYPES.Identifier &&
-                  (prop.key.name === 'db' || prop.key.name === 'firestore')
+                  (prop.key.name === 'db' ||
+                    prop.key.name === 'firestore' ||
+                    prop.key.name === 'getFirestore'),
               )
             ) {
               context.report({
                 node,
                 messageId: 'noManualFirestoreMock',
-                fix(fixer) {
-                  return fixer.replaceText(
-                    node,
-                    'mockFirestore({\n          // TODO: Add your mock data here\n        })'
-                  );
-                },
               });
             }
           }
@@ -72,18 +81,12 @@ export const enforceFirestoreMock = createRule<[], MessageIds>({
             (specifier) =>
               specifier.type === AST_NODE_TYPES.ImportSpecifier &&
               specifier.imported.type === AST_NODE_TYPES.Identifier &&
-              specifier.imported.name === 'mockFirebase'
+              specifier.imported.name === 'mockFirebase',
           )
         ) {
           context.report({
             node,
             messageId: 'noMockFirebase',
-            fix(fixer) {
-              return fixer.replaceText(
-                node,
-                'import { mockFirestore } from \'__mocks__/functions/src/config/mockFirestore\';'
-              );
-            },
           });
         }
       },

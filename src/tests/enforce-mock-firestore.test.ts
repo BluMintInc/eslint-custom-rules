@@ -108,13 +108,6 @@ ruleTesterTs.run('enforce-mock-firestore', enforceFirestoreMock, {
         });
       `,
       errors: [{ messageId: 'noMockFirebase' }],
-      output: `
-        import { mockFirestore } from '__mocks__/functions/src/config/mockFirestore';
-
-        mockFirestore({
-          users: [{ id: '123', name: 'John' }],
-        });
-      `,
     },
     // Invalid manual mock of Firestore
     {
@@ -126,13 +119,6 @@ ruleTesterTs.run('enforce-mock-firestore', enforceFirestoreMock, {
         }));
       `,
       errors: [{ messageId: 'noManualFirestoreMock' }],
-      output: `
-        import { mockFirestore } from '__mocks__/functions/src/config/mockFirestore';
-
-        mockFirestore({
-          users: [{ id: '123', name: 'John' }],
-        });
-      `,
     },
     // Invalid manual mock of Firestore with firestore property
     {
@@ -144,13 +130,6 @@ ruleTesterTs.run('enforce-mock-firestore', enforceFirestoreMock, {
         }));
       `,
       errors: [{ messageId: 'noManualFirestoreMock' }],
-      output: `
-        import { mockFirestore } from '__mocks__/functions/src/config/mockFirestore';
-
-        mockFirestore({
-          users: [{ id: '123', name: 'John' }],
-        });
-      `,
     },
     // Invalid direct mock of firebase-admin with Firestore
     {
@@ -163,13 +142,6 @@ ruleTesterTs.run('enforce-mock-firestore', enforceFirestoreMock, {
         }));
       `,
       errors: [{ messageId: 'noManualFirestoreMock' }],
-      output: `
-        import { mockFirestore } from '__mocks__/functions/src/config/mockFirestore';
-
-        mockFirestore({
-          users: [{ id: '123', name: 'John' }],
-        });
-      `,
     },
     // Invalid mock of firebase-admin/firestore
     {
@@ -182,13 +154,6 @@ ruleTesterTs.run('enforce-mock-firestore', enforceFirestoreMock, {
         }));
       `,
       errors: [{ messageId: 'noManualFirestoreMock' }],
-      output: `
-        import { mockFirestore } from '__mocks__/functions/src/config/mockFirestore';
-
-        mockFirestore({
-          users: [{ id: '123', name: 'John' }],
-        });
-      `,
     },
     // Invalid use of mockFirebase with complex setup
     {
@@ -205,16 +170,6 @@ ruleTesterTs.run('enforce-mock-firestore', enforceFirestoreMock, {
         });
       `,
       errors: [{ messageId: 'noMockFirebase' }],
-      output: `
-        import { mockFirestore } from '__mocks__/functions/src/config/mockFirestore';
-
-        mockFirestore({
-          users: [
-            { id: '123', name: 'John', posts: [{ id: 'p1', title: 'Hello' }] },
-            { id: '456', name: 'Jane', posts: [{ id: 'p2', title: 'World' }] }
-          ],
-        });
-      `,
     },
     // Invalid manual mock with both db and firestore
     {
@@ -229,13 +184,6 @@ ruleTesterTs.run('enforce-mock-firestore', enforceFirestoreMock, {
         }));
       `,
       errors: [{ messageId: 'noManualFirestoreMock' }],
-      output: `
-        import { mockFirestore } from '__mocks__/functions/src/config/mockFirestore';
-
-        mockFirestore({
-          users: [{ id: '123', name: 'John' }],
-        });
-      `,
     },
     // Invalid manual mock with Firestore methods
     {
@@ -250,13 +198,6 @@ ruleTesterTs.run('enforce-mock-firestore', enforceFirestoreMock, {
         }));
       `,
       errors: [{ messageId: 'noManualFirestoreMock' }],
-      output: `
-        import { mockFirestore } from '__mocks__/functions/src/config/mockFirestore';
-
-        mockFirestore({
-          users: [{ id: '123', name: 'John' }],
-        });
-      `,
     },
   ],
 });
