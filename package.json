@@ -45,6 +45,7 @@
     "commitlint": "commitlint --edit"
   },
   "dependencies": {
+    "compromise": "^14.14.4",
     "requireindex": "1.2.0"
   },
   "devDependencies": {
