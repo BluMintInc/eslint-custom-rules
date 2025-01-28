@@ -34,6 +34,7 @@ import { enforceFirestorePathUtils } from './rules/enforce-firestore-path-utils'
 import { noCompositingLayerProps } from './rules/no-compositing-layer-props';
 import { enforceFirestoreDocRefGeneric } from './rules/enforce-firestore-doc-ref-generic';
 import { semanticFunctionPrefixes } from './rules/semantic-function-prefixes';
+import { enforceFirestoreMock } from './rules/enforce-mock-firestore';
 
 module.exports = {
   meta: {
@@ -83,6 +84,7 @@ module.exports = {
         '@blumintinc/blumint/no-compositing-layer-props': 'error',
         '@blumintinc/blumint/enforce-firestore-doc-ref-generic': 'error',
         '@blumintinc/blumint/semantic-function-prefixes': 'error',
+        '@blumintinc/blumint/enforce-mock-firestore': 'error',
       },
     },
   },
@@ -123,5 +125,6 @@ module.exports = {
     'no-compositing-layer-props': noCompositingLayerProps,
     'enforce-firestore-doc-ref-generic': enforceFirestoreDocRefGeneric,
     'semantic-function-prefixes': semanticFunctionPrefixes,
+    'enforce-mock-firestore': enforceFirestoreMock,
   },
 };
