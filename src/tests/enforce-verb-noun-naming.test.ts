@@ -51,24 +51,22 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
       code: `class Service {
         fetchData() { }
         processRequest() { }
+        toString() { }
       }`,
     },
 
-    // Ambiguous verb/noun names
+    // Variables that are not functions (should be ignored)
     {
-      code: `const update = { version: '1.0.0' };`, // update can be both verb and noun
+      code: `const data = { value: true };`,
     },
     {
-      code: `function update() { }`, // update can be both verb and noun
+      code: `const userProfile = { name: 'John' };`,
     },
     {
-      code: `const request = { url: '' };`, // request can be both verb and noun
-    },
-    {
-      code: `function request() { }`, // request can be both verb and noun
+      code: `class DataProcessor { }`,
     },
 
-    // React components (noun phrases)
+    // React components (should be ignored)
     {
       code: `/** @jsx jsx */
       function UserCard() {
@@ -101,54 +99,12 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
       errors: [{ messageId: 'functionVerbPhrase' }],
     },
 
-    // Invalid data type names (not noun phrases)
-    {
-      code: `const fetchUser = { id: 1 };`,
-      errors: [{ messageId: 'dataTypeNounPhrase' }],
-    },
-    {
-      code: `const processData = { value: true };`,
-      errors: [{ messageId: 'dataTypeNounPhrase' }],
-    },
-
-    // Invalid class names (not noun phrases)
-    {
-      code: `class ProcessRequest { }`,
-      errors: [{ messageId: 'dataTypeNounPhrase' }],
-    },
-    {
-      code: `class FetchData { }`,
-      errors: [{ messageId: 'dataTypeNounPhrase' }],
-    },
-
     // Invalid class method names (not verb phrases)
     {
       code: `class Service {
         data() { }
       }`,
       errors: [{ messageId: 'functionVerbPhrase' }],
-    },
-
-    // Invalid React component names (verb phrases)
-    {
-      code: `/** @jsx jsx */
-      function FetchData() {
-        return <div>Data</div>;
-      }`,
-      errors: [{ messageId: 'dataTypeNounPhrase' }],
-      parserOptions: {
-        ecmaFeatures: { jsx: true },
-      },
-    },
-    {
-      code: `/** @jsx jsx */
-      const ProcessRequest = () => {
-        return <div>Request</div>;
-      }`,
-      errors: [{ messageId: 'dataTypeNounPhrase' }],
-      parserOptions: {
-        ecmaFeatures: { jsx: true },
-      },
     },
   ],
 });

@@ -2,85 +2,68 @@ import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import nlp from 'compromise';
 
-type MessageIds = 'functionVerbPhrase' | 'dataTypeNounPhrase' | 'reactComponentPascalCase';
+type MessageIds = 'functionVerbPhrase';
 
-const COMMON_VERBS = new Set([
-  'get', 'set', 'fetch', 'update', 'create', 'delete', 'remove', 'process',
-  'handle', 'validate', 'parse', 'format', 'convert', 'transform', 'build',
-  'generate', 'compute', 'calculate', 'initialize', 'setup', 'configure',
-  'load', 'save', 'store', 'cache', 'clear', 'reset', 'refresh', 'sync',
-  'merge', 'split', 'filter', 'map', 'reduce', 'find', 'search', 'sort',
-  'check', 'verify', 'test', 'debug', 'log', 'print', 'render', 'display',
-  'show', 'hide', 'enable', 'disable', 'start', 'stop', 'pause', 'resume',
-  'open', 'close', 'read', 'write', 'send', 'receive', 'emit', 'dispatch',
-  'subscribe', 'unsubscribe', 'connect', 'disconnect', 'mount', 'unmount',
-  'add', 'insert', 'append', 'prepend', 'push', 'pop', 'shift', 'unshift',
-  'to', 'from', 'with', 'without', 'use', 'make',
-]);
-
-const COMMON_NOUNS = new Set([
-  'service', 'processor', 'handler', 'manager', 'controller', 'provider',
-  'factory', 'builder', 'helper', 'util', 'utility', 'config', 'configuration',
-  'data', 'info', 'information', 'result', 'response', 'request', 'error',
-  'state', 'props', 'options', 'settings', 'preferences', 'profile', 'account',
-  'user', 'client', 'server', 'api', 'database', 'cache', 'store', 'storage',
-  'queue', 'stack', 'list', 'array', 'map', 'set', 'tree', 'graph', 'node',
-  'element', 'component', 'module', 'package', 'library', 'framework',
-]);
+const PREPOSITIONS = ['to', 'from', 'with', 'by', 'at', 'of'] as const;
 
 export const enforceVerbNounNaming = createRule<[], MessageIds>({
   name: 'enforce-verb-noun-naming',
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce verb phrases for functions and noun phrases for data types',
+      description: 'Enforce verb phrases for functions and methods',
       recommended: 'error',
     },
     schema: [],
     messages: {
-      functionVerbPhrase: 'Function names should start with a verb phrase (e.g., fetchData, processRequest)',
-      dataTypeNounPhrase: 'Data type names should be noun phrases (e.g., userProfile, requestProcessor)',
-      reactComponentPascalCase: 'React components should use PascalCase naming',
+      functionVerbPhrase:
+        'Function names should start with a verb phrase (e.g., fetchData, processRequest)',
     },
   },
   defaultOptions: [],
   create(context) {
-    function splitCamelCase(str: string): string[] {
-      return str.split(/(?=[A-Z])/).map(s => s.toLowerCase());
+    function extractFirstWord(name: string) {
+      const firstChar = name.charAt(0);
+      const rest = name.slice(1);
+      const words = rest.split(/(?=[A-Z])/);
+      return firstChar + words[0];
+    }
+
+    function toSentence(name: string) {
+      return name.split(/(?=[A-Z])/).join(' ');
+    }
+
+    function getPossibleTags(sentence: string) {
+      const doc = nlp(sentence);
+      const terms = doc.terms().json();
+
+      if (terms.length === 0 || !terms[0].terms || !terms[0].terms[0].tags)
+        return [];
+
+      const tags = terms[0].terms[0].tags;
+      return tags;
     }
 
     function isVerbPhrase(name: string): boolean {
-      const words = splitCamelCase(name);
-      if (words.length === 0) return false;
+      const firstWord = extractFirstWord(name);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (PREPOSITIONS.includes(firstWord.toLowerCase() as any)) {
+        return true;
+      }
 
-      const firstWord = words[0];
-      if (COMMON_VERBS.has(firstWord)) return true;
-      if (COMMON_NOUNS.has(firstWord)) return false;
-
-      const doc = nlp(firstWord);
-      return doc.verbs().length > 0;
-    }
-
-    function isNounPhrase(name: string): boolean {
-      const words = splitCamelCase(name);
-      if (words.length === 0) return false;
-
-      const firstWord = words[0];
-      if (COMMON_VERBS.has(firstWord)) return false;
-      if (COMMON_NOUNS.has(firstWord)) return true;
-
-      const doc = nlp(firstWord);
-      return doc.nouns().length > 0;
-    }
-
-    function isPascalCase(name: string): boolean {
-      return /^[A-Z][a-zA-Z0-9]*$/.test(name);
+      const tags = getPossibleTags(toSentence(name));
+      const isVerb = tags.includes('Verb');
+      const isPreposition = tags.includes('Preposition');
+      const isConjunction = tags.includes('Conjunction');
+      return isVerb || isPreposition || isConjunction;
     }
 
     function isJsxReturnFunction(node: TSESTree.Node): boolean {
-      if (node.type !== AST_NODE_TYPES.FunctionDeclaration &&
-          node.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
-          node.type !== AST_NODE_TYPES.FunctionExpression) {
+      if (
+        node.type !== AST_NODE_TYPES.FunctionDeclaration &&
+        node.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
+        node.type !== AST_NODE_TYPES.FunctionExpression
+      ) {
         return false;
       }
 
@@ -89,18 +72,11 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
       const text = sourceCode.getText(node);
       return text.includes('return <') || text.includes('=> <');
     }
-
     return {
       FunctionDeclaration(node) {
         if (!node.id) return;
 
         if (isJsxReturnFunction(node)) {
-          if (!isPascalCase(node.id.name)) {
-            context.report({
-              node: node.id,
-              messageId: 'reactComponentPascalCase',
-            });
-          }
           return;
         }
 
@@ -115,17 +91,12 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
       VariableDeclarator(node) {
         if (node.id.type !== AST_NODE_TYPES.Identifier) return;
 
-        // Check if it's a function
-        if (node.init?.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-            node.init?.type === AST_NODE_TYPES.FunctionExpression) {
-
+        // Only check if it's a function
+        if (
+          node.init?.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+          node.init?.type === AST_NODE_TYPES.FunctionExpression
+        ) {
           if (isJsxReturnFunction(node.init)) {
-            if (!isPascalCase(node.id.name)) {
-              context.report({
-                node: node.id,
-                messageId: 'reactComponentPascalCase',
-              });
-            }
             return;
           }
 
@@ -135,25 +106,6 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
               messageId: 'functionVerbPhrase',
             });
           }
-        } else {
-          // It's a data type
-          if (!isNounPhrase(node.id.name)) {
-            context.report({
-              node: node.id,
-              messageId: 'dataTypeNounPhrase',
-            });
-          }
-        }
-      },
-
-      ClassDeclaration(node) {
-        if (!node.id) return;
-
-        if (!isNounPhrase(node.id.name)) {
-          context.report({
-            node: node.id,
-            messageId: 'dataTypeNounPhrase',
-          });
         }
       },
 
