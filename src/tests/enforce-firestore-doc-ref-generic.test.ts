@@ -281,5 +281,81 @@ ruleTesterTs.run('enforce-firestore-doc-ref-generic', enforceFirestoreDocRefGene
       `,
       errors: [{ messageId: 'invalidGeneric' }],
     },
+    // No explicit type for DocumentReference
+    {
+      code: `const userRef = db.collection('users').doc(userId);`,
+      errors: [{ messageId: 'missingGeneric', data: { typeName: 'DocumentReference' } }],
+    },
+    // No explicit type for CollectionReference
+    {
+      code: `const usersRef = db.collection('users');`,
+      errors: [{ messageId: 'missingGeneric', data: { typeName: 'CollectionReference' } }],
+    },
+    // No explicit type for CollectionGroup
+    {
+      code: `const userGroups = db.collectionGroup('users');`,
+      errors: [{ messageId: 'missingGeneric', data: { typeName: 'CollectionGroup' } }],
+    },
+    // No explicit type in chained operations
+    {
+      code: `const userDoc = db.collection('users').doc(userId).collection('orders').doc(orderId);`,
+      errors: [
+        { messageId: 'missingGeneric', data: { typeName: 'DocumentReference' } },
+        { messageId: 'missingGeneric', data: { typeName: 'CollectionReference' } },
+        { messageId: 'missingGeneric', data: { typeName: 'DocumentReference' } }
+      ],
+    },
+    // No explicit type in variable assignment
+    {
+      code: `
+        const collection = db.collection('users');
+        const doc = collection.doc(userId);
+      `,
+      errors: [
+        { messageId: 'missingGeneric', data: { typeName: 'CollectionReference' } },
+        { messageId: 'missingGeneric', data: { typeName: 'DocumentReference' } }
+      ],
+    },
+    // No explicit type in array operations
+    {
+      code: `
+        const userIds = ['1', '2', '3'];
+        const userRefs = userIds.map(id => db.collection('users').doc(id));
+      `,
+      errors: [{ messageId: 'missingGeneric', data: { typeName: 'DocumentReference' } }],
+    },
+    // No explicit type in function return
+    {
+      code: `
+        function getUserDoc(id: string) {
+          return db.collection('users').doc(id);
+        }
+      `,
+      errors: [{ messageId: 'missingGeneric', data: { typeName: 'DocumentReference' } }],
+    },
+    // No explicit type in async function
+    {
+      code: `
+        async function fetchUserDoc(id: string) {
+          const doc = await db.collection('users').doc(id).get();
+          return doc;
+        }
+      `,
+      errors: [{ messageId: 'missingGeneric', data: { typeName: 'DocumentReference' } }],
+    },
+    // No explicit type in object property
+    {
+      code: `
+        const userService = {
+          getUser: (id: string) => db.collection('users').doc(id),
+          getOrders: (userId: string) => db.collection('users').doc(userId).collection('orders')
+        };
+      `,
+      errors: [
+        { messageId: 'missingGeneric', data: { typeName: 'DocumentReference' } },
+        { messageId: 'missingGeneric', data: { typeName: 'DocumentReference' } },
+        { messageId: 'missingGeneric', data: { typeName: 'CollectionReference' } }
+      ],
+    },
   ],
 });
