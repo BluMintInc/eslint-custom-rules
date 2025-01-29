@@ -110,6 +110,15 @@ ruleTesterTs.run('global-const-style', rule, {
         const { adminApp, db, realtimeDb, storage, bucket, auth, messaging } = firebaseAdminInstance;
       `,
     },
+    // Regular expressions should not get as const
+    {
+      code: 'const NEAR_GLIDER_REGEX = /(?:^|\\s)(left-[1-6]|right-[1-6])(?:\\s|$)/;',
+      filename: 'test.ts',
+    },
+    {
+      code: 'const EMAIL_REGEX = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;',
+      filename: 'test.ts',
+    },
   ],
   invalid: [
     // Missing UPPER_SNAKE_CASE and as const in TypeScript
