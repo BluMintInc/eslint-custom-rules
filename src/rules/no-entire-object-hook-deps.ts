@@ -175,8 +175,9 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Avoid using entire objects in React hook dependency arrays when only specific fields are used',
+        'Avoid using entire objects in React hook dependency arrays when only specific fields are used. Requires TypeScript and `parserOptions.project` to be configured.',
       recommended: 'error',
+      requiresTypeChecking: true,
     },
     fixable: 'code',
     schema: [],
