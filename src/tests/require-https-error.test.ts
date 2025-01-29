@@ -13,6 +13,16 @@ ruleTesterTs.run('require-https-error', requireHttpsError, {
       code: 'throw new CustomError("test error");',
       filename: 'functions/src/test.ts',
     },
+    // Should allow non-HttpsError imports from firebase-admin
+    {
+      code: 'import { auth } from "firebase-admin";',
+      filename: 'functions/src/test.ts',
+    },
+    // Should allow renamed non-HttpsError imports from firebase-admin
+    {
+      code: 'import { auth as authDefault } from "firebase-admin";',
+      filename: 'functions/src/test.ts',
+    },
   ],
   invalid: [
     // Should not allow throw new Error in functions/src
