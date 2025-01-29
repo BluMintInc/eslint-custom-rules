@@ -1,5 +1,5 @@
 /**
- * @fileoverview Enforce generic argument for Firestore DocumentReference
+ * @fileoverview Enforce generic argument for Firestore DocumentReference, CollectionReference and CollectionGroup
  * @author BluMint
  */
 
@@ -20,15 +20,15 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
   meta: {
     type: 'problem',
     docs: {
-      description: 'Enforce generic argument for Firestore DocumentReference',
+      description: 'Enforce generic argument for Firestore DocumentReference, CollectionReference and CollectionGroup',
       recommended: 'error',
       requiresTypeChecking: true,
     },
     schema: [],
     messages: {
-      missingGeneric: 'DocumentReference must specify a generic type argument',
+      missingGeneric: '{{ type }} must specify a generic type argument',
       invalidGeneric:
-        'DocumentReference must not use "any" or "{}" as generic type argument',
+        '{{ type }} must not use "any" or "{}" as generic type argument',
     },
   },
   defaultOptions: [],
@@ -126,13 +126,17 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
       TSTypeReference(node: TSESTree.TSTypeReference): void {
         if (
           node.typeName.type === AST_NODE_TYPES.Identifier &&
-          node.typeName.name === 'DocumentReference'
+          (node.typeName.name === 'DocumentReference' ||
+           node.typeName.name === 'CollectionReference' ||
+           node.typeName.name === 'CollectionGroup')
         ) {
+          const typeName = node.typeName.name;
           // Check if generic type argument is missing
           if (!node.typeParameters || node.typeParameters.params.length === 0) {
             context.report({
               node,
               messageId: 'missingGeneric',
+              data: { type: typeName }
             });
             return;
           }
@@ -143,6 +147,7 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
             context.report({
               node,
               messageId: 'invalidGeneric',
+              data: { type: typeName }
             });
           }
         }
