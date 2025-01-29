@@ -62,6 +62,7 @@ function getObjectUsagesInHook(
 ): Set<string> {
   const usages = new Set<string>();
   const visited = new Set<TSESTree.Node>();
+  let needsEntireObject = false;
 
   function buildAccessPath(node: TSESTree.MemberExpression): string | null {
     const parts: string[] = [];
@@ -92,7 +93,17 @@ function getObjectUsagesInHook(
     if (visited.has(node)) return;
     visited.add(node);
 
-    if (node.type === AST_NODE_TYPES.MemberExpression) {
+    if (node.type === AST_NODE_TYPES.CallExpression) {
+      // Check if the object is directly passed as an argument
+      node.arguments.forEach((arg) => {
+        if (
+          arg.type === AST_NODE_TYPES.Identifier &&
+          arg.name === objectName
+        ) {
+          needsEntireObject = true;
+        }
+      });
+    } else if (node.type === AST_NODE_TYPES.MemberExpression) {
       const path = buildAccessPath(node);
       if (path) {
         usages.add(`${objectName}.${path}`);
@@ -103,8 +114,7 @@ function getObjectUsagesInHook(
         node.argument.type === AST_NODE_TYPES.Identifier &&
         node.argument.name === objectName
       ) {
-        // Return empty set to indicate valid usage without specific fields
-        usages.clear();
+        needsEntireObject = true;
         return;
       }
     }
@@ -128,6 +138,11 @@ function getObjectUsagesInHook(
   }
 
   visit(hookBody);
+
+  // If the entire object is needed, return an empty set to indicate valid usage
+  if (needsEntireObject) {
+    return new Set();
+  }
 
   // Filter out intermediate paths
   const paths = Array.from(usages);
