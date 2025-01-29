@@ -93,6 +93,29 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    // Using object as a direct function argument should be valid
+    {
+      code: `
+        const MyComponent = ({ userInternal }) => {
+          const user = useMemo(() => {
+            return onlyIdentified(userInternal);
+          }, [userInternal]);
+          return <div>{user.name}</div>;
+        };
+      `,
+    },
+    // Using object as a direct function argument with multiple functions should be valid
+    {
+      code: `
+        const MyComponent = ({ userInternal }) => {
+          const user = useMemo(() => {
+            validateUser(userInternal);
+            return onlyIdentified(userInternal);
+          }, [userInternal]);
+          return <div>{user.name}</div>;
+        };
+      `,
+    },
   ],
   invalid: [
     // Basic case - using entire object when only name is needed
