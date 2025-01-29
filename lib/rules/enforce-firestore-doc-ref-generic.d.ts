@@ -1,5 +1,5 @@
 /**
- * @fileoverview Enforce generic argument for Firestore DocumentReference
+ * @fileoverview Enforce generic argument for Firestore DocumentReference, CollectionReference and CollectionGroup
  * @author BluMint
  */
 type MessageIds = 'missingGeneric' | 'invalidGeneric';
