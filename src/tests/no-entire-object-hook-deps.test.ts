@@ -78,6 +78,27 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    // Using string path with split() should be valid
+    {
+      code: `
+        const MyComponent = () => {
+          const [eventDocPath] = useRouterState({ key: 'event' });
+          const publish = useCallback(async () => {
+            if (!eventDocPath) {
+              return;
+            }
+            const pathSegments = eventDocPath.split('/');
+            const tournamentId = pathSegments[pathSegments.length - 1];
+            const gameId = pathSegments[pathSegments.length - 3];
+            await publishTournament({
+              tournamentId,
+              gameId,
+            });
+          }, [eventDocPath]);
+          return <button onClick={publish}>Publish</button>;
+        };
+      `,
+    },
     // Using object spread with property access should be valid
     {
       code: `
