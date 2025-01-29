@@ -222,6 +222,49 @@ ruleTesterTs.run('enforce-firestore-doc-ref-generic', enforceFirestoreDocRefGene
         const commentsGroup: CollectionGroup<Comment> = db.collectionGroup('comments');
       `,
     },
+    // Valid method calls with explicit generics
+    {
+      code: `
+        interface User {
+          name: string;
+          age: number;
+        }
+        const userRef = db.collection<User>('users').doc<User>(userId);
+      `,
+    },
+    {
+      code: `
+        interface Product {
+          name: string;
+          price: number;
+        }
+        const productsCollection = db.collection<Product>('products');
+      `,
+    },
+    {
+      code: `
+        interface Comment {
+          text: string;
+          author: string;
+        }
+        const commentsGroup = db.collectionGroup<Comment>('comments');
+      `,
+    },
+    // Method calls with complex types
+    {
+      code: `
+        interface User {
+          name: string;
+          metadata: {
+            lastLogin: Date;
+            preferences: {
+              theme: 'light' | 'dark';
+            };
+          };
+        }
+        const userRef = db.collection<User>('users').doc<User>(userId);
+      `,
+    },
   ],
   invalid: [
     // Missing generic type - DocumentReference
@@ -238,6 +281,40 @@ ruleTesterTs.run('enforce-firestore-doc-ref-generic', enforceFirestoreDocRefGene
     {
       code: `const productsGroup: CollectionGroup = db.collectionGroup('products');`,
       errors: [{ messageId: 'missingGeneric', data: { type: 'CollectionGroup' } }],
+    },
+    // Missing generic type in .doc() call
+    {
+      code: `const userRef = db.collection('users').doc(userId);`,
+      errors: [
+        { messageId: 'missingGeneric', data: { type: 'DocumentReference' } }
+      ],
+    },
+    // Missing generic type in .collection() call
+    {
+      code: `const usersCollection = db.collection('users');`,
+      errors: [{ messageId: 'missingGeneric', data: { type: 'CollectionReference' } }],
+    },
+    // Missing generic type in .collectionGroup() call
+    {
+      code: `const productsGroup = db.collectionGroup('products');`,
+      errors: [{ messageId: 'missingGeneric', data: { type: 'CollectionGroup' } }],
+    },
+    // Invalid generic type in .doc() call
+    {
+      code: `const userRef = db.collection<User>('users').doc<any>(userId);`,
+      errors: [
+        { messageId: 'invalidGeneric', data: { type: 'DocumentReference' } }
+      ],
+    },
+    // Invalid generic type in .collection() call
+    {
+      code: `const usersCollection = db.collection<{}>("users");`,
+      errors: [{ messageId: 'invalidGeneric', data: { type: 'CollectionReference' } }],
+    },
+    // Invalid generic type in .collectionGroup() call
+    {
+      code: `const productsGroup = db.collectionGroup<any>('products');`,
+      errors: [{ messageId: 'invalidGeneric', data: { type: 'CollectionGroup' } }],
     },
     // Using any - DocumentReference
     {

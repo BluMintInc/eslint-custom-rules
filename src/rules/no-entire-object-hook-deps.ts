@@ -28,6 +28,8 @@ function isArrayOrPrimitive(
   if (
     type.flags &
     (TypeFlags.String |
+      TypeFlags.StringLike |
+      TypeFlags.StringLiteral |
       TypeFlags.Number |
       TypeFlags.Boolean |
       TypeFlags.Null |
@@ -49,6 +51,11 @@ function isArrayOrPrimitive(
     type.symbol?.escapedName === 'Array' ||
     (typeNode && (isArrayTypeNode(typeNode) || isTupleTypeNode(typeNode)))
   ) {
+    return true;
+  }
+
+  // Check if it's a string type with methods (like String object)
+  if (type.symbol?.name === 'String' || type.symbol?.escapedName === 'String') {
     return true;
   }
 
@@ -168,8 +175,9 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Avoid using entire objects in React hook dependency arrays when only specific fields are used',
+        'Avoid using entire objects in React hook dependency arrays when only specific fields are used. Requires TypeScript and `parserOptions.project` to be configured.',
       recommended: 'error',
+      requiresTypeChecking: true,
     },
     fixable: 'code',
     schema: [],
