@@ -6,6 +6,44 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
   valid: [
     {
       code: `
+        import { GradientIconButton, GradientIconButtonProps } from '../../gradients/GradientIconButton';
+
+        export type ChannelGroupSidebarPlaceholderProps = GradientIconButtonProps;
+
+        const ChannelGroupSidebarPlaceholderUnmemoized = ({
+          IconComponent,
+          onClick,
+          sx,
+        }: ChannelGroupSidebarPlaceholderProps) => {
+          return (
+            <div>
+              <GradientIconButton
+                IconComponent={IconComponent}
+                sx={{
+                  width: {
+                    xs: '28px',
+                    md: '36px',
+                  },
+                  height: {
+                    xs: '28px',
+                    md: '36px',
+                  },
+                }}
+                onClick={onClick}
+              />
+            </div>
+          );
+        };
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
         type Props = { title: string };
         const MyComponent = ({ title }: Props) => <h1>{title}</h1>;
       `,

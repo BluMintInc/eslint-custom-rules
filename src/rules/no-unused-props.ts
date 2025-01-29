@@ -44,6 +44,11 @@ export const noUnusedProps = createRule({
               // For referenced types like FormControlLabelProps, we need to track that these props should be forwarded
               if (typeNode.typeName.type === AST_NODE_TYPES.Identifier) {
                 props[`...${typeNode.typeName.name}`] = typeNode.typeName;
+                // If the type is directly assigned from another type (e.g., type MyProps = OtherProps)
+                // consider all props from the referenced type as used
+                if (node.typeAnnotation === typeNode) {
+                  props[`...${node.id.name}`] = node.id;
+                }
               }
             }
           }
@@ -108,15 +113,23 @@ export const noUnusedProps = createRule({
           const used = usedProps.get(typeName);
 
           if (propsType && used) {
-            Object.keys(propsType).forEach((prop) => {
-              if (!used.has(prop)) {
-                context.report({
-                  node: propsType[prop],
-                  messageId: 'unusedProp',
-                  data: { propName: prop },
-                });
-              }
-            });
+            // Check if this type is directly assigned from another type
+            const isTypeAssignment = Object.keys(propsType).some(
+              (key) => key === `...${typeName}`
+            );
+
+            // If it's a direct type assignment, all props are considered used
+            if (!isTypeAssignment) {
+              Object.keys(propsType).forEach((prop) => {
+                if (!used.has(prop)) {
+                  context.report({
+                    node: propsType[prop],
+                    messageId: 'unusedProp',
+                    data: { propName: prop },
+                  });
+                }
+              });
+            }
           }
 
           // Reset state for this component
