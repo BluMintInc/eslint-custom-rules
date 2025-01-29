@@ -34,6 +34,7 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     const typeCache = new Map<string, boolean>();
+    const nodeCache = new WeakMap<TSESTree.Node, boolean>();
 
     function hasInvalidType(node: TSESTree.TypeNode | undefined): boolean {
       if (!node) return false;
@@ -122,6 +123,96 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
       }
     }
 
+    function hasTypeAnnotation(node: TSESTree.Node): boolean {
+      if (nodeCache.has(node)) {
+        return nodeCache.get(node)!;
+      }
+
+      let current: TSESTree.Node | undefined = node;
+      while (current) {
+        // Variable declarations with type annotations
+        if (current.type === AST_NODE_TYPES.VariableDeclarator && current.id.typeAnnotation) {
+          nodeCache.set(node, true);
+          return true;
+        }
+        // Class property definitions with type annotations
+        if (current.type === AST_NODE_TYPES.PropertyDefinition && current.typeAnnotation) {
+          nodeCache.set(node, true);
+          return true;
+        }
+        // Return statements in functions with return type annotations
+        if (current.type === AST_NODE_TYPES.ReturnStatement) {
+          const func = current.parent?.parent;
+          if (func?.type === AST_NODE_TYPES.FunctionDeclaration && func.returnType) {
+            nodeCache.set(node, true);
+            return true;
+          }
+        }
+        // Assignment expressions to class properties
+        if (current.type === AST_NODE_TYPES.AssignmentExpression) {
+          const left = current.left;
+          if (left.type === AST_NODE_TYPES.MemberExpression) {
+            const obj = left.object;
+            if (obj.type === AST_NODE_TYPES.ThisExpression) {
+              const classNode = findParentClass(current);
+              if (classNode) {
+                const property = classNode.body.body.find(
+                  (member): member is TSESTree.PropertyDefinition =>
+                    member.type === AST_NODE_TYPES.PropertyDefinition &&
+                    member.key.type === AST_NODE_TYPES.Identifier &&
+                    member.key.name === (left.property as TSESTree.Identifier).name
+                );
+                if (property?.typeAnnotation) {
+                  nodeCache.set(node, true);
+                  return true;
+                }
+              }
+            }
+          }
+        }
+        current = current.parent as TSESTree.Node;
+      }
+      nodeCache.set(node, false);
+      return false;
+    }
+
+    function findParentClass(node: TSESTree.Node): TSESTree.ClassDeclaration | undefined {
+      let current: TSESTree.Node | undefined = node;
+      while (current) {
+        if (current.type === AST_NODE_TYPES.ClassDeclaration) {
+          return current;
+        }
+        current = current.parent as TSESTree.Node;
+      }
+      return undefined;
+    }
+
+    function isPartOfMethodChain(node: TSESTree.CallExpression): boolean {
+      if (node.callee.type !== AST_NODE_TYPES.MemberExpression) {
+        return false;
+      }
+
+      // Check if this node is part of a method chain as the object
+      const obj = node.callee.object;
+      if (obj.type === AST_NODE_TYPES.CallExpression) {
+        return true;
+      }
+
+      // Check if this node is part of a method chain as the callee
+      let current: TSESTree.Node | undefined = node;
+      while (current) {
+        if (
+          current.parent?.type === AST_NODE_TYPES.MemberExpression &&
+          current.parent.parent?.type === AST_NODE_TYPES.CallExpression
+        ) {
+          return true;
+        }
+        current = current.parent as TSESTree.Node;
+      }
+
+      return false;
+    }
+
     return {
       TSTypeReference(node: TSESTree.TSTypeReference): void {
         if (
@@ -148,6 +239,77 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
               node,
               messageId: 'invalidGeneric',
               data: { type: typeName }
+            });
+          }
+        }
+      },
+      CallExpression(node: TSESTree.CallExpression): void {
+        // Only check method calls if there's no type annotation
+        if (hasTypeAnnotation(node)) {
+          return;
+        }
+
+        // Check for .doc() calls
+        if (
+          node.callee.type === AST_NODE_TYPES.MemberExpression &&
+          node.callee.property.type === AST_NODE_TYPES.Identifier &&
+          node.callee.property.name === 'doc'
+        ) {
+          const typeAnnotation = node.typeParameters;
+          if (!typeAnnotation) {
+            context.report({
+              node,
+              messageId: 'missingGeneric',
+              data: { type: 'DocumentReference' }
+            });
+          } else if (hasInvalidType(typeAnnotation.params[0])) {
+            context.report({
+              node,
+              messageId: 'invalidGeneric',
+              data: { type: 'DocumentReference' }
+            });
+          }
+        }
+        // Check for .collection() calls
+        else if (
+          node.callee.type === AST_NODE_TYPES.MemberExpression &&
+          node.callee.property.type === AST_NODE_TYPES.Identifier &&
+          node.callee.property.name === 'collection' &&
+          !isPartOfMethodChain(node)
+        ) {
+          const typeAnnotation = node.typeParameters;
+          if (!typeAnnotation) {
+            context.report({
+              node,
+              messageId: 'missingGeneric',
+              data: { type: 'CollectionReference' }
+            });
+          } else if (hasInvalidType(typeAnnotation.params[0])) {
+            context.report({
+              node,
+              messageId: 'invalidGeneric',
+              data: { type: 'CollectionReference' }
+            });
+          }
+        }
+        // Check for .collectionGroup() calls
+        else if (
+          node.callee.type === AST_NODE_TYPES.MemberExpression &&
+          node.callee.property.type === AST_NODE_TYPES.Identifier &&
+          node.callee.property.name === 'collectionGroup'
+        ) {
+          const typeAnnotation = node.typeParameters;
+          if (!typeAnnotation) {
+            context.report({
+              node,
+              messageId: 'missingGeneric',
+              data: { type: 'CollectionGroup' }
+            });
+          } else if (hasInvalidType(typeAnnotation.params[0])) {
+            context.report({
+              node,
+              messageId: 'invalidGeneric',
+              data: { type: 'CollectionGroup' }
             });
           }
         }
