@@ -118,6 +118,34 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
     },
   ],
   invalid: [
+    // Optional chaining case
+    {
+      code: `
+        const MyComponent = ({ userFull }: { userFull: { uid?: string } }) => {
+          const uidFull = useMemo(() => {
+            return userFull?.uid;
+          }, [userFull]);
+          return <div>{uidFull}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userFull',
+            fields: 'userFull?.uid',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userFull }: { userFull: { uid?: string } }) => {
+          const uidFull = useMemo(() => {
+            return userFull?.uid;
+          }, [userFull?.uid]);
+          return <div>{uidFull}</div>;
+        };
+      `,
+    },
     // Basic case - using entire object when only name is needed
     {
       code: `

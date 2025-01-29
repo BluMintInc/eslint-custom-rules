@@ -67,23 +67,29 @@ function getObjectUsagesInHook(
   function buildAccessPath(node: TSESTree.MemberExpression): string | null {
     const parts: string[] = [];
     let current: TSESTree.Node = node;
+    let hasOptionalChaining = false;
 
+    // Collect all parts from leaf to root
     while (current.type === AST_NODE_TYPES.MemberExpression) {
-      if (current.computed) {
+      const memberExpr = current as TSESTree.MemberExpression;
+      if (memberExpr.computed) {
         return null; // Skip computed properties
       }
-      if (current.property.type !== AST_NODE_TYPES.Identifier) {
+      if (memberExpr.property.type !== AST_NODE_TYPES.Identifier) {
         return null;
       }
-      parts.unshift(current.property.name);
-      current = current.object;
+      parts.unshift(memberExpr.property.name);
+      if (memberExpr.optional) {
+        hasOptionalChaining = true;
+      }
+      current = memberExpr.object;
     }
 
-    if (
-      current.type === AST_NODE_TYPES.Identifier &&
-      current.name === objectName
-    ) {
-      return parts.join('.');
+    // Check if we reached the target identifier
+    if (current.type === AST_NODE_TYPES.Identifier && current.name === objectName) {
+      // Build the path with optional chaining
+      const path = objectName + (hasOptionalChaining ? '?' : '') + parts.map(part => '.' + part).join('');
+      return path;
     }
 
     return null;
@@ -103,11 +109,6 @@ function getObjectUsagesInHook(
           needsEntireObject = true;
         }
       });
-    } else if (node.type === AST_NODE_TYPES.MemberExpression) {
-      const path = buildAccessPath(node);
-      if (path) {
-        usages.add(`${objectName}.${path}`);
-      }
     } else if (node.type === AST_NODE_TYPES.SpreadElement) {
       // If we find a spread operator with our target object, consider it as accessing all properties
       if (
@@ -116,6 +117,11 @@ function getObjectUsagesInHook(
       ) {
         needsEntireObject = true;
         return;
+      }
+    } else if (node.type === AST_NODE_TYPES.MemberExpression) {
+      const path = buildAccessPath(node);
+      if (path) {
+        usages.add(path);
       }
     }
 
