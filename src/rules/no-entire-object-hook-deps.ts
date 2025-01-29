@@ -62,27 +62,34 @@ function getObjectUsagesInHook(
 ): Set<string> {
   const usages = new Set<string>();
   const visited = new Set<TSESTree.Node>();
+  let needsEntireObject = false;
 
   function buildAccessPath(node: TSESTree.MemberExpression): string | null {
     const parts: string[] = [];
     let current: TSESTree.Node = node;
+    let hasOptionalChaining = false;
 
+    // Collect all parts from leaf to root
     while (current.type === AST_NODE_TYPES.MemberExpression) {
-      if (current.computed) {
+      const memberExpr = current as TSESTree.MemberExpression;
+      if (memberExpr.computed) {
         return null; // Skip computed properties
       }
-      if (current.property.type !== AST_NODE_TYPES.Identifier) {
+      if (memberExpr.property.type !== AST_NODE_TYPES.Identifier) {
         return null;
       }
-      parts.unshift(current.property.name);
-      current = current.object;
+      parts.unshift(memberExpr.property.name);
+      if (memberExpr.optional) {
+        hasOptionalChaining = true;
+      }
+      current = memberExpr.object;
     }
 
-    if (
-      current.type === AST_NODE_TYPES.Identifier &&
-      current.name === objectName
-    ) {
-      return parts.join('.');
+    // Check if we reached the target identifier
+    if (current.type === AST_NODE_TYPES.Identifier && current.name === objectName) {
+      // Build the path with optional chaining
+      const path = objectName + (hasOptionalChaining ? '?' : '') + parts.map(part => '.' + part).join('');
+      return path;
     }
 
     return null;
@@ -92,10 +99,29 @@ function getObjectUsagesInHook(
     if (visited.has(node)) return;
     visited.add(node);
 
-    if (node.type === AST_NODE_TYPES.MemberExpression) {
+    if (node.type === AST_NODE_TYPES.CallExpression) {
+      // Check if the object is directly passed as an argument
+      node.arguments.forEach((arg) => {
+        if (
+          arg.type === AST_NODE_TYPES.Identifier &&
+          arg.name === objectName
+        ) {
+          needsEntireObject = true;
+        }
+      });
+    } else if (node.type === AST_NODE_TYPES.SpreadElement) {
+      // If we find a spread operator with our target object, consider it as accessing all properties
+      if (
+        node.argument.type === AST_NODE_TYPES.Identifier &&
+        node.argument.name === objectName
+      ) {
+        needsEntireObject = true;
+        return;
+      }
+    } else if (node.type === AST_NODE_TYPES.MemberExpression) {
       const path = buildAccessPath(node);
       if (path) {
-        usages.add(`${objectName}.${path}`);
+        usages.add(path);
       }
     }
 
@@ -118,6 +144,11 @@ function getObjectUsagesInHook(
   }
 
   visit(hookBody);
+
+  // If the entire object is needed, return an empty set to indicate valid usage
+  if (needsEntireObject) {
+    return new Set();
+  }
 
   // Filter out intermediate paths
   const paths = Array.from(usages);
@@ -196,6 +227,7 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
             const usages = getObjectUsagesInHook(callbackArg.body, objectName);
 
             // If we found specific field usages and the entire object is in deps
+            // Skip reporting if usages is empty (indicates spread operator usage)
             if (usages.size > 0) {
               const fields = Array.from(usages).join(', ');
               context.report({

@@ -78,8 +78,74 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    // Using object spread with property access should be valid
+    {
+      code: `
+        const MyComponent = ({ style }) => {
+          const imageStyle = useMemo(() => {
+            return {
+              objectFit: 'contain',
+              borderRadius: style?.borderRadius || 'inherit',
+              ...style,
+            } as const;
+          }, [style]);
+          return <div style={imageStyle} />;
+        };
+      `,
+    },
+    // Using object as a direct function argument should be valid
+    {
+      code: `
+        const MyComponent = ({ userInternal }) => {
+          const user = useMemo(() => {
+            return onlyIdentified(userInternal);
+          }, [userInternal]);
+          return <div>{user.name}</div>;
+        };
+      `,
+    },
+    // Using object as a direct function argument with multiple functions should be valid
+    {
+      code: `
+        const MyComponent = ({ userInternal }) => {
+          const user = useMemo(() => {
+            validateUser(userInternal);
+            return onlyIdentified(userInternal);
+          }, [userInternal]);
+          return <div>{user.name}</div>;
+        };
+      `,
+    },
   ],
   invalid: [
+    // Optional chaining case
+    {
+      code: `
+        const MyComponent = ({ userFull }: { userFull: { uid?: string } }) => {
+          const uidFull = useMemo(() => {
+            return userFull?.uid;
+          }, [userFull]);
+          return <div>{uidFull}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userFull',
+            fields: 'userFull?.uid',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userFull }: { userFull: { uid?: string } }) => {
+          const uidFull = useMemo(() => {
+            return userFull?.uid;
+          }, [userFull?.uid]);
+          return <div>{uidFull}</div>;
+        };
+      `,
+    },
     // Basic case - using entire object when only name is needed
     {
       code: `
