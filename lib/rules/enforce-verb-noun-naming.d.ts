@@ -1,0 +1,1 @@
+export declare const enforceVerbNounNaming: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"functionVerbPhrase", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;

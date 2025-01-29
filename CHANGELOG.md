@@ -1,3 +1,15 @@
+# [1.3.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.2.1...v1.3.0) (2025-01-29)
+
+
+### Bug Fixes
+
+* **husky:** Remove commit-msg hook ([879f734](https://github.com/BluMintInc/eslint-custom-rules/commit/879f734979ef2ca097d4389430f8d579656b2127))
+
+
+### Features
+
+* **eslint-rules:** Add new rule and update README with type information and compositing layer props ([e047fb6](https://github.com/BluMintInc/eslint-custom-rules/commit/e047fb6ae03bd776ebbe079fbe8c7cd54a4f1323))
+
 ## [1.2.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.2.0...v1.2.1) (2025-01-27)
 
 

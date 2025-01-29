@@ -39,7 +39,7 @@ import { enforceFirestoreMock } from './rules/enforce-mock-firestore';
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.2.1',
+    version: '1.3.0',
   },
   parseOptions: {
     ecmaVersion: 2020,
