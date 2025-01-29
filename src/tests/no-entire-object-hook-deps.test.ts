@@ -78,6 +78,21 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    // Using object spread with property access should be valid
+    {
+      code: `
+        const MyComponent = ({ style }) => {
+          const imageStyle = useMemo(() => {
+            return {
+              objectFit: 'contain',
+              borderRadius: style?.borderRadius || 'inherit',
+              ...style,
+            } as const;
+          }, [style]);
+          return <div style={imageStyle} />;
+        };
+      `,
+    },
   ],
   invalid: [
     // Basic case - using entire object when only name is needed
