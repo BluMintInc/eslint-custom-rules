@@ -97,6 +97,16 @@ function getObjectUsagesInHook(
       if (path) {
         usages.add(`${objectName}.${path}`);
       }
+    } else if (node.type === AST_NODE_TYPES.SpreadElement) {
+      // If we find a spread operator with our target object, consider it as accessing all properties
+      if (
+        node.argument.type === AST_NODE_TYPES.Identifier &&
+        node.argument.name === objectName
+      ) {
+        // Return empty set to indicate valid usage without specific fields
+        usages.clear();
+        return;
+      }
     }
 
     // Visit all child nodes
@@ -196,6 +206,7 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
             const usages = getObjectUsagesInHook(callbackArg.body, objectName);
 
             // If we found specific field usages and the entire object is in deps
+            // Skip reporting if usages is empty (indicates spread operator usage)
             if (usages.size > 0) {
               const fields = Array.from(usages).join(', ');
               context.report({
