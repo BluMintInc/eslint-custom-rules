@@ -28,6 +28,8 @@ function isArrayOrPrimitive(
   if (
     type.flags &
     (TypeFlags.String |
+      TypeFlags.StringLike |
+      TypeFlags.StringLiteral |
       TypeFlags.Number |
       TypeFlags.Boolean |
       TypeFlags.Null |
@@ -49,6 +51,11 @@ function isArrayOrPrimitive(
     type.symbol?.escapedName === 'Array' ||
     (typeNode && (isArrayTypeNode(typeNode) || isTupleTypeNode(typeNode)))
   ) {
+    return true;
+  }
+
+  // Check if it's a string type with methods (like String object)
+  if (type.symbol?.name === 'String' || type.symbol?.escapedName === 'String') {
     return true;
   }
 
