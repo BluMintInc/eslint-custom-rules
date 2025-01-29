@@ -1,3 +1,10 @@
+## [1.3.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.3.1...v1.3.2) (2025-01-29)
+
+
+### Bug Fixes
+
+* **.cursorrules:** trigger semantic patch upgrade ([f6133bc](https://github.com/BluMintInc/eslint-custom-rules/commit/f6133bca802ff066890cbf4747fda1c6ac3b51c7))
+
 ## [1.3.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.3.0...v1.3.1) (2025-01-29)
 
 
