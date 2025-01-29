@@ -25,7 +25,7 @@ import { noJsxWhitespaceLiteral } from './rules/no-jsx-whitespace-literal';
 import { default as requireDynamicFirebaseImports } from './rules/require-dynamic-firebase-imports';
 import { default as requireHttpsError } from './rules/require-https-error';
 import { useCustomRouter } from './rules/use-custom-router';
-import { default as requireImageOverlayed } from './rules/require-image-overlayed';
+import { default as requireImageOptimized } from './rules/require-image-optimized';
 import { requireUseMemoObjectLiterals } from './rules/require-usememo-object-literals';
 import { enforceStableStringify } from './rules/enforce-safe-stringify';
 import { avoidUtilsDirectory } from './rules/avoid-utils-directory';
@@ -77,7 +77,7 @@ module.exports = {
         '@blumintinc/blumint/require-dynamic-firebase-imports': 'error',
         '@blumintinc/blumint/require-https-error': 'error',
         '@blumintinc/blumint/use-custom-router': 'error',
-        '@blumintinc/blumint/require-image-overlayed': 'error',
+        '@blumintinc/blumint/require-image-optimized': 'error',
         '@blumintinc/blumint/require-usememo-object-literals': 'error',
         '@blumintinc/blumint/enforce-safe-stringify': 'error',
         '@blumintinc/blumint/no-entire-object-hook-deps': 'error',
@@ -116,7 +116,7 @@ module.exports = {
     'require-dynamic-firebase-imports': requireDynamicFirebaseImports,
     'require-https-error': requireHttpsError,
     'use-custom-router': useCustomRouter,
-    'require-image-overlayed': requireImageOverlayed,
+    'require-image-optimized': requireImageOptimized,
     'require-usememo-object-literals': requireUseMemoObjectLiterals,
     'enforce-safe-stringify': enforceStableStringify,
     'avoid-utils-directory': avoidUtilsDirectory,

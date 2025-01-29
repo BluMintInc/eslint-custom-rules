@@ -1,21 +1,21 @@
 import { ruleTesterJsx } from '../utils/ruleTester';
-import rule from '../rules/require-image-overlayed';
+import rule from '../rules/require-image-optimized';
 
-ruleTesterJsx.run('require-image-overlayed', rule, {
+ruleTesterJsx.run('require-image-optimized', rule, {
   valid: [
     {
       code: `
-        import ImageOverlayed from 'src/components/ImageOverlayed';
+        import ImageOptimized from 'src/components/image/ImageOptimized';
         function Component() {
-          return <ImageOverlayed src="/example.jpg" alt="Example" overlayText="Overlay Text" />;
+          return <ImageOptimized src="/example.jpg" alt="Example" />;
         }
       `,
     },
     {
       code: `
-        import { ImageOverlayed as CustomImage } from 'src/components/ImageOverlayed';
+        import { ImageOptimized as CustomImage } from 'src/components/image/ImageOptimized';
         function Component() {
-          return <CustomImage src="/example.jpg" alt="Example" overlayText="Overlay Text" />;
+          return <CustomImage src="/example.jpg" alt="Example" />;
         }
       `,
     },
@@ -30,15 +30,15 @@ ruleTesterJsx.run('require-image-overlayed', rule, {
       `,
       errors: [
         {
-          messageId: 'useImageOverlayed',
+          messageId: 'useImageOptimized',
           data: {
-            componentPath: 'src/components/ImageOverlayed',
+            componentPath: 'src/components/image/ImageOptimized',
             component: 'next/image',
           },
         },
       ],
       output: `
-        import Image from 'src/components/ImageOverlayed';
+        import Image from 'src/components/image/ImageOptimized';
         function Component() {
           return <Image src="/example.jpg" alt="Example" />;
         }
@@ -52,16 +52,16 @@ ruleTesterJsx.run('require-image-overlayed', rule, {
       `,
       errors: [
         {
-          messageId: 'useImageOverlayed',
+          messageId: 'useImageOptimized',
           data: {
-            componentPath: 'src/components/ImageOverlayed',
+            componentPath: 'src/components/image/ImageOptimized',
             component: 'img tag',
           },
         },
       ],
       output: `
         function Component() {
-          return <ImageOverlayed src="/example.jpg" alt="Example" />;
+          return <ImageOptimized src="/example.jpg" alt="Example" />;
         }
       `,
     },
@@ -74,15 +74,15 @@ ruleTesterJsx.run('require-image-overlayed', rule, {
       `,
       errors: [
         {
-          messageId: 'useImageOverlayed',
+          messageId: 'useImageOptimized',
           data: {
-            componentPath: 'src/components/ImageOverlayed',
+            componentPath: 'src/components/image/ImageOptimized',
             component: 'next/image',
           },
         },
       ],
       output: `
-        import NextImage from 'src/components/ImageOverlayed';
+        import NextImage from 'src/components/image/ImageOptimized';
         function Component() {
           return <NextImage src="/example.jpg" alt="Example" />;
         }
