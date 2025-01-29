@@ -153,6 +153,10 @@ export default createRule<[], MessageIds>({
               }
 
               // Check if it's a literal, array, or object that should have as const
+              // Skip regular expressions as they are already immutable
+              if (node.type === AST_NODE_TYPES.Literal && 'regex' in node) {
+                return false;
+              }
               return (
                 node.type === AST_NODE_TYPES.Literal ||
                 node.type === AST_NODE_TYPES.ArrayExpression ||

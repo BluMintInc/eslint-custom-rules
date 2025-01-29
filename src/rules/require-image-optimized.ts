@@ -1,12 +1,12 @@
 import { createRule } from '../utils/createRule';
 
 export = createRule({
-  name: 'require-image-overlayed',
+  name: 'require-image-optimized',
   meta: {
     type: 'problem',
     docs: {
       description:
-        'Enforce using ImageOverlayed component instead of next/image or img tags',
+        'Enforce using ImageOptimized component instead of next/image or img tags',
       recommended: 'error',
       requiresTypeChecking: false,
     },
@@ -17,23 +17,23 @@ export = createRule({
         properties: {
           componentPath: {
             type: 'string',
-            description: 'The import path for the ImageOverlayed component',
-            default: 'src/components/ImageOverlayed',
+            description: 'The import path for the ImageOptimized component',
+            default: 'src/components/image/ImageOptimized',
           },
         },
         additionalProperties: false,
       },
     ],
     messages: {
-      useImageOverlayed:
-        'Use ImageOverlayed component from {{ componentPath }} instead of {{ component }}',
+      useImageOptimized:
+        'Use ImageOptimized component from {{ componentPath }} instead of {{ component }}',
     },
   },
-  defaultOptions: [{ componentPath: 'src/components/ImageOverlayed' }],
+  defaultOptions: [{ componentPath: 'src/components/image/ImageOptimized' }],
 
   create(context) {
     const options = context.options[0] || {
-      componentPath: 'src/components/ImageOverlayed',
+      componentPath: 'src/components/image/ImageOptimized',
     };
     const sourceCode = context.getSourceCode();
 
@@ -43,7 +43,7 @@ export = createRule({
         if (node.openingElement.name.name === 'img') {
           context.report({
             node,
-            messageId: 'useImageOverlayed',
+            messageId: 'useImageOptimized',
             data: {
               componentPath: options.componentPath,
               component: 'img tag',
@@ -54,7 +54,7 @@ export = createRule({
                 .join(' ');
               return fixer.replaceText(
                 node,
-                `<ImageOverlayed ${attributes} />`,
+                `<ImageOptimized ${attributes} />`,
               );
             },
           });
@@ -77,7 +77,7 @@ export = createRule({
             // Report the import
             context.report({
               node,
-              messageId: 'useImageOverlayed',
+              messageId: 'useImageOptimized',
               data: {
                 componentPath: options.componentPath,
                 component: 'next/image',

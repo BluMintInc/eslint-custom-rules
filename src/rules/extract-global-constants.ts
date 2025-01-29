@@ -24,12 +24,40 @@ function isFunctionDefinition(node: TSESTree.Expression | null): boolean {
   );
 }
 
+function isImmutableValue(node: TSESTree.Expression | null): boolean {
+  if (!node) return false;
+
+  switch (node.type) {
+    case 'Literal':
+      return true;
+    case 'TemplateLiteral':
+      return node.expressions.length === 0;
+    case 'UnaryExpression':
+      return isImmutableValue(node.argument);
+    case 'BinaryExpression':
+      if (node.left.type === 'PrivateIdentifier') return false;
+      return isImmutableValue(node.left) && isImmutableValue(node.right);
+    default:
+      return false;
+  }
+}
+
 function isMutableValue(node: TSESTree.Expression | null): boolean {
   if (!node) return false;
 
-  // Check for array literals and object expressions
-  if (node.type === 'ArrayExpression' || node.type === 'ObjectExpression') {
+  // Check for object expressions (always mutable)
+  if (node.type === 'ObjectExpression') {
     return true;
+  }
+
+  // Check array literals - mutable if empty or if they contain mutable values
+  if (node.type === 'ArrayExpression') {
+    // Empty arrays are mutable since they can be modified later
+    if (node.elements.length === 0) return true;
+    // Arrays with spread elements are mutable
+    if (node.elements.some(element => !element || element.type === 'SpreadElement')) return true;
+    // Arrays with non-immutable values are mutable
+    return node.elements.some(element => !isImmutableValue(element as TSESTree.Expression));
   }
 
   // Check for new expressions (e.g., new Map(), new Set())
