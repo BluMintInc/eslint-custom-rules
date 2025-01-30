@@ -38,6 +38,33 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       filename: 'types.d.ts',
       options: [{ allowDtsFiles: true }],
     },
+
+    // Firestore function files
+    {
+      code: `
+        export type Params = { gameId: string; groupId: string; };
+        export type Response = Promise<{ tournamentNew: Tournament }>;
+        export const createTemplateTournament = async (
+          request: AuthenticatedRequest<Params>,
+        ): Response => {
+          return { tournamentNew: await generator.generate() };
+        };
+      `,
+      filename: 'createTemplateTournament.f.ts',
+      options: [{ allowFirestoreFunctionFiles: true }],
+    },
+    {
+      code: `
+        export type Response = Promise<void>;
+        export const deleteUser = async (
+          request: AuthenticatedRequest<{ userId: string }>,
+        ): Response => {
+          await deleteUserData(request.data.userId);
+        };
+      `,
+      filename: 'deleteUser.f.ts',
+      options: [{ allowFirestoreFunctionFiles: true }],
+    },
   ],
   invalid: [
     // Basic function with explicit return type
@@ -96,6 +123,29 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       options: [{ allowInterfaceMethodSignatures: false }],
       errors: [{ messageId: 'noExplicitReturnType' }],
       output: 'interface Logger { log(message: string); }',
+    },
+
+    // Firestore function file when not allowed
+    {
+      code: `
+        export type Response = Promise<void>;
+        export const deleteUser = async (
+          request: AuthenticatedRequest<{ userId: string }>,
+        ): Response => {
+          await deleteUserData(request.data.userId);
+        };
+      `,
+      filename: 'deleteUser.f.ts',
+      options: [{ allowFirestoreFunctionFiles: false }],
+      errors: [{ messageId: 'noExplicitReturnType' }],
+      output: `
+        export type Response = Promise<void>;
+        export const deleteUser = async (
+          request: AuthenticatedRequest<{ userId: string }>,
+        ) => {
+          await deleteUserData(request.data.userId);
+        };
+      `,
     },
   ],
 });
