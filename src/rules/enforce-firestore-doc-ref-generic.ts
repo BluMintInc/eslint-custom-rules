@@ -130,6 +130,11 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
 
       let current: TSESTree.Node | undefined = node;
       while (current) {
+        // Type assertions using 'as' keyword
+        if (current.type === AST_NODE_TYPES.TSAsExpression) {
+          nodeCache.set(node, true);
+          return true;
+        }
         // Variable declarations with type annotations
         if (current.type === AST_NODE_TYPES.VariableDeclarator && current.id.typeAnnotation) {
           nodeCache.set(node, true);

@@ -35,6 +35,16 @@ import { noCompositingLayerProps } from './rules/no-compositing-layer-props';
 import { enforceFirestoreDocRefGeneric } from './rules/enforce-firestore-doc-ref-generic';
 import { semanticFunctionPrefixes } from './rules/semantic-function-prefixes';
 import { enforceFirestoreMock } from './rules/enforce-mock-firestore';
+import { preferSettingsObject } from './rules/prefer-settings-object';
+import { enforceFirestoreSetMerge } from './rules/enforce-firestore-set-merge';
+import { enforceVerbNounNaming } from './rules/enforce-verb-noun-naming';
+import { noExplicitReturnType } from './rules/no-explicit-return-type';
+import { useCustomMemo } from './rules/use-custom-memo';
+import { useCustomLink } from './rules/use-custom-link';
+import { default as enforceSerializableParams } from './rules/enforce-serializable-params';
+import { enforceRealtimedbPathUtils } from './rules/enforce-realtimedb-path-utils';
+import { enforceMemoizeAsync } from './rules/enforce-memoize-async';
+import { enforceExportedFunctionTypes } from './rules/enforce-exported-function-types';
 
 module.exports = {
   meta: {
@@ -85,6 +95,16 @@ module.exports = {
         '@blumintinc/blumint/enforce-firestore-doc-ref-generic': 'error',
         '@blumintinc/blumint/semantic-function-prefixes': 'error',
         '@blumintinc/blumint/enforce-mock-firestore': 'error',
+        '@blumintinc/blumint/prefer-settings-object': 'error',
+        '@blumintinc/blumint/enforce-firestore-set-merge': 'error',
+        '@blumintinc/blumint/enforce-verb-noun-naming': 'error',
+        '@blumintinc/blumint/no-explicit-return-type': 'error',
+        '@blumintinc/blumint/use-custom-memo': 'error',
+        '@blumintinc/blumint/use-custom-link': 'error',
+        '@blumintinc/blumint/enforce-serializable-params': 'error',
+        '@blumintinc/blumint/enforce-realtimedb-path-utils': 'error',
+        '@blumintinc/blumint/enforce-memoize-async': 'error',
+        '@blumintinc/blumint/enforce-exported-function-types': 'error',
       },
     },
   },
@@ -126,5 +146,15 @@ module.exports = {
     'enforce-firestore-doc-ref-generic': enforceFirestoreDocRefGeneric,
     'semantic-function-prefixes': semanticFunctionPrefixes,
     'enforce-mock-firestore': enforceFirestoreMock,
+    'prefer-settings-object': preferSettingsObject,
+    'enforce-firestore-set-merge': enforceFirestoreSetMerge,
+    'enforce-verb-noun-naming': enforceVerbNounNaming,
+    'no-explicit-return-type': noExplicitReturnType,
+    'use-custom-memo': useCustomMemo,
+    'use-custom-link': useCustomLink,
+    'enforce-serializable-params': enforceSerializableParams,
+    'enforce-realtimedb-path-utils': enforceRealtimedbPathUtils,
+    'enforce-memoize-async': enforceMemoizeAsync,
+    'enforce-exported-function-types': enforceExportedFunctionTypes,
   },
 };

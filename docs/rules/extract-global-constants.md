@@ -1,14 +1,6 @@
 # Extract static constants and functions to the global scope when possible (`@blumintinc/blumint/extract-global-constants`)
 
-⚠️ This rule _warns_ in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
-⚠️ This rule _warns_ in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
-⚠️ This rule _warns_ in the ✅ `recommended` config.
+💼 This rule is enabled in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
 

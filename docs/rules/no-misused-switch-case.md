@@ -4,14 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 This rule prevents the misuse of logical OR in switch case statements. Instead, cascading cases should be used. This improves code readability and understanding.
 
 ## Rule Details

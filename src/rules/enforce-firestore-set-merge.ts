@@ -8,13 +8,17 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce using set() with { merge: true } instead of update() for Firestore operations',
+      description:
+        'Enforce using set() with { merge: true } instead of update() for Firestore operations',
       recommended: 'error',
+      requiresTypeChecking: false,
+      extendsBaseRule: false,
     },
     fixable: 'code',
     schema: [],
     messages: {
-      preferSetMerge: 'Use set() with { merge: true } instead of update() for more predictable Firestore operations',
+      preferSetMerge:
+        'Use set() with { merge: true } instead of update() for more predictable Firestore operations',
     },
   },
   defaultOptions: [],
@@ -24,7 +28,10 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
     function isFirestoreUpdateCall(node: TSESTree.CallExpression): boolean {
       if (node.callee.type === AST_NODE_TYPES.MemberExpression) {
         const property = node.callee.property;
-        return property.type === AST_NODE_TYPES.Identifier && property.name === 'update';
+        return (
+          property.type === AST_NODE_TYPES.Identifier &&
+          property.name === 'update'
+        );
       }
       if (node.callee.type === AST_NODE_TYPES.Identifier) {
         return updateAliases.has(node.callee.name);
@@ -32,7 +39,10 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
       return false;
     }
 
-    function convertUpdateToSetMerge(node: TSESTree.CallExpression, sourceCode: any): string {
+    function convertUpdateToSetMerge(
+      node: TSESTree.CallExpression,
+      sourceCode: any,
+    ): string {
       const args = node.arguments;
       if (args.length === 0) return '';
 
@@ -54,8 +64,11 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
 
     return {
       ImportDeclaration(node): void {
-        if (node.source.value === 'firebase/firestore' || node.source.value === 'firebase-admin') {
-          node.specifiers.forEach(specifier => {
+        if (
+          node.source.value === 'firebase/firestore' ||
+          node.source.value === 'firebase-admin'
+        ) {
+          node.specifiers.forEach((specifier) => {
             if (specifier.type === AST_NODE_TYPES.ImportSpecifier) {
               if (specifier.imported.name === 'updateDoc') {
                 updateAliases.add(specifier.local.name);
@@ -66,24 +79,34 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
       },
 
       ImportExpression(node): void {
-        if (node.source.type === AST_NODE_TYPES.Literal &&
-            (node.source.value === 'firebase/firestore' || node.source.value === 'firebase-admin')) {
+        if (
+          node.source.type === AST_NODE_TYPES.Literal &&
+          (node.source.value === 'firebase/firestore' ||
+            node.source.value === 'firebase-admin')
+        ) {
           // Dynamic imports are handled in VariableDeclarator
         }
       },
 
       VariableDeclarator(node): void {
-        if (node.init?.type === AST_NODE_TYPES.AwaitExpression &&
-            node.init.argument.type === AST_NODE_TYPES.ImportExpression) {
+        if (
+          node.init?.type === AST_NODE_TYPES.AwaitExpression &&
+          node.init.argument.type === AST_NODE_TYPES.ImportExpression
+        ) {
           const importSource = node.init.argument.source;
-          if (importSource.type === AST_NODE_TYPES.Literal &&
-              (importSource.value === 'firebase/firestore' || importSource.value === 'firebase-admin')) {
+          if (
+            importSource.type === AST_NODE_TYPES.Literal &&
+            (importSource.value === 'firebase/firestore' ||
+              importSource.value === 'firebase-admin')
+          ) {
             // Handle destructured imports
             if (node.id.type === AST_NODE_TYPES.ObjectPattern) {
-              node.id.properties.forEach(prop => {
-                if (prop.type === AST_NODE_TYPES.Property &&
-                    prop.key.type === AST_NODE_TYPES.Identifier &&
-                    prop.key.name === 'updateDoc') {
+              node.id.properties.forEach((prop) => {
+                if (
+                  prop.type === AST_NODE_TYPES.Property &&
+                  prop.key.type === AST_NODE_TYPES.Identifier &&
+                  prop.key.name === 'updateDoc'
+                ) {
                   if (prop.value.type === AST_NODE_TYPES.Identifier) {
                     updateAliases.add(prop.value.name);
                   }
@@ -100,7 +123,10 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
             node,
             messageId: 'preferSetMerge',
             fix(fixer) {
-              const newText = convertUpdateToSetMerge(node, context.getSourceCode());
+              const newText = convertUpdateToSetMerge(
+                node,
+                context.getSourceCode(),
+              );
               return fixer.replaceText(node, newText);
             },
           });

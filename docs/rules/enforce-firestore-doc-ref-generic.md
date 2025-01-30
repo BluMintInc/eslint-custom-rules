@@ -1,14 +1,8 @@
-# Enforce generic argument for Firestore DocumentReference (`@blumintinc/blumint/enforce-firestore-doc-ref-generic`)
+# Enforce generic argument for Firestore DocumentReference, CollectionReference and CollectionGroup (`@blumintinc/blumint/enforce-firestore-doc-ref-generic`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
-💭 This rule requires type information.
-
-<!-- end auto-generated rule header -->
-
-💼 This rule is enabled in the ✅ `recommended` config.
-
-🔧💭 This rule requires type information.
+💭 This rule requires [type information](https://typescript-eslint.io/linting/typed-linting).
 
 <!-- end auto-generated rule header -->
 
@@ -66,10 +60,6 @@ type BaseData = {
 type UserWithBase = UserData & BaseData;
 const docRef: DocumentReference<UserWithBase> = db.doc('users/123');
 ```
-
-## Options
-
-This rule has no configurable options.
 
 ## When Not To Use It
 

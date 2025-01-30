@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'noExplicitReturnType';
@@ -23,9 +23,11 @@ const defaultOptions: Options[0] = {
 
 function isRecursiveFunction(node: TSESTree.FunctionLike): boolean {
   const functionName =
-    node.type === AST_NODE_TYPES.FunctionDeclaration ? node.id?.name :
-    node.type === AST_NODE_TYPES.FunctionExpression && node.id ? node.id.name :
-    undefined;
+    node.type === AST_NODE_TYPES.FunctionDeclaration
+      ? node.id?.name
+      : node.type === AST_NODE_TYPES.FunctionExpression && node.id
+      ? node.id.name
+      : undefined;
 
   if (!functionName || !node.body) return false;
 
@@ -73,15 +75,18 @@ function isOverloadedFunction(node: TSESTree.Node): boolean {
     const interfaceBody = node.parent;
     if (interfaceBody.type !== AST_NODE_TYPES.TSInterfaceBody) return false;
 
-    const methodName = node.key.type === AST_NODE_TYPES.Identifier ? node.key.name : undefined;
+    const methodName =
+      node.key.type === AST_NODE_TYPES.Identifier ? node.key.name : undefined;
     if (!methodName) return false;
 
-    return interfaceBody.body.filter(
-      member =>
-        member.type === AST_NODE_TYPES.TSMethodSignature &&
-        member.key.type === AST_NODE_TYPES.Identifier &&
-        member.key.name === methodName,
-    ).length > 1;
+    return (
+      interfaceBody.body.filter(
+        (member) =>
+          member.type === AST_NODE_TYPES.TSMethodSignature &&
+          member.key.type === AST_NODE_TYPES.Identifier &&
+          member.key.name === methodName,
+      ).length > 1
+    );
   }
 
   return false;
@@ -93,7 +98,10 @@ function isInterfaceOrAbstractMethodSignature(node: TSESTree.Node): boolean {
   if (node.type === AST_NODE_TYPES.MethodDefinition) {
     let current: TSESTree.Node | undefined = node;
     while (current) {
-      if (current.type === AST_NODE_TYPES.ClassDeclaration && current.abstract) {
+      if (
+        current.type === AST_NODE_TYPES.ClassDeclaration &&
+        current.abstract
+      ) {
         return true;
       }
       current = current.parent;
@@ -103,13 +111,18 @@ function isInterfaceOrAbstractMethodSignature(node: TSESTree.Node): boolean {
   return false;
 }
 
-export const noExplicitReturnType = createRule<Options, MessageIds>({
+export const noExplicitReturnType: TSESLint.RuleModule<
+  'noExplicitReturnType',
+  Options
+> = createRule<Options, MessageIds>({
   name: 'no-explicit-return-type',
   meta: {
     type: 'suggestion',
     docs: {
       description: 'Disallow explicit return types on functions',
       recommended: 'error',
+      requiresTypeChecking: false,
+      extendsBaseRule: false,
     },
     fixable: 'code',
     schema: [
@@ -126,7 +139,8 @@ export const noExplicitReturnType = createRule<Options, MessageIds>({
       },
     ],
     messages: {
-      noExplicitReturnType: 'Explicit return type is not allowed. Let TypeScript infer it.',
+      noExplicitReturnType:
+        'Explicit return type is not allowed. Let TypeScript infer it.',
     },
   },
   defaultOptions: [defaultOptions],
@@ -138,6 +152,7 @@ export const noExplicitReturnType = createRule<Options, MessageIds>({
       return {};
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function fixReturnType(fixer: any, node: any) {
       const returnType = node.returnType || node.value?.returnType;
       if (!returnType) return null;
@@ -150,28 +165,34 @@ export const noExplicitReturnType = createRule<Options, MessageIds>({
       FunctionDeclaration(node) {
         if (!node.returnType) return;
 
-        if (mergedOptions.allowRecursiveFunctions && isRecursiveFunction(node)) {
+        if (
+          mergedOptions.allowRecursiveFunctions &&
+          isRecursiveFunction(node)
+        ) {
           return;
         }
 
         context.report({
           node: node.returnType,
           messageId: 'noExplicitReturnType',
-          fix: fixer => fixReturnType(fixer, node),
+          fix: (fixer) => fixReturnType(fixer, node),
         });
       },
 
       FunctionExpression(node) {
         if (!node.returnType) return;
 
-        if (mergedOptions.allowRecursiveFunctions && isRecursiveFunction(node)) {
+        if (
+          mergedOptions.allowRecursiveFunctions &&
+          isRecursiveFunction(node)
+        ) {
           return;
         }
 
         context.report({
           node: node.returnType,
           messageId: 'noExplicitReturnType',
-          fix: fixer => fixReturnType(fixer, node),
+          fix: (fixer) => fixReturnType(fixer, node),
         });
       },
 
@@ -181,7 +202,7 @@ export const noExplicitReturnType = createRule<Options, MessageIds>({
         context.report({
           node: node.returnType,
           messageId: 'noExplicitReturnType',
-          fix: fixer => fixReturnType(fixer, node),
+          fix: (fixer) => fixReturnType(fixer, node),
         });
       },
 
@@ -192,28 +213,34 @@ export const noExplicitReturnType = createRule<Options, MessageIds>({
           return;
         }
 
-        if (mergedOptions.allowOverloadedFunctions && isOverloadedFunction(node)) {
+        if (
+          mergedOptions.allowOverloadedFunctions &&
+          isOverloadedFunction(node)
+        ) {
           return;
         }
 
         context.report({
           node: node.returnType,
           messageId: 'noExplicitReturnType',
-          fix: fixer => fixReturnType(fixer, node),
+          fix: (fixer) => fixReturnType(fixer, node),
         });
       },
 
       MethodDefinition(node) {
         if (!node.value.returnType) return;
 
-        if (mergedOptions.allowAbstractMethodSignatures && isInterfaceOrAbstractMethodSignature(node)) {
+        if (
+          mergedOptions.allowAbstractMethodSignatures &&
+          isInterfaceOrAbstractMethodSignature(node)
+        ) {
           return;
         }
 
         context.report({
           node: node.value.returnType,
           messageId: 'noExplicitReturnType',
-          fix: fixer => fixReturnType(fixer, node),
+          fix: (fixer) => fixReturnType(fixer, node),
         });
       },
     };
