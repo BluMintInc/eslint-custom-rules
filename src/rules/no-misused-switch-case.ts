@@ -15,7 +15,7 @@ export const noMisusedSwitchCase: TSESLint.RuleModule<
     schema: [],
     messages: {
       noMisusedSwitchCase:
-        'Avoid using logical OR  in switch case. Use cascading cases instead.',
+        'Avoid using logical OR (||) in switch case statements. Instead of `case x || y:`, use cascading cases like `case x: case y:`.',
     },
   },
   defaultOptions: [],

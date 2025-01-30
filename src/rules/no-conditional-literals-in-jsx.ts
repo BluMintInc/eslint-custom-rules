@@ -17,7 +17,7 @@ export const noConditionalLiteralsInJsx: TSESLint.RuleModule<
     schema: [],
     messages: {
       unexpected:
-        'Conditional expression is a sibling of raw text and must be wrapped in <div> or <span>',
+        'Conditional text literals must be wrapped in a container element when next to other text. Instead of `<div>text {condition && "more text"}</div>`, use `<div>text <span>{condition && "more text"}</span></div>` to prevent React hydration issues.',
     },
   },
   defaultOptions: [],

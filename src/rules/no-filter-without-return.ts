@@ -38,7 +38,7 @@ export const noFilterWithoutReturn: TSESLint.RuleModule<'unexpected', never[]> =
       schema: [],
       messages: {
         unexpected:
-          'An array filter callback with a block statement must contain a return statement',
+          'Array.filter callbacks with block statements must contain a return statement. Instead of `array.filter(x => { doSomething(x); })`, use `array.filter(x => { doSomething(x); return someCondition; })` or use implicit return `array.filter(x => someCondition)`.',
       },
     },
     defaultOptions: [],

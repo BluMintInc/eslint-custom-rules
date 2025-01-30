@@ -13,7 +13,7 @@ export const enforceFirebaseImports = createRule({
     schema: [],
     messages: {
       noDynamicImport:
-        'Static imports from firebaseCloud directory are not allowed. Use dynamic imports instead.',
+        'Static imports from firebaseCloud directory are not allowed to reduce initial bundle size. Instead of `import { func } from "./firebaseCloud/module"`, use dynamic import: `const { func } = await import("./firebaseCloud/module")`.',
     },
   },
   defaultOptions: [],

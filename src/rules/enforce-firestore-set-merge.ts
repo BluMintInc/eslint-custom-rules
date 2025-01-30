@@ -18,7 +18,7 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
     schema: [],
     messages: {
       preferSetMerge:
-        'Use set() with { merge: true } instead of update() for more predictable Firestore operations',
+        'Use set() with { merge: true } instead of update() for more predictable Firestore operations. Instead of `docRef.update({ field: value })`, use `docRef.set({ field: value }, { merge: true })`. This ensures consistent behavior when the document does not exist.',
     },
   },
   defaultOptions: [],

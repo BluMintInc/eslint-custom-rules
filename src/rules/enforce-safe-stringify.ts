@@ -17,7 +17,7 @@ export const enforceStableStringify = createRule<Options, MessageIds>({
     schema: [],
     messages: {
       useStableStringify:
-        'Use safe-stable-stringify instead of JSON.stringify for safer serialization',
+        'Use safe-stable-stringify instead of JSON.stringify for safer serialization. Replace `JSON.stringify(obj)` with `stringify(obj)`. First import it: `import stringify from "safe-stable-stringify"`. This handles circular references and provides deterministic output.',
     },
   },
   defaultOptions: [],

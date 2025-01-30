@@ -38,7 +38,7 @@ export const noAsyncArrayFilter: TSESLint.RuleModule<'unexpected', never[]> =
       schema: [],
       messages: {
         unexpected:
-          'Async array filter is dangerous as a Promise object will always be truthy. You should move the asynchronous logic elsewhere.',
+          'Async array filter is dangerous as a Promise object will always be truthy. Instead of `array.filter(async x => await someCheck(x))`, first resolve the promises with `Promise.all()` or move the async logic elsewhere: `const results = await Promise.all(array.map(x => someCheck(x))); array.filter((_, i) => results[i])`.',
       },
     },
     defaultOptions: [],

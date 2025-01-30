@@ -15,7 +15,7 @@ export const enforceFirestorePathUtils = createRule<[], MessageIds>({
     },
     schema: [],
     messages: {
-      requirePathUtil: 'Use a utility function (e.g., toUserPath, toCollectionPath) for Firestore paths instead of string literals',
+      requirePathUtil: 'Use a utility function for Firestore paths to ensure type safety and maintainability. Instead of `doc("users/" + userId)`, create and use a utility function: `const toUserPath = (id: string) => `users/${id}`; doc(toUserPath(userId))`.',
     },
   },
   defaultOptions: [],

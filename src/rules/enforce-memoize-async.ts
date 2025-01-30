@@ -15,7 +15,7 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
     fixable: 'code',
     schema: [],
     messages: {
-      requireMemoize: 'Async methods with 0-1 parameters should be decorated with @Memoize()',
+      requireMemoize: 'Async methods with 0-1 parameters should be decorated with @Memoize() to cache results and improve performance. Instead of `async getData(id?: string)`, use `@Memoize()\nasync getData(id?: string)`. Import Memoize from "typescript-memoize".',
     },
   },
   defaultOptions: [],
