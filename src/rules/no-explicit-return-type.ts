@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'noExplicitReturnType';
@@ -111,7 +111,10 @@ function isInterfaceOrAbstractMethodSignature(node: TSESTree.Node): boolean {
   return false;
 }
 
-export const noExplicitReturnType = createRule<Options, MessageIds>({
+export const noExplicitReturnType: TSESLint.RuleModule<
+  'noExplicitReturnType',
+  Options
+> = createRule<Options, MessageIds>({
   name: 'no-explicit-return-type',
   meta: {
     type: 'suggestion',
@@ -149,6 +152,7 @@ export const noExplicitReturnType = createRule<Options, MessageIds>({
       return {};
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function fixReturnType(fixer: any, node: any) {
       const returnType = node.returnType || node.value?.returnType;
       if (!returnType) return null;
