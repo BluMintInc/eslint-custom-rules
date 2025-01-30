@@ -232,7 +232,7 @@ ruleTesterTs.run('enforce-firestore-doc-ref-generic', enforceFirestoreDocRefGene
         const userRef = db.collection<User>('users').doc<User>(userId);
       `,
     },
-    // Type assertions using 'as' keyword
+    // Type assertions using 'as' keyword for DocumentReference
     {
       code: `
         interface User {
@@ -240,6 +240,26 @@ ruleTesterTs.run('enforce-firestore-doc-ref-generic', enforceFirestoreDocRefGene
           age: number;
         }
         const userRef = db.doc(toUserPath(userId)) as DocumentReference<User>;
+      `,
+    },
+    // Type assertions using 'as' keyword for CollectionReference
+    {
+      code: `
+        interface User {
+          name: string;
+          age: number;
+        }
+        const usersCollection = db.collection('users') as CollectionReference<User>;
+      `,
+    },
+    // Type assertions using 'as' keyword for CollectionGroup
+    {
+      code: `
+        interface User {
+          name: string;
+          age: number;
+        }
+        const usersGroup = db.collectionGroup('users') as CollectionGroup<User>;
       `,
     },
     {
