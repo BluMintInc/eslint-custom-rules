@@ -30,6 +30,34 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
+    function checkMethodName(node: TSESTree.MethodDefinition) {
+      // Skip getters and setters
+      if (node.kind === 'get' || node.kind === 'set') {
+        return;
+      }
+
+      const methodName = node.key.type === AST_NODE_TYPES.Identifier ? node.key.name : '';
+      if (!methodName) return;
+
+      // Skip if method starts with 'is' (boolean check methods are okay)
+      if (methodName.startsWith('is')) return;
+
+      // Check for disallowed prefixes
+      for (const prefix of DISALLOWED_PREFIXES) {
+        if (methodName.toLowerCase().startsWith(prefix.toLowerCase())) {
+          context.report({
+            node: node.key,
+            messageId: 'avoidGenericPrefix',
+            data: {
+              prefix,
+              alternatives: SUGGESTED_ALTERNATIVES[prefix as keyof typeof SUGGESTED_ALTERNATIVES].join(', '),
+            },
+          });
+          break;
+        }
+      }
+    }
+
     function checkFunctionName(node: TSESTree.FunctionDeclaration | TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression) {
       // Skip anonymous functions
       if (!node.id && node.parent?.type !== AST_NODE_TYPES.VariableDeclarator) {
@@ -48,11 +76,6 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
 
       // Skip if function starts with 'is' (boolean check functions are okay)
       if (functionName.startsWith('is')) return;
-
-      // Skip class getters
-      if (node.parent?.type === AST_NODE_TYPES.MethodDefinition && node.parent.kind === 'get') {
-        return;
-      }
 
       // Check for disallowed prefixes
       for (const prefix of DISALLOWED_PREFIXES) {
@@ -74,6 +97,7 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
       FunctionDeclaration: checkFunctionName,
       FunctionExpression: checkFunctionName,
       ArrowFunctionExpression: checkFunctionName,
+      MethodDefinition: checkMethodName,
     };
   },
 });
