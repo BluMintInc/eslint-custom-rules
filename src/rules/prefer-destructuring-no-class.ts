@@ -51,83 +51,64 @@ function isStaticClassMember(node: TSESTree.Node, context: any): boolean {
   return false;
 }
 
-function shouldEnforceDestructuring(node: TSESTree.Node, context: any): boolean {
-  // Don't enforce destructuring for class instances or static class members
-  if (isClassInstance(node, context) || isStaticClassMember(node, context)) {
-    return false;
-  }
-  return true;
-}
-
 export const preferDestructuringNoClass = createRule<[], MessageIds>({
   name: 'prefer-destructuring-no-class',
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce destructuring when accessing properties, except for class instances',
+      description: 'Enforce destructuring when accessing properties, except for class instances. Extends ESLint core prefer-destructuring rule.',
       recommended: 'error',
+      extendsBaseRule: 'prefer-destructuring',
     },
     fixable: 'code',
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          object: {
+            type: 'boolean',
+            default: true,
+          },
+          array: {
+            type: 'boolean',
+            default: false,
+          },
+        },
+        additionalProperties: false,
+      },
+    ],
     messages: {
       preferDestructuring: 'Use destructuring instead of accessing the property directly.',
     },
   },
-  defaultOptions: [],
+  defaultOptions: [{
+    object: true,
+    array: false,
+  }],
   create(context) {
+    // Get the base prefer-destructuring rule
+    const baseRule = context.sourceCode.eslintConfig?.rules?.['prefer-destructuring'];
+    const baseRuleConfig = baseRule ? baseRule[1] : { object: true, array: false };
+
+    // Create the base rule context
+    const baseRuleContext = {
+      ...context,
+      options: [baseRuleConfig],
+    };
+
+    // Get the base rule implementation
+    const baseRuleListeners = require('eslint/lib/rules/prefer-destructuring').default.create(baseRuleContext);
+
     return {
       MemberExpression(node) {
-        // Skip if this is part of an assignment pattern
-        if (node.parent?.type === AST_NODE_TYPES.AssignmentPattern) {
+        // Skip if this is a class instance or static class member
+        if (isClassInstance(node, context) || isStaticClassMember(node, context)) {
           return;
         }
 
-        // Only check property access with dot notation
-        if (node.computed || !node.property || node.property.type !== AST_NODE_TYPES.Identifier) {
-          return;
-        }
-
-        // Check if this is part of a variable declaration
-        if (node.parent?.type === AST_NODE_TYPES.VariableDeclarator) {
-          // Skip if this is a class instance or static class member
-          if (!shouldEnforceDestructuring(node, context)) {
-            return;
-          }
-
-          const propertyName = node.property.name;
-          let objectName = '';
-
-          // Handle nested property access
-          if (node.object.type === AST_NODE_TYPES.MemberExpression) {
-            const parts: string[] = [];
-            let current: TSESTree.Node = node.object;
-            while (current.type === AST_NODE_TYPES.MemberExpression) {
-              if (current.property.type === AST_NODE_TYPES.Identifier) {
-                parts.unshift(current.property.name);
-              }
-              current = current.object;
-            }
-            if (current.type === AST_NODE_TYPES.Identifier) {
-              parts.unshift(current.name);
-              objectName = parts.join('.');
-            }
-          } else if (node.object.type === AST_NODE_TYPES.Identifier) {
-            objectName = node.object.name;
-          }
-
-          if (objectName) {
-            context.report({
-              node,
-              messageId: 'preferDestructuring',
-              fix(fixer) {
-                const parent = node.parent as TSESTree.VariableDeclarator;
-                return fixer.replaceText(
-                  parent,
-                  `{ ${propertyName} } = ${objectName}`
-                );
-              },
-            });
-          }
+        // Apply the base rule's MemberExpression handler
+        if (baseRuleListeners.MemberExpression) {
+          baseRuleListeners.MemberExpression(node);
         }
       },
     };
