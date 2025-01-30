@@ -1,21 +1,29 @@
+/* eslint-disable @typescript-eslint/no-empty-function */
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
-type MessageIds = 'missingExportedType' | 'missingExportedReturnType' | 'missingExportedPropsType';
+type MessageIds =
+  | 'missingExportedType'
+  | 'missingExportedReturnType'
+  | 'missingExportedPropsType';
 
 export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
   name: 'enforce-exported-function-types',
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce exporting types for function props and return values',
+      description:
+        'Enforce exporting types for function props and return values',
       recommended: 'error',
     },
     schema: [],
     messages: {
-      missingExportedType: 'Type {{typeName}} should be exported since it is used in an exported function',
-      missingExportedReturnType: 'Return type {{typeName}} should be exported since it is used in an exported function',
-      missingExportedPropsType: 'Props type {{typeName}} should be exported since it is used in an exported React component',
+      missingExportedType:
+        'Type {{typeName}} should be exported since it is used in an exported function',
+      missingExportedReturnType:
+        'Return type {{typeName}} should be exported since it is used in an exported function',
+      missingExportedPropsType:
+        'Props type {{typeName}} should be exported since it is used in an exported React component',
     },
   },
   defaultOptions: [],
@@ -24,17 +32,22 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
     function isExported(node: TSESTree.Node | undefined): boolean {
       if (!node) return false;
 
-      if (node.type === AST_NODE_TYPES.ExportNamedDeclaration ||
-          node.type === AST_NODE_TYPES.ExportDefaultDeclaration) {
+      if (
+        node.type === AST_NODE_TYPES.ExportNamedDeclaration ||
+        node.type === AST_NODE_TYPES.ExportDefaultDeclaration
+      ) {
         return true;
       }
 
       const parent = node.parent;
       if (!parent) return false;
 
-      if (parent.type === AST_NODE_TYPES.ExportNamedDeclaration ||
-          parent.type === AST_NODE_TYPES.ExportDefaultDeclaration ||
-          parent.type === AST_NODE_TYPES.VariableDeclarator && isExported(parent.parent)) {
+      if (
+        parent.type === AST_NODE_TYPES.ExportNamedDeclaration ||
+        parent.type === AST_NODE_TYPES.ExportDefaultDeclaration ||
+        (parent.type === AST_NODE_TYPES.VariableDeclarator &&
+          isExported(parent.parent))
+      ) {
         return true;
       }
 
@@ -50,7 +63,7 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
             const names = [node.typeName.name];
             // For generic types like AuthenticatedRequest<Params>, check both the base type and type parameters
             if ('typeParameters' in node && node.typeParameters) {
-              node.typeParameters.params.forEach(param => {
+              node.typeParameters.params.forEach((param) => {
                 names.push(...getTypeNames(param));
               });
             }
@@ -63,14 +76,46 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
       return [];
     }
 
+    function isBuiltInType(typeName: string): boolean {
+      const builtInTypes = new Set([
+        'string',
+        'number',
+        'boolean',
+        'null',
+        'undefined',
+        'void',
+        'any',
+        'never',
+        'unknown',
+        'object',
+        'Date',
+        'RegExp',
+        'Error',
+        'Promise',
+        'Array',
+        'Function',
+        'Symbol',
+        'BigInt',
+        'Map',
+        'Set',
+        'WeakMap',
+        'WeakSet',
+      ]);
+      return builtInTypes.has(typeName);
+    }
+
     function checkAndReportType(
       node: TSESTree.TypeNode,
       parentNode: TSESTree.Node,
-      messageId: MessageIds
+      messageId: MessageIds,
     ): void {
       const typeNames = getTypeNames(node);
       for (const typeName of typeNames) {
-        if (typeName !== 'AnonymousType' && !isTypeExported(typeName)) {
+        if (
+          typeName !== 'AnonymousType' &&
+          !isBuiltInType(typeName) &&
+          !isTypeExported(typeName)
+        ) {
           // Check if we've already reported this type
           const key = `${typeName}-${parentNode.loc?.start.line}-${parentNode.loc?.start.column}`;
           if (!reportedTypes.has(key)) {
@@ -89,13 +134,33 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
       const sourceCode = context.getSourceCode();
       const program = sourceCode.ast;
 
+      // Check for imported types
+      const importedTypes = program.body.filter((node) => {
+        if (node.type === AST_NODE_TYPES.ImportDeclaration) {
+          return node.specifiers.some(
+            (specifier) =>
+              specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+              specifier.local.name === typeName,
+          );
+        }
+        return false;
+      });
+
+      if (importedTypes.length > 0) {
+        return true;
+      }
+
       // Check for exported type declarations
-      const exportedTypes = program.body.filter(node => {
+      const exportedTypes = program.body.filter((node) => {
         if (node.type === AST_NODE_TYPES.ExportNamedDeclaration) {
-          if (node.declaration?.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
+          if (
+            node.declaration?.type === AST_NODE_TYPES.TSTypeAliasDeclaration
+          ) {
             return node.declaration.id.name === typeName;
           }
-          if (node.declaration?.type === AST_NODE_TYPES.TSInterfaceDeclaration) {
+          if (
+            node.declaration?.type === AST_NODE_TYPES.TSInterfaceDeclaration
+          ) {
             return node.declaration.id.name === typeName;
           }
         }
@@ -108,7 +173,7 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
 
       // Check for type aliases in the current scope
       const scope = context.getScope();
-      const variable = scope.variables.find(v => v.name === typeName);
+      const variable = scope.variables.find((v) => v.name === typeName);
       if (!variable) return false;
 
       const def = variable.defs[0];
@@ -152,45 +217,78 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
 
         // Check return type
         if (node.returnType?.typeAnnotation) {
-          checkAndReportType(node.returnType.typeAnnotation, node.returnType, 'missingExportedReturnType');
+          checkAndReportType(
+            node.returnType.typeAnnotation,
+            node.returnType,
+            'missingExportedReturnType',
+          );
         }
 
         // Check parameter types
-        node.params.forEach(param => {
-          if (param.type === AST_NODE_TYPES.Identifier && param.typeAnnotation) {
-            checkAndReportType(param.typeAnnotation.typeAnnotation, param.typeAnnotation, 'missingExportedType');
+        node.params.forEach((param) => {
+          if (
+            param.type === AST_NODE_TYPES.Identifier &&
+            param.typeAnnotation
+          ) {
+            checkAndReportType(
+              param.typeAnnotation.typeAnnotation,
+              param.typeAnnotation,
+              'missingExportedType',
+            );
           }
         });
       },
 
-      'VariableDeclarator > ArrowFunctionExpression'(node: TSESTree.ArrowFunctionExpression) {
+      'VariableDeclarator > ArrowFunctionExpression'(
+        node: TSESTree.ArrowFunctionExpression,
+      ) {
         if (!node.parent?.parent || !isExported(node.parent.parent)) return;
 
         // Skip React components
-        if (node.parent.type === AST_NODE_TYPES.VariableDeclarator &&
-            node.parent.id.type === AST_NODE_TYPES.Identifier &&
-            /^[A-Z]/.test(node.parent.id.name)) return;
+        if (
+          node.parent.type === AST_NODE_TYPES.VariableDeclarator &&
+          node.parent.id.type === AST_NODE_TYPES.Identifier &&
+          /^[A-Z]/.test(node.parent.id.name)
+        )
+          return;
 
         // Check return type
         if (node.returnType?.typeAnnotation) {
-          checkAndReportType(node.returnType.typeAnnotation, node.returnType, 'missingExportedReturnType');
+          checkAndReportType(
+            node.returnType.typeAnnotation,
+            node.returnType,
+            'missingExportedReturnType',
+          );
         }
 
         // Check parameter types
-        node.params.forEach(param => {
-          if (param.type === AST_NODE_TYPES.Identifier && param.typeAnnotation) {
-            checkAndReportType(param.typeAnnotation.typeAnnotation, param.typeAnnotation, 'missingExportedType');
+        node.params.forEach((param) => {
+          if (
+            param.type === AST_NODE_TYPES.Identifier &&
+            param.typeAnnotation
+          ) {
+            checkAndReportType(
+              param.typeAnnotation.typeAnnotation,
+              param.typeAnnotation,
+              'missingExportedType',
+            );
           }
         });
       },
 
       // Handle React components
-      'FunctionDeclaration[id.name=/^[A-Z]/] > Identifier[typeAnnotation]'(node: TSESTree.Identifier) {
+      'FunctionDeclaration[id.name=/^[A-Z]/] > Identifier[typeAnnotation]'(
+        node: TSESTree.Identifier,
+      ) {
         if (!isExported(node.parent)) return;
 
         // Check props parameter
         if (node.typeAnnotation) {
-          checkAndReportType(node.typeAnnotation.typeAnnotation, node.typeAnnotation, 'missingExportedPropsType');
+          checkAndReportType(
+            node.typeAnnotation.typeAnnotation,
+            node.typeAnnotation,
+            'missingExportedPropsType',
+          );
         }
       },
 
@@ -223,10 +321,6 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
       'VariableDeclarator[id.name=/^[A-Z]/] > ArrowFunctionExpression > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName > TSQualifiedName > TSQualifiedName > TSQualifiedName > Identifier'() {},
       'FunctionDeclaration[id.name=/^[A-Z]/] > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName > TSQualifiedName > TSQualifiedName > TSQualifiedName > TSQualifiedName'() {},
       'VariableDeclarator[id.name=/^[A-Z]/] > ArrowFunctionExpression > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName > TSQualifiedName > TSQualifiedName > TSQualifiedName > TSQualifiedName'() {},
-      'FunctionDeclaration[id.name=/^[A-Z]/] > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName > TSQualifiedName > TSQualifiedName > TSQualifiedName > TSQualifiedName > Identifier'() {},
-      'VariableDeclarator[id.name=/^[A-Z]/] > ArrowFunctionExpression > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName > TSQualifiedName > TSQualifiedName > TSQualifiedName > TSQualifiedName > Identifier'() {},
-      'FunctionDeclaration[id.name=/^[A-Z]/] > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName > TSQualifiedName > TSQualifiedName > TSQualifiedName > TSQualifiedName > TSQualifiedName'() {},
-      'VariableDeclarator[id.name=/^[A-Z]/] > ArrowFunctionExpression > Identifier[typeAnnotation] > TSTypeAnnotation > TSTypeReference > TSQualifiedName > TSQualifiedName > TSQualifiedName > TSQualifiedName > TSQualifiedName > TSQualifiedName'() {},
     };
   },
 });
