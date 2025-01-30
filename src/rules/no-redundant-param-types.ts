@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'redundantParamType';
@@ -63,6 +63,22 @@ function isAssignmentPatternWithTypeAnnotation(
   );
 }
 
+function removeTypeAnnotation(
+  fixer: TSESLint.RuleFixer,
+  typeAnnotation: TSESTree.TSTypeAnnotation,
+  sourceCode: { getText(): string },
+): TSESLint.RuleFix {
+  const typeStart = typeAnnotation.range[0];
+  const typeEnd = typeAnnotation.range[1];
+
+  // Check if there's a question mark before the type annotation
+  const hasQuestionMark =
+    typeStart > 0 && sourceCode.getText().charAt(typeStart - 1) === '?';
+  const startPos = hasQuestionMark ? typeStart - 1 : typeStart;
+
+  return fixer.removeRange([startPos, typeEnd]);
+}
+
 function hasRedundantTypeAnnotation(
   node: TSESTree.ArrowFunctionExpression,
 ): boolean {
@@ -125,9 +141,11 @@ export const noRedundantParamTypes = createRule<[], MessageIds>({
               node: param,
               messageId: 'redundantParamType',
               fix(fixer) {
-                const typeStart = param.typeAnnotation.range[0];
-                const typeEnd = param.typeAnnotation.range[1];
-                return fixer.removeRange([typeStart, typeEnd]);
+                return removeTypeAnnotation(
+                  fixer,
+                  param.typeAnnotation,
+                  context.getSourceCode(),
+                );
               },
             });
           } else if (isRestElementWithTypeAnnotation(param)) {
@@ -135,9 +153,11 @@ export const noRedundantParamTypes = createRule<[], MessageIds>({
               node: param,
               messageId: 'redundantParamType',
               fix(fixer) {
-                const typeStart = param.typeAnnotation.range[0];
-                const typeEnd = param.typeAnnotation.range[1];
-                return fixer.removeRange([typeStart, typeEnd]);
+                return removeTypeAnnotation(
+                  fixer,
+                  param.typeAnnotation,
+                  context.getSourceCode(),
+                );
               },
             });
           } else if (isObjectPatternWithTypeAnnotation(param)) {
@@ -145,9 +165,11 @@ export const noRedundantParamTypes = createRule<[], MessageIds>({
               node: param,
               messageId: 'redundantParamType',
               fix(fixer) {
-                const typeStart = param.typeAnnotation.range[0];
-                const typeEnd = param.typeAnnotation.range[1];
-                return fixer.removeRange([typeStart, typeEnd]);
+                return removeTypeAnnotation(
+                  fixer,
+                  param.typeAnnotation,
+                  context.getSourceCode(),
+                );
               },
             });
           } else if (isArrayPatternWithTypeAnnotation(param)) {
@@ -155,9 +177,11 @@ export const noRedundantParamTypes = createRule<[], MessageIds>({
               node: param,
               messageId: 'redundantParamType',
               fix(fixer) {
-                const typeStart = param.typeAnnotation.range[0];
-                const typeEnd = param.typeAnnotation.range[1];
-                return fixer.removeRange([typeStart, typeEnd]);
+                return removeTypeAnnotation(
+                  fixer,
+                  param.typeAnnotation,
+                  context.getSourceCode(),
+                );
               },
             });
           } else if (isAssignmentPatternWithTypeAnnotation(param)) {
@@ -166,9 +190,11 @@ export const noRedundantParamTypes = createRule<[], MessageIds>({
               node: param,
               messageId: 'redundantParamType',
               fix(fixer) {
-                const typeStart = left.typeAnnotation.range[0];
-                const typeEnd = left.typeAnnotation.range[1];
-                return fixer.removeRange([typeStart, typeEnd]);
+                return removeTypeAnnotation(
+                  fixer,
+                  left.typeAnnotation,
+                  context.getSourceCode(),
+                );
               },
             });
           }
