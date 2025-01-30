@@ -10,7 +10,7 @@ export const enforceFirestorePathUtils = createRule<[], MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce usage of utility functions for Firestore paths',
+      description: 'Enforce usage of utility functions for Firestore paths to ensure type safety, maintainability, and consistent path construction. This prevents errors from manual string concatenation and makes path changes easier to manage.',
       recommended: 'error',
     },
     schema: [],

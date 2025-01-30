@@ -18,7 +18,7 @@ export default createRule({
     type: 'problem',
     docs: {
       description:
-        'Enforce serializable parameters in Firebase Callable/HTTPS Cloud Functions',
+        'Enforce serializable parameters in Firebase Callable/HTTPS Cloud Functions to prevent runtime errors. Firebase Functions can only pass JSON-serializable data, so using non-serializable types like Date, DocumentReference, or Map will cause failures. Use primitive types, plain objects, and arrays instead, converting complex types to their serializable representations (e.g., Date to ISO string).',
       recommended: 'error',
     },
     schema: [

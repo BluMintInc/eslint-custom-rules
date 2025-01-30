@@ -9,7 +9,7 @@ export default createRule<[], MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Enforce useCallback or useMemo for inline functions in JSX props',
+        'Enforce useCallback for inline functions and useMemo for objects/arrays containing functions in JSX props to prevent unnecessary re-renders. This improves React component performance by ensuring stable function references across renders and memoizing complex objects.',
       recommended: 'error',
     },
     messages: {

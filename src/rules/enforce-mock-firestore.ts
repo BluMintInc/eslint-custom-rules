@@ -14,7 +14,7 @@ export const enforceFirestoreMock = createRule<[], MessageIds>({
   meta: {
     type: 'problem',
     docs: {
-      description: 'Enforce using mockFirestore over manual Firestore mocking',
+      description: 'Enforce using the standardized mockFirestore utility instead of manual Firestore mocking or third-party mocks. This ensures consistent test behavior across the codebase, reduces boilerplate, and provides type-safe mocking of Firestore operations.',
       recommended: 'error',
     },
     schema: [],

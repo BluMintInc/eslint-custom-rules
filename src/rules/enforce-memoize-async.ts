@@ -9,7 +9,7 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce @Memoize() decorator on async methods with 0-1 parameters',
+      description: 'Enforce @Memoize() decorator on async methods with 0-1 parameters to cache results and prevent redundant API calls or expensive computations. This improves performance by reusing previous results when the same parameters are provided, particularly useful for data fetching methods.',
       recommended: 'error',
     },
     fixable: 'code',
