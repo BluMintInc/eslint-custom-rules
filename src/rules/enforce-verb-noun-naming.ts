@@ -6,6 +6,23 @@ type MessageIds = 'functionVerbPhrase';
 
 const PREPOSITIONS = ['to', 'from', 'with', 'by', 'at', 'of'] as const;
 
+// Common short verbs that should be allowed
+const COMMON_VERBS = new Set([
+  'sync',
+  'fix',
+  'set',
+  'log',
+  'get',
+  'put',
+  'add',
+  'map',
+  'run',
+  'use',
+  'has',
+  'is',
+  'do',
+]);
+
 export const enforceVerbNounNaming = createRule<[], MessageIds>({
   name: 'enforce-verb-noun-naming',
   meta: {
@@ -32,7 +49,8 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
     }
 
     function toSentence(name: string) {
-      return name.split(/(?=[A-Z])/).join(' ');
+      // Add "I" prefix to create a proper sentence for better verb detection
+      return 'I ' + name.split(/(?=[A-Z])/).join(' ');
     }
 
     function getPossibleTags(sentence: string) {
@@ -49,15 +67,28 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
     function isVerbPhrase(name: string): boolean {
       const firstWord = extractFirstWord(name);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if (PREPOSITIONS.includes(firstWord.toLowerCase() as any)) {
+      const firstWordLower = firstWord.toLowerCase();
+
+      // Check for prepositions and common verbs first
+      if (PREPOSITIONS.includes(firstWordLower as any) || COMMON_VERBS.has(firstWordLower)) {
         return true;
       }
 
-      const tags = getPossibleTags(toSentence(name));
-      const isVerb = tags.includes('Verb');
-      const isPreposition = tags.includes('Preposition');
-      const isConjunction = tags.includes('Conjunction');
-      return isVerb || isPreposition || isConjunction;
+      // Try both with and without "I" prefix to catch more verb forms
+      const withPrefixTags = getPossibleTags(toSentence(name));
+      const withoutPrefixTags = getPossibleTags(firstWord);
+
+      // Check if either form is recognized as a verb
+      const isVerb = withPrefixTags.includes('Verb') || withoutPrefixTags.includes('Verb');
+      const isPreposition = withPrefixTags.includes('Preposition');
+      const isConjunction = withPrefixTags.includes('Conjunction');
+
+      // For non-prepositions/conjunctions, require verb form
+      if (isPreposition || isConjunction) {
+        return true;
+      }
+
+      return isVerb;
     }
 
     function isJsxReturnFunction(node: TSESTree.Node): boolean {
@@ -113,6 +144,12 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
 
       MethodDefinition(node) {
         if (node.key.type !== AST_NODE_TYPES.Identifier) return;
+
+        // Skip getters since they represent properties and should use noun phrases
+        if (node.kind === 'get') return;
+
+        // Skip constructors since they are special class methods
+        if (node.kind === 'constructor') return;
 
         if (!isVerbPhrase(node.key.name)) {
           context.report({

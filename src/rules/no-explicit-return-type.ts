@@ -10,6 +10,7 @@ type Options = [
     allowInterfaceMethodSignatures?: boolean;
     allowAbstractMethodSignatures?: boolean;
     allowDtsFiles?: boolean;
+    allowFirestoreFunctionFiles?: boolean;
   },
 ];
 
@@ -19,6 +20,7 @@ const defaultOptions: Options[0] = {
   allowInterfaceMethodSignatures: true,
   allowAbstractMethodSignatures: true,
   allowDtsFiles: true,
+  allowFirestoreFunctionFiles: true,
 };
 
 function isRecursiveFunction(node: TSESTree.FunctionLike): boolean {
@@ -119,7 +121,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Disallow explicit return types on functions',
+      description: 'Disallow explicit return type annotations on functions when TypeScript can infer them. This reduces code verbosity and maintenance burden while leveraging TypeScript\'s powerful type inference. Exceptions are made for recursive functions, overloaded functions, interface methods, and abstract methods where explicit types improve clarity.',
       recommended: 'error',
       requiresTypeChecking: false,
       extendsBaseRule: false,
@@ -134,6 +136,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<
           allowInterfaceMethodSignatures: { type: 'boolean' },
           allowAbstractMethodSignatures: { type: 'boolean' },
           allowDtsFiles: { type: 'boolean' },
+          allowFirestoreFunctionFiles: { type: 'boolean' },
         },
         additionalProperties: false,
       },
@@ -148,7 +151,10 @@ export const noExplicitReturnType: TSESLint.RuleModule<
     const mergedOptions = { ...defaultOptions, ...options };
     const filename = context.getFilename();
 
-    if (mergedOptions.allowDtsFiles && filename.endsWith('.d.ts')) {
+    if (
+      (mergedOptions.allowDtsFiles && filename.endsWith('.d.ts')) ||
+      (mergedOptions.allowFirestoreFunctionFiles && filename.endsWith('.f.ts'))
+    ) {
       return {};
     }
 

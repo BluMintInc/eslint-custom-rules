@@ -16,9 +16,9 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
     schema: [],
     messages: {
       missingType:
-        'Expected exported type "{{ typeName }}" in index.ts under folder "{{ folderName }}"',
+        'Expected exported type "{{ typeName }}" in index.ts under folder "{{ folderName }}". Create a type that matches the folder name: `export type {{ typeName }} = { /* fields */ }`.',
       notExtendingIdentifiable:
-        'Type "{{ typeName }}" must extend "Identifiable", including an "id: string" field',
+        'Type "{{ typeName }}" must extend "Identifiable" to ensure all Firestore documents have an ID field. Add `extends Identifiable` or include `id: string`: `export type {{ typeName }} = { id: string; /* other fields */ }`.',
     },
   },
   defaultOptions: [],

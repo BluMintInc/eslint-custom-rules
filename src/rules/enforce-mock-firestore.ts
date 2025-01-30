@@ -14,15 +14,15 @@ export const enforceFirestoreMock = createRule<[], MessageIds>({
   meta: {
     type: 'problem',
     docs: {
-      description: 'Enforce using mockFirestore over manual Firestore mocking',
+      description: 'Enforce using the standardized mockFirestore utility instead of manual Firestore mocking or third-party mocks. This ensures consistent test behavior across the codebase, reduces boilerplate, and provides type-safe mocking of Firestore operations.',
       recommended: 'error',
     },
     schema: [],
     messages: {
       noManualFirestoreMock:
-        'Use mockFirestore from __mocks__/functions/src/config/mockFirestore instead of manually mocking Firestore',
+        'Use mockFirestore from __mocks__/functions/src/config/mockFirestore instead of manually mocking Firestore. Replace `jest.mock("firebase-admin", () => ({ firestore: () => ({ /* mock */ }) }))` with `import { mockFirestore } from "__mocks__/functions/src/config/mockFirestore"; jest.mock("firebase-admin", () => mockFirestore)`.',
       noMockFirebase:
-        'Use mockFirestore from __mocks__/functions/src/config/mockFirestore instead of mockFirebase',
+        'Use mockFirestore from __mocks__/functions/src/config/mockFirestore instead of mockFirebase. Replace `import { mockFirebase } from "firestore-jest-mock"` with `import { mockFirestore } from "__mocks__/functions/src/config/mockFirestore"`.',
     },
   },
   defaultOptions: [],

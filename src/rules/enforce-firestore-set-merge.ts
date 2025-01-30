@@ -9,7 +9,7 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Enforce using set() with { merge: true } instead of update() for Firestore operations',
+        'Enforce using set() with { merge: true } instead of update() for Firestore operations to ensure consistent behavior. The update() method fails if the document does not exist, while set() with { merge: true } creates the document if needed and safely merges fields, making it more reliable and predictable.',
       recommended: 'error',
       requiresTypeChecking: false,
       extendsBaseRule: false,
@@ -18,7 +18,7 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
     schema: [],
     messages: {
       preferSetMerge:
-        'Use set() with { merge: true } instead of update() for more predictable Firestore operations',
+        'Use set() with { merge: true } instead of update() for more predictable Firestore operations. Instead of `docRef.update({ field: value })`, use `docRef.set({ field: value }, { merge: true })`. This ensures consistent behavior when the document does not exist.',
     },
   },
   defaultOptions: [],
@@ -26,14 +26,49 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
     const updateAliases = new Set<string>();
 
     function isFirestoreUpdateCall(node: TSESTree.CallExpression): boolean {
+      // Check if it's a set() call with merge: true
       if (node.callee.type === AST_NODE_TYPES.MemberExpression) {
         const property = node.callee.property;
-        return (
-          property.type === AST_NODE_TYPES.Identifier &&
-          property.name === 'update'
-        );
+        if (property.type === AST_NODE_TYPES.Identifier) {
+          // If it's a set() call, check if it has merge: true
+          if (property.name === 'set') {
+            const lastArg = node.arguments[node.arguments.length - 1];
+            if (lastArg?.type === AST_NODE_TYPES.ObjectExpression) {
+              const hasMergeTrue = lastArg.properties.some(
+                (prop) =>
+                  prop.type === AST_NODE_TYPES.Property &&
+                  prop.key.type === AST_NODE_TYPES.Identifier &&
+                  prop.key.name === 'merge' &&
+                  prop.value.type === AST_NODE_TYPES.Literal &&
+                  prop.value.value === true
+              );
+              if (hasMergeTrue) {
+                return false; // Already using set with merge: true
+              }
+            }
+          }
+          // Only flag update() calls
+          return property.name === 'update';
+        }
       }
       if (node.callee.type === AST_NODE_TYPES.Identifier) {
+        // Check if it's a setDoc() call with merge: true
+        if (node.callee.name === 'setDoc') {
+          const lastArg = node.arguments[node.arguments.length - 1];
+          if (lastArg?.type === AST_NODE_TYPES.ObjectExpression) {
+            const hasMergeTrue = lastArg.properties.some(
+              (prop) =>
+                prop.type === AST_NODE_TYPES.Property &&
+                prop.key.type === AST_NODE_TYPES.Identifier &&
+                prop.key.name === 'merge' &&
+                prop.value.type === AST_NODE_TYPES.Literal &&
+                prop.value.value === true
+            );
+            if (hasMergeTrue) {
+              return false; // Already using setDoc with merge: true
+            }
+          }
+        }
         return updateAliases.has(node.callee.name);
       }
       return false;

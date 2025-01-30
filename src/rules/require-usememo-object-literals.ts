@@ -7,7 +7,7 @@ export const requireUseMemoObjectLiterals = createRule({
     type: 'suggestion',
     docs: {
       description:
-        'Enforce using useMemo for inline object literals passed as props to JSX components',
+        'Enforce using useMemo for inline object/array literals passed as props to JSX components to prevent unnecessary re-renders. When object/array literals are defined inline in JSX, they create new references on every render, causing child components to re-render even if the values haven\'t changed. Wrap them in useMemo to maintain referential equality.',
       recommended: 'error',
     },
     messages: {
