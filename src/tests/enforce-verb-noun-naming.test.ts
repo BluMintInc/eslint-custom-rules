@@ -66,6 +66,7 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
     // Class methods with verb phrases
     {
       code: `class Service {
+        constructor(name) { this.name = name; }
         fetchData() { }
         processRequest() { }
         toString() { }

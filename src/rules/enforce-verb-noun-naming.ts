@@ -146,7 +146,8 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
         if (node.key.type !== AST_NODE_TYPES.Identifier) return;
 
         // Skip getters since they represent properties and should use noun phrases
-        if (node.kind === 'get') return;
+        // Also skip constructors since they are special class methods
+        if (node.kind === 'get' || node.kind === 'constructor') return;
 
         if (!isVerbPhrase(node.key.name)) {
           context.report({
