@@ -42,6 +42,16 @@ ruleTesterTs.run('enforce-firestore-set-merge', enforceFirestoreSetMerge, {
         });
       `,
     },
+    // Valid transaction case with complex data
+    {
+      code: `
+        await db.runTransaction(async (transaction) => {
+          const userRef = db.collection('users').doc(userId);
+          const currentGroups = ['group1', 'group2'];
+          return transaction.set(userRef, { groups: currentGroups }, { merge: true });
+        });
+      `,
+    },
     {
       code: `
         import { runTransaction, doc, setDoc } from 'firebase/firestore';

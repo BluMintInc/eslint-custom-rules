@@ -26,14 +26,49 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
     const updateAliases = new Set<string>();
 
     function isFirestoreUpdateCall(node: TSESTree.CallExpression): boolean {
+      // Check if it's a set() call with merge: true
       if (node.callee.type === AST_NODE_TYPES.MemberExpression) {
         const property = node.callee.property;
-        return (
-          property.type === AST_NODE_TYPES.Identifier &&
-          property.name === 'update'
-        );
+        if (property.type === AST_NODE_TYPES.Identifier) {
+          // If it's a set() call, check if it has merge: true
+          if (property.name === 'set') {
+            const lastArg = node.arguments[node.arguments.length - 1];
+            if (lastArg?.type === AST_NODE_TYPES.ObjectExpression) {
+              const hasMergeTrue = lastArg.properties.some(
+                (prop) =>
+                  prop.type === AST_NODE_TYPES.Property &&
+                  prop.key.type === AST_NODE_TYPES.Identifier &&
+                  prop.key.name === 'merge' &&
+                  prop.value.type === AST_NODE_TYPES.Literal &&
+                  prop.value.value === true
+              );
+              if (hasMergeTrue) {
+                return false; // Already using set with merge: true
+              }
+            }
+          }
+          // Only flag update() calls
+          return property.name === 'update';
+        }
       }
       if (node.callee.type === AST_NODE_TYPES.Identifier) {
+        // Check if it's a setDoc() call with merge: true
+        if (node.callee.name === 'setDoc') {
+          const lastArg = node.arguments[node.arguments.length - 1];
+          if (lastArg?.type === AST_NODE_TYPES.ObjectExpression) {
+            const hasMergeTrue = lastArg.properties.some(
+              (prop) =>
+                prop.type === AST_NODE_TYPES.Property &&
+                prop.key.type === AST_NODE_TYPES.Identifier &&
+                prop.key.name === 'merge' &&
+                prop.value.type === AST_NODE_TYPES.Literal &&
+                prop.value.value === true
+            );
+            if (hasMergeTrue) {
+              return false; // Already using setDoc with merge: true
+            }
+          }
+        }
         return updateAliases.has(node.callee.name);
       }
       return false;
