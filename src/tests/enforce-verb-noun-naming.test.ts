@@ -19,6 +19,23 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
       code: `const processInput = () => null;`,
     },
 
+    // Short verb functions
+    {
+      code: `function syncMembership() { return null; }`,
+    },
+    {
+      code: `function fixBug() { return null; }`,
+    },
+    {
+      code: `function setConfig() { return null; }`,
+    },
+    {
+      code: `function logError() { return null; }`,
+    },
+    {
+      code: `const syncData = () => null;`,
+    },
+
     // Functions starting with "to" or "with"
     {
       code: `function toNumber(value) { return +value; }`,
