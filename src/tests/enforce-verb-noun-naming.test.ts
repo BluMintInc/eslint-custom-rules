@@ -55,6 +55,16 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
       }`,
     },
 
+    // Class getters (should be ignored since they represent properties)
+    {
+      code: `class Service {
+        get groupRef() { return null; }
+        get userProfile() { return null; }
+        @Memoize()
+        get dataCache() { return null; }
+      }`,
+    },
+
     // Variables that are not functions (should be ignored)
     {
       code: `const data = { value: true };`,
