@@ -72,6 +72,15 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
       }`,
     },
 
+    // Class constructors (should be ignored)
+    {
+      code: `class User {
+        constructor(name) {
+          this.name = name;
+        }
+      }`,
+    },
+
     // Class getters (should be ignored since they represent properties)
     {
       code: `class Service {
