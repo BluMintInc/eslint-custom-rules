@@ -148,6 +148,9 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
         // Skip getters since they represent properties and should use noun phrases
         if (node.kind === 'get') return;
 
+        // Skip constructors since they are special class methods
+        if (node.kind === 'constructor') return;
+
         if (!isVerbPhrase(node.key.name)) {
           context.report({
             node: node.key,
