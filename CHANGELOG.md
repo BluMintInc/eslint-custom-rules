@@ -1,3 +1,16 @@
+# [1.5.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.4.0...v1.5.0) (2025-01-30)
+
+
+### Bug Fixes
+
+* **no-class-instance-destructuring:** Improve destructuring rule for class instances ([76a79d3](https://github.com/BluMintInc/eslint-custom-rules/commit/76a79d36080e5e956f31f3f4c3b3da697c3832de))
+* **no-redundant-param-types:** Extract type annotation removal logic ([6fc3b24](https://github.com/BluMintInc/eslint-custom-rules/commit/6fc3b24ee0680c2e3be853329abbc57378a65b3b))
+
+
+### Features
+
+* **prefer-destructuring-no-class:** Enhance rule to handle object property destructuring ([dc5bfa9](https://github.com/BluMintInc/eslint-custom-rules/commit/dc5bfa926f893ff1d3eb9a52ec20203c6b82533a))
+
 # [1.4.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.3.2...v1.4.0) (2025-01-30)
 
 

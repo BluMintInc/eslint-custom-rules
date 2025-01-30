@@ -6,6 +6,7 @@ type Options = [
         allowInterfaceMethodSignatures?: boolean;
         allowAbstractMethodSignatures?: boolean;
         allowDtsFiles?: boolean;
+        allowFirestoreFunctionFiles?: boolean;
     }
 ];
 export declare const noExplicitReturnType: TSESLint.RuleModule<'noExplicitReturnType', Options>;

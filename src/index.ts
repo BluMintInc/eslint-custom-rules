@@ -51,7 +51,7 @@ import { noClassInstanceDestructuring } from './rules/no-class-instance-destruct
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.4.0',
+    version: '1.5.0',
   },
   parseOptions: {
     ecmaVersion: 2020,
