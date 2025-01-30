@@ -22,6 +22,66 @@ ruleTesterJsx.run('enforce-exported-function-types', enforceExportedFunctionType
         }
       `,
     },
+    // Valid case: imported generic type used in exported function
+    {
+      code: `
+        import { Result } from '../../util/result';
+        import { SafeTimestamp } from '../../util/firestore/timestamp';
+
+        export function processTimestamp(time: SafeTimestamp): Result<Date> {
+          return { success: true, data: time.toDate() };
+        }
+      `,
+    },
+    // Valid case: imported base type with local generic type
+    {
+      code: `
+        import { BaseRequest } from '../../util/request';
+
+        export type AuthenticatedRequest<T> = BaseRequest & {
+          data: T;
+          auth: {
+            uid: string;
+          };
+        };
+
+        export type Params = {
+          gameId: string;
+        };
+
+        export function handleRequest(req: AuthenticatedRequest<Params>): void {
+          // Implementation
+        }
+      `,
+    },
+    // Valid case: imported generic type with imported type parameter
+    {
+      code: `
+        import { Result } from '../../util/result';
+        import { User } from '../../models/user';
+
+        export function getUser(id: string): Result<User> {
+          return { success: true, data: { id, name: 'Test' } };
+        }
+      `,
+    },
+    // Valid case: multiple imported types in type intersection
+    {
+      code: `
+        import { BaseEntity } from '../../models/base';
+        import { Timestamps } from '../../util/timestamps';
+        import { Metadata } from '../../util/metadata';
+
+        export function createEntity(): BaseEntity & Timestamps & Metadata {
+          return {
+            id: '123',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            meta: {}
+          };
+        }
+      `,
+    },
     // Valid case: exported type with exported function
     {
       code: `
