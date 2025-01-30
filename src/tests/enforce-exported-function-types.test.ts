@@ -3,6 +3,25 @@ import { enforceExportedFunctionTypes } from '../rules/enforce-exported-function
 
 ruleTesterJsx.run('enforce-exported-function-types', enforceExportedFunctionTypes, {
   valid: [
+    // Valid case: imported type used in exported function
+    {
+      code: `
+        import { SafeTimestamp } from '../../util/firestore/timestamp';
+
+        export type PhaseChangeTaskPayload = {
+          gameId: string;
+          tournamentId: string;
+          phase: TournamentPhase;
+        } & RequireOnlyOne<{
+          epochMillis: number;
+          time: SafeTimestamp;
+        }>;
+
+        export function processPhaseChange(payload: PhaseChangeTaskPayload): void {
+          // Implementation
+        }
+      `,
+    },
     // Valid case: exported type with exported function
     {
       code: `
