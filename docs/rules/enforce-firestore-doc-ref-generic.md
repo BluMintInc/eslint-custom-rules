@@ -61,10 +61,6 @@ type UserWithBase = UserData & BaseData;
 const docRef: DocumentReference<UserWithBase> = db.doc('users/123');
 ```
 
-## Options
-
-This rule has no configurable options.
-
 ## When Not To Use It
 
 If you're working with untyped Firestore documents or if you need to temporarily work with unknown document types during development/prototyping phases. However, it's recommended to always properly type your Firestore documents in production code.
