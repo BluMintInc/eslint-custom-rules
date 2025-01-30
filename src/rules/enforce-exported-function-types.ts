@@ -41,19 +41,48 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
       return false;
     }
 
-    function getTypeName(node: TSESTree.TypeNode | undefined): string | undefined {
-      if (!node) return undefined;
+    function getTypeNames(node: TSESTree.TypeNode | undefined): string[] {
+      if (!node) return [];
 
       switch (node.type) {
         case AST_NODE_TYPES.TSTypeReference:
           if (node.typeName.type === AST_NODE_TYPES.Identifier) {
-            return node.typeName.name;
+            const names = [node.typeName.name];
+            // For generic types like AuthenticatedRequest<Params>, check both the base type and type parameters
+            if ('typeParameters' in node && node.typeParameters) {
+              node.typeParameters.params.forEach(param => {
+                names.push(...getTypeNames(param));
+              });
+            }
+            return names;
           }
           break;
         case AST_NODE_TYPES.TSTypeLiteral:
-          return 'AnonymousType';
+          return ['AnonymousType'];
       }
-      return undefined;
+      return [];
+    }
+
+    function checkAndReportType(
+      node: TSESTree.TypeNode,
+      parentNode: TSESTree.Node,
+      messageId: MessageIds
+    ): void {
+      const typeNames = getTypeNames(node);
+      for (const typeName of typeNames) {
+        if (typeName !== 'AnonymousType' && !isTypeExported(typeName)) {
+          // Check if we've already reported this type
+          const key = `${typeName}-${parentNode.loc?.start.line}-${parentNode.loc?.start.column}`;
+          if (!reportedTypes.has(key)) {
+            reportedTypes.add(key);
+            context.report({
+              node: parentNode,
+              messageId,
+              data: { typeName },
+            });
+          }
+        }
+      }
     }
 
     function isTypeExported(typeName: string): boolean {
@@ -123,37 +152,13 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
 
         // Check return type
         if (node.returnType?.typeAnnotation) {
-          const typeName = getTypeName(node.returnType.typeAnnotation);
-          if (typeName && !isTypeExported(typeName)) {
-            // Check if we've already reported this type
-            const key = `${typeName}-${node.loc?.start.line}-${node.loc?.start.column}`;
-            if (!reportedTypes.has(key)) {
-              reportedTypes.add(key);
-              context.report({
-                node: node.returnType,
-                messageId: 'missingExportedReturnType',
-                data: { typeName },
-              });
-            }
-          }
+          checkAndReportType(node.returnType.typeAnnotation, node.returnType, 'missingExportedReturnType');
         }
 
         // Check parameter types
         node.params.forEach(param => {
           if (param.type === AST_NODE_TYPES.Identifier && param.typeAnnotation) {
-            const typeName = getTypeName(param.typeAnnotation.typeAnnotation);
-            if (typeName && !isTypeExported(typeName)) {
-              // Check if we've already reported this type
-              const key = `${typeName}-${param.loc?.start.line}-${param.loc?.start.column}`;
-              if (!reportedTypes.has(key)) {
-                reportedTypes.add(key);
-                context.report({
-                  node: param.typeAnnotation,
-                  messageId: 'missingExportedType',
-                  data: { typeName },
-                });
-              }
-            }
+            checkAndReportType(param.typeAnnotation.typeAnnotation, param.typeAnnotation, 'missingExportedType');
           }
         });
       },
@@ -168,37 +173,13 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
 
         // Check return type
         if (node.returnType?.typeAnnotation) {
-          const typeName = getTypeName(node.returnType.typeAnnotation);
-          if (typeName && !isTypeExported(typeName)) {
-            // Check if we've already reported this type
-            const key = `${typeName}-${node.loc?.start.line}-${node.loc?.start.column}`;
-            if (!reportedTypes.has(key)) {
-              reportedTypes.add(key);
-              context.report({
-                node: node.returnType,
-                messageId: 'missingExportedReturnType',
-                data: { typeName },
-              });
-            }
-          }
+          checkAndReportType(node.returnType.typeAnnotation, node.returnType, 'missingExportedReturnType');
         }
 
         // Check parameter types
         node.params.forEach(param => {
           if (param.type === AST_NODE_TYPES.Identifier && param.typeAnnotation) {
-            const typeName = getTypeName(param.typeAnnotation.typeAnnotation);
-            if (typeName && !isTypeExported(typeName)) {
-              // Check if we've already reported this type
-              const key = `${typeName}-${param.loc?.start.line}-${param.loc?.start.column}`;
-              if (!reportedTypes.has(key)) {
-                reportedTypes.add(key);
-                context.report({
-                  node: param.typeAnnotation,
-                  messageId: 'missingExportedType',
-                  data: { typeName },
-                });
-              }
-            }
+            checkAndReportType(param.typeAnnotation.typeAnnotation, param.typeAnnotation, 'missingExportedType');
           }
         });
       },
@@ -209,20 +190,7 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
 
         // Check props parameter
         if (node.typeAnnotation) {
-          const typeName = getTypeName(node.typeAnnotation.typeAnnotation);
-          if (typeName && !isTypeExported(typeName)) {
-            // Check if we've already reported this type
-            const key = `${typeName}-${node.loc?.start.line}-${node.loc?.start.column}`;
-            if (!reportedTypes.has(key)) {
-              reportedTypes.add(key);
-              context.report({
-                node: node.typeAnnotation,
-                messageId: 'missingExportedType',
-                data: { typeName },
-              });
-              return;
-            }
-          }
+          checkAndReportType(node.typeAnnotation.typeAnnotation, node.typeAnnotation, 'missingExportedPropsType');
         }
       },
 
