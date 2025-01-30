@@ -13,6 +13,8 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
     docs: {
       description: 'Enforce verb phrases for functions and methods',
       recommended: 'error',
+      requiresTypeChecking: false,
+      extendsBaseRule: false,
     },
     schema: [],
     messages: {
