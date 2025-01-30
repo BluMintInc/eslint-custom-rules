@@ -90,5 +90,77 @@ ruleTesterTs.run('no-class-instance-destructuring', noClassInstanceDestructuring
         const cohorts = new BracketChunker(data).cohorts;
       `,
     },
+    {
+      code: `
+        class Example {
+          constructor() {
+            this.name = 'test';
+            this.age = 25;
+          }
+          getName() {
+            return this.name;
+          }
+          getAge() {
+            return this.age;
+          }
+        }
+        const example = new Example();
+        const { getName, getAge } = example;
+      `,
+      errors: [{ messageId: 'noClassInstanceDestructuring' }],
+      output: `
+        class Example {
+          constructor() {
+            this.name = 'test';
+            this.age = 25;
+          }
+          getName() {
+            return this.name;
+          }
+          getAge() {
+            return this.age;
+          }
+        }
+        const example = new Example();
+        const getName = example.getName;
+        const getAge = example.getAge;
+      `,
+    },
+    {
+      code: `
+        const { name, age } = new Person('John', 30);
+      `,
+      errors: [{ messageId: 'noClassInstanceDestructuring' }],
+      output: `
+        const name = new Person('John', 30).name;
+        const age = new Person('John', 30).age;
+      `,
+    },
+    {
+      code: `
+        class DataHolder {
+          constructor(data) {
+            this.data = data;
+          }
+          get value() { return this.data.value; }
+          get type() { return this.data.type; }
+        }
+        const holder = new DataHolder({ value: 42, type: 'number' });
+        const { value, type } = holder;
+      `,
+      errors: [{ messageId: 'noClassInstanceDestructuring' }],
+      output: `
+        class DataHolder {
+          constructor(data) {
+            this.data = data;
+          }
+          get value() { return this.data.value; }
+          get type() { return this.data.type; }
+        }
+        const holder = new DataHolder({ value: 42, type: 'number' });
+        const value = holder.value;
+        const type = holder.type;
+      `,
+    },
   ],
 });

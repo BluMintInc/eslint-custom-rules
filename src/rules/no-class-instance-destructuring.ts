@@ -28,11 +28,11 @@ export const noClassInstanceDestructuring = createRule<[], MessageIds>({
 
       // Check for identifiers that might be class instances
       if (node.type === AST_NODE_TYPES.Identifier) {
-        const variable = context.getScope().variables.find(
-          (v) => v.name === node.name
+        const variableDef = context.getScope().variables.find(
+          (variableDef) => variableDef.name === node.name
         );
-        if (variable?.defs[0]?.node.type === AST_NODE_TYPES.VariableDeclarator) {
-          const init = (variable.defs[0].node as TSESTree.VariableDeclarator).init;
+        if (variableDef?.defs[0]?.node.type === AST_NODE_TYPES.VariableDeclarator) {
+          const init = (variableDef.defs[0].node as TSESTree.VariableDeclarator).init;
           return init?.type === AST_NODE_TYPES.NewExpression;
         }
       }
@@ -51,22 +51,34 @@ export const noClassInstanceDestructuring = createRule<[], MessageIds>({
           context.report({
             node,
             messageId: 'noClassInstanceDestructuring',
-            *fix(fixer) {
+            fix(fixer) {
               const sourceCode = context.getSourceCode();
-              for (const prop of objectPattern.properties) {
+              const properties = objectPattern.properties;
+
+              // For single property, use simple replacement
+              if (properties.length === 1) {
+                const prop = properties[0];
                 if (prop.type === AST_NODE_TYPES.Property) {
                   const key = prop.key.type === AST_NODE_TYPES.Identifier ? prop.key.name : sourceCode.getText(prop.key);
                   const value = prop.value.type === AST_NODE_TYPES.Identifier ? prop.value.name : sourceCode.getText(prop.value);
-
-                  // Replace destructuring with property access
-                  if (node.init) {
-                    yield fixer.replaceText(
-                      node,
-                      `${value} = ${sourceCode.getText(node.init)}.${key}`
-                    );
-                  }
+                  return fixer.replaceText(
+                    node,
+                    `const ${value} = ${sourceCode.getText(node.init)}.${key}`
+                  );
                 }
               }
+
+              // For multiple properties, create multiple declarations
+              const declarations = properties
+                .filter((prop): prop is TSESTree.Property => prop.type === AST_NODE_TYPES.Property)
+                .map(prop => {
+                  const key = prop.key.type === AST_NODE_TYPES.Identifier ? prop.key.name : sourceCode.getText(prop.key);
+                  const value = prop.value.type === AST_NODE_TYPES.Identifier ? prop.value.name : sourceCode.getText(prop.value);
+                  return `const ${value} = ${sourceCode.getText(node.init)}.${key}`;
+                })
+                .join(';\n');
+
+              return fixer.replaceText(node, declarations);
             },
           });
         }
