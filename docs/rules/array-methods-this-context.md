@@ -1,14 +1,6 @@
 # Prevent misuse of Array methods in OOP (`@blumintinc/blumint/array-methods-this-context`)
 
-⚠️ This rule _warns_ in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
-⚠️ This rule _warns_ in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
-⚠️ This rule _warns_ in the ✅ `recommended` config.
+💼 This rule is enabled in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
 
