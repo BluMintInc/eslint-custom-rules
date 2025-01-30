@@ -10,6 +10,48 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
     {
       code: `function processRequest() { return null; }`,
     },
+    {
+      code: `function syncMembership() { return null; }`,
+    },
+    {
+      code: `function fixBug() { return null; }`,
+    },
+    {
+      code: `function setConfig() { return null; }`,
+    },
+    {
+      code: `function getData() { return null; }`,
+    },
+    {
+      code: `function getUser() { return null; }`,
+    },
+    {
+      code: `function logError() { return null; }`,
+    },
+    {
+      code: `function addUser() { return null; }`,
+    },
+    {
+      code: `function mapData() { return null; }`,
+    },
+    {
+      code: `function runTask() { return null; }`,
+    },
+    {
+      code: `function useHook() { return null; }`,
+    },
+    {
+      code: `function hasPermission() { return null; }`,
+    },
+    {
+      code: `function isValid() { return null; }`,
+    },
+    {
+      code: `function doAction() { return null; }`,
+    },
+    {
+      code: `function goHome() { return null; }`,
+    },
 
     // Arrow functions with verb phrases
     {
@@ -92,10 +134,26 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
       code: `function userData() { return null; }`,
       errors: [{ messageId: 'functionVerbPhrase' }],
     },
+    {
+      code: `function data() { return null; }`,
+      errors: [{ messageId: 'functionVerbPhrase' }],
+    },
+    {
+      code: `function user() { return null; }`,
+      errors: [{ messageId: 'functionVerbPhrase' }],
+    },
+    {
+      code: `function profile() { return null; }`,
+      errors: [{ messageId: 'functionVerbPhrase' }],
+    },
 
     // Invalid arrow function names (not verb phrases)
     {
       code: `const data = () => null;`,
+      errors: [{ messageId: 'functionVerbPhrase' }],
+    },
+    {
+      code: `const user = () => null;`,
       errors: [{ messageId: 'functionVerbPhrase' }],
     },
 
@@ -103,8 +161,12 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
     {
       code: `class Service {
         data() { }
+        user() { }
       }`,
-      errors: [{ messageId: 'functionVerbPhrase' }],
+      errors: [
+        { messageId: 'functionVerbPhrase' },
+        { messageId: 'functionVerbPhrase' },
+      ],
     },
   ],
 });

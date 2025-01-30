@@ -1,10 +1,161 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
-import nlp from 'compromise';
 
 type MessageIds = 'functionVerbPhrase';
 
 const PREPOSITIONS = ['to', 'from', 'with', 'by', 'at', 'of'] as const;
+
+// Common verbs that might not match verb patterns
+const COMMON_VERBS = new Set([
+  'sync',
+  'fix',
+  'set',
+  'get',
+  'log',
+  'add',
+  'map',
+  'run',
+  'use',
+  'has',
+  'is',
+  'do',
+  'go',
+  'put',
+  'let',
+  'try',
+  'can',
+  'will',
+  'make',
+  'take',
+  'give',
+  'find',
+  'send',
+  'show',
+  'keep',
+  'hold',
+  'save',
+  'read',
+  'call',
+  'turn',
+  'pull',
+  'push',
+  'move',
+  'play',
+  'stop',
+  'bind',
+  'seek',
+  'load',
+  'fail',
+  'pass',
+  'skip',
+  'help',
+  'test',
+  'mock',
+  'wrap',
+  'sort',
+  'join',
+  'wait',
+  'kill',
+  'lock',
+  'meet',
+  'rest',
+  'copy',
+  'drop',
+  'fire',
+  'plan',
+  'rate',
+  'mark',
+  'post',
+  'fetch',
+  'process',
+]);
+
+// Common verb suffixes
+const VERB_SUFFIXES = [
+  'ize',
+  'ate',
+  'ify',
+  'ise',
+  'ect',
+  'uck',
+  'ush',
+  'ash',
+  'ess',
+  'end',
+  'ent',
+  'ard',
+  'ute',
+  'ume',
+  'ase',
+  'ock',
+  'ool',
+  'ack',
+  'ish',
+  'ide',
+  'ive',
+  'ose',
+  'amp',
+  'ure',
+  'ape',
+  'eat',
+  'eal',
+  'aze',
+  'ink',
+  'unk',
+  'ake',
+  'ite',
+  'ame',
+  'aim',
+  'ail',
+  'own',
+  'ign',
+  'act',
+  'eed',
+  'ine',
+  'lay',
+  'arn',
+  'urn',
+  'ump',
+  'ant',
+  'ink',
+  'unk',
+  'ank',
+  'ash',
+  'ush',
+  'oke',
+  'uck',
+  'ide',
+  'ive',
+  'ose',
+  'ure',
+  'ape',
+  'eat',
+  'eal',
+  'aze',
+  'ink',
+  'unk',
+  'ake',
+  'ite',
+  'ame',
+  'aim',
+  'ail',
+  'own',
+  'ign',
+  'act',
+  'eed',
+  'ine',
+  'lay',
+  'arn',
+  'urn',
+  'ump',
+  'ant',
+  'ink',
+  'unk',
+  'ank',
+  'ash',
+  'ush',
+  'oke',
+];
 
 export const enforceVerbNounNaming = createRule<[], MessageIds>({
   name: 'enforce-verb-noun-naming',
@@ -31,33 +182,34 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
       return firstChar + words[0];
     }
 
-    function toSentence(name: string) {
-      return name.split(/(?=[A-Z])/).join(' ');
-    }
+    function isVerb(word: string): boolean {
+      const lowerWord = word.toLowerCase();
 
-    function getPossibleTags(sentence: string) {
-      const doc = nlp(sentence);
-      const terms = doc.terms().json();
+      // Check common verbs first
+      if (COMMON_VERBS.has(lowerWord)) {
+        return true;
+      }
 
-      if (terms.length === 0 || !terms[0].terms || !terms[0].terms[0].tags)
-        return [];
+      // Check verb suffixes
+      for (const suffix of VERB_SUFFIXES) {
+        if (lowerWord.endsWith(suffix)) {
+          return true;
+        }
+      }
 
-      const tags = terms[0].terms[0].tags;
-      return tags;
+      return false;
     }
 
     function isVerbPhrase(name: string): boolean {
       const firstWord = extractFirstWord(name);
+      const lowerFirstWord = firstWord.toLowerCase();
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if (PREPOSITIONS.includes(firstWord.toLowerCase() as any)) {
+      if (PREPOSITIONS.includes(lowerFirstWord as any)) {
         return true;
       }
 
-      const tags = getPossibleTags(toSentence(name));
-      const isVerb = tags.includes('Verb');
-      const isPreposition = tags.includes('Preposition');
-      const isConjunction = tags.includes('Conjunction');
-      return isVerb || isPreposition || isConjunction;
+      return isVerb(firstWord);
     }
 
     function isJsxReturnFunction(node: TSESTree.Node): boolean {
