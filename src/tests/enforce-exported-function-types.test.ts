@@ -1,11 +1,14 @@
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { enforceExportedFunctionTypes } from '../rules/enforce-exported-function-types';
 
-ruleTesterJsx.run('enforce-exported-function-types', enforceExportedFunctionTypes, {
-  valid: [
-    // Valid case: imported type used in exported function
-    {
-      code: `
+ruleTesterJsx.run(
+  'enforce-exported-function-types',
+  enforceExportedFunctionTypes,
+  {
+    valid: [
+      // Valid case: imported type used in exported function
+      {
+        code: `
         import { SafeTimestamp } from '../../util/firestore/timestamp';
 
         export type PhaseChangeTaskPayload = {
@@ -21,10 +24,10 @@ ruleTesterJsx.run('enforce-exported-function-types', enforceExportedFunctionType
           // Implementation
         }
       `,
-    },
-    // Valid case: imported generic type used in exported function
-    {
-      code: `
+      },
+      // Valid case: imported generic type used in exported function
+      {
+        code: `
         import { Result } from '../../util/result';
         import { SafeTimestamp } from '../../util/firestore/timestamp';
 
@@ -32,10 +35,10 @@ ruleTesterJsx.run('enforce-exported-function-types', enforceExportedFunctionType
           return { success: true, data: time.toDate() };
         }
       `,
-    },
-    // Valid case: imported base type with local generic type
-    {
-      code: `
+      },
+      // Valid case: imported base type with local generic type
+      {
+        code: `
         import { BaseRequest } from '../../util/request';
 
         export type AuthenticatedRequest<T> = BaseRequest & {
@@ -53,10 +56,10 @@ ruleTesterJsx.run('enforce-exported-function-types', enforceExportedFunctionType
           // Implementation
         }
       `,
-    },
-    // Valid case: imported generic type with imported type parameter
-    {
-      code: `
+      },
+      // Valid case: imported generic type with imported type parameter
+      {
+        code: `
         import { Result } from '../../util/result';
         import { User } from '../../models/user';
 
@@ -64,10 +67,10 @@ ruleTesterJsx.run('enforce-exported-function-types', enforceExportedFunctionType
           return { success: true, data: { id, name: 'Test' } };
         }
       `,
-    },
-    // Valid case: multiple imported types in type intersection
-    {
-      code: `
+      },
+      // Valid case: multiple imported types in type intersection
+      {
+        code: `
         import { BaseEntity } from '../../models/base';
         import { Timestamps } from '../../util/timestamps';
         import { Metadata } from '../../util/metadata';
@@ -81,10 +84,10 @@ ruleTesterJsx.run('enforce-exported-function-types', enforceExportedFunctionType
           };
         }
       `,
-    },
-    // Valid case: exported type with exported function
-    {
-      code: `
+      },
+      // Valid case: exported type with exported function
+      {
+        code: `
         export type NotificationActions = {
           markAsRead: (toId: string, notificationId: string) => Promise<void>;
           markAsArchived: (toId: string, notificationId: string) => Promise<void>;
@@ -97,10 +100,10 @@ ruleTesterJsx.run('enforce-exported-function-types', enforceExportedFunctionType
           };
         }
       `,
-    },
-    // Valid case: exported props type with React component
-    {
-      code: `
+      },
+      // Valid case: exported props type with React component
+      {
+        code: `
         export type NotificationBannerProps = {
           message: string;
           onClose: () => void;
@@ -115,10 +118,10 @@ ruleTesterJsx.run('enforce-exported-function-types', enforceExportedFunctionType
           );
         }
       `,
-    },
-    // Valid case: non-exported function with non-exported type
-    {
-      code: `
+      },
+      // Valid case: non-exported function with non-exported type
+      {
+        code: `
         type InternalType = {
           value: string;
         };
@@ -127,18 +130,18 @@ ruleTesterJsx.run('enforce-exported-function-types', enforceExportedFunctionType
           return param;
         }
       `,
-    },
-    // Valid case: primitive types
-    {
-      code: `
+      },
+      // Valid case: primitive types
+      {
+        code: `
         export function simpleFunction(value: string): number {
           return 42;
         }
       `,
-    },
-    // Valid case: generic type with exported base type
-    {
-      code: `
+      },
+      // Valid case: generic type with exported base type
+      {
+        code: `
         export type AuthenticatedRequest<T> = {
           data: T;
           auth: {
@@ -158,10 +161,10 @@ ruleTesterJsx.run('enforce-exported-function-types', enforceExportedFunctionType
           return { tournamentNew: request.data };
         };
       `,
-    },
-    // Valid case: generic type with exported base type and return type
-    {
-      code: `
+      },
+      // Valid case: generic type with exported base type and return type
+      {
+        code: `
         export type AuthenticatedRequest<T> = {
           data: T;
           auth: {
@@ -185,12 +188,12 @@ ruleTesterJsx.run('enforce-exported-function-types', enforceExportedFunctionType
           return { tournamentNew: request.data };
         };
       `,
-    },
-  ],
-  invalid: [
-    // Invalid case: non-exported type with exported function
-    {
-      code: `
+      },
+    ],
+    invalid: [
+      // Invalid case: non-exported type with exported function
+      {
+        code: `
         type NotificationActions = {
           markAsRead: (toId: string, notificationId: string) => Promise<void>;
         };
@@ -201,16 +204,16 @@ ruleTesterJsx.run('enforce-exported-function-types', enforceExportedFunctionType
           };
         }
       `,
-      errors: [
-        {
-          messageId: 'missingExportedReturnType',
-          data: { typeName: 'NotificationActions' },
-        },
-      ],
-    },
-    // Invalid case: non-exported props type with React component
-    {
-      code: `
+        errors: [
+          {
+            messageId: 'missingExportedReturnType',
+            data: { typeName: 'NotificationActions' },
+          },
+        ],
+      },
+      // Invalid case: non-exported props type with React component
+      {
+        code: `
         type NotificationBannerProps = {
           message: string;
           onClose: () => void;
@@ -225,16 +228,16 @@ ruleTesterJsx.run('enforce-exported-function-types', enforceExportedFunctionType
           );
         }
       `,
-      errors: [
-        {
-          messageId: 'missingExportedPropsType',
-          data: { typeName: 'NotificationBannerProps' },
-        },
-      ],
-    },
-    // Invalid case: non-exported parameter type
-    {
-      code: `
+        errors: [
+          {
+            messageId: 'missingExportedPropsType',
+            data: { typeName: 'NotificationBannerProps' },
+          },
+        ],
+      },
+      // Invalid case: non-exported parameter type
+      {
+        code: `
         type Config = {
           timeout: number;
         };
@@ -243,16 +246,16 @@ ruleTesterJsx.run('enforce-exported-function-types', enforceExportedFunctionType
           return config;
         }
       `,
-      errors: [
-        {
-          messageId: 'missingExportedType',
-          data: { typeName: 'Config' },
-        },
-      ],
-    },
-    // Invalid case: arrow function with non-exported return type
-    {
-      code: `
+        errors: [
+          {
+            messageId: 'missingExportedType',
+            data: { typeName: 'Config' },
+          },
+        ],
+      },
+      // Invalid case: arrow function with non-exported return type
+      {
+        code: `
         type Result = {
           value: string;
         };
@@ -261,16 +264,16 @@ ruleTesterJsx.run('enforce-exported-function-types', enforceExportedFunctionType
           return { value: 'test' };
         };
       `,
-      errors: [
-        {
-          messageId: 'missingExportedReturnType',
-          data: { typeName: 'Result' },
-        },
-      ],
-    },
-    // Invalid case: non-exported generic base type
-    {
-      code: `
+        errors: [
+          {
+            messageId: 'missingExportedReturnType',
+            data: { typeName: 'Result' },
+          },
+        ],
+      },
+      // Invalid case: non-exported generic base type
+      {
+        code: `
         type AuthenticatedRequest<T> = {
           data: T;
           auth: {
@@ -290,16 +293,16 @@ ruleTesterJsx.run('enforce-exported-function-types', enforceExportedFunctionType
           return { tournamentNew: request.data };
         };
       `,
-      errors: [
-        {
-          messageId: 'missingExportedType',
-          data: { typeName: 'AuthenticatedRequest' },
-        },
-      ],
-    },
-    // Invalid case: non-exported generic parameter type
-    {
-      code: `
+        errors: [
+          {
+            messageId: 'missingExportedType',
+            data: { typeName: 'AuthenticatedRequest' },
+          },
+        ],
+      },
+      // Invalid case: non-exported generic parameter type
+      {
+        code: `
         export type AuthenticatedRequest<T> = {
           data: T;
           auth: {
@@ -319,12 +322,13 @@ ruleTesterJsx.run('enforce-exported-function-types', enforceExportedFunctionType
           return { tournamentNew: request.data };
         };
       `,
-      errors: [
-        {
-          messageId: 'missingExportedType',
-          data: { typeName: 'Params' },
-        },
-      ],
-    },
-  ],
-});
+        errors: [
+          {
+            messageId: 'missingExportedType',
+            data: { typeName: 'Params' },
+          },
+        ],
+      },
+    ],
+  },
+);
