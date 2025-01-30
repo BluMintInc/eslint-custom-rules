@@ -46,6 +46,7 @@ import { enforceRealtimedbPathUtils } from './rules/enforce-realtimedb-path-util
 import { enforceMemoizeAsync } from './rules/enforce-memoize-async';
 import { enforceExportedFunctionTypes } from './rules/enforce-exported-function-types';
 import { noRedundantParamTypes } from './rules/no-redundant-param-types';
+import { noClassInstanceDestructuring } from './rules/no-class-instance-destructuring';
 
 module.exports = {
   meta: {
@@ -107,6 +108,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-memoize-async': 'error',
         '@blumintinc/blumint/enforce-exported-function-types': 'error',
         '@blumintinc/blumint/no-redundant-param-types': 'error',
+        '@blumintinc/blumint/no-class-instance-destructuring': 'error',
       },
     },
   },
@@ -159,5 +161,6 @@ module.exports = {
     'enforce-memoize-async': enforceMemoizeAsync,
     'enforce-exported-function-types': enforceExportedFunctionTypes,
     'no-redundant-param-types': noRedundantParamTypes,
+    'no-class-instance-destructuring': noClassInstanceDestructuring,
   },
 };
