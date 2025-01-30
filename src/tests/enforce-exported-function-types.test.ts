@@ -57,6 +57,56 @@ ruleTesterJsx.run('enforce-exported-function-types', enforceExportedFunctionType
         }
       `,
     },
+    // Valid case: generic type with exported base type
+    {
+      code: `
+        export type AuthenticatedRequest<T> = {
+          data: T;
+          auth: {
+            uid: string;
+          };
+        };
+
+        export type Params = {
+          gameId: string;
+          previousId?: string;
+          groupId: string;
+        };
+
+        export const createTemplateTournament = async (
+          request: AuthenticatedRequest<Params>
+        ) => {
+          return { tournamentNew: request.data };
+        };
+      `,
+    },
+    // Valid case: generic type with exported base type and return type
+    {
+      code: `
+        export type AuthenticatedRequest<T> = {
+          data: T;
+          auth: {
+            uid: string;
+          };
+        };
+
+        export type Params = {
+          gameId: string;
+          previousId?: string;
+          groupId: string;
+        };
+
+        export type Response = Promise<{
+          tournamentNew: Tournament;
+        }>;
+
+        export const createTemplateTournament = async (
+          request: AuthenticatedRequest<Params>
+        ): Response => {
+          return { tournamentNew: request.data };
+        };
+      `,
+    },
   ],
   invalid: [
     // Invalid case: non-exported type with exported function
@@ -98,7 +148,7 @@ ruleTesterJsx.run('enforce-exported-function-types', enforceExportedFunctionType
       `,
       errors: [
         {
-          messageId: 'missingExportedType',
+          messageId: 'missingExportedPropsType',
           data: { typeName: 'NotificationBannerProps' },
         },
       ],
@@ -136,6 +186,64 @@ ruleTesterJsx.run('enforce-exported-function-types', enforceExportedFunctionType
         {
           messageId: 'missingExportedReturnType',
           data: { typeName: 'Result' },
+        },
+      ],
+    },
+    // Invalid case: non-exported generic base type
+    {
+      code: `
+        type AuthenticatedRequest<T> = {
+          data: T;
+          auth: {
+            uid: string;
+          };
+        };
+
+        export type Params = {
+          gameId: string;
+          previousId?: string;
+          groupId: string;
+        };
+
+        export const createTemplateTournament = async (
+          request: AuthenticatedRequest<Params>
+        ) => {
+          return { tournamentNew: request.data };
+        };
+      `,
+      errors: [
+        {
+          messageId: 'missingExportedType',
+          data: { typeName: 'AuthenticatedRequest' },
+        },
+      ],
+    },
+    // Invalid case: non-exported generic parameter type
+    {
+      code: `
+        export type AuthenticatedRequest<T> = {
+          data: T;
+          auth: {
+            uid: string;
+          };
+        };
+
+        type Params = {
+          gameId: string;
+          previousId?: string;
+          groupId: string;
+        };
+
+        export const createTemplateTournament = async (
+          request: AuthenticatedRequest<Params>
+        ) => {
+          return { tournamentNew: request.data };
+        };
+      `,
+      errors: [
+        {
+          messageId: 'missingExportedType',
+          data: { typeName: 'Params' },
         },
       ],
     },
