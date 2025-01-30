@@ -36,6 +36,13 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
     // Anonymous functions are ignored
     '() => {}',
     '(function() {})',
+    // Words that contain disallowed prefixes as substrings should be valid
+    'const DownloadLivestreamButtonUnmemoized = () => {}',
+    'function downloadFile() {}',
+    'const ManageDownloadQueue = () => {}',
+    'function processDownloadStatus() {}',
+    'const WindowManager = () => {}',
+    'function checkoutCart() {}',
   ],
   invalid: [
     {
