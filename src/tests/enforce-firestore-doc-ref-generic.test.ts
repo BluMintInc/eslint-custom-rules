@@ -232,6 +232,16 @@ ruleTesterTs.run('enforce-firestore-doc-ref-generic', enforceFirestoreDocRefGene
         const userRef = db.collection<User>('users').doc<User>(userId);
       `,
     },
+    // Type assertions using 'as' keyword
+    {
+      code: `
+        interface User {
+          name: string;
+          age: number;
+        }
+        const userRef = db.doc(toUserPath(userId)) as DocumentReference<User>;
+      `,
+    },
     {
       code: `
         interface Product {
