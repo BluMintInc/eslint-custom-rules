@@ -49,7 +49,7 @@ import { enforceExportedFunctionTypes } from './rules/enforce-exported-function-
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.3.2',
+    version: '1.4.0',
   },
   parseOptions: {
     ecmaVersion: 2020,

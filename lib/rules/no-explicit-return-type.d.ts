@@ -1,3 +1,4 @@
+import { TSESLint } from '@typescript-eslint/utils';
 type Options = [
     {
         allowRecursiveFunctions?: boolean;
@@ -7,5 +8,5 @@ type Options = [
         allowDtsFiles?: boolean;
     }
 ];
-export declare const noExplicitReturnType: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"noExplicitReturnType", Options, import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;
+export declare const noExplicitReturnType: TSESLint.RuleModule<'noExplicitReturnType', Options>;
 export {};

@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.3.2...v1.4.0) (2025-01-30)
+
+
+### Features
+
+* **rules:** Add multiple new ESLint rules ([0685d7e](https://github.com/BluMintInc/eslint-custom-rules/commit/0685d7e002f729f0da0f83c50d6bea991d1489d8))
+
 ## [1.3.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.3.1...v1.3.2) (2025-01-29)
 
 
