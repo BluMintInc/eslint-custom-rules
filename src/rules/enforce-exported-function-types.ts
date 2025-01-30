@@ -60,6 +60,22 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
       const sourceCode = context.getSourceCode();
       const program = sourceCode.ast;
 
+      // Check for imported types first
+      const importedTypes = program.body.filter(node => {
+        if (node.type === AST_NODE_TYPES.ImportDeclaration) {
+          // Check named imports
+          return node.specifiers.some(specifier =>
+            specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+            specifier.local.name === typeName
+          );
+        }
+        return false;
+      });
+
+      if (importedTypes.length > 0) {
+        return true; // Type is imported, no need to check if it's exported
+      }
+
       // Check for exported type declarations
       const exportedTypes = program.body.filter(node => {
         if (node.type === AST_NODE_TYPES.ExportNamedDeclaration) {

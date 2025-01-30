@@ -57,6 +57,35 @@ ruleTesterJsx.run('enforce-exported-function-types', enforceExportedFunctionType
         }
       `,
     },
+    // Valid case: imported types
+    {
+      code: `
+        import { SafeTimestamp } from '../../util/firestore/timestamp';
+
+        export type PhaseChangeTaskPayload = {
+          gameId: string;
+          tournamentId: string;
+          phase: TournamentPhase;
+        } & RequireOnlyOne<{
+          epochMillis: number;
+          time: SafeTimestamp;
+        }>;
+      `,
+    },
+    // Valid case: imported types in function parameters and return type
+    {
+      code: `
+        import { UserProfile } from './types';
+        import { DatabaseRecord } from '../db/types';
+
+        export function processUserData(profile: UserProfile): DatabaseRecord {
+          return {
+            id: profile.id,
+            data: profile.data
+          };
+        }
+      `,
+    },
   ],
   invalid: [
     // Invalid case: non-exported type with exported function
