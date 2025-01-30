@@ -10,6 +10,13 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
     'function validateInput() {}',
     'function transformData() {}',
     'function executeAction() {}',
+    // Valid PascalCase/camelCase names that contain disallowed prefixes as substrings
+    'function downloadFile() {}',
+    'function DownloadLivestreamButtonUnmemoized() {}',
+    'function endowmentFund() {}',
+    'function windowSize() {}',
+    'function shadowRoot() {}',
+    'function meadowFlowers() {}',
     // Boolean check functions with 'is' prefix are allowed
     'function isUserLoggedIn() {}',
     'function isValid() {}',
@@ -31,6 +38,12 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
         modifyRecord() {}
         validateInput() {}
         isValid() {}
+        downloadFile() {}
+        DownloadLivestreamButtonUnmemoized() {}
+        endowmentFund() {}
+        windowSize() {}
+        shadowRoot() {}
+        meadowFlowers() {}
       }
     `,
     // Anonymous functions are ignored

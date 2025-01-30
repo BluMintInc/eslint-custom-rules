@@ -42,9 +42,18 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
       // Skip if method starts with 'is' (boolean check methods are okay)
       if (methodName.startsWith('is')) return;
 
+      // Extract first word from PascalCase/camelCase
+      let firstWord = methodName;
+      for (let i = 1; i < methodName.length; i++) {
+        if (methodName[i] >= 'A' && methodName[i] <= 'Z') {
+          firstWord = methodName.substring(0, i);
+          break;
+        }
+      }
+
       // Check for disallowed prefixes
       for (const prefix of DISALLOWED_PREFIXES) {
-        if (methodName.toLowerCase().startsWith(prefix.toLowerCase())) {
+        if (firstWord.toLowerCase() === prefix.toLowerCase()) {
           context.report({
             node: node.key,
             messageId: 'avoidGenericPrefix',
@@ -77,9 +86,18 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
       // Skip if function starts with 'is' (boolean check functions are okay)
       if (functionName.startsWith('is')) return;
 
+      // Extract first word from PascalCase/camelCase
+      let firstWord = functionName;
+      for (let i = 1; i < functionName.length; i++) {
+        if (functionName[i] >= 'A' && functionName[i] <= 'Z') {
+          firstWord = functionName.substring(0, i);
+          break;
+        }
+      }
+
       // Check for disallowed prefixes
       for (const prefix of DISALLOWED_PREFIXES) {
-        if (functionName.toLowerCase().startsWith(prefix.toLowerCase())) {
+        if (firstWord.toLowerCase() === prefix.toLowerCase()) {
           context.report({
             node: node.id || node,
             messageId: 'avoidGenericPrefix',
