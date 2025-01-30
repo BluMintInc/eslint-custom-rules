@@ -18,7 +18,7 @@ export default createRule({
     type: 'problem',
     docs: {
       description:
-        'Enforce serializable parameters in Firebase Callable/HTTPS Cloud Functions',
+        'Enforce serializable parameters in Firebase Callable/HTTPS Cloud Functions to prevent runtime errors. Firebase Functions can only pass JSON-serializable data, so using non-serializable types like Date, DocumentReference, or Map will cause failures. Use primitive types, plain objects, and arrays instead, converting complex types to their serializable representations (e.g., Date to ISO string).',
       recommended: 'error',
     },
     schema: [
@@ -39,9 +39,9 @@ export default createRule({
       },
     ],
     messages: {
-      nonSerializableParam: 'Parameter type "{{ type }}" is not serializable',
+      nonSerializableParam: 'Parameter type "{{ type }}" is not serializable in Firebase Cloud Functions. Use JSON-serializable types like string, number, boolean, arrays, or plain objects. Instead of `Date`, use ISO strings: `new Date().toISOString()`.',
       nonSerializableProperty:
-        'Property "{{ prop }}" has non-serializable type "{{ type }}"',
+        'Property "{{ prop }}" has non-serializable type "{{ type }}". Use JSON-serializable types. For example, instead of `{ timestamp: Date }`, use `{ timestamp: string }` with ISO format.',
     },
   },
   defaultOptions: [

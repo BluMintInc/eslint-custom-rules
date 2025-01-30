@@ -12,7 +12,7 @@ export const noUnusedProps = createRule({
     schema: [],
     messages: {
       unusedProp:
-        'Prop "{{propName}}" is defined in type but not used in component',
+        'Prop "{{propName}}" is defined in the Props type but not used in the component. Either use the prop in your component or remove it from the Props type. If you need to forward all props, use a rest spread operator: `const MyComponent = ({ usedProp, ...rest }: Props) => ...`',
     },
     fixable: 'code',
   },

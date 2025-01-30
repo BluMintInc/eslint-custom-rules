@@ -15,7 +15,7 @@ export const enforceRealtimedbPathUtils = createRule<[], MessageIds>({
     },
     schema: [],
     messages: {
-      requirePathUtil: 'Use a utility function (e.g., toUserPath, toItemPath) for Realtime Database paths instead of string literals',
+      requirePathUtil: 'Use a utility function for Realtime Database paths to ensure type safety and maintainability. Instead of `ref("users/" + userId)`, create and use a utility function: `const toUserPath = (id: string) => `users/${id}`; ref(toUserPath(userId))`.',
     },
   },
   defaultOptions: [],

@@ -19,11 +19,11 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
     schema: [],
     messages: {
       missingExportedType:
-        'Type {{typeName}} should be exported since it is used in an exported function',
+        'Type {{typeName}} should be exported since it is used in an exported function. Add `export` before the type definition: `export type {{typeName}} = ...`',
       missingExportedReturnType:
-        'Return type {{typeName}} should be exported since it is used in an exported function',
+        'Return type {{typeName}} should be exported since it is used in an exported function. Add `export` before the type definition: `export type {{typeName}} = ...`',
       missingExportedPropsType:
-        'Props type {{typeName}} should be exported since it is used in an exported React component',
+        'Props type {{typeName}} should be exported since it is used in an exported React component. Add `export` before the type definition: `export type {{typeName}} = ...`',
     },
   },
   defaultOptions: [],

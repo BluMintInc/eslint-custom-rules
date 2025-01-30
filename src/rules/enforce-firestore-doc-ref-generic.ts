@@ -26,9 +26,9 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
     },
     schema: [],
     messages: {
-      missingGeneric: '{{ type }} must specify a generic type argument',
+      missingGeneric: '{{ type }} must specify a generic type argument for type safety. Instead of `const docRef = doc(collection)`, use `const docRef = doc<YourType>(collection)`.',
       invalidGeneric:
-        '{{ type }} must not use "any" or "{}" as generic type argument',
+        '{{ type }} must not use "any" or "{}" as generic type argument. Define a proper interface/type for your document: `interface UserDoc { name: string; age: number; }` and use it: `const docRef = doc<UserDoc>(collection)`.',
     },
   },
   defaultOptions: [],

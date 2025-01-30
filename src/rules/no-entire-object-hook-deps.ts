@@ -175,7 +175,7 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Avoid using entire objects in React hook dependency arrays when only specific fields are used. Requires TypeScript and `parserOptions.project` to be configured.',
+        'Avoid using entire objects in React hook dependency arrays when only specific fields are used, as this can cause unnecessary re-renders. When a hook only uses obj.name but obj is in the deps array, any change to obj.age will trigger the hook. Use individual fields (obj.name) instead of the entire object. Requires TypeScript and `parserOptions.project` to be configured.',
       recommended: 'error',
       requiresTypeChecking: true,
     },

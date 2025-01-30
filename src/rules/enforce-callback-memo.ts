@@ -9,14 +9,14 @@ export default createRule<[], MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Enforce useCallback or useMemo for inline functions in JSX props',
+        'Enforce useCallback for inline functions and useMemo for objects/arrays containing functions in JSX props to prevent unnecessary re-renders. This improves React component performance by ensuring stable function references across renders and memoizing complex objects.',
       recommended: 'error',
     },
     messages: {
       enforceCallback:
-        'Inline functions in JSX props should be wrapped with useCallback',
+        'Inline functions in JSX props should be wrapped with useCallback to prevent unnecessary re-renders. Instead of `<Button onClick={() => handleClick(id)} />`, use `<Button onClick={useCallback(() => handleClick(id), [id])} />`.',
       enforceMemo:
-        'Objects/arrays containing functions in JSX props should be wrapped with useMemo',
+        'Objects/arrays containing functions in JSX props should be wrapped with useMemo to prevent unnecessary re-renders. Instead of `<Component config={{ onSubmit: () => {...} }} />`, use `<Component config={useMemo(() => ({ onSubmit: () => {...} }), [])} />`.',
     },
     schema: [],
   },

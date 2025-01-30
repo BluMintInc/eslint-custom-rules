@@ -38,7 +38,7 @@ export const noUselessFragment: TSESLint.RuleModule<'noUselessFragment', []> = {
     },
     messages: {
       noUselessFragment:
-        'React fragment is unnecessary when wrapping a single child',
+        'React fragment is unnecessary when wrapping a single child. Instead of `<>{"text"}</> or <Fragment>{"text"}</Fragment>`, use just `{"text"}`. Fragments are only needed when returning multiple elements.',
     },
     schema: [],
     fixable: 'code',
