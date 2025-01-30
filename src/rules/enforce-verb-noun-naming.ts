@@ -6,7 +6,7 @@ type MessageIds = 'functionVerbPhrase';
 
 const PREPOSITIONS = ['to', 'from', 'with', 'by', 'at', 'of'] as const;
 
-// Common short verbs that should be allowed
+// Common short verbs and technical verbs that should be allowed
 const COMMON_VERBS = new Set([
   'sync',
   'fix',
@@ -21,6 +21,15 @@ const COMMON_VERBS = new Set([
   'has',
   'is',
   'do',
+  // Technical verbs
+  'enqueue',
+  'dequeue',
+  'memoize',
+  'serialize',
+  'deserialize',
+  'instantiate',
+  'marshal',
+  'unmarshal',
 ]);
 
 export const enforceVerbNounNaming = createRule<[], MessageIds>({
