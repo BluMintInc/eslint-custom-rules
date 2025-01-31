@@ -48,6 +48,7 @@ import { enforceExportedFunctionTypes } from './rules/enforce-exported-function-
 import { noRedundantParamTypes } from './rules/no-redundant-param-types';
 import { noClassInstanceDestructuring } from './rules/no-class-instance-destructuring';
 import { noMemoizeOnStatic } from './rules/no-memoize-on-static';
+import { noUnsafeFirestoreSpread } from './rules/no-unsafe-firestore-spread';
 
 module.exports = {
   meta: {
@@ -111,6 +112,7 @@ module.exports = {
         '@blumintinc/blumint/no-redundant-param-types': 'error',
         '@blumintinc/blumint/no-class-instance-destructuring': 'error',
         '@blumintinc/blumint/no-memoize-on-static': 'error',
+        '@blumintinc/blumint/no-unsafe-firestore-spread': 'error',
       },
     },
   },
@@ -165,5 +167,6 @@ module.exports = {
     'no-redundant-param-types': noRedundantParamTypes,
     'no-class-instance-destructuring': noClassInstanceDestructuring,
     'no-memoize-on-static': noMemoizeOnStatic,
+    'no-unsafe-firestore-spread': noUnsafeFirestoreSpread,
   },
 };
