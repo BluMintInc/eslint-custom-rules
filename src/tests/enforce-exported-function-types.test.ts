@@ -189,6 +189,19 @@ ruleTesterJsx.run(
         };
       `,
       },
+      // Valid case: generic type parameter in exported function
+      {
+        code: `
+        import { DocumentSnapshot, DocumentData } from 'firebase-admin/firestore';
+        import { Change } from 'firebase-functions/core';
+
+        export const removeFromUserGroups = async <TData extends DocumentData>(
+          change: Change<DocumentSnapshot<TData>>,
+        ) => {
+          // Implementation
+        };
+      `,
+      },
     ],
     invalid: [
       // Invalid case: non-exported type with exported function
