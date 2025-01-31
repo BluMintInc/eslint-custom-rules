@@ -49,6 +49,7 @@ import { noRedundantParamTypes } from './rules/no-redundant-param-types';
 import { noClassInstanceDestructuring } from './rules/no-class-instance-destructuring';
 import { noFirestoreObjectArrays } from './rules/no-firestore-object-arrays';
 import { noMemoizeOnStatic } from './rules/no-memoize-on-static';
+import { noUnsafeFirestoreSpread } from './rules/no-unsafe-firestore-spread';
 import { noJsxInHooks } from './rules/no-jsx-in-hooks';
 
 module.exports = {
@@ -114,6 +115,7 @@ module.exports = {
         '@blumintinc/blumint/no-class-instance-destructuring': 'error',
         '@blumintinc/blumint/no-firestore-object-arrays': 'warn',
         '@blumintinc/blumint/no-memoize-on-static': 'error',
+        '@blumintinc/blumint/no-unsafe-firestore-spread': 'error',
         '@blumintinc/blumint/no-jsx-in-hooks': 'error',
       },
     },
@@ -170,6 +172,7 @@ module.exports = {
     'no-class-instance-destructuring': noClassInstanceDestructuring,
     'no-firestore-object-arrays': noFirestoreObjectArrays,
     'no-memoize-on-static': noMemoizeOnStatic,
+    'no-unsafe-firestore-spread': noUnsafeFirestoreSpread,
     'no-jsx-in-hooks': noJsxInHooks,
   },
 };
