@@ -23,8 +23,14 @@ const isObjectType = (node: TSESTree.TypeNode): boolean => {
     case AST_NODE_TYPES.TSTypeLiteral:
       return true;
     case AST_NODE_TYPES.TSTypeReference:
-      const typeName = (node.typeName as TSESTree.Identifier).name;
-      return !PRIMITIVE_TYPES.has(typeName.toLowerCase());
+      if (node.typeName.type === AST_NODE_TYPES.Identifier) {
+        const typeName = node.typeName.name;
+        return !PRIMITIVE_TYPES.has(typeName);
+      } else if (node.typeName.type === AST_NODE_TYPES.TSQualifiedName) {
+        // Handle namespace.Type cases
+        return true;
+      }
+      return true;
     case AST_NODE_TYPES.TSIntersectionType:
     case AST_NODE_TYPES.TSUnionType:
       return node.types.some(isObjectType);
