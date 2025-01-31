@@ -47,6 +47,7 @@ import { enforceMemoizeAsync } from './rules/enforce-memoize-async';
 import { enforceExportedFunctionTypes } from './rules/enforce-exported-function-types';
 import { noRedundantParamTypes } from './rules/no-redundant-param-types';
 import { noClassInstanceDestructuring } from './rules/no-class-instance-destructuring';
+import { noMemoizeOnStatic } from './rules/no-memoize-on-static';
 
 module.exports = {
   meta: {
@@ -109,6 +110,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-exported-function-types': 'error',
         '@blumintinc/blumint/no-redundant-param-types': 'error',
         '@blumintinc/blumint/no-class-instance-destructuring': 'error',
+        '@blumintinc/blumint/no-memoize-on-static': 'error',
       },
     },
   },
@@ -162,5 +164,6 @@ module.exports = {
     'enforce-exported-function-types': enforceExportedFunctionTypes,
     'no-redundant-param-types': noRedundantParamTypes,
     'no-class-instance-destructuring': noClassInstanceDestructuring,
+    'no-memoize-on-static': noMemoizeOnStatic,
   },
 };
