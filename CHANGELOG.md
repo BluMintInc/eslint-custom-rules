@@ -1,3 +1,10 @@
+## [1.5.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.5.0...v1.5.1) (2025-01-31)
+
+
+### Bug Fixes
+
+* **verbs.json:** add programming terms ([fbbef84](https://github.com/BluMintInc/eslint-custom-rules/commit/fbbef84d6de97c1aed2f73149392e5653074597e))
+
 # [1.5.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.4.0...v1.5.0) (2025-01-30)
 
 
