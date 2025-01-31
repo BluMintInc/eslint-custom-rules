@@ -51,11 +51,63 @@ ruleTesterJsx.run('no-jsx-in-hooks', noJsxInHooks, {
     },
   ],
   invalid: [
-    // Invalid hook that directly returns JSX
+    // Invalid hook with early return of ReactNode
     {
       code: `
         const useLivestreamPlayer = ({ placeholder, playbackId }) => {
-          return <div>Livestream Player</div>;
+          const { isPictureInPicture } = usePictureInPicture();
+          const { playbackIds } = useVideo();
+
+          const livestreamCarousel = useMemo(() => {
+            const playbackIdsResolved = playbackId ? [playbackId] : playbackIds;
+
+            if (!playbackIdsResolved || playbackIdsResolved.length === 0) {
+              return placeholder ?? undefined;
+            }
+
+            const carouselContent = playbackIdsResolved.map((id: string) => {
+              return <LivestreamPlayer key={id} playbackId={id} />;
+            });
+
+            return (
+              <Box
+                sx={{
+                  height: '100%',
+                  visibility: isPictureInPicture ? 'hidden' : 'visible',
+                }}
+              >
+                <ContentCarousel
+                  buttonSx={BUTTON_SX}
+                  content={carouselContent}
+                  showNavigation={playbackIdsResolved.length > 1}
+                  sx={{ height: '100%' }}
+                />
+              </Box>
+            );
+          }, [playbackId, playbackIds, isPictureInPicture, placeholder]);
+
+          return livestreamCarousel;
+        };
+      `,
+      errors: [{ messageId: 'noJsxInHooks' }],
+    },
+    // Invalid hook with early return of ReactNode via ternary
+    {
+      code: `
+        const useConditionalElement = ({ condition, placeholder }) => {
+          return condition ? <div>Content</div> : placeholder;
+        };
+      `,
+      errors: [{ messageId: 'noJsxInHooks' }],
+    },
+    // Invalid hook with early return of JSX in if statement
+    {
+      code: `
+        const useLoadingState = ({ isLoading, data }) => {
+          if (isLoading) {
+            return <div>Loading...</div>;
+          }
+          return data;
         };
       `,
       errors: [{ messageId: 'noJsxInHooks' }],
