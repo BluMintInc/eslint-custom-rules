@@ -1,27 +1,14 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import nlp from 'compromise';
+import verbs from '../utils/verbs.json';
 
 type MessageIds = 'functionVerbPhrase';
 
-const PREPOSITIONS = ['to', 'from', 'with', 'by', 'at', 'of'] as const;
+const PREPOSITIONS = new Set(['to', 'from', 'with', 'by', 'at', 'of']);
 
-// Common short verbs that should be allowed
-const COMMON_VERBS = new Set([
-  'sync',
-  'fix',
-  'set',
-  'log',
-  'get',
-  'put',
-  'add',
-  'map',
-  'run',
-  'use',
-  'has',
-  'is',
-  'do',
-]);
+// Create a Set from the verbs list for O(1) lookup
+const VERBS_SET = new Set(verbs);
 
 export const enforceVerbNounNaming = createRule<[], MessageIds>({
   name: 'enforce-verb-noun-naming',
@@ -48,40 +35,46 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
       return firstChar + words[0];
     }
 
-    function toSentence(name: string) {
-      // Add "I" prefix to create a proper sentence for better verb detection
-      return 'I ' + name.split(/(?=[A-Z])/).join(' ');
+    function toPhrase(name: string) {
+      return name.split(/(?=[A-Z])/).join(' ');
     }
 
-    function getPossibleTags(sentence: string) {
+    function getPossibleTags(sentence: string, index = 0) {
       const doc = nlp(sentence);
       const terms = doc.terms().json();
 
-      if (terms.length === 0 || !terms[0].terms || !terms[0].terms[0].tags)
+      if (
+        terms.length < index ||
+        !terms[index]?.terms?.length ||
+        !terms[index]?.terms[0]?.tags
+      )
         return [];
 
-      const tags = terms[0].terms[0].tags;
+      const tags = terms[index].terms[0].tags;
       return tags;
     }
 
     function isVerbPhrase(name: string): boolean {
       const firstWord = extractFirstWord(name);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const firstWordLower = firstWord.toLowerCase();
 
-      // Check for prepositions and common verbs first
-      if (PREPOSITIONS.includes(firstWordLower as any) || COMMON_VERBS.has(firstWordLower)) {
+      // Check for prepositions first
+      if (PREPOSITIONS.has(firstWordLower)) {
         return true;
       }
 
-      // Try both with and without "I" prefix to catch more verb forms
-      const withPrefixTags = getPossibleTags(toSentence(name));
-      const withoutPrefixTags = getPossibleTags(firstWord);
+      // Check against our comprehensive verbs list first
+      if (VERBS_SET.has(firstWordLower)) {
+        return true;
+      }
+
+      // Fall back to NLP approach if not found in verbs list
+      const withoutPrefixTags = getPossibleTags(toPhrase(name));
 
       // Check if either form is recognized as a verb
-      const isVerb = withPrefixTags.includes('Verb') || withoutPrefixTags.includes('Verb');
-      const isPreposition = withPrefixTags.includes('Preposition');
-      const isConjunction = withPrefixTags.includes('Conjunction');
+      const isVerb = withoutPrefixTags.includes('Verb');
+      const isPreposition = withoutPrefixTags.includes('Preposition');
+      const isConjunction = withoutPrefixTags.includes('Conjunction');
 
       // For non-prepositions/conjunctions, require verb form
       if (isPreposition || isConjunction) {
