@@ -41,8 +41,12 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
       },
 
       MethodDefinition(node) {
-        // Only process async methods
-        if (node.value.type !== AST_NODE_TYPES.FunctionExpression || !node.value.async) {
+        // Only process async instance methods (skip static methods)
+        if (
+          node.value.type !== AST_NODE_TYPES.FunctionExpression ||
+          !node.value.async ||
+          node.static
+        ) {
           return;
         }
 
