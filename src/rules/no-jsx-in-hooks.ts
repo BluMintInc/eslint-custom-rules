@@ -4,6 +4,12 @@ import { createRule } from '../utils/createRule';
 type MessageIds = 'noJsxInHooks';
 
 const isJsxElement = (node: TSESTree.Node): boolean => {
+  if (!node) return false;
+
+  if (node.type === AST_NODE_TYPES.ConditionalExpression) {
+    return isJsxElement(node.consequent) || isJsxElement(node.alternate);
+  }
+
   return (
     node.type === AST_NODE_TYPES.JSXElement ||
     node.type === AST_NODE_TYPES.JSXFragment ||
@@ -16,6 +22,83 @@ const isJsxReturnType = (node: TSESTree.TSTypeAnnotation): boolean => {
     const typeName = node.typeAnnotation.typeName;
     if (typeName.type === AST_NODE_TYPES.Identifier) {
       return ['JSX', 'ReactNode', 'ReactElement'].includes(typeName.name);
+    }
+    if (typeName.type === AST_NODE_TYPES.TSQualifiedName) {
+      return typeName.left.type === AST_NODE_TYPES.Identifier &&
+             typeName.left.name === 'JSX' &&
+             typeName.right.type === AST_NODE_TYPES.Identifier &&
+             typeName.right.name === 'Element';
+    }
+  }
+  return false;
+};
+
+const containsJsxInBlockStatement = (node: TSESTree.BlockStatement): boolean => {
+  const variablesWithJsx = new Set<string>();
+
+  for (const statement of node.body) {
+    // Check variable declarations for JSX assignments
+    if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
+      for (const declarator of statement.declarations) {
+        if (declarator.init) {
+          if (declarator.init.type === AST_NODE_TYPES.CallExpression &&
+              containsJsxInUseMemo(declarator.init)) {
+            if (declarator.id.type === AST_NODE_TYPES.Identifier) {
+              variablesWithJsx.add(declarator.id.name);
+            }
+          }
+        }
+      }
+    }
+
+    // Check return statements
+    if (statement.type === AST_NODE_TYPES.ReturnStatement && statement.argument) {
+      if (isJsxElement(statement.argument)) {
+        return true;
+      }
+      if (statement.argument.type === AST_NODE_TYPES.CallExpression) {
+        if (containsJsxInUseMemo(statement.argument)) {
+          return true;
+        }
+      }
+      if (statement.argument.type === AST_NODE_TYPES.Identifier &&
+          variablesWithJsx.has(statement.argument.name)) {
+        return true;
+      }
+    }
+
+    // Check if statements
+    if (statement.type === AST_NODE_TYPES.IfStatement) {
+      if (statement.consequent.type === AST_NODE_TYPES.ReturnStatement &&
+          statement.consequent.argument) {
+        if (isJsxElement(statement.consequent.argument)) {
+          return true;
+        }
+        if (statement.consequent.argument.type === AST_NODE_TYPES.Identifier &&
+            variablesWithJsx.has(statement.consequent.argument.name)) {
+          return true;
+        }
+      }
+      if (statement.consequent.type === AST_NODE_TYPES.BlockStatement &&
+          containsJsxInBlockStatement(statement.consequent)) {
+        return true;
+      }
+      if (statement.alternate) {
+        if (statement.alternate.type === AST_NODE_TYPES.ReturnStatement &&
+            statement.alternate.argument) {
+          if (isJsxElement(statement.alternate.argument)) {
+            return true;
+          }
+          if (statement.alternate.argument.type === AST_NODE_TYPES.Identifier &&
+              variablesWithJsx.has(statement.alternate.argument.name)) {
+            return true;
+          }
+        }
+        if (statement.alternate.type === AST_NODE_TYPES.BlockStatement &&
+            containsJsxInBlockStatement(statement.alternate)) {
+          return true;
+        }
+      }
     }
   }
   return false;
@@ -31,17 +114,21 @@ const containsJsxInUseMemo = (node: TSESTree.CallExpression): boolean => {
     if (callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
         callback.type === AST_NODE_TYPES.FunctionExpression) {
       const body = callback.body;
-      if (body.type === AST_NODE_TYPES.JSXElement ||
-          body.type === AST_NODE_TYPES.JSXFragment) {
+      if (isJsxElement(body)) {
         return true;
       }
       if (body.type === AST_NODE_TYPES.BlockStatement) {
-        for (const statement of body.body) {
-          if (statement.type === AST_NODE_TYPES.ReturnStatement &&
-              statement.argument &&
-              isJsxElement(statement.argument)) {
-            return true;
-          }
+        return containsJsxInBlockStatement(body);
+      }
+      if (body.type === AST_NODE_TYPES.CallExpression &&
+          body.callee.type === AST_NODE_TYPES.MemberExpression &&
+          body.callee.property.type === AST_NODE_TYPES.Identifier &&
+          body.callee.property.name === 'map') {
+        const mapCallback = body.arguments[0];
+        if ((mapCallback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+             mapCallback.type === AST_NODE_TYPES.FunctionExpression) &&
+            isJsxElement(mapCallback.body)) {
+          return true;
         }
       }
     }
@@ -79,28 +166,11 @@ export const noJsxInHooks = createRule<[], MessageIds>({
 
           // Check return statements
           if (node.body.type === AST_NODE_TYPES.BlockStatement) {
-            for (const statement of node.body.body) {
-              if (statement.type === AST_NODE_TYPES.ReturnStatement && statement.argument) {
-                if (isJsxElement(statement.argument)) {
-                  context.report({
-                    node: node.id,
-                    messageId: 'noJsxInHooks',
-                  });
-                  break;
-                }
-
-                // Check for JSX returned via useMemo
-                if (
-                  statement.argument.type === AST_NODE_TYPES.CallExpression &&
-                  containsJsxInUseMemo(statement.argument)
-                ) {
-                  context.report({
-                    node: node.id,
-                    messageId: 'noJsxInHooks',
-                  });
-                  break;
-                }
-              }
+            if (containsJsxInBlockStatement(node.body)) {
+              context.report({
+                node: node.id,
+                messageId: 'noJsxInHooks',
+              });
             }
           }
         }
@@ -133,31 +203,11 @@ export const noJsxInHooks = createRule<[], MessageIds>({
 
           // Check block body returns
           if (node.body.type === AST_NODE_TYPES.BlockStatement) {
-            for (const statement of node.body.body) {
-              if (
-                statement.type === AST_NODE_TYPES.ReturnStatement &&
-                statement.argument
-              ) {
-                if (isJsxElement(statement.argument)) {
-                  context.report({
-                    node: parent.id,
-                    messageId: 'noJsxInHooks',
-                  });
-                  break;
-                }
-
-                // Check for JSX returned via useMemo
-                if (
-                  statement.argument.type === AST_NODE_TYPES.CallExpression &&
-                  containsJsxInUseMemo(statement.argument)
-                ) {
-                  context.report({
-                    node: parent.id,
-                    messageId: 'noJsxInHooks',
-                  });
-                  break;
-                }
-              }
+            if (containsJsxInBlockStatement(node.body)) {
+              context.report({
+                node: parent.id,
+                messageId: 'noJsxInHooks',
+              });
             }
           }
         }
