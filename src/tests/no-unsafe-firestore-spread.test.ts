@@ -3,6 +3,69 @@ import { noUnsafeFirestoreSpread } from '../rules/no-unsafe-firestore-spread';
 
 ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
   valid: [
+    // Valid: Non-Firestore set methods
+    {
+      code: `
+        const mySet = new Set();
+        mySet.add(1);
+        const spreadArray = [...mySet];
+      `,
+    },
+    {
+      code: `
+        const myMap = new Map();
+        myMap.set('key', { ...someObject });
+      `,
+    },
+    {
+      code: `
+        class CustomClass {
+          set property({ ...value }) {
+            this._property = value;
+          }
+        }
+      `,
+    },
+    {
+      code: `
+        const customObj = {
+          set: (data) => {
+            return { ...data };
+          }
+        };
+        customObj.set({ ...someData });
+      `,
+    },
+    {
+      code: `
+        React.useState(new Set([...items]));
+      `,
+    },
+    {
+      code: `
+        // DOM Set methods
+        element.dataset.value = JSON.stringify({ ...data });
+      `,
+    },
+    {
+      code: `
+        // Set with options but not merge: true
+        customRef.set({ ...data }, { overwrite: true });
+      `,
+    },
+    {
+      code: `
+        // Method named setData
+        obj.setData({ ...data });
+      `,
+    },
+    {
+      code: `
+        // Set in promise chain
+        Promise.resolve()
+          .then(set => set({ ...data }));
+      `,
+    },
     // Valid: Using dot notation for object updates
     {
       code: `
@@ -114,6 +177,57 @@ ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
           },
           { merge: true }
         );
+      `,
+    },
+    {
+      code: `
+        // Frontend SDK: Valid import and usage without spreads
+        import { doc, setDoc } from 'firebase/firestore';
+        await setDoc(doc(db, 'users', userId), {
+          name: 'John',
+          age: 30
+        }, { merge: true });
+      `,
+    },
+    {
+      code: `
+        // Frontend SDK: Valid usage with FieldValue
+        import { doc, setDoc, arrayUnion } from 'firebase/firestore';
+        await setDoc(doc(db, 'users', userId), {
+          tags: arrayUnion('new-tag'),
+          lastUpdate: serverTimestamp()
+        }, { merge: true });
+      `,
+    },
+    {
+      code: `
+        // Frontend SDK: Valid nested paths
+        import { doc, setDoc } from 'firebase/firestore';
+        await setDoc(doc(db, 'users', userId), {
+          'profile.settings.theme': 'dark',
+          'profile.settings.notifications': true
+        }, { merge: true });
+      `,
+    },
+    {
+      code: `
+        // Frontend SDK: Valid transaction
+        import { doc, runTransaction } from 'firebase/firestore';
+        await runTransaction(db, async (transaction) => {
+          transaction.set(doc(db, 'users', userId), {
+            counter: increment(1)
+          }, { merge: true });
+        });
+      `,
+    },
+    {
+      code: `
+        // Frontend SDK: Valid batch
+        import { doc, writeBatch } from 'firebase/firestore';
+        const batch = writeBatch(db);
+        batch.set(doc(db, 'users', userId), {
+          'status.online': true
+        }, { merge: true });
       `,
     },
   ],
@@ -300,6 +414,68 @@ ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
       `,
       errors: [
         { messageId: 'unsafeObjectSpread' },
+        { messageId: 'unsafeObjectSpread' },
+        { messageId: 'unsafeArraySpread' },
+      ],
+    },
+    // Add frontend SDK invalid cases
+    {
+      code: `
+        // Frontend SDK: Invalid object spread
+        import { doc, setDoc } from 'firebase/firestore';
+        await setDoc(doc(db, 'users', userId), {
+          profile: {
+            ...existingProfile,
+            lastLogin: serverTimestamp()
+          }
+        }, { merge: true });
+      `,
+      errors: [{ messageId: 'unsafeObjectSpread' }],
+    },
+    {
+      code: `
+        // Frontend SDK: Invalid array spread in transaction
+        import { doc, runTransaction } from 'firebase/firestore';
+        await runTransaction(db, async (transaction) => {
+          transaction.set(doc(db, 'users', userId), {
+            tags: [...existingTags, 'new-tag']
+          }, { merge: true });
+        });
+      `,
+      errors: [{ messageId: 'unsafeArraySpread' }],
+    },
+    {
+      code: `
+        // Frontend SDK: Invalid nested spreads in batch
+        import { doc, writeBatch } from 'firebase/firestore';
+        const batch = writeBatch(db);
+        batch.set(doc(db, 'users', userId), {
+          settings: {
+            ...currentSettings,
+            notifications: {
+              ...currentNotifications,
+              email: true
+            }
+          }
+        }, { merge: true });
+      `,
+      errors: [
+        { messageId: 'unsafeObjectSpread' },
+        { messageId: 'unsafeObjectSpread' },
+      ],
+    },
+    {
+      code: `
+        // Frontend SDK: Invalid mix of spreads
+        import { doc, setDoc } from 'firebase/firestore';
+        await setDoc(doc(db, 'users', userId), {
+          profile: {
+            ...baseProfile,
+            preferences: [...defaultPreferences]
+          }
+        }, { merge: true });
+      `,
+      errors: [
         { messageId: 'unsafeObjectSpread' },
         { messageId: 'unsafeArraySpread' },
       ],
