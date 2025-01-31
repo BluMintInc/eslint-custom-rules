@@ -36,6 +36,38 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
       code: `const syncData = () => null;`,
     },
 
+    // Technical verb functions
+    {
+      code: `function enqueueTask() { return null; }`,
+    },
+    {
+      code: `function dequeueMessage() { return null; }`,
+    },
+    {
+      code: `function memoizeResult() { return null; }`,
+    },
+    {
+      code: `function serializeData() { return null; }`,
+    },
+    {
+      code: `function deserializeResponse() { return null; }`,
+    },
+    {
+      code: `function instantiateClass() { return null; }`,
+    },
+    {
+      code: `function marshalRequest() { return null; }`,
+    },
+    {
+      code: `function unmarshalResponse() { return null; }`,
+    },
+    {
+      code: `class QueueHelper {
+        async enqueueTask() { return null; }
+        async dequeueMessage() { return null; }
+      }`,
+    },
+
     // Functions starting with "to" or "with"
     {
       code: `function toNumber(value) { return +value; }`,
@@ -69,6 +101,15 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
         fetchData() { }
         processRequest() { }
         toString() { }
+      }`,
+    },
+
+    // Class constructors (should be ignored)
+    {
+      code: `class User {
+        constructor(name) {
+          this.name = name;
+        }
       }`,
     },
 

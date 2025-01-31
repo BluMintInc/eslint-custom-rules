@@ -54,17 +54,46 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
       return false;
     }
 
-    function getTypeNames(node: TSESTree.TypeNode | undefined): string[] {
+    function findTypeParameters(node: TSESTree.Node): Set<string> {
+      // Find all type parameters in scope
+      const typeParams = new Set<string>();
+      let current: TSESTree.Node | undefined = node;
+      while (current) {
+        // Handle type parameters in function declarations
+        if (current.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+            current.type === AST_NODE_TYPES.FunctionDeclaration) {
+          if ('typeParameters' in current && current.typeParameters) {
+            current.typeParameters.params.forEach((param) => {
+              if (param.type === AST_NODE_TYPES.TSTypeParameter) {
+                typeParams.add(param.name.name);
+              }
+            });
+          }
+        }
+        current = current.parent as TSESTree.Node | undefined;
+      }
+      return typeParams;
+    }
+
+    function getTypeNames(node: TSESTree.TypeNode | undefined, typeParams?: Set<string>): string[] {
       if (!node) return [];
+
+      // Initialize type parameters if not provided
+      if (!typeParams) {
+        typeParams = findTypeParameters(node);
+      }
 
       switch (node.type) {
         case AST_NODE_TYPES.TSTypeReference:
           if (node.typeName.type === AST_NODE_TYPES.Identifier) {
+            // Skip checking generic type parameters (e.g., T in <T extends DocumentData>)
+            if (typeParams.has(node.typeName.name)) return [];
+
             const names = [node.typeName.name];
-            // For generic types like AuthenticatedRequest<Params>, check both the base type and type parameters
+            // For generic types like AuthenticatedRequest<Params>, check type arguments
             if ('typeParameters' in node && node.typeParameters) {
               node.typeParameters.params.forEach((param) => {
-                names.push(...getTypeNames(param));
+                names.push(...getTypeNames(param, typeParams));
               });
             }
             return names;

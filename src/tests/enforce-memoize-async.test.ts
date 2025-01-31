@@ -57,6 +57,40 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
         }
       `,
     },
+    // Static async method with no parameters (should be ignored)
+    {
+      code: `
+        import { Memoize } from 'typescript-memoize';
+        class Example {
+          static async getData() {
+            return await fetch('data');
+          }
+        }
+      `,
+    },
+    // Static async method with one parameter (should be ignored)
+    {
+      code: `
+        import { Memoize } from 'typescript-memoize';
+        class Example {
+          static async getData(id: string) {
+            return await fetch(\`data/\${id}\`);
+          }
+        }
+      `,
+    },
+    // Static async method with @Memoize (should be ignored)
+    {
+      code: `
+        import { Memoize } from 'typescript-memoize';
+        class Example {
+          @Memoize()
+          static async getData() {
+            return await fetch('data');
+          }
+        }
+      `,
+    },
   ],
   invalid: [
     // Missing decorator on async method with no parameters
