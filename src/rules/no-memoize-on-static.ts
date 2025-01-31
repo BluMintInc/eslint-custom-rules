@@ -34,14 +34,20 @@ export const noMemoizeOnStatic = createRule<[], MessageIds>({
       'MethodDefinition[static=true]'(node: TSESTree.MethodDefinition) {
         if (node.decorators) {
           for (const decorator of node.decorators) {
-            if (decorator.expression.type === AST_NODE_TYPES.CallExpression) {
-              const callee = decorator.expression.callee;
-              if (callee.type === AST_NODE_TYPES.Identifier && memoizeAliases.has(callee.name)) {
-                context.report({
-                  node: decorator,
-                  messageId: 'noMemoizeOnStatic',
-                });
-              }
+            const expr = decorator.expression;
+            if (
+              // Handle @Memoize()
+              (expr.type === AST_NODE_TYPES.CallExpression &&
+                expr.callee.type === AST_NODE_TYPES.Identifier &&
+                memoizeAliases.has(expr.callee.name)) ||
+              // Handle @Memoize (without parentheses)
+              (expr.type === AST_NODE_TYPES.Identifier &&
+                memoizeAliases.has(expr.name))
+            ) {
+              context.report({
+                node: decorator,
+                messageId: 'noMemoizeOnStatic',
+              });
             }
           }
         }
