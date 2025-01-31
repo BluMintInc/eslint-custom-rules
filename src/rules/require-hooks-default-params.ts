@@ -23,7 +23,7 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
       return name.startsWith('use') && name[3]?.toUpperCase() === name[3];
     }
 
-    function hasAllOptionalProperties(typeNode: TSESTree.TypeNode): boolean {
+    function hasAllOptionalProperties(typeNode: TSESTree.TypeNode | TSESTree.TSTypeAliasDeclaration | TSESTree.TSInterfaceDeclaration): boolean {
       // Handle type literals directly
       if (typeNode.type === AST_NODE_TYPES.TSTypeLiteral) {
         return typeNode.members.every(member => {
@@ -44,7 +44,9 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
         const scope = context.getScope();
         const variable = scope.variables.find(v => v.name === typeName.name);
         if (!variable || !variable.defs[0]?.node) {
-          return false;
+          // If we can't find the type definition, assume it's a type with all optional properties
+          // This handles cases where the type is imported from another module
+          return true;
         }
 
         const def = variable.defs[0].node;
@@ -58,6 +60,26 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
             return member.optional === true;
           });
         }
+
+        // If we found the type definition but it's not a type alias or interface declaration,
+        // assume it's a type with all optional properties
+        // This handles cases where the type is imported from another module
+        return true;
+      }
+
+      // Handle type alias declarations
+      if (typeNode.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
+        return hasAllOptionalProperties(typeNode.typeAnnotation);
+      }
+
+      // Handle interface declarations
+      if (typeNode.type === AST_NODE_TYPES.TSInterfaceDeclaration) {
+        return typeNode.body.body.every(member => {
+          if (member.type !== AST_NODE_TYPES.TSPropertySignature) {
+            return false;
+          }
+          return member.optional === true;
+        });
       }
 
       return false;
@@ -76,7 +98,69 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
 
       // If it's an object pattern, check if it needs a default value
       if (param.type === AST_NODE_TYPES.ObjectPattern && param.typeAnnotation) {
-        if (hasAllOptionalProperties(param.typeAnnotation.typeAnnotation)) {
+        const typeAnnotation = param.typeAnnotation.typeAnnotation;
+        if (typeAnnotation.type === AST_NODE_TYPES.TSTypeReference) {
+          const typeName = typeAnnotation.typeName;
+          if (typeName.type === AST_NODE_TYPES.Identifier) {
+            const scope = context.getScope();
+            const variable = scope.variables.find(v => v.name === typeName.name);
+            if (!variable || !variable.defs[0]?.node) {
+              // If we can't find the type definition, assume it's a type with all optional properties
+              // This handles cases where the type is imported from another module
+              context.report({
+                node: param,
+                messageId: 'requireDefaultParams',
+                fix(fixer) {
+                  const paramText = context.getSourceCode().getText(param);
+                  return fixer.replaceText(param, `${paramText} = {}`);
+                },
+              });
+              return;
+            }
+
+            const def = variable.defs[0].node;
+            if (def.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
+              if (hasAllOptionalProperties(def.typeAnnotation)) {
+                context.report({
+                  node: param,
+                  messageId: 'requireDefaultParams',
+                  fix(fixer) {
+                    const paramText = context.getSourceCode().getText(param);
+                    return fixer.replaceText(param, `${paramText} = {}`);
+                  },
+                });
+              }
+            } else if (def.type === AST_NODE_TYPES.TSInterfaceDeclaration) {
+              if (def.body.body.every(member => {
+                if (member.type !== AST_NODE_TYPES.TSPropertySignature) {
+                  return false;
+                }
+                return member.optional === true;
+              })) {
+                context.report({
+                  node: param,
+                  messageId: 'requireDefaultParams',
+                  fix(fixer) {
+                    const paramText = context.getSourceCode().getText(param);
+                    return fixer.replaceText(param, `${paramText} = {}`);
+                  },
+                });
+              }
+            } else {
+              // If we found the type definition but it's not a type alias or interface declaration,
+              // assume it's a type with all optional properties
+              // This handles cases where the type is imported from another module
+              context.report({
+                node: param,
+                messageId: 'requireDefaultParams',
+                fix(fixer) {
+                  const paramText = context.getSourceCode().getText(param);
+                  return fixer.replaceText(param, `${paramText} = {}`);
+                },
+              });
+            }
+          }
+        } else if (hasAllOptionalProperties(typeAnnotation)) {
           context.report({
             node: param,
             messageId: 'requireDefaultParams',
