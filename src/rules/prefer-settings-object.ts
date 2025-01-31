@@ -58,6 +58,9 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
     const finalOptions = { ...defaultOptions, ...options };
 
     function getParameterType(param: TSESTree.Parameter): string {
+      if (param.type === AST_NODE_TYPES.AssignmentPattern) {
+        return getParameterType(param.left as TSESTree.Parameter);
+      }
       if (param.type === AST_NODE_TYPES.Identifier && param.typeAnnotation) {
         const typeNode = param.typeAnnotation.typeAnnotation;
         if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
@@ -65,6 +68,9 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
             ? typeNode.typeName.name
             : 'unknown';
         }
+        if (typeNode.type === AST_NODE_TYPES.TSStringKeyword) return 'string';
+        if (typeNode.type === AST_NODE_TYPES.TSNumberKeyword) return 'number';
+        if (typeNode.type === AST_NODE_TYPES.TSBooleanKeyword) return 'boolean';
         return typeNode.type;
       }
       return 'unknown';
@@ -115,7 +121,7 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
 
       const params = node.params;
 
-      // Check for too many parameters
+      // Check for too many parameters first
       const minParams = finalOptions.minimumParameters !== undefined
         ? finalOptions.minimumParameters
         : defaultOptions.minimumParameters!;
@@ -128,7 +134,7 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
         return;
       }
 
-      // Check for same type parameters if enabled
+      // Then check for same type parameters if enabled
       if (finalOptions.checkSameTypeParameters && params.length >= 2) {
         if (hasSameTypeParameters(params)) {
           context.report({
