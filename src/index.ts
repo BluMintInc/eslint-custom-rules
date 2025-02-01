@@ -55,7 +55,7 @@ import { noJsxInHooks } from './rules/no-jsx-in-hooks';
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.5.4',
+    version: '1.5.5',
   },
   parseOptions: {
     ecmaVersion: 2020,
