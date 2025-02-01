@@ -4595,13 +4595,27 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
       return isVerb;
     }
 
-    function isJsxReturnFunction(node: TSESTree.Node): boolean {
+    function isReactComponent(node: TSESTree.Node): boolean {
       if (
         node.type !== AST_NODE_TYPES.FunctionDeclaration &&
         node.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
         node.type !== AST_NODE_TYPES.FunctionExpression
       ) {
         return false;
+      }
+
+      // Check if function has React component type annotation
+      if (node.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+        const parent = node.parent;
+        if (parent?.type === AST_NODE_TYPES.VariableDeclarator) {
+          const id = parent.id;
+          if (id.type === AST_NODE_TYPES.Identifier && id.typeAnnotation?.type === AST_NODE_TYPES.TSTypeAnnotation) {
+            const typeText = context.getSourceCode().getText(id.typeAnnotation.typeAnnotation);
+            if (typeText.includes('React.') || typeText.includes('FC') || typeText.includes('FunctionComponent')) {
+              return true;
+            }
+          }
+        }
       }
 
       // Check if function returns JSX
@@ -4613,7 +4627,7 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
       FunctionDeclaration(node) {
         if (!node.id) return;
 
-        if (isJsxReturnFunction(node)) {
+        if (isReactComponent(node)) {
           return;
         }
 
@@ -4633,7 +4647,7 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
           node.init?.type === AST_NODE_TYPES.ArrowFunctionExpression ||
           node.init?.type === AST_NODE_TYPES.FunctionExpression
         ) {
-          if (isJsxReturnFunction(node.init)) {
+          if (isReactComponent(node.init)) {
             return;
           }
 

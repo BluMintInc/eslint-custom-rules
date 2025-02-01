@@ -153,6 +153,33 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
         ecmaFeatures: { jsx: true },
       },
     },
+    {
+      code: `/** @jsx jsx */
+      const StatsPanelUnmemoized: React.FC<StatsPanelProps> = ({ data }) => {
+        return <div className="stats-panel">{/* component implementation */}</div>;
+      }`,
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+      },
+    },
+    {
+      code: `/** @jsx jsx */
+      const UserProfile: FunctionComponent<UserProfileProps> = ({ user }) => {
+        return <div>{user.name}</div>;
+      }`,
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+      },
+    },
+    {
+      code: `/** @jsx jsx */
+      const DataTable: React.FunctionComponent<DataTableProps> = ({ data }) => {
+        return <table>{/* table implementation */}</table>;
+      }`,
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+      },
+    },
   ],
   invalid: [
     // Invalid function names (not verb phrases)
