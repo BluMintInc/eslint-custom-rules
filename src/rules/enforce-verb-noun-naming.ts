@@ -4575,6 +4575,10 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
       }
 
       // Check against our comprehensive verbs list first
+      // Special case: 'get' is only valid in getter methods, not regular methods
+      if (firstWordLower === 'get') {
+        return false;
+      }
       if (VERBS_SET.has(firstWordLower)) {
         return true;
       }

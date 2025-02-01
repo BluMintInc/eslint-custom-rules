@@ -122,6 +122,14 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
         get dataCache() { return null; }
       }`,
     },
+    // Private getters (should be ignored since they represent properties)
+    {
+      code: `class DocumentPropagationManager<TData extends DocumentData, TOmitKey extends keyof TData> {
+        private get propogatorFactories() {
+          return this.settings.propogatorFactories;
+        }
+      }`,
+    },
 
     // Variables that are not functions (should be ignored)
     {
@@ -200,6 +208,19 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
         data() { }
       }`,
       errors: [{ messageId: 'functionVerbPhrase' }],
+    },
+    // Regular methods starting with 'get' should be invalid (only getters can use 'get')
+    {
+      code: `class Service {
+        getData() { }
+        getUser() { }
+        getConfig() { }
+      }`,
+      errors: [
+        { messageId: 'functionVerbPhrase' },
+        { messageId: 'functionVerbPhrase' },
+        { messageId: 'functionVerbPhrase' },
+      ],
     },
   ],
 });
