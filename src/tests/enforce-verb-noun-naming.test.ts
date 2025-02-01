@@ -112,6 +112,14 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
         }
       }`,
     },
+    // Class constructors with TypeScript parameter properties (should be ignored)
+    {
+      code: `class DocContextFactory<TDoc extends DocumentData> {
+        constructor(private readonly displayName: string) {
+          this.Context.displayName = displayName;
+        }
+      }`,
+    },
 
     // Class getters (should be ignored since they represent properties)
     {
