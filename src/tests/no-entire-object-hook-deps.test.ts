@@ -137,6 +137,28 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    // Using object spread in JSX should be valid
+    {
+      code: `
+        const SelectableEventsCalendar = (props) => {
+          useEffect(() => {
+            return <AlgoliaEventsCalendar {...props} />;
+          }, [props]);
+          return null;
+        };
+      `,
+    },
+    // Using object spread in JSX with other props should be valid
+    {
+      code: `
+        const SelectableEventsCalendar = (props) => {
+          useEffect(() => {
+            return <AlgoliaEventsCalendar {...props} extraProp="value" />;
+          }, [props]);
+          return null;
+        };
+      `,
+    },
   ],
   invalid: [
     // Optional chaining case
