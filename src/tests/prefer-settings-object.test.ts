@@ -15,6 +15,11 @@ ruleTesterTs.run('prefer-settings-object', preferSettingsObject, {
       code: `function diffTypes(a: string, b: number) { return a + b; }`,
       options: [{ checkSameTypeParameters: true }],
     },
+    // Bug fix test case: Function with different types and default values
+    {
+      code: `function findFunctionFiles(subdirectory: string = './', skipScripts: boolean = true) { return []; }`,
+      options: [{ checkSameTypeParameters: true }],
+    },
     // Ignored variadic functions
     {
       code: `function sum(...numbers: number[]) { return numbers.reduce((a, b) => a + b, 0); }`,

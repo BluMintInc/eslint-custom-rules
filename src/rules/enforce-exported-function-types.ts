@@ -163,8 +163,9 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
       const sourceCode = context.getSourceCode();
       const program = sourceCode.ast;
 
-      // Check for imported types
-      const importedTypes = program.body.filter((node) => {
+      // Check for imported types first - if found, return true immediately
+      // since imported types are already available to consumers
+      const hasImportedType = program.body.some((node) => {
         if (node.type === AST_NODE_TYPES.ImportDeclaration) {
           return node.specifiers.some(
             (specifier) =>
@@ -175,7 +176,7 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
         return false;
       });
 
-      if (importedTypes.length > 0) {
+      if (hasImportedType) {
         return true;
       }
 
