@@ -1,3 +1,10 @@
+## [1.5.3](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.5.2...v1.5.3) (2025-02-01)
+
+
+### Bug Fixes
+
+* **.cursorrules:** force upgrade version ([02a87c2](https://github.com/BluMintInc/eslint-custom-rules/commit/02a87c25c80258d497452617e43a655103f26273))
+
 ## [1.5.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.5.1...v1.5.2) (2025-01-31)
 
 
