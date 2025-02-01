@@ -4595,6 +4595,43 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
       return isVerb;
     }
 
+    function isPascalCase(name: string): boolean {
+      return /^[A-Z][a-zA-Z0-9]*$/.test(name);
+    }
+
+    function hasPropsParameter(node: TSESTree.FunctionDeclaration | TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression): boolean {
+      if (!node.params.length) return false;
+
+      const firstParam = node.params[0];
+      if (firstParam.type === AST_NODE_TYPES.ObjectPattern) {
+        return true; // Destructured props
+      }
+
+      if (firstParam.type === AST_NODE_TYPES.Identifier) {
+        const paramName = firstParam.name.toLowerCase();
+        return paramName === 'props';
+      }
+
+      return false;
+    }
+
+    function hasJsxReturn(node: TSESTree.Node): boolean {
+      const sourceCode = context.getSourceCode();
+      const text = sourceCode.getText(node);
+
+      // Check for direct JSX returns
+      if (text.includes('return <') || text.includes('=> <')) {
+        return true;
+      }
+
+      // Check for JSX assigned to variables then returned
+      if (text.includes('const ') && text.includes('<') && text.includes('return')) {
+        return true;
+      }
+
+      return false;
+    }
+
     function isReactComponent(node: TSESTree.Node): boolean {
       if (
         node.type !== AST_NODE_TYPES.FunctionDeclaration &&
@@ -4604,24 +4641,46 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
         return false;
       }
 
-      // Check if function has React component type annotation
-      if (node.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+      // Get the function name
+      let functionName = '';
+      if (node.type === AST_NODE_TYPES.FunctionDeclaration && node.id) {
+        functionName = node.id.name;
+      } else if (node.type === AST_NODE_TYPES.ArrowFunctionExpression || node.type === AST_NODE_TYPES.FunctionExpression) {
         const parent = node.parent;
-        if (parent?.type === AST_NODE_TYPES.VariableDeclarator) {
-          const id = parent.id;
-          if (id.type === AST_NODE_TYPES.Identifier && id.typeAnnotation?.type === AST_NODE_TYPES.TSTypeAnnotation) {
-            const typeText = context.getSourceCode().getText(id.typeAnnotation.typeAnnotation);
-            if (typeText.includes('React.') || typeText.includes('FC') || typeText.includes('FunctionComponent')) {
-              return true;
-            }
-          }
+        if (parent?.type === AST_NODE_TYPES.VariableDeclarator && parent.id.type === AST_NODE_TYPES.Identifier) {
+          functionName = parent.id.name;
         }
       }
 
-      // Check if function returns JSX
-      const sourceCode = context.getSourceCode();
-      const text = sourceCode.getText(node);
-      return text.includes('return <') || text.includes('=> <');
+      // Check for React component indicators
+      const indicators = [
+        // 1. PascalCase naming
+        functionName && isPascalCase(functionName),
+
+        // 2. Props parameter
+        hasPropsParameter(node),
+
+        // 3. JSX return
+        hasJsxReturn(node),
+
+        // 4. React type annotations
+        (() => {
+          if (node.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+            const parent = node.parent;
+            if (parent?.type === AST_NODE_TYPES.VariableDeclarator) {
+              const id = parent.id;
+              if (id.type === AST_NODE_TYPES.Identifier && id.typeAnnotation?.type === AST_NODE_TYPES.TSTypeAnnotation) {
+                const typeText = context.getSourceCode().getText(id.typeAnnotation.typeAnnotation);
+                return typeText.includes('React.') || typeText.includes('FC') || typeText.includes('FunctionComponent');
+              }
+            }
+          }
+          return false;
+        })()
+      ];
+
+      // Consider it a React component if it matches at least 2 indicators
+      return indicators.filter(Boolean).length >= 2;
     }
     return {
       FunctionDeclaration(node) {
