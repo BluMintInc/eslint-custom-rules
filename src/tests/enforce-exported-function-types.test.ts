@@ -202,6 +202,38 @@ ruleTesterJsx.run(
         };
       `,
       },
+      // Valid case: imported type used in exported function parameter
+      {
+        code: `
+        import { SafeTimestamp } from '../types/SafeTimestamp';
+
+        export function processTimestamp(timestamp: SafeTimestamp) {
+          // Implementation
+        }
+      `,
+      },
+      // Valid case: imported type used in exported function return type
+      {
+        code: `
+        import { SafeTimestamp } from '../types/SafeTimestamp';
+
+        export function getCurrentTimestamp(): SafeTimestamp {
+          // Implementation
+          return { seconds: 0, nanoseconds: 0 };
+        }
+      `,
+      },
+      // Valid case: imported type used in exported arrow function
+      {
+        code: `
+        import { SafeTimestamp } from '../types/SafeTimestamp';
+
+        export const processTimestamp = (timestamp: SafeTimestamp): SafeTimestamp => {
+          // Implementation
+          return timestamp;
+        };
+      `,
+      },
     ],
     invalid: [
       // Invalid case: non-exported type with exported function
