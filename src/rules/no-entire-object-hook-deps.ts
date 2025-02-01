@@ -116,6 +116,19 @@ function getObjectUsagesInHook(
           needsEntireObject = true;
         }
       });
+    } else if (node.type === AST_NODE_TYPES.JSXElement || node.type === AST_NODE_TYPES.JSXFragment) {
+      // If we find a JSX element, check its attributes for spread operator
+      if (node.type === AST_NODE_TYPES.JSXElement) {
+        node.openingElement.attributes.forEach((attr) => {
+          if (
+            attr.type === AST_NODE_TYPES.JSXSpreadAttribute &&
+            attr.argument.type === AST_NODE_TYPES.Identifier &&
+            attr.argument.name === objectName
+          ) {
+            needsEntireObject = true;
+          }
+        });
+      }
     } else if (node.type === AST_NODE_TYPES.SpreadElement) {
       // If we find a spread operator with our target object, consider it as accessing all properties
       if (
