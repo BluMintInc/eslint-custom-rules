@@ -113,6 +113,18 @@ function isInterfaceOrAbstractMethodSignature(node: TSESTree.Node): boolean {
   return false;
 }
 
+function isTypeGuardFunction(node: TSESTree.Node): boolean {
+  if (!('returnType' in node) || !node.returnType) return false;
+
+  const returnType = node.returnType;
+  if (returnType.type !== AST_NODE_TYPES.TSTypeAnnotation) return false;
+
+  const typeAnnotation = returnType.typeAnnotation;
+  if (typeAnnotation.type !== AST_NODE_TYPES.TSTypePredicate) return false;
+
+  return true;
+}
+
 export const noExplicitReturnType: TSESLint.RuleModule<
   'noExplicitReturnType',
   Options
@@ -121,7 +133,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Disallow explicit return type annotations on functions when TypeScript can infer them. This reduces code verbosity and maintenance burden while leveraging TypeScript\'s powerful type inference. Exceptions are made for recursive functions, overloaded functions, interface methods, and abstract methods where explicit types improve clarity.',
+      description: 'Disallow explicit return type annotations on functions when TypeScript can infer them. This reduces code verbosity and maintenance burden while leveraging TypeScript\'s powerful type inference. Exceptions are made for type guard functions (using the `is` keyword), recursive functions, overloaded functions, interface methods, and abstract methods where explicit types improve clarity.',
       recommended: 'error',
       requiresTypeChecking: false,
       extendsBaseRule: false,
@@ -172,8 +184,8 @@ export const noExplicitReturnType: TSESLint.RuleModule<
         if (!node.returnType) return;
 
         if (
-          mergedOptions.allowRecursiveFunctions &&
-          isRecursiveFunction(node)
+          isTypeGuardFunction(node) ||
+          (mergedOptions.allowRecursiveFunctions && isRecursiveFunction(node))
         ) {
           return;
         }
@@ -189,8 +201,8 @@ export const noExplicitReturnType: TSESLint.RuleModule<
         if (!node.returnType) return;
 
         if (
-          mergedOptions.allowRecursiveFunctions &&
-          isRecursiveFunction(node)
+          isTypeGuardFunction(node) ||
+          (mergedOptions.allowRecursiveFunctions && isRecursiveFunction(node))
         ) {
           return;
         }
@@ -204,6 +216,10 @@ export const noExplicitReturnType: TSESLint.RuleModule<
 
       ArrowFunctionExpression(node) {
         if (!node.returnType) return;
+
+        if (isTypeGuardFunction(node)) {
+          return;
+        }
 
         context.report({
           node: node.returnType,
