@@ -3,6 +3,9 @@ import { RuleTester } from 'eslint';
 
 export const ruleTesterTs = new ESLintUtils.RuleTester({
   parser: '@typescript-eslint/parser',
+  parserOptions: {
+    ecmaVersion: 2020,
+  },
 });
 
 export const ruleTesterJsx = new ESLintUtils.RuleTester({
