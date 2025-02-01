@@ -41,9 +41,33 @@ export const noUnusedProps = createRule({
             } else if (typeNode.type === AST_NODE_TYPES.TSIntersectionType) {
               typeNode.types.forEach(extractProps);
             } else if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
-              // For referenced types like FormControlLabelProps, we need to track that these props should be forwarded
               if (typeNode.typeName.type === AST_NODE_TYPES.Identifier) {
-                props[`...${typeNode.typeName.name}`] = typeNode.typeName;
+                if (typeNode.typeName.name === 'Pick' && typeNode.typeParameters) {
+                  // Handle Pick utility type
+                  const [baseType, pickedProps] = typeNode.typeParameters.params;
+                  if (baseType.type === AST_NODE_TYPES.TSTypeReference &&
+                      baseType.typeName.type === AST_NODE_TYPES.Identifier) {
+                    // Extract the picked properties from the union type
+                    if (pickedProps.type === AST_NODE_TYPES.TSUnionType) {
+                      pickedProps.types.forEach((type) => {
+                        if (type.type === AST_NODE_TYPES.TSLiteralType &&
+                            type.literal.type === AST_NODE_TYPES.Literal &&
+                            typeof type.literal.value === 'string') {
+                          // Add each picked property as a regular prop
+                          props[type.literal.value] = type.literal;
+                        }
+                      });
+                    } else if (pickedProps.type === AST_NODE_TYPES.TSLiteralType &&
+                             pickedProps.literal.type === AST_NODE_TYPES.Literal &&
+                             typeof pickedProps.literal.value === 'string') {
+                      // Single property pick
+                      props[pickedProps.literal.value] = pickedProps.literal;
+                    }
+                  }
+                } else {
+                  // For referenced types like FormControlLabelProps, we need to track that these props should be forwarded
+                  props[`...${typeNode.typeName.name}`] = typeNode.typeName;
+                }
               }
             }
           }
