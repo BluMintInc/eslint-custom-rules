@@ -81,6 +81,55 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         sourceType: 'module',
       },
     },
+    {
+      code: `
+        type ChannelGroupProps = {
+          sortGroups: ({ groupNameA, groupNameB }: { groupNameA: string; groupNameB: string }) => number;
+          sortChannels: ({ channelA, channelB }: { channelA: any; channelB: any }) => number;
+          otherProp: string;
+        };
+        type ChannelsProps = Pick<ChannelGroupProps, 'sortGroups' | 'sortChannels'> & {
+          channels: any[];
+          channelGroupId: string;
+          onClick: () => void;
+        };
+        const ChannelsUnmemoized = ({
+          channels,
+          onClick,
+          sortGroups,
+          sortChannels,
+          channelGroupId,
+        }: ChannelsProps) => {
+          const groupedChannels = useMemo(() => {
+            const groups: Record<string, any[]> = {};
+            if (sortChannels) {
+              for (const groupName of Object.keys(groups)) {
+                groups[groupName].sort((channelA, channelB) => {
+                  return sortChannels({ channelA, channelB });
+                });
+              }
+            }
+            return groups;
+          }, [channels, sortChannels]);
+
+          const sortedGroups = useMemo(() => {
+            const groupNames = Object.keys(groupedChannels);
+            groupNames.sort((groupNameA, groupNameB) => {
+              return sortGroups({ groupNameA, groupNameB });
+            });
+            return groupNames;
+          }, [groupedChannels, sortGroups]);
+
+          return <div>{sortedGroups.join(', ')}</div>;
+        };
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
   ],
   invalid: [
     {
