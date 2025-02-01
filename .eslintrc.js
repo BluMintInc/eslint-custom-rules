@@ -9,7 +9,8 @@ module.exports = {
   plugins: [
     '@typescript-eslint',
     'eslint-plugin-eslint-plugin',
-    'import'
+    'import',
+    '@blumintinc/blumint'
   ],
   extends: [
     'plugin:@typescript-eslint/recommended',
@@ -33,7 +34,8 @@ module.exports = {
       'error',
       'always',
       { exceptAfterSingleLine: true }
-    ]
+    ],
+    '@blumintinc/blumint/enforce-verb-noun-naming': 'error'
   },
   overrides: [
     {
