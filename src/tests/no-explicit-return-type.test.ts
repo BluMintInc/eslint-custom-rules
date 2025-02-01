@@ -8,6 +8,13 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
     'const multiply = (a: number, b: number) => a * b;',
     'const obj = { method(a: number) { return a; } };',
 
+    // Type guard functions with is keyword
+    'function isString(value: unknown): value is string { return typeof value === "string"; }',
+    'const isNumber = (value: unknown): value is number => typeof value === "number";',
+    'function isCustomType<T extends object>(obj: unknown): obj is T { return obj instanceof Object; }',
+    'const isLivestream = <TTime = Timestamp>(channelGroup: ChannelGroup<keyof GroupFilterMap, TTime>): channelGroup is ChannelGroup<Capitalize<LivestreamType>, TTime> => { return true; }',
+    'function isLivestreamType(type: FilterType): type is FilterType { return true; }',
+
     // Recursive functions with explicit return type
     {
       code: 'function factorial(n: number): number { if (n <= 1) return 1; return n * factorial(n - 1); }',
