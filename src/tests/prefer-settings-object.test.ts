@@ -37,6 +37,31 @@ ruleTesterTs.run('prefer-settings-object', preferSettingsObject, {
         function createUser({ name, age, isAdmin }: Settings) { return { name, age, isAdmin }; }
       `,
     },
+    // Built-in Promise constructor
+    {
+      code: `
+        await new Promise<webpack.Stats>((resolvePromise, rejectPromise) => {
+          webpack(config, (err, stats) => {
+            if (err || !stats) {
+              rejectPromise(err ?? new Error('No stats returned from webpack'));
+            } else {
+              new PackageGenerator(pathing).writePackageJson();
+              resolvePromise(stats);
+            }
+          });
+        });
+      `,
+    },
+    // Other built-in constructors
+    {
+      code: `
+        const map = new Map<string, string>((entries) => {});
+        const set = new Set<string>((values) => {});
+        const date = new Date(year, month, day);
+        const regex = new RegExp(pattern, flags);
+        const error = new Error(message, options);
+      `,
+    },
   ],
   invalid: [
     // Too many parameters

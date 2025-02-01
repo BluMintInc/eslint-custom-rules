@@ -91,7 +91,32 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
       return false;
     }
 
+    function isBuiltInOrThirdParty(node: TSESTree.Node): boolean {
+      // Check if the node is part of a new expression (constructor call)
+      let parent = node.parent;
+      if (parent?.type === AST_NODE_TYPES.NewExpression) {
+        const callee = parent.callee;
+        if (callee.type === AST_NODE_TYPES.Identifier) {
+          // List of built-in objects that should be ignored
+          const builtInObjects = new Set([
+            'Promise', 'Map', 'Set', 'WeakMap', 'WeakSet',
+            'Int8Array', 'Uint8Array', 'Uint8ClampedArray',
+            'Int16Array', 'Uint16Array', 'Int32Array', 'Uint32Array',
+            'Float32Array', 'Float64Array', 'BigInt64Array', 'BigUint64Array',
+            'ArrayBuffer', 'SharedArrayBuffer', 'DataView',
+            'Date', 'RegExp', 'Error', 'AggregateError', 'EvalError',
+            'RangeError', 'ReferenceError', 'SyntaxError', 'TypeError', 'URIError'
+          ]);
+          return builtInObjects.has(callee.name);
+        }
+      }
+      return false;
+    }
+
     function shouldIgnoreNode(node: TSESTree.Node): boolean {
+      // Ignore built-in objects and third-party modules
+      if (isBuiltInOrThirdParty(node)) return true;
+
       // Ignore variadic functions if configured
       if (finalOptions.ignoreVariadicFunctions) {
         const hasRestParam = node.type === AST_NODE_TYPES.FunctionDeclaration &&
