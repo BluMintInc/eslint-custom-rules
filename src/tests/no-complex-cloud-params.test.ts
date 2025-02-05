@@ -43,6 +43,47 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
         };
       `,
     },
+    // Object with RegExp literal (valid since it's serializable)
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const groupFilter = { pattern: /test-.*/ };
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+    },
+    // Object with BigInt literal (valid since it's serializable)
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const groupFilter = { id: 123n };
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+    },
+    // Object with typed array (valid since it's serializable)
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const groupFilter = { data: new Int32Array([1, 2, 3]) };
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+    },
+    // Object with null prototype
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const groupFilter = Object.create(null);
+          groupFilter.name = 'test';
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+    },
   ],
   invalid: [
     // Object with method
@@ -120,6 +161,177 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
             name: 'group2'
           }];
           await exitChannelGroupExternal({ groupFilters });
+        };
+      `,
+      errors: [{ messageId: 'noComplexObjects' }],
+    },
+    // Object with getter/setter
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const groupFilter = {
+            _name: 'test',
+            get name() { return this._name; },
+            set name(value) { this._name = value; }
+          };
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+      errors: [{ messageId: 'noComplexObjects' }],
+    },
+    // Object with Symbol property
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const groupFilter = {
+            name: 'test',
+            [Symbol.iterator]: function* () { yield 'test'; }
+          };
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+      errors: [{ messageId: 'noComplexObjects' }],
+    },
+    // Object with inherited methods
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const baseFilter = {
+            validate() { return true; }
+          };
+          const groupFilter = Object.create(baseFilter);
+          groupFilter.name = 'test';
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+      errors: [{ messageId: 'noComplexObjects' }],
+    },
+    // Object with bound function
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const validate = function() { return this.name === 'test'; };
+          const groupFilter = {
+            name: 'test',
+            check: validate.bind({ name: 'test' })
+          };
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+      errors: [{ messageId: 'noComplexObjects' }],
+    },
+    // Object with async method
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const groupFilter = {
+            name: 'test',
+            async validate() { return true; }
+          };
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+      errors: [{ messageId: 'noComplexObjects' }],
+    },
+    // Object with generator function
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const groupFilter = {
+            name: 'test',
+            *generate() { yield 'test'; }
+          };
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+      errors: [{ messageId: 'noComplexObjects' }],
+    },
+    // Object with Proxy
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const target = { name: 'test' };
+          const handler = {
+            get(target, prop) { return target[prop]; }
+          };
+          const groupFilter = new Proxy(target, handler);
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+      errors: [{ messageId: 'noComplexObjects' }],
+    },
+    // Object with circular reference
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const groupFilter: any = { name: 'test' };
+          groupFilter.self = groupFilter;
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+      errors: [{ messageId: 'noComplexObjects' }],
+    },
+    // Object with WeakMap/WeakSet
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const groupFilter = {
+            name: 'test',
+            cache: new WeakMap(),
+            refs: new WeakSet()
+          };
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+      errors: [{ messageId: 'noComplexObjects' }],
+    },
+    // Object with Promise
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const groupFilter = {
+            name: 'test',
+            promise: Promise.resolve('test')
+          };
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+      errors: [{ messageId: 'noComplexObjects' }],
+    },
+    // Object with Error instance
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const groupFilter = {
+            name: 'test',
+            error: new Error('test error')
+          };
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+      errors: [{ messageId: 'noComplexObjects' }],
+    },
+    // Array with function elements
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const groupFilter = {
+            name: 'test',
+            callbacks: [() => true, function() { return false; }]
+          };
+          await exitChannelGroupExternal({ groupFilter });
         };
       `,
       errors: [{ messageId: 'noComplexObjects' }],
