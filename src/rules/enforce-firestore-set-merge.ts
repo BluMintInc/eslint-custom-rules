@@ -40,7 +40,7 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
                   prop.key.type === AST_NODE_TYPES.Identifier &&
                   prop.key.name === 'merge' &&
                   prop.value.type === AST_NODE_TYPES.Literal &&
-                  prop.value.value === true
+                  prop.value.value === true,
               );
               if (hasMergeTrue) {
                 return false; // Already using set with merge: true
@@ -51,10 +51,22 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
           // Only flag update() calls that are Firestore operations
           if (property.name === 'update') {
             const object = node.callee.object;
+
+            // Check for BatchManager update calls
+            if (
+              object.type === AST_NODE_TYPES.MemberExpression &&
+              object.property.type === AST_NODE_TYPES.Identifier &&
+              object.property.name === 'batchManager'
+            ) {
+              return true;
+            }
+
             if (object.type === AST_NODE_TYPES.CallExpression) {
               // Check if it's a createHash().update() call
-              if (object.callee.type === AST_NODE_TYPES.Identifier &&
-                  object.callee.name === 'createHash') {
+              if (
+                object.callee.type === AST_NODE_TYPES.Identifier &&
+                object.callee.name === 'createHash'
+              ) {
                 return false;
               }
             }
@@ -67,9 +79,14 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
                 const obj = current.object;
                 if (obj.type === AST_NODE_TYPES.Identifier) {
                   // Check for common Firestore variable names
-                  if (obj.name === 'db' || obj.name === 'firestore' ||
-                      obj.name === 'transaction' || obj.name === 'docRef' ||
-                      obj.name === 'userRef' || obj.name.endsWith('Ref')) {
+                  if (
+                    obj.name === 'db' ||
+                    obj.name === 'firestore' ||
+                    obj.name === 'transaction' ||
+                    obj.name === 'docRef' ||
+                    obj.name === 'userRef' ||
+                    obj.name.endsWith('Ref')
+                  ) {
                     return true;
                   }
                 }
@@ -89,22 +106,32 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
             }
 
             // Check if it's a transaction.update() call
-            if (object.type === AST_NODE_TYPES.Identifier && object.name === 'transaction') {
+            if (
+              object.type === AST_NODE_TYPES.Identifier &&
+              object.name === 'transaction'
+            ) {
               return true;
             }
 
             // Check if it's a Firestore document reference by looking at imports
-            const program = context.getAncestors().find(
-              (node): node is TSESTree.Program => node.type === AST_NODE_TYPES.Program
-            );
+            const program = context
+              .getAncestors()
+              .find(
+                (node): node is TSESTree.Program =>
+                  node.type === AST_NODE_TYPES.Program,
+              );
             if (program) {
               for (const node of program.body) {
                 if (node.type === AST_NODE_TYPES.VariableDeclaration) {
                   for (const decl of node.declarations) {
-                    if (decl.init?.type === AST_NODE_TYPES.CallExpression &&
-                        decl.init.callee.type === AST_NODE_TYPES.MemberExpression &&
-                        decl.init.callee.property.type === AST_NODE_TYPES.Identifier &&
-                        decl.init.callee.property.name === 'firestore') {
+                    if (
+                      decl.init?.type === AST_NODE_TYPES.CallExpression &&
+                      decl.init.callee.type ===
+                        AST_NODE_TYPES.MemberExpression &&
+                      decl.init.callee.property.type ===
+                        AST_NODE_TYPES.Identifier &&
+                      decl.init.callee.property.name === 'firestore'
+                    ) {
                       return true;
                     }
                   }
@@ -128,7 +155,7 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
                 prop.key.type === AST_NODE_TYPES.Identifier &&
                 prop.key.name === 'merge' &&
                 prop.value.type === AST_NODE_TYPES.Literal &&
-                prop.value.value === true
+                prop.value.value === true,
             );
             if (hasMergeTrue) {
               return false; // Already using setDoc with merge: true
