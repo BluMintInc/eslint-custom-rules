@@ -30,15 +30,6 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
         await setter.validate(doc);
       }
     `,
-    // Different setter instances in loop are allowed
-    `
-      const userSetter = new DocSetter(usersRef);
-      const orderSetter = new DocSetter(ordersRef);
-      for (const doc of documents) {
-        await userSetter.set(doc.user);
-        await orderSetter.set(doc.order);
-      }
-    `,
     // Using setAll() with array methods
     `
       const setter = new DocSetter(collectionRef);
@@ -74,6 +65,18 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
     `,
   ],
   invalid: [
+    // Different setter instances in loop are not allowed
+    {
+      code: `
+        const userSetter = new DocSetter(usersRef);
+        const orderSetter = new DocSetter(ordersRef);
+        for (const doc of documents) {
+          await userSetter.set(doc.user);
+          await orderSetter.set(doc.order);
+        }
+      `,
+      errors: [{ messageId: 'preferSetAll' }],
+    },
     // For...of loop with set()
     {
       code: `

@@ -33,11 +33,7 @@ function isPromiseAll(node: TSESTree.Node): boolean {
 
 function findLoopNode(node: TSESTree.Node): { node: TSESTree.Node; isArrayMethod?: string } | undefined {
   let current: TSESTree.Node | undefined = node;
-  let inPromiseAll = false;
-  let foundArrayMethod: { node: TSESTree.Node; methodName: string } | undefined;
-  let promiseAllNode: TSESTree.Node | undefined;
-  let foundLoop: TSESTree.Node | undefined;
-  let inFunction = false;
+  let loopNode: TSESTree.Node | null = null;
 
   while (current) {
     switch (current.type) {
@@ -46,91 +42,34 @@ function findLoopNode(node: TSESTree.Node): { node: TSESTree.Node; isArrayMethod
       case AST_NODE_TYPES.ForOfStatement:
       case AST_NODE_TYPES.WhileStatement:
       case AST_NODE_TYPES.DoWhileStatement:
-        // Store the loop but keep looking for array methods and Promise.all
-        foundLoop = current;
-        break;
-
-      case AST_NODE_TYPES.ArrowFunctionExpression:
-      case AST_NODE_TYPES.FunctionExpression:
-      case AST_NODE_TYPES.FunctionDeclaration:
-        inFunction = true;
-        if (current.parent?.type === AST_NODE_TYPES.CallExpression) {
-          // Check for array methods
-          const { isValid, methodName } = isArrayMethod(current.parent);
-          if (isValid && methodName) {
-            // Return immediately for forEach and reduce
-            if (methodName === 'forEach' || methodName === 'reduce') {
-              return { node: current.parent, isArrayMethod: methodName };
-            }
-            // Store the array method but keep looking for Promise.all
-            foundArrayMethod = { node: current.parent, methodName };
-          }
-        }
-        // Only stop at function boundaries if we're not in a Promise.all chain
-        // and we haven't found an array method
-        if (!inPromiseAll && !foundArrayMethod && !foundLoop) return undefined;
+        loopNode = current;
         break;
 
       case AST_NODE_TYPES.CallExpression:
         // Check for Promise.all
         if (isPromiseAll(current)) {
-          inPromiseAll = true;
-          promiseAllNode = current;
-          // Keep looking for array methods
-          break;
+          return { node: current, isArrayMethod: 'map' };
         }
-        // Check for array methods directly on CallExpression
-        const { isValid, methodName } = isArrayMethod(current);
-        if (isValid && methodName) {
-          // Return immediately for forEach and reduce
-          if (methodName === 'forEach' || methodName === 'reduce') {
-            return { node: current, isArrayMethod: methodName };
+        // Check for array methods
+        const { isValid, methodName: currentMethodName } = isArrayMethod(current);
+        if (isValid && currentMethodName) {
+          // For sequential array methods, check if the callback is async
+          if (currentMethodName === 'forEach' || currentMethodName === 'reduce' || currentMethodName === 'filter') {
+            const callback = current.arguments[0];
+            if (callback && (callback.type === AST_NODE_TYPES.ArrowFunctionExpression || 
+                           callback.type === AST_NODE_TYPES.FunctionExpression) && 
+                callback.async) {
+              return { node: current, isArrayMethod: currentMethodName };
+            }
           }
-          // Store the array method but keep looking for Promise.all
-          foundArrayMethod = { node: current, methodName };
+          return { node: current, isArrayMethod: currentMethodName };
         }
-        break;
-
-      case AST_NODE_TYPES.BlockStatement:
-        // Only check the parent if it's not a function body
-        if (
-          current.parent?.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
-          current.parent?.type !== AST_NODE_TYPES.FunctionExpression &&
-          current.parent?.type !== AST_NODE_TYPES.FunctionDeclaration
-        ) {
-          break;
-        }
-        // Only stop at function boundaries if we're not in a Promise.all chain
-        // and we haven't found an array method
-        if (!inPromiseAll && !foundArrayMethod && !foundLoop) return undefined;
         break;
 
       case AST_NODE_TYPES.Program:
-        // Return the array method if we found one, otherwise return Promise.all if we found one
-        if (foundArrayMethod) {
-          return { node: foundArrayMethod.node, isArrayMethod: foundArrayMethod.methodName };
-        }
-        if (promiseAllNode) {
-          return { node: promiseAllNode, isArrayMethod: 'map' }; // Treat Promise.all like map
-        }
-        if (foundLoop) {
-          // If we're in a function, treat it like forEach
-          if (inFunction) {
-            return { node: foundLoop, isArrayMethod: 'forEach' }; // Treat function loops like forEach
-          }
-          // Check if we're in a function
-          let current = foundLoop;
-          let hasFunction = false;
-          while (current) {
-            if (current.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-                current.type === AST_NODE_TYPES.FunctionExpression ||
-                current.type === AST_NODE_TYPES.FunctionDeclaration) {
-              hasFunction = true;
-              break;
-            }
-            current = current.parent as TSESTree.Node;
-          }
-          return { node: foundLoop, isArrayMethod: hasFunction ? 'forEach' : undefined };
+        // Return loop if we found one
+        if (loopNode) {
+          return { node: loopNode };
         }
         return undefined;
     }
@@ -157,6 +96,14 @@ function isSetterMethodCall(node: TSESTree.Node): { isValid: boolean; methodName
   return { isValid: true, methodName, setterInstance };
 }
 
+// Add this before the rule definition
+type SetterCallInfo = {
+  methodName: string;
+  count: number;
+};
+
+const loopSetterCalls = new Map<TSESTree.Node, Map<string, SetterCallInfo>>();
+
 export const preferBatchOperations = createRule<[], MessageIds>({
   name: 'prefer-batch-operations',
   meta: {
@@ -174,9 +121,6 @@ export const preferBatchOperations = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    // Track setter calls per loop node
-    const loopSetterCalls = new Map<TSESTree.Node, Map<string, { methodName: string; count: number }>>();
-
     return {
       'Program:exit'() {
         // Clear the maps for the next file
@@ -213,7 +157,7 @@ export const preferBatchOperations = createRule<[], MessageIds>({
         // For Promise.all and array methods, report on the first occurrence
         // For regular loops, report on the first occurrence too since we know it's in a loop
         const shouldReport = loopInfo.isArrayMethod
-          ? loopInfo.isArrayMethod === 'forEach' || loopInfo.isArrayMethod === 'reduce' || loopInfo.isArrayMethod === 'map'
+          ? ['forEach', 'reduce', 'filter', 'map'].includes(loopInfo.isArrayMethod)
           : setterCalls.get(key)!.count === 1;
 
         // Don't report if we have multiple different setter instances in a loop
