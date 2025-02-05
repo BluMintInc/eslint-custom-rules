@@ -49,6 +49,17 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
     // Anonymous functions are ignored
     '() => {}',
     '(function() {})',
+    // Next.js data-fetching functions are allowed
+    'export async function getServerSideProps() { return { props: {} }; }',
+    'export async function getStaticProps() { return { props: {} }; }',
+    'export async function getStaticPaths() { return { paths: [], fallback: false }; }',
+    `
+      class Page {
+        static async getServerSideProps() { return { props: {} }; }
+        static async getStaticProps() { return { props: {} }; }
+        static async getStaticPaths() { return { paths: [], fallback: false }; }
+      }
+    `,
   ],
   invalid: [
     {
