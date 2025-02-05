@@ -62,6 +62,81 @@ ruleTesterTs.run('prefer-settings-object', preferSettingsObject, {
         const error = new Error(message, options);
       `,
     },
+    // Third-party module constructors
+    {
+      code: `
+        import { Server } from 'socket.io';
+        import { Client } from '@elastic/elasticsearch';
+        import { Sequelize } from 'sequelize';
+        import { MongoClient } from 'mongodb';
+        import { Redis } from 'ioredis';
+        import { Worker } from 'worker_threads';
+        import { Transform } from 'stream';
+        import { EventEmitter } from 'events';
+
+        const io = new Server(httpServer, { cors: { origin: '*' } });
+        const elastic = new Client({ node: 'http://localhost:9200' });
+        const sequelize = new Sequelize('database', 'user', 'pass');
+        const mongo = new MongoClient('mongodb://localhost:27017');
+        const redis = new Redis({ host: 'localhost', port: 6379 });
+        const worker = new Worker('./worker.js', { workerData: data });
+        const transform = new Transform({ transform: (chunk, encoding, callback) => {} });
+        const emitter = new EventEmitter();
+      `,
+    },
+    // Third-party module member constructors
+    {
+      code: `
+        import React from 'react';
+        import * as PIXI from 'pixi.js';
+        import * as THREE from 'three';
+        import * as monaco from 'monaco-editor';
+        import * as Phaser from 'phaser';
+
+        class MyComponent extends React.Component {
+          render() {
+            return <div>Hello</div>;
+          }
+        }
+
+        const sprite = new PIXI.Sprite(texture);
+        const scene = new THREE.Scene();
+        const editor = new monaco.editor.Editor(element, options);
+        const game = new Phaser.Game(config);
+      `,
+    },
+    // Third-party testing frameworks
+    {
+      code: `
+        import { Test } from '@nestjs/testing';
+        import { MockInstance } from 'vitest';
+        import { TestBed } from '@angular/core/testing';
+        import { TestingModule } from '@nestjs/testing';
+        import { MockedClass } from 'jest-mock';
+
+        const moduleRef = new Test.TestingModule(metadata);
+        const mock = new MockInstance(fn);
+        const testBed = new TestBed();
+        const module = new TestingModule(imports);
+        const mockedClass = new MockedClass();
+      `,
+    },
+    // Third-party UI component libraries
+    {
+      code: `
+        import { Modal } from 'antd';
+        import { Dialog } from '@mui/material';
+        import { Toast } from '@chakra-ui/react';
+        import { Popover } from '@headlessui/react';
+        import { Notification } from 'element-plus';
+
+        const modal = new Modal({ title: 'Hello', content: 'World' });
+        const dialog = new Dialog({ open: true });
+        const toast = new Toast({ title: 'Success' });
+        const popover = new Popover({ placement: 'bottom' });
+        const notification = new Notification({ message: 'Done' });
+      `,
+    },
   ],
   invalid: [
     // Too many parameters

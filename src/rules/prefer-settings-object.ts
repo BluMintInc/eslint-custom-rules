@@ -107,7 +107,38 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
             'Date', 'RegExp', 'Error', 'AggregateError', 'EvalError',
             'RangeError', 'ReferenceError', 'SyntaxError', 'TypeError', 'URIError'
           ]);
-          return builtInObjects.has(callee.name);
+          if (builtInObjects.has(callee.name)) {
+            return true;
+          }
+
+          // Check if the identifier is imported from a third-party module
+          const scope = context.getScope();
+          const variable = scope.variables.find(v => v.name === callee.name);
+          if (variable) {
+            const def = variable.defs[0];
+            if (def?.type === 'ImportBinding') {
+              const importDecl = def.parent;
+              const source = importDecl.source.value;
+              // Check if import is from node_modules (not starting with . or /)
+              return !source.startsWith('.') && !source.startsWith('/');
+            }
+          }
+        } else if (callee.type === AST_NODE_TYPES.MemberExpression) {
+          // Handle cases like React.Component or lodash.debounce
+          const obj = callee.object;
+          if (obj.type === AST_NODE_TYPES.Identifier) {
+            const scope = context.getScope();
+            const variable = scope.variables.find(v => v.name === obj.name);
+            if (variable) {
+              const def = variable.defs[0];
+              if (def?.type === 'ImportBinding') {
+                const importDecl = def.parent;
+                const source = importDecl.source.value;
+                // Check if import is from node_modules (not starting with . or /)
+                return !source.startsWith('.') && !source.startsWith('/');
+              }
+            }
+          }
         }
       }
       return false;
