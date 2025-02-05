@@ -1,6 +1,7 @@
-import { ruleTesterTs } from '../utils/ruleTester';
+import { ruleTesterTs, ruleTesterJsx } from '../utils/ruleTester';
 import { preferSettingsObject } from '../rules/prefer-settings-object';
 
+// Run non-JSX tests
 ruleTesterTs.run('prefer-settings-object', preferSettingsObject, {
   valid: [
     // Functions with less than 3 parameters
@@ -35,6 +36,146 @@ ruleTesterTs.run('prefer-settings-object', preferSettingsObject, {
       code: `
         type Settings = { name: string; age: number; isAdmin: boolean; };
         function createUser({ name, age, isAdmin }: Settings) { return { name, age, isAdmin }; }
+      `,
+    },
+    // Built-in Promise constructor
+    {
+      code: `
+        await new Promise<webpack.Stats>((resolvePromise, rejectPromise) => {
+          webpack(config, (err, stats) => {
+            if (err || !stats) {
+              rejectPromise(err ?? new Error('No stats returned from webpack'));
+            } else {
+              new PackageGenerator(pathing).writePackageJson();
+              resolvePromise(stats);
+            }
+          });
+        });
+      `,
+    },
+    // Other built-in constructors
+    {
+      code: `
+        const map = new Map<string, string>((entries) => {});
+        const set = new Set<string>((values) => {});
+        const date = new Date(year, month, day);
+        const regex = new RegExp(pattern, flags);
+        const error = new Error(message, options);
+      `,
+    },
+    // Third-party module constructors
+    {
+      code: `
+        import { Server } from 'socket.io';
+        import { Client } from '@elastic/elasticsearch';
+        import { Sequelize } from 'sequelize';
+        import { MongoClient } from 'mongodb';
+        import { Redis } from 'ioredis';
+        import { Worker } from 'worker_threads';
+        import { Transform } from 'stream';
+        import { EventEmitter } from 'events';
+
+        const io = new Server(httpServer, { cors: { origin: '*' } });
+        const elastic = new Client({ node: 'http://localhost:9200' });
+        const sequelize = new Sequelize('database', 'user', 'pass');
+        const mongo = new MongoClient('mongodb://localhost:27017');
+        const redis = new Redis({ host: 'localhost', port: 6379 });
+        const worker = new Worker('./worker.js', { workerData: data });
+        const transform = new Transform({ transform: (chunk, encoding, callback) => {} });
+        const emitter = new EventEmitter();
+      `,
+    },
+    // Third-party testing frameworks
+    {
+      code: `
+        import { Test } from '@nestjs/testing';
+        import { MockInstance } from 'vitest';
+        import { TestBed } from '@angular/core/testing';
+        import { TestingModule } from '@nestjs/testing';
+        import { MockedClass } from 'jest-mock';
+
+        const moduleRef = new Test.TestingModule(metadata);
+        const mock = new MockInstance(fn);
+        const testBed = new TestBed();
+        const module = new TestingModule(imports);
+        const mockedClass = new MockedClass();
+      `,
+    },
+    // Third-party UI component libraries
+    {
+      code: `
+        import { Modal } from 'antd';
+        import { Dialog } from '@mui/material';
+        import { Toast } from '@chakra-ui/react';
+        import { Popover } from '@headlessui/react';
+        import { Notification } from 'element-plus';
+
+        const modal = new Modal({ title: 'Hello', content: 'World' });
+        const dialog = new Dialog({ open: true });
+        const toast = new Toast({ title: 'Success' });
+        const popover = new Popover({ placement: 'bottom' });
+        const notification = new Notification({ message: 'Done' });
+      `,
+    },
+    // Third-party imported functions with same type parameters
+    {
+      code: `
+        import { compareStrings } from '@string-compare';
+        import { mergeArrays } from '@data/array-utils';
+        import { joinPaths } from 'filesystem/path';
+        import { combineStyles } from 'ui';
+
+        // Two parameters of same type
+        compareStrings('hello', 'world');
+        mergeArrays([1, 2], [3, 4]);
+        joinPaths('/root', '/subfolder');
+        combineStyles('color: red', 'font-size: 12px');
+      `,
+      options: [{ checkSameTypeParameters: true }],
+    },
+    // Third-party imported functions with multiple parameters
+    {
+      code: `
+        import { configureDatabase } from '@config';
+        import { createApiEndpoint } from 'endpoints';
+        import { setupLogger } from '@logging/setup';
+        import { initializeWidget } from 'widgets/core';
+
+        // Functions with 3+ parameters
+        configureDatabase('localhost', 5432, 'mydb', true);
+        createApiEndpoint('/users', 'GET', true, ['admin'], { cache: true });
+        setupLogger('app', 'debug', true, './logs', 500);
+        initializeWidget('sidebar', 'left', true, { theme: 'dark' }, onInit);
+      `,
+    },
+    // Third-party imported class methods with multiple parameters
+    {
+      code: `
+        import { DatabaseClient } from 'db/client';
+        import { ApiService } from '@api/service';
+        import { Logger } from 'logging';
+
+        const db = new DatabaseClient();
+        const api = new ApiService();
+        const logger = new Logger();
+
+        // Class methods with multiple parameters
+        db.query('SELECT * FROM users', ['active'], { timeout: 5000 }, true);
+        api.request('GET', '/users', { id: 1 }, true, headers);
+        logger.log('error', 'Failed to connect', { attempt: 3 }, true, 'db');
+      `,
+    },
+    // Third-party imported utility functions with mixed parameter types
+    {
+      code: `
+        import { formatData } from 'utils/formatter';
+        import { validateInput } from '@validation/core';
+        import { transformConfig } from '@config';
+
+        // Mixed parameter types and counts
+        formatData('user', { id: 1 }, true, ['name', 'email']);
+        validateInput(data, schema, true, options, onError);
+        transformConfig(baseConfig, overrides, true, plugins, context);
       `,
     },
     // Different types with destructuring
@@ -87,4 +228,32 @@ ruleTesterTs.run('prefer-settings-object', preferSettingsObject, {
       errors: [{ messageId: 'tooManyParams', data: { count: 3 } }],
     },
   ],
+});
+
+// Run JSX tests separately
+ruleTesterJsx.run('prefer-settings-object', preferSettingsObject, {
+  valid: [
+    // React component test
+    {
+      code: `
+        import React from 'react';
+        import * as PIXI from 'pixi.js';
+        import * as THREE from 'three';
+        import * as monaco from 'monaco-editor';
+        import * as Phaser from 'phaser';
+
+        class MyComponent extends React.Component {
+          render() {
+            return <div>Hello</div>;
+          }
+        }
+
+        const sprite = new PIXI.Sprite(texture);
+        const scene = new THREE.Scene();
+        const editor = new monaco.editor.Editor(element, options);
+        const game = new Phaser.Game(config);
+      `,
+    },
+  ],
+  invalid: [],
 });

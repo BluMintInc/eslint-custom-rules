@@ -35,3 +35,6 @@ lib/package.json
 
 # But don't ignore scripts
 !scripts/**/*.js
+
+# Ingored in this eslint-custom-rules repo so that it only shows in the agora repo
+.specstory/
