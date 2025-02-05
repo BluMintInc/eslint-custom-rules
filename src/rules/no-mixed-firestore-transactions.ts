@@ -24,7 +24,7 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    let inTransaction = false;
+    const transactionScopes = new Set<TSESTree.Node>();
 
     function getTransactionalClassName(className: string): string {
       if (className === 'DocSetter') return 'DocSetterTransaction';
@@ -47,6 +47,37 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       return NON_TRANSACTIONAL_CLASSES.has(callee.name);
     }
 
+    function isTransactionParameter(param: TSESTree.Parameter): boolean {
+      if (param.type !== AST_NODE_TYPES.Identifier) return false;
+      const typeAnnotation = param.typeAnnotation;
+      if (!typeAnnotation || typeAnnotation.type !== AST_NODE_TYPES.TSTypeAnnotation) return false;
+      const type = typeAnnotation.typeAnnotation;
+      if (type.type !== AST_NODE_TYPES.TSTypeReference) return false;
+      const typeName = type.typeName;
+      if (typeName.type !== AST_NODE_TYPES.TSQualifiedName) return false;
+      return typeName.left.type === AST_NODE_TYPES.Identifier && typeName.left.name === 'FirebaseFirestore' &&
+             typeName.right.type === AST_NODE_TYPES.Identifier && typeName.right.name === 'Transaction';
+    }
+
+    function isInTransactionScope(node: TSESTree.Node): boolean {
+      let current: TSESTree.Node | undefined = node;
+      while (current) {
+        if (transactionScopes.has(current)) {
+          return true;
+        }
+        if (current.type === AST_NODE_TYPES.FunctionDeclaration ||
+            current.type === AST_NODE_TYPES.FunctionExpression ||
+            current.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+          const params = current.params;
+          if (params.some(isTransactionParameter)) {
+            return true;
+          }
+        }
+        current = current.parent;
+      }
+      return false;
+    }
+
     return {
       'CallExpression[callee.property.name="runTransaction"]'(node: TSESTree.CallExpression) {
         if (!isFirestoreTransaction(node)) return;
@@ -54,16 +85,20 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
         const callback = node.arguments[0];
         if (callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
             callback.type === AST_NODE_TYPES.FunctionExpression) {
-          inTransaction = true;
+          transactionScopes.add(callback.body);
         }
       },
 
-      'CallExpression[callee.property.name="runTransaction"]:exit'() {
-        inTransaction = false;
+      'CallExpression[callee.property.name="runTransaction"]:exit'(node: TSESTree.CallExpression) {
+        const callback = node.arguments[0];
+        if (callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+            callback.type === AST_NODE_TYPES.FunctionExpression) {
+          transactionScopes.delete(callback.body);
+        }
       },
 
       NewExpression(node) {
-        if (!inTransaction || !isNonTransactionalClass(node)) return;
+        if (!isInTransactionScope(node) || !isNonTransactionalClass(node)) return;
 
         const className = (node.callee as TSESTree.Identifier).name;
         context.report({
