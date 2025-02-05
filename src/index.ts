@@ -52,6 +52,7 @@ import { noMemoizeOnStatic } from './rules/no-memoize-on-static';
 import { noUnsafeFirestoreSpread } from './rules/no-unsafe-firestore-spread';
 import { noJsxInHooks } from './rules/no-jsx-in-hooks';
 import { enforceAssertThrows } from './rules/enforce-assert-throws';
+import { preferBatchOperations } from './rules/prefer-batch-operations';
 import { noComplexCloudParams } from './rules/no-complex-cloud-params';
 import { noMixedFirestoreTransactions } from './rules/no-mixed-firestore-transactions';
 import { enforceFirestoreFacade } from './rules/enforce-firestore-facade';
@@ -123,6 +124,7 @@ module.exports = {
         '@blumintinc/blumint/no-unsafe-firestore-spread': 'error',
         '@blumintinc/blumint/no-jsx-in-hooks': 'error',
         '@blumintinc/blumint/enforce-assert-throws': 'error',
+        '@blumintinc/blumint/prefer-batch-operations': 'error',
         '@blumintinc/blumint/no-complex-cloud-params': 'error',
         '@blumintinc/blumint/no-mixed-firestore-transactions': 'error',
         '@blumintinc/blumint/enforce-firestore-facade': 'error',
@@ -186,6 +188,7 @@ module.exports = {
     'no-unsafe-firestore-spread': noUnsafeFirestoreSpread,
     'no-jsx-in-hooks': noJsxInHooks,
     'enforce-assert-throws': enforceAssertThrows,
+    'prefer-batch-operations': preferBatchOperations,
     'no-complex-cloud-params': noComplexCloudParams,
     'no-mixed-firestore-transactions': noMixedFirestoreTransactions,
     'enforce-firestore-facade': enforceFirestoreFacade,
