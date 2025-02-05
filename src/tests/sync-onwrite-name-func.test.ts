@@ -65,7 +65,9 @@ ruleTesterTs.run('sync-onwrite-name-func', syncOnwriteNameFunc, {
     },
     // Valid case with only name and func
     {
-      code: `{ name: 'minimal', func: minimal }`,
+      code: `
+        const config = { name: 'minimal', func: minimal };
+      `,
     },
   ],
   invalid: [
@@ -165,9 +167,13 @@ ruleTesterTs.run('sync-onwrite-name-func', syncOnwriteNameFunc, {
     },
     // Mismatch in minimal object
     {
-      code: `{ name: 'wrong', func: minimal }`,
+      code: `
+        const config = { name: 'wrong', func: minimal };
+      `,
       errors: [{ messageId: 'mismatchedName' }],
-      output: `{ name: 'minimal', func: minimal }`,
+      output: `
+        const config = { name: 'minimal', func: minimal };
+      `,
     },
     // Mismatch with string quotes
     {

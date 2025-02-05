@@ -38,8 +38,7 @@ export const syncOnwriteNameFunc = createRule<[], MessageIds>({
 
           if (
             property.key.type === AST_NODE_TYPES.Identifier &&
-            property.key.name === 'func' &&
-            property.value.type === AST_NODE_TYPES.Identifier
+            property.key.name === 'func'
           ) {
             funcProperty = property;
           }
@@ -50,7 +49,25 @@ export const syncOnwriteNameFunc = createRule<[], MessageIds>({
         }
 
         const nameValue = (nameProperty.value as TSESTree.Literal).value as string;
-        const funcName = (funcProperty.value as TSESTree.Identifier).name;
+        let funcName: string;
+
+        // Handle variable references
+        if (funcProperty.value.type === AST_NODE_TYPES.Identifier) {
+          const funcIdentifier = funcProperty.value;
+          const scope = context.getScope();
+          const variable = scope.references.find(ref => ref.identifier === funcIdentifier)?.resolved;
+
+          if (variable?.defs[0]?.node.type === AST_NODE_TYPES.VariableDeclarator &&
+              variable.defs[0].node.init?.type === AST_NODE_TYPES.Identifier) {
+            // If the variable is initialized with another identifier, use that name
+            funcName = variable.defs[0].node.init.name;
+          } else {
+            // Otherwise use the variable name itself
+            funcName = funcIdentifier.name;
+          }
+        } else {
+          return; // Skip if func is not an identifier
+        }
 
         if (nameValue !== funcName) {
           const value = nameProperty.value;
