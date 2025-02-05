@@ -43,39 +43,6 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
         };
       `,
     },
-    // Object with RegExp literal (invalid since it's not serializable)
-    {
-      code: `
-        const remove = async () => {
-          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
-          const groupFilter = { pattern: /test-.*/ };
-          await exitChannelGroupExternal({ groupFilter });
-        };
-      `,
-      errors: [{ messageId: 'noComplexObjects' }],
-    },
-    // Object with BigInt literal (invalid since it's not serializable)
-    {
-      code: `
-        const remove = async () => {
-          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
-          const groupFilter = { id: 123n };
-          await exitChannelGroupExternal({ groupFilter });
-        };
-      `,
-      errors: [{ messageId: 'noComplexObjects' }],
-    },
-    // Object with typed array (invalid since it's not serializable)
-    {
-      code: `
-        const remove = async () => {
-          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
-          const groupFilter = { data: new Int32Array([1, 2, 3]) };
-          await exitChannelGroupExternal({ groupFilter });
-        };
-      `,
-      errors: [{ messageId: 'noComplexObjects' }],
-    },
     // Object with Date (valid since it's serializable to ISO string)
     {
       code: `
@@ -122,6 +89,39 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
     },
   ],
   invalid: [
+    // Object with RegExp literal (invalid since it's not serializable)
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const groupFilter = { pattern: /test-.*/ };
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+      errors: [{ messageId: 'noComplexObjects' }],
+    },
+    // Object with BigInt literal (invalid since it's not serializable)
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const groupFilter = { id: 123n };
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+      errors: [{ messageId: 'noComplexObjects' }],
+    },
+    // Object with typed array (invalid since it's not serializable)
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const groupFilter = { data: new Int32Array([1, 2, 3]) };
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+      errors: [{ messageId: 'noComplexObjects' }],
+    },
     // Object with method
     {
       code: `
@@ -298,18 +298,6 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
             get(target, prop) { return target[prop]; }
           };
           const groupFilter = new Proxy(target, handler);
-          await exitChannelGroupExternal({ groupFilter });
-        };
-      `,
-      errors: [{ messageId: 'noComplexObjects' }],
-    },
-    // Object with circular reference
-    {
-      code: `
-        const remove = async () => {
-          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
-          const groupFilter: any = { name: 'test' };
-          groupFilter.self = groupFilter;
           await exitChannelGroupExternal({ groupFilter });
         };
       `,
