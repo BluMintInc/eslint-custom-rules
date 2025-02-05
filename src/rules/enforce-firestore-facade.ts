@@ -5,46 +5,76 @@ type MessageIds = 'noDirectGet' | 'noDirectSet' | 'noDirectUpdate' | 'noDirectDe
 
 const FIRESTORE_METHODS = new Set(['get', 'set', 'update', 'delete']);
 
+const isMemberExpression = (node: TSESTree.Node): node is TSESTree.MemberExpression => {
+  return node.type === AST_NODE_TYPES.MemberExpression;
+};
+
 const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
-  if (node.callee.type !== AST_NODE_TYPES.MemberExpression) return false;
+  if (!isMemberExpression(node.callee)) return false;
   const property = node.callee.property;
-  if (property.type !== AST_NODE_TYPES.Identifier || !FIRESTORE_METHODS.has(property.name)) {
+  if (!isIdentifier(property) || !FIRESTORE_METHODS.has(property.name)) {
     return false;
   }
 
   // Check if the method is called on a facade instance
   const object = node.callee.object;
-  if (object.type === AST_NODE_TYPES.Identifier) {
+  if (isIdentifier(object)) {
     const name = object.name;
+    // Skip if it's a facade instance
     if (name.includes('Fetcher') || name.includes('Setter') || name.includes('Tx')) {
       return false;
     }
+    // Check for batch or transaction
+    if (/batch|transaction/i.test(name)) {
+      return true;
+    }
   }
 
-  return true;
+  // Check if it's a Firestore reference
+  let current: TSESTree.Node = object;
+  let foundDocOrCollection = false;
+
+  while (current) {
+    if (isCallExpression(current)) {
+      const callee = current.callee;
+      if (isMemberExpression(callee)) {
+        const property = callee.property;
+        if (isIdentifier(property) && (property.name === 'doc' || property.name === 'collection')) {
+          foundDocOrCollection = true;
+          break;
+        }
+      }
+    }
+    if (isMemberExpression(current)) {
+      current = current.object;
+    } else {
+      break;
+    }
+  }
+
+  // If we haven't found a doc/collection call yet, check if the object is a variable
+  if (!foundDocOrCollection && isIdentifier(object)) {
+    const name = object.name;
+    // If the variable name contains 'doc' or 'ref', it's likely a Firestore reference
+    if (name.toLowerCase().includes('doc') || name.toLowerCase().includes('ref')) {
+      return true;
+    }
+  }
+
+  return foundDocOrCollection;
 };
 
-const isFirestoreReference = (node: TSESTree.MemberExpression): boolean => {
-  const object = node.object;
-  if (object.type !== AST_NODE_TYPES.CallExpression) return false;
-
-  const callee = object.callee;
-  if (callee.type !== AST_NODE_TYPES.MemberExpression) return false;
-
-  const property = callee.property;
-  return (
-    property.type === AST_NODE_TYPES.Identifier &&
-    (property.name === 'doc' || property.name === 'collection')
-  );
+const isCallExpression = (node: TSESTree.Node): node is TSESTree.CallExpression => {
+  return node.type === AST_NODE_TYPES.CallExpression;
 };
 
-const isFirestoreBatchOrTransaction = (node: TSESTree.MemberExpression): boolean => {
-  const object = node.object;
-  if (object.type !== AST_NODE_TYPES.Identifier) return false;
 
-  // Check if variable name contains 'batch' or 'transaction'
-  return /batch|transaction/i.test(object.name);
+
+const isIdentifier = (node: TSESTree.Node): node is TSESTree.Identifier => {
+  return node.type === AST_NODE_TYPES.Identifier;
 };
+
+
 
 export const enforceFirestoreFacade = createRule<[], MessageIds>({
   name: 'enforce-firestore-facade',
@@ -68,21 +98,13 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
       CallExpression(node) {
         if (!isFirestoreMethodCall(node)) return;
 
-        const callee = node.callee as TSESTree.MemberExpression;
-        const methodName = (callee.property as TSESTree.Identifier).name;
-
-        // Skip if the method is called on a valid facade instance
-        const objectType = callee.object.type;
-        if (
-          objectType === AST_NODE_TYPES.MemberExpression &&
-          !isFirestoreReference(callee.object as TSESTree.MemberExpression) &&
-          !isFirestoreBatchOrTransaction(callee.object as TSESTree.MemberExpression)
-        ) {
-          return;
-        }
+        const callee = node.callee;
+        if (!isMemberExpression(callee)) return;
+        const property = callee.property;
+        if (!isIdentifier(property)) return;
 
         // Report appropriate error based on method
-        switch (methodName) {
+        switch (property.name) {
           case 'get':
             context.report({
               node,
