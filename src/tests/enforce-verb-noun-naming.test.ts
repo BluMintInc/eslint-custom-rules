@@ -122,6 +122,14 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
         get dataCache() { return null; }
       }`,
     },
+    // Bug report example - getter should be ignored
+    {
+      code: `export class DocumentPropagationManager<TData extends DocumentData, TOmitKey extends keyof TData> {
+        private get propogatorFactories() {
+          return this.settings.propogatorFactories;
+        }
+      }`,
+    },
 
     // Variables that are not functions (should be ignored)
     {
