@@ -43,7 +43,7 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
         };
       `,
     },
-    // Object with RegExp literal (valid since it's serializable)
+    // Object with RegExp literal (invalid since it's not serializable)
     {
       code: `
         const remove = async () => {
@@ -52,8 +52,9 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
           await exitChannelGroupExternal({ groupFilter });
         };
       `,
+      errors: [{ messageId: 'noComplexObjects' }],
     },
-    // Object with BigInt literal (valid since it's serializable)
+    // Object with BigInt literal (invalid since it's not serializable)
     {
       code: `
         const remove = async () => {
@@ -62,13 +63,48 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
           await exitChannelGroupExternal({ groupFilter });
         };
       `,
+      errors: [{ messageId: 'noComplexObjects' }],
     },
-    // Object with typed array (valid since it's serializable)
+    // Object with typed array (invalid since it's not serializable)
     {
       code: `
         const remove = async () => {
           const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
           const groupFilter = { data: new Int32Array([1, 2, 3]) };
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+      errors: [{ messageId: 'noComplexObjects' }],
+    },
+    // Object with Date (valid since it's serializable to ISO string)
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const groupFilter = { date: new Date() };
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+    },
+    // Object with primitive values
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const groupFilter = { id: 123, name: "test", active: true, empty: null };
+          await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+    },
+    // Object with nested arrays and objects
+    {
+      code: `
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const groupFilter = {
+            ids: [1, 2, 3],
+            config: { enabled: true, tags: ["a", "b"] }
+          };
           await exitChannelGroupExternal({ groupFilter });
         };
       `,

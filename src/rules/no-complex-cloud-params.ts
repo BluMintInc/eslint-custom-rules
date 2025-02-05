@@ -14,7 +14,7 @@ export const noComplexCloudParams = createRule<[], MessageIds>({
     schema: [],
     messages: {
       noComplexObjects:
-        'Do not pass complex objects to cloud functions. Complex objects include class instances, objects with methods, or objects with nested complex properties.',
+        'Do not pass complex objects to cloud functions. Complex objects include class instances, objects with methods, non-serializable values (RegExp, BigInt, TypedArray, etc.), or objects with nested complex properties.',
     },
   },
   defaultOptions: [],
@@ -42,6 +42,32 @@ export const noComplexCloudParams = createRule<[], MessageIds>({
 
     function isClassInstance(node: TSESTree.Node): boolean {
       if (node.type === AST_NODE_TYPES.NewExpression) {
+        // Check for known non-serializable constructors
+        if (node.callee.type === AST_NODE_TYPES.Identifier) {
+          const nonSerializableTypes = new Set([
+            'RegExp',
+            'BigInt',
+            'Int8Array',
+            'Uint8Array',
+            'Uint8ClampedArray',
+            'Int16Array',
+            'Uint16Array',
+            'Int32Array',
+            'Uint32Array',
+            'Float32Array',
+            'Float64Array',
+            'BigInt64Array',
+            'BigUint64Array',
+            'WeakMap',
+            'WeakSet',
+            'Promise',
+            'Error',
+            'Proxy',
+          ]);
+          if (nonSerializableTypes.has(node.callee.name)) {
+            return true;
+          }
+        }
         return true;
       }
 
@@ -65,6 +91,14 @@ export const noComplexCloudParams = createRule<[], MessageIds>({
       return false;
     }
 
+    function isNonSerializableLiteral(node: TSESTree.Node): boolean {
+      return (
+        node.type === AST_NODE_TYPES.Literal &&
+        (node.regex !== undefined || // RegExp literal
+          node.bigint !== undefined) // BigInt literal
+      );
+    }
+
     function hasComplexProperties(node: TSESTree.Node): boolean {
       switch (node.type) {
         case AST_NODE_TYPES.ObjectExpression:
@@ -78,6 +112,9 @@ export const noComplexCloudParams = createRule<[], MessageIds>({
 
               // Check if property value is a class instance
               if (isClassInstance(prop.value)) return true;
+
+              // Check if property value is a non-serializable literal
+              if (isNonSerializableLiteral(prop.value)) return true;
 
               // Recursively check nested objects
               return hasComplexProperties(prop.value);
@@ -110,8 +147,8 @@ export const noComplexCloudParams = createRule<[], MessageIds>({
           return true;
 
         case AST_NODE_TYPES.CallExpression:
-          // Check if the call is to a class constructor
-          return isClassInstance(node.callee);
+          // Check if the call is to a class constructor or returns a complex object
+          return isClassInstance(node.callee) || hasComplexProperties(node.callee);
 
         case AST_NODE_TYPES.Property:
           return (
@@ -124,7 +161,17 @@ export const noComplexCloudParams = createRule<[], MessageIds>({
           return node.properties.some((prop) => hasComplexProperties(prop));
 
         case AST_NODE_TYPES.MemberExpression:
-          return true; // Consider member expressions as complex
+          // Check if the member expression resolves to a complex object
+          const object = node.object;
+          const property = node.property;
+          return (
+            hasComplexProperties(object) ||
+            (property.type === AST_NODE_TYPES.Identifier &&
+              property.name === 'prototype')
+          );
+
+        case AST_NODE_TYPES.Literal:
+          return isNonSerializableLiteral(node);
 
         default:
           return false;
