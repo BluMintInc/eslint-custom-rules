@@ -88,6 +88,15 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
           const data = sourceCode.getText(args[1]);
           return `${object}.set(${docRef}, ${data}, { merge: true })`;
         }
+        if (object.includes('batchManager')) {
+          const docRef = sourceCode.getText(args[0]);
+          const data = sourceCode.getText(args[1]);
+          return `${object}.set({
+          ref: ${docRef},
+          data: ${data},
+          merge: true,
+        })`;
+        }
         const data = sourceCode.getText(args[0]);
         return `${object}.set(${data}, { merge: true })`;
       }

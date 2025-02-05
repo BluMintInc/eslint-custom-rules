@@ -165,5 +165,19 @@ ruleTesterTs.run('enforce-firestore-set-merge', enforceFirestoreSetMerge, {
         });
       `,
     },
+    // Invalid BatchManager case
+    {
+      code: `
+        this.batchManager.update(notificationRef, updates);
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        this.batchManager.set({
+          ref: notificationRef,
+          data: updates,
+          merge: true,
+        });
+      `,
+    },
   ],
 });
