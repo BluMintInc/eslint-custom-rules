@@ -1,6 +1,7 @@
-import { ruleTesterTs } from '../utils/ruleTester';
+import { ruleTesterTs, ruleTesterJsx } from '../utils/ruleTester';
 import { preferSettingsObject } from '../rules/prefer-settings-object';
 
+// Run non-JSX tests
 ruleTesterTs.run('prefer-settings-object', preferSettingsObject, {
   valid: [
     // Functions with less than 3 parameters
@@ -84,27 +85,6 @@ ruleTesterTs.run('prefer-settings-object', preferSettingsObject, {
         const emitter = new EventEmitter();
       `,
     },
-    // Third-party module member constructors
-    {
-      code: `
-        import React from 'react';
-        import * as PIXI from 'pixi.js';
-        import * as THREE from 'three';
-        import * as monaco from 'monaco-editor';
-        import * as Phaser from 'phaser';
-
-        class MyComponent extends React.Component {
-          render() {
-            return <div>Hello</div>;
-          }
-        }
-
-        const sprite = new PIXI.Sprite(texture);
-        const scene = new THREE.Scene();
-        const editor = new monaco.editor.Editor(element, options);
-        const game = new Phaser.Game(config);
-      `,
-    },
     // Third-party testing frameworks
     {
       code: `
@@ -135,6 +115,67 @@ ruleTesterTs.run('prefer-settings-object', preferSettingsObject, {
         const toast = new Toast({ title: 'Success' });
         const popover = new Popover({ placement: 'bottom' });
         const notification = new Notification({ message: 'Done' });
+      `,
+    },
+    // Third-party imported functions with same type parameters
+    {
+      code: `
+        import { compareStrings } from '@string-compare';
+        import { mergeArrays } from '@data/array-utils';
+        import { joinPaths } from 'filesystem/path';
+        import { combineStyles } from 'ui';
+
+        // Two parameters of same type
+        compareStrings('hello', 'world');
+        mergeArrays([1, 2], [3, 4]);
+        joinPaths('/root', '/subfolder');
+        combineStyles('color: red', 'font-size: 12px');
+      `,
+      options: [{ checkSameTypeParameters: true }],
+    },
+    // Third-party imported functions with multiple parameters
+    {
+      code: `
+        import { configureDatabase } from '@config';
+        import { createApiEndpoint } from 'endpoints';
+        import { setupLogger } from '@logging/setup';
+        import { initializeWidget } from 'widgets/core';
+
+        // Functions with 3+ parameters
+        configureDatabase('localhost', 5432, 'mydb', true);
+        createApiEndpoint('/users', 'GET', true, ['admin'], { cache: true });
+        setupLogger('app', 'debug', true, './logs', 500);
+        initializeWidget('sidebar', 'left', true, { theme: 'dark' }, onInit);
+      `,
+    },
+    // Third-party imported class methods with multiple parameters
+    {
+      code: `
+        import { DatabaseClient } from 'db/client';
+        import { ApiService } from '@api/service';
+        import { Logger } from 'logging';
+
+        const db = new DatabaseClient();
+        const api = new ApiService();
+        const logger = new Logger();
+
+        // Class methods with multiple parameters
+        db.query('SELECT * FROM users', ['active'], { timeout: 5000 }, true);
+        api.request('GET', '/users', { id: 1 }, true, headers);
+        logger.log('error', 'Failed to connect', { attempt: 3 }, true, 'db');
+      `,
+    },
+    // Third-party imported utility functions with mixed parameter types
+    {
+      code: `
+        import { formatData } from 'utils/formatter';
+        import { validateInput } from '@validation/core';
+        import { transformConfig } from '@config';
+
+        // Mixed parameter types and counts
+        formatData('user', { id: 1 }, true, ['name', 'email']);
+        validateInput(data, schema, true, options, onError);
+        transformConfig(baseConfig, overrides, true, plugins, context);
       `,
     },
   ],
@@ -174,4 +215,32 @@ ruleTesterTs.run('prefer-settings-object', preferSettingsObject, {
       errors: [{ messageId: 'tooManyParams', data: { count: 3 } }],
     },
   ],
+});
+
+// Run JSX tests separately
+ruleTesterJsx.run('prefer-settings-object', preferSettingsObject, {
+  valid: [
+    // React component test
+    {
+      code: `
+        import React from 'react';
+        import * as PIXI from 'pixi.js';
+        import * as THREE from 'three';
+        import * as monaco from 'monaco-editor';
+        import * as Phaser from 'phaser';
+
+        class MyComponent extends React.Component {
+          render() {
+            return <div>Hello</div>;
+          }
+        }
+
+        const sprite = new PIXI.Sprite(texture);
+        const scene = new THREE.Scene();
+        const editor = new monaco.editor.Editor(element, options);
+        const game = new Phaser.Game(config);
+      `,
+    },
+  ],
+  invalid: [],
 });
