@@ -112,6 +112,13 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
         }
       }`,
     },
+    {
+      code: `export class DocContextFactory<TDoc extends DocumentData> {
+        constructor(private readonly displayName: string) {
+          this.Context.displayName = displayName;
+        }
+      }`,
+    },
 
     // Class getters (should be ignored since they represent properties)
     {
