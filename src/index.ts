@@ -51,6 +51,7 @@ import { noFirestoreObjectArrays } from './rules/no-firestore-object-arrays';
 import { noMemoizeOnStatic } from './rules/no-memoize-on-static';
 import { noUnsafeFirestoreSpread } from './rules/no-unsafe-firestore-spread';
 import { noJsxInHooks } from './rules/no-jsx-in-hooks';
+import { enforceAssertThrows } from './rules/enforce-assert-throws';
 
 module.exports = {
   meta: {
@@ -117,9 +118,11 @@ module.exports = {
         '@blumintinc/blumint/no-memoize-on-static': 'error',
         '@blumintinc/blumint/no-unsafe-firestore-spread': 'error',
         '@blumintinc/blumint/no-jsx-in-hooks': 'error',
+        '@blumintinc/blumint/enforce-assert-throws': 'error',
       },
     },
   },
+
   rules: {
     'array-methods-this-context': arrayMethodsThisContext,
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
@@ -174,5 +177,6 @@ module.exports = {
     'no-memoize-on-static': noMemoizeOnStatic,
     'no-unsafe-firestore-spread': noUnsafeFirestoreSpread,
     'no-jsx-in-hooks': noJsxInHooks,
+    'enforce-assert-throws': enforceAssertThrows,
   },
 };

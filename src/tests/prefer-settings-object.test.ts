@@ -178,6 +178,19 @@ ruleTesterTs.run('prefer-settings-object', preferSettingsObject, {
         transformConfig(baseConfig, overrides, true, plugins, context);
       `,
     },
+    // Different types with destructuring
+    {
+      code: `
+        type DocSetterTransactionOptions = { transaction: any; converterOptions?: any };
+        class DocSetterTransaction {
+          constructor(
+            collectionRef: CollectionReference,
+            { transaction, ...converterOptions }: DocSetterTransactionOptions
+          ) {}
+        }
+      `,
+      options: [{ checkSameTypeParameters: true }],
+    },
   ],
   invalid: [
     // Too many parameters

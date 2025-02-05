@@ -3,6 +3,24 @@ import { enforceFirestoreSetMerge } from '../rules/enforce-firestore-set-merge';
 
 ruleTesterTs.run('enforce-firestore-set-merge', enforceFirestoreSetMerge, {
   valid: [
+    // Valid cases using non-Firestore update methods
+    {
+      code: `
+        import { createHash } from 'node:crypto';
+        const hash = createHash('sha256')
+          .update(randomHex)
+          .digest('hex');
+      `,
+    },
+    {
+      code: `
+        import { createHash } from 'crypto';
+        const hash = createHash('sha256')
+          .update('some string')
+          .update('another string')
+          .digest('hex');
+      `,
+    },
     // Valid cases using set with merge
     {
       code: `
@@ -162,6 +180,20 @@ ruleTesterTs.run('enforce-firestore-set-merge', enforceFirestoreSetMerge, {
           transaction.set(userRef, {
             'preferences.theme': 'dark'
           }, { merge: true });
+        });
+      `,
+    },
+    // Invalid BatchManager case
+    {
+      code: `
+        this.batchManager.update(notificationRef, updates);
+      `,
+      errors: [{ messageId: 'preferSetMerge' }],
+      output: `
+        this.batchManager.set({
+          ref: notificationRef,
+          data: updates,
+          merge: true,
         });
       `,
     },

@@ -430,6 +430,7 @@ const VERBS_SET = new Set([
   'include',
   'includes',
   'increase',
+  'increment',
   'index',
   'influence',
   'inform',

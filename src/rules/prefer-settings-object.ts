@@ -64,6 +64,16 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
       if (param.type === AST_NODE_TYPES.AssignmentPattern) {
         return getParameterType(param.left as TSESTree.Parameter);
       }
+      if (param.type === AST_NODE_TYPES.ObjectPattern && param.typeAnnotation) {
+        // For destructured parameters, use the type annotation name
+        const typeNode = param.typeAnnotation.typeAnnotation;
+        if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
+          return typeNode.typeName.type === AST_NODE_TYPES.Identifier
+            ? typeNode.typeName.name
+            : 'unknown';
+        }
+        return typeNode.type;
+      }
       if (param.type === AST_NODE_TYPES.Identifier && param.typeAnnotation) {
         const typeNode = param.typeAnnotation.typeAnnotation;
         if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
