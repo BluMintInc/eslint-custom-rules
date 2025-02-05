@@ -15,6 +15,12 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
     'const isLivestream = <TTime = Timestamp>(channelGroup: ChannelGroup<keyof GroupFilterMap, TTime>): channelGroup is ChannelGroup<Capitalize<LivestreamType>, TTime> => { return true; }',
     'function isLivestreamType(type: FilterType): type is FilterType { return true; }',
 
+    // Assertion functions with asserts keyword
+    'function assertIsString(value: unknown): asserts value is string { if (typeof value !== "string") throw new Error("Not a string"); }',
+    'const assertIsNumber = (value: unknown): asserts value is number => { if (typeof value !== "number") throw new Error("Not a number"); }',
+    'function assertNonNull<T>(value: T | null | undefined): asserts value is T { if (value == null) throw new Error("Value is null or undefined"); }',
+    'function assert(condition: unknown): asserts condition { if (!condition) throw new Error("Assertion failed"); }',
+
     // Recursive functions with explicit return type
     {
       code: 'function factorial(n: number): number { if (n <= 1) return 1; return n * factorial(n - 1); }',

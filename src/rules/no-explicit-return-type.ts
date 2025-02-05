@@ -120,9 +120,19 @@ function isTypeGuardFunction(node: TSESTree.Node): boolean {
   if (returnType.type !== AST_NODE_TYPES.TSTypeAnnotation) return false;
 
   const typeAnnotation = returnType.typeAnnotation;
-  if (typeAnnotation.type !== AST_NODE_TYPES.TSTypePredicate) return false;
 
-  return true;
+  // Check for type predicates (is keyword)
+  if (typeAnnotation.type === AST_NODE_TYPES.TSTypePredicate) return true;
+
+  // Check for assertion functions (asserts keyword)
+  if (typeAnnotation.type === AST_NODE_TYPES.TSTypeReference) {
+    const typeName = typeAnnotation.typeName;
+    if (typeName.type === AST_NODE_TYPES.Identifier && typeName.name === 'asserts') {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 export const noExplicitReturnType: TSESLint.RuleModule<
