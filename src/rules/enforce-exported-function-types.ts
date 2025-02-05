@@ -59,9 +59,12 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
       const typeParams = new Set<string>();
       let current: TSESTree.Node | undefined = node;
       while (current) {
-        // Handle type parameters in function declarations
-        if (current.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-            current.type === AST_NODE_TYPES.FunctionDeclaration) {
+        // Handle type parameters in function declarations, arrow functions, and variable declarations
+        if (
+          current.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+          current.type === AST_NODE_TYPES.FunctionDeclaration ||
+          current.type === AST_NODE_TYPES.VariableDeclarator
+        ) {
           if ('typeParameters' in current && current.typeParameters) {
             current.typeParameters.params.forEach((param) => {
               if (param.type === AST_NODE_TYPES.TSTypeParameter) {

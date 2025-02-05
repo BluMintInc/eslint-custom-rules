@@ -5,6 +5,8 @@ type MessageIds = 'avoidGenericPrefix';
 
 const DISALLOWED_PREFIXES = new Set(['get', 'update', 'check', 'manage', 'process', 'do']);
 
+const NEXTJS_DATA_FUNCTIONS = new Set(['getServerSideProps', 'getStaticProps', 'getStaticPaths']);
+
 const SUGGESTED_ALTERNATIVES = {
   get: ['fetch', 'retrieve', 'compute', 'derive'],
   update: ['modify', 'set', 'apply'],
@@ -41,6 +43,9 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
 
       // Skip if method starts with 'is' (boolean check methods are okay)
       if (methodName.startsWith('is')) return;
+
+      // Skip Next.js data-fetching functions
+      if (NEXTJS_DATA_FUNCTIONS.has(methodName)) return;
 
       // Extract first word from PascalCase/camelCase
       let firstWord = methodName;
@@ -85,6 +90,9 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
 
       // Skip if function starts with 'is' (boolean check functions are okay)
       if (functionName.startsWith('is')) return;
+
+      // Skip Next.js data-fetching functions
+      if (NEXTJS_DATA_FUNCTIONS.has(functionName)) return;
 
       // Extract first word from PascalCase/camelCase
       let firstWord = functionName;

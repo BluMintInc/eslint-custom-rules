@@ -234,6 +234,20 @@ ruleTesterJsx.run(
         };
       `,
       },
+      // Valid case: generic type parameter in exported arrow function
+      {
+        code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+
+        export const convertToDate = <TTime extends Timestamp | Date>(
+          timestamp: TTime,
+        ) => {
+          return timestamp instanceof Timestamp
+            ? timestamp.toDate()
+            : (timestamp as Date);
+        };
+      `,
+      },
     ],
     invalid: [
       // Invalid case: non-exported type with exported function
