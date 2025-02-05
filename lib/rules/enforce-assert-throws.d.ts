@@ -1,0 +1,1 @@
+export declare const enforceAssertThrows: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"assertShouldThrow", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;

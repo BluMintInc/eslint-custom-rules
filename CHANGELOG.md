@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.5.5...v1.6.0) (2025-02-05)
+
+
+### Features
+
+* **deploy-functions-changed.yml:** GitHub action to deploy only changed CFs ([375cdb4](https://github.com/BluMintInc/eslint-custom-rules/commit/375cdb47406dfeb3402aa4d249930879cccebb53))
+
 ## [1.5.5](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.5.4...v1.5.5) (2025-02-01)
 
 
