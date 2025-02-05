@@ -47,8 +47,74 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
               }
             }
           }
-          // Only flag update() calls
-          return property.name === 'update';
+
+          // Only flag update() calls that are Firestore operations
+          if (property.name === 'update') {
+            const object = node.callee.object;
+            if (object.type === AST_NODE_TYPES.CallExpression) {
+              // Check if it's a createHash().update() call
+              if (object.callee.type === AST_NODE_TYPES.Identifier &&
+                  object.callee.name === 'createHash') {
+                return false;
+              }
+            }
+
+            // Check if it's a Firestore document reference or transaction
+            let current: TSESTree.Node | undefined = node;
+            while (current?.parent) {
+              current = current.parent;
+              if (current.type === AST_NODE_TYPES.MemberExpression) {
+                const obj = current.object;
+                if (obj.type === AST_NODE_TYPES.Identifier) {
+                  // Check for common Firestore variable names
+                  if (obj.name === 'db' || obj.name === 'firestore' ||
+                      obj.name === 'transaction' || obj.name === 'docRef' ||
+                      obj.name === 'userRef' || obj.name.endsWith('Ref')) {
+                    return true;
+                  }
+                }
+              }
+            }
+
+            // Check if it's a Firestore document reference method chain
+            let currentObj = object;
+            while (currentObj.type === AST_NODE_TYPES.MemberExpression) {
+              if (currentObj.property.type === AST_NODE_TYPES.Identifier) {
+                const methodName = currentObj.property.name;
+                if (methodName === 'collection' || methodName === 'doc') {
+                  return true;
+                }
+              }
+              currentObj = currentObj.object;
+            }
+
+            // Check if it's a transaction.update() call
+            if (object.type === AST_NODE_TYPES.Identifier && object.name === 'transaction') {
+              return true;
+            }
+
+            // Check if it's a Firestore document reference by looking at imports
+            const program = context.getAncestors().find(
+              (node): node is TSESTree.Program => node.type === AST_NODE_TYPES.Program
+            );
+            if (program) {
+              for (const node of program.body) {
+                if (node.type === AST_NODE_TYPES.VariableDeclaration) {
+                  for (const decl of node.declarations) {
+                    if (decl.init?.type === AST_NODE_TYPES.CallExpression &&
+                        decl.init.callee.type === AST_NODE_TYPES.MemberExpression &&
+                        decl.init.callee.property.type === AST_NODE_TYPES.Identifier &&
+                        decl.init.callee.property.name === 'firestore') {
+                      return true;
+                    }
+                  }
+                }
+              }
+            }
+
+            return false;
+          }
+          return false;
         }
       }
       if (node.callee.type === AST_NODE_TYPES.Identifier) {
