@@ -53,6 +53,7 @@ import { noUnsafeFirestoreSpread } from './rules/no-unsafe-firestore-spread';
 import { noJsxInHooks } from './rules/no-jsx-in-hooks';
 import { enforceAssertThrows } from './rules/enforce-assert-throws';
 import { noMixedFirestoreTransactions } from './rules/no-mixed-firestore-transactions';
+import { enforceFirestoreFacade } from './rules/enforce-firestore-facade';
 
 module.exports = {
   meta: {
@@ -121,6 +122,7 @@ module.exports = {
         '@blumintinc/blumint/no-jsx-in-hooks': 'error',
         '@blumintinc/blumint/enforce-assert-throws': 'error',
         '@blumintinc/blumint/no-mixed-firestore-transactions': 'error',
+        '@blumintinc/blumint/enforce-firestore-facade': 'error',
       },
     },
   },
@@ -181,5 +183,6 @@ module.exports = {
     'no-jsx-in-hooks': noJsxInHooks,
     'enforce-assert-throws': enforceAssertThrows,
     'no-mixed-firestore-transactions': noMixedFirestoreTransactions,
+    'enforce-firestore-facade': enforceFirestoreFacade,
   },
 };
