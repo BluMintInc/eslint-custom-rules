@@ -37,6 +37,19 @@ ruleTesterTs.run('prefer-settings-object', preferSettingsObject, {
         function createUser({ name, age, isAdmin }: Settings) { return { name, age, isAdmin }; }
       `,
     },
+    // Different types with destructuring
+    {
+      code: `
+        type DocSetterTransactionOptions = { transaction: any; converterOptions?: any };
+        class DocSetterTransaction {
+          constructor(
+            collectionRef: CollectionReference,
+            { transaction, ...converterOptions }: DocSetterTransactionOptions
+          ) {}
+        }
+      `,
+      options: [{ checkSameTypeParameters: true }],
+    },
   ],
   invalid: [
     // Too many parameters
