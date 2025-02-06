@@ -241,6 +241,27 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
       return false;
     }
 
+    function hasABPattern(params: TSESTree.Parameter[]): boolean {
+      if (params.length !== 2) return false;
+
+      const paramNames = params.map(param => {
+        if (param.type === AST_NODE_TYPES.Identifier) {
+          return param.name;
+        }
+        return '';
+      });
+
+      // Check if both parameters end with 'A' and 'B' respectively and have the same prefix
+      const [first, second] = paramNames;
+      if (first.endsWith('A') && second.endsWith('B')) {
+        const firstPrefix = first.slice(0, -1);
+        const secondPrefix = second.slice(0, -1);
+        return firstPrefix === secondPrefix;
+      }
+
+      return false;
+    }
+
     function shouldIgnoreNode(node: TSESTree.Node): boolean {
       // Ignore built-in objects and third-party modules
       if (isBuiltInOrThirdParty(node)) return true;
@@ -267,6 +288,18 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
           }
           parent = parent.parent as TSESTree.Node;
         }
+      }
+
+      // Ignore functions with A/B pattern parameters
+      if (
+        (node.type === AST_NODE_TYPES.FunctionDeclaration ||
+          node.type === AST_NODE_TYPES.FunctionExpression ||
+          node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+          node.type === AST_NODE_TYPES.TSMethodSignature ||
+          node.type === AST_NODE_TYPES.TSFunctionType) &&
+        Array.isArray(node.params)
+      ) {
+        if (hasABPattern(node.params)) return true;
       }
 
       return false;
