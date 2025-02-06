@@ -3,17 +3,13 @@ import { createRule } from '../utils/createRule';
 
 type MessageIds = 'circularReference';
 
-type ObjectInfo = {
-  node: TSESTree.Node;
-  identifier?: string;
-};
+type Options = [
+  {
+    ignoreWithToJSON?: boolean;
+  }
+];
 
-type ScopeTracker = {
-  objects: Map<string, ObjectInfo>;
-  references: Map<string, Set<string>>;
-};
-
-export const noCircularRefs = createRule<[], MessageIds>({
+export const noCircularRefs = createRule<Options, MessageIds>({
   name: 'no-circular-refs',
   meta: {
     type: 'problem',
@@ -21,35 +17,36 @@ export const noCircularRefs = createRule<[], MessageIds>({
       description: 'Disallow circular references in objects',
       recommended: 'error',
     },
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          ignoreWithToJSON: {
+            type: 'boolean',
+            default: false,
+          },
+        },
+        additionalProperties: false,
+      },
+    ],
     messages: {
       circularReference: 'Circular reference detected. Objects should not reference themselves directly or indirectly.',
     },
   },
-  defaultOptions: [],
+  defaultOptions: [{ ignoreWithToJSON: false }],
   create(context) {
-    const scopeTracker: ScopeTracker = {
-      objects: new Map(),
-      references: new Map(),
-    };
-
-    function isObjectExpression(node: TSESTree.Node): node is TSESTree.ObjectExpression {
-      return node.type === AST_NODE_TYPES.ObjectExpression;
-    }
-
-    function isIdentifier(node: TSESTree.Node): node is TSESTree.Identifier {
-      return node.type === AST_NODE_TYPES.Identifier;
-    }
+    const [options] = context.options;
+    const objectRefs = new Map<string, Set<string>>();
+    const objectNodes = new Map<string, TSESTree.Node>();
+    const objectHasToJSON = new Set<string>();
 
     function addObject(name: string, node: TSESTree.Node): void {
-      scopeTracker.objects.set(name, { node });
-      if (!scopeTracker.references.has(name)) {
-        scopeTracker.references.set(name, new Set());
-      }
+      objectRefs.set(name, new Set());
+      objectNodes.set(name, node);
     }
 
     function addReference(fromName: string, toName: string): void {
-      const refs = scopeTracker.references.get(fromName);
+      const refs = objectRefs.get(fromName);
       if (refs) {
         refs.add(toName);
       }
@@ -65,10 +62,10 @@ export const noCircularRefs = createRule<[], MessageIds>({
       }
 
       visited.add(currentName);
-      const refs = scopeTracker.references.get(currentName);
+      const refs = objectRefs.get(currentName);
       if (refs) {
         for (const ref of refs) {
-          if (hasCircularReference(startName, ref, visited)) {
+          if (hasCircularReference(startName, ref, new Set(visited))) {
             return true;
           }
         }
@@ -79,10 +76,13 @@ export const noCircularRefs = createRule<[], MessageIds>({
 
     function checkAndReportCircular(name: string): void {
       if (hasCircularReference(name, name)) {
-        const obj = scopeTracker.objects.get(name);
-        if (obj) {
+        const node = objectNodes.get(name);
+        if (node) {
+          if (options.ignoreWithToJSON && objectHasToJSON.has(name)) {
+            return;
+          }
           context.report({
-            node: obj.node,
+            node,
             messageId: 'circularReference',
           });
         }
@@ -91,49 +91,63 @@ export const noCircularRefs = createRule<[], MessageIds>({
 
     return {
       VariableDeclarator(node): void {
-        if (isIdentifier(node.id) && node.init && isObjectExpression(node.init)) {
-          addObject(node.id.name, node.init);
+        if (node.id.type === AST_NODE_TYPES.Identifier) {
+          if (node.init?.type === AST_NODE_TYPES.ObjectExpression) {
+            const hasToJSON = node.init.properties.some(
+              (prop) =>
+                prop.type === AST_NODE_TYPES.Property &&
+                prop.key.type === AST_NODE_TYPES.Identifier &&
+                prop.key.name === 'toJSON'
+            );
+            addObject(node.id.name, node);
+            if (hasToJSON) {
+              objectHasToJSON.add(node.id.name);
+            }
+          }
         }
       },
 
       AssignmentExpression(node): void {
-        function getRootObject(expr: TSESTree.Expression): TSESTree.Identifier | null {
-          if (isIdentifier(expr)) {
-            return expr;
+        if (node.left.type === AST_NODE_TYPES.MemberExpression) {
+          const obj = node.left.object;
+          if (obj.type === AST_NODE_TYPES.Identifier) {
+            const objName = obj.name;
+            if (node.right.type === AST_NODE_TYPES.Identifier) {
+              const rightName = node.right.name;
+              if (objectRefs.has(objName) && objectRefs.has(rightName)) {
+                addReference(objName, rightName);
+                checkAndReportCircular(objName);
+              }
+            }
           }
-          if (expr.type === AST_NODE_TYPES.MemberExpression) {
-            return getRootObject(expr.object);
-          }
-          return null;
         }
 
-        const leftRoot = getRootObject(node.left);
-        const rightRoot = getRootObject(node.right);
-
-        if (leftRoot && rightRoot) {
-          const leftName = leftRoot.name;
-          const rightName = rightRoot.name;
-          if (scopeTracker.objects.has(leftName) && scopeTracker.objects.has(rightName)) {
-            addReference(leftName, rightName);
-            checkAndReportCircular(leftName);
-          }
+        // Handle toJSON method assignment
+        if (
+          node.left.type === AST_NODE_TYPES.MemberExpression &&
+          node.left.property.type === AST_NODE_TYPES.Identifier &&
+          node.left.property.name === 'toJSON' &&
+          node.left.object.type === AST_NODE_TYPES.Identifier
+        ) {
+          const objName = node.left.object.name;
+          objectHasToJSON.add(objName);
         }
       },
 
       Property(node): void {
         if (
           node.parent?.type === AST_NODE_TYPES.ObjectExpression &&
-          isIdentifier(node.value)
+          node.value.type === AST_NODE_TYPES.Identifier
         ) {
           const parentNode = node.parent;
           const parentParent = parentNode.parent;
           if (
             parentParent?.type === AST_NODE_TYPES.VariableDeclarator &&
-            isIdentifier(parentParent.id)
+            parentParent.id.type === AST_NODE_TYPES.Identifier
           ) {
             const objName = parentParent.id.name;
             const valueName = node.value.name;
-            if (scopeTracker.objects.has(objName) && scopeTracker.objects.has(valueName)) {
+            if (objectRefs.has(objName) && objectRefs.has(valueName)) {
               addReference(objName, valueName);
               checkAndReportCircular(objName);
             }
