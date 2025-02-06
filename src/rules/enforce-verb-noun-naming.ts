@@ -67,6 +67,7 @@ const VERBS_SET = new Set([
   'auto',
   'avoid',
   'back',
+  'backfill',
   'backup',
   'bake',
   'balance',
