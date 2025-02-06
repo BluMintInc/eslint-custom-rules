@@ -53,6 +53,31 @@ ruleTesterTs.run('enforce-assert-throws', enforceAssertThrows, {
         }
       `,
     },
+    // Function that calls another assert function
+    {
+      code: `
+        function assertAuthenticated(request: any) {
+          if (!request.auth) {
+            throw new Error('Not authenticated');
+          }
+        }
+
+        function assertGroupMember(request: any) {
+          assertAuthenticated(request);
+          const evaluator = new MembershipEvaluator(request);
+          evaluator.assertMember();
+        }
+      `,
+    },
+    // Function that calls an object's assert method
+    {
+      code: `
+        function assertValidData(data: any) {
+          const validator = new Validator();
+          validator.assertValid(data);
+        }
+      `,
+    },
   ],
   invalid: [
     // Function declaration without throw
