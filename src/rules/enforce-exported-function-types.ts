@@ -110,6 +110,7 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
 
     function isBuiltInType(typeName: string): boolean {
       const builtInTypes = new Set([
+        // Primitive types
         'string',
         'number',
         'boolean',
@@ -120,6 +121,7 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
         'never',
         'unknown',
         'object',
+        // Built-in objects
         'Date',
         'RegExp',
         'Error',
@@ -132,6 +134,28 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
         'Set',
         'WeakMap',
         'WeakSet',
+        // TypeScript utility types
+        'Record',
+        'Partial',
+        'Required',
+        'Readonly',
+        'Pick',
+        'Omit',
+        'Exclude',
+        'Extract',
+        'NonNullable',
+        'Parameters',
+        'ConstructorParameters',
+        'ReturnType',
+        'InstanceType',
+        'ThisParameterType',
+        'OmitThisParameter',
+        'ThisType',
+        'Uppercase',
+        'Lowercase',
+        'Capitalize',
+        'Uncapitalize',
+        'Awaited',
       ]);
       return builtInTypes.has(typeName);
     }
