@@ -1,4 +1,4 @@
-# Enforce using src/components/Link instead of next/link (`@blumintinc/blumint/use-custom-link`)
+# Prevent unsafe object/array spreads in Firestore updates (`@blumintinc/blumint/no-unsafe-firestore-spread`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

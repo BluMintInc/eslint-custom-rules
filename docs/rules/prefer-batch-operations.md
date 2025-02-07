@@ -1,4 +1,4 @@
-# Enforce using src/components/Link instead of next/link (`@blumintinc/blumint/use-custom-link`)
+# Enforce using setAll() and overwriteAll() instead of multiple set() or overwrite() calls (`@blumintinc/blumint/prefer-batch-operations`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
