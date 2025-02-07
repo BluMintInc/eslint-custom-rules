@@ -231,7 +231,13 @@ This repository is structured as an ESLint plugin, which means that new rules ca
     * Explain the rule's purpose, usage, options, and provide code examples.
     * Use `scripts/generateDocs.js` to automate documentation generation.
 
-4. **Acceptance Criteria:**
+4. **Register the Rule in index.ts:**
+    * Import your rule at the top of `src/index.ts`
+    * Add it to the `rules` object export
+    * If it should be enabled by default, add it to the `recommended` config section with appropriate severity ('error' in almost all cases, 'warn' in rare cases)
+    * Ensure the rule name in all places matches your file name in kebab-case
+
+5. **Acceptance Criteria:**
     * **Code Quality:**
         * The rule must adhere to ESLint's plugin guidelines.
         * The rule must pass linting and code style checks with zero errors.
