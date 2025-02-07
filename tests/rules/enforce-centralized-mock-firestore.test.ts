@@ -25,6 +25,73 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
         });
       `,
     },
+    // Valid case: Using renamed import
+    {
+      code: `
+        import { mockFirestore as centralMockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+
+        beforeEach(() => {
+          centralMockFirestore({
+            'some/path': [{ id: 'test' }],
+          });
+        });
+      `,
+    },
+    // Valid case: Using destructured import with comments
+    {
+      code: `
+        // Import the centralized mockFirestore
+        import {
+          // This is the mock we need
+          mockFirestore,
+          // Other imports
+          otherMock,
+        } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+
+        beforeEach(() => {
+          mockFirestore({
+            'some/path': [{ id: 'test' }],
+          });
+        });
+      `,
+    },
+    // Valid case: Using in async test
+    {
+      code: `
+        import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+
+        it('should work with async', async () => {
+          mockFirestore({
+            'some/path': [{ id: 'test' }],
+          });
+          await someAsyncOperation();
+        });
+      `,
+    },
+    // Valid case: Using with multiple test blocks
+    {
+      code: `
+        import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+
+        describe('test suite', () => {
+          beforeAll(() => {
+            mockFirestore({
+              'global/path': [{ id: 'global' }],
+            });
+          });
+
+          beforeEach(() => {
+            mockFirestore({
+              'some/path': [{ id: 'test' }],
+            });
+          });
+
+          afterEach(() => {
+            mockFirestore({});
+          });
+        });
+      `,
+    },
   ],
   invalid: [
     // Invalid case: Local mockFirestore declaration
@@ -41,7 +108,6 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
       errors: [{ messageId: 'useCentralizedMockFirestore' }],
       output: `
         import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
-
 
 
         beforeEach(() => {
@@ -65,7 +131,6 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
       errors: [{ messageId: 'useCentralizedMockFirestore' }],
       output: `
         import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
-
 
 
         beforeEach(() => {
@@ -97,6 +162,174 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
         beforeEach(() => {
           mockFirestore({
             'some/path': [{ id: 'test' }],
+          });
+        });
+      `,
+    },
+    // Invalid case: Using require syntax
+    {
+      code: `
+        const { mockFirestore } = require('./localMocks');
+
+        beforeEach(() => {
+          mockFirestore({
+            'some/path': [{ id: 'test' }],
+          });
+        });
+      `,
+      errors: [{ messageId: 'useCentralizedMockFirestore' }],
+      output: `
+        import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+
+
+        beforeEach(() => {
+          mockFirestore({
+            'some/path': [{ id: 'test' }],
+          });
+        });
+      `,
+    },
+    // Invalid case: Using with class property
+    {
+      code: `
+        class TestClass {
+          private mockFirestore = jest.fn();
+
+          beforeEach() {
+            this.mockFirestore({
+              'some/path': [{ id: 'test' }],
+            });
+          }
+        }
+      `,
+      errors: [{ messageId: 'useCentralizedMockFirestore' }],
+      output: `
+        import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+
+        class TestClass {
+
+          beforeEach() {
+            mockFirestore({
+              'some/path': [{ id: 'test' }],
+            });
+          }
+        }
+      `,
+    },
+    // Invalid case: Using with destructuring and renaming
+    {
+      code: `
+        const { mockFirestore: customMockFirestore } = require('./customMocks');
+
+        describe('test suite', () => {
+          beforeEach(() => {
+            customMockFirestore({
+              'some/path': [{ id: 'test' }],
+            });
+          });
+        });
+      `,
+      errors: [{ messageId: 'useCentralizedMockFirestore' }],
+      output: `
+        import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+
+
+        describe('test suite', () => {
+          beforeEach(() => {
+            mockFirestore({
+              'some/path': [{ id: 'test' }],
+            });
+          });
+        });
+      `,
+    },
+    // Invalid case: Using with dynamic import
+    {
+      code: `
+        async function setupTests() {
+          const { mockFirestore } = await import('./localMocks');
+
+          beforeEach(() => {
+            mockFirestore({
+              'some/path': [{ id: 'test' }],
+            });
+          });
+        }
+      `,
+      errors: [{ messageId: 'useCentralizedMockFirestore' }],
+      output: `
+        import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+
+        async function setupTests() {
+
+          beforeEach(() => {
+            mockFirestore({
+              'some/path': [{ id: 'test' }],
+            });
+          });
+        }
+      `,
+    },
+    // Invalid case: Using with multiple declarations
+    {
+      code: `
+        const mockFirestore1 = jest.fn();
+        const mockFirestore2 = jest.fn();
+        const mockFirestore = process.env.CI ? mockFirestore1 : mockFirestore2;
+
+        describe('test suite', () => {
+          beforeEach(() => {
+            mockFirestore({
+              'some/path': [{ id: 'test' }],
+            });
+          });
+        });
+      `,
+      errors: [{ messageId: 'useCentralizedMockFirestore' }],
+      output: `
+        import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+
+
+
+        describe('test suite', () => {
+          beforeEach(() => {
+            mockFirestore({
+              'some/path': [{ id: 'test' }],
+            });
+          });
+        });
+      `,
+    },
+    // Invalid case: Using with complex object destructuring
+    {
+      code: `
+        const {
+          mocks: {
+            firestore: {
+              mockFirestore
+            }
+          }
+        } = require('./complexMocks');
+
+        describe('test suite', () => {
+          beforeEach(() => {
+            mockFirestore({
+              'some/path': [{ id: 'test' }],
+            });
+          });
+        });
+      `,
+      errors: [{ messageId: 'useCentralizedMockFirestore' }],
+      output: `
+        import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+
+
+
+        describe('test suite', () => {
+          beforeEach(() => {
+            mockFirestore({
+              'some/path': [{ id: 'test' }],
+            });
           });
         });
       `,
