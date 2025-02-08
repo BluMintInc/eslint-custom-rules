@@ -118,13 +118,13 @@ ruleTesterTs.run('enforce-logical-grouping', enforceLogicalGrouping, {
 
     // Event handlers and callbacks
     `
+      const handleClose = () => {
+        setIsOpen(false);
+      };
+      
       const handleClick = (e: React.MouseEvent) => {
         e.preventDefault();
         setIsOpen(true);
-      };
-
-      const handleClose = () => {
-        setIsOpen(false);
       };
 
       return <button onClick={handleClick}>Open</button>;
