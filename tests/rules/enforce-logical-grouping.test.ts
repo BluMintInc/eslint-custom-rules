@@ -91,12 +91,11 @@ ruleTesterTs.run('enforce-logical-grouping', enforceLogicalGrouping, {
         const response = await api.get('/config');
         return response.data;
       };
+      const config = await fetchConfig();
 
       const processConfig = (config) => {
         return config.features;
       };
-
-      const config = await fetchConfig();
       const features = processConfig(config);
     `,
 
