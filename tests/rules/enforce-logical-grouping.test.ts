@@ -295,7 +295,6 @@ ruleTesterTs.run('enforce-logical-grouping', enforceLogicalGrouping, {
           const response = await fetch('/api');
           return response.json();
         }
-
         const result = await fetchData();
         console.log(result);
       `,
