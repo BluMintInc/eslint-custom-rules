@@ -194,6 +194,7 @@ ruleTesterTs.run('enforce-logical-grouping', enforceLogicalGrouping, {
       output: `
         console.log('Processing started');
 
+
         let results = [];
         for (const item of items) {
           results.push(processItem(item));
