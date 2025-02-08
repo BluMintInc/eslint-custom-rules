@@ -57,6 +57,7 @@ import { noComplexCloudParams } from './rules/no-complex-cloud-params';
 import { noMixedFirestoreTransactions } from './rules/no-mixed-firestore-transactions';
 import { enforceFirestoreFacade } from './rules/enforce-firestore-facade';
 import { syncOnwriteNameFunc } from './rules/sync-onwrite-name-func';
+import { enforceLogicalGrouping } from './rules/enforce-logical-grouping';
 
 module.exports = {
   meta: {
@@ -129,6 +130,7 @@ module.exports = {
         '@blumintinc/blumint/no-mixed-firestore-transactions': 'error',
         '@blumintinc/blumint/enforce-firestore-facade': 'error',
         '@blumintinc/blumint/sync-onwrite-name-func': 'error',
+        '@blumintinc/blumint/enforce-logical-grouping': 'error',
       },
     },
   },
@@ -193,5 +195,6 @@ module.exports = {
     'no-mixed-firestore-transactions': noMixedFirestoreTransactions,
     'enforce-firestore-facade': enforceFirestoreFacade,
     'sync-onwrite-name-func': syncOnwriteNameFunc,
+    'enforce-logical-grouping': enforceLogicalGrouping,
   },
 };
