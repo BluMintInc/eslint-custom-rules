@@ -176,6 +176,7 @@ ruleTesterTs.run('enforce-logical-grouping', enforceLogicalGrouping, {
         const group = useGroupDoc();
         const { id } = group || {};
 
+
         const { groupTabState } = useGroupRouter();
       `,
     },
