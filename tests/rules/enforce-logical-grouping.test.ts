@@ -319,11 +319,9 @@ ruleTesterTs.run('enforce-logical-grouping', enforceLogicalGrouping, {
           id: string;
           name: string;
         };
-
         function processUser(user: User) {
           return user.name;
         }
-
         const user: User = { id: '1', name: 'John' };
       `,
     },
