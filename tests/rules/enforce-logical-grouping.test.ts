@@ -672,13 +672,13 @@ ruleTesterTs.run('enforce-logical-grouping', enforceLogicalGrouping, {
     // Edge case: Hooks with TypeScript generics and scattered dependencies
     {
       code: `
+        const { data } = useQuery<User[]>();
+        const { mutate } = useMutation<User, Error>();
+        
         const handleUpdate = useCallback<UpdateHandler>(
           (user) => mutate(user),
           [mutate]
         );
-
-        const { data } = useQuery<User[]>();
-        const { mutate } = useMutation<User, Error>();
 
         const processedData = useMemo<ProcessedUser[]>(
           () => data?.map(processUser) ?? [],
