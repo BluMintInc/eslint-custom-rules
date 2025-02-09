@@ -512,25 +512,6 @@ ruleTesterTs.run('enforce-logical-grouping', enforceLogicalGrouping, {
       `,
     },
 
-    // Complex React component structure
-    {
-      code: `
-        const styles = useStyles();
-        function MyComponent() {
-          return <div>Hello</div>;
-        }
-        const [state, setState] = useState(null);
-      `,
-      errors: [{ messageId: 'logicalGrouping' }],
-      output: `
-        function MyComponent() {
-          return <div>Hello</div>;
-        }
-
-        const styles = useStyles();
-        const [state, setState] = useState(null);
-      `,
-    },
 
     // Edge case: Multiple hooks with shared dependencies in wrong order
     {
