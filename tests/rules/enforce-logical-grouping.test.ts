@@ -688,13 +688,12 @@ ruleTesterTs.run('enforce-logical-grouping', enforceLogicalGrouping, {
       errors: [{ messageId: 'logicalGrouping' }],
       output: `
         const { data } = useQuery<User[]>();
-        const { mutate } = useMutation<User, Error>();
-
         const processedData = useMemo<ProcessedUser[]>(
           () => data?.map(processUser) ?? [],
           [data]
         );
 
+        const { mutate } = useMutation<User, Error>();
         const handleUpdate = useCallback<UpdateHandler>(
           (user) => mutate(user),
           [mutate]
