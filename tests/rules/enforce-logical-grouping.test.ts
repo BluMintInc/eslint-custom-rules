@@ -581,13 +581,13 @@ ruleTesterTs.run('enforce-logical-grouping', enforceLogicalGrouping, {
       `,
       errors: [{ messageId: 'logicalGrouping' }],
       output: `
-        const { data } = useQuery();
         const isAdmin = useIsAdmin();
 
         const mutation = isAdmin
           ? useMutation(adminEndpoint)
           : useMutation(userEndpoint);
 
+        const { data } = useQuery();
         const handleSubmit = () => {
           mutation.mutate(data);
         };
