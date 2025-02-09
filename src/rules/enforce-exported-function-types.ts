@@ -315,7 +315,6 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
         'Validator',
         'Logger',
         'LogLevel',
-        'Config',
         'Options',
         'Settings',
         'Context',
@@ -420,7 +419,25 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
       }
     }
 
+    function checkAndReportParameterType(
+      param: TSESTree.Parameter,
+      messageId: MessageIds,
+    ): void {
+      if (param.type === AST_NODE_TYPES.Identifier && param.typeAnnotation) {
+        checkAndReportType(
+          param.typeAnnotation.typeAnnotation,
+          param.typeAnnotation,
+          messageId,
+        );
+      }
+    }
+
     function isTypeExported(typeName: string): boolean {
+      // If it's a built-in type, consider it as "exported"
+      if (isBuiltInType(typeName)) {
+        return true;
+      }
+
       const sourceCode = context.getSourceCode();
       const program = sourceCode.ast;
 
@@ -454,6 +471,14 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
           ) {
             return node.declaration.id.name === typeName;
           }
+          // Check for export { Type } statements
+          if (node.specifiers) {
+            return node.specifiers.some(
+              (specifier) =>
+                specifier.type === AST_NODE_TYPES.ExportSpecifier &&
+                specifier.local.name === typeName,
+            );
+          }
         }
         return false;
       });
@@ -484,16 +509,53 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
 
       // Handle type aliases in variable declarations
       if (parent.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
+        // Check if the type alias itself is exported
         if (parent.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration) {
           return true;
         }
+        // If not exported, return false
+        return false;
       }
 
       // Handle type aliases in interface declarations
       if (parent.type === AST_NODE_TYPES.TSInterfaceDeclaration) {
+        // Check if the interface itself is exported
         if (parent.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration) {
           return true;
         }
+        // If not exported, return false
+        return false;
+      }
+
+      // Handle type aliases in variable declarations
+      if (parent.type === AST_NODE_TYPES.VariableDeclarator) {
+        if (parent.parent?.type === AST_NODE_TYPES.VariableDeclaration) {
+          if (parent.parent.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration) {
+            return true;
+          }
+        }
+      }
+
+      // Handle type aliases in type declarations
+      if (parent.type === AST_NODE_TYPES.Identifier) {
+        if (parent.parent?.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
+          // Check if the type alias itself is exported
+          if (parent.parent.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration) {
+            return true;
+          }
+          // If not exported, return false
+          return false;
+        }
+      }
+
+      // Handle type aliases in type declarations
+      if (def.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
+        // Check if the type alias itself is exported
+        if (def.node.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration) {
+          return true;
+        }
+        // If not exported, return false
+        return false;
       }
 
       return false;
@@ -517,16 +579,7 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
 
         // Check parameter types
         node.params.forEach((param) => {
-          if (
-            param.type === AST_NODE_TYPES.Identifier &&
-            param.typeAnnotation
-          ) {
-            checkAndReportType(
-              param.typeAnnotation.typeAnnotation,
-              param.typeAnnotation,
-              'missingExportedType',
-            );
-          }
+          checkAndReportParameterType(param, 'missingExportedType');
         });
       },
 
@@ -554,16 +607,7 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
 
         // Check parameter types
         node.params.forEach((param) => {
-          if (
-            param.type === AST_NODE_TYPES.Identifier &&
-            param.typeAnnotation
-          ) {
-            checkAndReportType(
-              param.typeAnnotation.typeAnnotation,
-              param.typeAnnotation,
-              'missingExportedType',
-            );
-          }
+          checkAndReportParameterType(param, 'missingExportedType');
         });
       },
 
