@@ -1,4 +1,4 @@
-# Enforce using src/components/Link instead of next/link (`@blumintinc/blumint/use-custom-link`)
+# Disallow destructuring of class instances to prevent loss of `this` context (`@blumintinc/blumint/no-class-instance-destructuring`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

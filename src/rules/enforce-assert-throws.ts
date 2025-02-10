@@ -19,11 +19,36 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
+    function isAssertionCall(node: TSESTree.Node): boolean {
+      if (node.type === AST_NODE_TYPES.ExpressionStatement) {
+        const expression = node.expression;
+        if (expression.type === AST_NODE_TYPES.CallExpression) {
+          const callee = expression.callee;
+          if (callee.type === AST_NODE_TYPES.Identifier) {
+            return callee.name.toLowerCase().startsWith('assert');
+          }
+          if (callee.type === AST_NODE_TYPES.MemberExpression) {
+            const property = callee.property;
+            if (property.type === AST_NODE_TYPES.Identifier) {
+              return property.name.toLowerCase().startsWith('assert');
+            }
+          }
+        }
+      }
+      return false;
+    }
+
     function hasThrowStatement(node: TSESTree.Node): boolean {
       let hasThrow = false;
 
       function walk(node: TSESTree.Node): void {
         if (node.type === AST_NODE_TYPES.ThrowStatement) {
+          hasThrow = true;
+          return;
+        }
+
+        // Check for assertion function calls
+        if (isAssertionCall(node)) {
           hasThrow = true;
           return;
         }

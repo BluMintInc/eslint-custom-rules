@@ -1,4 +1,4 @@
-# Enforce using src/components/Link instead of next/link (`@blumintinc/blumint/use-custom-link`)
+# Ensure that the name field matches the func field in onWrite handlers (`@blumintinc/blumint/sync-onwrite-name-func`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

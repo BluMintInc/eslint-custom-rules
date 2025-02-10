@@ -1,4 +1,4 @@
-# Enforce using src/components/Link instead of next/link (`@blumintinc/blumint/use-custom-link`)
+# Disallow redundant parameter type annotations (`@blumintinc/blumint/no-redundant-param-types`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

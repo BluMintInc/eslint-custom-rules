@@ -191,6 +191,22 @@ ruleTesterTs.run('prefer-settings-object', preferSettingsObject, {
       `,
       options: [{ checkSameTypeParameters: true }],
     },
+    // Functions with A/B pattern parameters
+    {
+      code: `
+        // Parameters with A/B pattern should be ignored
+        export const toMembershipPath = (groupIdA: string, groupIdB: string) => {
+          const [firstId, secondId] = [groupIdA, groupIdB].sort();
+          return toMembershipPathKnown(\`\${firstId}-\${secondId}\`);
+        };
+
+        // Another example with A/B pattern
+        function compareValues(valueA: number, valueB: number) {
+          return valueA - valueB;
+        }
+      `,
+      options: [{ checkSameTypeParameters: true }],
+    },
   ],
   invalid: [
     // Too many parameters
