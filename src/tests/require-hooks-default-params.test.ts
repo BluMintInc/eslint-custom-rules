@@ -95,6 +95,15 @@ ruleTesterTs.run('require-hooks-default-params', requireHooksDefaultParams, {
         };
       `,
     },
+    // Hook with type imported from another module (should be ignored if has required params)
+    {
+      code: `
+        import { UseUnseenParams } from '../types';
+        export const useUnseen = ({ identifier, action }: UseUnseenParams) => {
+          return null;
+        };
+      `,
+    },
     // Hook with mixed required and optional properties (should be ignored)
     {
       code: `
