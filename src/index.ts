@@ -67,7 +67,7 @@ import { preferDestructuringNoClass } from './rules/prefer-destructuring-no-clas
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.6.0',
+    version: '1.7.0',
   },
   parseOptions: {
     ecmaVersion: 2020,

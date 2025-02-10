@@ -1,3 +1,11 @@
+# [1.7.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.6.0...v1.7.0) (2025-02-10)
+
+
+### Features
+
+* **.openhands_instructions:** improve and add hard acceptance criteria ([d077615](https://github.com/BluMintInc/eslint-custom-rules/commit/d0776152c141480ba2c0658149eef2ca02abf766))
+* **repo.md:** add in case openhands does not pick up .openhands_instructions ([769e644](https://github.com/BluMintInc/eslint-custom-rules/commit/769e64436bfcf576c5bcd0e1d02eb3e5f4b67610))
+
 # [1.6.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.5.5...v1.6.0) (2025-02-05)
 
 
