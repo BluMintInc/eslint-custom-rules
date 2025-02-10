@@ -248,6 +248,57 @@ ruleTesterJsx.run(
         };
       `,
       },
+      // Valid case: TypeScript utility type Record in exported function
+      {
+        code: `
+        export type RoundCohort = {
+          id: string;
+          name: string;
+        };
+
+        export const findCohortRoundFrom = (
+          rounds: Record<string, RoundCohort>,
+          matchId: string,
+        ) => {
+          // Implementation
+        };
+      `,
+      },
+      // Valid case: TypeScript utility type Partial in exported function
+      {
+        code: `
+        export type MatchCohort = {
+          id: string;
+          name: string;
+          score: number;
+        };
+
+        export const transformCohortMatches = (
+          matchesCohort: MatchCohort[],
+          updateData: Partial<MatchCohort>,
+        ) => {
+          // Implementation
+        };
+      `,
+      },
+      // Valid case: Multiple TypeScript utility types in exported function
+      {
+        code: `
+        export type User = {
+          id: string;
+          name: string;
+          email: string;
+          preferences: Record<string, unknown>;
+        };
+
+        export const updateUserPreferences = (
+          users: Record<string, User>,
+          updates: Record<string, Partial<Pick<User, 'preferences'>>>,
+        ) => {
+          // Implementation
+        };
+      `,
+      },
     ],
     invalid: [
       // Invalid case: non-exported type with exported function
