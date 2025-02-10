@@ -57,6 +57,12 @@ import { noComplexCloudParams } from './rules/no-complex-cloud-params';
 import { noMixedFirestoreTransactions } from './rules/no-mixed-firestore-transactions';
 import { enforceFirestoreFacade } from './rules/enforce-firestore-facade';
 import { syncOnwriteNameFunc } from './rules/sync-onwrite-name-func';
+import { preferCloneDeep } from './rules/prefer-clone-deep';
+import { noFirestoreJestMock } from './rules/no-firestore-jest-mock';
+import { noMockFirebaseAdmin } from './rules/no-mock-firebase-admin';
+import { enforceCentralizedMockFirestore } from './rules/enforce-centralized-mock-firestore';
+import { requireHooksDefaultParams } from './rules/require-hooks-default-params';
+import { preferDestructuringNoClass } from './rules/prefer-destructuring-no-class';
 
 module.exports = {
   meta: {
@@ -129,6 +135,12 @@ module.exports = {
         '@blumintinc/blumint/no-mixed-firestore-transactions': 'error',
         '@blumintinc/blumint/enforce-firestore-facade': 'error',
         '@blumintinc/blumint/sync-onwrite-name-func': 'error',
+        '@blumintinc/blumint/prefer-clone-deep': 'error',
+        '@blumintinc/blumint/no-firestore-jest-mock': 'error',
+        '@blumintinc/blumint/no-mock-firebase-admin': 'error',
+        '@blumintinc/blumint/enforce-centralized-mock-firestore': 'error',
+        '@blumintinc/blumint/require-hooks-default-params': 'error',
+        '@blumintinc/blumint/prefer-destructuring-no-class': 'error',
       },
     },
   },
@@ -193,5 +205,11 @@ module.exports = {
     'no-mixed-firestore-transactions': noMixedFirestoreTransactions,
     'enforce-firestore-facade': enforceFirestoreFacade,
     'sync-onwrite-name-func': syncOnwriteNameFunc,
+    'prefer-clone-deep': preferCloneDeep,
+    'no-firestore-jest-mock': noFirestoreJestMock,
+    'no-mock-firebase-admin': noMockFirebaseAdmin,
+    'enforce-centralized-mock-firestore': enforceCentralizedMockFirestore,
+    'require-hooks-default-params': requireHooksDefaultParams,
+    'prefer-destructuring-no-class': preferDestructuringNoClass,
   },
 };
