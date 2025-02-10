@@ -104,6 +104,18 @@ ruleTesterTs.run('require-hooks-default-params', requireHooksDefaultParams, {
         };
       `,
     },
+    // Hook with all required fields
+    {
+      code: `
+        export type UseUnseenParams = {
+          identifier: string;
+          action: () => void;
+        };
+        export const useUnseen = ({ identifier, action }: UseUnseenParams) => {
+          return null;
+        };
+      `,
+    },
     // Hook with mixed required and optional properties (should be ignored)
     {
       code: `
