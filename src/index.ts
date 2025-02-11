@@ -1,4 +1,5 @@
 import { arrayMethodsThisContext } from './rules/array-methods-this-context';
+import { arrayMethodMaxParams } from './rules/array-method-max-params';
 import { classMethodsReadTopToBottom } from './rules/class-methods-read-top-to-bottom';
 import { default as consistentCallbackNaming } from './rules/consistent-callback-naming';
 import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
@@ -76,6 +77,7 @@ module.exports = {
     recommended: {
       plugins: ['@blumintinc/blumint'],
       rules: {
+        '@blumintinc/blumint/array-method-max-params': ['error', { max: 2 }],
         '@blumintinc/blumint/avoid-utils-directory': 'error',
         '@blumintinc/blumint/enforce-firestore-path-utils': 'error',
         '@blumintinc/blumint/no-jsx-whitespace-literal': 'error',
@@ -146,6 +148,7 @@ module.exports = {
   },
 
   rules: {
+    'array-method-max-params': arrayMethodMaxParams,
     'array-methods-this-context': arrayMethodsThisContext,
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
     'consistent-callback-naming': consistentCallbackNaming,
