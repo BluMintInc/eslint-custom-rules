@@ -45,6 +45,11 @@ function isImmutableValue(node: TSESTree.Expression | null): boolean {
 function isMutableValue(node: TSESTree.Expression | null): boolean {
   if (!node) return false;
 
+  // Check for JSX elements (always mutable due to props/context)
+  if (node.type === 'JSXElement' || node.type === 'JSXFragment') {
+    return true;
+  }
+
   // Check for object expressions (always mutable)
   if (node.type === 'ObjectExpression') {
     return true;
