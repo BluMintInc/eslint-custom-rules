@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'preferFragment' | 'addFragmentImport';
@@ -52,7 +52,7 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
       }
     }
 
-    function addFragmentImport(fixer: TSESTree.RuleFix) {
+    function addFragmentImport(fixer: TSESLint.RuleFixer) {
       if (reactImportNode) {
         // Add Fragment to existing react import
         const lastSpecifier = reactImportNode.specifiers[reactImportNode.specifiers.length - 1];
