@@ -101,7 +101,7 @@ module.exports = {
         '@blumintinc/blumint/no-unpinned-dependencies': 'error',
         '@blumintinc/blumint/no-unused-props': 'error',
         //'@blumintinc/blumint/no-useless-fragment': 'error',
-        '@blumintinc/blumint/prefer-fragment-shorthand': 'error',
+        //'@blumintinc/blumint/prefer-fragment-shorthand': 'error',
         '@blumintinc/blumint/prefer-type-over-interface': 'error',
         '@blumintinc/blumint/require-memo': 'error',
         '@blumintinc/blumint/require-dynamic-firebase-imports': 'error',
