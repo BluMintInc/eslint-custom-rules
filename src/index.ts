@@ -64,6 +64,7 @@ import { enforceCentralizedMockFirestore } from './rules/enforce-centralized-moc
 import { requireHooksDefaultParams } from './rules/require-hooks-default-params';
 import { preferDestructuringNoClass } from './rules/prefer-destructuring-no-class';
 import { enforceRenderHitsMemoization } from './rules/enforce-render-hits-memoization';
+import { preferFragmentComponent } from './rules/prefer-fragment-component';
 
 module.exports = {
   meta: {
@@ -100,7 +101,7 @@ module.exports = {
         '@blumintinc/blumint/no-unpinned-dependencies': 'error',
         '@blumintinc/blumint/no-unused-props': 'error',
         //'@blumintinc/blumint/no-useless-fragment': 'error',
-        '@blumintinc/blumint/prefer-fragment-shorthand': 'error',
+        //'@blumintinc/blumint/prefer-fragment-shorthand': 'error',
         '@blumintinc/blumint/prefer-type-over-interface': 'error',
         '@blumintinc/blumint/require-memo': 'error',
         '@blumintinc/blumint/require-dynamic-firebase-imports': 'error',
@@ -143,6 +144,7 @@ module.exports = {
         '@blumintinc/blumint/require-hooks-default-params': 'error',
         '@blumintinc/blumint/prefer-destructuring-no-class': 'error',
         '@blumintinc/blumint/enforce-render-hits-memoization': 'error',
+        '@blumintinc/blumint/prefer-fragment-component': 'error',
       },
     },
   },
@@ -214,5 +216,6 @@ module.exports = {
     'require-hooks-default-params': requireHooksDefaultParams,
     'prefer-destructuring-no-class': preferDestructuringNoClass,
     'enforce-render-hits-memoization': enforceRenderHitsMemoization,
+    'prefer-fragment-component': preferFragmentComponent,
   },
 };
