@@ -63,6 +63,7 @@ import { noMockFirebaseAdmin } from './rules/no-mock-firebase-admin';
 import { enforceCentralizedMockFirestore } from './rules/enforce-centralized-mock-firestore';
 import { requireHooksDefaultParams } from './rules/require-hooks-default-params';
 import { preferDestructuringNoClass } from './rules/prefer-destructuring-no-class';
+import { enforceRenderHitsMemoization } from './rules/enforce-render-hits-memoization';
 
 module.exports = {
   meta: {
@@ -141,6 +142,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-centralized-mock-firestore': 'error',
         '@blumintinc/blumint/require-hooks-default-params': 'error',
         '@blumintinc/blumint/prefer-destructuring-no-class': 'error',
+        '@blumintinc/blumint/enforce-render-hits-memoization': 'error',
       },
     },
   },
@@ -211,5 +213,6 @@ module.exports = {
     'enforce-centralized-mock-firestore': enforceCentralizedMockFirestore,
     'require-hooks-default-params': requireHooksDefaultParams,
     'prefer-destructuring-no-class': preferDestructuringNoClass,
+    'enforce-render-hits-memoization': enforceRenderHitsMemoization,
   },
 };

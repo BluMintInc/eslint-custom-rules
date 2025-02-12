@@ -71,7 +71,14 @@ function getObjectUsagesInHook(
   const visited = new Set<TSESTree.Node>();
   let needsEntireObject = false;
 
-  function buildAccessPath(node: TSESTree.MemberExpression): string | null {
+  // Built-in array methods that should not be considered as object properties
+const ARRAY_METHODS = new Set([
+  'map', 'filter', 'reduce', 'forEach', 'some', 'every', 'find', 'findIndex',
+  'includes', 'indexOf', 'join', 'slice', 'splice', 'concat', 'push', 'pop',
+  'shift', 'unshift', 'sort', 'reverse', 'flat', 'flatMap'
+]);
+
+function buildAccessPath(node: TSESTree.MemberExpression): string | null {
     const parts: string[] = [];
     let current: TSESTree.Node = node;
     let hasOptionalChaining = false;
@@ -85,6 +92,12 @@ function getObjectUsagesInHook(
       if (memberExpr.property.type !== AST_NODE_TYPES.Identifier) {
         return null;
       }
+
+      // Skip array methods
+      if (memberExpr.property.name && ARRAY_METHODS.has(memberExpr.property.name)) {
+        return null;
+      }
+
       parts.unshift(memberExpr.property.name);
       if (memberExpr.optional) {
         hasOptionalChaining = true;

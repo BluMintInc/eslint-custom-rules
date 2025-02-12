@@ -154,6 +154,26 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
         }
       `,
     },
+    // Should allow JSX elements in local variables
+    {
+      code: `
+        import { ReactNode } from 'react';
+        import { EventHit, RenderCard, RenderWrapper } from '../algolia/catalog-wrappers/EventsCalendar';
+
+        export const transformToEventKeyed = <THit extends EventHit<Date>>({
+          hit,
+          Card,
+          Wrapper,
+        }: TransformToEventProps<THit>) => {
+          const cardRendered: ReactNode = <Card {...hit} />;
+
+          return {
+            key: hit.objectID,
+            Node: Wrapper ? <Wrapper hit={hit}>{cardRendered}</Wrapper> : cardRendered,
+          };
+        };
+      `,
+    },
   ],
   invalid: [
     // Should flag immutable string constants

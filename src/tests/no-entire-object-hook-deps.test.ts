@@ -78,6 +78,34 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    // Using array methods should be valid
+    {
+      code: `
+        const MyComponent = ({ hits }) => {
+          const convertedHits = useMemo(() => {
+            const converter = ConverterFactory.buildDateConverter();
+            return hits.map((hit) => {
+              return converter.convertData(hit);
+            });
+          }, [hits]);
+          return <div>{convertedHits}</div>;
+        };
+      `,
+    },
+    // Using multiple array methods should be valid
+    {
+      code: `
+        const MyComponent = ({ items }) => {
+          const filteredAndMapped = useMemo(() => {
+            return items
+              .filter(item => item.active)
+              .map(item => item.name)
+              .join(', ');
+          }, [items]);
+          return <div>{filteredAndMapped}</div>;
+        };
+      `,
+    },
     // Using string path with split() should be valid
     {
       code: `

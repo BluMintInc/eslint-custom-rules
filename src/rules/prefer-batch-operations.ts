@@ -78,6 +78,49 @@ function findLoopNode(node: TSESTree.Node): { node: TSESTree.Node; isArrayMethod
   return undefined;
 }
 
+function isFirestoreSetterInstance(node: TSESTree.Node): boolean {
+  // Check if it's a DocSetter instance
+  if (node.type === AST_NODE_TYPES.NewExpression) {
+    return (
+      node.callee.type === AST_NODE_TYPES.Identifier &&
+      node.callee.name === 'DocSetter'
+    );
+  }
+
+  return false;
+}
+
+function isMapInstance(node: TSESTree.Node): boolean {
+  // Check if it's a Map instance
+  if (node.type === AST_NODE_TYPES.NewExpression) {
+    return (
+      node.callee.type === AST_NODE_TYPES.Identifier &&
+      node.callee.name === 'Map'
+    );
+  }
+
+  return false;
+}
+
+function findVariableDeclaration(node: TSESTree.Node, varName: string): TSESTree.VariableDeclarator | undefined {
+  let current: TSESTree.Node | undefined = node;
+  while (current) {
+    if (current.type === AST_NODE_TYPES.Program) {
+      for (const statement of current.body) {
+        if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
+          for (const decl of statement.declarations) {
+            if (decl.id.type === AST_NODE_TYPES.Identifier && decl.id.name === varName) {
+              return decl;
+            }
+          }
+        }
+      }
+    }
+    current = current.parent as TSESTree.Node;
+  }
+  return undefined;
+}
+
 function isSetterMethodCall(node: TSESTree.Node): { isValid: boolean; methodName?: string; setterInstance?: string } {
   if (node.type !== AST_NODE_TYPES.CallExpression) return { isValid: false };
   const callee = node.callee;
@@ -89,6 +132,16 @@ function isSetterMethodCall(node: TSESTree.Node): { isValid: boolean; methodName
   const object = callee.object;
   if (object.type !== AST_NODE_TYPES.Identifier) return { isValid: false };
   const setterInstance = object.name;
+
+  // Find the variable declaration
+  const decl = findVariableDeclaration(node, setterInstance);
+  if (!decl || !decl.init) return { isValid: false };
+
+  // Skip if it's a Map instance
+  if (isMapInstance(decl.init)) return { isValid: false };
+
+  // Check if it's a Firestore setter instance
+  if (!isFirestoreSetterInstance(decl.init)) return { isValid: false };
 
   // Get the method name
   const methodName = callee.property.name;

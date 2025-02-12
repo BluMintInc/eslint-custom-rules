@@ -110,6 +110,7 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
 
     function isBuiltInType(typeName: string): boolean {
       const builtInTypes = new Set([
+        // Primitive types
         'string',
         'number',
         'boolean',
@@ -120,6 +121,9 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
         'never',
         'unknown',
         'object',
+        'symbol',
+        'bigint',
+        // Built-in objects
         'Date',
         'RegExp',
         'Error',
@@ -132,6 +136,259 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
         'Set',
         'WeakMap',
         'WeakSet',
+        'Proxy',
+        'DataView',
+        'ArrayBuffer',
+        'SharedArrayBuffer',
+        'Atomics',
+        'Intl',
+        'JSON',
+        'Math',
+        'Reflect',
+        'WeakRef',
+        'FinalizationRegistry',
+        // TypeScript utility types
+        'Record',
+        'Partial',
+        'Required',
+        'Readonly',
+        'Pick',
+        'Omit',
+        'Exclude',
+        'Extract',
+        'NonNullable',
+        'Parameters',
+        'ConstructorParameters',
+        'ReturnType',
+        'InstanceType',
+        'ThisParameterType',
+        'OmitThisParameter',
+        'ThisType',
+        'Uppercase',
+        'Lowercase',
+        'Capitalize',
+        'Uncapitalize',
+        'Awaited',
+        'PropertyKey',
+        'Mutable',
+        'DeepPartial',
+        'DeepReadonly',
+        'DeepRequired',
+        'Merge',
+        'MergeExclusive',
+        'OptionalKeys',
+        'RequiredKeys',
+        'ReadonlyKeys',
+        'WritableKeys',
+        'UnionToIntersection',
+        'UnionToTuple',
+        'Promisable',
+        // React types
+        'ReactElement',
+        'ReactNode',
+        'ReactChild',
+        'ReactChildren',
+        'ReactFragment',
+        'ReactPortal',
+        'ReactText',
+        'JSX',
+        'JSXElement',
+        'JSXElementConstructor',
+        'ComponentType',
+        'ComponentProps',
+        'ComponentRef',
+        'ElementType',
+        'ElementRef',
+        'Ref',
+        'RefObject',
+        'RefCallback',
+        'LegacyRef',
+        'PropsWithRef',
+        'PropsWithChildren',
+        'PropsWithoutRef',
+        'FC',
+        'FunctionComponent',
+        'VFC',
+        'VoidFunctionComponent',
+        'ForwardRefRenderFunction',
+        'ForwardRefExoticComponent',
+        'MutableRefObject',
+        'ClassAttributes',
+        'DOMAttributes',
+        'CSSProperties',
+        'StyleHTMLAttributes',
+        'AriaAttributes',
+        'DOMElement',
+        'ReactHTML',
+        'ReactSVG',
+        // Node.js types
+        'Buffer',
+        'ReadableStream',
+        'WritableStream',
+        'DuplexStream',
+        'TransformStream',
+        'ReadStream',
+        'WriteStream',
+        'EventEmitter',
+        'Timeout',
+        'Immediate',
+        'NodeJS',
+        'Process',
+        'Global',
+        // DOM types
+        'HTMLElement',
+        'Element',
+        'Node',
+        'Document',
+        'Window',
+        'Event',
+        'CustomEvent',
+        'MouseEvent',
+        'KeyboardEvent',
+        'TouchEvent',
+        'DragEvent',
+        'ClipboardEvent',
+        'FocusEvent',
+        'FormEvent',
+        'ChangeEvent',
+        'AnimationEvent',
+        'TransitionEvent',
+        'SVGElement',
+        'File',
+        'FileList',
+        'Blob',
+        'URL',
+        'URLSearchParams',
+        'FormData',
+        'Headers',
+        'Request',
+        'Response',
+        'WebSocket',
+        'Worker',
+        'ServiceWorker',
+        'MessagePort',
+        'Storage',
+        'CSSStyleDeclaration',
+        // Common library types
+        'Observable',
+        'Subscription',
+        'Subject',
+        'BehaviorSubject',
+        'ReplaySubject',
+        'AsyncSubject',
+        'Observer',
+        'Operator',
+        'Scheduler',
+        'Unsubscribable',
+        'SubscriptionLike',
+        'TeardownLogic',
+        'MonoTypeOperatorFunction',
+        'OperatorFunction',
+        'UnaryFunction',
+        'Action',
+        'AnyAction',
+        'Dispatch',
+        'Reducer',
+        'Store',
+        'Middleware',
+        'Selector',
+        'ThunkAction',
+        'ThunkDispatch',
+        'Query',
+        'Mutation',
+        'QueryResult',
+        'MutationResult',
+        'UseQueryResult',
+        'UseMutationResult',
+        'UseInfiniteQueryResult',
+        'Schema',
+        'Model',
+        'Document',
+        'ObjectId',
+        'Collection',
+        'Db',
+        'Client',
+        'Session',
+        'Transaction',
+        'ValidationError',
+        'ValidationResult',
+        'Validator',
+        'Logger',
+        'LogLevel',
+        'Options',
+        'Settings',
+        'Context',
+        'Next',
+        'Middleware',
+        'Route',
+        'Router',
+        'Handler',
+        'Controller',
+        'Service',
+        'Repository',
+        'Entity',
+        'DTO',
+        'Enum',
+        'Union',
+        'Intersection',
+        'Tuple',
+        'Readonly',
+        'ReadonlyArray',
+        'ReadonlyMap',
+        'ReadonlySet',
+        'Iterable',
+        'Iterator',
+        'Generator',
+        'AsyncIterator',
+        'AsyncGenerator',
+        'Thenable',
+        'PromiseLike',
+        'ArrayLike',
+        'Indexable',
+        'Nullable',
+        'Optional',
+        'NonOptional',
+        'NonNullable',
+        'NonUndefined',
+        'NonVoid',
+        'NonEmptyArray',
+        'DeepReadonly',
+        'DeepPartial',
+        'DeepRequired',
+        'DeepNonNullable',
+        'DeepMutable',
+        'Primitive',
+        'Nullish',
+        'Falsy',
+        'Truthy',
+        'Exact',
+        'Strict',
+        'Loose',
+        'Writable',
+        'Mutable',
+        'Immutable',
+        'Frozen',
+        'Sealed',
+        'Extensible',
+        'Constructable',
+        'Abstract',
+        'Concrete',
+        'Override',
+        'Overwrite',
+        'OmitByValue',
+        'PickByValue',
+        'RequiredBy',
+        'OptionalBy',
+        'ReadonlyBy',
+        'MutableBy',
+        'NullableBy',
+        'NonNullableBy',
+        'UndefinedBy',
+        'NonUndefinedBy',
+        'NeverBy',
+        'UnknownBy',
+        'AnyBy',
+        'VoidBy',
       ]);
       return builtInTypes.has(typeName);
     }
@@ -162,7 +419,25 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
       }
     }
 
+    function checkAndReportParameterType(
+      param: TSESTree.Parameter,
+      messageId: MessageIds,
+    ): void {
+      if (param.type === AST_NODE_TYPES.Identifier && param.typeAnnotation) {
+        checkAndReportType(
+          param.typeAnnotation.typeAnnotation,
+          param.typeAnnotation,
+          messageId,
+        );
+      }
+    }
+
     function isTypeExported(typeName: string): boolean {
+      // If it's a built-in type, consider it as "exported"
+      if (isBuiltInType(typeName)) {
+        return true;
+      }
+
       const sourceCode = context.getSourceCode();
       const program = sourceCode.ast;
 
@@ -196,6 +471,14 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
           ) {
             return node.declaration.id.name === typeName;
           }
+          // Check for export { Type } statements
+          if (node.specifiers) {
+            return node.specifiers.some(
+              (specifier) =>
+                specifier.type === AST_NODE_TYPES.ExportSpecifier &&
+                specifier.local.name === typeName,
+            );
+          }
         }
         return false;
       });
@@ -226,16 +509,53 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
 
       // Handle type aliases in variable declarations
       if (parent.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
+        // Check if the type alias itself is exported
         if (parent.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration) {
           return true;
         }
+        // If not exported, return false
+        return false;
       }
 
       // Handle type aliases in interface declarations
       if (parent.type === AST_NODE_TYPES.TSInterfaceDeclaration) {
+        // Check if the interface itself is exported
         if (parent.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration) {
           return true;
         }
+        // If not exported, return false
+        return false;
+      }
+
+      // Handle type aliases in variable declarations
+      if (parent.type === AST_NODE_TYPES.VariableDeclarator) {
+        if (parent.parent?.type === AST_NODE_TYPES.VariableDeclaration) {
+          if (parent.parent.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration) {
+            return true;
+          }
+        }
+      }
+
+      // Handle type aliases in type declarations
+      if (parent.type === AST_NODE_TYPES.Identifier) {
+        if (parent.parent?.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
+          // Check if the type alias itself is exported
+          if (parent.parent.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration) {
+            return true;
+          }
+          // If not exported, return false
+          return false;
+        }
+      }
+
+      // Handle type aliases in type declarations
+      if (def.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
+        // Check if the type alias itself is exported
+        if (def.node.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration) {
+          return true;
+        }
+        // If not exported, return false
+        return false;
       }
 
       return false;
@@ -259,16 +579,7 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
 
         // Check parameter types
         node.params.forEach((param) => {
-          if (
-            param.type === AST_NODE_TYPES.Identifier &&
-            param.typeAnnotation
-          ) {
-            checkAndReportType(
-              param.typeAnnotation.typeAnnotation,
-              param.typeAnnotation,
-              'missingExportedType',
-            );
-          }
+          checkAndReportParameterType(param, 'missingExportedType');
         });
       },
 
@@ -296,16 +607,7 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
 
         // Check parameter types
         node.params.forEach((param) => {
-          if (
-            param.type === AST_NODE_TYPES.Identifier &&
-            param.typeAnnotation
-          ) {
-            checkAndReportType(
-              param.typeAnnotation.typeAnnotation,
-              param.typeAnnotation,
-              'missingExportedType',
-            );
-          }
+          checkAndReportParameterType(param, 'missingExportedType');
         });
       },
 
