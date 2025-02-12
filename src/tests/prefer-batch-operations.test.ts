@@ -3,6 +3,33 @@ import { preferBatchOperations } from '../rules/prefer-batch-operations';
 
 ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
   valid: [
+    // Map.set() calls should not be flagged
+    `
+      const seen = new Map();
+      for (const hit of hits) {
+        if (!seen.has(hit.objectID)) {
+          seen.set(hit.objectID, true);
+        }
+      }
+    `,
+    // Map.set() in useMemo should not be flagged
+    `
+      import { useMemo } from 'react';
+      import { Hit } from '../../../functions/src/types/Hit';
+
+      export const useHitsDeduped = (hits: Hit[]) => {
+        return useMemo(() => {
+          const seen = new Map();
+          return hits.filter((hit) => {
+            if (!seen.has(hit.objectID)) {
+              seen.set(hit.objectID, true);
+              return true;
+            }
+            return false;
+          });
+        }, [hits]);
+      };
+    `,
     // Single set() call is allowed
     `
       const setter = new DocSetter(collectionRef);
