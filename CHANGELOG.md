@@ -1,3 +1,10 @@
+## [1.7.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.7.1...v1.7.2) (2025-02-12)
+
+
+### Bug Fixes
+
+* **index.ts:** turn off prefer-fragment-shorthand in recommended config ([aec89ff](https://github.com/BluMintInc/eslint-custom-rules/commit/aec89ff56b2940de5125bd51c4d62d85b1ebfa90))
+
 ## [1.7.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.7.0...v1.7.1) (2025-02-12)
 
 
