@@ -64,6 +64,7 @@ import { enforceCentralizedMockFirestore } from './rules/enforce-centralized-moc
 import { requireHooksDefaultParams } from './rules/require-hooks-default-params';
 import { preferDestructuringNoClass } from './rules/prefer-destructuring-no-class';
 import { enforceRenderHitsMemoization } from './rules/enforce-render-hits-memoization';
+import { requireRouterStateConstantKey } from './rules/require-router-state-constant-key';
 
 module.exports = {
   meta: {
@@ -143,6 +144,7 @@ module.exports = {
         '@blumintinc/blumint/require-hooks-default-params': 'error',
         '@blumintinc/blumint/prefer-destructuring-no-class': 'error',
         '@blumintinc/blumint/enforce-render-hits-memoization': 'error',
+        '@blumintinc/blumint/require-router-state-constant-key': 'warn',
       },
     },
   },
@@ -214,5 +216,6 @@ module.exports = {
     'require-hooks-default-params': requireHooksDefaultParams,
     'prefer-destructuring-no-class': preferDestructuringNoClass,
     'enforce-render-hits-memoization': enforceRenderHitsMemoization,
+    'require-router-state-constant-key': requireRouterStateConstantKey,
   },
 };
