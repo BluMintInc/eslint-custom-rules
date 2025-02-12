@@ -1,3 +1,10 @@
+## [1.7.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.7.0...v1.7.1) (2025-02-12)
+
+
+### Bug Fixes
+
+* **src/tests/require-hooks-default-params.test.ts:** add correct test that was causing the rule to fail ([e33901d](https://github.com/BluMintInc/eslint-custom-rules/commit/e33901ddc447c4ec14f9fa5166e202aa3c4184a4))
+
 # [1.7.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.6.0...v1.7.0) (2025-02-10)
 
 

@@ -68,7 +68,7 @@ import { enforceRenderHitsMemoization } from './rules/enforce-render-hits-memoiz
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.7.0',
+    version: '1.7.1',
   },
   parseOptions: {
     ecmaVersion: 2020,
