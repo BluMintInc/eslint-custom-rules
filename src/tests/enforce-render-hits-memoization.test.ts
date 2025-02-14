@@ -1,7 +1,7 @@
-import { ruleTesterTs } from '../utils/ruleTester';
+import { ruleTesterJsx } from '../utils/ruleTester';
 import { enforceRenderHitsMemoization } from '../rules/enforce-render-hits-memoization';
 
-ruleTesterTs.run(
+ruleTesterJsx.run(
   'enforce-render-hits-memoization',
   enforceRenderHitsMemoization,
   {
