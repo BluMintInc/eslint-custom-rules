@@ -1,5 +1,5 @@
 import { ruleTesterTs } from '../utils/ruleTester';
-import { preferFragmentComponent } from '../../src/rules/prefer-fragment-component';
+import { preferFragmentComponent } from '../rules/prefer-fragment-component';
 
 ruleTesterTs.run('prefer-fragment-component', preferFragmentComponent, {
   valid: [

@@ -1,28 +1,31 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noMixedFirestoreTransactions } from '../rules/no-mixed-firestore-transactions';
 
-ruleTesterTs.run('no-mixed-firestore-transactions', noMixedFirestoreTransactions, {
-  valid: [
-    // Valid: Using transaction-aware classes inside transaction
-    {
-      code: `
+ruleTesterTs.run(
+  'no-mixed-firestore-transactions',
+  noMixedFirestoreTransactions,
+  {
+    valid: [
+      // Valid: Using transaction-aware classes inside transaction
+      {
+        code: `
         await db.runTransaction(async (tx) => {
           const txSetter = new DocSetterTransaction(ref, { transaction: tx });
           txSetter.set(doc1);
           txSetter.set(doc2);
         });
       `,
-    },
-    // Valid: Using non-transactional classes outside transaction
-    {
-      code: `
+      },
+      // Valid: Using non-transactional classes outside transaction
+      {
+        code: `
         const setter = new DocSetter(ref);
         await setter.set(doc);
       `,
-    },
-    // Valid: Using transaction-aware classes in helper function
-    {
-      code: `
+      },
+      // Valid: Using transaction-aware classes in helper function
+      {
+        code: `
         async function updateUser(tx: FirebaseFirestore.Transaction) {
           const txSetter = new DocSetterTransaction(ref, { transaction: tx });
           txSetter.set(doc1);
@@ -32,19 +35,19 @@ ruleTesterTs.run('no-mixed-firestore-transactions', noMixedFirestoreTransactions
           await updateUser(tx);
         });
       `,
-    },
-    // Valid: Using non-Firestore classes inside transaction
-    {
-      code: `
+      },
+      // Valid: Using non-Firestore classes inside transaction
+      {
+        code: `
         await db.runTransaction(async (tx) => {
           const logger = new Logger();
           logger.log("Transaction started");
         });
       `,
-    },
-    // Valid: Multiple transactions with correct usage
-    {
-      code: `
+      },
+      // Valid: Multiple transactions with correct usage
+      {
+        code: `
         await db.runTransaction(async (tx1) => {
           const txSetter1 = new DocSetterTransaction(ref, { transaction: tx1 });
           txSetter1.set(doc1);
@@ -55,10 +58,10 @@ ruleTesterTs.run('no-mixed-firestore-transactions', noMixedFirestoreTransactions
           txSetter2.set(doc2);
         });
       `,
-    },
-    // Valid: Nested transactions with correct usage
-    {
-      code: `
+      },
+      // Valid: Nested transactions with correct usage
+      {
+        code: `
         await db.runTransaction(async (outerTx) => {
           const outerSetter = new DocSetterTransaction(ref, { transaction: outerTx });
           await outerSetter.set(doc1);
@@ -69,10 +72,10 @@ ruleTesterTs.run('no-mixed-firestore-transactions', noMixedFirestoreTransactions
           });
         });
       `,
-    },
-    // Valid: Transaction with try-catch using transaction-aware classes
-    {
-      code: `
+      },
+      // Valid: Transaction with try-catch using transaction-aware classes
+      {
+        code: `
         await db.runTransaction(async (tx) => {
           try {
             const txSetter = new DocSetterTransaction(ref, { transaction: tx });
@@ -83,10 +86,10 @@ ruleTesterTs.run('no-mixed-firestore-transactions', noMixedFirestoreTransactions
           }
         });
       `,
-    },
-    // Valid: Transaction with array methods using transaction-aware classes
-    {
-      code: `
+      },
+      // Valid: Transaction with array methods using transaction-aware classes
+      {
+        code: `
         await db.runTransaction(async (tx) => {
           const txSetter = new DocSetterTransaction(ref, { transaction: tx });
           await Promise.all(docs.map(async (doc) => {
@@ -94,10 +97,10 @@ ruleTesterTs.run('no-mixed-firestore-transactions', noMixedFirestoreTransactions
           }));
         });
       `,
-    },
-    // Valid: Transaction with object methods
-    {
-      code: `
+      },
+      // Valid: Transaction with object methods
+      {
+        code: `
         const obj = {
           async process(tx: FirebaseFirestore.Transaction) {
             const txSetter = new DocSetterTransaction(ref, { transaction: tx });
@@ -108,19 +111,19 @@ ruleTesterTs.run('no-mixed-firestore-transactions', noMixedFirestoreTransactions
           await obj.process(tx);
         });
       `,
-    },
-    // Valid: Transaction with destructured parameters
-    {
-      code: `
+      },
+      // Valid: Transaction with destructured parameters
+      {
+        code: `
         await db.runTransaction(async ({ _firestore }) => {
           const txSetter = new DocSetterTransaction(ref, { transaction: _firestore });
           await txSetter.set(doc);
         });
       `,
-    },
-    // Valid: Transaction with IIFE
-    {
-      code: `
+      },
+      // Valid: Transaction with IIFE
+      {
+        code: `
         await db.runTransaction(async (tx) => {
           await (async () => {
             const txSetter = new DocSetterTransaction(ref, { transaction: tx });
@@ -128,10 +131,10 @@ ruleTesterTs.run('no-mixed-firestore-transactions', noMixedFirestoreTransactions
           })();
         });
       `,
-    },
-    // Valid: Transaction in class method
-    {
-      code: `
+      },
+      // Valid: Transaction in class method
+      {
+        code: `
         class TransactionManager {
           async execute() {
             await db.runTransaction(async (tx) => {
@@ -141,10 +144,10 @@ ruleTesterTs.run('no-mixed-firestore-transactions', noMixedFirestoreTransactions
           }
         }
       `,
-    },
-    // Valid: Transaction with promise chains
-    {
-      code: `
+      },
+      // Valid: Transaction with promise chains
+      {
+        code: `
         await db.runTransaction(async (tx) => {
           const txSetter = new DocSetterTransaction(ref, { transaction: tx });
           return txSetter.set(doc1)
@@ -152,60 +155,66 @@ ruleTesterTs.run('no-mixed-firestore-transactions', noMixedFirestoreTransactions
             .then(() => txSetter.set(doc3));
         });
       `,
-    },
-  ],
-  invalid: [
-    // Invalid: Using DocSetter inside transaction
-    {
-      code: `
+      },
+    ],
+    invalid: [
+      // Invalid: Using DocSetter inside transaction
+      {
+        code: `
         await db.runTransaction(async (tx) => {
           const regularSetter = new DocSetter(ref);
           await regularSetter.set(doc);
         });
       `,
-      errors: [{
-        messageId: 'noMixedTransactions',
-        data: {
-          className: 'DocSetter',
-          transactionalClass: 'DocSetterTransaction',
-        },
-      }],
-    },
-    // Invalid: Using FirestoreDocFetcher inside transaction
-    {
-      code: `
+        errors: [
+          {
+            messageId: 'noMixedTransactions',
+            data: {
+              className: 'DocSetter',
+              transactionalClass: 'DocSetterTransaction',
+            },
+          },
+        ],
+      },
+      // Invalid: Using FirestoreDocFetcher inside transaction
+      {
+        code: `
         await db.runTransaction(async (tx) => {
           const fetcher = new FirestoreDocFetcher(ref);
           await fetcher.fetch();
         });
       `,
-      errors: [{
-        messageId: 'noMixedTransactions',
-        data: {
-          className: 'FirestoreDocFetcher',
-          transactionalClass: 'FirestoreDocFetcherTransaction',
-        },
-      }],
-    },
-    // Invalid: Using FirestoreFetcher inside transaction
-    {
-      code: `
+        errors: [
+          {
+            messageId: 'noMixedTransactions',
+            data: {
+              className: 'FirestoreDocFetcher',
+              transactionalClass: 'FirestoreDocFetcherTransaction',
+            },
+          },
+        ],
+      },
+      // Invalid: Using FirestoreFetcher inside transaction
+      {
+        code: `
         await db.runTransaction(async (tx) => {
           const fetcher = new FirestoreFetcher(ref);
           await fetcher.fetch();
         });
       `,
-      errors: [{
-        messageId: 'noMixedTransactions',
-        data: {
-          className: 'FirestoreFetcher',
-          transactionalClass: 'FirestoreFetcherTransaction',
-        },
-      }],
-    },
-    // Invalid: Mixing transactional and non-transactional operations
-    {
-      code: `
+        errors: [
+          {
+            messageId: 'noMixedTransactions',
+            data: {
+              className: 'FirestoreFetcher',
+              transactionalClass: 'FirestoreFetcherTransaction',
+            },
+          },
+        ],
+      },
+      // Invalid: Mixing transactional and non-transactional operations
+      {
+        code: `
         await db.runTransaction(async (tx) => {
           const txSetter = new DocSetterTransaction(ref, { transaction: tx });
           const regularSetter = new DocSetter(ref);
@@ -214,17 +223,19 @@ ruleTesterTs.run('no-mixed-firestore-transactions', noMixedFirestoreTransactions
           await regularSetter.set(doc2);
         });
       `,
-      errors: [{
-        messageId: 'noMixedTransactions',
-        data: {
-          className: 'DocSetter',
-          transactionalClass: 'DocSetterTransaction',
-        },
-      }],
-    },
-    // Invalid: Multiple non-transactional classes in the same transaction
-    {
-      code: `
+        errors: [
+          {
+            messageId: 'noMixedTransactions',
+            data: {
+              className: 'DocSetter',
+              transactionalClass: 'DocSetterTransaction',
+            },
+          },
+        ],
+      },
+      // Invalid: Multiple non-transactional classes in the same transaction
+      {
+        code: `
         await db.runTransaction(async (tx) => {
           const setter = new DocSetter(ref);
           const fetcher = new FirestoreDocFetcher(ref);
@@ -235,33 +246,33 @@ ruleTesterTs.run('no-mixed-firestore-transactions', noMixedFirestoreTransactions
           await listFetcher.fetch();
         });
       `,
-      errors: [
-        {
-          messageId: 'noMixedTransactions',
-          data: {
-            className: 'DocSetter',
-            transactionalClass: 'DocSetterTransaction',
+        errors: [
+          {
+            messageId: 'noMixedTransactions',
+            data: {
+              className: 'DocSetter',
+              transactionalClass: 'DocSetterTransaction',
+            },
           },
-        },
-        {
-          messageId: 'noMixedTransactions',
-          data: {
-            className: 'FirestoreDocFetcher',
-            transactionalClass: 'FirestoreDocFetcherTransaction',
+          {
+            messageId: 'noMixedTransactions',
+            data: {
+              className: 'FirestoreDocFetcher',
+              transactionalClass: 'FirestoreDocFetcherTransaction',
+            },
           },
-        },
-        {
-          messageId: 'noMixedTransactions',
-          data: {
-            className: 'FirestoreFetcher',
-            transactionalClass: 'FirestoreFetcherTransaction',
+          {
+            messageId: 'noMixedTransactions',
+            data: {
+              className: 'FirestoreFetcher',
+              transactionalClass: 'FirestoreFetcherTransaction',
+            },
           },
-        },
-      ],
-    },
-    // Invalid: Conditional instantiation of non-transactional class
-    {
-      code: `
+        ],
+      },
+      // Invalid: Conditional instantiation of non-transactional class
+      {
+        code: `
         await db.runTransaction(async (tx) => {
           const txSetter = new DocSetterTransaction(ref, { transaction: tx });
           if (condition) {
@@ -270,17 +281,19 @@ ruleTesterTs.run('no-mixed-firestore-transactions', noMixedFirestoreTransactions
           }
         });
       `,
-      errors: [{
-        messageId: 'noMixedTransactions',
-        data: {
-          className: 'DocSetter',
-          transactionalClass: 'DocSetterTransaction',
-        },
-      }],
-    },
-    // Invalid: Non-transactional class in try-catch
-    {
-      code: `
+        errors: [
+          {
+            messageId: 'noMixedTransactions',
+            data: {
+              className: 'DocSetter',
+              transactionalClass: 'DocSetterTransaction',
+            },
+          },
+        ],
+      },
+      // Invalid: Non-transactional class in try-catch
+      {
+        code: `
         await db.runTransaction(async (tx) => {
           try {
             const regularSetter = new DocSetter(ref);
@@ -291,26 +304,26 @@ ruleTesterTs.run('no-mixed-firestore-transactions', noMixedFirestoreTransactions
           }
         });
       `,
-      errors: [
-        {
-          messageId: 'noMixedTransactions',
-          data: {
-            className: 'DocSetter',
-            transactionalClass: 'DocSetterTransaction',
+        errors: [
+          {
+            messageId: 'noMixedTransactions',
+            data: {
+              className: 'DocSetter',
+              transactionalClass: 'DocSetterTransaction',
+            },
           },
-        },
-        {
-          messageId: 'noMixedTransactions',
-          data: {
-            className: 'FirestoreDocFetcher',
-            transactionalClass: 'FirestoreDocFetcherTransaction',
+          {
+            messageId: 'noMixedTransactions',
+            data: {
+              className: 'FirestoreDocFetcher',
+              transactionalClass: 'FirestoreDocFetcherTransaction',
+            },
           },
-        },
-      ],
-    },
-    // Invalid: Non-transactional class in array method callback
-    {
-      code: `
+        ],
+      },
+      // Invalid: Non-transactional class in array method callback
+      {
+        code: `
         await db.runTransaction(async (tx) => {
           await Promise.all(docs.map(async (doc) => {
             const regularSetter = new DocSetter(ref);
@@ -318,17 +331,19 @@ ruleTesterTs.run('no-mixed-firestore-transactions', noMixedFirestoreTransactions
           }));
         });
       `,
-      errors: [{
-        messageId: 'noMixedTransactions',
-        data: {
-          className: 'DocSetter',
-          transactionalClass: 'DocSetterTransaction',
-        },
-      }],
-    },
-    // Invalid: Non-transactional class in object method
-    {
-      code: `
+        errors: [
+          {
+            messageId: 'noMixedTransactions',
+            data: {
+              className: 'DocSetter',
+              transactionalClass: 'DocSetterTransaction',
+            },
+          },
+        ],
+      },
+      // Invalid: Non-transactional class in object method
+      {
+        code: `
         const obj = {
           async process(tx: FirebaseFirestore.Transaction) {
             const regularSetter = new DocSetter(ref);
@@ -339,17 +354,19 @@ ruleTesterTs.run('no-mixed-firestore-transactions', noMixedFirestoreTransactions
           await obj.process(tx);
         });
       `,
-      errors: [{
-        messageId: 'noMixedTransactions',
-        data: {
-          className: 'DocSetter',
-          transactionalClass: 'DocSetterTransaction',
-        },
-      }],
-    },
-    // Invalid: Non-transactional class in IIFE
-    {
-      code: `
+        errors: [
+          {
+            messageId: 'noMixedTransactions',
+            data: {
+              className: 'DocSetter',
+              transactionalClass: 'DocSetterTransaction',
+            },
+          },
+        ],
+      },
+      // Invalid: Non-transactional class in IIFE
+      {
+        code: `
         await db.runTransaction(async (tx) => {
           await (async () => {
             const regularSetter = new DocSetter(ref);
@@ -357,17 +374,19 @@ ruleTesterTs.run('no-mixed-firestore-transactions', noMixedFirestoreTransactions
           })();
         });
       `,
-      errors: [{
-        messageId: 'noMixedTransactions',
-        data: {
-          className: 'DocSetter',
-          transactionalClass: 'DocSetterTransaction',
-        },
-      }],
-    },
-    // Invalid: Non-transactional class in promise chain
-    {
-      code: `
+        errors: [
+          {
+            messageId: 'noMixedTransactions',
+            data: {
+              className: 'DocSetter',
+              transactionalClass: 'DocSetterTransaction',
+            },
+          },
+        ],
+      },
+      // Invalid: Non-transactional class in promise chain
+      {
+        code: `
         await db.runTransaction(async (tx) => {
           const regularSetter = new DocSetter(ref);
           return regularSetter.set(doc1)
@@ -375,13 +394,16 @@ ruleTesterTs.run('no-mixed-firestore-transactions', noMixedFirestoreTransactions
             .then(() => regularSetter.set(doc3));
         });
       `,
-      errors: [{
-        messageId: 'noMixedTransactions',
-        data: {
-          className: 'DocSetter',
-          transactionalClass: 'DocSetterTransaction',
-        },
-      }],
-    },
-  ],
-});
+        errors: [
+          {
+            messageId: 'noMixedTransactions',
+            data: {
+              className: 'DocSetter',
+              transactionalClass: 'DocSetterTransaction',
+            },
+          },
+        ],
+      },
+    ],
+  },
+);
