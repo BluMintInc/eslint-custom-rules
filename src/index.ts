@@ -144,7 +144,7 @@ module.exports = {
         '@blumintinc/blumint/require-hooks-default-params': 'error',
         '@blumintinc/blumint/prefer-destructuring-no-class': 'error',
         '@blumintinc/blumint/enforce-render-hits-memoization': 'error',
-        '@blumintinc/blumint/require-router-state-constant-key': 'warn',
+        '@blumintinc/blumint/require-router-state-constant-key': 'error',
       },
     },
   },
