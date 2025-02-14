@@ -21,7 +21,7 @@ export const noMockFirebaseAdmin = createRule<[], MessageIds>({
     schema: [],
     messages: {
       noMockFirebaseAdmin:
-        'Do not mock firebaseAdmin directly. Use mockFirestore from __mocks__/functions/src/config/mockFirestore instead.',
+        'Do not mock firebaseAdmin directly. Use mockFirestore from __test-utils__/mockFirestore instead.',
     },
   },
   defaultOptions: [],

@@ -10,7 +10,7 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
         },
         // Valid: Test file using mockFirestore
         {
-            code: `import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';`,
+            code: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';`,
             filename: 'src/components/test.test.ts',
         },
         // Valid: Test file with no Firestore mocks
@@ -43,13 +43,13 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
         // Valid: Test file with dynamic import of allowed package
         {
             code: `const mockFn = async () => {
-                const { mockFirestore } = await import('../../../../../__mocks__/functions/src/config/mockFirestore');
+                const { mockFirestore } = await import('../../../../../__test-utils__/mockFirestore');
             };`,
             filename: 'src/components/test.test.ts',
         },
         // Valid: Test file with type import
         {
-            code: `import type { MockFirestoreTypes } from '../../../../../__mocks__/functions/src/config/mockFirestore';`,
+            code: `import type { MockFirestoreTypes } from '../../../../../__test-utils__/mockFirestore';`,
             filename: 'src/components/test.test.ts',
         },
     ],
@@ -59,14 +59,14 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
             code: `import { mockFirebase } from 'firestore-jest-mock';`,
             filename: 'src/components/test.test.ts',
             errors: [{ messageId: 'noFirestoreJestMock' }],
-            output: `import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';`,
+            output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';`,
         },
         // Invalid: Multiple imports with aliases
         {
             code: `import { mockFirebase as myMock, mockSet as mySet } from 'firestore-jest-mock';`,
             filename: 'src/components/test.test.ts',
             errors: [{ messageId: 'noFirestoreJestMock' }],
-            output: `import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';`,
+            output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';`,
         },
         // Invalid: jest.mock usage
         {
@@ -102,7 +102,7 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
             filename: 'src/components/test.test.ts',
             errors: [{ messageId: 'noFirestoreJestMock' }],
             output: `import { render } from '@testing-library/react';
-            import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+            import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
             import { useState } from 'react';`,
         },
         // Invalid: Import with line breaks and comments
@@ -115,7 +115,7 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
             } from 'firestore-jest-mock';`,
             filename: 'src/components/test.test.ts',
             errors: [{ messageId: 'noFirestoreJestMock' }],
-            output: `import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';`,
+            output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';`,
         },
         // Invalid: jest.mock with other configurations
         {

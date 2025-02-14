@@ -32,7 +32,7 @@ jest.mock('../../config/firebaseAdmin');
 Examples of **correct** code for this rule:
 
 ```ts
-import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
 beforeEach(() => {
   mockFirestore({

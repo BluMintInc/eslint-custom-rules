@@ -5,7 +5,7 @@ ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
   valid: [
     // Valid usage of mockFirestore
     {
-      code: `import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+      code: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
       beforeEach(() => {
         mockFirestore({

@@ -36,7 +36,7 @@ export const noFirestoreJestMock = createRule<[], MessageIds>({
                             // Replace with mockFirestore import
                             return fixer.replaceText(
                                 node,
-                                "import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';"
+                                "import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';"
                             );
                         },
                     });
