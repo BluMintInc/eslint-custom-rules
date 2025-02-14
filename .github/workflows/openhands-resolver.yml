@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   call-openhands-resolver:
-    uses: All-Hands-AI/OpenHands/.github/workflows/openhands-resolver.yml@main
+    uses: All-Hands-AI/OpenHands/.github/workflows/openhands-resolver.yml@b46d8881050fdb2f706da9f67b814ddc62cb106b
     with:
       macro: ${{ vars.OPENHANDS_MACRO || '@openhands-agent' }}
       target_branch: "develop"
