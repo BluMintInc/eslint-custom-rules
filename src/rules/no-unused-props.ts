@@ -39,7 +39,49 @@ export const noUnusedProps = createRule({
                 }
               });
             } else if (typeNode.type === AST_NODE_TYPES.TSIntersectionType) {
-              typeNode.types.forEach(extractProps);
+              typeNode.types.forEach((type) => {
+                if (type.type === AST_NODE_TYPES.TSTypeReference) {
+                  const typeName = type.typeName;
+                  if (typeName.type === AST_NODE_TYPES.Identifier) {
+                    if (typeName.name === 'Pick' && type.typeParameters) {
+                      // Handle Pick utility type in intersection
+                      const [baseType, pickedProps] = type.typeParameters.params;
+                      if (baseType.type === AST_NODE_TYPES.TSTypeReference &&
+                          baseType.typeName.type === AST_NODE_TYPES.Identifier) {
+                        // Extract the picked properties from the union type
+                        if (pickedProps.type === AST_NODE_TYPES.TSUnionType) {
+                          pickedProps.types.forEach((t) => {
+                            if (t.type === AST_NODE_TYPES.TSLiteralType &&
+                                t.literal.type === AST_NODE_TYPES.Literal &&
+                                typeof t.literal.value === 'string') {
+                              // Add each picked property as a regular prop
+                              props[t.literal.value] = t.literal;
+                            }
+                          });
+                        } else if (pickedProps.type === AST_NODE_TYPES.TSLiteralType &&
+                                 pickedProps.literal.type === AST_NODE_TYPES.Literal &&
+                                 typeof pickedProps.literal.value === 'string') {
+                          // Single property pick
+                          props[pickedProps.literal.value] = pickedProps.literal;
+                        }
+                      }
+                    } else {
+                      // For referenced types in intersections, we need to find their type declaration
+                      const scope = context.getScope();
+                      const variable = scope.variables.find(v => v.name === typeName.name);
+                      if (variable && variable.defs[0]?.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
+                        extractProps(variable.defs[0].node.typeAnnotation);
+                      } else {
+                        // If we can't find the type declaration, it's likely an imported type
+                        // Mark it as a forwarded prop
+                        props[`...${typeName.name}`] = typeName;
+                      }
+                    }
+                  }
+                } else {
+                  extractProps(type);
+                }
+              });
             } else if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
               if (typeNode.typeName.type === AST_NODE_TYPES.Identifier) {
                 if (typeNode.typeName.name === 'Pick' && typeNode.typeParameters) {
