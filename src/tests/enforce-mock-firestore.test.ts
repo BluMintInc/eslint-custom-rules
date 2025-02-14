@@ -6,7 +6,7 @@ ruleTesterTs.run('enforce-mock-firestore', enforceFirestoreMock, {
     // Valid use of mockFirestore
     {
       code: `
-        import { mockFirestore } from '__mocks__/functions/src/config/mockFirestore';
+        import { mockFirestore } from '__test-utils__/mockFirestore';
 
         mockFirestore({
           users: [{ id: '123', name: 'John Doe' }],
@@ -32,7 +32,7 @@ ruleTesterTs.run('enforce-mock-firestore', enforceFirestoreMock, {
     // Valid use of mockFirestore with multiple collections
     {
       code: `
-        import { mockFirestore } from '__mocks__/functions/src/config/mockFirestore';
+        import { mockFirestore } from '__test-utils__/mockFirestore';
 
         mockFirestore({
           users: [{ id: '123', name: 'John' }],
@@ -43,7 +43,7 @@ ruleTesterTs.run('enforce-mock-firestore', enforceFirestoreMock, {
     // Valid use of mockFirestore with nested collections
     {
       code: `
-        import { mockFirestore } from '__mocks__/functions/src/config/mockFirestore';
+        import { mockFirestore } from '__test-utils__/mockFirestore';
 
         mockFirestore({
           users: [{
@@ -57,7 +57,7 @@ ruleTesterTs.run('enforce-mock-firestore', enforceFirestoreMock, {
     // Valid use of mockFirestore with empty collections
     {
       code: `
-        import { mockFirestore } from '__mocks__/functions/src/config/mockFirestore';
+        import { mockFirestore } from '__test-utils__/mockFirestore';
 
         mockFirestore({
           users: [],

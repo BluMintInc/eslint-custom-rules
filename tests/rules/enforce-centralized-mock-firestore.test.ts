@@ -6,7 +6,7 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
     // Valid case: Using the centralized mockFirestore
     {
       code: `
-        import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+        import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
         beforeEach(() => {
           mockFirestore({
@@ -28,7 +28,7 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
     // Valid case: Using renamed import
     {
       code: `
-        import { mockFirestore as centralMockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+        import { mockFirestore as centralMockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
         beforeEach(() => {
           centralMockFirestore({
@@ -46,7 +46,7 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
           mockFirestore,
           // Other imports
           otherMock,
-        } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+        } from '../../../../../__test-utils__/mockFirestore';
 
         beforeEach(() => {
           mockFirestore({
@@ -58,7 +58,7 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
     // Valid case: Using in async test
     {
       code: `
-        import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+        import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
         it('should work with async', async () => {
           mockFirestore({
@@ -71,7 +71,7 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
     // Valid case: Using with multiple test blocks
     {
       code: `
-        import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+        import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
         describe('test suite', () => {
           beforeAll(() => {
@@ -107,7 +107,7 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
       `,
       errors: [{ messageId: 'useCentralizedMockFirestore' }],
       output: `
-        import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+        import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
 
         beforeEach(() => {
@@ -130,7 +130,7 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
       `,
       errors: [{ messageId: 'useCentralizedMockFirestore' }],
       output: `
-        import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+        import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
 
         beforeEach(() => {
@@ -154,7 +154,7 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
       `,
       errors: [{ messageId: 'useCentralizedMockFirestore' }],
       output: `
-        import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+        import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
         const myMockFirestore = jest.fn();
 
@@ -179,7 +179,7 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
       `,
       errors: [{ messageId: 'useCentralizedMockFirestore' }],
       output: `
-        import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+        import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
 
         beforeEach(() => {
@@ -204,7 +204,7 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
       `,
       errors: [{ messageId: 'useCentralizedMockFirestore' }],
       output: `
-        import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+        import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
         class TestClass {
 
@@ -231,7 +231,7 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
       `,
       errors: [{ messageId: 'useCentralizedMockFirestore' }],
       output: `
-        import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+        import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
 
         describe('test suite', () => {
@@ -258,7 +258,7 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
       `,
       errors: [{ messageId: 'useCentralizedMockFirestore' }],
       output: `
-        import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+        import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
         async function setupTests() {
 
@@ -287,7 +287,7 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
       `,
       errors: [{ messageId: 'useCentralizedMockFirestore' }],
       output: `
-        import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+        import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
 
 
@@ -321,7 +321,7 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
       `,
       errors: [{ messageId: 'useCentralizedMockFirestore' }],
       output: `
-        import { mockFirestore } from '../../../../../__mocks__/functions/src/config/mockFirestore';
+        import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
 
 
