@@ -64,83 +64,99 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
   invalid: [
     {
       code: 'function getData() {}',
-      errors: [{
-        messageId: 'avoidGenericPrefix',
-        data: {
-          prefix: 'get',
-          alternatives: 'fetch, retrieve, compute, derive',
+      errors: [
+        {
+          messageId: 'avoidGenericPrefix',
+          data: {
+            prefix: 'get',
+            alternatives: 'fetch, retrieve, compute, derive',
+          },
         },
-      }],
+      ],
     },
     {
       code: 'function updateUser() {}',
-      errors: [{
-        messageId: 'avoidGenericPrefix',
-        data: {
-          prefix: 'update',
-          alternatives: 'modify, set, apply',
+      errors: [
+        {
+          messageId: 'avoidGenericPrefix',
+          data: {
+            prefix: 'update',
+            alternatives: 'modify, set, apply',
+          },
         },
-      }],
+      ],
     },
     {
       code: 'function checkValidity() {}',
-      errors: [{
-        messageId: 'avoidGenericPrefix',
-        data: {
-          prefix: 'check',
-          alternatives: 'validate, assert, ensure',
+      errors: [
+        {
+          messageId: 'avoidGenericPrefix',
+          data: {
+            prefix: 'check',
+            alternatives: 'validate, assert, ensure',
+          },
         },
-      }],
+      ],
     },
     {
       code: 'function manageTasks() {}',
-      errors: [{
-        messageId: 'avoidGenericPrefix',
-        data: {
-          prefix: 'manage',
-          alternatives: 'control, coordinate, schedule',
+      errors: [
+        {
+          messageId: 'avoidGenericPrefix',
+          data: {
+            prefix: 'manage',
+            alternatives: 'control, coordinate, schedule',
+          },
         },
-      }],
+      ],
     },
     {
       code: 'function processInput() {}',
-      errors: [{
-        messageId: 'avoidGenericPrefix',
-        data: {
-          prefix: 'process',
-          alternatives: 'transform, sanitize, compute',
+      errors: [
+        {
+          messageId: 'avoidGenericPrefix',
+          data: {
+            prefix: 'process',
+            alternatives: 'transform, sanitize, compute',
+          },
         },
-      }],
+      ],
     },
     {
       code: 'function doSomething() {}',
-      errors: [{
-        messageId: 'avoidGenericPrefix',
-        data: {
-          prefix: 'do',
-          alternatives: 'execute, perform, apply',
+      errors: [
+        {
+          messageId: 'avoidGenericPrefix',
+          data: {
+            prefix: 'do',
+            alternatives: 'execute, perform, apply',
+          },
         },
-      }],
+      ],
     },
     {
       code: 'const getData = () => {}',
-      errors: [{
-        messageId: 'avoidGenericPrefix',
-        data: {
-          prefix: 'get',
-          alternatives: 'fetch, retrieve, compute, derive',
+      errors: [
+        {
+          messageId: 'avoidGenericPrefix',
+          data: {
+            prefix: 'get',
+            alternatives: 'fetch, retrieve, compute, derive',
+          },
         },
-      }],
+      ],
     },
     {
       code: 'const updateUser = function() {}',
-      errors: [{
-        messageId: 'avoidGenericPrefix',
-        data: {
-          prefix: 'update',
-          alternatives: 'modify, set, apply',
+      errors: [
+        {
+          messageId: 'avoidGenericPrefix',
+          data: {
+            prefix: 'update',
+            alternatives: 'modify, set, apply',
+          },
         },
-      }],
+      ],
     },
     {
       code: `
@@ -148,13 +164,15 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
           protected async updateUserData() {}
         }
       `,
-      errors: [{
-        messageId: 'avoidGenericPrefix',
-        data: {
-          prefix: 'update',
-          alternatives: 'modify, set, apply',
+      errors: [
+        {
+          messageId: 'avoidGenericPrefix',
+          data: {
+            prefix: 'update',
+            alternatives: 'modify, set, apply',
+          },
         },
-      }],
+      ],
     },
     {
       code: `

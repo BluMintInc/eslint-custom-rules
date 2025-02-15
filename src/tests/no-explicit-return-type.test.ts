@@ -127,7 +127,8 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       code: 'function factorial(n: number): number { if (n <= 1) return 1; return n * factorial(n - 1); }',
       options: [{ allowRecursiveFunctions: false }],
       errors: [{ messageId: 'noExplicitReturnType' }],
-      output: 'function factorial(n: number) { if (n <= 1) return 1; return n * factorial(n - 1); }',
+      output:
+        'function factorial(n: number) { if (n <= 1) return 1; return n * factorial(n - 1); }',
     },
 
     // Interface method when not allowed

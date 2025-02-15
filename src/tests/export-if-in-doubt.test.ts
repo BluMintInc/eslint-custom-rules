@@ -41,7 +41,7 @@ ruleTesterTs.run('export-if-in-doubt', exportIfInDoubt, {
         
           const userRef = db.doc("User/\${userId}") as DocumentReference<User>;
           const userItemRef = userRef.collection(
-            'UserItem',
+            'UserItem',s
           ) as CollectionReference<UserItem>;
         
           const cacher = new UserItemCacher(userItemRef, [address]);

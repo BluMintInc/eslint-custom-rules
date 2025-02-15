@@ -1,5 +1,5 @@
 import { ruleTesterTs } from '../utils/ruleTester';
-import { preferCloneDeep } from '../../src/rules/prefer-clone-deep';
+import { preferCloneDeep } from '../rules/prefer-clone-deep';
 
 ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
   valid: [

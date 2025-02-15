@@ -21,13 +21,18 @@ export const preferCloneDeep = createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     function hasNestedSpread(node: TSESTree.ObjectExpression): boolean {
-      let spreadCount = 0;
       let hasFunction = false;
       let hasSymbol = false;
+      let hasSpread = false;
+      let hasNestedSpread = false;
+      let hasNestedObject = false;
 
-      function visit(node: TSESTree.Node): void {
+      function visit(node: TSESTree.Node, depth = 0): void {
         if (node.type === AST_NODE_TYPES.SpreadElement) {
-          spreadCount++;
+          hasSpread = true;
+          if (depth > 0) {
+            hasNestedSpread = true;
+          }
         } else if (node.type === AST_NODE_TYPES.FunctionExpression ||
                   node.type === AST_NODE_TYPES.ArrowFunctionExpression) {
           hasFunction = true;
@@ -38,25 +43,43 @@ export const preferCloneDeep = createRule<[], MessageIds>({
           hasSymbol = true;
         }
 
-        for (const key in node) {
-          const value = (node as any)[key];
-          if (value && typeof value === 'object') {
-            visit(value);
+        // Visit child nodes without traversing parent references
+        if (node.type === AST_NODE_TYPES.ObjectExpression) {
+          if (depth > 0) {
+            hasNestedObject = true;
           }
+          node.properties.forEach(prop => visit(prop, depth + 1));
+        } else if (node.type === AST_NODE_TYPES.Property) {
+          visit(node.value, depth);
+        } else if (node.type === AST_NODE_TYPES.SpreadElement) {
+          visit(node.argument, depth);
         }
       }
 
       visit(node);
-      return spreadCount > 1 && !hasFunction && !hasSymbol;
+      return hasSpread && hasNestedSpread && hasNestedObject && !hasFunction && !hasSymbol;
     }
 
-    function getSourceText(node: TSESTree.Node): string {
-      return context.getSourceCode().getText(node);
-    }
+
 
     function generateCloneDeepFix(node: TSESTree.ObjectExpression): string {
-      const sourceText = getSourceText(node);
-      return `cloneDeep(${sourceText.replace(/\.\.\./g, '')}, {} as const)`;
+      const sourceCode = context.getSourceCode();
+      const parts: string[] = [];
+
+      for (const prop of node.properties) {
+        if (prop.type === AST_NODE_TYPES.SpreadElement) {
+          const spreadArg = sourceCode.getText(prop.argument);
+          parts.push(`...${spreadArg}`);
+        } else if (prop.type === AST_NODE_TYPES.Property) {
+          const key = prop.computed
+            ? `[${sourceCode.getText(prop.key)}]`
+            : sourceCode.getText(prop.key);
+          const value = sourceCode.getText(prop.value);
+          parts.push(`${key}: ${value}`);
+        }
+      }
+
+      return `cloneDeep({ ${parts.join(', ')} }, {} as const)`;
     }
 
     return {
