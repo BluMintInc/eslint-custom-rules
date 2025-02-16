@@ -6,6 +6,41 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
   valid: [
     {
       code: `
+        type ReactionBase = {
+          count: number;
+          isOwnReaction: boolean;
+          reactedBy: string[];
+        };
+
+        type ReactionProps = ReactionBase & {
+          type: string;
+          onClick: () => Promise<void> | void;
+        };
+
+        const ReactionUnmemoized = ({
+          type,
+          count,
+          reactedBy,
+          isOwnReaction,
+          onClick,
+        }: ReactionProps) => {
+          return (
+            <div onClick={onClick}>
+              <span>{type}</span>
+              <span>{count}</span>
+            </div>
+          );
+        };
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
         type Props = { title: string };
         const MyComponent = ({ title }: Props) => <h1>{title}</h1>;
       `,

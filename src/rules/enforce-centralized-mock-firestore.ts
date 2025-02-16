@@ -3,7 +3,7 @@ import { createRule } from '../utils/createRule';
 
 type MessageIds = 'useCentralizedMockFirestore';
 
-const MOCK_FIRESTORE_PATH = '../../../../../__mocks__/functions/src/config/mockFirestore';
+const MOCK_FIRESTORE_PATH = '../../../../../__test-utils__/mockFirestore';
 
 export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
   name: 'enforce-centralized-mock-firestore',
