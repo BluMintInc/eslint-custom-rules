@@ -40,7 +40,28 @@ export const enforceRenderHitsMemoization = createRule<[], MessageIds>({
       return /^[A-Z]/.test(name);
     };
 
+    const isMemoizedVariable = (node: TSESTree.Node): boolean => {
+      if (node.type !== AST_NODE_TYPES.Identifier) return false;
+
+      // Get the variable declaration for this identifier
+      const variable = context.getScope().variables.find(v => v.name === (node as TSESTree.Identifier).name);
+      if (!variable) return false;
+
+      // Check if the variable is initialized with a memoized call
+      const def = variable.defs[0];
+      if (!def || !def.node) return false;
+
+      if (def.node.type === AST_NODE_TYPES.VariableDeclarator && def.node.init) {
+        return isMemoizedCall(def.node.init);
+      }
+      return false;
+    };
+
     const isInsideMemoizedCall = (node: TSESTree.Node): boolean => {
+      // Check if the node is a reference to a memoized variable
+      if (isMemoizedVariable(node)) return true;
+
+      // Check if the node is inside a memoization hook call
       let current: TSESTree.Node | undefined = node;
       while (current?.parent) {
         if (isMemoizedCall(current.parent)) return true;
