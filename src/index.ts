@@ -69,7 +69,7 @@ import { preferFragmentComponent } from './rules/prefer-fragment-component';
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.7.2',
+    version: '1.7.3',
   },
   parseOptions: {
     ecmaVersion: 2020,

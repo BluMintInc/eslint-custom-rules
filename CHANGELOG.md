@@ -1,3 +1,12 @@
+## [1.7.3](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.7.2...v1.7.3) (2025-02-16)
+
+
+### Bug Fixes
+
+* **enforce-render-hits-memoization:** force version update ([e66316a](https://github.com/BluMintInc/eslint-custom-rules/commit/e66316aedfdaa43481ef6d66ab09c3ec112f53dd))
+* **enforce-verb-noun-naming.ts:** add "clean" for scripts like "cleanup" ([ec4852a](https://github.com/BluMintInc/eslint-custom-rules/commit/ec4852ac7a205fb93173df3587ddf2f9c61aa51c))
+* **openhands-resolver.yml:** temporary rollback to v0.23.0 ([90b0164](https://github.com/BluMintInc/eslint-custom-rules/commit/90b0164d0355fb0b8166ba643d8625b698c6346b))
+
 ## [1.7.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.7.1...v1.7.2) (2025-02-12)
 
 
