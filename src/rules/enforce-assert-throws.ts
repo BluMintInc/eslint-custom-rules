@@ -8,13 +8,13 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
   meta: {
     type: 'problem',
     docs: {
-      description: 'Enforce that functions with assert- prefix must throw an error',
+      description: 'Enforce that functions with assert- prefix must throw an error or call process.exit(1)',
       recommended: 'error',
     },
     schema: [],
     messages: {
       assertShouldThrow:
-        'Functions with assert- prefix must throw an error. Either rename the function or add a throw statement.',
+        'Functions with assert- prefix must throw an error or call process.exit(1). Either rename the function or add a throw/exit statement.',
     },
   },
   defaultOptions: [],
@@ -38,6 +38,37 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
       return false;
     }
 
+    function isProcessExit1(node: TSESTree.Node): boolean {
+      if (node.type === AST_NODE_TYPES.CallExpression) {
+        const callee = node.callee;
+        if (
+          callee.type === AST_NODE_TYPES.MemberExpression &&
+          callee.object.type === AST_NODE_TYPES.Identifier &&
+          callee.object.name === 'process' &&
+          callee.property.type === AST_NODE_TYPES.Identifier &&
+          callee.property.name === 'exit'
+        ) {
+          const args = node.arguments;
+          if (args.length === 1) {
+            const arg = args[0];
+            if (arg.type === AST_NODE_TYPES.Literal && arg.value === 1) {
+              return true;
+            }
+            // Handle numeric literal 1 in different forms
+            if (
+              arg.type === AST_NODE_TYPES.UnaryExpression &&
+              arg.operator === '+' &&
+              arg.argument.type === AST_NODE_TYPES.Literal &&
+              arg.argument.value === 1
+            ) {
+              return true;
+            }
+          }
+        }
+      }
+      return false;
+    }
+
     function hasThrowStatement(node: TSESTree.Node): boolean {
       let hasThrow = false;
 
@@ -45,6 +76,14 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
         if (node.type === AST_NODE_TYPES.ThrowStatement) {
           hasThrow = true;
           return;
+        }
+
+        // Check for process.exit(1)
+        if (node.type === AST_NODE_TYPES.ExpressionStatement) {
+          if (isProcessExit1(node.expression)) {
+            hasThrow = true;
+            return;
+          }
         }
 
         // Check for assertion function calls
@@ -64,8 +103,21 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
           }
         }
 
-        // Don't count throws in catch blocks that are just re-throwing
+        // Check catch blocks for process.exit(1)
         if (node.type === AST_NODE_TYPES.CatchClause) {
+          walk(node.body);
+          return;
+        }
+
+        // Handle TryStatement specially
+        if (node.type === AST_NODE_TYPES.TryStatement) {
+          walk(node.block);
+          if (node.handler) {
+            walk(node.handler);
+          }
+          if (node.finalizer) {
+            walk(node.finalizer);
+          }
           return;
         }
 
