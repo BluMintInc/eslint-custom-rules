@@ -78,6 +78,35 @@ ruleTesterTs.run('enforce-assert-throws', enforceAssertThrows, {
         }
       `,
     },
+    // Function that uses process.exit(1)
+    {
+      code: `
+        export const assertFirebaseAuthenticated = async () => {
+          try {
+            logWithTimestamp(ANSI_GREEN, 'Checking Firebase authentication...');
+            await runCommand('firebase projects:list');
+            logWithTimestamp(ANSI_GREEN, 'Successfully authenticated with Firebase');
+          } catch {
+            logWithTimestamp(
+              ANSI_MAGENTA,
+              'Not authenticated with Firebase. Please run "firebase login" first.',
+            );
+            process.exit(1);
+          }
+        };
+      `,
+    },
+    // Function that uses process.exit(1) in if statement
+    {
+      code: `
+        function assertEnvironmentVars() {
+          if (!process.env.API_KEY) {
+            console.error('API_KEY environment variable is required');
+            process.exit(1);
+          }
+        }
+      `,
+    },
   ],
   invalid: [
     // Function declaration without throw
