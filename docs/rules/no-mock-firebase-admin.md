@@ -1,4 +1,8 @@
-# no-mock-firebase-admin
+# Prevent mocking of functions/src/config/firebaseAdmin (`@blumintinc/blumint/no-mock-firebase-admin`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 Prevents mocking of `functions/src/config/firebaseAdmin` since it is already mocked in `jest.setup.node.js`. Instead of manually mocking `firebaseAdmin`, tests should use `mockFirestore` for Firestore interactions.
 
