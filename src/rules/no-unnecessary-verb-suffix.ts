@@ -44,7 +44,7 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
     ): void {
       if (!name) return;
 
-      for (const suffix of COMMON_VERB_SUFFIXES) {
+      for (const suffix of COMMON_PREPOSITION_SUFFIXES) {
         const suffixPattern = new RegExp(`${suffix}$`);
         const suffixWithVerbPattern = new RegExp(`[A-Z][a-z]+${suffix}$`);
 
