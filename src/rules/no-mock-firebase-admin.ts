@@ -26,6 +26,15 @@ export const noMockFirebaseAdmin = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
+    // Check if the current file is a test file
+    const filename = context.getFilename();
+    const isTestFile = /\.test\.[jt]sx?$/.test(filename) || /\.spec\.[jt]sx?$/.test(filename);
+
+    // If it's not a test file, don't apply the rule
+    if (!isTestFile) {
+      return {};
+    }
+
     return {
       CallExpression(node) {
         if (
