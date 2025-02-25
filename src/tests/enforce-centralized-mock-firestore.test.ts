@@ -161,7 +161,6 @@ ruleTesterTs.run(
 
         const myMockFirestore = jest.fn();
 
-
         beforeEach(() => {
           mockFirestore({
             'some/path': [{ id: 'test' }],
@@ -292,7 +291,8 @@ ruleTesterTs.run(
         output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
-
+        const mockFirestore1 = jest.fn();
+        const mockFirestore2 = jest.fn();
 
         describe('test suite', () => {
           beforeEach(() => {
@@ -325,7 +325,6 @@ ruleTesterTs.run(
         errors: [{ messageId: 'useCentralizedMockFirestore' }],
         output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
-
 
 
         describe('test suite', () => {
