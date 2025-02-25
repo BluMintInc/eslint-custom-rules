@@ -1,11 +1,14 @@
 import { ruleTesterTs } from '../utils/ruleTester';
-import { enforceCentralizedMockFirestore } from '../../src/rules/enforce-centralized-mock-firestore';
+import { enforceCentralizedMockFirestore } from '../rules/enforce-centralized-mock-firestore';
 
-ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFirestore, {
-  valid: [
-    // Valid case: Using the centralized mockFirestore
-    {
-      code: `
+ruleTesterTs.run(
+  'enforce-centralized-mock-firestore',
+  enforceCentralizedMockFirestore,
+  {
+    valid: [
+      // Valid case: Using the centralized mockFirestore
+      {
+        code: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
         beforeEach(() => {
@@ -14,20 +17,20 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
           });
         });
       `,
-    },
-    // Valid case: No mockFirestore usage
-    {
-      code: `
+      },
+      // Valid case: No mockFirestore usage
+      {
+        code: `
         import { someOtherMock } from './mocks';
 
         beforeEach(() => {
           someOtherMock();
         });
       `,
-    },
-    // Valid case: Using renamed import
-    {
-      code: `
+      },
+      // Valid case: Using renamed import
+      {
+        code: `
         import { mockFirestore as centralMockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
         beforeEach(() => {
@@ -36,10 +39,10 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
           });
         });
       `,
-    },
-    // Valid case: Using destructured import with comments
-    {
-      code: `
+      },
+      // Valid case: Using destructured import with comments
+      {
+        code: `
         // Import the centralized mockFirestore
         import {
           // This is the mock we need
@@ -54,10 +57,10 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
           });
         });
       `,
-    },
-    // Valid case: Using in async test
-    {
-      code: `
+      },
+      // Valid case: Using in async test
+      {
+        code: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
         it('should work with async', async () => {
@@ -67,10 +70,10 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
           await someAsyncOperation();
         });
       `,
-    },
-    // Valid case: Using with multiple test blocks
-    {
-      code: `
+      },
+      // Valid case: Using with multiple test blocks
+      {
+        code: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
         describe('test suite', () => {
@@ -91,12 +94,12 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
           });
         });
       `,
-    },
-  ],
-  invalid: [
-    // Invalid case: Local mockFirestore declaration
-    {
-      code: `
+      },
+    ],
+    invalid: [
+      // Invalid case: Local mockFirestore declaration
+      {
+        code: `
         const mockFirestore = jest.fn();
 
         beforeEach(() => {
@@ -105,8 +108,8 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
           });
         });
       `,
-      errors: [{ messageId: 'useCentralizedMockFirestore' }],
-      output: `
+        errors: [{ messageId: 'useCentralizedMockFirestore' }],
+        output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
 
@@ -116,10 +119,10 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
           });
         });
       `,
-    },
-    // Invalid case: Conditional mockFirestore declaration
-    {
-      code: `
+      },
+      // Invalid case: Conditional mockFirestore declaration
+      {
+        code: `
         const mockFirestore = process.env.TEST_ENV === 'ci' ? jest.fn() : require('mockModule');
 
         beforeEach(() => {
@@ -128,8 +131,8 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
           });
         });
       `,
-      errors: [{ messageId: 'useCentralizedMockFirestore' }],
-      output: `
+        errors: [{ messageId: 'useCentralizedMockFirestore' }],
+        output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
 
@@ -139,10 +142,10 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
           });
         });
       `,
-    },
-    // Invalid case: Different name but same functionality
-    {
-      code: `
+      },
+      // Invalid case: Different name but same functionality
+      {
+        code: `
         const myMockFirestore = jest.fn();
         const mockFirestore = myMockFirestore;
 
@@ -152,8 +155,8 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
           });
         });
       `,
-      errors: [{ messageId: 'useCentralizedMockFirestore' }],
-      output: `
+        errors: [{ messageId: 'useCentralizedMockFirestore' }],
+        output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
         const myMockFirestore = jest.fn();
@@ -165,10 +168,10 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
           });
         });
       `,
-    },
-    // Invalid case: Using require syntax
-    {
-      code: `
+      },
+      // Invalid case: Using require syntax
+      {
+        code: `
         const { mockFirestore } = require('./localMocks');
 
         beforeEach(() => {
@@ -177,8 +180,8 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
           });
         });
       `,
-      errors: [{ messageId: 'useCentralizedMockFirestore' }],
-      output: `
+        errors: [{ messageId: 'useCentralizedMockFirestore' }],
+        output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
 
@@ -188,10 +191,10 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
           });
         });
       `,
-    },
-    // Invalid case: Using with class property
-    {
-      code: `
+      },
+      // Invalid case: Using with class property
+      {
+        code: `
         class TestClass {
           private mockFirestore = jest.fn();
 
@@ -202,8 +205,8 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
           }
         }
       `,
-      errors: [{ messageId: 'useCentralizedMockFirestore' }],
-      output: `
+        errors: [{ messageId: 'useCentralizedMockFirestore' }],
+        output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
         class TestClass {
@@ -215,10 +218,10 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
           }
         }
       `,
-    },
-    // Invalid case: Using with destructuring and renaming
-    {
-      code: `
+      },
+      // Invalid case: Using with destructuring and renaming
+      {
+        code: `
         const { mockFirestore: customMockFirestore } = require('./customMocks');
 
         describe('test suite', () => {
@@ -229,8 +232,8 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
           });
         });
       `,
-      errors: [{ messageId: 'useCentralizedMockFirestore' }],
-      output: `
+        errors: [{ messageId: 'useCentralizedMockFirestore' }],
+        output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
 
@@ -242,10 +245,10 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
           });
         });
       `,
-    },
-    // Invalid case: Using with dynamic import
-    {
-      code: `
+      },
+      // Invalid case: Using with dynamic import
+      {
+        code: `
         async function setupTests() {
           const { mockFirestore } = await import('./localMocks');
 
@@ -256,8 +259,8 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
           });
         }
       `,
-      errors: [{ messageId: 'useCentralizedMockFirestore' }],
-      output: `
+        errors: [{ messageId: 'useCentralizedMockFirestore' }],
+        output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
         async function setupTests() {
@@ -269,10 +272,10 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
           });
         }
       `,
-    },
-    // Invalid case: Using with multiple declarations
-    {
-      code: `
+      },
+      // Invalid case: Using with multiple declarations
+      {
+        code: `
         const mockFirestore1 = jest.fn();
         const mockFirestore2 = jest.fn();
         const mockFirestore = process.env.CI ? mockFirestore1 : mockFirestore2;
@@ -285,8 +288,8 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
           });
         });
       `,
-      errors: [{ messageId: 'useCentralizedMockFirestore' }],
-      output: `
+        errors: [{ messageId: 'useCentralizedMockFirestore' }],
+        output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
 
@@ -299,10 +302,10 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
           });
         });
       `,
-    },
-    // Invalid case: Using with complex object destructuring
-    {
-      code: `
+      },
+      // Invalid case: Using with complex object destructuring
+      {
+        code: `
         const {
           mocks: {
             firestore: {
@@ -319,8 +322,8 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
           });
         });
       `,
-      errors: [{ messageId: 'useCentralizedMockFirestore' }],
-      output: `
+        errors: [{ messageId: 'useCentralizedMockFirestore' }],
+        output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
 
@@ -333,6 +336,7 @@ ruleTesterTs.run('enforce-centralized-mock-firestore', enforceCentralizedMockFir
           });
         });
       `,
-    },
-  ],
-});
+      },
+    ],
+  },
+);

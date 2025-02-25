@@ -1,7 +1,7 @@
-import { ruleTesterTs } from '../utils/ruleTester';
-import { preferFragmentComponent } from '../../src/rules/prefer-fragment-component';
+import { ruleTesterJsx } from '../utils/ruleTester';
+import { preferFragmentComponent } from '../rules/prefer-fragment-component';
 
-ruleTesterTs.run('prefer-fragment-component', preferFragmentComponent, {
+ruleTesterJsx.run('prefer-fragment-component', preferFragmentComponent, {
   valid: [
     {
       code: `
