@@ -56,15 +56,22 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
       if (reactImportNode) {
         // Add Fragment to existing react import
         const lastSpecifier = reactImportNode.specifiers[reactImportNode.specifiers.length - 1];
-        return fixer.insertTextAfter(
-          lastSpecifier,
-          ', Fragment'
+        const hasNamedImports = reactImportNode.specifiers.some(
+          spec => spec.type === AST_NODE_TYPES.ImportSpecifier
         );
+
+        if (hasNamedImports) {
+          return fixer.insertTextAfter(lastSpecifier, ', Fragment');
+        } else {
+          return fixer.insertTextAfter(lastSpecifier, ', { Fragment }');
+        }
       }
       // Add new react import with Fragment
+      const importText = 'import { Fragment } from \'react\';\n';
+      const indentation = sourceCode.text.match(/^[ \t]*/m)?.[0] || '';
       return fixer.insertTextBefore(
         sourceCode.ast.body[0],
-        'import { Fragment } from \'react\';\n'
+        indentation + importText
       );
     }
 
@@ -76,12 +83,22 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
           node,
           messageId: 'preferFragment',
           data: { type: 'shorthand fragment (<>)' },
-          *fix(fixer) {
+          fix(fixer) {
+            const fixes: ReturnType<typeof fixer.insertTextBefore>[] = [];
             if (!hasFragmentImport) {
-              yield addFragmentImport(fixer);
+              fixes.push(addFragmentImport(fixer));
             }
-            yield fixer.replaceText(node.openingFragment, '<Fragment>');
-            yield fixer.replaceText(node.closingFragment, '</Fragment>');
+            const sourceCode = context.getSourceCode();
+            const openingText = sourceCode.getText(node.openingFragment);
+            const closingText = sourceCode.getText(node.closingFragment);
+            if (openingText === '<>' && closingText === '</>') {
+              const openingRange = node.openingFragment.range;
+              const closingRange = node.closingFragment.range;
+
+              fixes.push(fixer.replaceTextRange(openingRange, '<Fragment>'));
+              fixes.push(fixer.replaceTextRange(closingRange, '</Fragment>'));
+            }
+            return fixes;
           },
         });
       },
@@ -94,17 +111,35 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
           node.parent.object.name === 'React'
         ) {
           const memberExpr = node.parent;
-          context.report({
-            node: memberExpr,
-            messageId: 'preferFragment',
-            data: { type: 'React.Fragment' },
-            *fix(fixer) {
-              if (!hasFragmentImport) {
-                yield addFragmentImport(fixer);
-              }
-              yield fixer.replaceText(memberExpr, 'Fragment');
-            },
-          });
+          const parentElement = memberExpr.parent;
+          if (parentElement?.type === AST_NODE_TYPES.JSXOpeningElement) {
+            const jsxElement = parentElement.parent;
+            if (jsxElement?.type === AST_NODE_TYPES.JSXElement) {
+              context.report({
+                node: memberExpr,
+                messageId: 'preferFragment',
+                data: { type: 'React.Fragment' },
+                fix(fixer) {
+                  const fixes: ReturnType<typeof fixer.insertTextBefore>[] = [];
+                  if (!hasFragmentImport) {
+                    fixes.push(addFragmentImport(fixer));
+                  }
+                  const sourceCode = context.getSourceCode();
+                  const openingText = sourceCode.getText(parentElement);
+                  const closingText = jsxElement.closingElement ? sourceCode.getText(jsxElement.closingElement) : '';
+                  if (openingText.startsWith('<React.Fragment') && closingText.startsWith('</React.Fragment')) {
+                    const openingRange = parentElement.range;
+                    const closingRange = jsxElement.closingElement?.range;
+                    if (openingRange && closingRange) {
+                      fixes.push(fixer.replaceTextRange(openingRange, '<Fragment>'));
+                      fixes.push(fixer.replaceTextRange(closingRange, '</Fragment>'));
+                    }
+                  }
+                  return fixes;
+                },
+              });
+            }
+          }
         }
       },
 

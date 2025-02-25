@@ -65,7 +65,6 @@ import { requireHooksDefaultParams } from './rules/require-hooks-default-params'
 import { preferDestructuringNoClass } from './rules/prefer-destructuring-no-class';
 import { enforceRenderHitsMemoization } from './rules/enforce-render-hits-memoization';
 import { preferFragmentComponent } from './rules/prefer-fragment-component';
-import { reactUseMemoShouldBeComponent } from './rules/react-usememo-should-be-component';
 
 module.exports = {
   meta: {
@@ -146,7 +145,6 @@ module.exports = {
         '@blumintinc/blumint/prefer-destructuring-no-class': 'error',
         '@blumintinc/blumint/enforce-render-hits-memoization': 'error',
         '@blumintinc/blumint/prefer-fragment-component': 'error',
-        '@blumintinc/blumint/react-usememo-should-be-component': 'error',
       },
     },
   },
@@ -219,6 +217,5 @@ module.exports = {
     'prefer-destructuring-no-class': preferDestructuringNoClass,
     'enforce-render-hits-memoization': enforceRenderHitsMemoization,
     'prefer-fragment-component': preferFragmentComponent,
-    'react-usememo-should-be-component': reactUseMemoShouldBeComponent,
   },
 };

@@ -28,17 +28,32 @@ export const noFirestoreJestMock = createRule<[], MessageIds>({
 
         return {
             ImportDeclaration(node) {
+                // Skip type imports completely
+                if (node.importKind === 'type') {
+                    return;
+                }
+
                 if (node.source.value === 'firestore-jest-mock') {
                     context.report({
                         node,
                         messageId: 'noFirestoreJestMock',
-                        fix(fixer) {
-                            // Replace with mockFirestore import
+                        fix: (fixer) => {
                             return fixer.replaceText(
                                 node,
-                                "import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';"
+                                `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';`
                             );
-                        },
+                        }
+                    });
+                }
+            },
+            ImportExpression(node) {
+                if (
+                    node.source.type === AST_NODE_TYPES.Literal &&
+                    node.source.value === 'firestore-jest-mock'
+                ) {
+                    context.report({
+                        node,
+                        messageId: 'noFirestoreJestMock',
                     });
                 }
             },
@@ -50,6 +65,20 @@ export const noFirestoreJestMock = createRule<[], MessageIds>({
                     node.callee.object.name === 'jest' &&
                     node.callee.property.type === AST_NODE_TYPES.Identifier &&
                     node.callee.property.name === 'mock' &&
+                    node.arguments.length > 0 &&
+                    node.arguments[0].type === AST_NODE_TYPES.Literal &&
+                    node.arguments[0].value === 'firestore-jest-mock'
+                ) {
+                    context.report({
+                        node,
+                        messageId: 'noFirestoreJestMock',
+                    });
+                }
+
+                // Check for require('firestore-jest-mock')
+                if (
+                    node.callee.type === AST_NODE_TYPES.Identifier &&
+                    node.callee.name === 'require' &&
                     node.arguments.length > 0 &&
                     node.arguments[0].type === AST_NODE_TYPES.Literal &&
                     node.arguments[0].value === 'firestore-jest-mock'

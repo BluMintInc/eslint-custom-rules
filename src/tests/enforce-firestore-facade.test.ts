@@ -164,10 +164,7 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
           transaction.set(docRef, { score: 100 });
         });
       `,
-      errors: [
-        { messageId: 'noDirectGet' },
-        { messageId: 'noDirectSet' },
-      ],
+      errors: [{ messageId: 'noDirectGet' }, { messageId: 'noDirectSet' }],
     },
     // Invalid nested collection reference get
     {
