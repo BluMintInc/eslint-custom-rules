@@ -93,6 +93,7 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
       code: `import type { MockTypes } from 'firestore-jest-mock';`,
       filename: 'src/components/test.test.ts',
       errors: [{ messageId: 'noFirestoreJestMock' }],
+      output: `import type { MockTypes } from 'firestore-jest-mock';`,
     },
     // Invalid: Multiple imports mixed with other imports
     {

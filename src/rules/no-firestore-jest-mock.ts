@@ -29,13 +29,19 @@ export const noFirestoreJestMock = createRule<[], MessageIds>({
         return {
             ImportDeclaration(node) {
                 if (node.source.value === 'firestore-jest-mock') {
-                    // Skip type imports
-                    if (node.importKind === 'type') {
-                        return;
-                    }
                     context.report({
                         node,
                         messageId: 'noFirestoreJestMock',
+                        fix: (fixer) => {
+                            // Don't modify type imports
+                            if (node.importKind === 'type') {
+                                return null;
+                            }
+                            return fixer.replaceText(
+                                node,
+                                `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';`
+                            );
+                        }
                     });
                 }
             },
