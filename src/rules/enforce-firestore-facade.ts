@@ -9,6 +9,10 @@ const isMemberExpression = (node: TSESTree.Node): node is TSESTree.MemberExpress
   return node.type === AST_NODE_TYPES.MemberExpression;
 };
 
+const isTSAsExpression = (node: TSESTree.Node): node is TSESTree.TSAsExpression => {
+  return node.type === AST_NODE_TYPES.TSAsExpression;
+};
+
 const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
   if (!isMemberExpression(node.callee)) return false;
   const property = node.callee.property;
@@ -18,6 +22,8 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
 
   // Check if the method is called on a facade instance
   const object = node.callee.object;
+
+  // Check for facade instances by name
   if (isIdentifier(object)) {
     const name = object.name;
     // Skip if it's a facade instance
@@ -28,40 +34,51 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
     if (/batch|transaction/i.test(name)) {
       return true;
     }
-  }
-
-  // Check if it's a Firestore reference
-  let current: TSESTree.Node = object;
-  let foundDocOrCollection = false;
-
-  while (current) {
-    if (isCallExpression(current)) {
-      const callee = current.callee;
-      if (isMemberExpression(callee)) {
-        const property = callee.property;
-        if (isIdentifier(property) && (property.name === 'doc' || property.name === 'collection')) {
-          foundDocOrCollection = true;
-          break;
-        }
-      }
-    }
-    if (isMemberExpression(current)) {
-      current = current.object;
-    } else {
-      break;
-    }
-  }
-
-  // If we haven't found a doc/collection call yet, check if the object is a variable
-  if (!foundDocOrCollection && isIdentifier(object)) {
-    const name = object.name;
     // If the variable name contains 'doc' or 'ref', it's likely a Firestore reference
     if (name.toLowerCase().includes('doc') || name.toLowerCase().includes('ref')) {
       return true;
     }
   }
 
-  return foundDocOrCollection;
+  // Check for Firestore doc/collection calls
+  const isFirestoreReference = (node: TSESTree.Node): boolean => {
+    // Handle TypeScript type assertions
+    if (isTSAsExpression(node)) {
+      return isFirestoreReference(node.expression);
+    }
+
+    // Handle call expressions (db.collection(), db.doc())
+    if (isCallExpression(node)) {
+      const callee = node.callee;
+      if (isMemberExpression(callee)) {
+        const property = callee.property;
+        if (isIdentifier(property)) {
+          // Direct doc/collection call
+          if (property.name === 'doc' || property.name === 'collection') {
+            return true;
+          }
+        }
+        // Check the object part of the member expression
+        return isFirestoreReference(callee.object);
+      }
+    }
+
+    // Handle member expressions (db.collection)
+    if (isMemberExpression(node)) {
+      const property = node.property;
+      if (isIdentifier(property)) {
+        if (property.name === 'doc' || property.name === 'collection') {
+          return true;
+        }
+      }
+      return isFirestoreReference(node.object);
+    }
+
+    return false;
+  };
+
+  // Always check the entire object for Firestore references
+  return isFirestoreReference(object);
 };
 
 const isCallExpression = (node: TSESTree.Node): node is TSESTree.CallExpression => {

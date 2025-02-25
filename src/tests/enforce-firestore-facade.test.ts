@@ -123,6 +123,24 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
       `,
       errors: [{ messageId: 'noDirectGet' }],
     },
+    // Invalid direct get with parentheses
+    {
+      code: `
+        const userDoc = await (
+          db.collection('users').doc('user123')
+        ).get();
+      `,
+      errors: [{ messageId: 'noDirectGet' }],
+    },
+    // Invalid direct get with type assertion
+    {
+      code: `
+        const userDoc = await (
+          db.collection('users').doc('user123') as DocumentReference<UserDocument>
+        ).get();
+      `,
+      errors: [{ messageId: 'noDirectGet' }],
+    },
     // Invalid direct set usage
     {
       code: `
