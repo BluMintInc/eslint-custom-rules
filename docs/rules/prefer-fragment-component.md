@@ -1,4 +1,10 @@
-# prefer-fragment-component
+# Enforce using Fragment imported from react over shorthand fragments and React.Fragment (`@blumintinc/blumint/prefer-fragment-component`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
 
 Enforces the use of `Fragment` imported from `'react'` over both `<>` and `<React.Fragment>`. This helps maintain consistency and ensures explicit imports in the codebase.
 
