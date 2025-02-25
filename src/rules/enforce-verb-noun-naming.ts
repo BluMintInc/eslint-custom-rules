@@ -8,6 +8,7 @@ const PREPOSITIONS = new Set(['to', 'from', 'with', 'by', 'at', 'of']);
 
 // Create a Set from the verbs list for O(1) lookup
 const VERBS_SET = new Set([
+  'clean',
   'abbreviate',
   'abort',
   'abstract',
