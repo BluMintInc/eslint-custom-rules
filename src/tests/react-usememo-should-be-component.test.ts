@@ -1,11 +1,14 @@
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { reactUseMemoShouldBeComponent } from '../rules/react-usememo-should-be-component';
 
-ruleTesterJsx.run('react-usememo-should-be-component', reactUseMemoShouldBeComponent, {
-  valid: [
-    // useMemo with non-JSX return is valid
-    {
-      code: `
+ruleTesterJsx.run(
+  'react-usememo-should-be-component',
+  reactUseMemoShouldBeComponent,
+  {
+    valid: [
+      // useMemo with non-JSX return is valid
+      {
+        code: `
         import React, { useMemo } from 'react';
 
         const Component = () => {
@@ -16,10 +19,10 @@ ruleTesterJsx.run('react-usememo-should-be-component', reactUseMemoShouldBeCompo
           return <div>{value}</div>;
         };
       `,
-    },
-    // useMemo with object return is valid
-    {
-      code: `
+      },
+      // useMemo with object return is valid
+      {
+        code: `
         import React, { useMemo } from 'react';
 
         const Component = () => {
@@ -31,10 +34,10 @@ ruleTesterJsx.run('react-usememo-should-be-component', reactUseMemoShouldBeCompo
           return <div style={styles}>Hello</div>;
         };
       `,
-    },
-    // useMemo with array of non-JSX is valid
-    {
-      code: `
+      },
+      // useMemo with array of non-JSX is valid
+      {
+        code: `
         import React, { useMemo } from 'react';
 
         const Component = () => {
@@ -47,10 +50,10 @@ ruleTesterJsx.run('react-usememo-should-be-component', reactUseMemoShouldBeCompo
           );
         };
       `,
-    },
-    // Proper component with memo is valid
-    {
-      code: `
+      },
+      // Proper component with memo is valid
+      {
+        code: `
         import React, { memo } from 'react';
 
         const UserAvatar = memo(({ imgUrl, username }) => (
@@ -63,12 +66,12 @@ ruleTesterJsx.run('react-usememo-should-be-component', reactUseMemoShouldBeCompo
           return <UserAvatar imgUrl={streamer.imgUrl} username={streamer.username} />;
         };
       `,
-    },
-  ],
-  invalid: [
-    // useMemo returning JSX directly
-    {
-      code: `
+      },
+    ],
+    invalid: [
+      // useMemo returning JSX directly
+      {
+        code: `
         import React, { useMemo } from 'react';
 
         const Component = ({ streamer }) => {
@@ -85,11 +88,11 @@ ruleTesterJsx.run('react-usememo-should-be-component', reactUseMemoShouldBeCompo
           return <div>{userAvatar}</div>;
         };
       `,
-      errors: [{ messageId: 'useMemoShouldBeComponent' }],
-    },
-    // useMemo with direct JSX return (no block)
-    {
-      code: `
+        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+      },
+      // useMemo with direct JSX return (no block)
+      {
+        code: `
         import React, { useMemo } from 'react';
 
         const Component = ({ title }) => {
@@ -102,11 +105,11 @@ ruleTesterJsx.run('react-usememo-should-be-component', reactUseMemoShouldBeCompo
           return <div>{header}</div>;
         };
       `,
-      errors: [{ messageId: 'useMemoShouldBeComponent' }],
-    },
-    // useMemo with conditional JSX
-    {
-      code: `
+        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+      },
+      // useMemo with conditional JSX
+      {
+        code: `
         import React, { useMemo } from 'react';
 
         const Component = ({ isAdmin, user }) => {
@@ -120,11 +123,11 @@ ruleTesterJsx.run('react-usememo-should-be-component', reactUseMemoShouldBeCompo
           return <div>{userInfo}</div>;
         };
       `,
-      errors: [{ messageId: 'useMemoShouldBeComponent' }],
-    },
-    // useMemo with array.map returning JSX
-    {
-      code: `
+        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+      },
+      // useMemo with array.map returning JSX
+      {
+        code: `
         import React, { useMemo } from 'react';
 
         const Component = ({ items }) => {
@@ -135,11 +138,11 @@ ruleTesterJsx.run('react-usememo-should-be-component', reactUseMemoShouldBeCompo
           return <List>{renderedItems}</List>;
         };
       `,
-      errors: [{ messageId: 'useMemoShouldBeComponent' }],
-    },
-    // Multiple useMemo with JSX in the same component
-    {
-      code: `
+        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+      },
+      // Multiple useMemo with JSX in the same component
+      {
+        code: `
         import React, { useMemo } from 'react';
 
         const LivestreamInfo = ({ streamer, title, description }) => {
@@ -169,10 +172,11 @@ ruleTesterJsx.run('react-usememo-should-be-component', reactUseMemoShouldBeCompo
           );
         };
       `,
-      errors: [
-        { messageId: 'useMemoShouldBeComponent' },
-        { messageId: 'useMemoShouldBeComponent' },
-      ],
-    },
-  ],
-});
+        errors: [
+          { messageId: 'useMemoShouldBeComponent' },
+          { messageId: 'useMemoShouldBeComponent' },
+        ],
+      },
+    ],
+  },
+);
