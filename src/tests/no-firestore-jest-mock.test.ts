@@ -47,9 +47,14 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
             };`,
       filename: 'src/components/test.test.ts',
     },
-    // Valid: Test file with type import
+    // Valid: Test file with type import from mockFirestore
     {
       code: `import type { MockFirestoreTypes } from '../../../../../__test-utils__/mockFirestore';`,
+      filename: 'src/components/test.test.ts',
+    },
+    // Valid: Test file with type import from firestore-jest-mock
+    {
+      code: `import type { MockTypes } from 'firestore-jest-mock';`,
       filename: 'src/components/test.test.ts',
     },
   ],
@@ -88,13 +93,7 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
       filename: 'src/components/test.test.ts',
       errors: [{ messageId: 'noFirestoreJestMock' }],
     },
-    // Invalid: Import type from firestore-jest-mock
-    {
-      code: `import type { MockTypes } from 'firestore-jest-mock';`,
-      filename: 'src/components/test.test.ts',
-      errors: [{ messageId: 'noFirestoreJestMock' }],
-      output: `import type { MockTypes } from 'firestore-jest-mock';`,
-    },
+
     // Invalid: Multiple imports mixed with other imports
     {
       code: `import { render } from '@testing-library/react';
