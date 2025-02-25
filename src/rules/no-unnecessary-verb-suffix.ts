@@ -110,7 +110,8 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Prevent unnecessary verb suffixes in function and method names',
+      description:
+        'Prevent unnecessary verb suffixes in function and method names',
       recommended: 'error',
     },
     fixable: 'code',
@@ -123,7 +124,10 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     function checkFunctionName(
-      node: TSESTree.FunctionDeclaration | TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression,
+      node:
+        | TSESTree.FunctionDeclaration
+        | TSESTree.FunctionExpression
+        | TSESTree.ArrowFunctionExpression,
       name: string | null,
     ): void {
       if (!name) return;
@@ -195,13 +199,19 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
       },
       MethodDefinition(node): void {
         if (node.key.type === AST_NODE_TYPES.Identifier) {
-          checkFunctionName(node.value as TSESTree.FunctionExpression, node.key.name);
+          checkFunctionName(
+            node.value as TSESTree.FunctionExpression,
+            node.key.name,
+          );
         }
       },
       TSMethodSignature(node): void {
         // Handle interface method signatures
         if (node.key.type === AST_NODE_TYPES.Identifier) {
-          checkFunctionName(node as unknown as TSESTree.FunctionExpression, node.key.name);
+          checkFunctionName(
+            node as unknown as TSESTree.FunctionExpression,
+            node.key.name,
+          );
         }
       },
       Property(node): void {
