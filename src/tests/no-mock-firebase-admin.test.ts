@@ -1,5 +1,5 @@
 import { ruleTesterTs } from '../utils/ruleTester';
-import { noMockFirebaseAdmin } from '../../src/rules/no-mock-firebase-admin';
+import { noMockFirebaseAdmin } from '../rules/no-mock-firebase-admin';
 
 ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
   valid: [
@@ -139,7 +139,7 @@ ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
     },
     // Template literal path
     {
-      code: "jest.mock(`../../config/firebaseAdmin`);",
+      code: 'jest.mock(`../../config/firebaseAdmin`);',
       filename: 'src/test.test.ts',
       errors: [{ messageId: 'noMockFirebaseAdmin' }],
     },
