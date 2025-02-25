@@ -10,8 +10,7 @@ This is an ESLint plugin that provides custom rules for BluMint's TypeScript/Rea
 * **scripts/**: Utility scripts for development and maintenance
 * **src/**: Source code for custom ESLint rules
     * **rules**: Contains all custom ESLint rules
-* **tests/**: Unit tests for the rules
-    * **rules**: Contains a test suite for each custom ESLint rule
+    * **tests/**: Contains a Jest test suite for each ESLint rule of the same name
 * **utils/**: Helper functions and utilities
 
 ### Documentation
