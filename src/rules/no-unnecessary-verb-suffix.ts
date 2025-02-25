@@ -1,7 +1,7 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
-const COMMON_VERB_SUFFIXES = new Set([
+const COMMON_PREPOSITION_SUFFIXES = new Set([
   'From',
   'For',
   'With',
