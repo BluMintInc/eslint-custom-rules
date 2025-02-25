@@ -67,6 +67,162 @@ ruleTesterJsx.run(
         };
       `,
       },
+      // useMemo with complex calculation but no JSX
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ data, threshold }) => {
+          const processedData = useMemo(() => {
+            const result = {};
+            for (const item of data) {
+              if (item.value > threshold) {
+                result[item.id] = item.value * 2;
+              } else {
+                result[item.id] = item.value / 2;
+              }
+            }
+            return result;
+          }, [data, threshold]);
+
+          return <div>{Object.values(processedData).join(', ')}</div>;
+        };
+      `,
+      },
+      // useMemo with string manipulation
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ text }) => {
+          const formattedText = useMemo(() => {
+            return text
+              .split(' ')
+              .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+              .join(' ');
+          }, [text]);
+
+          return <p>{formattedText}</p>;
+        };
+      `,
+      },
+      // useMemo with function return
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ baseValue }) => {
+          const calculator = useMemo(() => {
+            return {
+              add: (x) => baseValue + x,
+              subtract: (x) => baseValue - x,
+              multiply: (x) => baseValue * x
+            };
+          }, [baseValue]);
+
+          return <div>Result: {calculator.add(5)}</div>;
+        };
+      `,
+      },
+      // useMemo with complex ternary but no JSX
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ condition, valueA, valueB }) => {
+          const result = useMemo(() =>
+            condition
+              ? valueA > 10
+                ? valueA * 2
+                : valueA / 2
+              : valueB > 20
+                ? valueB * 3
+                : valueB / 3
+          , [condition, valueA, valueB]);
+
+          return <div>{result}</div>;
+        };
+      `,
+      },
+      // useMemo with regex operations
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ input }) => {
+          const matches = useMemo(() => {
+            const regex = /\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\b/gi;
+            return input.match(regex) || [];
+          }, [input]);
+
+          return (
+            <div>
+              <p>Found {matches.length} email addresses</p>
+              <ul>
+                {matches.map((email, i) => <li key={i}>{email}</li>)}
+              </ul>
+            </div>
+          );
+        };
+      `,
+      },
+      // useMemo with data transformation for chart
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ rawData }) => {
+          const chartData = useMemo(() => {
+            return {
+              labels: rawData.map(d => d.label),
+              datasets: [{
+                data: rawData.map(d => d.value),
+                backgroundColor: rawData.map(d => d.color || '#ccc')
+              }]
+            };
+          }, [rawData]);
+
+          return <Chart data={chartData} />;
+        };
+      `,
+      },
+      // useMemo with very simple JSX (single element) - could be considered an exception
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ text }) => {
+          // This is a borderline case that could be allowed with an option
+          const formattedText = text.toUpperCase();
+
+          return <div>{formattedText}</div>;
+        };
+      `,
+      },
+      // useMemo with computed values for props but no JSX
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items, filter }) => {
+          const filteredItems = useMemo(() => {
+            return items.filter(item => {
+              const matchesFilter = item.name.includes(filter);
+              const isActive = item.status === 'active';
+              return matchesFilter && isActive;
+            });
+          }, [items, filter]);
+
+          return (
+            <ul>
+              {filteredItems.map(item => (
+                <li key={item.id}>{item.name}</li>
+              ))}
+            </ul>
+          );
+        };
+      `,
+      },
     ],
     invalid: [
       // useMemo returning JSX directly
@@ -176,6 +332,264 @@ ruleTesterJsx.run(
           { messageId: 'useMemoShouldBeComponent' },
           { messageId: 'useMemoShouldBeComponent' },
         ],
+      },
+      // useMemo with nested JSX structure
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ data, isLoading }) => {
+          const content = useMemo(() => {
+            if (isLoading) {
+              return (
+                <div className="loading-container">
+                  <Spinner size="large" />
+                  <div className="loading-text">
+                    <p>Loading your data...</p>
+                    <small>This may take a few moments</small>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div className="data-container">
+                <h2>Results</h2>
+                {data.length === 0 ? (
+                  <EmptyState message="No results found" />
+                ) : (
+                  <ul>
+                    {data.map(item => (
+                      <li key={item.id}>{item.name}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          }, [data, isLoading]);
+
+          return <div className="wrapper">{content}</div>;
+        };
+      `,
+        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+      },
+      // useMemo with JSX fragments
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ user }) => {
+          const userDetails = useMemo(() => (
+            <>
+              <h3>{user.name}</h3>
+              <p>{user.email}</p>
+              <p>{user.location}</p>
+            </>
+          ), [user]);
+
+          return <div className="user-card">{userDetails}</div>;
+        };
+      `,
+        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+      },
+      // useMemo with complex conditional rendering
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ status, data, error }) => {
+          const statusDisplay = useMemo(() => {
+            switch (status) {
+              case 'loading':
+                return <LoadingSpinner />;
+              case 'error':
+                return <ErrorMessage message={error} />;
+              case 'empty':
+                return <EmptyState />;
+              case 'success':
+                return (
+                  <div className="success">
+                    <CheckIcon />
+                    <p>Operation completed successfully!</p>
+                  </div>
+                );
+              default:
+                return <p>Unknown status</p>;
+            }
+          }, [status, error]);
+
+          return <div className="status-container">{statusDisplay}</div>;
+        };
+      `,
+        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+      },
+      // useMemo with JSX in ternary expressions
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ isLoggedIn, user }) => {
+          const authStatus = useMemo(() =>
+            isLoggedIn
+              ? (
+                <div className="user-info">
+                  <Avatar src={user.avatar} />
+                  <span>{user.name}</span>
+                </div>
+              )
+              : (
+                <div className="login-prompt">
+                  <LoginIcon />
+                  <span>Please log in</span>
+                </div>
+              )
+          , [isLoggedIn, user]);
+
+          return <div className="auth-container">{authStatus}</div>;
+        };
+      `,
+        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+      },
+      // useMemo with JSX in array methods other than map
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const firstItem = useMemo(() =>
+            items.find(item => item.isSpecial)
+              ? <SpecialItem item={items.find(item => item.isSpecial)} />
+              : <p>No special items found</p>
+          , [items]);
+
+          return <div>{firstItem}</div>;
+        };
+      `,
+        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+      },
+      // useMemo with JSX in nested functions
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ data }) => {
+          const processedContent = useMemo(() => {
+            const renderItem = (item) => {
+              return <div key={item.id}>{item.name}</div>;
+            };
+
+            return data.map(renderItem);
+          }, [data]);
+
+          return <div>{processedContent}</div>;
+        };
+      `,
+        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+      },
+      // useMemo with JSX in IIFE
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ config }) => {
+          const configPanel = useMemo(() => {
+            return (() => {
+              const { theme, layout, showHeader } = config;
+
+              return (
+                <div className={\`panel \${theme}\`}>
+                  {showHeader && <Header />}
+                  <div className={\`content \${layout}\`}>
+                    <p>Configuration panel</p>
+                  </div>
+                </div>
+              );
+            })();
+          }, [config]);
+
+          return <div>{configPanel}</div>;
+        };
+      `,
+        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+      },
+      // useMemo with complex JSX and multiple returns
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ step, formData }) => {
+          const formStep = useMemo(() => {
+            if (step === 1) {
+              return (
+                <div className="step-1">
+                  <h2>Personal Information</h2>
+                  <input type="text" value={formData.name} placeholder="Name" />
+                  <input type="email" value={formData.email} placeholder="Email" />
+                </div>
+              );
+            } else if (step === 2) {
+              return (
+                <div className="step-2">
+                  <h2>Address</h2>
+                  <input type="text" value={formData.street} placeholder="Street" />
+                  <input type="text" value={formData.city} placeholder="City" />
+                </div>
+              );
+            } else {
+              return (
+                <div className="step-3">
+                  <h2>Review</h2>
+                  <p>Name: {formData.name}</p>
+                  <p>Email: {formData.email}</p>
+                  <p>Address: {formData.street}, {formData.city}</p>
+                </div>
+              );
+            }
+          }, [step, formData]);
+
+          return <form>{formStep}</form>;
+        };
+      `,
+        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+      },
+      // useMemo with dynamic component creation
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ componentType, props }) => {
+          const dynamicComponent = useMemo(() => {
+            const components = {
+              button: <Button {...props} />,
+              input: <Input {...props} />,
+              select: <Select {...props} />
+            };
+
+            return components[componentType] || <div>Unknown component type</div>;
+          }, [componentType, props]);
+
+          return <div className="dynamic-component-wrapper">{dynamicComponent}</div>;
+        };
+      `,
+        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+      },
+      // useMemo with template literals in JSX
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ user, theme }) => {
+          const userGreeting = useMemo(() => (
+            <div className={\`greeting \${theme}\`}>
+              <h2>{\`Hello, \${user.name}!\`}</h2>
+              <p>{\`Welcome back to your \${user.plan} account\`}</p>
+            </div>
+          ), [user, theme]);
+
+          return <div>{userGreeting}</div>;
+        };
+      `,
+        errors: [{ messageId: 'useMemoShouldBeComponent' }],
       },
     ],
   },
