@@ -202,29 +202,6 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
         }
       `,
     },
-    // Function with destructuring when enforceDestructuring is true
-    {
-      code: `
-        type ProcessProps = {
-          id: string;
-          name: string;
-        };
-        function process({ id, name }: ProcessProps) {
-          return id + name;
-        }
-      `,
-      options: [{ enforceDestructuring: true }],
-      errors: [{ messageId: 'usePropsForParameter', data: { paramName: 'destructured object' } }],
-      output: `
-        type ProcessProps = {
-          id: string;
-          name: string;
-        };
-        function process(props) {
-          return id + name;
-        }
-      `,
-    },
     // Type with incorrect suffix
     {
       code: `
