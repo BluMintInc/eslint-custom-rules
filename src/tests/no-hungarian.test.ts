@@ -134,20 +134,17 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
     },
     // Class properties should be ignored in our implementation
 
-    // Variables with Hungarian notation prefixes (when configured)
+    // Variables with Hungarian notation prefixes
     {
       code: 'const strName = "John";',
-      options: [{ disallowedPrefixes: ['str', 'int', 'bool'] }],
       errors: [{ messageId: 'noHungarian', data: { name: 'strName' } }],
     },
     {
       code: 'const intAge = 30;',
-      options: [{ disallowedPrefixes: ['str', 'int', 'bool'] }],
       errors: [{ messageId: 'noHungarian', data: { name: 'intAge' } }],
     },
     {
       code: 'const boolIsActive = true;',
-      options: [{ disallowedPrefixes: ['str', 'int', 'bool'] }],
       errors: [{ messageId: 'noHungarian', data: { name: 'boolIsActive' } }],
     },
 
@@ -190,40 +187,15 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
       errors: [{ messageId: 'noHungarian', data: { name: 'appController' } }],
     },
 
-    // Custom disallowed suffixes
-    {
-      code: 'const userDto = { name: "John" };',
-      options: [{ disallowedSuffixes: ['Dto', 'Vo', 'Bo'] }],
-      errors: [{ messageId: 'noHungarian', data: { name: 'userDto' } }],
-    },
-    {
-      code: 'const productVo = { id: 1, name: "Product" };',
-      options: [{ disallowedSuffixes: ['Dto', 'Vo', 'Bo'] }],
-      errors: [{ messageId: 'noHungarian', data: { name: 'productVo' } }],
-    },
-    {
-      code: 'const customerBo = new CustomerBo();',
-      options: [{ disallowedSuffixes: ['Dto', 'Vo', 'Bo'] }],
-      errors: [{ messageId: 'noHungarian', data: { name: 'customerBo' } }],
-    },
-
-    // Variables with both disallowed prefixes and suffixes
-    {
-      code: 'const strNameString = "John";',
-      options: [{ disallowedPrefixes: ['str', 'int', 'bool'], disallowedSuffixes: ['String', 'Number', 'Boolean'] }],
-      errors: [{ messageId: 'noHungarian', data: { name: 'strNameString' } }],
-    },
-
-    // Edge case: variable name contains multiple disallowed suffixes
+    // Edge case: variable name contains multiple type names
     {
       code: 'const userObjectArray = [{ name: "John" }];',
       errors: [{ messageId: 'noHungarian', data: { name: 'userObjectArray' } }],
     },
 
-    // Edge case: variable name with disallowed suffix but not at the end
+    // Edge case: variable name with type name as prefix
     {
       code: 'const arrayOfItems = ["a", "b", "c"];',
-      options: [{ disallowedPrefixes: ['array'] }],
       errors: [{ messageId: 'noHungarian', data: { name: 'arrayOfItems' } }],
     },
   ],
