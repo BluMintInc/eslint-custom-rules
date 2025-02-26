@@ -212,6 +212,16 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
     }
 
     /**
+     * Safely formats alternatives for display
+     */
+    function formatAlternatives(alternatives: string[] | string): string {
+      if (Array.isArray(alternatives)) {
+        return alternatives.join(', ');
+      }
+      return String(alternatives);
+    }
+
+    /**
      * Check variable declarations for negative naming
      */
     function checkVariableDeclaration(node: TSESTree.VariableDeclarator) {
@@ -226,7 +236,7 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
           messageId: 'avoidNegativeNaming',
           data: {
             name: variableName,
-            alternatives: alternatives.join(', '),
+            alternatives: formatAlternatives(alternatives),
           },
         });
       }
@@ -268,7 +278,7 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
           messageId: 'avoidNegativeNaming',
           data: {
             name: functionName,
-            alternatives: alternatives.join(', '),
+            alternatives: formatAlternatives(alternatives),
           },
         });
       }
@@ -289,7 +299,7 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
           messageId: 'avoidNegativeNaming',
           data: {
             name: methodName,
-            alternatives: alternatives.join(', '),
+            alternatives: formatAlternatives(alternatives),
           },
         });
       }
@@ -310,7 +320,7 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
           messageId: 'avoidNegativeNaming',
           data: {
             name: propertyName,
-            alternatives: alternatives.join(', '),
+            alternatives: formatAlternatives(alternatives),
           },
         });
       }
@@ -331,7 +341,7 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
           messageId: 'avoidNegativeNaming',
           data: {
             name: propertyName,
-            alternatives: alternatives.join(', '),
+            alternatives: formatAlternatives(alternatives),
           },
         });
       }
@@ -352,7 +362,7 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
           messageId: 'avoidNegativeNaming',
           data: {
             name: paramName,
-            alternatives: alternatives.join(', '),
+            alternatives: formatAlternatives(alternatives),
           },
         });
       }
