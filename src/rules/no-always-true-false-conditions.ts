@@ -369,6 +369,27 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
 
       // For ||: if either side is always truthy, the whole expression is truthy
       if (node.operator === '||') {
+        // Skip evaluation if this is a destructuring assignment with fallback pattern
+        if (node.parent) {
+          // Check for variable declarator with destructuring pattern
+          if (node.parent.type === AST_NODE_TYPES.VariableDeclarator &&
+              (node.parent.id.type === AST_NODE_TYPES.ObjectPattern ||
+               node.parent.id.type === AST_NODE_TYPES.ArrayPattern)) {
+            // This is a destructuring with fallback pattern like: const { x } = obj || {}
+            // Don't flag this as an always true/false condition
+            return {};
+          }
+
+          // Check for assignment expression with destructuring pattern
+          if (node.parent.type === AST_NODE_TYPES.AssignmentExpression &&
+              (node.parent.left.type === AST_NODE_TYPES.ObjectPattern ||
+               node.parent.left.type === AST_NODE_TYPES.ArrayPattern)) {
+            // This is a destructuring with fallback pattern like: ({ x } = obj || {})
+            // Don't flag this as an always true/false condition
+            return {};
+          }
+        }
+
         if (leftResult.isTruthy) {
           // Short circuit for || - if left is truthy, right is never evaluated
           return { isTruthy: true };
