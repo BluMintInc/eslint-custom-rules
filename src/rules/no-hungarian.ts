@@ -93,6 +93,18 @@ export const noHungarian = createRule<[Options], MessageIds>({
       return varName.includes(className);
     }
 
+    // Helper function to check if a node is a class property or method
+    function isClassProperty(node: TSESTree.Node): boolean {
+      let current = node.parent;
+      while (current) {
+        if (current.type === 'ClassBody' || current.type === 'ClassDeclaration' || current.type === 'ClassExpression') {
+          return true;
+        }
+        current = current.parent;
+      }
+      return false;
+    }
+
     return {
       VariableDeclarator(node) {
         // Skip destructuring patterns
@@ -102,6 +114,34 @@ export const noHungarian = createRule<[Options], MessageIds>({
 
         const variableName = node.id.name;
         let typeName: string | null = null;
+
+        // Skip variables that are exactly the same as a type name
+        if (disallowedSuffixes.includes(variableName)) {
+          return;
+        }
+
+        // Skip variables that contain type names as part of a larger word
+        // For example, "strongPassword" contains "String" but is not Hungarian notation
+        // But don't skip if it contains multiple disallowed suffixes like "userObjectArray"
+        const containsAsSubstring = disallowedSuffixes.some(suffix => {
+          // Check if the suffix appears in the middle of the word, not at the end
+          const index = variableName.indexOf(suffix);
+          return index > 0 && index + suffix.length < variableName.length;
+        });
+
+        // Check if the variable name ends with multiple disallowed suffixes
+        const hasMultipleSuffixes = disallowedSuffixes.some(suffix => {
+          if (variableName.endsWith(suffix)) {
+            // Check if the remaining part also ends with a disallowed suffix
+            const remainingPart = variableName.substring(0, variableName.length - suffix.length);
+            return disallowedSuffixes.some(s => remainingPart.endsWith(s) && remainingPart !== s);
+          }
+          return false;
+        });
+
+        if (containsAsSubstring && !hasMultipleSuffixes) {
+          return;
+        }
 
         // Check if the variable is initialized with a new expression
         if (node.init && node.init.type === 'NewExpression') {
@@ -137,6 +177,14 @@ export const noHungarian = createRule<[Options], MessageIds>({
               name: variableName,
             },
           });
+        }
+      },
+
+      // Handle class properties
+      PropertyDefinition(node) {
+        if (node.key.type === 'Identifier' && isClassProperty(node)) {
+          // Skip class properties - they should be ignored
+          return;
         }
       },
     };
