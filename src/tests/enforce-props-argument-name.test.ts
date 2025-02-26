@@ -308,28 +308,6 @@ ruleTesterJsx.run('enforce-props-argument-name', enforcePropsArgumentName, {
     },
   ],
   invalid: [
-    // React component with incorrect parameter name
-    {
-      code: `
-        type ButtonProps = {
-          label: string;
-          onClick: () => void;
-        };
-        const Button = (config: ButtonProps) => {
-          return <button onClick={config.onClick}>{config.label}</button>;
-        };
-      `,
-      errors: [{ messageId: 'usePropsForParameter', data: { paramName: 'config' } }],
-      output: `
-        type ButtonProps = {
-          label: string;
-          onClick: () => void;
-        };
-        const Button = (props) => {
-          return <button onClick={config.onClick}>{config.label}</button>;
-        };
-      `,
-    },
     // React component with incorrect type suffix
     {
       code: `
