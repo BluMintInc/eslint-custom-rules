@@ -4,9 +4,9 @@ import { createRule } from '../utils/createRule';
 type MessageIds = 'noMockFirebaseAdmin';
 
 const FIREBASE_ADMIN_PATHS = [
-  '../../config/firebaseAdmin',
-  '../config/firebaseAdmin',
-  './config/firebaseAdmin',
+  'firebaseAdmin',
+  'config/firebaseAdmin',
+  'src/config/firebaseAdmin',
   'functions/src/config/firebaseAdmin',
 ];
 
@@ -26,6 +26,15 @@ export const noMockFirebaseAdmin = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
+    // Check if the current file is a test file
+    const filename = context.getFilename();
+    const isTestFile = /\.test\.[jt]sx?$/.test(filename) || /\.spec\.[jt]sx?$/.test(filename);
+
+    // If it's not a test file, don't apply the rule
+    if (!isTestFile) {
+      return {};
+    }
+
     return {
       CallExpression(node) {
         if (
@@ -35,12 +44,17 @@ export const noMockFirebaseAdmin = createRule<[], MessageIds>({
           node.callee.property.type === AST_NODE_TYPES.Identifier &&
           node.callee.property.name === 'mock' &&
           node.arguments.length > 0 &&
-          node.arguments[0].type === AST_NODE_TYPES.Literal &&
-          typeof node.arguments[0].value === 'string'
+          (node.arguments[0].type === AST_NODE_TYPES.Literal ||
+           node.arguments[0].type === AST_NODE_TYPES.TemplateLiteral)
         ) {
-          const mockPath = node.arguments[0].value;
+          let mockPath = '';
+          if (node.arguments[0].type === AST_NODE_TYPES.TemplateLiteral) {
+            mockPath = node.arguments[0].quasis[0].value.raw;
+          } else if (node.arguments[0].type === AST_NODE_TYPES.Literal) {
+            mockPath = String(node.arguments[0].value);
+          }
           const isFirebaseAdminMock = FIREBASE_ADMIN_PATHS.some(path =>
-            mockPath.endsWith(path) || mockPath.includes('firebaseAdmin')
+            mockPath.endsWith(path) && !mockPath.endsWith('Helper') && !mockPath.endsWith('utils') && !mockPath.endsWith('test') && !mockPath.endsWith('mock') && !mockPath.endsWith('jest-mock')
           );
 
           if (isFirebaseAdminMock) {

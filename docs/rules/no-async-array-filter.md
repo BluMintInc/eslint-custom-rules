@@ -1,4 +1,4 @@
-# Disallow async callbacks in Array.filter() as they lead to incorrect filtering. Since async functions return Promises which are always truthy, the filter will keep all elements regardless of the async check's result. Use Promise.all() with map() first, then filter based on the resolved results (`@blumintinc/blumint/no-async-array-filter`)
+# Disallow async callbacks for Array.filter (`@blumintinc/blumint/no-async-array-filter`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

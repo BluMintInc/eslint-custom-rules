@@ -10,8 +10,7 @@ This is an ESLint plugin that provides custom rules for BluMint's TypeScript/Rea
 * **scripts/**: Utility scripts for development and maintenance
 * **src/**: Source code for custom ESLint rules
     * **rules**: Contains all custom ESLint rules
-* **tests/**: Unit tests for the rules
-    * **rules**: Contains a test suite for each custom ESLint rule
+    * **tests/**: Contains a Jest test suite for each ESLint rule of the same name
 * **utils/**: Helper functions and utilities
 
 ### Documentation
@@ -157,7 +156,7 @@ When creating a new rule:
 When writing tests for ESLint rules, follow these guidelines:
 
 1. **Test File Structure**
-    * Create test files in the `tests/rules/` directory
+    * Create test files in the `src/tests/` directory
     * Name the test file the same as the rule file with `.test.ts` extension
     * Use the following import boilerplate:
     ```typescript
@@ -222,9 +221,9 @@ This repository is structured as an ESLint plugin, which means that new rules ca
     * Leverage `utils/astUtils.ts` for AST manipulation and traversal.
 
 2. **Write Tests:**
-    * Each rule's test suite should reside in the `tests/rules/` collection with a filename of the same filename as the rule but with the `.test.ts` suffix.
+    * Each rule's test suite should reside in the `src/tests/` directory with a filename of the same filename as the rule but with the `.test.ts` suffix.
     * Use `ruleTester` to define valid and invalid code examples for your rule.
-    * Ensure comprehensive test coverage for different scenarios and edge cases.
+    * **Be extremely comprehensive when writing tests. You should expect to write more than 20 tests for each rule. These tests should cover different scenarios and edge cases.**
 
 3. **Document the Rule:**
     * Add a new markdown file in `docs/rules/`.
@@ -249,7 +248,9 @@ This repository is structured as an ESLint plugin, which means that new rules ca
             * Invalid function signatures
             * Unusual whitespace or comments
             * Complex nested structures
+            * And even more! Be extremely comprehensive.
         * No tests should be failing.
+        * You should expect to write more than 20 tests for each rule.
     * **Documentation:**
         * The rule must have clear and concise documentation, including:
             * A description of the rule's purpose

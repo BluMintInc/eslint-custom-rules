@@ -1,4 +1,10 @@
-# no-firestore-jest-mock
+# Prevent importing firestore-jest-mock in test files (`@blumintinc/blumint/no-firestore-jest-mock`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
 
 Prevents importing from `firestore-jest-mock` in test files to ensure consistent Firestore mocking through our centralized `mockFirestore` utility.
 

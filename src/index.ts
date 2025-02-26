@@ -65,6 +65,18 @@ import { requireHooksDefaultParams } from './rules/require-hooks-default-params'
 import { preferDestructuringNoClass } from './rules/prefer-destructuring-no-class';
 import { enforceRenderHitsMemoization } from './rules/enforce-render-hits-memoization';
 import { preferFragmentComponent } from './rules/prefer-fragment-component';
+import { reactUseMemoShouldBeComponent } from './rules/react-usememo-should-be-component';
+import { noUnnecessaryVerbSuffix } from './rules/no-unnecessary-verb-suffix';
+import { enforceAssertSafeObjectKey } from './rules/enforce-assertSafe-object-key';
+import { enforceObjectLiteralAsConst } from './rules/enforce-object-literal-as-const';
+import { enforcePositiveNaming } from './rules/enforce-positive-naming';
+import { noTypeAssertionReturns } from './rules/no-type-assertion-returns';
+import { preferUtilityFunctionOverPrivateStatic } from './rules/prefer-utility-function-over-private-static';
+import { enforceMicrodiff } from './rules/enforce-microdiff';
+import { enforceTimestampNow } from './rules/enforce-timestamp-now';
+import { noAlwaysTrueFalseConditions } from './rules/no-always-true-false-conditions';
+import { enforcePropsArgumentName } from './rules/enforce-props-argument-name';
+import { preferGlobalRouterStateKey } from './rules/prefer-global-router-state-key';
 
 module.exports = {
   meta: {
@@ -145,6 +157,18 @@ module.exports = {
         '@blumintinc/blumint/prefer-destructuring-no-class': 'error',
         '@blumintinc/blumint/enforce-render-hits-memoization': 'error',
         '@blumintinc/blumint/prefer-fragment-component': 'error',
+        '@blumintinc/blumint/react-usememo-should-be-component': 'error',
+        '@blumintinc/blumint/no-unnecessary-verb-suffix': 'error',
+        '@blumintinc/blumint/enforce-assertSafe-object-key': 'error',
+        '@blumintinc/blumint/enforce-object-literal-as-const': 'error',
+        '@blumintinc/blumint/enforce-positive-naming': 'error',
+        '@blumintinc/blumint/no-type-assertion-returns': 'error',
+        '@blumintinc/blumint/prefer-utility-function-over-private-static': 'error',
+        '@blumintinc/blumint/enforce-microdiff': 'error',
+        '@blumintinc/blumint/enforce-timestamp-now': 'error',
+        '@blumintinc/blumint/no-always-true-false-conditions': 'error',
+        '@blumintinc/blumint/enforce-props-argument-name': 'error',
+        '@blumintinc/blumint/prefer-global-router-state-key': 'warn',
       },
     },
   },
@@ -217,5 +241,17 @@ module.exports = {
     'prefer-destructuring-no-class': preferDestructuringNoClass,
     'enforce-render-hits-memoization': enforceRenderHitsMemoization,
     'prefer-fragment-component': preferFragmentComponent,
+    'react-usememo-should-be-component': reactUseMemoShouldBeComponent,
+    'no-unnecessary-verb-suffix': noUnnecessaryVerbSuffix,
+    'enforce-assertSafe-object-key': enforceAssertSafeObjectKey,
+    'enforce-object-literal-as-const': enforceObjectLiteralAsConst,
+    'enforce-positive-naming': enforcePositiveNaming,
+    'no-type-assertion-returns': noTypeAssertionReturns,
+    'prefer-utility-function-over-private-static': preferUtilityFunctionOverPrivateStatic,
+    'enforce-microdiff': enforceMicrodiff,
+    'enforce-timestamp-now': enforceTimestampNow,
+    'no-always-true-false-conditions': noAlwaysTrueFalseConditions,
+    'enforce-props-argument-name': enforcePropsArgumentName,
+    'prefer-global-router-state-key': preferGlobalRouterStateKey,
   },
 };
