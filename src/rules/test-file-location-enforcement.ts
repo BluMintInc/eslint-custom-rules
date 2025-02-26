@@ -42,86 +42,23 @@ export const testFileLocationEnforcement = createRule<[], MessageIds>({
 
         // Get the directory of the test file
         const testDir = path.dirname(filename);
+        // check if the source file exists in the same directory
+        const sourceFilePath = path.join(testDir, sourceFilename);
 
-        // Check if the test file is in a dedicated test directory
-        const isInTestDir =
-          /\/tests?\/?$/.test(testDir) ||
-          testDir.includes('/tests/') ||
-          testDir.includes('/test/');
-
-        if (isInTestDir) {
-          // If in a test directory, we need to find the corresponding source file
-          const possibleSourceDirs: string[] = [];
-
-          // Replace 'test' or 'tests' with 'src' in the path
-          const srcDir = testDir
-            .replace(/\/tests?\/?$/, '/src')
-            .replace(/\/tests\//, '/src/');
-          possibleSourceDirs.push(srcDir);
-
-          // Also try one level up (for cases like functions/tests -> functions/src)
-          const parentDir = path.dirname(testDir);
-          const srcDirFromParent = path.join(parentDir, 'src');
-          possibleSourceDirs.push(srcDirFromParent);
-
-          // Try to find the source file in possible directories
-          let sourceFileFound = false;
-          let expectedPath = '';
-
-          for (const dir of possibleSourceDirs) {
-            const possibleSourcePath = path.join(dir, sourceFilename);
-
-            try {
-              if (fs.existsSync(possibleSourcePath)) {
-                sourceFileFound = true;
-                // The expected test file location would be in the same directory as the source
-                expectedPath = path.join(dir, basename);
-                break;
-              }
-            } catch (err) {
-              // Ignore file system errors
-            }
-          }
-
-          if (sourceFileFound) {
+        try {
+          // If the source file doesn't exist in the same directory, report an error
+          if (!fs.existsSync(sourceFilePath)) {
+            // If found in src directory, suggest moving the test file there
             context.report({
               node,
               messageId: 'incorrectTestLocation',
               data: {
-                expectedPath,
+                expectedPath: path.join(testDir, sourceFilename),
               },
             });
           }
-        } else {
-          // If not in a dedicated test directory, check if the source file exists in the same directory
-          const sourceFilePath = path.join(testDir, sourceFilename);
-
-          try {
-            // If the source file doesn't exist in the same directory, report an error
-            if (!fs.existsSync(sourceFilePath)) {
-              // Try to find the source file in a src directory
-              const possibleSrcDir = testDir
-                .replace(/\/lib\//, '/src/')
-                .replace(/\/dist\//, '/src/');
-              const possibleSrcPath = path.join(possibleSrcDir, sourceFilename);
-
-              if (
-                possibleSrcDir !== testDir &&
-                fs.existsSync(possibleSrcPath)
-              ) {
-                // If found in src directory, suggest moving the test file there
-                context.report({
-                  node,
-                  messageId: 'incorrectTestLocation',
-                  data: {
-                    expectedPath: path.join(possibleSrcDir, basename),
-                  },
-                });
-              }
-            }
-          } catch (err) {
-            // Ignore file system errors
-          }
+        } catch (err) {
+          // Ignore file system errors
         }
       },
     };
