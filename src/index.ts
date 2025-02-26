@@ -81,7 +81,7 @@ import { preferGlobalRouterStateKey } from './rules/prefer-global-router-state-k
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.7.3',
+    version: '1.8.0',
   },
   parseOptions: {
     ecmaVersion: 2020,

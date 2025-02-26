@@ -1,3 +1,24 @@
+# [1.8.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.7.3...v1.8.0) (2025-02-26)
+
+
+### Bug Fixes
+
+* **jest-config:** update test match pattern to include all test files ([2d332aa](https://github.com/BluMintInc/eslint-custom-rules/commit/2d332aa178cdb9c66858ff957384e591cef81e08))
+* **openhands-resolver.yml:** use latest version of resolver ([7519d16](https://github.com/BluMintInc/eslint-custom-rules/commit/7519d16d579aff08972d0bc3db1bde1e2ef0dcd6))
+* **src/rules/no-unnecessary-verb-suffix.ts:** preposition not verb ([00dc2df](https://github.com/BluMintInc/eslint-custom-rules/commit/00dc2dfe391cecdf74ad4eb8ef4159554235e842))
+* **src/rules/no-unnecessary-verb-suffix.ts:** preposition not verb ([6c67b95](https://github.com/BluMintInc/eslint-custom-rules/commit/6c67b9595c78d2bc060ee65dfb7156363e056502))
+* **src/tests/avatar-next-test.ts:** remove ([d3e7b46](https://github.com/BluMintInc/eslint-custom-rules/commit/d3e7b466eaebab136943b685d863a5384639fded))
+
+
+### Features
+
+* add new ESLint rules for various code quality improvements ([e51b27a](https://github.com/BluMintInc/eslint-custom-rules/commit/e51b27ad0d52165ab60bcd31cf6f5c1e9f7f8993))
+* **enforce-render-hits-memoization:** enhance rule with improved memoization checks ([ef42251](https://github.com/BluMintInc/eslint-custom-rules/commit/ef42251a190827293ccf80acca359cdf12a9c4fc))
+* **eslint-plugin:** Add new rules for React useMemo and verb suffix ([74c662e](https://github.com/BluMintInc/eslint-custom-rules/commit/74c662ebfb3eb953a7d62233722061baa1cfef3d))
+* **eslint-plugin:** enhance enforce-assertSafe-object-key rule with more precise key access validation ([eea1ec7](https://github.com/BluMintInc/eslint-custom-rules/commit/eea1ec7e88aaa89813b30fbe673117ec52ebb0a0))
+* **eslint-plugin:** improve prefer-fragment-component rule ([5a6f6ed](https://github.com/BluMintInc/eslint-custom-rules/commit/5a6f6ed612e16afe47274cc255ce6631011e9a6e))
+* **eslint:** Enhance microdiff enforcement rule with more comprehensive checks ([5beeb2d](https://github.com/BluMintInc/eslint-custom-rules/commit/5beeb2d40f3d4178c766f5821a1c9d518227fb3c))
+
 ## [1.7.3](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.7.2...v1.7.3) (2025-02-16)
 
 
