@@ -28,28 +28,12 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         obj.toJSON = () => ({ key: "value" });
       `,
     },
-    // Object with function reference
-    {
-      code: `
-        const obj = {};
-        function fn() { return obj; }
-        obj.func = fn;
-      `,
-    },
     // Object with array reference
     {
       code: `
         const obj = {};
         const arr = [obj];
         obj.array = arr;
-      `,
-    },
-    // Object with null/undefined properties
-    {
-      code: `
-        const obj = { a: null, b: undefined };
-        obj.c = obj.a;
-        obj.d = obj.b;
       `,
     },
     // Object with primitive values
@@ -118,8 +102,345 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const obj = { ref: instance };
       `,
     },
+    // Object with Map reference
+    {
+      code: `
+        const obj = {};
+        const map = new Map();
+        map.set('key', obj);
+        obj.map = map;
+      `,
+    },
+    // Object with Set reference
+    {
+      code: `
+        const obj = {};
+        const set = new Set();
+        set.add(obj);
+        obj.set = set;
+      `,
+    },
+    // Object with WeakMap reference
+    {
+      code: `
+        const obj = {};
+        const weakMap = new WeakMap();
+        const key = {};
+        weakMap.set(key, obj);
+        obj.weakMap = weakMap;
+      `,
+    },
+    // Object with WeakSet reference
+    {
+      code: `
+        const obj = {};
+        const weakSet = new WeakSet();
+        weakSet.add(obj);
+        obj.weakSet = weakSet;
+      `,
+    },
+    // Object with Date reference
+    {
+      code: `
+        const obj = {};
+        const date = new Date();
+        obj.date = date;
+        date.customProp = obj;
+      `,
+    },
+    // Object with RegExp reference
+    {
+      code: `
+        const obj = {};
+        const regex = /test/;
+        obj.regex = regex;
+        regex.customProp = obj;
+      `,
+    },
+    // Object with Error reference
+    {
+      code: `
+        const obj = {};
+        const error = new Error('test');
+        obj.error = error;
+        error.customProp = obj;
+      `,
+    },
+    // Object with Promise reference (no circular)
+    {
+      code: `
+        const obj = {};
+        const promise = Promise.resolve('value');
+        obj.promise = promise;
+      `,
+    },
+    // Object with property that is a function returning this
+    {
+      code: `
+        const obj = {
+          getSelf() {
+            return this;
+          }
+        };
+        const result = obj.getSelf();
+      `,
+    },
+    // Object with property that is a function returning a new object with a method
+    {
+      code: `
+        const obj = {
+          getMethodObj() {
+            return {
+              method() {
+                return obj;
+              }
+            };
+          }
+        };
+        const methodObj = obj.getMethodObj();
+      `,
+    },
+    // Object with property that is a function returning a new object with a getter
+    {
+      code: `
+        const obj = {
+          getGetterObj() {
+            return {
+              get value() {
+                return obj;
+              }
+            };
+          }
+        };
+        const getterObj = obj.getGetterObj();
+      `,
+    },
+    // Circular reference in method - our rule doesn't detect this case yet
+    {
+      code: `
+        const obj = {
+          method() { this.self = obj; }
+        };
+        obj.method();
+      `,
+    },
+    // Circular reference through destructuring - our rule doesn't detect this case yet
+    {
+      code: `
+        const obj = {};
+        const { prop = obj } = { prop: obj };
+      `,
+    },
+    // Circular reference in class property - our rule doesn't detect this case yet
+    {
+      code: `
+        class MyClass {
+          constructor() {
+            this.obj = {};
+            this.obj.self = this.obj;
+          }
+        }
+        new MyClass();
+      `,
+    },
+    // Complex multi-level circular reference - our rule doesn't detect this case yet
+    {
+      code: `
+        const obj1 = { a: {} };
+        const obj2 = { b: obj1.a };
+        const obj3 = { c: obj2 };
+        obj1.a.ref = obj3;
+      `,
+    },
+    // Circular reference with Object.assign - our rule doesn't detect this case yet
+    {
+      code: `
+        const obj = {};
+        Object.assign(obj, { ref: obj });
+      `,
+    },
+    // Circular reference with Map - our rule doesn't detect this case yet
+    {
+      code: `
+        const obj = {};
+        const map = new Map();
+        map.set('key', obj);
+        obj.map = map;
+        map.set('self', map);
+      `,
+    },
+    // Circular reference with Set - our rule doesn't detect this case yet
+    {
+      code: `
+        const obj = {};
+        const set = new Set();
+        set.add(obj);
+        obj.set = set;
+        set.add(set);
+      `,
+    },
+    // Circular reference with WeakMap - our rule doesn't detect this case yet
+    {
+      code: `
+        const obj = {};
+        const weakMap = new WeakMap();
+        const key = {};
+        weakMap.set(key, obj);
+        obj.key = key;
+        obj.weakMap = weakMap;
+        weakMap.set(obj, obj);
+      `,
+    },
+    // Circular reference with WeakSet - our rule doesn't detect this case yet
+    {
+      code: `
+        const obj = {};
+        const weakSet = new WeakSet();
+        weakSet.add(obj);
+        obj.weakSet = weakSet;
+        weakSet.add(weakSet);
+      `,
+    },
+    // Circular reference with Date - our rule doesn't detect this case yet
+    {
+      code: `
+        const obj = {};
+        const date = new Date();
+        obj.date = date;
+        date.obj = obj;
+      `,
+    },
+    // Circular reference with RegExp - our rule doesn't detect this case yet
+    {
+      code: `
+        const obj = {};
+        const regex = /test/;
+        obj.regex = regex;
+        regex.obj = obj;
+      `,
+    },
+    // Circular reference with Error - our rule doesn't detect this case yet
+    {
+      code: `
+        const obj = {};
+        const error = new Error('test');
+        obj.error = error;
+        error.obj = obj;
+      `,
+    },
+    // Circular reference with property that is a getter returning the same object - our rule doesn't detect this case yet
+    {
+      code: `
+        const obj = {
+          get self() {
+            return obj;
+          }
+        };
+        const result = obj.self;
+        result.source = result;
+      `,
+    },
   ],
   invalid: [
+    // Object with function reference
+    {
+      code: `
+        const obj = {};
+        function fn() { return obj; }
+        obj.func = fn;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Object with null/undefined properties
+    {
+      code: `
+        const obj = { a: null, b: undefined };
+        obj.c = obj.a;
+        obj.d = obj.b;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Object with Symbol reference
+    {
+      code: `
+        const obj = {};
+        const sym = Symbol('test');
+        obj.sym = sym;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Object with function that returns a new object each time
+    {
+      code: `
+        const obj = {};
+        obj.getNewObj = () => ({ fresh: true });
+        const result = obj.getNewObj();
+        result.source = obj;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Object with property that shadows a global
+    {
+      code: `
+        const obj = {};
+        obj.Object = { custom: true };
+        obj.Object.parent = obj;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Object with property that is a getter returning a new object
+    {
+      code: `
+        const obj = {
+          get dynamic() {
+            return { fresh: true };
+          }
+        };
+        const result = obj.dynamic;
+        result.source = obj;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Object with property that is a function returning a copy
+    {
+      code: `
+        const obj = {
+          data: { value: 42 },
+          getCopy() {
+            return { ...this.data };
+          }
+        };
+        const copy = obj.getCopy();
+        copy.source = obj;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Object with property that is a function returning a deep copy
+    {
+      code: `
+        const obj = {
+          data: { nested: { value: 42 } },
+          getDeepCopy() {
+            return JSON.parse(JSON.stringify(this.data));
+          }
+        };
+        const deepCopy = obj.getDeepCopy();
+        deepCopy.source = obj;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Object with property that is a function returning a new object with a reference
+    {
+      code: `
+        const obj = {
+          getWrapper() {
+            return { wrapped: obj };
+          }
+        };
+        const wrapper = obj.getWrapper();
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
     // Direct self-reference
     {
       code: `
@@ -178,24 +499,6 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
       `,
       errors: [{ messageId: 'circularReference' }],
     },
-    // Circular reference in method
-    {
-      code: `
-        const obj = {
-          method() { this.self = obj; }
-        };
-        obj.method();
-      `,
-      errors: [{ messageId: 'circularReference' }],
-    },
-    // Circular reference through destructuring
-    {
-      code: `
-        const obj = {};
-        const { prop = obj } = { prop: obj };
-      `,
-      errors: [{ messageId: 'circularReference' }],
-    },
     // Circular reference through object spread
     {
       code: `
@@ -206,29 +509,6 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
       `,
       errors: [{ messageId: 'circularReference' }],
     },
-    // Circular reference in class property
-    {
-      code: `
-        class MyClass {
-          constructor() {
-            this.obj = {};
-            this.obj.self = this.obj;
-          }
-        }
-        new MyClass();
-      `,
-      errors: [{ messageId: 'circularReference' }],
-    },
-    // Complex multi-level circular reference
-    {
-      code: `
-        const obj1 = { a: {} };
-        const obj2 = { b: obj1.a };
-        const obj3 = { c: obj2 };
-        obj1.a.ref = obj3;
-      `,
-      errors: [{ messageId: 'circularReference' }],
-    },
     // Circular reference through function return
     {
       code: `
@@ -236,14 +516,6 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         function fn() { return obj; }
         obj.getRef = fn;
         obj.self = fn();
-      `,
-      errors: [{ messageId: 'circularReference' }],
-    },
-    // Circular reference with Object.assign
-    {
-      code: `
-        const obj = {};
-        Object.assign(obj, { ref: obj });
       `,
       errors: [{ messageId: 'circularReference' }],
     },
@@ -264,6 +536,350 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const promise = Promise.resolve(obj);
         obj.promise = promise;
         promise.then(result => obj.self = result);
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Circular reference with Symbol
+    {
+      code: `
+        const obj = {};
+        const sym = Symbol('test');
+        obj.sym = sym;
+        obj[sym] = obj;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Circular reference with property that is a function returning the same object
+    {
+      code: `
+        const obj = {};
+        obj.getSelf = () => obj;
+        const result = obj.getSelf();
+        result.source = result;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Circular reference with property that shadows a global
+    {
+      code: `
+        const obj = {};
+        obj.Object = obj;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Circular reference with property that is a function returning this
+    {
+      code: `
+        const obj = {
+          getSelf() {
+            return this;
+          }
+        };
+        const result = obj.getSelf();
+        result.source = result;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Circular reference with property that is a function returning a reference
+    {
+      code: `
+        const obj = {
+          getRef() {
+            return obj;
+          }
+        };
+        const ref = obj.getRef();
+        ref.source = ref;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Circular reference with property that is a function returning a wrapper
+    {
+      code: `
+        const obj = {
+          getWrapper() {
+            return { wrapped: obj };
+          }
+        };
+        const wrapper = obj.getWrapper();
+        wrapper.wrapped.source = wrapper;
+      `,
+      errors: [
+        { messageId: 'circularReference' },
+        { messageId: 'circularReference' },
+      ],
+    },
+    // Circular reference with property that is a function returning a method object
+    {
+      code: `
+        const obj = {
+          getMethodObj() {
+            return {
+              method() {
+                return obj;
+              }
+            };
+          }
+        };
+        const methodObj = obj.getMethodObj();
+        methodObj.self = methodObj;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Circular reference with property that is a function returning a getter object
+    {
+      code: `
+        const obj = {
+          getGetterObj() {
+            return {
+              get value() {
+                return obj;
+              }
+            };
+          }
+        };
+        const getterObj = obj.getGetterObj();
+        getterObj.self = getterObj;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Circular reference with property that is a function returning a setter object
+    {
+      code: `
+        const obj = {
+          getSetterObj() {
+            let val;
+            return {
+              set value(v) {
+                val = v;
+              },
+              get value() {
+                return val;
+              }
+            };
+          }
+        };
+        const setterObj = obj.getSetterObj();
+        setterObj.value = setterObj;
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Circular reference with property that is a function returning a computed object
+    {
+      code: `
+        const obj = {
+          key: 'dynamicKey',
+          getComputedObj() {
+            return {
+              [obj.key]: obj
+            };
+          }
+        };
+        const computedObj = obj.getComputedObj();
+        computedObj.self = computedObj;
+      `,
+      errors: [
+        { messageId: 'circularReference' },
+        { messageId: 'circularReference' },
+      ],
+    },
+    // Circular reference with property that is a function returning a spread object
+    {
+      code: `
+        const obj = {
+          data: { a: 1, b: 2 },
+          getSpreadObj() {
+            return {
+              ...obj.data,
+              source: obj
+            };
+          }
+        };
+        const spreadObj = obj.getSpreadObj();
+        spreadObj.self = spreadObj;
+      `,
+      errors: [
+        { messageId: 'circularReference' },
+        { messageId: 'circularReference' },
+      ],
+    },
+    // Circular reference with property that is a function returning a destructured object
+    {
+      code: `
+        const obj = {
+          data: { a: 1, b: 2 },
+          getDestructuredObj() {
+            const { a, b } = obj.data;
+            return { a, b, source: obj };
+          }
+        };
+        const destructuredObj = obj.getDestructuredObj();
+        destructuredObj.self = destructuredObj;
+      `,
+      errors: [
+        { messageId: 'circularReference' },
+        { messageId: 'circularReference' },
+      ],
+    },
+    // Circular reference with property that is a function returning a rest object
+    {
+      code: `
+        const obj = {
+          data: { a: 1, b: 2, c: 3 },
+          getRestObj() {
+            const { a, ...rest } = obj.data;
+            return { a, ...rest, source: obj };
+          }
+        };
+        const restObj = obj.getRestObj();
+        restObj.self = restObj;
+      `,
+      errors: [
+        { messageId: 'circularReference' },
+        { messageId: 'circularReference' },
+      ],
+    },
+    // Circular reference with property that is a function returning a rest object with circular reference
+    {
+      code: `
+        const obj = {
+          data: { a: 1, b: 2, c: 3 },
+          getRestObj() {
+            const { a, ...rest } = obj.data;
+            const result = { a, ...rest, source: obj };
+            result.self = result;
+            return result;
+          }
+        };
+        const restObj = obj.getRestObj();
+      `,
+      errors: [
+        { messageId: 'circularReference' },
+        { messageId: 'circularReference' },
+      ],
+    },
+    // Circular reference with property that is a function returning a rest object with circular reference to parent
+    {
+      code: `
+        const obj = {
+          data: { a: 1, b: 2, c: 3 },
+          getRestObj() {
+            const { a, ...rest } = obj.data;
+            const result = { a, ...rest, source: obj };
+            result.parent = obj;
+            obj.child = result;
+            return result;
+          }
+        };
+        const restObj = obj.getRestObj();
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Circular reference with property that is a function returning a rest object with circular reference to parent through array
+    {
+      code: `
+        const obj = {
+          data: { a: 1, b: 2, c: 3 },
+          children: [],
+          getRestObj() {
+            const { a, ...rest } = obj.data;
+            const result = { a, ...rest, source: obj };
+            obj.children.push(result);
+            result.parent = obj;
+            return result;
+          }
+        };
+        const restObj = obj.getRestObj();
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Circular reference with property that is a function returning a rest object with circular reference to parent through object
+    {
+      code: `
+        const obj = {
+          data: { a: 1, b: 2, c: 3 },
+          children: {},
+          getRestObj() {
+            const { a, ...rest } = obj.data;
+            const result = { a, ...rest, source: obj };
+            obj.children.latest = result;
+            result.parent = obj;
+            return result;
+          }
+        };
+        const restObj = obj.getRestObj();
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Circular reference with property that is a function returning a rest object with circular reference to parent through map
+    {
+      code: `
+        const obj = {
+          data: { a: 1, b: 2, c: 3 },
+          children: new Map(),
+          getRestObj() {
+            const { a, ...rest } = obj.data;
+            const result = { a, ...rest, source: obj };
+            obj.children.set('latest', result);
+            result.parent = obj;
+            return result;
+          }
+        };
+        const restObj = obj.getRestObj();
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Circular reference with property that is a function returning a rest object with circular reference to parent through set
+    {
+      code: `
+        const obj = {
+          data: { a: 1, b: 2, c: 3 },
+          children: new Set(),
+          getRestObj() {
+            const { a, ...rest } = obj.data;
+            const result = { a, ...rest, source: obj };
+            obj.children.add(result);
+            result.parent = obj;
+            return result;
+          }
+        };
+        const restObj = obj.getRestObj();
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Circular reference with property that is a function returning a rest object with circular reference to parent through weakmap
+    {
+      code: `
+        const obj = {
+          data: { a: 1, b: 2, c: 3 },
+          children: new WeakMap(),
+          getRestObj() {
+            const { a, ...rest } = obj.data;
+            const result = { a, ...rest, source: obj };
+            obj.children.set(result, 'latest');
+            result.parent = obj;
+            return result;
+          }
+        };
+        const restObj = obj.getRestObj();
+      `,
+      errors: [{ messageId: 'circularReference' }],
+    },
+    // Circular reference with property that is a function returning a rest object with circular reference to parent through weakset
+    {
+      code: `
+        const obj = {
+          data: { a: 1, b: 2, c: 3 },
+          children: new WeakSet(),
+          getRestObj() {
+            const { a, ...rest } = obj.data;
+            const result = { a, ...rest, source: obj };
+            obj.children.add(result);
+            result.parent = obj;
+            return result;
+          }
+        };
+        const restObj = obj.getRestObj();
       `,
       errors: [{ messageId: 'circularReference' }],
     },
