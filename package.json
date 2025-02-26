@@ -46,6 +46,7 @@
   },
   "dependencies": {
     "compromise": "14.14.4",
+    "minimatch": "^10.0.1",
     "requireindex": "1.2.0"
   },
   "devDependencies": {
