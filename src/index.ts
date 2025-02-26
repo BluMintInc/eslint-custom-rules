@@ -14,6 +14,7 @@ import { noAsyncArrayFilter } from './rules/no-async-array-filter';
 import { noAsyncForEach } from './rules/no-async-foreach';
 import { noConditionalLiteralsInJsx } from './rules/no-conditional-literals-in-jsx';
 import { noFilterWithoutReturn } from './rules/no-filter-without-return';
+import { noHungarian } from './rules/no-hungarian';
 import { noMisusedSwitchCase } from './rules/no-misused-switch-case';
 import { noUnpinnedDependencies } from './rules/no-unpinned-dependencies';
 import { noUnusedProps } from './rules/no-unused-props';
@@ -109,6 +110,7 @@ module.exports = {
         '@blumintinc/blumint/no-async-foreach': 'error',
         '@blumintinc/blumint/no-conditional-literals-in-jsx': 'error',
         '@blumintinc/blumint/no-filter-without-return': 'error',
+        '@blumintinc/blumint/no-hungarian': 'error',
         '@blumintinc/blumint/no-misused-switch-case': 'error',
         '@blumintinc/blumint/no-unpinned-dependencies': 'error',
         '@blumintinc/blumint/no-unused-props': 'error',
@@ -190,6 +192,7 @@ module.exports = {
     'no-async-foreach': noAsyncForEach,
     'no-conditional-literals-in-jsx': noConditionalLiteralsInJsx,
     'no-filter-without-return': noFilterWithoutReturn,
+    'no-hungarian': noHungarian,
     'no-misused-switch-case': noMisusedSwitchCase,
     'no-unpinned-dependencies': noUnpinnedDependencies,
     'no-unused-props': noUnusedProps,
