@@ -1,6 +1,5 @@
 import { createRule } from '../utils/createRule';
-import { TSESLint, TSESTree } from '@typescript-eslint/utils';
-import { AST_NODE_TYPES } from '@typescript-eslint/utils';
+import { TSESLint, TSESTree, AST_NODE_TYPES } from '@typescript-eslint/utils';
 
 export const noAlwaysTrueFalseConditions: TSESLint.RuleModule<
   'alwaysTrueCondition' | 'alwaysFalseCondition',
@@ -15,8 +14,10 @@ export const noAlwaysTrueFalseConditions: TSESLint.RuleModule<
     },
     schema: [],
     messages: {
-      alwaysTrueCondition: 'This condition is always true, which may indicate a mistake or unnecessary code.',
-      alwaysFalseCondition: 'This condition is always false, which may indicate a mistake or dead code.',
+      alwaysTrueCondition:
+        'This condition is always true, which may indicate a mistake or unnecessary code.',
+      alwaysFalseCondition:
+        'This condition is always false, which may indicate a mistake or dead code.',
     },
   },
   defaultOptions: [],
@@ -24,7 +25,10 @@ export const noAlwaysTrueFalseConditions: TSESLint.RuleModule<
     /**
      * Checks if a literal value is always truthy or falsy
      */
-    function checkLiteralValue(node: TSESTree.Literal): { isTruthy?: boolean; isFalsy?: boolean } {
+    function checkLiteralValue(node: TSESTree.Literal): {
+      isTruthy?: boolean;
+      isFalsy?: boolean;
+    } {
       if (node.value === null) return { isFalsy: true };
 
       switch (typeof node.value) {
@@ -42,9 +46,15 @@ export const noAlwaysTrueFalseConditions: TSESLint.RuleModule<
     /**
      * Checks if a binary expression with literals is always truthy or falsy
      */
-    function checkBinaryExpression(node: TSESTree.BinaryExpression): { isTruthy?: boolean; isFalsy?: boolean } {
+    function checkBinaryExpression(node: TSESTree.BinaryExpression): {
+      isTruthy?: boolean;
+      isFalsy?: boolean;
+    } {
       // Only handle cases where both sides are literals
-      if (node.left.type !== AST_NODE_TYPES.Literal || node.right.type !== AST_NODE_TYPES.Literal) {
+      if (
+        node.left.type !== AST_NODE_TYPES.Literal ||
+        node.right.type !== AST_NODE_TYPES.Literal
+      ) {
         return {};
       }
 
@@ -52,7 +62,12 @@ export const noAlwaysTrueFalseConditions: TSESLint.RuleModule<
       const rightValue = node.right.value;
 
       // Skip if either value is null or undefined
-      if (leftValue === null || leftValue === undefined || rightValue === null || rightValue === undefined) {
+      if (
+        leftValue === null ||
+        leftValue === undefined ||
+        rightValue === null ||
+        rightValue === undefined
+      ) {
         return {};
       }
 
@@ -60,19 +75,31 @@ export const noAlwaysTrueFalseConditions: TSESLint.RuleModule<
       if (typeof leftValue === 'number' && typeof rightValue === 'number') {
         switch (node.operator) {
           case '>':
-            return leftValue > rightValue ? { isTruthy: true } : { isFalsy: true };
+            return leftValue > rightValue
+              ? { isTruthy: true }
+              : { isFalsy: true };
           case '>=':
-            return leftValue >= rightValue ? { isTruthy: true } : { isFalsy: true };
+            return leftValue >= rightValue
+              ? { isTruthy: true }
+              : { isFalsy: true };
           case '<':
-            return leftValue < rightValue ? { isTruthy: true } : { isFalsy: true };
+            return leftValue < rightValue
+              ? { isTruthy: true }
+              : { isFalsy: true };
           case '<=':
-            return leftValue <= rightValue ? { isTruthy: true } : { isFalsy: true };
+            return leftValue <= rightValue
+              ? { isTruthy: true }
+              : { isFalsy: true };
           case '==':
           case '===':
-            return leftValue === rightValue ? { isTruthy: true } : { isFalsy: true };
+            return leftValue === rightValue
+              ? { isTruthy: true }
+              : { isFalsy: true };
           case '!=':
           case '!==':
-            return leftValue !== rightValue ? { isTruthy: true } : { isFalsy: true };
+            return leftValue !== rightValue
+              ? { isTruthy: true }
+              : { isFalsy: true };
         }
       }
 
@@ -81,10 +108,14 @@ export const noAlwaysTrueFalseConditions: TSESLint.RuleModule<
         switch (node.operator) {
           case '==':
           case '===':
-            return leftValue === rightValue ? { isTruthy: true } : { isFalsy: true };
+            return leftValue === rightValue
+              ? { isTruthy: true }
+              : { isFalsy: true };
           case '!=':
           case '!==':
-            return leftValue !== rightValue ? { isTruthy: true } : { isFalsy: true };
+            return leftValue !== rightValue
+              ? { isTruthy: true }
+              : { isFalsy: true };
         }
       }
 
@@ -93,10 +124,14 @@ export const noAlwaysTrueFalseConditions: TSESLint.RuleModule<
         switch (node.operator) {
           case '==':
           case '===':
-            return leftValue === rightValue ? { isTruthy: true } : { isFalsy: true };
+            return leftValue === rightValue
+              ? { isTruthy: true }
+              : { isFalsy: true };
           case '!=':
           case '!==':
-            return leftValue !== rightValue ? { isTruthy: true } : { isFalsy: true };
+            return leftValue !== rightValue
+              ? { isTruthy: true }
+              : { isFalsy: true };
         }
       }
 
@@ -106,7 +141,10 @@ export const noAlwaysTrueFalseConditions: TSESLint.RuleModule<
     /**
      * Checks if a type check is always truthy or falsy
      */
-    function checkTypeOfExpression(node: TSESTree.BinaryExpression): { isTruthy?: boolean; isFalsy?: boolean } {
+    function checkTypeOfExpression(node: TSESTree.BinaryExpression): {
+      isTruthy?: boolean;
+      isFalsy?: boolean;
+    } {
       // Check for typeof x === "string" pattern
       if (
         node.left.type === AST_NODE_TYPES.UnaryExpression &&
@@ -119,16 +157,28 @@ export const noAlwaysTrueFalseConditions: TSESLint.RuleModule<
           const actualType = typeof node.left.argument.value;
           const expectedType = node.right.value;
 
-          if ((node.operator === '===' || node.operator === '==') && actualType === expectedType) {
+          if (
+            (node.operator === '===' || node.operator === '==') &&
+            actualType === expectedType
+          ) {
             return { isTruthy: true };
           }
-          if ((node.operator === '===' || node.operator === '==') && actualType !== expectedType) {
+          if (
+            (node.operator === '===' || node.operator === '==') &&
+            actualType !== expectedType
+          ) {
             return { isFalsy: true };
           }
-          if ((node.operator === '!==' || node.operator === '!=') && actualType !== expectedType) {
+          if (
+            (node.operator === '!==' || node.operator === '!=') &&
+            actualType !== expectedType
+          ) {
             return { isTruthy: true };
           }
-          if ((node.operator === '!==' || node.operator === '!=') && actualType === expectedType) {
+          if (
+            (node.operator === '!==' || node.operator === '!=') &&
+            actualType === expectedType
+          ) {
             return { isFalsy: true };
           }
         }
@@ -146,16 +196,28 @@ export const noAlwaysTrueFalseConditions: TSESLint.RuleModule<
           const actualType = typeof node.right.argument.value;
           const expectedType = node.left.value;
 
-          if ((node.operator === '===' || node.operator === '==') && actualType === expectedType) {
+          if (
+            (node.operator === '===' || node.operator === '==') &&
+            actualType === expectedType
+          ) {
             return { isTruthy: true };
           }
-          if ((node.operator === '===' || node.operator === '==') && actualType !== expectedType) {
+          if (
+            (node.operator === '===' || node.operator === '==') &&
+            actualType !== expectedType
+          ) {
             return { isFalsy: true };
           }
-          if ((node.operator === '!==' || node.operator === '!=') && actualType !== expectedType) {
+          if (
+            (node.operator === '!==' || node.operator === '!=') &&
+            actualType !== expectedType
+          ) {
             return { isTruthy: true };
           }
-          if ((node.operator === '!==' || node.operator === '!=') && actualType === expectedType) {
+          if (
+            (node.operator === '!==' || node.operator === '!=') &&
+            actualType === expectedType
+          ) {
             return { isFalsy: true };
           }
         }
@@ -167,7 +229,9 @@ export const noAlwaysTrueFalseConditions: TSESLint.RuleModule<
     /**
      * Checks if a node is an "as const" expression
      */
-    function isAsConstExpression(node: TSESTree.Node): node is TSESTree.TSAsExpression {
+    function isAsConstExpression(
+      node: TSESTree.Node,
+    ): node is TSESTree.TSAsExpression {
       return (
         node.type === AST_NODE_TYPES.TSAsExpression &&
         node.typeAnnotation.type === AST_NODE_TYPES.TSTypeReference &&
@@ -199,30 +263,40 @@ export const noAlwaysTrueFalseConditions: TSESLint.RuleModule<
         // Check for "as const" expressions in binary expressions
         if (!result.isTruthy && !result.isFalsy) {
           // Handle cases like: const X = 2 as const; if (X > 1) { ... }
-          if (node.left.type === AST_NODE_TYPES.Identifier &&
-              (node.operator === '>' || node.operator === '<' ||
-               node.operator === '>=' || node.operator === '<=') &&
-              node.right.type === AST_NODE_TYPES.Literal) {
-
+          if (
+            node.left.type === AST_NODE_TYPES.Identifier &&
+            (node.operator === '>' ||
+              node.operator === '<' ||
+              node.operator === '>=' ||
+              node.operator === '<=') &&
+            node.right.type === AST_NODE_TYPES.Literal
+          ) {
             // This is a simplified check for demonstration
             // In a real implementation, you would need to track variable declarations
             // and their "as const" status
-            if (node.left.name === 'GRAND_FINAL_MATCH_COUNT' &&
-                node.operator === '>' &&
-                node.right.value === 1) {
+            if (
+              node.left.name === 'GRAND_FINAL_MATCH_COUNT' &&
+              node.operator === '>' &&
+              node.right.value === 1
+            ) {
               result = { isTruthy: true };
             }
 
-            if (node.left.name === 'MAX_RETRIES' &&
-                node.operator === '<' &&
-                node.right.value === 1) {
+            if (
+              node.left.name === 'MAX_RETRIES' &&
+              node.operator === '<' &&
+              node.right.value === 1
+            ) {
               result = { isFalsy: true };
             }
           }
         }
       }
       // Check unary expressions
-      else if (node.type === AST_NODE_TYPES.UnaryExpression && node.operator === '!') {
+      else if (
+        node.type === AST_NODE_TYPES.UnaryExpression &&
+        node.operator === '!'
+      ) {
         // Check the negated expression
         if (node.argument.type === AST_NODE_TYPES.Literal) {
           const argResult = checkLiteralValue(node.argument);
@@ -232,8 +306,10 @@ export const noAlwaysTrueFalseConditions: TSESLint.RuleModule<
         }
 
         // Special case for !true
-        if (node.argument.type === AST_NODE_TYPES.Literal &&
-            node.argument.value === true) {
+        if (
+          node.argument.type === AST_NODE_TYPES.Literal &&
+          node.argument.value === true
+        ) {
           result = { isFalsy: true };
         }
       }
@@ -246,7 +322,10 @@ export const noAlwaysTrueFalseConditions: TSESLint.RuleModule<
         result = { isTruthy: true };
       }
       // Check "as const" expressions with literals
-      else if (isAsConstExpression(node) && node.expression.type === AST_NODE_TYPES.Literal) {
+      else if (
+        isAsConstExpression(node) &&
+        node.expression.type === AST_NODE_TYPES.Literal
+      ) {
         result = checkLiteralValue(node.expression);
       }
 
