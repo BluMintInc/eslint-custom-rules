@@ -8,7 +8,8 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce using Fragment imported from react over shorthand fragments and React.Fragment',
+      description:
+        'Enforce using Fragment imported from react over shorthand fragments and React.Fragment',
       recommended: 'error',
     },
     fixable: 'code',
@@ -23,6 +24,9 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
     const sourceCode = context.getSourceCode();
     let hasFragmentImport = false;
     let reactImportNode: TSESTree.ImportDeclaration | null = null;
+    // Track fragments that need to be fixed
+    const fragmentsToFix: Set<TSESTree.JSXFragment> = new Set();
+    const reactFragmentsToFix: Set<TSESTree.JSXMemberExpression> = new Set();
 
     function getReactImportNode(): TSESTree.ImportDeclaration | null {
       const program = sourceCode.ast;
@@ -55,9 +59,10 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
     function addFragmentImport(fixer: TSESLint.RuleFixer) {
       if (reactImportNode) {
         // Add Fragment to existing react import
-        const lastSpecifier = reactImportNode.specifiers[reactImportNode.specifiers.length - 1];
+        const lastSpecifier =
+          reactImportNode.specifiers[reactImportNode.specifiers.length - 1];
         const hasNamedImports = reactImportNode.specifiers.some(
-          spec => spec.type === AST_NODE_TYPES.ImportSpecifier
+          (spec) => spec.type === AST_NODE_TYPES.ImportSpecifier,
         );
 
         if (hasNamedImports) {
@@ -67,11 +72,11 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
         }
       }
       // Add new react import with Fragment
-      const importText = 'import { Fragment } from \'react\';\n';
+      const importText = "import { Fragment } from 'react';\n";
       const indentation = sourceCode.text.match(/^[ \t]*/m)?.[0] || '';
       return fixer.insertTextBefore(
         sourceCode.ast.body[0],
-        indentation + importText
+        indentation + importText,
       );
     }
 
@@ -79,25 +84,30 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
       ImportDeclaration: checkFragmentImport,
 
       JSXFragment(node) {
+        fragmentsToFix.add(node);
         context.report({
           node,
           messageId: 'preferFragment',
           data: { type: 'shorthand fragment (<>)' },
           fix(fixer) {
             const fixes: ReturnType<typeof fixer.insertTextBefore>[] = [];
+
+            // Add Fragment import if needed
             if (!hasFragmentImport) {
               fixes.push(addFragmentImport(fixer));
             }
-            const sourceCode = context.getSourceCode();
+
+            // Get text possibly containing whitespace or other content
             const openingText = sourceCode.getText(node.openingFragment);
             const closingText = sourceCode.getText(node.closingFragment);
-            if (openingText === '<>' && closingText === '</>') {
-              const openingRange = node.openingFragment.range;
-              const closingRange = node.closingFragment.range;
 
-              fixes.push(fixer.replaceTextRange(openingRange, '<Fragment>'));
-              fixes.push(fixer.replaceTextRange(closingRange, '</Fragment>'));
-            }
+            // Create replacement that preserves whitespace
+            const newOpeningText = openingText.replace('<>', '<Fragment>');
+            const newClosingText = closingText.replace('</>', '</Fragment>');
+
+            fixes.push(fixer.replaceText(node.openingFragment, newOpeningText));
+            fixes.push(fixer.replaceText(node.closingFragment, newClosingText));
+
             return fixes;
           },
         });
@@ -111,6 +121,7 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
           node.parent.object.name === 'React'
         ) {
           const memberExpr = node.parent;
+          reactFragmentsToFix.add(memberExpr);
           const parentElement = memberExpr.parent;
           if (parentElement?.type === AST_NODE_TYPES.JSXOpeningElement) {
             const jsxElement = parentElement.parent;
@@ -121,20 +132,41 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
                 data: { type: 'React.Fragment' },
                 fix(fixer) {
                   const fixes: ReturnType<typeof fixer.insertTextBefore>[] = [];
+
+                  // Add Fragment import if needed
                   if (!hasFragmentImport) {
                     fixes.push(addFragmentImport(fixer));
                   }
-                  const sourceCode = context.getSourceCode();
-                  const openingText = sourceCode.getText(parentElement);
-                  const closingText = jsxElement.closingElement ? sourceCode.getText(jsxElement.closingElement) : '';
-                  if (openingText.startsWith('<React.Fragment') && closingText.startsWith('</React.Fragment')) {
-                    const openingRange = parentElement.range;
-                    const closingRange = jsxElement.closingElement?.range;
-                    if (openingRange && closingRange) {
-                      fixes.push(fixer.replaceTextRange(openingRange, '<Fragment>'));
-                      fixes.push(fixer.replaceTextRange(closingRange, '</Fragment>'));
-                    }
+
+                  // Replace React.Fragment with Fragment
+                  if (parentElement && jsxElement.closingElement) {
+                    // Get the full text of the opening tag
+                    const openingText = sourceCode.getText(parentElement);
+                    // Create a replacement that preserves attributes if any
+                    const newOpeningText = openingText.replace(
+                      'React.Fragment',
+                      'Fragment',
+                    );
+                    fixes.push(
+                      fixer.replaceText(parentElement, newOpeningText),
+                    );
+
+                    // Handle closing tag
+                    const closingText = sourceCode.getText(
+                      jsxElement.closingElement,
+                    );
+                    const newClosingText = closingText.replace(
+                      'React.Fragment',
+                      'Fragment',
+                    );
+                    fixes.push(
+                      fixer.replaceText(
+                        jsxElement.closingElement,
+                        newClosingText,
+                      ),
+                    );
                   }
+
                   return fixes;
                 },
               });
@@ -145,7 +177,11 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
 
       'Program:exit'() {
         // If we found any violations but no Fragment import, we need to add it
-        if (!hasFragmentImport && !reactImportNode) {
+        if (
+          !hasFragmentImport &&
+          (fragmentsToFix.size > 0 || reactFragmentsToFix.size > 0) &&
+          !reactImportNode
+        ) {
           reactImportNode = getReactImportNode();
         }
       },
