@@ -74,6 +74,7 @@ import { noTypeAssertionReturns } from './rules/no-type-assertion-returns';
 import { preferUtilityFunctionOverPrivateStatic } from './rules/prefer-utility-function-over-private-static';
 import { enforceMicrodiff } from './rules/enforce-microdiff';
 import { enforceTimestampNow } from './rules/enforce-timestamp-now';
+import { enforcePropsArgumentName } from './rules/enforce-props-argument-name';
 
 module.exports = {
   meta: {
@@ -163,6 +164,7 @@ module.exports = {
         '@blumintinc/blumint/prefer-utility-function-over-private-static': 'error',
         '@blumintinc/blumint/enforce-microdiff': 'error',
         '@blumintinc/blumint/enforce-timestamp-now': 'error',
+        '@blumintinc/blumint/enforce-props-argument-name': 'error',
       },
     },
   },
@@ -244,5 +246,6 @@ module.exports = {
     'prefer-utility-function-over-private-static': preferUtilityFunctionOverPrivateStatic,
     'enforce-microdiff': enforceMicrodiff,
     'enforce-timestamp-now': enforceTimestampNow,
+    'enforce-props-argument-name': enforcePropsArgumentName,
   },
 };
