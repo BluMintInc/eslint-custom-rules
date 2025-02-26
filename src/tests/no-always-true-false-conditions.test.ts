@@ -645,12 +645,13 @@ ruleTesterTs.run(
     }
     `,
     ].map((code) => {
-      // For simplicity, we're assuming all invalid cases trigger the appropriate message
-      // In a real implementation, you might want to be more specific about which message is expected
+      // Determine the appropriate message ID based on the expression
       const isAlwaysTrue =
         (code.includes('true') &&
           !code.includes('!true') &&
-          !code.includes('!!false')) ||
+          !code.includes('!!false') &&
+          !code.includes('false && true') &&
+          !code.includes('true && false')) ||
         code.includes('2 > 1') ||
         code.includes('=== "string"') ||
         code.includes('{}') ||
@@ -658,10 +659,11 @@ ruleTesterTs.run(
         code.includes('"a" === "a"') ||
         code.includes('!false') ||
         code.includes('!!true') ||
-        code.includes('true || false') ||
+        (code.includes('true || false') &&
+          !code.includes('false && (true || false)')) ||
         code.includes('false || true') ||
         code.includes('true && true') ||
-        code.includes('(2 > 1) ||') ||
+        (code.includes('(2 > 1) ||') && !code.includes('& (2 > 1)')) ||
         code.includes('new Date() instanceof Date') ||
         code.includes('"toString" in {}') ||
         code.includes('typeof null === "object"') ||
@@ -677,6 +679,173 @@ ruleTesterTs.run(
         code.includes('JSON.stringify({a: 1}) === \'{"a":1}\'') ||
         (code.includes('GRAND_FINAL_MATCH_COUNT') && code.includes('> 1'));
 
+      // Special cases for more complex expressions that need specific handling
+      if (code.includes('!!false')) {
+        return {
+          code,
+          errors: [{ messageId: 'alwaysFalseCondition' }],
+        };
+      }
+
+      if (code.includes('true && false') || code.includes('false && true')) {
+        return {
+          code,
+          errors: [{ messageId: 'alwaysFalseCondition' }],
+        };
+      }
+
+      if (code.includes('false || false')) {
+        return {
+          code,
+          errors: [{ messageId: 'alwaysFalseCondition' }],
+        };
+      }
+
+      // Complex nested expressions
+      if (code.includes('true || (false && true)')) {
+        return {
+          code,
+          errors: [{ messageId: 'alwaysTrueCondition' }],
+        };
+      }
+
+      if (code.includes('false && (true || false)')) {
+        return {
+          code,
+          errors: [{ messageId: 'alwaysFalseCondition' }],
+        };
+      }
+
+      if (code.includes('(2 > 1) || (3 === 3 && "a" !== "b")')) {
+        return {
+          code,
+          errors: [{ messageId: 'alwaysTrueCondition' }],
+        };
+      }
+
+      if (code.includes('(1 > 2) && (3 === 3 || "a" !== "b")')) {
+        return {
+          code,
+          errors: [{ messageId: 'alwaysFalseCondition' }],
+        };
+      }
+
+      // Special case for property access
+      if (code.includes('obj?.prop')) {
+        return {
+          code,
+          errors: [{ messageId: 'alwaysTrueCondition' }],
+        };
+      }
+
+      // Template literal tests
+      if (code.includes('`${"a"}${"b"}` === "ab"')) {
+        return {
+          code,
+          errors: [{ messageId: 'alwaysTrueCondition' }],
+        };
+      }
+
+      if (code.includes('`${"a"}${"b"}` === "cd"')) {
+        return {
+          code,
+          errors: [{ messageId: 'alwaysFalseCondition' }],
+        };
+      }
+
+      // The in operator should work correctly
+      if (code.includes('"nonExistentProp" in { existingProp: true }')) {
+        return {
+          code,
+          errors: [{ messageId: 'alwaysFalseCondition' }],
+        };
+      }
+
+      // Nullish coalescing
+      if (code.includes('const value = "defined" ?? "default"')) {
+        return {
+          code,
+          errors: [{ messageId: 'alwaysTrueCondition' }],
+        };
+      }
+
+      // Bitwise operations
+      if (code.includes('(1 & 1) === 1')) {
+        return {
+          code,
+          errors: [{ messageId: 'alwaysTrueCondition' }],
+        };
+      }
+
+      if (code.includes('(1 & 0) === 1')) {
+        return {
+          code,
+          errors: [{ messageId: 'alwaysFalseCondition' }],
+        };
+      }
+
+      // Math operations
+      if (code.includes('Math.max(1, 2) === 2')) {
+        return {
+          code,
+          errors: [{ messageId: 'alwaysTrueCondition' }],
+        };
+      }
+
+      if (code.includes('Math.min(1, 2) === 2')) {
+        return {
+          code,
+          errors: [{ messageId: 'alwaysFalseCondition' }],
+        };
+      }
+
+      // Date comparisons
+      if (code.includes('new Date(2023, 0, 2) < new Date(2023, 0, 1)')) {
+        return {
+          code,
+          errors: [{ messageId: 'alwaysFalseCondition' }],
+        };
+      }
+
+      // Object keys length
+      if (code.includes('Object.keys({a: 1, b: 2}).length === 2')) {
+        return {
+          code,
+          errors: [{ messageId: 'alwaysTrueCondition' }],
+        };
+      }
+
+      if (code.includes('Object.keys({a: 1, b: 2}).length === 3')) {
+        return {
+          code,
+          errors: [{ messageId: 'alwaysFalseCondition' }],
+        };
+      }
+
+      // JSON stringify
+      if (code.includes('JSON.stringify({a: 1}) === \'{"a":1}\'')) {
+        return {
+          code,
+          errors: [{ messageId: 'alwaysTrueCondition' }],
+        };
+      }
+
+      if (code.includes('JSON.stringify({a: 1}) === \'{"a":2}\'')) {
+        return {
+          code,
+          errors: [{ messageId: 'alwaysFalseCondition' }],
+        };
+      }
+
+      // String methods
+      if (code.includes('"hello".startsWith("xy")')) {
+        return {
+          code,
+          errors: [{ messageId: 'alwaysFalseCondition' }],
+        };
+      }
+
+      // Default case
       return {
         code,
         errors: [
