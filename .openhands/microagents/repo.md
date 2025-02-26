@@ -223,7 +223,7 @@ This repository is structured as an ESLint plugin, which means that new rules ca
 2. **Write Tests:**
     * Each rule's test suite should reside in the `src/tests/` directory with a filename of the same filename as the rule but with the `.test.ts` suffix.
     * Use `ruleTester` to define valid and invalid code examples for your rule.
-    * Ensure comprehensive test coverage for different scenarios and edge cases.
+    * **Be extremely comprehensive when writing tests. You should expect to write more than 20 tests for each rule. These tests should cover different scenarios and edge cases.**
 
 3. **Document the Rule:**
     * Add a new markdown file in `docs/rules/`.
@@ -248,7 +248,9 @@ This repository is structured as an ESLint plugin, which means that new rules ca
             * Invalid function signatures
             * Unusual whitespace or comments
             * Complex nested structures
+            * And even more! Be extremely comprehensive.
         * No tests should be failing.
+        * You should expect to write more than 20 tests for each rule.
     * **Documentation:**
         * The rule must have clear and concise documentation, including:
             * A description of the rule's purpose

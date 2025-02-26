@@ -263,5 +263,32 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
       `,
       errors: [{ messageId: 'noDirectUpdate' }],
     },
+    // Invalid get with TypeScript type assertion (regression test for bug fix)
+    {
+      code: `
+        import { DocumentReference, CollectionReference } from 'firebase-admin/firestore';
+        import { db } from '../../config/firebaseAdmin';
+        import { GroupDenormalization } from '../../types/firestore/User/GroupDenormalization';
+        import { GroupInfo } from '../../types/firestore/Guild';
+
+        export const fetchData = async (userId: string, path: string) => {
+          const denormDocs = await (
+            db.collection(
+              'users/' + userId + '/groups'
+            ) as CollectionReference<GroupDenormalization>
+          ).get();
+
+          const subGroupDoc = await (
+            db.doc(path) as DocumentReference<GroupInfo>
+          ).get();
+
+          return { denormDocs, subGroupDoc };
+        };
+      `,
+      errors: [
+        { messageId: 'noDirectGet' },
+        { messageId: 'noDirectGet' }
+      ],
+    },
   ],
 });

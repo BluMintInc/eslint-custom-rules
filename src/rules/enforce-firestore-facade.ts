@@ -30,6 +30,11 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
     }
   }
 
+  // Handle type assertions (as in the bug report)
+  if (object.type === AST_NODE_TYPES.TSAsExpression) {
+    return true;
+  }
+
   // Check if it's a Firestore reference
   let current: TSESTree.Node = object;
   let foundDocOrCollection = false;
@@ -47,6 +52,9 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
     }
     if (isMemberExpression(current)) {
       current = current.object;
+    } else if (current.type === AST_NODE_TYPES.TSAsExpression) {
+      // Handle nested type assertions
+      current = (current as TSESTree.TSAsExpression).expression;
     } else {
       break;
     }

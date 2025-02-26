@@ -65,8 +65,11 @@ import { requireHooksDefaultParams } from './rules/require-hooks-default-params'
 import { preferDestructuringNoClass } from './rules/prefer-destructuring-no-class';
 import { enforceRenderHitsMemoization } from './rules/enforce-render-hits-memoization';
 import { preferFragmentComponent } from './rules/prefer-fragment-component';
+import { reactUseMemoShouldBeComponent } from './rules/react-usememo-should-be-component';
 import { noUnnecessaryVerbSuffix } from './rules/no-unnecessary-verb-suffix';
 import { testFileLocationEnforcement } from './rules/test-file-location-enforcement';
+import { enforceAssertSafeObjectKey } from './rules/enforce-assertSafe-object-key';
+import { enforceObjectLiteralAsConst } from './rules/enforce-object-literal-as-const';
 
 module.exports = {
   meta: {
@@ -147,8 +150,11 @@ module.exports = {
         '@blumintinc/blumint/prefer-destructuring-no-class': 'error',
         '@blumintinc/blumint/enforce-render-hits-memoization': 'error',
         '@blumintinc/blumint/prefer-fragment-component': 'error',
+        '@blumintinc/blumint/react-usememo-should-be-component': 'error',
         '@blumintinc/blumint/no-unnecessary-verb-suffix': 'error',
         '@blumintinc/blumint/test-file-location-enforcement': 'error',
+        '@blumintinc/blumint/enforce-assertSafe-object-key': 'error',
+        '@blumintinc/blumint/enforce-object-literal-as-const': 'error',
       },
     },
   },
@@ -221,7 +227,10 @@ module.exports = {
     'prefer-destructuring-no-class': preferDestructuringNoClass,
     'enforce-render-hits-memoization': enforceRenderHitsMemoization,
     'prefer-fragment-component': preferFragmentComponent,
+    'react-usememo-should-be-component': reactUseMemoShouldBeComponent,
     'no-unnecessary-verb-suffix': noUnnecessaryVerbSuffix,
     'test-file-location-enforcement': testFileLocationEnforcement,
+    'enforce-assertSafe-object-key': enforceAssertSafeObjectKey,
+    'enforce-object-literal-as-const': enforceObjectLiteralAsConst,
   },
 };
