@@ -49,35 +49,11 @@ console.log(obj[\`prefix_\${id}_suffix\`]);
       `,
     },
     {
-      // Object property access with a variable directly should be valid
-      code: `
-const obj = { key1: 'value1', key2: 'value2' };
-const id = 'key1';
-console.log(obj[id]);
-      `,
-    },
-    {
       // Numeric expressions should be valid
       code: `
 const arr = ['value1', 'value2', 'value3'];
 const index = 1;
 console.log(arr[index + 1]);
-      `,
-    },
-    {
-      // Boolean expressions should be valid
-      code: `
-const obj = { true: 'value1', false: 'value2' };
-const condition = true;
-console.log(obj[condition]);
-      `,
-    },
-    {
-      // Function calls other than String() should be valid
-      code: `
-const obj = { key1: 'value1', key2: 'value2' };
-const getId = () => 'key1';
-console.log(obj[getId()]);
       `,
     },
     {
@@ -183,10 +159,7 @@ const id = 'key1';
 const value1 = obj[String(id)];
 const value2 = obj[\`\${id}\`];
       `,
-      errors: [
-        { messageId: 'useAssertSafe' },
-        { messageId: 'useAssertSafe' },
-      ],
+      errors: [{ messageId: 'useAssertSafe' }, { messageId: 'useAssertSafe' }],
       output: `
 import { assertSafe } from 'utils/assertions';
 const obj = { key1: 'value1', key2: 'value2' };
@@ -348,16 +321,58 @@ const id = 'key1';
 console.log(obj[String(id)]); // Redundant string conversion
 console.log(obj[\`\${id}\`]); // Unnecessary template literal usage
       `,
-      errors: [
-        { messageId: 'useAssertSafe' },
-        { messageId: 'useAssertSafe' },
-      ],
+      errors: [{ messageId: 'useAssertSafe' }, { messageId: 'useAssertSafe' }],
       output: `
 import { assertSafe } from 'utils/assertions';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[assertSafe(id)]); // Redundant string conversion
 console.log(obj[assertSafe(id)]); // Unnecessary template literal usage
+      `,
+    },
+    {
+      // Object property access with a variable directly should be invalid
+      code: `
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+console.log(obj[id]);
+      `,
+      errors: [{ messageId: 'useAssertSafe' }],
+      output: `
+import { assertSafe } from 'utils/assertions';
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+console.log(obj[assertSafe(id)]);
+      `,
+    },
+    {
+      // Boolean expressions should be invalid
+      code: `
+const obj = { true: 'value1', false: 'value2' };
+const condition = true;
+console.log(obj[condition]);
+      `,
+      errors: [{ messageId: 'useAssertSafe' }],
+      output: `
+import { assertSafe } from 'utils/assertions';
+const obj = { true: 'value1', false: 'value2' };
+const condition = true;
+console.log(obj[assertSafe(condition)]);
+      `,
+    },
+    {
+      // Function calls other than String() should be invalid
+      code: `
+const obj = { key1: 'value1', key2: 'value2' };
+const getId = () => 'key1';
+console.log(obj[getId()]);
+      `,
+      errors: [{ messageId: 'useAssertSafe' }],
+      output: `
+import { assertSafe } from 'utils/assertions';
+const obj = { key1: 'value1', key2: 'value2' };
+const getId = () => 'key1';
+console.log(obj[assertSafe(getId())]);
       `,
     },
   ],

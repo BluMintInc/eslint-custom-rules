@@ -27,12 +27,15 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
     /**
      * Helper function to add assertSafe import if needed
      */
-    const addAssertSafeImport = (fixer: TSESLint.RuleFixer): TSESLint.RuleFix => {
+    const addAssertSafeImport = (
+      fixer: TSESLint.RuleFixer,
+    ): TSESLint.RuleFix => {
       const program = context.getSourceCode().ast;
       const firstImport = program.body.find(
-        (node) => node.type === AST_NODE_TYPES.ImportDeclaration
+        (node) => node.type === AST_NODE_TYPES.ImportDeclaration,
       );
-      const importStatement = "import { assertSafe } from 'utils/assertions';\n";
+      const importStatement =
+        "import { assertSafe } from 'utils/assertions';\n";
 
       if (firstImport) {
         return fixer.insertTextBefore(firstImport, importStatement);
@@ -47,7 +50,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
     const createFixes = (
       fixer: TSESLint.RuleFixer,
       node: TSESTree.Node,
-      argText: string
+      argText: string,
     ): TSESLint.RuleFix[] => {
       const fixes: TSESLint.RuleFix[] = [];
 
@@ -70,7 +73,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
           node.specifiers.some(
             (specifier) =>
               specifier.type === AST_NODE_TYPES.ImportSpecifier &&
-              specifier.imported.name === 'assertSafe'
+              specifier.imported.name === 'assertSafe',
           )
         ) {
           hasAssertSafeImport = true;
@@ -164,7 +167,48 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
         if (node.computed) {
           const property = node.property;
 
-          // Check for String(id) pattern
+          // Skip if already using assertSafe
+          if (
+            property.type === AST_NODE_TYPES.CallExpression &&
+            property.callee.type === AST_NODE_TYPES.Identifier &&
+            property.callee.name === 'assertSafe'
+          ) {
+            // Already using assertSafe, this is valid
+            return;
+          }
+
+          // Try to determine if this is likely an array or dictionary
+          const objectNode = node.object;
+          let objectName = '';
+          let isLikelyArray = false;
+
+          if (objectNode.type === AST_NODE_TYPES.Identifier) {
+            objectName = objectNode.name.toLowerCase();
+            isLikelyArray =
+              /^(array|arr|items|elements|list|collection|data)s?$/i.test(
+                objectName,
+              );
+          }
+
+          // Check for string literals - allow them for dictionaries but not for regular objects
+          if (
+            property.type === AST_NODE_TYPES.Literal &&
+            typeof property.value === 'string'
+          ) {
+            // String literals are fine, no need for assertSafe
+            return;
+          }
+
+          // Check for numeric literals - always allow for arrays
+          if (
+            property.type === AST_NODE_TYPES.Literal &&
+            typeof property.value === 'number'
+          ) {
+            // Numeric literals are fine, no need for assertSafe
+            return;
+          }
+
+          // Check if we're using String(id) pattern
           if (
             property.type === AST_NODE_TYPES.CallExpression &&
             property.callee.type === AST_NODE_TYPES.Identifier &&
@@ -179,59 +223,129 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
                 return createFixes(fixer, property, argText);
               },
             });
+            return;
           }
 
-          // Check for template literals like `${id}`
+          // Check for template literals
           if (property.type === AST_NODE_TYPES.TemplateLiteral) {
-            // Only target simple template literals with a single expression
-            if (
+            // If it's a template literal in an array, allow it
+            if (isLikelyArray) {
+              return;
+            }
+
+            // Only flag simple template literals that are just `${id}`
+            // Complex templates with additional text like `prefix_${id}_suffix` are allowed
+            const isSimpleVarInterpolation =
               property.expressions.length === 1 &&
               property.quasis.length === 2 &&
               property.quasis[0].value.raw === '' &&
-              property.quasis[1].value.raw === ''
-            ) {
-              context.report({
-                node: property,
-                messageId: 'useAssertSafe',
-                fix(fixer) {
-                  const expr = property.expressions[0];
-                  const exprText = context.getSourceCode().getText(expr);
-                  return createFixes(fixer, property, exprText);
-                },
-              });
+              property.quasis[1].value.raw === '';
+
+            if (!isSimpleVarInterpolation) {
+              // Complex template literals with additional text are fine
+              return;
             }
+
+            context.report({
+              node: property,
+              messageId: 'useAssertSafe',
+              fix(fixer) {
+                // Extract the expression from the template literal
+                const expr = property.expressions[0];
+                const exprText = context.getSourceCode().getText(expr);
+                return createFixes(fixer, property, exprText);
+              },
+            });
+            return;
           }
 
-          // Check for variables that were defined using template literals
+          // Check for direct variable usage (identifiers)
           if (property.type === AST_NODE_TYPES.Identifier) {
-            const sourceCode = context.getSourceCode();
-            // Note: context.getScope() is deprecated in ESLint v9, but we're using an earlier version
-            // When upgrading to ESLint v9, change to sourceCode.getScope()
-            const scope = context.getScope();
-            const variable = scope.variables.find(v => v.name === property.name);
-
-            if (variable && variable.defs.length > 0) {
-              const def = variable.defs[0];
-
-              if (
-                def.node.type === AST_NODE_TYPES.VariableDeclarator &&
-                def.node.init &&
-                def.node.init.type === AST_NODE_TYPES.TemplateLiteral &&
-                def.node.init.expressions.length === 1 &&
-                def.node.init.quasis.length === 2 &&
-                def.node.init.quasis[0].value.raw === '' &&
-                def.node.init.quasis[1].value.raw === ''
-              ) {
-                context.report({
-                  node: property,
-                  messageId: 'useAssertSafe',
-                  fix(fixer) {
-                    const propText = sourceCode.getText(property);
-                    return createFixes(fixer, property, propText);
-                  },
-                });
-              }
+            // Skip numeric literals, they're safe
+            if (/^\d+$/.test(property.name)) {
+              return;
             }
+
+            // If it looks like an array access, allow it
+            if (isLikelyArray) {
+              return;
+            }
+
+            context.report({
+              node: property,
+              messageId: 'useAssertSafe',
+              fix(fixer) {
+                // For direct variable use, just use the variable name
+                const propText = context.getSourceCode().getText(property);
+                return createFixes(fixer, property, propText);
+              },
+            });
+            return;
+          }
+
+          // Check for binary expressions (like index + 1)
+          if (property.type === AST_NODE_TYPES.BinaryExpression) {
+            // Allow binary expressions in array access
+            if (isLikelyArray) {
+              return;
+            }
+
+            context.report({
+              node: property,
+              messageId: 'useAssertSafe',
+              fix(fixer) {
+                const propText = context.getSourceCode().getText(property);
+                return createFixes(fixer, property, propText);
+              },
+            });
+            return;
+          }
+
+          // Check for boolean expressions and other literals
+          if (
+            property.type === AST_NODE_TYPES.Literal ||
+            property.type === AST_NODE_TYPES.LogicalExpression ||
+            property.type === AST_NODE_TYPES.ConditionalExpression
+          ) {
+            // Allow these expressions in array access
+            if (isLikelyArray) {
+              return;
+            }
+
+            context.report({
+              node: property,
+              messageId: 'useAssertSafe',
+              fix(fixer) {
+                const propText = context.getSourceCode().getText(property);
+                return createFixes(fixer, property, propText);
+              },
+            });
+            return;
+          }
+
+          // Check for function calls (anything that isn't handled above)
+          if (
+            property.type === AST_NODE_TYPES.MemberExpression ||
+            (property.type === AST_NODE_TYPES.CallExpression &&
+              !(
+                property.callee.type === AST_NODE_TYPES.Identifier &&
+                property.callee.name === 'String'
+              ))
+          ) {
+            // Allow member expressions and function calls in array access
+            if (isLikelyArray) {
+              return;
+            }
+
+            context.report({
+              node: property,
+              messageId: 'useAssertSafe',
+              fix(fixer) {
+                const propText = context.getSourceCode().getText(property);
+                return createFixes(fixer, property, propText);
+              },
+            });
+            return;
           }
         }
       },
