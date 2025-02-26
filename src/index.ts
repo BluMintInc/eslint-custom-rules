@@ -69,6 +69,7 @@ import { reactUseMemoShouldBeComponent } from './rules/react-usememo-should-be-c
 import { noUnnecessaryVerbSuffix } from './rules/no-unnecessary-verb-suffix';
 import { enforceAssertSafeObjectKey } from './rules/enforce-assertSafe-object-key';
 import { enforceObjectLiteralAsConst } from './rules/enforce-object-literal-as-const';
+import { noTypeAssertionReturns } from './rules/no-type-assertion-returns';
 import { preferUtilityFunctionOverPrivateStatic } from './rules/prefer-utility-function-over-private-static';
 
 module.exports = {
@@ -154,6 +155,7 @@ module.exports = {
         '@blumintinc/blumint/no-unnecessary-verb-suffix': 'error',
         '@blumintinc/blumint/enforce-assertSafe-object-key': 'error',
         '@blumintinc/blumint/enforce-object-literal-as-const': 'error',
+        '@blumintinc/blumint/no-type-assertion-returns': 'error',
         '@blumintinc/blumint/prefer-utility-function-over-private-static': 'error',
       },
     },
@@ -231,6 +233,7 @@ module.exports = {
     'no-unnecessary-verb-suffix': noUnnecessaryVerbSuffix,
     'enforce-assertSafe-object-key': enforceAssertSafeObjectKey,
     'enforce-object-literal-as-const': enforceObjectLiteralAsConst,
+    'no-type-assertion-returns': noTypeAssertionReturns,
     'prefer-utility-function-over-private-static': preferUtilityFunctionOverPrivateStatic,
   },
 };
