@@ -174,6 +174,81 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
         };
       `,
     },
+    // Should allow 0 and 1 in loop expressions
+    {
+      code: `
+        function loopWithZeroAndOne() {
+          for (let i = 0; i < array.length; i += 1) {
+            console.log(i);
+          }
+        }
+      `,
+    },
+    // Should allow 0 and 1 in loop expressions (alternative syntax)
+    {
+      code: `
+        function loopWithZeroAndOne() {
+          for (let i = 0; i <= 1; i++) {
+            console.log(i);
+          }
+        }
+      `,
+    },
+    // Should allow dynamic values in loop expressions
+    {
+      code: `
+        function loopWithDynamicValues() {
+          for (let i = 0; i < items.length; i++) {
+            console.log(items[i]);
+          }
+        }
+      `,
+    },
+    // Should allow as const in loop expressions
+    {
+      code: `
+        function loopWithAsConst() {
+          const START = 2 as const;
+          const INCREMENT = 2 as const;
+          const MAX = 10 as const;
+          for (let i = START; i < MAX; i += INCREMENT) {
+            console.log(i);
+          }
+        }
+      `,
+    },
+    // Should allow as const inline in loop expressions
+    {
+      code: `
+        function loopWithInlineAsConst() {
+          for (let i = 2 as const; i < 10 as const; i += 2 as const) {
+            console.log(i);
+          }
+        }
+      `,
+    },
+    // Should allow while loops with 0 and 1
+    {
+      code: `
+        function whileLoopWithZeroAndOne() {
+          let count = 0;
+          while (count < 1) {
+            count++;
+          }
+        }
+      `,
+    },
+    // Should allow do-while loops with 0 and 1
+    {
+      code: `
+        function doWhileLoopWithZeroAndOne() {
+          let count = 0;
+          do {
+            count++;
+          } while (count < 1);
+        }
+      `,
+    },
   ],
   invalid: [
     // Should flag immutable string constants
@@ -289,6 +364,112 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
         {
           messageId: 'extractGlobalConstants',
           data: { declarationName: 'SIZES' },
+        },
+      ],
+    },
+    // Should flag numeric literals > 1 in for loop initialization
+    {
+      code: `
+        function loopWithMagicNumbers() {
+          for (let i = 3; i < array.length; i++) {
+            console.log(i);
+          }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'requireAsConst',
+          data: { value: 3 },
+        },
+      ],
+    },
+    // Should flag numeric literals > 1 in for loop test condition
+    {
+      code: `
+        function loopWithMagicNumbers() {
+          for (let i = 0; i < 5; i++) {
+            console.log(i);
+          }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'requireAsConst',
+          data: { value: 5 },
+        },
+      ],
+    },
+    // Should flag numeric literals > 1 in for loop update expression
+    {
+      code: `
+        function loopWithMagicNumbers() {
+          for (let i = 0; i < array.length; i += 2) {
+            console.log(i);
+          }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'requireAsConst',
+          data: { value: 2 },
+        },
+      ],
+    },
+    // Should flag numeric literals > 1 in while loop test condition
+    {
+      code: `
+        function whileLoopWithMagicNumbers() {
+          let count = 0;
+          while (count < 5) {
+            count++;
+          }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'requireAsConst',
+          data: { value: 5 },
+        },
+      ],
+    },
+    // Should flag numeric literals > 1 in do-while loop test condition
+    {
+      code: `
+        function doWhileLoopWithMagicNumbers() {
+          let count = 0;
+          do {
+            count += 2;
+          } while (count < 10);
+        }
+      `,
+      errors: [
+        {
+          messageId: 'requireAsConst',
+          data: { value: 10 },
+        },
+      ],
+    },
+    // Should flag multiple numeric literals > 1 in the same loop
+    {
+      code: `
+        function loopWithMultipleMagicNumbers() {
+          for (let i = 2; i < 10; i += 3) {
+            console.log(i);
+          }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'requireAsConst',
+          data: { value: 2 },
+        },
+        {
+          messageId: 'requireAsConst',
+          data: { value: 10 },
+        },
+        {
+          messageId: 'requireAsConst',
+          data: { value: 3 },
         },
       ],
     },

@@ -99,8 +99,33 @@ function isMutableValue(node: TSESTree.Expression | null): boolean {
   return false;
 }
 
+function isNumericLiteral(node: TSESTree.Node | null): boolean {
+  if (!node) return false;
+  return node.type === 'Literal' && typeof (node as TSESTree.Literal).value === 'number';
+}
+
+function isZeroOrOne(node: TSESTree.Node | null): boolean {
+  if (!isNumericLiteral(node)) return false;
+  const value = (node as TSESTree.Literal).value as number;
+  return value === 0 || value === 1;
+}
+
+function isAsConstExpression(node: TSESTree.Node | null): boolean {
+  if (!node) return false;
+
+  if (node.type === 'TSAsExpression') {
+    if (node.typeAnnotation.type === 'TSTypeReference' &&
+        node.typeAnnotation.typeName.type === 'Identifier' &&
+        node.typeAnnotation.typeName.name === 'const') {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export const extractGlobalConstants: TSESLint.RuleModule<
-  'extractGlobalConstants',
+  'extractGlobalConstants' | 'requireAsConst',
   never[]
 > = createRule({
   create(context) {
@@ -122,9 +147,15 @@ export const extractGlobalConstants: TSESLint.RuleModule<
             ASTHelpers.declarationIncludesIdentifier(declaration.init),
         );
 
+        // Skip constants with 'as const' type assertions used in loops
+        const hasAsConstAssertion = node.declarations.some(
+          (declaration) => declaration.init && isAsConstExpression(declaration.init)
+        );
+
         // Only check function/block scoped constants without dependencies
         if (
           !hasDependencies &&
+          !hasAsConstAssertion &&
           (scope.type === 'function' || scope.type === 'block') &&
           isInsideFunction(node)
         ) {
@@ -160,6 +191,88 @@ export const extractGlobalConstants: TSESLint.RuleModule<
           }
         }
       },
+      ForStatement(node: TSESTree.ForStatement) {
+        // Check initialization
+        if (node.init && node.init.type === 'VariableDeclaration') {
+          for (const decl of node.init.declarations) {
+            if (decl.init && isNumericLiteral(decl.init) && !isZeroOrOne(decl.init) && !isAsConstExpression(decl.init)) {
+              context.report({
+                node: decl.init,
+                messageId: 'requireAsConst',
+                data: {
+                  value: (decl.init as TSESTree.Literal).value,
+                },
+              });
+            }
+          }
+        }
+
+        // Check test condition
+        if (node.test && node.test.type === 'BinaryExpression') {
+          if (isNumericLiteral(node.test.right) && !isZeroOrOne(node.test.right) && !isAsConstExpression(node.test.right)) {
+            context.report({
+              node: node.test.right,
+              messageId: 'requireAsConst',
+              data: {
+                value: (node.test.right as TSESTree.Literal).value,
+              },
+            });
+          }
+        }
+
+        // Check update expression
+        if (node.update) {
+          if (node.update.type === 'AssignmentExpression') {
+            if (node.update.right && isNumericLiteral(node.update.right) && !isZeroOrOne(node.update.right) && !isAsConstExpression(node.update.right)) {
+              context.report({
+                node: node.update.right,
+                messageId: 'requireAsConst',
+                data: {
+                  value: (node.update.right as TSESTree.Literal).value,
+                },
+              });
+            }
+          } else if (node.update.type === 'BinaryExpression') {
+            if (isNumericLiteral(node.update.right) && !isZeroOrOne(node.update.right) && !isAsConstExpression(node.update.right)) {
+              context.report({
+                node: node.update.right,
+                messageId: 'requireAsConst',
+                data: {
+                  value: (node.update.right as TSESTree.Literal).value,
+                },
+              });
+            }
+          }
+        }
+      },
+      WhileStatement(node: TSESTree.WhileStatement) {
+        // Check test condition
+        if (node.test.type === 'BinaryExpression') {
+          if (isNumericLiteral(node.test.right) && !isZeroOrOne(node.test.right) && !isAsConstExpression(node.test.right)) {
+            context.report({
+              node: node.test.right,
+              messageId: 'requireAsConst',
+              data: {
+                value: (node.test.right as TSESTree.Literal).value,
+              },
+            });
+          }
+        }
+      },
+      DoWhileStatement(node: TSESTree.DoWhileStatement) {
+        // Check test condition
+        if (node.test.type === 'BinaryExpression') {
+          if (isNumericLiteral(node.test.right) && !isZeroOrOne(node.test.right) && !isAsConstExpression(node.test.right)) {
+            context.report({
+              node: node.test.right,
+              messageId: 'requireAsConst',
+              data: {
+                value: (node.test.right as TSESTree.Literal).value,
+              },
+            });
+          }
+        }
+      },
     };
   },
 
@@ -168,13 +281,15 @@ export const extractGlobalConstants: TSESLint.RuleModule<
     type: 'suggestion',
     docs: {
       description:
-        'Extract static constants and functions to the global scope when possible',
+        'Extract static constants and functions to the global scope when possible, and enforce type narrowing with as const for numeric literals in loops',
       recommended: 'error',
     },
     schema: [],
     messages: {
       extractGlobalConstants:
         'Move this declaration {{ declarationName }} to the global scope and rename it to UPPER_SNAKE_CASE if necessary.',
+      requireAsConst:
+        'Numeric literal {{ value }} in loop expression should be extracted to a constant with "as const" type assertion.',
     },
   },
   defaultOptions: [],
