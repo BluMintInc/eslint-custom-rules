@@ -60,9 +60,16 @@ function isMutableValue(node: TSESTree.Expression | null): boolean {
     // Empty arrays are mutable since they can be modified later
     if (node.elements.length === 0) return true;
     // Arrays with spread elements are mutable
-    if (node.elements.some(element => !element || element.type === 'SpreadElement')) return true;
+    if (
+      node.elements.some(
+        (element) => !element || element.type === 'SpreadElement',
+      )
+    )
+      return true;
     // Arrays with non-immutable values are mutable
-    return node.elements.some(element => !isImmutableValue(element as TSESTree.Expression));
+    return node.elements.some(
+      (element) => !isImmutableValue(element as TSESTree.Expression),
+    );
   }
 
   // Check for new expressions (e.g., new Map(), new Set())
@@ -90,7 +97,7 @@ function isMutableValue(node: TSESTree.Expression | null): boolean {
         'splice',
         'reverse',
         'sort',
-        'fill'
+        'fill',
       ];
       return mutatingMethods.includes(methodName);
     }
@@ -111,7 +118,11 @@ export const extractGlobalConstants: TSESLint.RuleModule<
         }
 
         // Skip if any of the declarations are function definitions or mutable values
-        if (node.declarations.some((d) => isFunctionDefinition(d.init) || isMutableValue(d.init))) {
+        if (
+          node.declarations.some(
+            (d) => isFunctionDefinition(d.init) || isMutableValue(d.init),
+          )
+        ) {
           return;
         }
 
