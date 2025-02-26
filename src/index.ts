@@ -66,6 +66,7 @@ import { preferDestructuringNoClass } from './rules/prefer-destructuring-no-clas
 import { enforceRenderHitsMemoization } from './rules/enforce-render-hits-memoization';
 import { preferFragmentComponent } from './rules/prefer-fragment-component';
 import { noUnnecessaryVerbSuffix } from './rules/no-unnecessary-verb-suffix';
+import { enforceAssertSafeObjectKey } from './rules/enforce-assertSafe-object-key';
 
 module.exports = {
   meta: {
@@ -147,6 +148,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-render-hits-memoization': 'error',
         '@blumintinc/blumint/prefer-fragment-component': 'error',
         '@blumintinc/blumint/no-unnecessary-verb-suffix': 'error',
+        '@blumintinc/blumint/enforce-assertSafe-object-key': 'error',
       },
     },
   },
@@ -220,5 +222,6 @@ module.exports = {
     'enforce-render-hits-memoization': enforceRenderHitsMemoization,
     'prefer-fragment-component': preferFragmentComponent,
     'no-unnecessary-verb-suffix': noUnnecessaryVerbSuffix,
+    'enforce-assertSafe-object-key': enforceAssertSafeObjectKey,
   },
 };
