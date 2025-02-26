@@ -23,6 +23,15 @@ const NEGATIVE_WORDS = [
   'fail',
   'missing',
   'forbidden',
+  'impossible',
+  'error',
+  'broken',
+  'banned',
+  'restricted',
+  'limitation',
+  'limitation',
+  'blocked',
+  'prohibited',
 ];
 
 // Whitelist of acceptable negative terms (technical terms, common patterns)
@@ -39,6 +48,12 @@ const ALLOWED_NEGATIVE_TERMS = new Set([
   'isNoticeable',
   'hasNotification',
   'isNoteworthy',
+  'isNone',
+  'isNegative', // For numbers
+  'isNeutral',
+  'isNotification',
+  'isNote',
+  'hasNote',
 ]);
 
 // Map of negative terms to suggested positive alternatives
@@ -52,6 +67,9 @@ const POSITIVE_ALTERNATIVES: Record<string, string[]> = {
   'hasNo': ['has'],
   'hasNot': ['has'],
   'canNot': ['can'],
+  'shouldNot': ['should'],
+  'willNot': ['will'],
+  'doesNot': ['does'],
   // Words
   'isInvalid': ['isValid'],
   'isDisabled': ['isEnabled'],
@@ -61,6 +79,13 @@ const POSITIVE_ALTERNATIVES: Record<string, string[]> = {
   'isDisallowed': ['isAllowed'],
   'isUnauthorized': ['isAuthorized'],
   'isUnverified': ['isVerified'],
+  'isImpossible': ['isPossible'],
+  'isError': ['isSuccess', 'isValid'],
+  'isBroken': ['isWorking', 'isFunctional'],
+  'isBanned': ['isAllowed', 'isPermitted'],
+  'isRestricted': ['isAllowed', 'isAccessible'],
+  'isBlocked': ['isAllowed', 'isAccessible'],
+  'isProhibited': ['isAllowed', 'isPermitted'],
   'prevent': ['allow', 'enable'],
   'avoid': ['use', 'prefer'],
   'block': ['allow', 'permit'],
@@ -77,10 +102,15 @@ const POSITIVE_ALTERNATIVES: Record<string, string[]> = {
   'unauthorized': ['authorized'],
   'unverified': ['verified'],
   'inactive': ['active'],
-  'disabledFeatures': ['enabled'],
-  'inactiveUsers': ['active'],
+  'disabledFeatures': ['enabledFeatures'],
+  'inactiveUsers': ['activeUsers'],
   'disableFeature': ['enableFeature'],
   'disableAccount': ['enableAccount'],
+  'blockUser': ['allowUser'],
+  'preventAccess': ['allowAccess', 'enableAccess'],
+  'restrictAccess': ['allowAccess', 'grantAccess'],
+  'limitations': ['capabilities', 'features'],
+  'limitation': ['capability', 'feature'],
 };
 
 export const enforcePositiveNaming = createRule<[], MessageIds>({
@@ -120,13 +150,17 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
           { pattern: new RegExp(`^is${prefix}`, 'i'), key: `is${prefix.charAt(0).toUpperCase() + prefix.slice(1)}` },
           { pattern: new RegExp(`^has${prefix}`, 'i'), key: `has${prefix.charAt(0).toUpperCase() + prefix.slice(1)}` },
           { pattern: new RegExp(`^can${prefix}`, 'i'), key: `can${prefix.charAt(0).toUpperCase() + prefix.slice(1)}` },
+          { pattern: new RegExp(`^should${prefix}`, 'i'), key: `should${prefix.charAt(0).toUpperCase() + prefix.slice(1)}` },
+          { pattern: new RegExp(`^will${prefix}`, 'i'), key: `will${prefix.charAt(0).toUpperCase() + prefix.slice(1)}` },
+          { pattern: new RegExp(`^does${prefix}`, 'i'), key: `does${prefix.charAt(0).toUpperCase() + prefix.slice(1)}` },
         ];
 
         for (const { pattern, key } of prefixPatterns) {
           if (pattern.test(name)) {
             // If we have a direct match for this pattern (like isNotVerified -> isVerified)
-            if (POSITIVE_ALTERNATIVES[name]) {
-              return { isNegative: true, alternatives: POSITIVE_ALTERNATIVES[name] };
+            const directMatch = POSITIVE_ALTERNATIVES[name];
+            if (directMatch) {
+              return { isNegative: true, alternatives: directMatch };
             }
 
             const alternatives = POSITIVE_ALTERNATIVES[key] || [];
@@ -145,9 +179,12 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
 
       // Check for exact negative words
       for (const word of NEGATIVE_WORDS) {
-        if (name.toLowerCase() === word) {
+        if (name.toLowerCase() === word.toLowerCase()) {
           const alternatives = POSITIVE_ALTERNATIVES[word] || [];
-          return { isNegative: true, alternatives: alternatives.length ? alternatives : ['a positive alternative'] };
+          return {
+            isNegative: true,
+            alternatives: alternatives.length ? alternatives : ['a positive alternative']
+          };
         }
       }
 
@@ -164,7 +201,10 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
 
           // Otherwise suggest general alternatives for the negative word
           const alternatives = POSITIVE_ALTERNATIVES[word] || [];
-          return { isNegative: true, alternatives: alternatives.length ? alternatives : ['a positive alternative'] };
+          return {
+            isNegative: true,
+            alternatives: alternatives.length ? alternatives : ['a positive alternative']
+          };
         }
       }
 
@@ -205,8 +245,17 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
       let functionName = '';
       if (node.id) {
         functionName = node.id.name;
-      } else if (node.parent?.type === AST_NODE_TYPES.VariableDeclarator && node.parent.id.type === AST_NODE_TYPES.Identifier) {
+      } else if (
+        node.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+        node.parent.id.type === AST_NODE_TYPES.Identifier
+      ) {
         functionName = node.parent.id.name;
+      } else if (
+        node.parent?.type === AST_NODE_TYPES.Property &&
+        node.parent.key.type === AST_NODE_TYPES.Identifier
+      ) {
+        // Handle object method shorthand
+        functionName = node.parent.key.name;
       }
 
       if (!functionName) return;
@@ -288,14 +337,59 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
       }
     }
 
+    /**
+     * Check parameter names for negative naming
+     */
+    function checkParameter(node: TSESTree.Parameter) {
+      if (node.type !== AST_NODE_TYPES.Identifier) return;
+
+      const paramName = node.name;
+      const { isNegative, alternatives } = hasNegativeNaming(paramName);
+
+      if (isNegative) {
+        context.report({
+          node,
+          messageId: 'avoidNegativeNaming',
+          data: {
+            name: paramName,
+            alternatives: alternatives.join(', '),
+          },
+        });
+      }
+    }
+
     return {
       VariableDeclarator: checkVariableDeclaration,
       FunctionDeclaration: checkFunctionDeclaration,
-      FunctionExpression: checkFunctionDeclaration,
-      ArrowFunctionExpression: checkFunctionDeclaration,
+      // Only check function expressions when they're not part of a variable declaration
+      // to avoid duplicate errors
+      FunctionExpression(node: TSESTree.FunctionExpression) {
+        if (node.parent?.type !== AST_NODE_TYPES.VariableDeclarator) {
+          checkFunctionDeclaration(node);
+        }
+      },
+      // Only check arrow function expressions when they're not part of a variable declaration
+      // to avoid duplicate errors
+      ArrowFunctionExpression(node: TSESTree.ArrowFunctionExpression) {
+        if (node.parent?.type !== AST_NODE_TYPES.VariableDeclarator) {
+          checkFunctionDeclaration(node);
+        }
+      },
       MethodDefinition: checkMethodDefinition,
       Property: checkProperty,
       TSPropertySignature: checkPropertySignature,
+      Identifier(node: TSESTree.Identifier) {
+        // Check parameter names in function declarations
+        if (
+          node.parent &&
+          (node.parent.type === AST_NODE_TYPES.FunctionDeclaration ||
+            node.parent.type === AST_NODE_TYPES.FunctionExpression ||
+            node.parent.type === AST_NODE_TYPES.ArrowFunctionExpression) &&
+          node.parent.params.includes(node)
+        ) {
+          checkParameter(node);
+        }
+      },
     };
   },
 });
