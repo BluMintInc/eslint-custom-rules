@@ -205,7 +205,8 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
           // Check for variables that were defined using template literals
           if (property.type === AST_NODE_TYPES.Identifier) {
             const sourceCode = context.getSourceCode();
-            // TODO: Update to sourceCode.getScope() when ESLint v9 is adopted
+            // Note: context.getScope() is deprecated in ESLint v9, but we're using an earlier version
+            // When upgrading to ESLint v9, change to sourceCode.getScope()
             const scope = context.getScope();
             const variable = scope.variables.find(v => v.name === property.name);
 
