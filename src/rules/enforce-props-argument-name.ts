@@ -1,17 +1,15 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
-type MessageIds = 'usePropsForParameter' | 'usePropsForType';
+type MessageIds = 'usePropsForType';
 type Options = [
   {
-    allowedExceptions?: string[];
     enforceDestructuring?: boolean;
     ignoreExternalInterfaces?: boolean;
   },
 ];
 
 const defaultOptions: Options[0] = {
-  allowedExceptions: [],
   enforceDestructuring: false,
   ignoreExternalInterfaces: true,
 };
@@ -21,7 +19,7 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce using "props" as the name for parameter objects',
+      description: 'Enforce using "Props" suffix in type names for parameter objects',
       recommended: 'error',
     },
     fixable: 'code',
@@ -29,12 +27,6 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
       {
         type: 'object',
         properties: {
-          allowedExceptions: {
-            type: 'array',
-            items: {
-              type: 'string',
-            },
-          },
           enforceDestructuring: {
             type: 'boolean',
           },
@@ -46,7 +38,6 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
       },
     ],
     messages: {
-      usePropsForParameter: 'Use "props" as the parameter name instead of "{{ paramName }}"',
       usePropsForType: 'Use "Props" suffix in type name instead of "{{ typeSuffix }}"',
     },
   },
@@ -76,11 +67,6 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
       return false;
     }
 
-    // Check if a parameter name is in the allowed exceptions list
-    function isAllowedException(paramName: string): boolean {
-      return (finalOptions.allowedExceptions || []).includes(paramName);
-    }
-
     // Extract type name from a type annotation
     function getTypeName(typeAnnotation: TSESTree.TypeNode): string | null {
       if (typeAnnotation.type === AST_NODE_TYPES.TSTypeReference) {
@@ -103,17 +89,6 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
         if (typeName.endsWith(suffix)) {
           return suffix;
         }
-      }
-      return null;
-    }
-
-    // Fix parameter name
-    function fixParameterName(fixer: any, node: TSESTree.Parameter): any {
-      if (node.type === AST_NODE_TYPES.Identifier) {
-        return fixer.replaceText(node, 'props');
-      } else if (node.type === AST_NODE_TYPES.ObjectPattern) {
-        // For destructured parameters, we need to add the props name
-        return fixer.replaceText(node, `props`);
       }
       return null;
     }
@@ -149,55 +124,27 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
         return;
       }
 
-      // Check parameter name
-      if (param.type === AST_NODE_TYPES.Identifier &&
-          param.name !== 'props' &&
-          !isAllowedException(param.name)) {
+      // Check if the parameter has a type annotation
+      if (param.type === AST_NODE_TYPES.Identifier && param.typeAnnotation && param.typeAnnotation.typeAnnotation) {
+        const typeName = getTypeName(param.typeAnnotation.typeAnnotation);
 
-        // Check if the parameter has a type annotation
-        if (param.typeAnnotation && param.typeAnnotation.typeAnnotation) {
-          const typeName = getTypeName(param.typeAnnotation.typeAnnotation);
+        if (typeName) {
+          const nonPropsSuffix = hasNonPropsSuffix(typeName);
 
-          if (typeName) {
-            const nonPropsSuffix = hasNonPropsSuffix(typeName);
-
-            if (nonPropsSuffix) {
-              context.report({
-                node: param.typeAnnotation.typeAnnotation,
-                messageId: 'usePropsForType',
-                data: { typeSuffix: nonPropsSuffix },
-                fix: (fixer) => fixTypeName(
-                  fixer,
-                  param.typeAnnotation!.typeAnnotation,
-                  typeName,
-                  nonPropsSuffix
-                ),
-              });
-            }
+          if (nonPropsSuffix) {
+            context.report({
+              node: param.typeAnnotation.typeAnnotation,
+              messageId: 'usePropsForType',
+              data: { typeSuffix: nonPropsSuffix },
+              fix: (fixer) => fixTypeName(
+                fixer,
+                param.typeAnnotation!.typeAnnotation,
+                typeName,
+                nonPropsSuffix
+              ),
+            });
           }
         }
-
-        context.report({
-          node: param,
-          messageId: 'usePropsForParameter',
-          data: { paramName: param.name },
-          fix: (fixer) => fixParameterName(fixer, param),
-        });
-      }
-
-      // Check object pattern (destructured parameter)
-      else if (param.type === AST_NODE_TYPES.ObjectPattern &&
-               finalOptions.enforceDestructuring) {
-
-        // If we're enforcing non-destructuring, report an error
-        context.report({
-          node: param,
-          messageId: 'usePropsForParameter',
-          data: { paramName: 'destructured object' },
-          fix: (fixer) => {
-            return fixer.replaceText(param, `props`);
-          },
-        });
       }
     }
 
@@ -222,40 +169,27 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
         return;
       }
 
-      // Check parameter name
-      if (param.type === AST_NODE_TYPES.Identifier &&
-          param.name !== 'props' &&
-          !isAllowedException(param.name)) {
+      // Check if the parameter has a type annotation
+      if (param.type === AST_NODE_TYPES.Identifier && param.typeAnnotation && param.typeAnnotation.typeAnnotation) {
+        const typeName = getTypeName(param.typeAnnotation.typeAnnotation);
 
-        // Check if the parameter has a type annotation
-        if (param.typeAnnotation && param.typeAnnotation.typeAnnotation) {
-          const typeName = getTypeName(param.typeAnnotation.typeAnnotation);
+        if (typeName) {
+          const nonPropsSuffix = hasNonPropsSuffix(typeName);
 
-          if (typeName) {
-            const nonPropsSuffix = hasNonPropsSuffix(typeName);
-
-            if (nonPropsSuffix) {
-              context.report({
-                node: param.typeAnnotation.typeAnnotation,
-                messageId: 'usePropsForType',
-                data: { typeSuffix: nonPropsSuffix },
-                fix: (fixer) => fixTypeName(
-                  fixer,
-                  param.typeAnnotation!.typeAnnotation,
-                  typeName,
-                  nonPropsSuffix
-                ),
-              });
-            }
+          if (nonPropsSuffix) {
+            context.report({
+              node: param.typeAnnotation.typeAnnotation,
+              messageId: 'usePropsForType',
+              data: { typeSuffix: nonPropsSuffix },
+              fix: (fixer) => fixTypeName(
+                fixer,
+                param.typeAnnotation!.typeAnnotation,
+                typeName,
+                nonPropsSuffix
+              ),
+            });
           }
         }
-
-        context.report({
-          node: param,
-          messageId: 'usePropsForParameter',
-          data: { paramName: param.name },
-          fix: (fixer) => fixParameterName(fixer, param),
-        });
       }
     }
 
@@ -269,13 +203,15 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
       const nonPropsSuffix = hasNonPropsSuffix(typeName);
 
       if (nonPropsSuffix && !isFromExternalLibrary(node)) {
+        const baseName = typeName.slice(0, -nonPropsSuffix.length);
+        const newTypeName = `${baseName}Props`;
+
         context.report({
           node: node.id,
           messageId: 'usePropsForType',
           data: { typeSuffix: nonPropsSuffix },
           fix: (fixer) => {
-            const baseName = typeName.slice(0, -nonPropsSuffix.length);
-            return fixer.replaceText(node.id, `${baseName}Props`);
+            return fixer.replaceText(node.id, newTypeName);
           },
         });
       }

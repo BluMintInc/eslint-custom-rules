@@ -71,7 +71,7 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
         }
       `,
     },
-    // Function with allowed exception
+    // Function with any parameter name is now allowed
     {
       code: `
         type UserProps = {
@@ -82,7 +82,32 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
           return config.name;
         }
       `,
-      options: [{ allowedExceptions: ['config'] }],
+    },
+    // Class with any parameter name is now allowed
+    {
+      code: `
+        type PendingStrategyProps = {
+          tournament: Tournament;
+          match: MatchAggregated;
+        };
+        class PendingStrategy {
+          constructor(settings: PendingStrategyProps) {
+            // ...
+          }
+        }
+      `,
+    },
+    // Function with any parameter name is now allowed
+    {
+      code: `
+        type AreQueuesEmptyProps = {
+          videoPlatforms?: VideoPlatform[];
+          projectId?: string;
+        };
+        function areQueuesEmpty(params: AreQueuesEmptyProps) {
+          // ...
+        }
+      `,
     },
     // External interface implementation (should be ignored)
     {
@@ -100,29 +125,7 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
     },
   ],
   invalid: [
-    // Function with incorrect parameter name
-    {
-      code: `
-        type UserProps = {
-          name: string;
-          age: number;
-        };
-        function User(config: UserProps) {
-          return config.name;
-        }
-      `,
-      errors: [{ messageId: 'usePropsForParameter', data: { paramName: 'config' } }],
-      output: `
-        type UserProps = {
-          name: string;
-          age: number;
-        };
-        function User(props) {
-          return config.name;
-        }
-      `,
-    },
-    // Class with incorrect parameter name
+    // Class with incorrect type suffix
     {
       code: `
         type PendingStrategySettings = {
@@ -137,8 +140,6 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
       `,
       errors: [
         { messageId: 'usePropsForType', data: { typeSuffix: 'Settings' } },
-        { messageId: 'usePropsForParameter', data: { paramName: 'settings' } },
-        { messageId: 'usePropsForParameter', data: { paramName: 'settings' } },
         { messageId: 'usePropsForType', data: { typeSuffix: 'Settings' } },
         { messageId: 'usePropsForType', data: { typeSuffix: 'Settings' } }
       ],
@@ -148,7 +149,7 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
           match: MatchAggregated;
         };
         class PendingStrategy {
-          constructor(props) {
+          constructor(settings: PendingStrategyProps) {
             // ...
           }
         }
@@ -167,7 +168,6 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
       `,
       errors: [
         { messageId: 'usePropsForType', data: { typeSuffix: 'Params' } },
-        { messageId: 'usePropsForParameter', data: { paramName: 'params' } },
         { messageId: 'usePropsForType', data: { typeSuffix: 'Params' } }
       ],
       output: `
@@ -175,7 +175,7 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
           videoPlatforms?: VideoPlatform[];
           projectId?: string;
         };
-        function areQueuesEmpty(props) {
+        function areQueuesEmpty(params: AreQueuesEmptyProps) {
           // ...
         }
       `,
@@ -199,7 +199,7 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
   ],
 });
 
-// Run JSX tests
+// Run JSX tests - combined with the previous ruleTesterTs tests
 ruleTesterJsx.run('enforce-props-argument-name', enforcePropsArgumentName, {
   valid: [
     // React component with correct props naming
@@ -240,6 +240,18 @@ ruleTesterJsx.run('enforce-props-argument-name', enforcePropsArgumentName, {
         }
       `,
     },
+    // React component with any parameter name is now allowed
+    {
+      code: `
+        type AlgoliaLayoutProps = {
+          CatalogWrapper: RenderCatalogWrapper;
+          configureOptions: Required<UseConfigureProps, 'filters'>;
+        };
+        const AlgoliaLayout = ({ CatalogWrapper, configureOptions }: AlgoliaLayoutProps) => {
+          // ...
+        };
+      `,
+    },
   ],
   invalid: [
     // React component with incorrect type suffix
@@ -255,15 +267,13 @@ ruleTesterJsx.run('enforce-props-argument-name', enforcePropsArgumentName, {
       `,
       errors: [
         { messageId: 'usePropsForType', data: { typeSuffix: 'Config' } },
-        { messageId: 'usePropsForParameter', data: { paramName: 'destructured object' } }
       ],
-      options: [{ enforceDestructuring: true }],
       output: `
         type AlgoliaLayoutProps = {
           CatalogWrapper: RenderCatalogWrapper;
           configureOptions: Required<UseConfigureProps, 'filters'>;
         };
-        const AlgoliaLayout = (props) => {
+        const AlgoliaLayout = ({ CatalogWrapper, configureOptions }: AlgoliaLayoutConfig) => {
           // ...
         };
       `,
