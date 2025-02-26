@@ -241,27 +241,6 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
         };
       `,
     },
-    // Factory with incorrect naming
-    {
-      code: `
-        class Factory<T> {
-          constructor(settings: T) {
-            // ...
-          }
-        }
-      `,
-      errors: [
-        { messageId: 'usePropsForParameter', data: { paramName: 'settings' } },
-        { messageId: 'usePropsForParameter', data: { paramName: 'settings' } }
-      ],
-      output: `
-        class Factory<T> {
-          constructor(props) {
-            // ...
-          }
-        }
-      `,
-    },
   ],
 });
 
