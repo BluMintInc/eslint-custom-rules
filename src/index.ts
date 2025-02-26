@@ -73,6 +73,7 @@ import { enforcePositiveNaming } from './rules/enforce-positive-naming';
 import { noTypeAssertionReturns } from './rules/no-type-assertion-returns';
 import { preferUtilityFunctionOverPrivateStatic } from './rules/prefer-utility-function-over-private-static';
 import { enforceTimestampNow } from './rules/enforce-timestamp-now';
+import { noAlwaysTrueFalseConditions } from './rules/no-always-true-false-conditions';
 
 module.exports = {
   meta: {
@@ -161,6 +162,7 @@ module.exports = {
         '@blumintinc/blumint/no-type-assertion-returns': 'error',
         '@blumintinc/blumint/prefer-utility-function-over-private-static': 'error',
         '@blumintinc/blumint/enforce-timestamp-now': 'error',
+        '@blumintinc/blumint/no-always-true-false-conditions': 'error',
       },
     },
   },
@@ -241,5 +243,6 @@ module.exports = {
     'no-type-assertion-returns': noTypeAssertionReturns,
     'prefer-utility-function-over-private-static': preferUtilityFunctionOverPrivateStatic,
     'enforce-timestamp-now': enforceTimestampNow,
+    'no-always-true-false-conditions': noAlwaysTrueFalseConditions,
   },
 };
