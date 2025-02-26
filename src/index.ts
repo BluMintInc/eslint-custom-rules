@@ -74,6 +74,7 @@ import { noTypeAssertionReturns } from './rules/no-type-assertion-returns';
 import { preferUtilityFunctionOverPrivateStatic } from './rules/prefer-utility-function-over-private-static';
 import { enforceMicrodiff } from './rules/enforce-microdiff';
 import { enforceTimestampNow } from './rules/enforce-timestamp-now';
+import { noAlwaysTrueFalseConditions } from './rules/no-always-true-false-conditions';
 import { enforcePropsArgumentName } from './rules/enforce-props-argument-name';
 import { preferGlobalRouterStateKey } from './rules/prefer-global-router-state-key';
 
@@ -165,6 +166,7 @@ module.exports = {
         '@blumintinc/blumint/prefer-utility-function-over-private-static': 'error',
         '@blumintinc/blumint/enforce-microdiff': 'error',
         '@blumintinc/blumint/enforce-timestamp-now': 'error',
+        '@blumintinc/blumint/no-always-true-false-conditions': 'error',
         '@blumintinc/blumint/enforce-props-argument-name': 'error',
         '@blumintinc/blumint/prefer-global-router-state-key': 'warn',
       },
@@ -248,6 +250,7 @@ module.exports = {
     'prefer-utility-function-over-private-static': preferUtilityFunctionOverPrivateStatic,
     'enforce-microdiff': enforceMicrodiff,
     'enforce-timestamp-now': enforceTimestampNow,
+    'no-always-true-false-conditions': noAlwaysTrueFalseConditions,
     'enforce-props-argument-name': enforcePropsArgumentName,
     'prefer-global-router-state-key': preferGlobalRouterStateKey,
   },
