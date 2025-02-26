@@ -1,0 +1,12 @@
+{
+  "name": "test-examples",
+  "version": "1.0.0",
+  "description": "Test examples for ESLint rule",
+  "main": "index.js",
+  "scripts": {
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@blumintinc/eslint-plugin-blumint": "file:../"
+  }
+}
