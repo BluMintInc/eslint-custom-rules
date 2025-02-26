@@ -71,6 +71,7 @@ import { enforceAssertSafeObjectKey } from './rules/enforce-assertSafe-object-ke
 import { enforceObjectLiteralAsConst } from './rules/enforce-object-literal-as-const';
 import { noTypeAssertionReturns } from './rules/no-type-assertion-returns';
 import { preferUtilityFunctionOverPrivateStatic } from './rules/prefer-utility-function-over-private-static';
+import { enforceMicrodiff } from './rules/enforce-microdiff';
 
 module.exports = {
   meta: {
@@ -157,6 +158,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-object-literal-as-const': 'error',
         '@blumintinc/blumint/no-type-assertion-returns': 'error',
         '@blumintinc/blumint/prefer-utility-function-over-private-static': 'error',
+        '@blumintinc/blumint/enforce-microdiff': 'error',
       },
     },
   },
@@ -235,5 +237,6 @@ module.exports = {
     'enforce-object-literal-as-const': enforceObjectLiteralAsConst,
     'no-type-assertion-returns': noTypeAssertionReturns,
     'prefer-utility-function-over-private-static': preferUtilityFunctionOverPrivateStatic,
+    'enforce-microdiff': enforceMicrodiff,
   },
 };
