@@ -75,6 +75,7 @@ import { preferUtilityFunctionOverPrivateStatic } from './rules/prefer-utility-f
 import { enforceMicrodiff } from './rules/enforce-microdiff';
 import { enforceTimestampNow } from './rules/enforce-timestamp-now';
 import { enforcePropsArgumentName } from './rules/enforce-props-argument-name';
+import { preferGlobalRouterStateKey } from './rules/prefer-global-router-state-key';
 
 module.exports = {
   meta: {
@@ -165,6 +166,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-microdiff': 'error',
         '@blumintinc/blumint/enforce-timestamp-now': 'error',
         '@blumintinc/blumint/enforce-props-argument-name': 'error',
+        '@blumintinc/blumint/prefer-global-router-state-key': 'warn',
       },
     },
   },
@@ -247,5 +249,6 @@ module.exports = {
     'enforce-microdiff': enforceMicrodiff,
     'enforce-timestamp-now': enforceTimestampNow,
     'enforce-props-argument-name': enforcePropsArgumentName,
+    'prefer-global-router-state-key': preferGlobalRouterStateKey,
   },
 };
