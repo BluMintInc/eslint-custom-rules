@@ -24,6 +24,47 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
+    /**
+     * Checks if a node contains a string literal that should be reported
+     */
+    function containsStringLiteral(node: TSESTree.Node): boolean {
+      // Direct string literal
+      if (node.type === AST_NODE_TYPES.Literal && typeof node.value === 'string') {
+        return true;
+      }
+
+      // String concatenation with + operator
+      if (
+        node.type === AST_NODE_TYPES.BinaryExpression &&
+        node.operator === '+' &&
+        (containsStringLiteral(node.left) || containsStringLiteral(node.right))
+      ) {
+        return true;
+      }
+
+      // Conditional (ternary) expression with string literals
+      if (
+        node.type === AST_NODE_TYPES.ConditionalExpression &&
+        (containsStringLiteral(node.consequent) || containsStringLiteral(node.alternate))
+      ) {
+        return true;
+      }
+
+      // Template literal with static parts
+      if (node.type === AST_NODE_TYPES.TemplateLiteral) {
+        // Only report if there's a meaningful static part in the template
+        // This allows dynamic templates like `${prefix}-${id}` but catches `static-${id}`
+        const hasSignificantStaticPart = node.quasis.some(quasi => {
+          const content = quasi.value.raw.trim();
+          // Allow common separators like '-', '_', ':', '/' as they're just joining dynamic parts
+          return content.length > 0 && !(/^[-_:/.]+$/.test(content));
+        });
+        return hasSignificantStaticPart;
+      }
+
+      return false;
+    }
+
     return {
       CallExpression(node: TSESTree.CallExpression) {
         // Check if this is a call to useRouterState
@@ -49,8 +90,8 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
               if (keyProperty && keyProperty.value) {
                 const keyValue = keyProperty.value;
 
-                // Check if the key is a string literal
-                if (keyValue.type === AST_NODE_TYPES.Literal && typeof keyValue.value === 'string') {
+                // Check for string literals in various contexts
+                if (containsStringLiteral(keyValue)) {
                   context.report({
                     node: keyValue,
                     messageId: 'preferGlobalRouterStateKey',
