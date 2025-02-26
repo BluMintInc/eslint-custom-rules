@@ -3,6 +3,28 @@ import { noTypeAssertionReturns } from '../rules/no-type-assertion-returns';
 
 ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
   valid: [
+    // ==================== VARIABLE DECLARATION WITH TYPE ASSERTION ====================
+
+    // Good: Variable declaration with type assertion using 'as' syntax (should not be flagged)
+    `
+    function getDocumentReference() {
+      const tournamentRef = db.doc(
+        toTournamentPath({ gameId, tournamentId }),
+      ) as DocumentReference<Tournament>;
+      return tournamentRef;
+    }
+    `,
+
+    // Good: Variable declaration with type assertion using angle bracket syntax (should not be flagged)
+    `
+    function getDocumentReferenceAngleBracket() {
+      const tournamentRef = <DocumentReference<Tournament>>db.doc(
+        toTournamentPath({ gameId, tournamentId })
+      );
+      return tournamentRef;
+    }
+    `,
+
     // ==================== BASIC VALID CASES ====================
 
     // Good: Type the variable explicitly
