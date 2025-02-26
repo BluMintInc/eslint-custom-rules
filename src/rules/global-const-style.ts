@@ -36,8 +36,11 @@ export default createRule<[], MessageIds>({
           return;
         }
 
-        // Skip if not at program level
-        if (node.parent?.type !== AST_NODE_TYPES.Program) {
+        // Skip if not at program level or not an exported declaration
+        if (
+          node.parent?.type !== AST_NODE_TYPES.Program &&
+          node.parent?.type !== AST_NODE_TYPES.ExportNamedDeclaration
+        ) {
           return;
         }
 
