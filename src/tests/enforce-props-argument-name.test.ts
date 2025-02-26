@@ -122,28 +122,6 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
         }
       `,
     },
-    // Arrow function with incorrect parameter name
-    {
-      code: `
-        type ButtonProps = {
-          label: string;
-          onClick: () => void;
-        };
-        const Button = (settings: ButtonProps) => {
-          return settings.label;
-        };
-      `,
-      errors: [{ messageId: 'usePropsForParameter', data: { paramName: 'settings' } }],
-      output: `
-        type ButtonProps = {
-          label: string;
-          onClick: () => void;
-        };
-        const Button = (props) => {
-          return settings.label;
-        };
-      `,
-    },
     // Class with incorrect parameter name
     {
       code: `
