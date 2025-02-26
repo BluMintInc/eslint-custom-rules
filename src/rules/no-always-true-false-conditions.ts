@@ -250,19 +250,39 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
           : { isTruthy: true };
       }
 
-      // Check if all expressions are literals
-      const allExpressionsAreLiterals = node.expressions.every(
-        (expr) => expr.type === AST_NODE_TYPES.Literal,
+      // Check if all expressions are literals or can be evaluated
+      const allExpressionsAreEvaluable = node.expressions.every(
+        (expr) =>
+          expr.type === AST_NODE_TYPES.Literal ||
+          (expr.type === AST_NODE_TYPES.TemplateLiteral &&
+            expr.expressions.every((e) => e.type === AST_NODE_TYPES.Literal)),
       );
 
-      if (allExpressionsAreLiterals) {
+      if (allExpressionsAreEvaluable) {
         // Evaluate the template literal
         let result = '';
         for (let i = 0; i < node.quasis.length; i++) {
           result += node.quasis[i].value.raw;
           if (i < node.expressions.length) {
-            const expr = node.expressions[i] as TSESTree.Literal;
-            result += String(expr.value);
+            const expr = node.expressions[i];
+            if (expr.type === AST_NODE_TYPES.Literal) {
+              result += String(expr.value);
+            } else if (expr.type === AST_NODE_TYPES.TemplateLiteral) {
+              // Recursively evaluate nested template literals
+              let nestedResult = '';
+              for (let j = 0; j < expr.quasis.length; j++) {
+                nestedResult += expr.quasis[j].value.raw;
+                if (
+                  j < expr.expressions.length &&
+                  expr.expressions[j].type === AST_NODE_TYPES.Literal
+                ) {
+                  nestedResult += String(
+                    (expr.expressions[j] as TSESTree.Literal).value,
+                  );
+                }
+              }
+              result += nestedResult;
+            }
           }
         }
 
@@ -328,13 +348,17 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
       const leftResult = evaluateConstantExpression(node.left);
       const rightResult = evaluateConstantExpression(node.right);
 
-      // Add children to evaluated list
+      // Add children to evaluated list to prevent duplicate evaluations
       evaluatedParentNodes.add(node.left);
       evaluatedParentNodes.add(node.right);
 
       // For &&: if either side is always falsy, the whole expression is falsy
       if (node.operator === '&&') {
-        if (leftResult.isFalsy || rightResult.isFalsy) {
+        if (leftResult.isFalsy) {
+          // Short circuit for && - if left is falsy, right is never evaluated
+          return { isFalsy: true };
+        }
+        if (rightResult.isFalsy) {
           return { isFalsy: true };
         }
         // If both sides are always truthy, the whole expression is truthy
@@ -345,7 +369,11 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
 
       // For ||: if either side is always truthy, the whole expression is truthy
       if (node.operator === '||') {
-        if (leftResult.isTruthy || rightResult.isTruthy) {
+        if (leftResult.isTruthy) {
+          // Short circuit for || - if left is truthy, right is never evaluated
+          return { isTruthy: true };
+        }
+        if (rightResult.isTruthy) {
           return { isTruthy: true };
         }
         // If both sides are always falsy, the whole expression is falsy
@@ -1102,11 +1130,16 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
         const logicalNode = node as unknown as TSESTree.LogicalExpression;
         if (
           logicalNode.operator === '??' &&
-          logicalNode.left.type === AST_NODE_TYPES.Literal &&
-          logicalNode.left.value !== null &&
-          logicalNode.left.value !== undefined
+          logicalNode.left.type === AST_NODE_TYPES.Literal
         ) {
-          // If the left side is not null/undefined, it's used
+          // If left is null or undefined, use right side evaluation
+          if (
+            logicalNode.left.value === null ||
+            logicalNode.left.value === undefined
+          ) {
+            return evaluateConstantExpression(logicalNode.right);
+          }
+          // Otherwise use left side evaluation
           return evaluateConstantExpression(logicalNode.left);
         }
       }
@@ -1114,12 +1147,20 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
       // Handle optional chaining with literal objects
       if (
         node.type === AST_NODE_TYPES.ChainExpression &&
-        node.expression.type === AST_NODE_TYPES.MemberExpression &&
-        node.expression.optional &&
-        node.expression.object.type === AST_NODE_TYPES.ObjectExpression
+        node.expression.type === AST_NODE_TYPES.MemberExpression
       ) {
-        // An object literal with optional chaining will never be null/undefined
-        return { isTruthy: true };
+        if (node.expression.optional) {
+          // Handle object?.prop
+          if (
+            node.expression.object.type === AST_NODE_TYPES.ObjectExpression ||
+            (node.expression.object.type === AST_NODE_TYPES.Identifier &&
+              node.expression.object.name !== 'undefined' &&
+              node.expression.object.name !== 'null')
+          ) {
+            // If we have a property access and we know the object is defined
+            return { isTruthy: true };
+          }
+        }
       }
 
       // Handle Object.keys().length
@@ -1283,8 +1324,8 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
         return;
       }
 
-      // Clear evaluated nodes set for each new condition check
-      evaluatedParentNodes.clear();
+      // We should NOT clear evaluatedParentNodes here as that can lead to duplicate evaluations
+      // and miss detection of conditions in nested expressions
 
       // Check for nested expressions to avoid multiple errors
       if (node.type === AST_NODE_TYPES.LogicalExpression) {
@@ -1294,7 +1335,7 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
           logicalNode.right.type === AST_NODE_TYPES.LogicalExpression;
 
         if (hasNestedLogical) {
-          // Add all nested expressions to prevent reporting on them
+          // Mark nested expressions to prevent reporting on them individually
           evaluatedParentNodes.add(logicalNode.left);
           evaluatedParentNodes.add(logicalNode.right);
 

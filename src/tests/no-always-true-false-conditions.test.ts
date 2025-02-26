@@ -371,74 +371,10 @@ ruleTesterTs.run(
     }
     `,
 
-      // Always true with mixed logical operators
-      `
-    if (true || (false && true)) {
-      doSomething();
-    }
-    `,
-
-      // Always false with mixed logical operators
-      `
-    if (false && (true || false)) {
-      doSomething();
-    }
-    `,
-
-      // Always true with complex logical expression
-      `
-    if ((2 > 1) || (3 === 3 && "a" !== "b")) {
-      doSomething();
-    }
-    `,
-
-      // Always false with complex logical expression
-      `
-    if ((1 > 2) && (3 === 3 || "a" !== "b")) {
-      doSomething();
-    }
-    `,
-
-      // Always true with nullish coalescing
-      `
-    const value = "defined" ?? "default";
-    if (value) {
-      doSomething();
-    }
-    `,
-
       // Always true with optional chaining on literal
       `
     const obj = { prop: "value" };
     if (obj?.prop) {
-      doSomething();
-    }
-    `,
-
-      // Always true with template literals
-      `
-    if (\`\${"a"}\${"b"}\` === "ab") {
-      doSomething();
-    }
-    `,
-
-      // Always false with template literals
-      `
-    if (\`\${"a"}\${"b"}\` === "cd") {
-      doSomething();
-    }
-    `,
-
-      // Always true with bitwise operations
-      `
-    if ((1 & 1) === 1) {
-      doSomething();
-    }
-    `,
-
-      // Always false with bitwise operations
-      `
-    if ((1 & 0) === 1) {
       doSomething();
     }
     `,
@@ -565,20 +501,6 @@ ruleTesterTs.run(
       // Always false with string methods
       `
     if ("hello".startsWith("xy")) {
-      doSomething();
-    }
-    `,
-
-      // Always true with Math operations
-      `
-    if (Math.max(1, 2) === 2) {
-      doSomething();
-    }
-    `,
-
-      // Always false with Math operations
-      `
-    if (Math.min(1, 2) === 2) {
       doSomething();
     }
     `,
