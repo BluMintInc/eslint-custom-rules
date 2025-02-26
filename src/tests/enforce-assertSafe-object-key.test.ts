@@ -40,6 +40,66 @@ const arr = ['value1', 'value2'];
 console.log(arr[0]);
       `,
     },
+    {
+      // Complex template literals with text should be valid
+      code: `
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+console.log(obj[\`prefix_\${id}_suffix\`]);
+      `,
+    },
+    {
+      // Object property access with a variable directly should be valid
+      code: `
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+console.log(obj[id]);
+      `,
+    },
+    {
+      // Numeric expressions should be valid
+      code: `
+const arr = ['value1', 'value2', 'value3'];
+const index = 1;
+console.log(arr[index + 1]);
+      `,
+    },
+    {
+      // Boolean expressions should be valid
+      code: `
+const obj = { true: 'value1', false: 'value2' };
+const condition = true;
+console.log(obj[condition]);
+      `,
+    },
+    {
+      // Function calls other than String() should be valid
+      code: `
+const obj = { key1: 'value1', key2: 'value2' };
+const getId = () => 'key1';
+console.log(obj[getId()]);
+      `,
+    },
+    {
+      // Using a computed property with a complex expression
+      code: `
+import { assertSafe } from 'utils/assertions';
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key';
+const num = 1;
+console.log(obj[assertSafe(id + num)]);
+      `,
+    },
+    {
+      // Using a computed property with a conditional expression
+      code: `
+import { assertSafe } from 'utils/assertions';
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key';
+const condition = true;
+console.log(obj[assertSafe(condition ? 'key1' : 'key2')]);
+      `,
+    },
   ],
   invalid: [
     {
@@ -133,6 +193,171 @@ const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 const value1 = obj[assertSafe(id)];
 const value2 = obj[assertSafe(id)];
+      `,
+    },
+    // Additional test cases
+    {
+      code: `
+const obj = { key1: 'value1', key2: 'value2' };
+function process(id) {
+  return obj[String(id)];
+}
+      `,
+      errors: [{ messageId: 'useAssertSafe' }],
+      output: `
+import { assertSafe } from 'utils/assertions';
+const obj = { key1: 'value1', key2: 'value2' };
+function process(id) {
+  return obj[assertSafe(id)];
+}
+      `,
+    },
+    {
+      code: `
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+const nested = { obj };
+console.log(nested.obj[String(id)]);
+      `,
+      errors: [{ messageId: 'useAssertSafe' }],
+      output: `
+import { assertSafe } from 'utils/assertions';
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+const nested = { obj };
+console.log(nested.obj[assertSafe(id)]);
+      `,
+    },
+    {
+      code: `
+const data = { users: { user1: { name: 'John' } } };
+const userId = 'user1';
+console.log(data.users[String(userId)].name);
+      `,
+      errors: [{ messageId: 'useAssertSafe' }],
+      output: `
+import { assertSafe } from 'utils/assertions';
+const data = { users: { user1: { name: 'John' } } };
+const userId = 'user1';
+console.log(data.users[assertSafe(userId)].name);
+      `,
+    },
+    {
+      code: `
+class DataStore {
+  constructor() {
+    this.data = { key1: 'value1' };
+  }
+
+  getValue(id) {
+    return this.data[String(id)];
+  }
+}
+      `,
+      errors: [{ messageId: 'useAssertSafe' }],
+      output: `
+import { assertSafe } from 'utils/assertions';
+class DataStore {
+  constructor() {
+    this.data = { key1: 'value1' };
+  }
+
+  getValue(id) {
+    return this.data[assertSafe(id)];
+  }
+}
+      `,
+    },
+    {
+      code: `
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+const prop = \`\${id}\`;
+console.log(obj[prop]);
+      `,
+      errors: [{ messageId: 'useAssertSafe' }],
+      output: `
+import { assertSafe } from 'utils/assertions';
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+const prop = \`\${id}\`;
+console.log(obj[assertSafe(prop)]);
+      `,
+    },
+    {
+      code: `
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+obj[String(id)] = 'new value';
+      `,
+      errors: [{ messageId: 'useAssertSafe' }],
+      output: `
+import { assertSafe } from 'utils/assertions';
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+obj[assertSafe(id)] = 'new value';
+      `,
+    },
+    {
+      code: `
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+delete obj[String(id)];
+      `,
+      errors: [{ messageId: 'useAssertSafe' }],
+      output: `
+import { assertSafe } from 'utils/assertions';
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+delete obj[assertSafe(id)];
+      `,
+    },
+    {
+      code: `
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+const hasKey = String(id) in obj;
+      `,
+      errors: [{ messageId: 'useAssertSafe' }],
+      output: `
+import { assertSafe } from 'utils/assertions';
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+const hasKey = assertSafe(id) in obj;
+      `,
+    },
+    {
+      code: `
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+const { [String(id)]: value } = obj;
+      `,
+      errors: [{ messageId: 'useAssertSafe' }],
+      output: `
+import { assertSafe } from 'utils/assertions';
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+const { [assertSafe(id)]: value } = obj;
+      `,
+    },
+    {
+      // The example from the issue description
+      code: `
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+console.log(obj[String(id)]); // Redundant string conversion
+console.log(obj[\`\${id}\`]); // Unnecessary template literal usage
+      `,
+      errors: [
+        { messageId: 'useAssertSafe' },
+        { messageId: 'useAssertSafe' },
+      ],
+      output: `
+import { assertSafe } from 'utils/assertions';
+const obj = { key1: 'value1', key2: 'value2' };
+const id = 'key1';
+console.log(obj[assertSafe(id)]); // Redundant string conversion
+console.log(obj[assertSafe(id)]); // Unnecessary template literal usage
       `,
     },
   ],

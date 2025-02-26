@@ -24,6 +24,45 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
   create(context) {
     let hasAssertSafeImport = false;
 
+    /**
+     * Helper function to add assertSafe import if needed
+     */
+    const addAssertSafeImport = (fixer: TSESLint.RuleFixer): TSESLint.RuleFix => {
+      const program = context.getSourceCode().ast;
+      const firstImport = program.body.find(
+        (node) => node.type === AST_NODE_TYPES.ImportDeclaration
+      );
+      const importStatement = "import { assertSafe } from 'utils/assertions';\n";
+
+      if (firstImport) {
+        return fixer.insertTextBefore(firstImport, importStatement);
+      } else {
+        return fixer.insertTextBefore(program.body[0], importStatement);
+      }
+    };
+
+    /**
+     * Helper function to create fixes for a node
+     */
+    const createFixes = (
+      fixer: TSESLint.RuleFixer,
+      node: TSESTree.Node,
+      argText: string
+    ): TSESLint.RuleFix[] => {
+      const fixes: TSESLint.RuleFix[] = [];
+
+      // Add import if not present
+      if (!hasAssertSafeImport) {
+        fixes.push(addAssertSafeImport(fixer));
+        hasAssertSafeImport = true;
+      }
+
+      // Replace the node with assertSafe(argText)
+      fixes.push(fixer.replaceText(node, `assertSafe(${argText})`));
+
+      return fixes;
+    };
+
     return {
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
         // Check if assertSafe is already imported
@@ -35,6 +74,90 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
           )
         ) {
           hasAssertSafeImport = true;
+        }
+      },
+      // Handle computed property in object destructuring
+      Property(node: TSESTree.Property) {
+        if (node.computed && node.key) {
+          const key = node.key;
+
+          // Check for String(id) pattern
+          if (
+            key.type === AST_NODE_TYPES.CallExpression &&
+            key.callee.type === AST_NODE_TYPES.Identifier &&
+            key.callee.name === 'String'
+          ) {
+            context.report({
+              node: key,
+              messageId: 'useAssertSafe',
+              fix(fixer) {
+                const arg = key.arguments[0];
+                const argText = context.getSourceCode().getText(arg);
+                return createFixes(fixer, key, argText);
+              },
+            });
+          }
+
+          // Check for template literals like `${id}`
+          if (
+            key.type === AST_NODE_TYPES.TemplateLiteral &&
+            key.expressions.length === 1 &&
+            key.quasis.length === 2 &&
+            key.quasis[0].value.raw === '' &&
+            key.quasis[1].value.raw === ''
+          ) {
+            context.report({
+              node: key,
+              messageId: 'useAssertSafe',
+              fix(fixer) {
+                const expr = key.expressions[0];
+                const exprText = context.getSourceCode().getText(expr);
+                return createFixes(fixer, key, exprText);
+              },
+            });
+          }
+        }
+      },
+      // Handle binary expressions like 'key' in obj
+      BinaryExpression(node: TSESTree.BinaryExpression) {
+        if (node.operator === 'in') {
+          const left = node.left;
+
+          // Check for String(id) pattern
+          if (
+            left.type === AST_NODE_TYPES.CallExpression &&
+            left.callee.type === AST_NODE_TYPES.Identifier &&
+            left.callee.name === 'String'
+          ) {
+            context.report({
+              node: left,
+              messageId: 'useAssertSafe',
+              fix(fixer) {
+                const arg = left.arguments[0];
+                const argText = context.getSourceCode().getText(arg);
+                return createFixes(fixer, left, argText);
+              },
+            });
+          }
+
+          // Check for template literals like `${id}`
+          if (
+            left.type === AST_NODE_TYPES.TemplateLiteral &&
+            left.expressions.length === 1 &&
+            left.quasis.length === 2 &&
+            left.quasis[0].value.raw === '' &&
+            left.quasis[1].value.raw === ''
+          ) {
+            context.report({
+              node: left,
+              messageId: 'useAssertSafe',
+              fix(fixer) {
+                const expr = left.expressions[0];
+                const exprText = context.getSourceCode().getText(expr);
+                return createFixes(fixer, left, exprText);
+              },
+            });
+          }
         }
       },
       MemberExpression(node: TSESTree.MemberExpression) {
@@ -51,30 +174,9 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
               node: property,
               messageId: 'useAssertSafe',
               fix(fixer) {
-                const fixes: TSESLint.RuleFix[] = [];
-
-                // Add import if not present
-                if (!hasAssertSafeImport) {
-                  const program = context.getSourceCode().ast;
-                  const firstImport = program.body.find(
-                    (node) => node.type === AST_NODE_TYPES.ImportDeclaration
-                  );
-                  const importStatement = "import { assertSafe } from 'utils/assertions';\n";
-
-                  if (firstImport) {
-                    fixes.push(fixer.insertTextBefore(firstImport, importStatement));
-                  } else {
-                    fixes.push(fixer.insertTextBefore(program.body[0], importStatement));
-                  }
-                  hasAssertSafeImport = true;
-                }
-
-                // Replace String(id) with assertSafe(id)
                 const arg = property.arguments[0];
                 const argText = context.getSourceCode().getText(arg);
-                fixes.push(fixer.replaceText(property, `assertSafe(${argText})`));
-
-                return fixes;
+                return createFixes(fixer, property, argText);
               },
             });
           }
@@ -92,32 +194,42 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
                 node: property,
                 messageId: 'useAssertSafe',
                 fix(fixer) {
-                  const fixes: TSESLint.RuleFix[] = [];
-
-                  // Add import if not present
-                  if (!hasAssertSafeImport) {
-                    const program = context.getSourceCode().ast;
-                    const firstImport = program.body.find(
-                      (node) => node.type === AST_NODE_TYPES.ImportDeclaration
-                    );
-                    const importStatement = "import { assertSafe } from 'utils/assertions';\n";
-
-                    if (firstImport) {
-                      fixes.push(fixer.insertTextBefore(firstImport, importStatement));
-                    } else {
-                      fixes.push(fixer.insertTextBefore(program.body[0], importStatement));
-                    }
-                    hasAssertSafeImport = true;
-                  }
-
-                  // Replace `${id}` with assertSafe(id)
                   const expr = property.expressions[0];
                   const exprText = context.getSourceCode().getText(expr);
-                  fixes.push(fixer.replaceText(property, `assertSafe(${exprText})`));
-
-                  return fixes;
+                  return createFixes(fixer, property, exprText);
                 },
               });
+            }
+          }
+
+          // Check for variables that were defined using template literals
+          if (property.type === AST_NODE_TYPES.Identifier) {
+            const sourceCode = context.getSourceCode();
+            // TODO: Update to sourceCode.getScope() when ESLint v9 is adopted
+            const scope = context.getScope();
+            const variable = scope.variables.find(v => v.name === property.name);
+
+            if (variable && variable.defs.length > 0) {
+              const def = variable.defs[0];
+
+              if (
+                def.node.type === AST_NODE_TYPES.VariableDeclarator &&
+                def.node.init &&
+                def.node.init.type === AST_NODE_TYPES.TemplateLiteral &&
+                def.node.init.expressions.length === 1 &&
+                def.node.init.quasis.length === 2 &&
+                def.node.init.quasis[0].value.raw === '' &&
+                def.node.init.quasis[1].value.raw === ''
+              ) {
+                context.report({
+                  node: property,
+                  messageId: 'useAssertSafe',
+                  fix(fixer) {
+                    const propText = sourceCode.getText(property);
+                    return createFixes(fixer, property, propText);
+                  },
+                });
+              }
             }
           }
         }
