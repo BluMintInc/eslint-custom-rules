@@ -9,13 +9,15 @@ export const testFileLocationEnforcement = createRule<[], MessageIds>({
   meta: {
     type: 'problem',
     docs: {
-      description: 'Enforce test files to be in the same directory as the file they are testing',
+      description:
+        'Enforce test files to be in the same directory as the file they are testing',
       recommended: 'error',
     },
     fixable: 'code',
     schema: [],
     messages: {
-      incorrectTestLocation: 'Test file should be in the same directory as the file it tests ({{ expectedPath }})',
+      incorrectTestLocation:
+        'Test file should be in the same directory as the file it tests ({{ expectedPath }})',
     },
   },
   defaultOptions: [],
@@ -42,19 +44,19 @@ export const testFileLocationEnforcement = createRule<[], MessageIds>({
         const testDir = path.dirname(filename);
 
         // Check if the test file is in a dedicated test directory
-        const isInTestDir = /\/tests?\/?$/.test(testDir) ||
-                           testDir.includes('/tests/') ||
-                           testDir.includes('/test/');
+        const isInTestDir =
+          /\/tests?\/?$/.test(testDir) ||
+          testDir.includes('/tests/') ||
+          testDir.includes('/test/');
 
         if (isInTestDir) {
           // If in a test directory, we need to find the corresponding source file
-          // First, try to find it in a parallel src directory
-          let possibleSourceDirs: string[] = [];
+          const possibleSourceDirs: string[] = [];
 
           // Replace 'test' or 'tests' with 'src' in the path
-          const srcDir = testDir.replace(/\/tests?\/?$/, '/src')
-                               .replace(/\/tests\//, '/src/');
-
+          const srcDir = testDir
+            .replace(/\/tests?\/?$/, '/src')
+            .replace(/\/tests\//, '/src/');
           possibleSourceDirs.push(srcDir);
 
           // Also try one level up (for cases like functions/tests -> functions/src)
@@ -89,6 +91,36 @@ export const testFileLocationEnforcement = createRule<[], MessageIds>({
                 expectedPath,
               },
             });
+          }
+        } else {
+          // If not in a dedicated test directory, check if the source file exists in the same directory
+          const sourceFilePath = path.join(testDir, sourceFilename);
+
+          try {
+            // If the source file doesn't exist in the same directory, report an error
+            if (!fs.existsSync(sourceFilePath)) {
+              // Try to find the source file in a src directory
+              const possibleSrcDir = testDir
+                .replace(/\/lib\//, '/src/')
+                .replace(/\/dist\//, '/src/');
+              const possibleSrcPath = path.join(possibleSrcDir, sourceFilename);
+
+              if (
+                possibleSrcDir !== testDir &&
+                fs.existsSync(possibleSrcPath)
+              ) {
+                // If found in src directory, suggest moving the test file there
+                context.report({
+                  node,
+                  messageId: 'incorrectTestLocation',
+                  data: {
+                    expectedPath: path.join(possibleSrcDir, basename),
+                  },
+                });
+              }
+            }
+          } catch (err) {
+            // Ignore file system errors
           }
         }
       },
