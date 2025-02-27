@@ -1,4 +1,4 @@
-# Disallow Array.forEach with an async callback function (`@blumintinc/blumint/no-async-foreach`)
+# Disallow Array.forEach with an async callback function as it does not wait for promises to resolve. This can lead to race conditions and unexpected behavior. Use a standard for...of loop for sequential execution or Promise.all with map for concurrent execution (`@blumintinc/blumint/no-async-foreach`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

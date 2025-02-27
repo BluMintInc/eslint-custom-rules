@@ -1,4 +1,4 @@
-# Extract static constants and functions to the global scope when possible (`@blumintinc/blumint/extract-global-constants`)
+# Extract static constants and functions to the global scope when possible, and enforce type narrowing with as const for numeric literals in loops (`@blumintinc/blumint/extract-global-constants`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
