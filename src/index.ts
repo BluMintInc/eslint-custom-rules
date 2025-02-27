@@ -81,6 +81,8 @@ import { noAlwaysTrueFalseConditions } from './rules/no-always-true-false-condit
 import { enforcePropsArgumentName } from './rules/enforce-props-argument-name';
 import { preferGlobalRouterStateKey } from './rules/prefer-global-router-state-key';
 import enforceDynamicImports from './rules/enforce-dynamic-imports';
+import { keyOnlyOutermostElement } from './rules/key-only-outermost-element';
+import { noUnnecessaryDestructuring } from './rules/no-unnecessary-destructuring';
 import { enforceSingularTypeNames } from './rules/enforce-singular-type-names';
 import { enforceCssMediaQueries } from './rules/enforce-css-media-queries';
 import { omitIndexHtml } from './rules/omit-index-html';
@@ -99,6 +101,7 @@ module.exports = {
     recommended: {
       plugins: ['@blumintinc/blumint'],
       rules: {
+        '@blumintinc/blumint/key-only-outermost-element': 'error',
         '@blumintinc/blumint/avoid-utils-directory': 'error',
         '@blumintinc/blumint/enforce-firestore-path-utils': 'error',
         '@blumintinc/blumint/no-jsx-whitespace-literal': 'error',
@@ -185,6 +188,7 @@ module.exports = {
           libraries: ['@stream-io/video-react-sdk', 'some-heavy-lib*'],
           allowImportType: true
         }],
+        '@blumintinc/blumint/no-unnecessary-destructuring': 'error',
         '@blumintinc/blumint/enforce-singular-type-names': 'error',
         '@blumintinc/blumint/enforce-css-media-queries': 'error',
         '@blumintinc/blumint/omit-index-html': 'error',
@@ -195,6 +199,7 @@ module.exports = {
   },
 
   rules: {
+    'key-only-outermost-element': keyOnlyOutermostElement,
     'array-methods-this-context': arrayMethodsThisContext,
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
     'consistent-callback-naming': consistentCallbackNaming,
@@ -278,6 +283,7 @@ module.exports = {
     'enforce-props-argument-name': enforcePropsArgumentName,
     'prefer-global-router-state-key': preferGlobalRouterStateKey,
     'enforce-dynamic-imports': enforceDynamicImports,
+    'no-unnecessary-destructuring': noUnnecessaryDestructuring,
     'enforce-singular-type-names': enforceSingularTypeNames,
     'enforce-css-media-queries': enforceCssMediaQueries,
     'omit-index-html': omitIndexHtml,
