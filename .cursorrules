@@ -203,6 +203,7 @@ When writing tests for ESLint rules, follow these guidelines:
         }
     ]
     ```
+    * **Indentation: Avoid using excessive indentation (such as 5 tabs) for multiline `code` and `output` blocks to make them line up with keys like `filename` and `error`. ** This can introduce unintended whitespace and make rules harder to implement.
 
 ### Development Workflow
 1. **Setup**: Run `npm install` to set up all dependencies
