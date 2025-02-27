@@ -6,6 +6,7 @@ import { enforceIdentifiableFirestoreType } from './rules/enforce-identifiable-f
 import { default as enforceCallbackMemo } from './rules/enforce-callback-memo';
 import { enforceCallableTypes } from './rules/enforce-callable-types';
 import { enforceFirebaseImports } from './rules/enforce-dynamic-firebase-imports';
+import { enforceMuiRoundedIcons } from './rules/enforce-mui-rounded-icons';
 import { enforceReactTypeNaming } from './rules/enforce-react-type-naming';
 import { exportIfInDoubt } from './rules/export-if-in-doubt';
 import { extractGlobalConstants } from './rules/extract-global-constants';
@@ -102,6 +103,7 @@ module.exports = {
         '@blumintinc/blumint/class-methods-read-top-to-bottom': 'error',
         '@blumintinc/blumint/consistent-callback-naming': 'error',
         '@blumintinc/blumint/dynamic-https-errors': 'error',
+        '@blumintinc/blumint/enforce-mui-rounded-icons': 'error',
         '@blumintinc/blumint/enforce-identifiable-firestore-type': 'error',
         '@blumintinc/blumint/enforce-callback-memo': 'error',
         '@blumintinc/blumint/enforce-callable-types': 'error',
@@ -193,6 +195,7 @@ module.exports = {
     'enforce-react-type-naming': enforceReactTypeNaming,
     'enforce-callable-types': enforceCallableTypes,
     'enforce-dynamic-firebase-imports': enforceFirebaseImports,
+    'enforce-mui-rounded-icons': enforceMuiRoundedIcons,
     'export-if-in-doubt': exportIfInDoubt,
     'extract-global-constants': extractGlobalConstants,
     'generic-starts-with-t': genericStartsWithT,
