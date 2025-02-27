@@ -80,6 +80,7 @@ import { enforceTimestampNow } from './rules/enforce-timestamp-now';
 import { noAlwaysTrueFalseConditions } from './rules/no-always-true-false-conditions';
 import { enforcePropsArgumentName } from './rules/enforce-props-argument-name';
 import { preferGlobalRouterStateKey } from './rules/prefer-global-router-state-key';
+import { preferUseMemoOverUseEffectUseState } from './rules/prefer-usememo-over-useeffect-usestate';
 import enforceDynamicImports from './rules/enforce-dynamic-imports';
 import { ensurePointerEventsNone } from './rules/ensure-pointer-events-none';
 import { noObjectValuesOnStrings } from './rules/no-object-values-on-strings';
@@ -180,16 +181,21 @@ module.exports = {
         '@blumintinc/blumint/enforce-object-literal-as-const': 'error',
         '@blumintinc/blumint/enforce-positive-naming': 'error',
         '@blumintinc/blumint/no-type-assertion-returns': 'error',
-        '@blumintinc/blumint/prefer-utility-function-over-private-static': 'error',
+        '@blumintinc/blumint/prefer-utility-function-over-private-static':
+          'error',
         '@blumintinc/blumint/enforce-microdiff': 'error',
         '@blumintinc/blumint/enforce-timestamp-now': 'error',
         '@blumintinc/blumint/no-always-true-false-conditions': 'error',
         '@blumintinc/blumint/enforce-props-argument-name': 'error',
-        '@blumintinc/blumint/prefer-global-router-state-key': 'warn',
-        '@blumintinc/blumint/enforce-dynamic-imports': ['error', {
-          libraries: ['@stream-io/video-react-sdk', 'some-heavy-lib*'],
-          allowImportType: true
-        }],
+        '@blumintinc/blumint/prefer-global-router-state-key': 'error',
+        '@blumintinc/blumint/prefer-usememo-over-useeffect-usestate': 'error',
+        '@blumintinc/blumint/enforce-dynamic-imports': [
+          'error',
+          {
+            libraries: ['@stream-io/video-react-sdk', 'some-heavy-lib*'],
+            allowImportType: true,
+          },
+        ],
         '@blumintinc/blumint/ensure-pointer-events-none': 'error',
         '@blumintinc/blumint/no-object-values-on-strings': 'error',
         '@blumintinc/blumint/no-unnecessary-destructuring': 'error',
@@ -280,12 +286,15 @@ module.exports = {
     'enforce-object-literal-as-const': enforceObjectLiteralAsConst,
     'enforce-positive-naming': enforcePositiveNaming,
     'no-type-assertion-returns': noTypeAssertionReturns,
-    'prefer-utility-function-over-private-static': preferUtilityFunctionOverPrivateStatic,
+    'prefer-utility-function-over-private-static':
+      preferUtilityFunctionOverPrivateStatic,
     'enforce-microdiff': enforceMicrodiff,
     'enforce-timestamp-now': enforceTimestampNow,
     'no-always-true-false-conditions': noAlwaysTrueFalseConditions,
     'enforce-props-argument-name': enforcePropsArgumentName,
     'prefer-global-router-state-key': preferGlobalRouterStateKey,
+    'prefer-usememo-over-useeffect-usestate':
+      preferUseMemoOverUseEffectUseState,
     'enforce-dynamic-imports': enforceDynamicImports,
     'ensure-pointer-events-none': ensurePointerEventsNone,
     'no-object-values-on-strings': noObjectValuesOnStrings,
