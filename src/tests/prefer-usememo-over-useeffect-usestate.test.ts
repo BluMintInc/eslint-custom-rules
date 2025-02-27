@@ -135,8 +135,6 @@ ruleTester.run(
         function Component({ items }) {
           const processedItems = useMemo(() => items.map(item => transformItem(item)), [items]);
 
-          ;
-
           return <List items={processedItems} />;
         }
       `,
