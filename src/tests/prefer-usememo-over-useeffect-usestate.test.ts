@@ -157,8 +157,6 @@ ruleTester.run(
         function Component({ data }) {
           const result = useMemo(() => computeResult(data), [data]);
 
-          ;
-
           return <div>{result}</div>;
         }
       `,
