@@ -80,6 +80,7 @@ import { enforceTimestampNow } from './rules/enforce-timestamp-now';
 import { noAlwaysTrueFalseConditions } from './rules/no-always-true-false-conditions';
 import { enforcePropsArgumentName } from './rules/enforce-props-argument-name';
 import { preferGlobalRouterStateKey } from './rules/prefer-global-router-state-key';
+import { enforceSingularTypeNames } from './rules/enforce-singular-type-names';
 import { enforceCssMediaQueries } from './rules/enforce-css-media-queries';
 import { omitIndexHtml } from './rules/omit-index-html';
 import { enforceIdCapitalization } from './rules/enforce-id-capitalization';
@@ -179,6 +180,7 @@ module.exports = {
         '@blumintinc/blumint/no-always-true-false-conditions': 'error',
         '@blumintinc/blumint/enforce-props-argument-name': 'error',
         '@blumintinc/blumint/prefer-global-router-state-key': 'warn',
+        '@blumintinc/blumint/enforce-singular-type-names': 'error',
         '@blumintinc/blumint/enforce-css-media-queries': 'error',
         '@blumintinc/blumint/omit-index-html': 'error',
         '@blumintinc/blumint/enforce-id-capitalization': 'error',
@@ -270,6 +272,7 @@ module.exports = {
     'no-always-true-false-conditions': noAlwaysTrueFalseConditions,
     'enforce-props-argument-name': enforcePropsArgumentName,
     'prefer-global-router-state-key': preferGlobalRouterStateKey,
+    'enforce-singular-type-names': enforceSingularTypeNames,
     'enforce-css-media-queries': enforceCssMediaQueries,
     'omit-index-html': omitIndexHtml,
     'enforce-id-capitalization': enforceIdCapitalization,
