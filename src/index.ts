@@ -80,6 +80,7 @@ import { enforceTimestampNow } from './rules/enforce-timestamp-now';
 import { noAlwaysTrueFalseConditions } from './rules/no-always-true-false-conditions';
 import { enforcePropsArgumentName } from './rules/enforce-props-argument-name';
 import { preferGlobalRouterStateKey } from './rules/prefer-global-router-state-key';
+import enforceDynamicImports from './rules/enforce-dynamic-imports';
 import { ensurePointerEventsNone } from './rules/ensure-pointer-events-none';
 import { noObjectValuesOnStrings } from './rules/no-object-values-on-strings';
 import { keyOnlyOutermostElement } from './rules/key-only-outermost-element';
@@ -185,6 +186,10 @@ module.exports = {
         '@blumintinc/blumint/no-always-true-false-conditions': 'error',
         '@blumintinc/blumint/enforce-props-argument-name': 'error',
         '@blumintinc/blumint/prefer-global-router-state-key': 'warn',
+        '@blumintinc/blumint/enforce-dynamic-imports': ['error', {
+          libraries: ['@stream-io/video-react-sdk', 'some-heavy-lib*'],
+          allowImportType: true
+        }],
         '@blumintinc/blumint/ensure-pointer-events-none': 'error',
         '@blumintinc/blumint/no-object-values-on-strings': 'error',
         '@blumintinc/blumint/no-unnecessary-destructuring': 'error',
@@ -281,6 +286,7 @@ module.exports = {
     'no-always-true-false-conditions': noAlwaysTrueFalseConditions,
     'enforce-props-argument-name': enforcePropsArgumentName,
     'prefer-global-router-state-key': preferGlobalRouterStateKey,
+    'enforce-dynamic-imports': enforceDynamicImports,
     'ensure-pointer-events-none': ensurePointerEventsNone,
     'no-object-values-on-strings': noObjectValuesOnStrings,
     'no-unnecessary-destructuring': noUnnecessaryDestructuring,

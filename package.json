@@ -47,7 +47,8 @@
   "dependencies": {
     "@types/pluralize": "^0.0.33",
     "compromise": "14.14.4",
-    "pluralize": "^8.0.0",
+    "minimatch": "10.0.1",
+    "pluralize": "8.0.0",
     "requireindex": "1.2.0"
   },
   "devDependencies": {
