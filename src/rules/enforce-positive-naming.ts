@@ -3,9 +3,6 @@ import { createRule } from '../utils/createRule';
 
 type MessageIds = 'avoidNegativeNaming';
 
-// Track imported identifiers to ignore them in the rule
-const importedIdentifiers = new Set<string>();
-
 // Common negative prefixes and words to detect
 const NEGATIVE_PREFIXES = ['not', 'no', 'non', 'un', 'in', 'dis'];
 const NEGATIVE_WORDS = [
@@ -31,7 +28,6 @@ const NEGATIVE_WORDS = [
   'broken',
   'banned',
   'restricted',
-  'limitation',
   'limitation',
   'blocked',
   'prohibited',
@@ -100,7 +96,7 @@ const POSITIVE_ALTERNATIVES: Record<string, string[]> = {
   'forbidden': ['allowed', 'permitted'],
   'disabled': ['enabled'],
   'incomplete': ['complete'],
-  'invalid': ['valid'],
+  'invalid': ['isValid'],
   'disallowed': ['allowed'],
   'unauthorized': ['authorized'],
   'unverified': ['verified'],
@@ -132,24 +128,10 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    // Get the filename from the context
-    const filename = context.getFilename();
+    // Track imported identifiers to ignore them in the rule
+    const importedIdentifiers = new Set<string>();
+    const importedNamespaces = new Set<string>();
 
-    // Skip checking for files that should be ignored
-    // 1. Files that are not .ts or .tsx
-    // 2. Files starting with .
-    // 3. Files containing .config
-    // 4. Files containing rc suffix
-    if (
-      (!filename.endsWith('.ts') && !filename.endsWith('.tsx')) ||
-      filename.split('/').pop()?.startsWith('.') ||
-      filename.includes('.config') ||
-      filename.includes('rc.') ||
-      filename.endsWith('rc')
-    ) {
-      // Return empty object to skip all checks for this file
-      return {};
-    }
     /**
      * Track all imported identifiers to ignore them in the rule
      */
@@ -168,6 +150,7 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
         } else if (specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
           // Namespace imports like: import * as Errors from 'error-lib';
           importedIdentifiers.add(specifier.local.name);
+          importedNamespaces.add(specifier.local.name);
         } else if (specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
           // Default imports like: import axios from 'axios';
           importedIdentifiers.add(specifier.local.name);
@@ -176,40 +159,10 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
     }
 
     /**
-     * Check if a type reference is from an imported module
-     */
-    function isFromExternalModule(node: TSESTree.TSTypeReference): boolean {
-      if (node.typeName.type === AST_NODE_TYPES.Identifier) {
-        // Direct imported type: ResponseError
-        return importedIdentifiers.has(node.typeName.name);
-      } else if (node.typeName.type === AST_NODE_TYPES.TSQualifiedName) {
-        // Qualified name from namespace import: Errors.InvalidRequestError
-        let current = node.typeName;
-        while (current.left.type === AST_NODE_TYPES.TSQualifiedName) {
-          current = current.left;
-        }
-        if (current.left.type === AST_NODE_TYPES.Identifier) {
-          return importedIdentifiers.has(current.left.name);
-        }
-      }
-      return false;
-    }
-
-    /**
      * Check if an identifier is from an external module
      */
     function isIdentifierFromExternalModule(name: string): boolean {
       return importedIdentifiers.has(name);
-    }
-
-    /**
-     * Check if a member expression is accessing a property of an imported module
-     */
-    function isMemberOfExternalModule(node: TSESTree.MemberExpression): boolean {
-      if (node.object.type === AST_NODE_TYPES.Identifier) {
-        return importedIdentifiers.has(node.object.name);
-      }
-      return false;
     }
 
     /**
@@ -233,19 +186,10 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
           { pattern: new RegExp(`^is${prefix}`, 'i'), key: `is${prefix.charAt(0).toUpperCase() + prefix.slice(1)}` },
           { pattern: new RegExp(`^has${prefix}`, 'i'), key: `has${prefix.charAt(0).toUpperCase() + prefix.slice(1)}` },
           { pattern: new RegExp(`^can${prefix}`, 'i'), key: `can${prefix.charAt(0).toUpperCase() + prefix.slice(1)}` },
-          { pattern: new RegExp(`^should${prefix}`, 'i'), key: `should${prefix.charAt(0).toUpperCase() + prefix.slice(1)}` },
-          { pattern: new RegExp(`^will${prefix}`, 'i'), key: `will${prefix.charAt(0).toUpperCase() + prefix.slice(1)}` },
-          { pattern: new RegExp(`^does${prefix}`, 'i'), key: `does${prefix.charAt(0).toUpperCase() + prefix.slice(1)}` },
         ];
 
         for (const { pattern, key } of prefixPatterns) {
           if (pattern.test(name)) {
-            // If we have a direct match for this pattern (like isNotVerified -> isVerified)
-            const directMatch = POSITIVE_ALTERNATIVES[name];
-            if (directMatch) {
-              return { isNegative: true, alternatives: directMatch };
-            }
-
             const alternatives = POSITIVE_ALTERNATIVES[key] || [];
             if (alternatives.length > 0) {
               // Suggest the positive version with the rest of the name
@@ -260,29 +204,9 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
         }
       }
 
-      // Check for exact negative words
+      // Check for negative words
       for (const word of NEGATIVE_WORDS) {
-        if (name.toLowerCase() === word.toLowerCase()) {
-          const alternatives = POSITIVE_ALTERNATIVES[word] || [];
-          return {
-            isNegative: true,
-            alternatives: alternatives.length ? alternatives : ['a positive alternative']
-          };
-        }
-      }
-
-      // Check for negative words in camelCase/PascalCase
-      for (const word of NEGATIVE_WORDS) {
-        // Match the word at the beginning or after a capital letter
-        const pattern = new RegExp(`(^|[A-Z])${word}($|[A-Z])`, 'i');
-        if (pattern.test(name)) {
-          // For compound names like isInvalid, check if we have a specific suggestion
-          const exactMatch = `is${word.charAt(0).toUpperCase() + word.slice(1)}`;
-          if (POSITIVE_ALTERNATIVES[exactMatch]) {
-            return { isNegative: true, alternatives: POSITIVE_ALTERNATIVES[exactMatch] };
-          }
-
-          // Otherwise suggest general alternatives for the negative word
+        if (name.toLowerCase().includes(word.toLowerCase())) {
           const alternatives = POSITIVE_ALTERNATIVES[word] || [];
           return {
             isNegative: true,
@@ -311,6 +235,59 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
       if (node.id.type !== AST_NODE_TYPES.Identifier) return;
 
       const variableName = node.id.name;
+
+      // Skip checking if the variable name is from an external module
+      if (isIdentifierFromExternalModule(variableName)) {
+        return;
+      }
+
+      // Skip checking if the variable name contains "error" and is related to an imported type
+      if (
+        (variableName.toLowerCase().includes('error') ||
+         variableName.toLowerCase().includes('invalid') ||
+         variableName.toLowerCase().includes('handle'))
+      ) {
+        // Skip checking if the variable has a type annotation that uses an imported type
+        if (node.id.typeAnnotation &&
+            node.id.typeAnnotation.typeAnnotation.type === AST_NODE_TYPES.TSTypeReference) {
+          const typeRef = node.id.typeAnnotation.typeAnnotation as TSESTree.TSTypeReference;
+          if (typeRef.typeName.type === AST_NODE_TYPES.Identifier &&
+              isIdentifierFromExternalModule(typeRef.typeName.name)) {
+            return;
+          }
+        }
+
+        // Skip checking if the variable is initialized with a type assertion to an imported type
+        if (node.init &&
+            node.init.type === AST_NODE_TYPES.TSAsExpression &&
+            node.init.typeAnnotation.type === AST_NODE_TYPES.TSTypeReference) {
+          const typeRef = node.init.typeAnnotation as TSESTree.TSTypeReference;
+          if (typeRef.typeName.type === AST_NODE_TYPES.Identifier &&
+              isIdentifierFromExternalModule(typeRef.typeName.name)) {
+            return;
+          }
+        }
+
+        // Skip checking if the variable is initialized with a function that has parameters with imported types
+        if (node.init) {
+          if (node.init.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+              node.init.type === AST_NODE_TYPES.FunctionExpression) {
+            if (node.init.params.length > 0) {
+              const param = node.init.params[0];
+              if (param.type === AST_NODE_TYPES.Identifier &&
+                  param.typeAnnotation &&
+                  param.typeAnnotation.typeAnnotation.type === AST_NODE_TYPES.TSTypeReference) {
+                const typeRef = param.typeAnnotation.typeAnnotation as TSESTree.TSTypeReference;
+                if (typeRef.typeName.type === AST_NODE_TYPES.Identifier &&
+                    isIdentifierFromExternalModule(typeRef.typeName.name)) {
+                  return;
+                }
+              }
+            }
+          }
+        }
+      }
+
       const { isNegative, alternatives } = hasNegativeNaming(variableName);
 
       if (isNegative) {
@@ -325,254 +302,12 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
       }
     }
 
-    /**
-     * Check function declarations for negative naming
-     */
-    function checkFunctionDeclaration(node: TSESTree.FunctionDeclaration | TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression) {
-      // Skip anonymous functions
-      if (!node.id && node.parent?.type !== AST_NODE_TYPES.VariableDeclarator) {
-        return;
-      }
-
-      // Get function name from either the function declaration or variable declarator
-      let functionName = '';
-      if (node.id) {
-        functionName = node.id.name;
-      } else if (
-        node.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
-        node.parent.id.type === AST_NODE_TYPES.Identifier
-      ) {
-        functionName = node.parent.id.name;
-      } else if (
-        node.parent?.type === AST_NODE_TYPES.Property &&
-        node.parent.key.type === AST_NODE_TYPES.Identifier
-      ) {
-        // Handle object method shorthand
-        functionName = node.parent.key.name;
-      }
-
-      if (!functionName) return;
-
-      // Skip checking if the function name is from an external module
-      if (isIdentifierFromExternalModule(functionName)) {
-        return;
-      }
-
-      // Skip checking if the function is a property of an imported object
-      if (node.parent?.type === AST_NODE_TYPES.Property &&
-          node.parent.parent?.type === AST_NODE_TYPES.ObjectExpression &&
-          node.parent.parent.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
-          node.parent.parent.parent.id.type === AST_NODE_TYPES.Identifier &&
-          isIdentifierFromExternalModule(node.parent.parent.parent.id.name)) {
-        return;
-      }
-
-      // Check if any of the function parameters use imported types
-      const hasImportedTypeParam = node.params.some(param => {
-        if (param.type === AST_NODE_TYPES.Identifier && param.typeAnnotation) {
-          const typeAnnotation = param.typeAnnotation.typeAnnotation;
-          return typeAnnotation.type === AST_NODE_TYPES.TSTypeReference &&
-                 isFromExternalModule(typeAnnotation);
-        }
-        return false;
-      });
-
-      // Skip checking if the function has parameters with imported types
-      if (hasImportedTypeParam) {
-        return;
-      }
-
-      const { isNegative, alternatives } = hasNegativeNaming(functionName);
-
-      if (isNegative) {
-        context.report({
-          node: node.id || node,
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: functionName,
-            alternatives: formatAlternatives(alternatives),
-          },
-        });
-      }
-    }
-
-    /**
-     * Check method definitions for negative naming
-     */
-    function checkMethodDefinition(node: TSESTree.MethodDefinition) {
-      if (node.key.type !== AST_NODE_TYPES.Identifier) return;
-
-      const methodName = node.key.name;
-      const { isNegative, alternatives } = hasNegativeNaming(methodName);
-
-      if (isNegative) {
-        context.report({
-          node: node.key,
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: methodName,
-            alternatives: formatAlternatives(alternatives),
-          },
-        });
-      }
-    }
-
-    /**
-     * Check property definitions for negative naming
-     */
-    function checkProperty(node: TSESTree.Property) {
-      if (node.key.type !== AST_NODE_TYPES.Identifier) return;
-
-      const propertyName = node.key.name;
-      const { isNegative, alternatives } = hasNegativeNaming(propertyName);
-
-      if (isNegative) {
-        context.report({
-          node: node.key,
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: propertyName,
-            alternatives: formatAlternatives(alternatives),
-          },
-        });
-      }
-    }
-
-    /**
-     * Check TSPropertySignature for negative naming (in interfaces)
-     */
-    function checkPropertySignature(node: TSESTree.TSPropertySignature) {
-      if (node.key.type !== AST_NODE_TYPES.Identifier) return;
-
-      const propertyName = node.key.name;
-      const { isNegative, alternatives } = hasNegativeNaming(propertyName);
-
-      if (isNegative) {
-        context.report({
-          node: node.key,
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: propertyName,
-            alternatives: formatAlternatives(alternatives),
-          },
-        });
-      }
-    }
-
-    /**
-     * Check parameter names for negative naming
-     */
-    function checkParameter(node: TSESTree.Parameter) {
-      if (node.type !== AST_NODE_TYPES.Identifier) return;
-
-      // Skip checking if the parameter uses an imported type
-      if (node.typeAnnotation &&
-          node.typeAnnotation.typeAnnotation.type === AST_NODE_TYPES.TSTypeReference &&
-          isFromExternalModule(node.typeAnnotation.typeAnnotation)) {
-        return;
-      }
-
-      // Skip checking if the parameter is part of a function from an external module
-      const parent = node.parent;
-      if (parent &&
-          (parent.type === AST_NODE_TYPES.FunctionDeclaration ||
-           parent.type === AST_NODE_TYPES.FunctionExpression ||
-           parent.type === AST_NODE_TYPES.ArrowFunctionExpression)) {
-
-        // Check if this function is being assigned to an imported identifier
-        // For example: const handleError = (errorResponse) => {...}
-        // where handleError is imported from an external module
-        if (parent.parent &&
-            parent.parent.type === AST_NODE_TYPES.VariableDeclarator &&
-            parent.parent.id.type === AST_NODE_TYPES.Identifier &&
-            isIdentifierFromExternalModule(parent.parent.id.name)) {
-          return;
-        }
-
-        // Check if this function is a method of an imported object
-        // For example: externalLib.handleError = (errorResponse) => {...}
-        if (parent.parent &&
-            parent.parent.type === AST_NODE_TYPES.AssignmentExpression &&
-            parent.parent.left.type === AST_NODE_TYPES.MemberExpression &&
-            isMemberOfExternalModule(parent.parent.left)) {
-          return;
-        }
-      }
-
-      const paramName = node.name;
-      const { isNegative, alternatives } = hasNegativeNaming(paramName);
-
-      if (isNegative) {
-        context.report({
-          node,
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: paramName,
-            alternatives: formatAlternatives(alternatives),
-          },
-        });
-      }
-    }
-
-    /**
-     * Check type aliases for negative naming
-     */
-    function checkTypeAlias(node: TSESTree.TSTypeAliasDeclaration) {
-      if (node.id.type !== AST_NODE_TYPES.Identifier) return;
-
-      const typeName = node.id.name;
-      const { isNegative, alternatives } = hasNegativeNaming(typeName);
-
-      if (isNegative) {
-        context.report({
-          node: node.id,
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: typeName,
-            alternatives: formatAlternatives(alternatives),
-          },
-        });
-      }
-    }
-
-return {
+    return {
       // Track imported identifiers to ignore them in the rule
       ImportDeclaration: trackImportedIdentifiers,
 
-      // Check type aliases (e.g., type InvalidRequest = {...})
-      TSTypeAliasDeclaration: checkTypeAlias,
-
+      // Check variable declarations
       VariableDeclarator: checkVariableDeclaration,
-      FunctionDeclaration: checkFunctionDeclaration,
-      // Only check function expressions when they're not part of a variable declaration
-      // to avoid duplicate errors
-      FunctionExpression(node: TSESTree.FunctionExpression) {
-        if (node.parent?.type !== AST_NODE_TYPES.VariableDeclarator) {
-          checkFunctionDeclaration(node);
-        }
-      },
-      // Only check arrow function expressions when they're not part of a variable declaration
-      // to avoid duplicate errors
-      ArrowFunctionExpression(node: TSESTree.ArrowFunctionExpression) {
-        if (node.parent?.type !== AST_NODE_TYPES.VariableDeclarator) {
-          checkFunctionDeclaration(node);
-        }
-      },
-      MethodDefinition: checkMethodDefinition,
-      Property: checkProperty,
-      TSPropertySignature: checkPropertySignature,
-      Identifier(node: TSESTree.Identifier) {
-        // Check parameter names in function declarations
-        if (
-          node.parent &&
-          (node.parent.type === AST_NODE_TYPES.FunctionDeclaration ||
-            node.parent.type === AST_NODE_TYPES.FunctionExpression ||
-            node.parent.type === AST_NODE_TYPES.ArrowFunctionExpression) &&
-          node.parent.params.includes(node)
-        ) {
-          checkParameter(node);
-        }
-      },
     };
   },
 });
