@@ -78,6 +78,7 @@ import { enforceTimestampNow } from './rules/enforce-timestamp-now';
 import { noAlwaysTrueFalseConditions } from './rules/no-always-true-false-conditions';
 import { enforcePropsArgumentName } from './rules/enforce-props-argument-name';
 import { preferGlobalRouterStateKey } from './rules/prefer-global-router-state-key';
+import { noObjectValuesOnStrings } from './rules/no-object-values-on-strings';
 
 module.exports = {
   meta: {
@@ -171,6 +172,7 @@ module.exports = {
         '@blumintinc/blumint/no-always-true-false-conditions': 'error',
         '@blumintinc/blumint/enforce-props-argument-name': 'error',
         '@blumintinc/blumint/prefer-global-router-state-key': 'warn',
+        '@blumintinc/blumint/no-object-values-on-strings': 'error',
       },
     },
   },
@@ -256,5 +258,6 @@ module.exports = {
     'no-always-true-false-conditions': noAlwaysTrueFalseConditions,
     'enforce-props-argument-name': enforcePropsArgumentName,
     'prefer-global-router-state-key': preferGlobalRouterStateKey,
+    'no-object-values-on-strings': noObjectValuesOnStrings,
   },
 };
