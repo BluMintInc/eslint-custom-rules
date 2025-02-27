@@ -6,6 +6,8 @@ import { enforceIdentifiableFirestoreType } from './rules/enforce-identifiable-f
 import { default as enforceCallbackMemo } from './rules/enforce-callback-memo';
 import { enforceCallableTypes } from './rules/enforce-callable-types';
 import { enforceFirebaseImports } from './rules/enforce-dynamic-firebase-imports';
+import { enforceMuiRoundedIcons } from './rules/enforce-mui-rounded-icons';
+import { enforceReactTypeNaming } from './rules/enforce-react-type-naming';
 import { exportIfInDoubt } from './rules/export-if-in-doubt';
 import { extractGlobalConstants } from './rules/extract-global-constants';
 import { genericStartsWithT } from './rules/generic-starts-with-t';
@@ -14,6 +16,7 @@ import { noAsyncArrayFilter } from './rules/no-async-array-filter';
 import { noAsyncForEach } from './rules/no-async-foreach';
 import { noConditionalLiteralsInJsx } from './rules/no-conditional-literals-in-jsx';
 import { noFilterWithoutReturn } from './rules/no-filter-without-return';
+import { noHungarian } from './rules/no-hungarian';
 import { noMisusedSwitchCase } from './rules/no-misused-switch-case';
 import { noUnpinnedDependencies } from './rules/no-unpinned-dependencies';
 import { noUnusedProps } from './rules/no-unused-props';
@@ -77,6 +80,17 @@ import { enforceTimestampNow } from './rules/enforce-timestamp-now';
 import { noAlwaysTrueFalseConditions } from './rules/no-always-true-false-conditions';
 import { enforcePropsArgumentName } from './rules/enforce-props-argument-name';
 import { preferGlobalRouterStateKey } from './rules/prefer-global-router-state-key';
+import { preferUseMemoOverUseEffectUseState } from './rules/prefer-usememo-over-useeffect-usestate';
+import enforceDynamicImports from './rules/enforce-dynamic-imports';
+import { ensurePointerEventsNone } from './rules/ensure-pointer-events-none';
+import { noObjectValuesOnStrings } from './rules/no-object-values-on-strings';
+import { keyOnlyOutermostElement } from './rules/key-only-outermost-element';
+import { noUnnecessaryDestructuring } from './rules/no-unnecessary-destructuring';
+import { enforceSingularTypeNames } from './rules/enforce-singular-type-names';
+import { enforceCssMediaQueries } from './rules/enforce-css-media-queries';
+import { omitIndexHtml } from './rules/omit-index-html';
+import { enforceIdCapitalization } from './rules/enforce-id-capitalization';
+import { noUnusedUseState } from './rules/no-unused-usestate';
 
 module.exports = {
   meta: {
@@ -90,6 +104,7 @@ module.exports = {
     recommended: {
       plugins: ['@blumintinc/blumint'],
       rules: {
+        '@blumintinc/blumint/key-only-outermost-element': 'error',
         '@blumintinc/blumint/avoid-utils-directory': 'error',
         '@blumintinc/blumint/enforce-firestore-path-utils': 'error',
         '@blumintinc/blumint/no-jsx-whitespace-literal': 'error',
@@ -97,10 +112,12 @@ module.exports = {
         '@blumintinc/blumint/class-methods-read-top-to-bottom': 'error',
         '@blumintinc/blumint/consistent-callback-naming': 'error',
         '@blumintinc/blumint/dynamic-https-errors': 'error',
+        '@blumintinc/blumint/enforce-mui-rounded-icons': 'error',
         '@blumintinc/blumint/enforce-identifiable-firestore-type': 'error',
         '@blumintinc/blumint/enforce-callback-memo': 'error',
         '@blumintinc/blumint/enforce-callable-types': 'error',
         '@blumintinc/blumint/enforce-dynamic-firebase-imports': 'error',
+        '@blumintinc/blumint/enforce-react-type-naming': 'error',
         // '@blumintinc/blumint/export-if-in-doubt': 'warn',
         '@blumintinc/blumint/extract-global-constants': 'error',
         '@blumintinc/blumint/generic-starts-with-t': 'error',
@@ -109,6 +126,7 @@ module.exports = {
         '@blumintinc/blumint/no-async-foreach': 'error',
         '@blumintinc/blumint/no-conditional-literals-in-jsx': 'error',
         '@blumintinc/blumint/no-filter-without-return': 'error',
+        '@blumintinc/blumint/no-hungarian': 'error',
         '@blumintinc/blumint/no-misused-switch-case': 'error',
         '@blumintinc/blumint/no-unpinned-dependencies': 'error',
         '@blumintinc/blumint/no-unused-props': 'error',
@@ -163,25 +181,45 @@ module.exports = {
         '@blumintinc/blumint/enforce-object-literal-as-const': 'error',
         '@blumintinc/blumint/enforce-positive-naming': 'error',
         '@blumintinc/blumint/no-type-assertion-returns': 'error',
-        '@blumintinc/blumint/prefer-utility-function-over-private-static': 'error',
+        '@blumintinc/blumint/prefer-utility-function-over-private-static':
+          'error',
         '@blumintinc/blumint/enforce-microdiff': 'error',
         '@blumintinc/blumint/enforce-timestamp-now': 'error',
         '@blumintinc/blumint/no-always-true-false-conditions': 'error',
         '@blumintinc/blumint/enforce-props-argument-name': 'error',
-        '@blumintinc/blumint/prefer-global-router-state-key': 'warn',
+        '@blumintinc/blumint/prefer-global-router-state-key': 'error',
+        '@blumintinc/blumint/prefer-usememo-over-useeffect-usestate': 'error',
+        '@blumintinc/blumint/enforce-dynamic-imports': [
+          'error',
+          {
+            libraries: ['@stream-io/video-react-sdk', 'some-heavy-lib*'],
+            allowImportType: true,
+          },
+        ],
+        '@blumintinc/blumint/ensure-pointer-events-none': 'error',
+        '@blumintinc/blumint/no-object-values-on-strings': 'error',
+        '@blumintinc/blumint/no-unnecessary-destructuring': 'error',
+        '@blumintinc/blumint/enforce-singular-type-names': 'error',
+        '@blumintinc/blumint/enforce-css-media-queries': 'error',
+        '@blumintinc/blumint/omit-index-html': 'error',
+        '@blumintinc/blumint/enforce-id-capitalization': 'error',
+        '@blumintinc/blumint/no-unused-usestate': 'error',
       },
     },
   },
 
   rules: {
+    'key-only-outermost-element': keyOnlyOutermostElement,
     'array-methods-this-context': arrayMethodsThisContext,
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
     'consistent-callback-naming': consistentCallbackNaming,
     'dynamic-https-errors': dynamicHttpsErrors,
     'enforce-identifiable-firestore-type': enforceIdentifiableFirestoreType,
     'enforce-callback-memo': enforceCallbackMemo,
+    'enforce-react-type-naming': enforceReactTypeNaming,
     'enforce-callable-types': enforceCallableTypes,
     'enforce-dynamic-firebase-imports': enforceFirebaseImports,
+    'enforce-mui-rounded-icons': enforceMuiRoundedIcons,
     'export-if-in-doubt': exportIfInDoubt,
     'extract-global-constants': extractGlobalConstants,
     'generic-starts-with-t': genericStartsWithT,
@@ -190,6 +228,7 @@ module.exports = {
     'no-async-foreach': noAsyncForEach,
     'no-conditional-literals-in-jsx': noConditionalLiteralsInJsx,
     'no-filter-without-return': noFilterWithoutReturn,
+    'no-hungarian': noHungarian,
     'no-misused-switch-case': noMisusedSwitchCase,
     'no-unpinned-dependencies': noUnpinnedDependencies,
     'no-unused-props': noUnusedProps,
@@ -247,11 +286,23 @@ module.exports = {
     'enforce-object-literal-as-const': enforceObjectLiteralAsConst,
     'enforce-positive-naming': enforcePositiveNaming,
     'no-type-assertion-returns': noTypeAssertionReturns,
-    'prefer-utility-function-over-private-static': preferUtilityFunctionOverPrivateStatic,
+    'prefer-utility-function-over-private-static':
+      preferUtilityFunctionOverPrivateStatic,
     'enforce-microdiff': enforceMicrodiff,
     'enforce-timestamp-now': enforceTimestampNow,
     'no-always-true-false-conditions': noAlwaysTrueFalseConditions,
     'enforce-props-argument-name': enforcePropsArgumentName,
     'prefer-global-router-state-key': preferGlobalRouterStateKey,
+    'prefer-usememo-over-useeffect-usestate':
+      preferUseMemoOverUseEffectUseState,
+    'enforce-dynamic-imports': enforceDynamicImports,
+    'ensure-pointer-events-none': ensurePointerEventsNone,
+    'no-object-values-on-strings': noObjectValuesOnStrings,
+    'no-unnecessary-destructuring': noUnnecessaryDestructuring,
+    'enforce-singular-type-names': enforceSingularTypeNames,
+    'enforce-css-media-queries': enforceCssMediaQueries,
+    'omit-index-html': omitIndexHtml,
+    'enforce-id-capitalization': enforceIdCapitalization,
+    'no-unused-usestate': noUnusedUseState,
   },
 };

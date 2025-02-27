@@ -20,6 +20,50 @@ ruleTesterJsx.run(
         };
       `,
       },
+      // useMemo returning an object that contains JSX elements should be valid
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ round }) => {
+          const matchTabPanes = useMemo(() => {
+            if (!round) {
+              return [];
+            }
+            const { matchesAggregation, id: roundId } = round;
+            const { matchPreviews } = matchesAggregation;
+
+            return Object.entries(matchPreviews).map(
+              ([matchId, { stage, name, numberOfTeams, maxTeamsPerMatch }]) => {
+                return {
+                  value: name,
+                  children: (
+                    <Typography
+                      color="text.primary"
+                      sx={{ width: '100%', textAlign: 'center' }}
+                      variant="body1"
+                    >
+                      {numberOfTeams}/{maxTeamsPerMatch}
+                    </Typography>
+                  ),
+                  component: (
+                    <MatchDetailsProvider matchId={matchId} roundId={roundId}>
+                      <MatchPane />
+                    </MatchDetailsProvider>
+                  ),
+                  customization: {
+                    disabled: stage === 'not-ready',
+                  },
+                  stage,
+                };
+              },
+            );
+          }, [round]);
+
+          return <div>{matchTabPanes.length}</div>;
+        };
+      `,
+      },
       // useMemo with object return is valid
       {
         code: `
@@ -242,6 +286,23 @@ ruleTesterJsx.run(
           }, [imgUrl, username]);
 
           return <div>{userAvatar}</div>;
+        };
+      `,
+        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+      },
+      // useMemo returning an array of JSX elements directly should be invalid
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const elements = useMemo(() => {
+            return items.map(item => (
+              <div key={item.id}>{item.name}</div>
+            ));
+          }, [items]);
+
+          return <div>{elements}</div>;
         };
       `,
         errors: [{ messageId: 'useMemoShouldBeComponent' }],

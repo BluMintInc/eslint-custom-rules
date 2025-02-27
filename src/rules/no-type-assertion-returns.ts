@@ -304,6 +304,12 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
           return;
         }
 
+        // If the parent is a variable declarator, this is a variable declaration with type assertion
+        // which is a valid pattern and should not be flagged
+        if (node.parent?.type === AST_NODE_TYPES.VariableDeclarator) {
+          return;
+        }
+
         // For standalone type assertions in expressions
         context.report({
           node,
@@ -320,6 +326,12 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
 
         // If the parent is an arrow function, we already handle it in ArrowFunctionExpression
         if (node.parent?.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+          return;
+        }
+
+        // If the parent is a variable declarator, this is a variable declaration with type assertion
+        // which is a valid pattern and should not be flagged
+        if (node.parent?.type === AST_NODE_TYPES.VariableDeclarator) {
           return;
         }
 

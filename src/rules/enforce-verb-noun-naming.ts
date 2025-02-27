@@ -4679,11 +4679,15 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
             }
           }
           return false;
-        })()
+        })(),
+
+        // 5. Component name ends with "Unmemoized" (common React pattern)
+        functionName && functionName.endsWith('Unmemoized')
       ];
 
       // Consider it a React component if it matches at least 2 indicators
-      return indicators.filter(Boolean).length >= 2;
+      // OR if it has the Unmemoized suffix (strong indicator of a React component)
+      return indicators.filter(Boolean).length >= 2 || (!!functionName && functionName.endsWith('Unmemoized'));
     }
     return {
       FunctionDeclaration(node) {
