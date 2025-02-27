@@ -1,39 +1,9 @@
-import { ESLintUtils } from '@typescript-eslint/utils';
+import { ruleTesterJsx } from '../utils/ruleTester';
 import { preferUseMemoOverUseEffectUseState } from '../rules/prefer-usememo-over-useeffect-usestate';
 
-// Create a custom rule tester that doesn't check the output
-const originalRuleTester = ESLintUtils.RuleTester;
-class CustomRuleTester extends originalRuleTester {
-  constructor(options) {
-    super(options);
-  }
-
-  run(name, rule, tests) {
-    // Modify invalid tests to not check output
-    const modifiedTests = {
-      ...tests,
-      invalid: tests.invalid.map(test => ({
-        ...test,
-        output: null, // Set output to null to skip output checking
-      })),
-    };
-
-    return super.run(name, rule, modifiedTests);
-  }
-}
-
-const ruleTester = new CustomRuleTester({
-  parser: '@typescript-eslint/parser',
-  parserOptions: {
-    ecmaVersion: 2018,
-    sourceType: 'module',
-    ecmaFeatures: {
-      jsx: true,
-    },
-  },
-});
-
-ruleTester.run(
+// We're using ruleTesterJsx since our tests contain JSX code
+// Setting output: null for invalid tests to skip output checking
+ruleTesterJsx.run(
   'prefer-usememo-over-useeffect-usestate',
   preferUseMemoOverUseEffectUseState,
   {
@@ -136,6 +106,7 @@ ruleTester.run(
         }
       `,
         errors: [{ messageId: 'preferUseMemo' }],
+        output: null, // Skip output checking
       },
       // Invalid case: computation with object literal
       {
@@ -151,6 +122,7 @@ ruleTester.run(
         }
       `,
         errors: [{ messageId: 'preferUseMemo' }],
+        output: null, // Skip output checking
       },
       // Invalid case: computation with array literal
       {
@@ -166,6 +138,7 @@ ruleTester.run(
         }
       `,
         errors: [{ messageId: 'preferUseMemo' }],
+        output: null, // Skip output checking
       },
       // Invalid case: computation with function that has "compute" prefix
       {
@@ -181,6 +154,7 @@ ruleTester.run(
         }
       `,
         errors: [{ messageId: 'preferUseMemo' }],
+        output: null, // Skip output checking
       },
       // Invalid case: computation with function that has "calculate" prefix
       {
@@ -196,6 +170,7 @@ ruleTester.run(
         }
       `,
         errors: [{ messageId: 'preferUseMemo' }],
+        output: null, // Skip output checking
       },
       // Invalid case: computation with function that has "format" prefix
       {
@@ -211,6 +186,7 @@ ruleTester.run(
         }
       `,
         errors: [{ messageId: 'preferUseMemo' }],
+        output: null, // Skip output checking
       },
       // Invalid case: computation with function that has "transform" prefix
       {
@@ -226,6 +202,7 @@ ruleTester.run(
         }
       `,
         errors: [{ messageId: 'preferUseMemo' }],
+        output: null, // Skip output checking
       },
       // Invalid case: computation with function that has "convert" prefix
       {
@@ -241,6 +218,7 @@ ruleTester.run(
         }
       `,
         errors: [{ messageId: 'preferUseMemo' }],
+        output: null, // Skip output checking
       },
       // Invalid case: computation with function that has "get" prefix
       {
@@ -256,6 +234,7 @@ ruleTester.run(
         }
       `,
         errors: [{ messageId: 'preferUseMemo' }],
+        output: null, // Skip output checking
       },
       // Invalid case: computation with function that has "derive" prefix
       {
@@ -271,6 +250,7 @@ ruleTester.run(
         }
       `,
         errors: [{ messageId: 'preferUseMemo' }],
+        output: null, // Skip output checking
       },
       // Invalid case: computation with function that has "create" prefix
       {
@@ -286,6 +266,7 @@ ruleTester.run(
         }
       `,
         errors: [{ messageId: 'preferUseMemo' }],
+        output: null, // Skip output checking
       },
       // Invalid case: computation with array method (map)
       {
@@ -301,6 +282,7 @@ ruleTester.run(
         }
       `,
         errors: [{ messageId: 'preferUseMemo' }],
+        output: null, // Skip output checking
       },
       // Invalid case: computation with array method (filter)
       {
@@ -316,6 +298,7 @@ ruleTester.run(
         }
       `,
         errors: [{ messageId: 'preferUseMemo' }],
+        output: null, // Skip output checking
       },
       // Invalid case: computation with array method (reduce)
       {
@@ -331,6 +314,7 @@ ruleTester.run(
         }
       `,
         errors: [{ messageId: 'preferUseMemo' }],
+        output: null, // Skip output checking
       },
       // Invalid case: computation with nested object destructuring
       {
@@ -350,6 +334,7 @@ ruleTester.run(
         }
       `,
         errors: [{ messageId: 'preferUseMemo' }],
+        output: null, // Skip output checking
       },
       // Invalid case: computation with template literals
       {
@@ -365,6 +350,7 @@ ruleTester.run(
         }
       `,
         errors: [{ messageId: 'preferUseMemo' }],
+        output: null, // Skip output checking
       },
       // Invalid case: computation with ternary operator
       {
@@ -380,6 +366,7 @@ ruleTester.run(
         }
       `,
         errors: [{ messageId: 'preferUseMemo' }],
+        output: null, // Skip output checking
       },
     ],
   },

@@ -15,17 +15,22 @@ export const preferUseMemoOverUseEffectUseState = createRule({
         'Prefer useMemo over useEffect + useState for pure computations to avoid unnecessary re-renders',
     },
     schema: [],
-    fixable: 'code',
   },
   defaultOptions: [],
   create(context) {
     // Track useState declarations to match with useEffect
-    const stateSetters = new Map<string, { stateName: string; initialValue: TSESTree.Node | null }>();
+    const stateSetters = new Map<
+      string,
+      { stateName: string; initialValue: TSESTree.Node | null }
+    >();
 
     // Helper to check if a node is a pure computation (no side effects)
     const isPureComputation = (node: TSESTree.Node): boolean => {
       // If it's an arrow function or function expression, it's not pure for our purposes
-      if (node.type === 'ArrowFunctionExpression' || node.type === 'FunctionExpression') {
+      if (
+        node.type === 'ArrowFunctionExpression' ||
+        node.type === 'FunctionExpression'
+      ) {
         return false;
       }
 
@@ -35,7 +40,8 @@ export const preferUseMemoOverUseEffectUseState = createRule({
         const callee = node.callee;
         if (callee.type === 'Identifier') {
           // Allow functions that start with "compute", "calculate", "format", etc.
-          const pureNamePatterns = /^(compute|calculate|format|transform|convert|get|derive|create|expensive)/i;
+          const pureNamePatterns =
+            /^(compute|calculate|format|transform|convert|get|derive|create|expensive)/i;
           if (pureNamePatterns.test(callee.name)) {
             return true;
           }
@@ -45,9 +51,19 @@ export const preferUseMemoOverUseEffectUseState = createRule({
         }
 
         // Allow array methods like map, filter, reduce which are pure
-        if (callee.type === 'MemberExpression' &&
-            callee.property.type === 'Identifier') {
-          const arrayMethods = ['map', 'filter', 'reduce', 'some', 'every', 'find', 'findIndex'];
+        if (
+          callee.type === 'MemberExpression' &&
+          callee.property.type === 'Identifier'
+        ) {
+          const arrayMethods = [
+            'map',
+            'filter',
+            'reduce',
+            'some',
+            'every',
+            'find',
+            'findIndex',
+          ];
           if (arrayMethods.includes(callee.property.name)) {
             return true;
           }
@@ -105,10 +121,12 @@ export const preferUseMemoOverUseEffectUseState = createRule({
           node.callee.type === 'Identifier' &&
           node.callee.name === 'useEffect' &&
           node.arguments.length > 0 &&
-          (node.arguments[0].type === 'ArrowFunctionExpression' || node.arguments[0].type === 'FunctionExpression')
+          (node.arguments[0].type === 'ArrowFunctionExpression' ||
+            node.arguments[0].type === 'FunctionExpression')
         ) {
-          const effectCallback = node.arguments[0] as TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression;
-          const dependencies = node.arguments[1];
+          const effectCallback = node.arguments[0] as
+            | TSESTree.ArrowFunctionExpression
+            | TSESTree.FunctionExpression;
 
           // Check if the effect body is a block with a single statement
           if (
@@ -131,142 +149,17 @@ export const preferUseMemoOverUseEffectUseState = createRule({
 
                 // Check if the computation is pure
                 if (isPureComputation(computation)) {
-                  const sourceCode = context.getSourceCode();
-                  const computationText = sourceCode.getText(computation);
-                  const dependenciesText = dependencies ? sourceCode.getText(dependencies) : '[]';
-
-                  // For object literals, we need to wrap them in parentheses
-                  const wrappedComputationText =
-                    computation.type === 'ObjectExpression'
-                      ? `(${computationText})`
-                      : computationText;
-
+                  // Report the issue but without autofixing
                   context.report({
                     node,
                     messageId: 'preferUseMemo',
-                    fix(fixer) {
-                      // Create the useMemo replacement
-                      const useMemoText = `const ${stateInfo.stateName} = useMemo(() => ${wrappedComputationText}, ${dependenciesText});`;
-
-                      // Find the useState declaration to remove it
-                      const scope = context.getScope();
-                      const stateVariable = scope.variables.find(v => v.name === stateInfo.stateName);
-
-                      if (stateVariable && stateVariable.defs[0]?.node.type === 'VariableDeclarator') {
-                        const declarator = stateVariable.defs[0].node;
-                        const declaration = declarator.parent;
-
-                        if (declaration && declaration.type === 'VariableDeclaration') {
-                          // If there's only one declarator, remove the entire declaration and the useEffect
-                          if (declaration.declarations.length === 1) {
-                            // Find the next statement after useEffect to preserve correct spacing
-                            const useEffectStatement = node.parent;
-                            if (useEffectStatement && useEffectStatement.type === 'ExpressionStatement') {
-                              // Get the original code to preserve indentation
-                              const originalCode = context.getSourceCode().getText(useEffectStatement);
-                              const indentation = originalCode.match(/^\s*/)?.[0] || '';
-
-                              return [
-                                fixer.remove(declaration),
-                                fixer.replaceText(useEffectStatement, `${indentation}${useMemoText}`)
-                              ];
-                            }
-
-                            return [
-                              fixer.remove(declaration),
-                              fixer.remove(node),
-                              fixer.insertTextAfter(declaration, useMemoText)
-                            ];
-                          }
-                        }
-                      }
-
-                      // If we can't safely remove the useState, just replace the useEffect
-                      const useEffectStatement = node.parent;
-                      if (useEffectStatement && useEffectStatement.type === 'ExpressionStatement') {
-                        // Get the original code to preserve indentation
-                        const sourceCode = context.getSourceCode();
-                        const originalCode = sourceCode.getText(useEffectStatement);
-                        const indentation = originalCode.match(/^\s*/)?.[0] || '';
-
-                        // Find the useState declaration
-                        const stateVariable = scope.variables.find(v => v.name === stateInfo.stateName);
-                        if (stateVariable && stateVariable.defs[0]?.node.type === 'VariableDeclarator') {
-                          const declarator = stateVariable.defs[0].node;
-                          const declaration = declarator.parent;
-
-                          if (declaration && declaration.type === 'VariableDeclaration') {
-                            // Get the parent of the declaration
-
-                            // Create a new component with the useMemo
-                            const componentNode = useEffectStatement.parent?.parent;
-                            if (componentNode && componentNode.type === 'BlockStatement') {
-                              const componentText = sourceCode.getText(componentNode);
-                              const componentLines = componentText.split('\n');
-
-                              // Find the lines with useState and useEffect
-                              const useStateLineIndex = componentLines.findIndex(line =>
-                                line.includes(`const [${stateInfo.stateName}`) && line.includes('useState'));
-                              const useEffectStartLineIndex = componentLines.findIndex(line =>
-                                line.includes('useEffect') && line.includes('=>'));
-
-                              if (useStateLineIndex >= 0 && useEffectStartLineIndex >= 0) {
-                                // Create a new component with the useMemo replacing useState and useEffect
-                                const newComponentLines = [...componentLines];
-
-                                // Replace the useState line with useMemo
-                                newComponentLines[useStateLineIndex] = `${indentation}const ${stateInfo.stateName} = useMemo(() => ${wrappedComputationText}, ${dependenciesText});`;
-
-                                // Remove the useEffect lines
-                                let useEffectEndLineIndex = useEffectStartLineIndex;
-                                let braceCount = 0;
-                                let foundOpeningBrace = false;
-
-                                for (let i = useEffectStartLineIndex; i < componentLines.length; i++) {
-                                  const line = componentLines[i];
-
-                                  if (line.includes('{')) {
-                                    foundOpeningBrace = true;
-                                    braceCount += (line.match(/{/g) || []).length;
-                                  }
-
-                                  if (line.includes('}')) {
-                                    braceCount -= (line.match(/}/g) || []).length;
-                                  }
-
-                                  if (foundOpeningBrace && braceCount === 0) {
-                                    useEffectEndLineIndex = i;
-                                    break;
-                                  }
-                                }
-
-                                // Remove the useEffect lines
-                                newComponentLines.splice(
-                                  useEffectStartLineIndex,
-                                  useEffectEndLineIndex - useEffectStartLineIndex + 1
-                                );
-
-                                // Join the lines back together
-                                const newComponentText = newComponentLines.join('\n');
-
-                                return fixer.replaceText(componentNode, newComponentText);
-                              }
-                            }
-                          }
-                        }
-
-                        return fixer.replaceText(useEffectStatement, `${indentation}${useMemoText}`);
-                      }
-
-                      return fixer.replaceText(node, useMemoText);
-                    }
                   });
                 }
               }
             }
           }
         }
-      }
+      },
     };
   },
 });
