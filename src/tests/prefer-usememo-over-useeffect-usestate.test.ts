@@ -113,8 +113,6 @@ ruleTester.run(
         function Component({ a, b }) {
           const config = useMemo(() => ({ a, b, computed: a + b }), [a, b]);
 
-          ;
-
           return <MyComponent config={config} />;
         }
       `,
