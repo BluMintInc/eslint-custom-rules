@@ -50,226 +50,224 @@ ruleTesterTs.run(
           };
         `,
       },
-      // Skip this test for now as it's causing issues with the comment handling
-      // {
-      //   code: `
-      //     // Mixed function declarations and expressions
-      //     function handleClick() {
-      //       processUserInput(userInput);
-      //     }
-      //
-      //     const processUserInput = function(input) {
-      //       return sanitize(input);
-      //     };
-      //
-      //     function fetchData() {
-      //       return api.get('/data');
-      //     }
-      //
-      //     const transformData = (data) => {
-      //       return data.map((item) => item.value);
-      //     };
-      //   `,
-      // },
       {
         code: `
-          // Functions with no dependencies
-          function functionA() {
-            return 'A';
-          }
+// Mixed function declarations and expressions
+function handleClick() {
+  processUserInput(userInput);
+}
 
-          function functionB() {
-            return 'B';
-          }
+const processUserInput = function(input) {
+  return sanitize(input);
+};
 
-          function functionC() {
-            return 'C';
-          }
+function fetchData() {
+  return api.get('/data');
+}
+
+const transformData = (data) => {
+  return data.map((item) => item.value);
+};
         `,
       },
       {
         code: `
-          // Nested functions should be ignored
-          function outer() {
-            function inner() {
-              return 'inner';
-            }
-            return inner();
-          }
+// Functions with no dependencies
+function functionA() {
+  return 'A';
+}
 
-          function another() {
-            return 'another';
-          }
+function functionB() {
+  return 'B';
+}
+
+function functionC() {
+  return 'C';
+}
         `,
       },
       {
         code: `
-          // Object methods should be ignored
-          const obj = {
-            firstMethod() {
-              return 'first';
-            },
-            secondMethod() {
-              return 'second';
-            }
-          };
+// Nested functions should be ignored
+function outer() {
+  function inner() {
+    return 'inner';
+  }
+  return inner();
+}
 
-          function standalone() {
-            return obj.firstMethod();
-          }
+function another() {
+  return 'another';
+}
+        `,
+      },
+      {
+        code: `
+// Object methods should be ignored
+const obj = {
+  firstMethod() {
+    return 'first';
+  },
+  secondMethod() {
+    return 'second';
+  }
+};
+
+function standalone() {
+  return obj.firstMethod();
+}
         `,
       },
     ],
     invalid: [
       {
         code: `
-          function fetchData() {
-            return api.get('/data');
-          }
+function fetchData() {
+  return api.get('/data');
+}
 
-          function processUserInput(input) {
-            return sanitize(input);
-          }
+function processUserInput(input) {
+  return sanitize(input);
+}
 
-          function transformData(data) {
-            return data.map((item) => item.value);
-          }
+function transformData(data) {
+  return data.map((item) => item.value);
+}
 
-          function handleClick() {
-            processUserInput(userInput);
-          }
+function handleClick() {
+  processUserInput(userInput);
+}
         `,
         errors: [{ messageId: 'functionsReadTopToBottom' }],
         output: `
-          function handleClick() {
-            processUserInput(userInput);
-          }
+function handleClick() {
+  processUserInput(userInput);
+}
 
 function processUserInput(input) {
-            return sanitize(input);
-          }
+  return sanitize(input);
+}
 
 function fetchData() {
-            return api.get('/data');
-          }
+  return api.get('/data');
+}
 
 function transformData(data) {
-            return data.map((item) => item.value);
-          }
+  return data.map((item) => item.value);
+}
         `,
       },
       {
         code: `
-          const fetchData = () => {
-            return api.get('/data');
-          };
-
-          const processUserInput = (input) => {
-            return sanitize(input);
-          };
-
-          const transformData = (data) => {
-            return data.map((item) => item.value);
-          };
-
-          const handleClick = () => {
-            processUserInput(userInput);
-          };
-        `,
-        errors: [{ messageId: 'functionsReadTopToBottom' }],
-        output: `
-          const handleClick = () => {
-            processUserInput(userInput);
-          };
+const fetchData = () => {
+  return api.get('/data');
+};
 
 const processUserInput = (input) => {
-            return sanitize(input);
-          };
+  return sanitize(input);
+};
+
+const transformData = (data) => {
+  return data.map((item) => item.value);
+};
+
+const handleClick = () => {
+  processUserInput(userInput);
+};
+        `,
+        errors: [{ messageId: 'functionsReadTopToBottom' }],
+        output: `
+const handleClick = () => {
+  processUserInput(userInput);
+};
+
+const processUserInput = (input) => {
+  return sanitize(input);
+};
 
 const fetchData = () => {
-            return api.get('/data');
-          };
+  return api.get('/data');
+};
 
 const transformData = (data) => {
-            return data.map((item) => item.value);
-          };
+  return data.map((item) => item.value);
+};
         `,
       },
       {
         code: `
-          function transformData(data) {
-            return data.map((item) => item.value);
-          }
+function transformData(data) {
+  return data.map((item) => item.value);
+}
 
-          function handleClick() {
-            processUserInput(userInput);
-          }
-
-          function fetchData() {
-            return api.get('/data');
-          }
-
-          function processUserInput(input) {
-            return sanitize(input);
-          }
-        `,
-        errors: [{ messageId: 'functionsReadTopToBottom' }],
-        output: `
-          function handleClick() {
-            processUserInput(userInput);
-          }
-
-function processUserInput(input) {
-            return sanitize(input);
-          }
+function handleClick() {
+  processUserInput(userInput);
+}
 
 function fetchData() {
-            return api.get('/data');
-          }
+  return api.get('/data');
+}
+
+function processUserInput(input) {
+  return sanitize(input);
+}
+        `,
+        errors: [{ messageId: 'functionsReadTopToBottom' }],
+        output: `
+function handleClick() {
+  processUserInput(userInput);
+}
+
+function processUserInput(input) {
+  return sanitize(input);
+}
+
+function fetchData() {
+  return api.get('/data');
+}
 
 function transformData(data) {
-            return data.map((item) => item.value);
-          }
+  return data.map((item) => item.value);
+}
         `,
       },
       {
         code: `
-          // Mixed function declarations and expressions in wrong order
-          function fetchData() {
-            return api.get('/data');
-          }
+// Mixed function declarations and expressions in wrong order
+function fetchData() {
+  return api.get('/data');
+}
 
-          const transformData = (data) => {
-            return data.map((item) => item.value);
-          };
+const transformData = (data) => {
+  return data.map((item) => item.value);
+};
 
-          const processUserInput = function(input) {
-            return sanitize(input);
-          };
+const processUserInput = function(input) {
+  return sanitize(input);
+};
 
-          function handleClick() {
-            processUserInput(userInput);
-          }
+function handleClick() {
+  processUserInput(userInput);
+}
         `,
         errors: [{ messageId: 'functionsReadTopToBottom' }],
         output: `
-          // Mixed function declarations and expressions in wrong order
-          function handleClick() {
-            processUserInput(userInput);
-          }
+function handleClick() {
+  processUserInput(userInput);
+}
 
 const processUserInput = function(input) {
-            return sanitize(input);
-          };
+  return sanitize(input);
+};
 
 // Mixed function declarations and expressions in wrong order
-          function fetchData() {
-            return api.get('/data');
-          }
+function fetchData() {
+  return api.get('/data');
+}
 
 const transformData = (data) => {
-            return data.map((item) => item.value);
-          };
+  return data.map((item) => item.value);
+};
         `,
       },
     ],
