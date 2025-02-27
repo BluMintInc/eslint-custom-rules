@@ -24,6 +24,11 @@ export const preferUseMemoOverUseEffectUseState = createRule({
 
     // Helper to check if a node is a pure computation (no side effects)
     const isPureComputation = (node: TSESTree.Node): boolean => {
+      // If it's an arrow function or function expression, it's not pure for our purposes
+      if (node.type === 'ArrowFunctionExpression' || node.type === 'FunctionExpression') {
+        return false;
+      }
+
       // If it's a call expression, check if it's likely to be pure
       if (node.type === 'CallExpression') {
         // Allow certain known pure functions
@@ -34,12 +39,15 @@ export const preferUseMemoOverUseEffectUseState = createRule({
           if (pureNamePatterns.test(callee.name)) {
             return true;
           }
+
+          // Consider all other named functions as potentially having side effects
+          return false;
         }
 
         // Allow array methods like map, filter, reduce which are pure
         if (callee.type === 'MemberExpression' &&
             callee.property.type === 'Identifier') {
-          const arrayMethods = ['map', 'filter', 'reduce', 'forEach', 'some', 'every', 'find', 'findIndex'];
+          const arrayMethods = ['map', 'filter', 'reduce', 'some', 'every', 'find', 'findIndex'];
           if (arrayMethods.includes(callee.property.name)) {
             return true;
           }
@@ -149,8 +157,21 @@ export const preferUseMemoOverUseEffectUseState = createRule({
                         const declaration = declarator.parent;
 
                         if (declaration && declaration.type === 'VariableDeclaration') {
-                          // If there's only one declarator, remove the entire declaration
+                          // If there's only one declarator, remove the entire declaration and the useEffect
                           if (declaration.declarations.length === 1) {
+                            // Find the next statement after useEffect to preserve correct spacing
+                            const useEffectStatement = node.parent;
+                            if (useEffectStatement && useEffectStatement.type === 'ExpressionStatement') {
+                              // Get the original code to preserve indentation
+                              const originalCode = context.getSourceCode().getText(useEffectStatement);
+                              const indentation = originalCode.match(/^\s*/)?.[0] || '';
+
+                              return [
+                                fixer.remove(declaration),
+                                fixer.replaceText(useEffectStatement, `${indentation}${useMemoText}`)
+                              ];
+                            }
+
                             return [
                               fixer.remove(declaration),
                               fixer.remove(node),
@@ -161,6 +182,82 @@ export const preferUseMemoOverUseEffectUseState = createRule({
                       }
 
                       // If we can't safely remove the useState, just replace the useEffect
+                      const useEffectStatement = node.parent;
+                      if (useEffectStatement && useEffectStatement.type === 'ExpressionStatement') {
+                        // Get the original code to preserve indentation
+                        const sourceCode = context.getSourceCode();
+                        const originalCode = sourceCode.getText(useEffectStatement);
+                        const indentation = originalCode.match(/^\s*/)?.[0] || '';
+
+                        // Find the useState declaration
+                        const stateVariable = scope.variables.find(v => v.name === stateInfo.stateName);
+                        if (stateVariable && stateVariable.defs[0]?.node.type === 'VariableDeclarator') {
+                          const declarator = stateVariable.defs[0].node;
+                          const declaration = declarator.parent;
+
+                          if (declaration && declaration.type === 'VariableDeclaration') {
+                            // Get the parent of the declaration
+
+                            // Create a new component with the useMemo
+                            const componentNode = useEffectStatement.parent?.parent;
+                            if (componentNode && componentNode.type === 'BlockStatement') {
+                              const componentText = sourceCode.getText(componentNode);
+                              const componentLines = componentText.split('\n');
+
+                              // Find the lines with useState and useEffect
+                              const useStateLineIndex = componentLines.findIndex(line =>
+                                line.includes(`const [${stateInfo.stateName}`) && line.includes('useState'));
+                              const useEffectStartLineIndex = componentLines.findIndex(line =>
+                                line.includes('useEffect') && line.includes('=>'));
+
+                              if (useStateLineIndex >= 0 && useEffectStartLineIndex >= 0) {
+                                // Create a new component with the useMemo replacing useState and useEffect
+                                const newComponentLines = [...componentLines];
+
+                                // Replace the useState line with useMemo
+                                newComponentLines[useStateLineIndex] = `${indentation}const ${stateInfo.stateName} = useMemo(() => ${wrappedComputationText}, ${dependenciesText});`;
+
+                                // Remove the useEffect lines
+                                let useEffectEndLineIndex = useEffectStartLineIndex;
+                                let braceCount = 0;
+                                let foundOpeningBrace = false;
+
+                                for (let i = useEffectStartLineIndex; i < componentLines.length; i++) {
+                                  const line = componentLines[i];
+
+                                  if (line.includes('{')) {
+                                    foundOpeningBrace = true;
+                                    braceCount += (line.match(/{/g) || []).length;
+                                  }
+
+                                  if (line.includes('}')) {
+                                    braceCount -= (line.match(/}/g) || []).length;
+                                  }
+
+                                  if (foundOpeningBrace && braceCount === 0) {
+                                    useEffectEndLineIndex = i;
+                                    break;
+                                  }
+                                }
+
+                                // Remove the useEffect lines
+                                newComponentLines.splice(
+                                  useEffectStartLineIndex,
+                                  useEffectEndLineIndex - useEffectStartLineIndex + 1
+                                );
+
+                                // Join the lines back together
+                                const newComponentText = newComponentLines.join('\n');
+
+                                return fixer.replaceText(componentNode, newComponentText);
+                              }
+                            }
+                          }
+                        }
+
+                        return fixer.replaceText(useEffectStatement, `${indentation}${useMemoText}`);
+                      }
+
                       return fixer.replaceText(node, useMemoText);
                     }
                   });
