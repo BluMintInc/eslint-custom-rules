@@ -19,8 +19,8 @@ export const noUnnecessaryDestructuring = createRule({
   defaultOptions: [],
   create(context) {
     return {
+      // Handle variable declarations
       VariableDeclarator(node) {
-        // Check if we have a destructuring pattern
         if (
           node.id.type === 'ObjectPattern' &&
           node.id.properties.length === 1 &&
@@ -52,6 +52,34 @@ export const noUnnecessaryDestructuring = createRule({
           });
         }
       },
+
+      // Handle assignments like { ...obj } = value
+      AssignmentExpression(node) {
+        if (
+          node.operator === '=' &&
+          node.left.type === 'ObjectPattern' &&
+          node.left.properties.length === 1 &&
+          node.left.properties[0].type === 'RestElement'
+        ) {
+          const restElement = node.left.properties[0] as TSESTree.RestElement;
+
+          context.report({
+            node,
+            messageId: 'noUnnecessaryDestructuring',
+            fix(fixer) {
+              const sourceCode = context.getSourceCode();
+              const restName = sourceCode.getText(restElement.argument);
+              const rightText = sourceCode.getText(node.right);
+
+              // Replace the destructuring with direct assignment
+              return fixer.replaceText(
+                node,
+                `${restName} = ${rightText}`
+              );
+            },
+          });
+        }
+      }
     };
   },
 });
