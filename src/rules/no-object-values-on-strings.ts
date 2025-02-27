@@ -67,6 +67,56 @@ export const noObjectValuesOnStrings: TSESLint.RuleModule<'unexpected', never[]>
       }
 
       /**
+       * Checks if a node is likely to produce a string value based on AST patterns
+       */
+      function isLikelyStringExpression(node: TSESTree.Node): boolean {
+        // Check for string concatenation
+        if (
+          node.type === AST_NODE_TYPES.BinaryExpression &&
+          node.operator === '+' &&
+          (isStringLiteral(node.left) || isStringLiteral(node.right))
+        ) {
+          return true;
+        }
+
+        // Check for method calls on strings like .toUpperCase(), .toLowerCase(), etc.
+        if (
+          node.type === AST_NODE_TYPES.CallExpression &&
+          node.callee.type === AST_NODE_TYPES.MemberExpression &&
+          (isStringLiteral(node.callee.object) ||
+            (node.callee.object.type === AST_NODE_TYPES.Identifier &&
+              node.callee.property.type === AST_NODE_TYPES.Identifier &&
+              ['toString', 'toUpperCase', 'toLowerCase', 'trim', 'substring', 'slice', 'charAt', 'concat', 'replace', 'replaceAll', 'padStart', 'padEnd'].includes(node.callee.property.name)))
+        ) {
+          return true;
+        }
+
+        // Check for common string-producing functions
+        if (
+          node.type === AST_NODE_TYPES.CallExpression &&
+          node.callee.type === AST_NODE_TYPES.MemberExpression &&
+          node.callee.property.type === AST_NODE_TYPES.Identifier &&
+          ['join', 'toString'].includes(node.callee.property.name)
+        ) {
+          return true;
+        }
+
+        // Check for JSON.stringify
+        if (
+          node.type === AST_NODE_TYPES.CallExpression &&
+          node.callee.type === AST_NODE_TYPES.MemberExpression &&
+          node.callee.object.type === AST_NODE_TYPES.Identifier &&
+          node.callee.object.name === 'JSON' &&
+          node.callee.property.type === AST_NODE_TYPES.Identifier &&
+          node.callee.property.name === 'stringify'
+        ) {
+          return true;
+        }
+
+        return false;
+      }
+
+      /**
        * Checks if a type could be a string by examining its properties and structure
        */
       function couldBeString(type: ts.Type): boolean {
@@ -89,7 +139,46 @@ export const noObjectValuesOnStrings: TSESLint.RuleModule<'unexpected', never[]>
         return false;
       }
 
+      /**
+       * Checks if a function declaration has a string parameter
+       */
+      function hasFunctionStringParameter(node: TSESTree.FunctionDeclaration | TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression): boolean {
+        for (const param of node.params) {
+          // Handle simple identifier parameters
+          if (param.type === AST_NODE_TYPES.Identifier) {
+            try {
+              const tsNode = parserServices.esTreeNodeToTSNodeMap.get(param);
+              const type = checker.getTypeAtLocation(tsNode);
+              if (couldBeString(type)) {
+                return true;
+              }
+            } catch (error) {
+              // Ignore errors in type checking
+            }
+          }
+
+          // Handle object pattern parameters
+          if (param.type === AST_NODE_TYPES.ObjectPattern) {
+            for (const property of param.properties) {
+              if (property.type === AST_NODE_TYPES.Property && property.value.type === AST_NODE_TYPES.Identifier) {
+                try {
+                  const tsNode = parserServices.esTreeNodeToTSNodeMap.get(property.value);
+                  const type = checker.getTypeAtLocation(tsNode);
+                  if (couldBeString(type)) {
+                    return true;
+                  }
+                } catch (error) {
+                  // Ignore errors in type checking
+                }
+              }
+            }
+          }
+        }
+        return false;
+      }
+
       return {
+        // Handle Object.values() calls
         CallExpression(node: TSESTree.CallExpression) {
           // Check if the call is Object.values()
           if (isObjectValuesCall(node)) {
@@ -97,6 +186,15 @@ export const noObjectValuesOnStrings: TSESLint.RuleModule<'unexpected', never[]>
 
             // Quick check for string literals and template literals
             if (isStringLiteral(argument)) {
+              context.report({
+                node,
+                messageId: 'unexpected',
+              });
+              return;
+            }
+
+            // Check for expressions that are likely to produce strings
+            if (isLikelyStringExpression(argument)) {
               context.report({
                 node,
                 messageId: 'unexpected',
@@ -124,16 +222,80 @@ export const noObjectValuesOnStrings: TSESLint.RuleModule<'unexpected', never[]>
                 }
               }
 
+              // Special handling for conditional expressions
+              if (argument.type === AST_NODE_TYPES.ConditionalExpression) {
+                const consequentType = checker.getTypeAtLocation(
+                  parserServices.esTreeNodeToTSNodeMap.get(argument.consequent)
+                );
+                const alternateType = checker.getTypeAtLocation(
+                  parserServices.esTreeNodeToTSNodeMap.get(argument.alternate)
+                );
+
+                if (couldBeString(consequentType) || couldBeString(alternateType)) {
+                  context.report({
+                    node,
+                    messageId: 'unexpected',
+                  });
+                  return;
+                }
+              }
+
               // Check if the type is or contains string
               if (couldBeString(type)) {
                 context.report({
                   node,
                   messageId: 'unexpected',
                 });
+                return;
               }
             } catch (error) {
               // If there's an error in type checking, fall back to AST-based checks
               // This is a safety measure to prevent the rule from crashing
+            }
+          }
+        },
+
+        // Handle function declarations that use Object.values on parameters
+        'FunctionDeclaration, FunctionExpression, ArrowFunctionExpression'(
+          node: TSESTree.FunctionDeclaration | TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression
+        ) {
+          // Find all Object.values calls in the function body
+          const objectValuesCalls: TSESTree.CallExpression[] = [];
+
+          // For function declarations and expressions
+          if (node.body && node.body.type === AST_NODE_TYPES.BlockStatement) {
+            sourceCode.ast.body.forEach(function findObjectValuesCalls(statement) {
+              if (statement.type === AST_NODE_TYPES.ExpressionStatement &&
+                  statement.expression.type === AST_NODE_TYPES.CallExpression &&
+                  isObjectValuesCall(statement.expression)) {
+                objectValuesCalls.push(statement.expression);
+              }
+            });
+          }
+          // For arrow functions with expression bodies
+          else if (node.body && node.body.type === AST_NODE_TYPES.CallExpression &&
+                   isObjectValuesCall(node.body)) {
+            objectValuesCalls.push(node.body);
+          }
+
+          // If we found Object.values calls and the function has string parameters, report errors
+          if (objectValuesCalls.length > 0 && hasFunctionStringParameter(node)) {
+            for (const call of objectValuesCalls) {
+              // Check if the argument is a parameter
+              const argument = call.arguments[0];
+              if (argument.type === AST_NODE_TYPES.Identifier) {
+                // Check if this identifier is one of the function parameters
+                const paramNames = node.params
+                  .filter(p => p.type === AST_NODE_TYPES.Identifier)
+                  .map(p => (p as TSESTree.Identifier).name);
+
+                if (paramNames.includes(argument.name)) {
+                  context.report({
+                    node: call,
+                    messageId: 'unexpected',
+                  });
+                }
+              }
             }
           }
         },
