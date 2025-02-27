@@ -1,4 +1,8 @@
-# prefer-global-router-state-key
+# Enforce using global constants or type-safe functions for useRouterState key parameter (`@blumintinc/blumint/prefer-global-router-state-key`)
+
+⚠️ This rule _warns_ in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 Enforce using global constants or type-safe functions for `useRouterState` key parameter.
 
