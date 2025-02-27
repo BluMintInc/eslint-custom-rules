@@ -129,6 +129,24 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
+    // Get the filename from the context
+    const filename = context.getFilename();
+
+    // Skip checking for files that should be ignored
+    // 1. Files that are not .ts or .tsx
+    // 2. Files starting with .
+    // 3. Files containing .config
+    // 4. Files containing rc suffix
+    if (
+      (!filename.endsWith('.ts') && !filename.endsWith('.tsx')) ||
+      filename.split('/').pop()?.startsWith('.') ||
+      filename.includes('.config') ||
+      filename.includes('rc.') ||
+      filename.endsWith('rc')
+    ) {
+      // Return empty object to skip all checks for this file
+      return {};
+    }
     /**
      * Check if a name has negative connotations
      */
