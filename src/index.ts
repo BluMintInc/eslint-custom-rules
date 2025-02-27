@@ -81,6 +81,8 @@ import { noAlwaysTrueFalseConditions } from './rules/no-always-true-false-condit
 import { enforcePropsArgumentName } from './rules/enforce-props-argument-name';
 import { preferGlobalRouterStateKey } from './rules/prefer-global-router-state-key';
 import enforceDynamicImports from './rules/enforce-dynamic-imports';
+import { ensurePointerEventsNone } from './rules/ensure-pointer-events-none';
+import { noObjectValuesOnStrings } from './rules/no-object-values-on-strings';
 import { keyOnlyOutermostElement } from './rules/key-only-outermost-element';
 import { noUnnecessaryDestructuring } from './rules/no-unnecessary-destructuring';
 import { enforceSingularTypeNames } from './rules/enforce-singular-type-names';
@@ -188,6 +190,8 @@ module.exports = {
           libraries: ['@stream-io/video-react-sdk', 'some-heavy-lib*'],
           allowImportType: true
         }],
+        '@blumintinc/blumint/ensure-pointer-events-none': 'error',
+        '@blumintinc/blumint/no-object-values-on-strings': 'error',
         '@blumintinc/blumint/no-unnecessary-destructuring': 'error',
         '@blumintinc/blumint/enforce-singular-type-names': 'error',
         '@blumintinc/blumint/enforce-css-media-queries': 'error',
@@ -283,6 +287,8 @@ module.exports = {
     'enforce-props-argument-name': enforcePropsArgumentName,
     'prefer-global-router-state-key': preferGlobalRouterStateKey,
     'enforce-dynamic-imports': enforceDynamicImports,
+    'ensure-pointer-events-none': ensurePointerEventsNone,
+    'no-object-values-on-strings': noObjectValuesOnStrings,
     'no-unnecessary-destructuring': noUnnecessaryDestructuring,
     'enforce-singular-type-names': enforceSingularTypeNames,
     'enforce-css-media-queries': enforceCssMediaQueries,
