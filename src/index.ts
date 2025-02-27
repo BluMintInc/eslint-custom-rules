@@ -80,6 +80,7 @@ import { enforceTimestampNow } from './rules/enforce-timestamp-now';
 import { noAlwaysTrueFalseConditions } from './rules/no-always-true-false-conditions';
 import { enforcePropsArgumentName } from './rules/enforce-props-argument-name';
 import { preferGlobalRouterStateKey } from './rules/prefer-global-router-state-key';
+import { keyOnlyOutermostElement } from './rules/key-only-outermost-element';
 import { noUnnecessaryDestructuring } from './rules/no-unnecessary-destructuring';
 import { enforceSingularTypeNames } from './rules/enforce-singular-type-names';
 import { enforceCssMediaQueries } from './rules/enforce-css-media-queries';
@@ -99,6 +100,7 @@ module.exports = {
     recommended: {
       plugins: ['@blumintinc/blumint'],
       rules: {
+        '@blumintinc/blumint/key-only-outermost-element': 'error',
         '@blumintinc/blumint/avoid-utils-directory': 'error',
         '@blumintinc/blumint/enforce-firestore-path-utils': 'error',
         '@blumintinc/blumint/no-jsx-whitespace-literal': 'error',
@@ -192,6 +194,7 @@ module.exports = {
   },
 
   rules: {
+    'key-only-outermost-element': keyOnlyOutermostElement,
     'array-methods-this-context': arrayMethodsThisContext,
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
     'consistent-callback-naming': consistentCallbackNaming,
