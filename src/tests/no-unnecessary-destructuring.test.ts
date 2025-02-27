@@ -39,7 +39,5 @@ ruleTester.run('no-unnecessary-destructuring', noUnnecessaryDestructuring, {
       errors: [{ messageId: 'noUnnecessaryDestructuring' }],
       output: `var result = getResult();`,
     },
-    // Removing this test case as it's not valid JavaScript syntax
-    // Rest elements cannot have a nested pattern
   ],
 });
