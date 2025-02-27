@@ -1,3 +1,12 @@
+## [1.8.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.8.0...v1.8.1) (2025-02-27)
+
+
+### Bug Fixes
+
+* **repo.md:** reduce indentation errors ([e27c611](https://github.com/BluMintInc/eslint-custom-rules/commit/e27c611b174cdbb94e52c753d3594f6bc15e65ea))
+* **src/tests/no-unnecessary-destructuring.test.ts:** remove LLM comment for itself ([abbabcb](https://github.com/BluMintInc/eslint-custom-rules/commit/abbabcb44840e3bba626d7197186dc05abfc0a8d))
+* **test-issue.ts:** delete ([fdf24c0](https://github.com/BluMintInc/eslint-custom-rules/commit/fdf24c0d7910b248122772506e68934b731e22f1))
+
 # [1.8.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.7.3...v1.8.0) (2025-02-26)
 
 

@@ -95,7 +95,7 @@ import { noUnusedUseState } from './rules/no-unused-usestate';
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.8.0',
+    version: '1.8.1',
   },
   parseOptions: {
     ecmaVersion: 2020,
