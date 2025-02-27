@@ -166,12 +166,13 @@ module.exports = {
         '@blumintinc/blumint/enforce-object-literal-as-const': 'error',
         '@blumintinc/blumint/enforce-positive-naming': 'error',
         '@blumintinc/blumint/no-type-assertion-returns': 'error',
-        '@blumintinc/blumint/prefer-utility-function-over-private-static': 'error',
+        '@blumintinc/blumint/prefer-utility-function-over-private-static':
+          'error',
         '@blumintinc/blumint/enforce-microdiff': 'error',
         '@blumintinc/blumint/enforce-timestamp-now': 'error',
         '@blumintinc/blumint/no-always-true-false-conditions': 'error',
         '@blumintinc/blumint/enforce-props-argument-name': 'error',
-        '@blumintinc/blumint/prefer-global-router-state-key': 'warn',
+        '@blumintinc/blumint/prefer-global-router-state-key': 'error',
         '@blumintinc/blumint/prefer-usememo-over-useeffect-usestate': 'error',
       },
     },
@@ -252,12 +253,14 @@ module.exports = {
     'enforce-object-literal-as-const': enforceObjectLiteralAsConst,
     'enforce-positive-naming': enforcePositiveNaming,
     'no-type-assertion-returns': noTypeAssertionReturns,
-    'prefer-utility-function-over-private-static': preferUtilityFunctionOverPrivateStatic,
+    'prefer-utility-function-over-private-static':
+      preferUtilityFunctionOverPrivateStatic,
     'enforce-microdiff': enforceMicrodiff,
     'enforce-timestamp-now': enforceTimestampNow,
     'no-always-true-false-conditions': noAlwaysTrueFalseConditions,
     'enforce-props-argument-name': enforcePropsArgumentName,
     'prefer-global-router-state-key': preferGlobalRouterStateKey,
-    'prefer-usememo-over-useeffect-usestate': preferUseMemoOverUseEffectUseState,
+    'prefer-usememo-over-useeffect-usestate':
+      preferUseMemoOverUseEffectUseState,
   },
 };
