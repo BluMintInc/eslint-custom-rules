@@ -91,8 +91,6 @@ ruleTester.run(
         function Component({ dependency }) {
           const computedValue = useMemo(() => expensiveCalculation(dependency), [dependency]);
 
-          ;
-
           return <div>{computedValue}</div>;
         }
       `,
