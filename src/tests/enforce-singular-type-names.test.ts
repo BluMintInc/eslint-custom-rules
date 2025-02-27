@@ -26,6 +26,14 @@ ruleTesterTs.run('enforce-singular-type-names', enforceSingularTypeNames, {
 
     // Type with irregular plural that's already singular
     'type Sheep = { wool: boolean; };',
+
+    // Types ending with 'Props' should be allowed even if plural
+    'type ButtonProps = { onClick: () => void; };',
+    'type UsersListProps = { users: User[]; };',
+
+    // Types ending with 'Params' should be allowed even if plural
+    'type FetchDataParams = { id: string; };',
+    'type UpdateUsersParams = { userIds: string[]; };',
   ],
   invalid: [
     // Plural type alias

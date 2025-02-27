@@ -16,6 +16,9 @@ export const enforceSingularTypeNames: TSESLint.RuleModule<
       // Skip checking if name is too short (less than 3 characters)
       if (name.length < 3) return false;
 
+      // Skip checking if name ends with 'Props' or 'Params'
+      if (name.endsWith('Props') || name.endsWith('Params')) return false;
+
       // Skip checking if name is already singular according to pluralize
       if (pluralize.isSingular(name)) return false;
 
