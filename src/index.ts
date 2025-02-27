@@ -79,6 +79,7 @@ import { noAlwaysTrueFalseConditions } from './rules/no-always-true-false-condit
 import { enforcePropsArgumentName } from './rules/enforce-props-argument-name';
 import { preferGlobalRouterStateKey } from './rules/prefer-global-router-state-key';
 import { enforceIdCapitalization } from './rules/enforce-id-capitalization';
+import { noUnusedUseState } from './rules/no-unused-usestate';
 
 module.exports = {
   meta: {
@@ -173,6 +174,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-props-argument-name': 'error',
         '@blumintinc/blumint/prefer-global-router-state-key': 'warn',
         '@blumintinc/blumint/enforce-id-capitalization': 'error',
+        '@blumintinc/blumint/no-unused-usestate': 'error',
       },
     },
   },
@@ -259,5 +261,6 @@ module.exports = {
     'enforce-props-argument-name': enforcePropsArgumentName,
     'prefer-global-router-state-key': preferGlobalRouterStateKey,
     'enforce-id-capitalization': enforceIdCapitalization,
+    'no-unused-usestate': noUnusedUseState,
   },
 };

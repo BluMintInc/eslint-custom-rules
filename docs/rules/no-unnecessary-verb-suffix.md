@@ -1,4 +1,10 @@
-# no-unnecessary-verb-suffix
+# Prevent unnecessary verb suffixes in function and method names (`@blumintinc/blumint/no-unnecessary-verb-suffix`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
 
 Prevents the use of unnecessary verb suffixes in function and method names unless they provide a necessary layer of description.
 
