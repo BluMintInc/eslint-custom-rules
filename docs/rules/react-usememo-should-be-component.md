@@ -1,4 +1,8 @@
-# react-usememo-should-be-component
+# Enforce that useMemo hooks returning React nodes should be abstracted into separate React components (`@blumintinc/blumint/react-usememo-should-be-component`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 > Enforce that useMemo hooks returning React nodes should be abstracted into separate React components
 
