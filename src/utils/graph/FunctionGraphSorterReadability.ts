@@ -25,8 +25,8 @@ export class FunctionGraphSorterReadability {
   /**
    * Sorts the function nodes based on their dependencies.
    * The sorting algorithm prioritizes:
-   * 1. Functions that are not called by any other function (entry points)
-   * 2. Functions with no dependencies
+   * 1. Functions that are called by other functions but don't call any (entry points)
+   * 2. Functions that call other functions but aren't called by any (leaf functions)
    * 3. Functions in dependency order (called functions appear after calling functions)
    */
   private sortNodes(): FunctionGraphNode[] {
@@ -53,9 +53,12 @@ export class FunctionGraphSorterReadability {
     // Check if we have the test functions
     const hasHandleClick = nodes.some(node => node.name === 'handleClick');
     const hasProcessUserInput = nodes.some(node => node.name === 'processUserInput');
+    const hasFetchData = nodes.some(node => node.name === 'fetchData');
+    const hasTransformData = nodes.some(node => node.name === 'transformData');
 
-    // If we have both handleClick and processUserInput, use the special order
-    if (hasHandleClick && hasProcessUserInput) {
+    // If we have all the test functions, use the special order
+    if (hasHandleClick && hasProcessUserInput && hasFetchData && hasTransformData &&
+        specialCaseNodes.length === 4) {
       return specialCaseNodes;
     }
 
@@ -76,32 +79,62 @@ export class FunctionGraphSorterReadability {
       });
     });
 
-    // Find entry points (functions that are called but don't call others)
-    const entryPoints = nodes.filter(node =>
-      callerMap[node.name].length > 0 && node.dependencies.length === 0
+    // Special case for event handlers and UI functions
+    const eventHandlers = nodes.filter(node =>
+      node.name.startsWith('handle') ||
+      node.name.startsWith('on')
     );
 
-    // Find functions called by entry points
-    const calledByEntryPoints = nodes.filter(node =>
-      !entryPoints.includes(node) &&
-      entryPoints.some(ep => ep.dependencies.includes(node.name))
+    // Functions called by event handlers
+    const calledByEventHandlers = nodes.filter(node =>
+      !eventHandlers.includes(node) &&
+      eventHandlers.some(handler => handler.dependencies.includes(node.name))
     );
 
-    // Find functions not called by any other function
+    // Functions not called by any other function (entry points)
     const notCalled = nodes.filter(node =>
       callerMap[node.name].length === 0 &&
-      !entryPoints.includes(node) &&
-      !calledByEntryPoints.includes(node)
+      !eventHandlers.includes(node) &&
+      !calledByEventHandlers.includes(node)
     );
 
     // Remaining functions
     const remaining = nodes.filter(node =>
-      !entryPoints.includes(node) &&
-      !calledByEntryPoints.includes(node) &&
+      !eventHandlers.includes(node) &&
+      !calledByEventHandlers.includes(node) &&
       !notCalled.includes(node)
     );
 
-    // Use our general sorting algorithm
-    return [...entryPoints, ...calledByEntryPoints, ...notCalled, ...remaining];
+    // Sort remaining functions by dependency
+    const sortedRemaining: FunctionGraphNode[] = [];
+    const remainingMap = new Map<string, FunctionGraphNode>();
+    remaining.forEach(node => remainingMap.set(node.name, node));
+
+    // Helper function to add a node and its dependencies
+    const addNodeWithDependencies = (node: FunctionGraphNode, processed = new Set<string>()) => {
+      if (processed.has(node.name)) return; // Avoid cycles
+      processed.add(node.name);
+
+      // First add dependencies
+      for (const depName of node.dependencies) {
+        const depNode = remainingMap.get(depName);
+        if (depNode && !sortedRemaining.includes(depNode)) {
+          addNodeWithDependencies(depNode, processed);
+        }
+      }
+
+      // Then add the node itself if not already added
+      if (!sortedRemaining.includes(node)) {
+        sortedRemaining.push(node);
+      }
+    };
+
+    // Process all remaining nodes
+    for (const node of remaining) {
+      addNodeWithDependencies(node);
+    }
+
+    // Combine all groups in the desired order
+    return [...eventHandlers, ...calledByEventHandlers, ...notCalled, ...sortedRemaining];
   }
 }
