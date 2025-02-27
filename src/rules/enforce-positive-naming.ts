@@ -3,6 +3,9 @@ import { createRule } from '../utils/createRule';
 
 type MessageIds = 'avoidNegativeNaming';
 
+// Track imported types to ignore them in the rule
+const importedTypes = new Set<string>();
+
 // Common negative prefixes and words to detect
 const NEGATIVE_PREFIXES = ['not', 'no', 'non', 'un', 'in', 'dis'];
 const NEGATIVE_WORDS = [
@@ -148,11 +151,46 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
       return {};
     }
     /**
+     * Track imported types to ignore them in the rule
+     */
+    function trackImportedTypes(node: TSESTree.ImportDeclaration) {
+      // Process named imports like: import { ResponseError } from 'external-lib';
+      for (const specifier of node.specifiers) {
+        if (specifier.type === AST_NODE_TYPES.ImportSpecifier) {
+          importedTypes.add(specifier.local.name);
+        } else if (specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
+          // Handle namespace imports like: import * as Errors from 'error-lib';
+          importedTypes.add(specifier.local.name);
+        }
+      }
+    }
+
+    /**
+     * Check if a type reference is from an imported type
+     */
+    function isImportedTypeReference(node: TSESTree.TSTypeReference): boolean {
+      if (node.typeName.type === AST_NODE_TYPES.Identifier) {
+        // Direct imported type: ResponseError
+        return importedTypes.has(node.typeName.name);
+      } else if (node.typeName.type === AST_NODE_TYPES.TSQualifiedName) {
+        // Qualified name from namespace import: Errors.InvalidRequestError
+        let current = node.typeName;
+        while (current.left.type === AST_NODE_TYPES.TSQualifiedName) {
+          current = current.left;
+        }
+        if (current.left.type === AST_NODE_TYPES.Identifier) {
+          return importedTypes.has(current.left.name);
+        }
+      }
+      return false;
+    }
+
+    /**
      * Check if a name has negative connotations
      */
     function hasNegativeNaming(name: string): { isNegative: boolean; alternatives: string[] } {
-      // Skip checking if the name is in the whitelist
-      if (ALLOWED_NEGATIVE_TERMS.has(name)) {
+      // Skip checking if the name is in the whitelist or is an imported type
+      if (ALLOWED_NEGATIVE_TERMS.has(name) || importedTypes.has(name)) {
         return { isNegative: false, alternatives: [] };
       }
 
@@ -288,6 +326,21 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
 
       if (!functionName) return;
 
+      // Check if any of the function parameters use imported types
+      const hasImportedTypeParam = node.params.some(param => {
+        if (param.type === AST_NODE_TYPES.Identifier && param.typeAnnotation) {
+          const typeAnnotation = param.typeAnnotation.typeAnnotation;
+          return typeAnnotation.type === AST_NODE_TYPES.TSTypeReference &&
+                 isImportedTypeReference(typeAnnotation);
+        }
+        return false;
+      });
+
+      // Skip checking if the function has parameters with imported types
+      if (hasImportedTypeParam) {
+        return;
+      }
+
       const { isNegative, alternatives } = hasNegativeNaming(functionName);
 
       if (isNegative) {
@@ -371,6 +424,13 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
     function checkParameter(node: TSESTree.Parameter) {
       if (node.type !== AST_NODE_TYPES.Identifier) return;
 
+      // Skip checking if the parameter uses an imported type
+      if (node.typeAnnotation &&
+          node.typeAnnotation.typeAnnotation.type === AST_NODE_TYPES.TSTypeReference &&
+          isImportedTypeReference(node.typeAnnotation.typeAnnotation)) {
+        return;
+      }
+
       const paramName = node.name;
       const { isNegative, alternatives } = hasNegativeNaming(paramName);
 
@@ -386,7 +446,34 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
       }
     }
 
-    return {
+    /**
+     * Check type aliases for negative naming
+     */
+    function checkTypeAlias(node: TSESTree.TSTypeAliasDeclaration) {
+      if (node.id.type !== AST_NODE_TYPES.Identifier) return;
+
+      const typeName = node.id.name;
+      const { isNegative, alternatives } = hasNegativeNaming(typeName);
+
+      if (isNegative) {
+        context.report({
+          node: node.id,
+          messageId: 'avoidNegativeNaming',
+          data: {
+            name: typeName,
+            alternatives: formatAlternatives(alternatives),
+          },
+        });
+      }
+    }
+
+return {
+      // Track imported types to ignore them in the rule
+      ImportDeclaration: trackImportedTypes,
+
+      // Check type aliases (e.g., type InvalidRequest = {...})
+      TSTypeAliasDeclaration: checkTypeAlias,
+
       VariableDeclarator: checkVariableDeclaration,
       FunctionDeclaration: checkFunctionDeclaration,
       // Only check function expressions when they're not part of a variable declaration
