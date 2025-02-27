@@ -3,8 +3,8 @@ import { createRule } from '../utils/createRule';
 
 type MessageIds = 'avoidNegativeNaming';
 
-// Track imported types to ignore them in the rule
-const importedTypes = new Set<string>();
+// Track imported identifiers to ignore them in the rule
+const importedIdentifiers = new Set<string>();
 
 // Common negative prefixes and words to detect
 const NEGATIVE_PREFIXES = ['not', 'no', 'non', 'un', 'in', 'dis'];
@@ -151,27 +151,37 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
       return {};
     }
     /**
-     * Track imported types to ignore them in the rule
+     * Track all imported identifiers to ignore them in the rule
      */
-    function trackImportedTypes(node: TSESTree.ImportDeclaration) {
-      // Process named imports like: import { ResponseError } from 'external-lib';
+    function trackImportedIdentifiers(node: TSESTree.ImportDeclaration) {
+      // Skip imports from relative paths (our own code)
+      const importPath = node.source.value as string;
+      if (importPath.startsWith('./') || importPath.startsWith('../') || importPath.startsWith('/')) {
+        return;
+      }
+
+      // Process all imports from external modules
       for (const specifier of node.specifiers) {
         if (specifier.type === AST_NODE_TYPES.ImportSpecifier) {
-          importedTypes.add(specifier.local.name);
+          // Named imports like: import { ResponseError } from 'external-lib';
+          importedIdentifiers.add(specifier.local.name);
         } else if (specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
-          // Handle namespace imports like: import * as Errors from 'error-lib';
-          importedTypes.add(specifier.local.name);
+          // Namespace imports like: import * as Errors from 'error-lib';
+          importedIdentifiers.add(specifier.local.name);
+        } else if (specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
+          // Default imports like: import axios from 'axios';
+          importedIdentifiers.add(specifier.local.name);
         }
       }
     }
 
     /**
-     * Check if a type reference is from an imported type
+     * Check if a type reference is from an imported module
      */
-    function isImportedTypeReference(node: TSESTree.TSTypeReference): boolean {
+    function isFromExternalModule(node: TSESTree.TSTypeReference): boolean {
       if (node.typeName.type === AST_NODE_TYPES.Identifier) {
         // Direct imported type: ResponseError
-        return importedTypes.has(node.typeName.name);
+        return importedIdentifiers.has(node.typeName.name);
       } else if (node.typeName.type === AST_NODE_TYPES.TSQualifiedName) {
         // Qualified name from namespace import: Errors.InvalidRequestError
         let current = node.typeName;
@@ -179,8 +189,25 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
           current = current.left;
         }
         if (current.left.type === AST_NODE_TYPES.Identifier) {
-          return importedTypes.has(current.left.name);
+          return importedIdentifiers.has(current.left.name);
         }
+      }
+      return false;
+    }
+
+    /**
+     * Check if an identifier is from an external module
+     */
+    function isIdentifierFromExternalModule(name: string): boolean {
+      return importedIdentifiers.has(name);
+    }
+
+    /**
+     * Check if a member expression is accessing a property of an imported module
+     */
+    function isMemberOfExternalModule(node: TSESTree.MemberExpression): boolean {
+      if (node.object.type === AST_NODE_TYPES.Identifier) {
+        return importedIdentifiers.has(node.object.name);
       }
       return false;
     }
@@ -189,8 +216,8 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
      * Check if a name has negative connotations
      */
     function hasNegativeNaming(name: string): { isNegative: boolean; alternatives: string[] } {
-      // Skip checking if the name is in the whitelist or is an imported type
-      if (ALLOWED_NEGATIVE_TERMS.has(name) || importedTypes.has(name)) {
+      // Skip checking if the name is in the whitelist or is from an external module
+      if (ALLOWED_NEGATIVE_TERMS.has(name) || isIdentifierFromExternalModule(name)) {
         return { isNegative: false, alternatives: [] };
       }
 
@@ -326,12 +353,26 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
 
       if (!functionName) return;
 
+      // Skip checking if the function name is from an external module
+      if (isIdentifierFromExternalModule(functionName)) {
+        return;
+      }
+
+      // Skip checking if the function is a property of an imported object
+      if (node.parent?.type === AST_NODE_TYPES.Property &&
+          node.parent.parent?.type === AST_NODE_TYPES.ObjectExpression &&
+          node.parent.parent.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+          node.parent.parent.parent.id.type === AST_NODE_TYPES.Identifier &&
+          isIdentifierFromExternalModule(node.parent.parent.parent.id.name)) {
+        return;
+      }
+
       // Check if any of the function parameters use imported types
       const hasImportedTypeParam = node.params.some(param => {
         if (param.type === AST_NODE_TYPES.Identifier && param.typeAnnotation) {
           const typeAnnotation = param.typeAnnotation.typeAnnotation;
           return typeAnnotation.type === AST_NODE_TYPES.TSTypeReference &&
-                 isImportedTypeReference(typeAnnotation);
+                 isFromExternalModule(typeAnnotation);
         }
         return false;
       });
@@ -427,8 +468,35 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
       // Skip checking if the parameter uses an imported type
       if (node.typeAnnotation &&
           node.typeAnnotation.typeAnnotation.type === AST_NODE_TYPES.TSTypeReference &&
-          isImportedTypeReference(node.typeAnnotation.typeAnnotation)) {
+          isFromExternalModule(node.typeAnnotation.typeAnnotation)) {
         return;
+      }
+
+      // Skip checking if the parameter is part of a function from an external module
+      const parent = node.parent;
+      if (parent &&
+          (parent.type === AST_NODE_TYPES.FunctionDeclaration ||
+           parent.type === AST_NODE_TYPES.FunctionExpression ||
+           parent.type === AST_NODE_TYPES.ArrowFunctionExpression)) {
+
+        // Check if this function is being assigned to an imported identifier
+        // For example: const handleError = (errorResponse) => {...}
+        // where handleError is imported from an external module
+        if (parent.parent &&
+            parent.parent.type === AST_NODE_TYPES.VariableDeclarator &&
+            parent.parent.id.type === AST_NODE_TYPES.Identifier &&
+            isIdentifierFromExternalModule(parent.parent.id.name)) {
+          return;
+        }
+
+        // Check if this function is a method of an imported object
+        // For example: externalLib.handleError = (errorResponse) => {...}
+        if (parent.parent &&
+            parent.parent.type === AST_NODE_TYPES.AssignmentExpression &&
+            parent.parent.left.type === AST_NODE_TYPES.MemberExpression &&
+            isMemberOfExternalModule(parent.parent.left)) {
+          return;
+        }
       }
 
       const paramName = node.name;
@@ -468,8 +536,8 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
     }
 
 return {
-      // Track imported types to ignore them in the rule
-      ImportDeclaration: trackImportedTypes,
+      // Track imported identifiers to ignore them in the rule
+      ImportDeclaration: trackImportedIdentifiers,
 
       // Check type aliases (e.g., type InvalidRequest = {...})
       TSTypeAliasDeclaration: checkTypeAlias,
