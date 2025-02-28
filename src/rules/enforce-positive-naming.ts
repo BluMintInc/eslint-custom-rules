@@ -4,7 +4,7 @@ import { createRule } from '../utils/createRule';
 type MessageIds = 'avoidNegativeNaming';
 
 // Common negative prefixes for boolean variables
-const BOOLEAN_NEGATIVE_PREFIXES = ['not', 'no'];
+const BOOLEAN_NEGATIVE_PREFIXES = ['not', 'no', 'non', 'un', 'in', 'dis'];
 
 // Map of negative boolean terms to suggested positive alternatives
 const BOOLEAN_POSITIVE_ALTERNATIVES: Record<string, string[]> = {
