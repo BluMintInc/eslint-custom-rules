@@ -10,6 +10,10 @@ const BOOLEAN_NEGATIVE_PREFIXES = ['not', 'no', 'non', 'un', 'in', 'dis'];
 const BOOLEAN_POSITIVE_ALTERNATIVES: Record<string, string[]> = {
   // Boolean prefixes
   'isNot': ['is'],
+  'isUn': ['is'],
+  'isDis': ['is'],
+  'isIn': ['is'],
+  'isNon': ['is'],
   'hasNo': ['has'],
   'hasNot': ['has'],
   'canNot': ['can'],
