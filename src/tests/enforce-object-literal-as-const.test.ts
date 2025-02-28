@@ -118,6 +118,30 @@ ruleTester.run(
         }
       `,
       },
+      // Valid case: array with object literals in useMemo (React component props)
+      {
+        code: `
+        const avatarUsers = useMemo(() => {
+          return [{ userId: id, imgUrl }];
+        }, [id, imgUrl]);
+      `,
+      },
+      // Valid case: array with object literals in useCallback
+      {
+        code: `
+        const getUsers = useCallback(() => {
+          return [{ id: 1, name: 'User 1' }, { id: 2, name: 'User 2' }];
+        }, []);
+      `,
+      },
+      // Valid case: array with object literals in custom hook
+      {
+        code: `
+        const items = useCustomHook(() => {
+          return [{ value: 'item1' }, { value: 'item2' }];
+        }, [deps]);
+      `,
+      },
       // Valid case: returning a conditional expression
       {
         code: `
@@ -584,6 +608,20 @@ ruleTester.run(
             return { foo: 'bar' } as const;
           }
         };
+      `,
+      },
+      // Invalid case: object literal in useMemo (not in an array)
+      {
+        code: `
+        const config = useMemo(() => {
+          return { theme: 'dark', fontSize: 16 };
+        }, []);
+      `,
+        errors: [{ messageId: 'enforceAsConst' }],
+        output: `
+        const config = useMemo(() => {
+          return { theme: 'dark', fontSize: 16 } as const;
+        }, []);
       `,
       },
       // Invalid case: with JSX in object
