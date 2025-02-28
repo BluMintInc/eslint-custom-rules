@@ -104,7 +104,22 @@ export const noHungarian = createRule<[Options], MessageIds>({
     }
 
     // Check if a variable name uses Hungarian notation
-    function isHungarianNotation(variableName: string, declaredTypeName: string | null): boolean {
+    function isHungarianNotation(variableName: string, declaredTypeName: string | null, currentNode: TSESTree.VariableDeclarator): boolean {
+      // Special case for common function naming patterns like isXXX, hasXXX
+      // These are not Hungarian notation but common naming conventions for boolean functions
+      if ((variableName.startsWith('is') || variableName.startsWith('has')) &&
+          variableName.length > 2 &&
+          currentNode.init &&
+          (currentNode.init.type === 'ArrowFunctionExpression' || currentNode.init.type === 'FunctionExpression')) {
+        // Check if this function is used in a call expression
+        const sourceCode = context.getSourceCode();
+        const text = sourceCode.getText();
+        const callPattern = new RegExp(`\\b${variableName}\\s*\\(`, 'g');
+        if (callPattern.test(text)) {
+          return false;
+        }
+      }
+
       // Check for Hungarian prefixes (e.g., strName, boolIsActive)
       if (hasHungarianPrefix(variableName)) {
         return true;
@@ -163,6 +178,8 @@ export const noHungarian = createRule<[Options], MessageIds>({
 
       return testCases.includes(variableName);
     }
+
+    // We've moved the function call detection logic into isHungarianNotation
 
     return {
       VariableDeclarator(node) {
@@ -230,8 +247,10 @@ export const noHungarian = createRule<[Options], MessageIds>({
           }
         }
 
+        // We've moved the function call detection logic into isHungarianNotation
+
         // Check if the variable name uses Hungarian notation
-        if (isHungarianNotation(variableName, typeName)) {
+        if (isHungarianNotation(variableName, typeName, node)) {
           context.report({
             node,
             messageId: 'noHungarian',
