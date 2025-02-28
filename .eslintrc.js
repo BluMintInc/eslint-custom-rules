@@ -9,7 +9,8 @@ module.exports = {
   plugins: [
     '@typescript-eslint',
     'eslint-plugin-eslint-plugin',
-    'import'
+    'import',
+    '@blumintinc/blumint'
   ],
   extends: [
     'plugin:@typescript-eslint/recommended',
