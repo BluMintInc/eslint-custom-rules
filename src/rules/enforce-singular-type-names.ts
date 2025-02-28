@@ -17,7 +17,7 @@ export const enforceSingularTypeNames: TSESLint.RuleModule<
       if (name.length < 3) return false;
 
       // Skip checking if name ends with 'Props' or 'Params'
-      if (name.endsWith('Props') || name.endsWith('Params')) return false;
+      if (name.endsWith('Props') || name.endsWith('Params') || name.endsWith('Options') || name.endsWith('Settings')) return false;
 
       // Skip checking if name is already singular according to pluralize
       if (pluralize.isSingular(name)) return false;
