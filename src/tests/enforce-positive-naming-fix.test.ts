@@ -4,6 +4,7 @@ import { ruleTesterTs } from '../utils/ruleTester';
 ruleTesterTs.run('enforce-positive-naming', enforcePositiveNaming, {
   valid: [
     // Test case for the bug scenario - getter method with complex return type
+    // This should be valid since it's not a boolean
     {
       code: `
         export interface GitHubIssueRequest {
@@ -29,13 +30,23 @@ ruleTesterTs.run('enforce-positive-naming', enforcePositiveNaming, {
         }
       `,
     },
+    // Non-boolean property with negative-sounding name should be valid
+    {
+      code: `
+        class ErrorHandler {
+          public get errorMessages(): string[] {
+            return this.errors.map(e => e.message);
+          }
+        }
+      `,
+    },
   ],
   invalid: [
-    // Test case with negative naming
+    // Test case with boolean negative naming
     {
       code: `
         class BadClass {
-          public get isNotValid() {
+          public get isNotValid(): boolean {
             return false;
           }
         }

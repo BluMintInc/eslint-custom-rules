@@ -85,24 +85,32 @@ ruleTesterTs.run('enforce-positive-naming-config-files', enforcePositiveNaming, 
       `,
       filename: 'component.vue',
     },
-  ],
-  invalid: [
-    // Regular TS file with negative naming should still be flagged
+
+    // Non-boolean variables with negative-sounding names should be valid
     {
       code: `
-        const disabledFeatures = ['feature1', 'feature2'];
+        const disabledFeatures: string[] = ['feature1', 'feature2'];
       `,
       filename: 'src/features.ts',
+    },
+  ],
+  invalid: [
+    // Boolean variable with negative naming should be flagged
+    {
+      code: `
+        const isNotAllowed: boolean = false;
+      `,
+      filename: 'src/component.ts',
       errors: [
         {
           messageId: 'avoidNegativeNaming',
         },
       ],
     },
-    // Regular TSX file with negative naming should still be flagged
+    // Boolean function with negative naming should be flagged
     {
       code: `
-        const isNotAllowed = () => <div>Not allowed</div>;
+        const isNotAllowed = (): boolean => false;
       `,
       filename: 'src/component.tsx',
       errors: [

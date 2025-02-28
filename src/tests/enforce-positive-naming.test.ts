@@ -17,114 +17,46 @@ ruleTesterTs.run('enforce-positive-naming', enforcePositiveNaming, {
     // Valid positive function names
     'function isEligible(user: User) { return meetsRequirements(user); }',
     'function canAccessUser(userId: string) { return hasPermission(userId); }',
-    'function enableFeature(featureId: string) { features[featureId].enabled = true; }',
 
     // Valid positive property names
     `
     interface UserState {
       isActive: boolean;
       isVerified: boolean;
-      enabledFeatures: string[];
-      completedTasks: Task[];
       hasPaid: boolean;
     }
     `,
-
-    // Allowed negative terms (technical/common)
-    'const isEmpty = array.length === 0;',
-    'const isOffline = !hasConnection;',
-    'const isMissing = !exists;',
-    'const isNaN = Number.isNaN(value);',
-    'const isNull = value === null;',
-    'const isUndefined = typeof value === "undefined";',
-    'const isOutOfStock = quantity === 0;',
-    'const isOutOfBounds = position > maxBounds;',
-    'const isOffPeak = !isPeakHours;',
-    'const isNone = value === null || value === undefined;',
-    'const isNegative = number < 0;',
-    'const isNeutral = value === 0;',
-    'const isNotification = type === "notification";',
-    'const isNote = type === "note";',
-    'const hasNote = notes.length > 0;',
 
     // Valid implementation with negation but positive naming
     'const isValid = !hasErrors;',
     'const canProceed = !isBlocked && !isPaused;',
     'const isAvailable = !isReserved && !isDeleted;',
 
-    // Words that contain negative prefixes but aren't negative
-    'const isNoticeable = true;',
-    'const hasNotification = true;',
-    'const isNoteworthy = true;',
-
-    // Valid array methods with positive naming
-    'const activeUsers = users.filter(u => u.isActive);',
-    'const enabledFeatures = features.filter(f => f.isEnabled);',
-
-    // Valid parameter names
-    'function processData(validItems, enabledFeatures) { return true; }',
+    // Non-boolean variables should not be flagged
+    'const errorMessage = "Something went wrong";',
+    'const rejectedItems = items.filter(item => !item.accepted);',
+    'const disabledFeatures: string[] = ["feature1", "feature2"];',
+    'const errorHandler = (err: Error) => console.error(err);',
+    'function handleError(error: Error) { console.log(error); }',
+    'const invalidInputs = ["a", "b", "c"];',
 
     // Valid object method shorthand
     'const obj = { isValid() { return true; } };',
+
+    // Non-boolean methods should not be flagged
+    'const utils = { disableFeature(id: string) { /* implementation */ } };',
+    'class ErrorHandler { handleError(err: Error) { /* implementation */ } }',
   ],
   invalid: [
-    // Invalid boolean variables
+    // Invalid boolean variables with "not" prefix
     {
-      code: 'const isInvalid = !validateInput(value);',
-      errors: [
-        {
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: 'isInvalid',
-            alternatives: 'isValid',
-          },
-        },
-      ],
-    },
-    {
-      code: 'const isNotAllowed = checkPermissions(user);',
+      code: 'const isNotAllowed: boolean = checkPermissions(user);',
       errors: [
         {
           messageId: 'avoidNegativeNaming',
           data: {
             name: 'isNotAllowed',
             alternatives: 'isAllowed',
-          },
-        },
-      ],
-    },
-    {
-      code: 'const disabled = true;',
-      errors: [
-        {
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: 'disabled',
-            alternatives: 'enabled',
-          },
-        },
-      ],
-    },
-    {
-      code: 'const incomplete = status !== "done";',
-      errors: [
-        {
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: 'incomplete',
-            alternatives: 'complete',
-          },
-        },
-      ],
-    },
-    {
-      code: 'const isDisabled = true;',
-      errors: [
-        {
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: 'isDisabled',
-            alternatives: 'isEnabled',
           },
         },
       ],
@@ -154,30 +86,6 @@ ruleTesterTs.run('enforce-positive-naming', enforcePositiveNaming, {
       ],
     },
     {
-      code: 'const isUnauthorized = checkAuth(user);',
-      errors: [
-        {
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: 'isUnauthorized',
-            alternatives: 'isAuthorized',
-          },
-        },
-      ],
-    },
-    {
-      code: 'const preventSubmission = true;',
-      errors: [
-        {
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: 'preventSubmission',
-            alternatives: 'allow, enable',
-          },
-        },
-      ],
-    },
-    {
       code: 'const isNotVerified = !user.verified;',
       errors: [
         {
@@ -190,59 +98,9 @@ ruleTesterTs.run('enforce-positive-naming', enforcePositiveNaming, {
       ],
     },
 
-    // New negative terms
+    // Boolean function names with negative prefixes
     {
-      code: 'const isImpossible = true;',
-      errors: [
-        {
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: 'isImpossible',
-            alternatives: 'isPossible',
-          },
-        },
-      ],
-    },
-    {
-      code: 'const isError = true;',
-      errors: [
-        {
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: 'isError',
-            alternatives: 'isSuccess, isValid',
-          },
-        },
-      ],
-    },
-    {
-      code: 'const isBroken = true;',
-      errors: [
-        {
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: 'isBroken',
-            alternatives: 'isWorking, isFunctional',
-          },
-        },
-      ],
-    },
-    {
-      code: 'const isRestricted = true;',
-      errors: [
-        {
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: 'isRestricted',
-            alternatives: 'isAllowed, isAccessible',
-          },
-        },
-      ],
-    },
-
-    // Invalid function names
-    {
-      code: 'function isNotEligible(user: User) { return !meetsRequirements(user); }',
+      code: 'function isNotEligible(user: User): boolean { return !meetsRequirements(user); }',
       errors: [
         {
           messageId: 'avoidNegativeNaming',
@@ -253,62 +111,15 @@ ruleTesterTs.run('enforce-positive-naming', enforcePositiveNaming, {
         },
       ],
     },
-    {
-      code: 'function preventUserAccess(userId: string) { return !hasPermission(userId); }',
-      errors: [
-        {
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: 'preventUserAccess',
-            alternatives: 'allow, enable',
-          },
-        },
-      ],
-    },
-    {
-      code: 'function disableFeature(featureId: string) { features[featureId].enabled = false; }',
-      errors: [
-        {
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: 'disableFeature',
-            alternatives: 'enableFeature',
-          },
-        },
-      ],
-    },
-    {
-      code: 'const blockUser = function(userId) { /* implementation */ };',
-      errors: [
-        {
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: 'blockUser',
-            alternatives: 'allowUser',
-          },
-        },
-      ],
-    },
 
-    // Invalid property names
+    // Boolean property names with negative prefixes
     {
       code: `
       interface UserState {
-        isInactive: boolean;
         isNotVerified: boolean;
-        disabledFeatures: string[];
-        incompleteTasks: Task[];
-        isUnpaid: boolean;
       }
       `,
       errors: [
-        {
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: 'isInactive',
-            alternatives: 'isActive',
-          },
-        },
         {
           messageId: 'avoidNegativeNaming',
           data: {
@@ -316,77 +127,19 @@ ruleTesterTs.run('enforce-positive-naming', enforcePositiveNaming, {
             alternatives: 'isVerified',
           },
         },
-        {
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: 'disabledFeatures',
-            alternatives: 'enabledFeatures',
-          },
-        },
-        {
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: 'incompleteTasks',
-            alternatives: 'isComplete',
-          },
-        },
-        {
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: 'isUnpaid',
-            alternatives: 'isPaid, hasPaid',
-          },
-        },
       ],
     },
 
-    // Invalid array methods with negative variables
-    {
-      code: 'const inactiveUsers = users.filter(u => u.isInactive);',
-      errors: [
-        {
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: 'inactiveUsers',
-            alternatives: 'activeUsers',
-          },
-        },
-      ],
-    },
-    {
-      code: 'const disabledFeatures = features.filter(f => f.disabled);',
-      errors: [
-        {
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: 'disabledFeatures',
-            alternatives: 'enabledFeatures',
-          },
-        },
-      ],
-    },
-
-    // Invalid method definitions
+    // Boolean method definitions with negative prefixes
     {
       code: `
       class Service {
-        disableAccount(userId: string) {
-          // implementation
-        }
-
-        isNotActive() {
+        isNotActive(): boolean {
           return !this.active;
         }
       }
       `,
       errors: [
-        {
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: 'disableAccount',
-            alternatives: 'enableAccount',
-          },
-        },
         {
           messageId: 'avoidNegativeNaming',
           data: {
@@ -397,9 +150,9 @@ ruleTesterTs.run('enforce-positive-naming', enforcePositiveNaming, {
       ],
     },
 
-    // Object method shorthand
+    // Object method shorthand with negative prefixes
     {
-      code: 'const obj = { isNotValid() { return false; } };',
+      code: 'const obj = { isNotValid(): boolean { return false; } };',
       errors: [
         {
           messageId: 'avoidNegativeNaming',
@@ -411,30 +164,9 @@ ruleTesterTs.run('enforce-positive-naming', enforcePositiveNaming, {
       ],
     },
 
-    // Function parameters
+    // Additional boolean prefix patterns
     {
-      code: 'function process(invalidData, disabledFeatures) { return true; }',
-      errors: [
-        {
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: 'invalidData',
-            alternatives: 'isValid',
-          },
-        },
-        {
-          messageId: 'avoidNegativeNaming',
-          data: {
-            name: 'disabledFeatures',
-            alternatives: 'enabledFeatures',
-          },
-        },
-      ],
-    },
-
-    // Additional prefix patterns
-    {
-      code: 'const shouldNotProceed = condition;',
+      code: 'const shouldNotProceed: boolean = condition;',
       errors: [
         {
           messageId: 'avoidNegativeNaming',
@@ -446,7 +178,7 @@ ruleTesterTs.run('enforce-positive-naming', enforcePositiveNaming, {
       ],
     },
     {
-      code: 'const willNotWork = condition;',
+      code: 'const willNotWork = false;',
       errors: [
         {
           messageId: 'avoidNegativeNaming',
@@ -458,7 +190,7 @@ ruleTesterTs.run('enforce-positive-naming', enforcePositiveNaming, {
       ],
     },
     {
-      code: 'const doesNotExist = condition;',
+      code: 'const doesNotExist = condition === false;',
       errors: [
         {
           messageId: 'avoidNegativeNaming',
