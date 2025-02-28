@@ -34,6 +34,68 @@ function isTypePredicate(node: TSESTree.TSTypeAnnotation): boolean {
   return node.typeAnnotation.type === AST_NODE_TYPES.TSTypePredicate;
 }
 
+/**
+ * Checks if a node is inside a return statement
+ */
+function isInsideReturnStatement(node: TSESTree.Node): boolean {
+  let current: TSESTree.Node | undefined = node;
+
+  while (current?.parent) {
+    if (current.parent.type === AST_NODE_TYPES.ReturnStatement) {
+      return true;
+    }
+    current = current.parent;
+  }
+
+  return false;
+}
+
+/**
+ * Checks if a node is inside a conditional statement
+ */
+function isInsideConditionalStatement(node: TSESTree.Node): boolean {
+  let current: TSESTree.Node | undefined = node;
+
+  while (current?.parent) {
+    if (
+      current.parent.type === AST_NODE_TYPES.IfStatement ||
+      current.parent.type === AST_NODE_TYPES.WhileStatement ||
+      current.parent.type === AST_NODE_TYPES.DoWhileStatement ||
+      current.parent.type === AST_NODE_TYPES.ForStatement ||
+      current.parent.type === AST_NODE_TYPES.ConditionalExpression
+    ) {
+      // If we're in a conditional statement but not in a return statement, it's valid
+      return !isInsideReturnStatement(current.parent);
+    }
+    current = current.parent;
+  }
+
+  return false;
+}
+
+/**
+ * Checks if a type assertion is used to access a property
+ */
+function isPropertyAccess(node: TSESTree.TSAsExpression | TSESTree.TSTypeAssertion): boolean {
+  return (
+    node.parent?.type === AST_NODE_TYPES.MemberExpression &&
+    node.parent.object === node
+  );
+}
+
+/**
+ * Checks if a type assertion is used within an array includes check
+ */
+function isArrayIncludesCheck(node: TSESTree.TSAsExpression | TSESTree.TSTypeAssertion): boolean {
+  return (
+    node.parent?.type === AST_NODE_TYPES.CallExpression &&
+    node.parent.arguments.includes(node) &&
+    node.parent.callee.type === AST_NODE_TYPES.MemberExpression &&
+    node.parent.callee.property.type === AST_NODE_TYPES.Identifier &&
+    node.parent.callee.property.name === 'includes'
+  );
+}
+
 export const noTypeAssertionReturns = createRule<Options, MessageIds>({
   name: 'no-type-assertion-returns',
   meta: {
@@ -62,6 +124,112 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
   defaultOptions: [defaultOptions],
   create(context, [options]) {
     const mergedOptions = { ...defaultOptions, ...options };
+
+    /**
+     * Common function to check if a type assertion should be allowed
+     */
+    function shouldAllowTypeAssertion(node: TSESTree.TSAsExpression | TSESTree.TSTypeAssertion): boolean {
+      // If the parent is a return statement, we already handle it in ReturnStatement
+      if (node.parent?.type === AST_NODE_TYPES.ReturnStatement) {
+        return true;
+      }
+
+      // If the parent is an arrow function, we already handle it in ArrowFunctionExpression
+      if (node.parent?.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+        return true;
+      }
+
+      // If the parent is a variable declarator, this is a variable declaration with type assertion
+      // which is a valid pattern and should not be flagged
+      if (node.parent?.type === AST_NODE_TYPES.VariableDeclarator) {
+        return true;
+      }
+
+      // Allow type assertions within conditional statements (if, while, do-while, for)
+      if (node.parent?.type === AST_NODE_TYPES.IfStatement ||
+          node.parent?.type === AST_NODE_TYPES.WhileStatement ||
+          node.parent?.type === AST_NODE_TYPES.DoWhileStatement ||
+          node.parent?.type === AST_NODE_TYPES.ForStatement) {
+        return true;
+      }
+
+      // Allow type assertions within logical expressions (which are often used in conditions)
+      if (node.parent?.type === AST_NODE_TYPES.LogicalExpression) {
+        return true;
+      }
+
+      // Allow type assertions within method calls like array.includes()
+      if (node.parent?.type === AST_NODE_TYPES.CallExpression &&
+          node.parent.callee.type === AST_NODE_TYPES.MemberExpression) {
+        return true;
+      }
+
+      // Allow type assertions within array includes checks
+      if (isArrayIncludesCheck(node)) {
+        return true;
+      }
+
+      // Allow type assertions within conditional expressions, but only if they're not part of a return statement
+      if (node.parent?.type === AST_NODE_TYPES.ConditionalExpression && !isInsideReturnStatement(node)) {
+        return true;
+      }
+
+      // Allow type assertions used to access properties in conditional contexts
+      if (isPropertyAccess(node) && isInsideConditionalStatement(node)) {
+        return true;
+      }
+
+      return false;
+    }
+
+    /**
+     * Common function to check function return types
+     */
+    function checkFunctionReturnType(
+      node: TSESTree.FunctionDeclaration | TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression
+    ) {
+      if (!node.returnType) return;
+
+      // Allow type predicates if configured
+      if (mergedOptions.allowTypePredicates && isTypePredicate(node.returnType)) {
+        return;
+      }
+
+      // If type predicates are not allowed, report them
+      if (!mergedOptions.allowTypePredicates && isTypePredicate(node.returnType)) {
+        context.report({
+          node: node.returnType,
+          messageId: 'useExplicitVariable',
+        });
+        return;
+      }
+
+      // Check if the function has a return statement with a direct value (not a variable)
+      if (node.body && node.body.type === AST_NODE_TYPES.BlockStatement) {
+        for (const statement of node.body.body) {
+          if (statement.type === AST_NODE_TYPES.ReturnStatement && statement.argument) {
+            // If returning a variable reference, that's fine
+            if (statement.argument.type === AST_NODE_TYPES.Identifier) {
+              continue;
+            }
+
+            // If returning an object literal, array literal, or other complex expression
+            // without first assigning it to a typed variable, that's a problem
+            if (
+              statement.argument.type === AST_NODE_TYPES.ObjectExpression ||
+              statement.argument.type === AST_NODE_TYPES.ArrayExpression ||
+              statement.argument.type === AST_NODE_TYPES.CallExpression
+            ) {
+              context.report({
+                node: node.returnType,
+                messageId: 'useExplicitVariable',
+              });
+              break;
+            }
+          }
+        }
+      }
+    }
 
     return {
       // Check for return statements with type assertions
@@ -101,92 +269,12 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
 
       // Check functions with explicit return types
       FunctionDeclaration(node) {
-        if (!node.returnType) return;
-
-        // Allow type predicates if configured
-        if (mergedOptions.allowTypePredicates && isTypePredicate(node.returnType)) {
-          return;
-        }
-
-        // If type predicates are not allowed, report them
-        if (!mergedOptions.allowTypePredicates && isTypePredicate(node.returnType)) {
-          context.report({
-            node: node.returnType,
-            messageId: 'useExplicitVariable',
-          });
-          return;
-        }
-
-        // Check if the function has a return statement with a direct value (not a variable)
-        if (node.body && node.body.type === AST_NODE_TYPES.BlockStatement) {
-          for (const statement of node.body.body) {
-            if (statement.type === AST_NODE_TYPES.ReturnStatement && statement.argument) {
-              // If returning a variable reference, that's fine
-              if (statement.argument.type === AST_NODE_TYPES.Identifier) {
-                continue;
-              }
-
-              // If returning an object literal, array literal, or other complex expression
-              // without first assigning it to a typed variable, that's a problem
-              if (
-                statement.argument.type === AST_NODE_TYPES.ObjectExpression ||
-                statement.argument.type === AST_NODE_TYPES.ArrayExpression ||
-                statement.argument.type === AST_NODE_TYPES.CallExpression
-              ) {
-                context.report({
-                  node: node.returnType,
-                  messageId: 'useExplicitVariable',
-                });
-                break;
-              }
-            }
-          }
-        }
+        checkFunctionReturnType(node);
       },
 
       // Check function expressions with explicit return types
       FunctionExpression(node) {
-        if (!node.returnType) return;
-
-        // Allow type predicates if configured
-        if (mergedOptions.allowTypePredicates && isTypePredicate(node.returnType)) {
-          return;
-        }
-
-        // If type predicates are not allowed, report them
-        if (!mergedOptions.allowTypePredicates && isTypePredicate(node.returnType)) {
-          context.report({
-            node: node.returnType,
-            messageId: 'useExplicitVariable',
-          });
-          return;
-        }
-
-        // Check if the function has a return statement with a direct value (not a variable)
-        if (node.body && node.body.type === AST_NODE_TYPES.BlockStatement) {
-          for (const statement of node.body.body) {
-            if (statement.type === AST_NODE_TYPES.ReturnStatement && statement.argument) {
-              // If returning a variable reference, that's fine
-              if (statement.argument.type === AST_NODE_TYPES.Identifier) {
-                continue;
-              }
-
-              // If returning an object literal, array literal, or other complex expression
-              // without first assigning it to a typed variable, that's a problem
-              if (
-                statement.argument.type === AST_NODE_TYPES.ObjectExpression ||
-                statement.argument.type === AST_NODE_TYPES.ArrayExpression ||
-                statement.argument.type === AST_NODE_TYPES.CallExpression
-              ) {
-                context.report({
-                  node: node.returnType,
-                  messageId: 'useExplicitVariable',
-                });
-                break;
-              }
-            }
-          }
-        }
+        checkFunctionReturnType(node);
       },
 
       // Check arrow functions
@@ -240,45 +328,7 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
           }
         } else if (node.returnType) {
           // For arrow functions with block bodies
-          // Allow type predicates if configured
-          if (mergedOptions.allowTypePredicates && isTypePredicate(node.returnType)) {
-            return;
-          }
-
-          // If type predicates are not allowed, report them
-          if (!mergedOptions.allowTypePredicates && isTypePredicate(node.returnType)) {
-            context.report({
-              node: node.returnType,
-              messageId: 'useExplicitVariable',
-            });
-            return;
-          }
-
-          // Check if the function has a return statement with a direct value (not a variable)
-          if (node.body && node.body.type === AST_NODE_TYPES.BlockStatement) {
-            for (const statement of node.body.body) {
-              if (statement.type === AST_NODE_TYPES.ReturnStatement && statement.argument) {
-                // If returning a variable reference, that's fine
-                if (statement.argument.type === AST_NODE_TYPES.Identifier) {
-                  continue;
-                }
-
-                // If returning an object literal, array literal, or other complex expression
-                // without first assigning it to a typed variable, that's a problem
-                if (
-                  statement.argument.type === AST_NODE_TYPES.ObjectExpression ||
-                  statement.argument.type === AST_NODE_TYPES.ArrayExpression ||
-                  statement.argument.type === AST_NODE_TYPES.CallExpression
-                ) {
-                  context.report({
-                    node: node.returnType,
-                    messageId: 'useExplicitVariable',
-                  });
-                  break;
-                }
-              }
-            }
-          }
+          checkFunctionReturnType(node);
         }
       },
 
@@ -294,19 +344,8 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
           return;
         }
 
-        // If the parent is a return statement, we already handle it in ReturnStatement
-        if (node.parent?.type === AST_NODE_TYPES.ReturnStatement) {
-          return;
-        }
-
-        // If the parent is an arrow function, we already handle it in ArrowFunctionExpression
-        if (node.parent?.type === AST_NODE_TYPES.ArrowFunctionExpression) {
-          return;
-        }
-
-        // If the parent is a variable declarator, this is a variable declaration with type assertion
-        // which is a valid pattern and should not be flagged
-        if (node.parent?.type === AST_NODE_TYPES.VariableDeclarator) {
+        // Use the common function to check if the type assertion should be allowed
+        if (shouldAllowTypeAssertion(node)) {
           return;
         }
 
@@ -319,19 +358,8 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
 
       // Check for type assertions using angle bracket syntax
       TSTypeAssertion(node) {
-        // If the parent is a return statement, we already handle it in ReturnStatement
-        if (node.parent?.type === AST_NODE_TYPES.ReturnStatement) {
-          return;
-        }
-
-        // If the parent is an arrow function, we already handle it in ArrowFunctionExpression
-        if (node.parent?.type === AST_NODE_TYPES.ArrowFunctionExpression) {
-          return;
-        }
-
-        // If the parent is a variable declarator, this is a variable declaration with type assertion
-        // which is a valid pattern and should not be flagged
-        if (node.parent?.type === AST_NODE_TYPES.VariableDeclarator) {
+        // Use the common function to check if the type assertion should be allowed
+        if (shouldAllowTypeAssertion(node)) {
           return;
         }
 
