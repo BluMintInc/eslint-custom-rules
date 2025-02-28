@@ -1,3 +1,10 @@
+## [1.8.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.8.1...v1.8.2) (2025-02-28)
+
+
+### Bug Fixes
+
+* **enforce-singular-type-names.ts:** also allow "Options" and "Settings" ([0c6514a](https://github.com/BluMintInc/eslint-custom-rules/commit/0c6514a43151b7ca9cd5cf1031aed85b60419cdd))
+
 ## [1.8.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.8.0...v1.8.1) (2025-02-27)
 
 
