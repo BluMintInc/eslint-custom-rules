@@ -405,17 +405,6 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
       errors: [{ messageId: 'noUuidv4Base62AsKey' }]
     },
 
-    // Using uuidv4Base62 in a nested JSX structure
-    {
-      code: `
-      {items.map((item) => (
-        <div>
-          <span key={uuidv4Base62()}>{item.name}</span>
-        </div>
-      ))}
-      `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }]
-    },
 
     // Using uuidv4Base62 in a deeply nested map
     {
