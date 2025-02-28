@@ -1,4 +1,8 @@
-# enforce-css-media-queries
+# Enforce CSS media queries over JS breakpoints (`@blumintinc/blumint/enforce-css-media-queries`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 This rule enforces the use of CSS media queries instead of JavaScript-based breakpoints in React components for better performance and separation of concerns.
 
