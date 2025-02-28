@@ -19,6 +19,45 @@ export const enforceObjectLiteralAsConst = createRule({
   },
   defaultOptions: [],
   create(context) {
+    /**
+     * Checks if the node is inside a React hook like useMemo
+     */
+    function isInsideReactHook(ancestors: TSESTree.Node[]): boolean {
+      for (let i = 0; i < ancestors.length; i++) {
+        const ancestor = ancestors[i];
+
+        // Check for CallExpression (function call)
+        if (ancestor.type === 'CallExpression') {
+          const callee = ancestor.callee;
+
+          // Check if it's a hook like useMemo, useCallback, etc.
+          if (
+            callee.type === 'Identifier' &&
+            (callee.name === 'useMemo' ||
+             callee.name === 'useCallback' ||
+             callee.name.startsWith('use'))
+          ) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    /**
+     * Checks if an array contains object literals that might be used as component props
+     */
+    function isArrayWithObjectLiterals(node: TSESTree.Node): boolean {
+      if (node.type !== 'ArrayExpression') {
+        return false;
+      }
+
+      // Check if any element in the array is an object literal
+      return node.elements.some(
+        (elem) => elem !== null && elem.type === 'ObjectExpression'
+      );
+    }
+
     return {
       ReturnStatement(node) {
         // Skip if there's no argument in the return statement
@@ -83,6 +122,16 @@ export const enforceObjectLiteralAsConst = createRule({
             argument.elements.some(
               (elem) => elem !== null && elem.type === 'SpreadElement',
             ))
+        ) {
+          return;
+        }
+
+        // Skip arrays with object literals inside React hooks (likely component props)
+        if (
+          isInsideReactHook(ancestors) &&
+          isArrayWithObjectLiterals(argument.type === 'TSAsExpression'
+            ? (argument as TSESTree.TSAsExpression).expression
+            : argument)
         ) {
           return;
         }
