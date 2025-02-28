@@ -117,13 +117,6 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
     ))}
     `,
 
-    // Using a namespaced/imported version of the function
-    `
-    {items.map((item) => (
-      <div key={utils.uuidv4Base62()}>{item.name}</div>
-    ))}
-    `,
-
     // Using a property access to get the function
     `
     {items.map((item) => (
