@@ -1,4 +1,5 @@
 import { createRule } from '../utils/createRule';
+import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 
 type Options = [];
 type MessageIds = 'enforceIdCapitalization';
@@ -30,10 +31,62 @@ export const enforceIdCapitalization = createRule<Options, MessageIds>({
     const idRegex = /(^|\s|[.,;:!?'"()\[\]{}])id(\s|$|[.,;:!?'"()\[\]{}])/g;
 
     /**
+     * Check if a node is in a context that should be excluded from the rule
+     * (e.g., parameter names, property names, type definitions)
+     */
+    function isExcludedContext(node: any): boolean {
+      // Check if the node is a property of an object pattern (destructuring)
+      if (
+        node.parent &&
+        (node.parent.type === AST_NODE_TYPES.Property ||
+          node.parent.type === AST_NODE_TYPES.PropertyDefinition) &&
+        node.parent.key === node
+      ) {
+        return true;
+      }
+
+      // Check if the node is a parameter name
+      if (
+        node.parent &&
+        (node.parent.type === AST_NODE_TYPES.FunctionDeclaration ||
+          node.parent.type === AST_NODE_TYPES.FunctionExpression ||
+          node.parent.type === AST_NODE_TYPES.ArrowFunctionExpression) &&
+        node.parent.params.includes(node)
+      ) {
+        return true;
+      }
+
+      // Check if the node is part of a type definition
+      if (
+        node.parent &&
+        (node.parent.type === AST_NODE_TYPES.TSPropertySignature ||
+          node.parent.type === AST_NODE_TYPES.TSParameterProperty ||
+          node.parent.type === AST_NODE_TYPES.TSTypeAnnotation ||
+          node.parent.type === AST_NODE_TYPES.TSTypeReference)
+      ) {
+        return true;
+      }
+
+      // Check if the node is a variable name
+      if (
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.VariableDeclarator &&
+        node.parent.id === node
+      ) {
+        return true;
+      }
+
+      return false;
+    }
+
+    /**
      * Check if a string contains "id" as a standalone word and report if found
      */
     function checkForIdInString(node: any, value: string) {
       if (typeof value !== 'string') return;
+
+      // Skip checking if the node is in an excluded context
+      if (isExcludedContext(node)) return;
 
       // Reset the regex lastIndex to ensure consistent behavior
       idRegex.lastIndex = 0;
@@ -51,11 +104,11 @@ export const enforceIdCapitalization = createRule<Options, MessageIds>({
           node,
           messageId: 'enforceIdCapitalization',
           fix: (fixer) => {
-            if (node.type === 'Literal') {
+            if (node.type === AST_NODE_TYPES.Literal) {
               return fixer.replaceText(node, JSON.stringify(fixedText));
-            } else if (node.type === 'JSXText') {
+            } else if (node.type === AST_NODE_TYPES.JSXText) {
               return fixer.replaceText(node, fixedText);
-            } else if (node.type === 'TemplateElement') {
+            } else if (node.type === AST_NODE_TYPES.TemplateElement) {
               return fixer.replaceText(node, fixedText);
             }
             return fixer.replaceText(node, JSON.stringify(fixedText));
