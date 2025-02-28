@@ -1,15 +1,19 @@
 import { TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import path from 'path';
 
 type MessageIds = 'noUuidv4Base62AsKey';
 type Options = [];
+
+// Target import path for uuidv4Base62
+const TARGET_IMPORT_PATH = 'functions/src/util/uuidv4Base62.ts';
 
 export const noUuidv4Base62AsKey = createRule<Options, MessageIds>({
   name: 'no-uuidv4-base62-as-key',
   meta: {
     type: 'problem',
     docs: {
-      description: 'Avoid using uuidv4Base62() as React list keys',
+      description: 'Avoid using uuidv4Base62() from functions/src/util/uuidv4Base62.ts as React list keys',
       recommended: 'error',
     },
     messages: {
@@ -22,6 +26,25 @@ export const noUuidv4Base62AsKey = createRule<Options, MessageIds>({
   create(context) {
     // Track JSXElements that are direct children of a map callback
     const mapCallbackElements = new Set<TSESTree.JSXElement | TSESTree.JSXFragment>();
+
+    // Track imported uuidv4Base62 identifiers
+    const uuidv4Base62Identifiers = new Set<string>();
+
+    // Helper function to check if an import path matches our target
+    const isTargetImportPath = (importPath: string): boolean => {
+      // Handle relative paths
+      if (importPath.startsWith('.')) {
+        const currentFilePath = context.getFilename();
+        const currentDir = path.dirname(currentFilePath);
+        const resolvedPath = path.resolve(currentDir, importPath);
+
+        // Check if the resolved path ends with our target path
+        return resolvedPath.endsWith(TARGET_IMPORT_PATH);
+      }
+
+      // Handle absolute paths
+      return importPath.endsWith(TARGET_IMPORT_PATH);
+    };
 
     // Helper function to process map calls
     const processMapCall = (node: TSESTree.CallExpression) => {
@@ -73,7 +96,8 @@ export const noUuidv4Base62AsKey = createRule<Options, MessageIds>({
 
       const callee = node.callee;
       if (callee.type === 'Identifier') {
-        return callee.name === 'uuidv4Base62';
+        // Check if the identifier is in our tracked set of uuidv4Base62 imports
+        return uuidv4Base62Identifiers.has(callee.name);
       }
 
       return false;
@@ -174,6 +198,25 @@ export const noUuidv4Base62AsKey = createRule<Options, MessageIds>({
     };
 
     return {
+      // Track imports of uuidv4Base62
+      ImportDeclaration(node: TSESTree.ImportDeclaration) {
+        const importPath = node.source.value;
+
+        // Check if this import is from our target path
+        if (typeof importPath === 'string' && isTargetImportPath(importPath)) {
+          // Process all specifiers to find uuidv4Base62
+          for (const specifier of node.specifiers) {
+            if (specifier.type === 'ImportSpecifier') {
+              // Check for direct import or renamed import
+              if (specifier.imported.name === 'uuidv4Base62') {
+                // Add the local name to our tracked identifiers
+                uuidv4Base62Identifiers.add(specifier.local.name);
+              }
+            }
+          }
+        }
+      },
+
       // Find array.map() calls
       'CallExpression[callee.property.name="map"]'(node: TSESTree.CallExpression) {
         processMapCall(node);
