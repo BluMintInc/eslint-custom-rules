@@ -34,6 +34,55 @@ function isTypePredicate(node: TSESTree.TSTypeAnnotation): boolean {
   return node.typeAnnotation.type === AST_NODE_TYPES.TSTypePredicate;
 }
 
+/**
+ * Checks if a node is inside a return statement
+ */
+function isInsideReturnStatement(node: TSESTree.Node): boolean {
+  let current: TSESTree.Node | undefined = node;
+
+  while (current?.parent) {
+    if (current.parent.type === AST_NODE_TYPES.ReturnStatement) {
+      return true;
+    }
+    current = current.parent;
+  }
+
+  return false;
+}
+
+/**
+ * Checks if a node is inside a conditional statement
+ */
+function isInsideConditionalStatement(node: TSESTree.Node): boolean {
+  let current: TSESTree.Node | undefined = node;
+
+  while (current?.parent) {
+    if (
+      current.parent.type === AST_NODE_TYPES.IfStatement ||
+      current.parent.type === AST_NODE_TYPES.WhileStatement ||
+      current.parent.type === AST_NODE_TYPES.DoWhileStatement ||
+      current.parent.type === AST_NODE_TYPES.ForStatement ||
+      current.parent.type === AST_NODE_TYPES.ConditionalExpression
+    ) {
+      // If we're in a conditional statement but not in a return statement, it's valid
+      return !isInsideReturnStatement(current.parent);
+    }
+    current = current.parent;
+  }
+
+  return false;
+}
+
+/**
+ * Checks if a type assertion is used to access a property
+ */
+function isPropertyAccess(node: TSESTree.TSAsExpression | TSESTree.TSTypeAssertion): boolean {
+  return (
+    node.parent?.type === AST_NODE_TYPES.MemberExpression &&
+    node.parent.object === node
+  );
+}
+
 export const noTypeAssertionReturns = createRule<Options, MessageIds>({
   name: 'no-type-assertion-returns',
   meta: {
@@ -310,6 +359,35 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
           return;
         }
 
+        // Allow type assertions within conditional statements (if, while, do-while, for)
+        if (node.parent?.type === AST_NODE_TYPES.IfStatement ||
+            node.parent?.type === AST_NODE_TYPES.WhileStatement ||
+            node.parent?.type === AST_NODE_TYPES.DoWhileStatement ||
+            node.parent?.type === AST_NODE_TYPES.ForStatement) {
+          return;
+        }
+
+        // Allow type assertions within logical expressions (which are often used in conditions)
+        if (node.parent?.type === AST_NODE_TYPES.LogicalExpression) {
+          return;
+        }
+
+        // Allow type assertions within method calls like array.includes()
+        if (node.parent?.type === AST_NODE_TYPES.CallExpression &&
+            node.parent.callee.type === AST_NODE_TYPES.MemberExpression) {
+          return;
+        }
+
+        // Allow type assertions within conditional expressions, but only if they're not part of a return statement
+        if (node.parent?.type === AST_NODE_TYPES.ConditionalExpression && !isInsideReturnStatement(node)) {
+          return;
+        }
+
+        // Allow type assertions used to access properties in conditional contexts
+        if (isPropertyAccess(node) && isInsideConditionalStatement(node)) {
+          return;
+        }
+
         // For standalone type assertions in expressions
         context.report({
           node,
@@ -332,6 +410,35 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
         // If the parent is a variable declarator, this is a variable declaration with type assertion
         // which is a valid pattern and should not be flagged
         if (node.parent?.type === AST_NODE_TYPES.VariableDeclarator) {
+          return;
+        }
+
+        // Allow type assertions within conditional statements (if, while, do-while, for)
+        if (node.parent?.type === AST_NODE_TYPES.IfStatement ||
+            node.parent?.type === AST_NODE_TYPES.WhileStatement ||
+            node.parent?.type === AST_NODE_TYPES.DoWhileStatement ||
+            node.parent?.type === AST_NODE_TYPES.ForStatement) {
+          return;
+        }
+
+        // Allow type assertions within logical expressions (which are often used in conditions)
+        if (node.parent?.type === AST_NODE_TYPES.LogicalExpression) {
+          return;
+        }
+
+        // Allow type assertions within method calls like array.includes()
+        if (node.parent?.type === AST_NODE_TYPES.CallExpression &&
+            node.parent.callee.type === AST_NODE_TYPES.MemberExpression) {
+          return;
+        }
+
+        // Allow type assertions within conditional expressions, but only if they're not part of a return statement
+        if (node.parent?.type === AST_NODE_TYPES.ConditionalExpression && !isInsideReturnStatement(node)) {
+          return;
+        }
+
+        // Allow type assertions used to access properties in conditional contexts
+        if (isPropertyAccess(node) && isInsideConditionalStatement(node)) {
           return;
         }
 

@@ -3,6 +3,28 @@ import { noTypeAssertionReturns } from '../rules/no-type-assertion-returns';
 
 ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
   valid: [
+    // ==================== TYPE ASSERTION IN CONDITIONAL STATEMENTS ====================
+
+    // Good: Type assertion within array includes check
+    `
+    function validateProject(project: string) {
+      if (!VALID_PROJECTS.includes(project as (typeof VALID_PROJECTS)[number])) {
+        throw new Error('Invalid project');
+      }
+      return project;
+    }
+    `,
+
+    // Good: Type assertion within conditional expression
+    `
+    function checkValue(value: unknown) {
+      if ((value as string).length > 5) {
+        return true;
+      }
+      return false;
+    }
+    `,
+
     // ==================== VARIABLE DECLARATION WITH TYPE ASSERTION ====================
 
     // Good: Variable declaration with type assertion using 'as' syntax (should not be flagged)
@@ -456,7 +478,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
 
     // ==================== ADDITIONAL INVALID CASES ====================
 
-    // Bad: Type assertion in conditional expression
+    // Bad: Type assertion in return statement with conditional expression
     {
       code: `
       function getItem(condition: boolean) {
