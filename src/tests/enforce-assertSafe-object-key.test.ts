@@ -5,7 +5,7 @@ ruleTesterTs.run('enforce-assertSafe-object-key', enforceAssertSafeObjectKey, {
   valid: [
     {
       code: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[assertSafe(id)]);
@@ -13,7 +13,7 @@ console.log(obj[assertSafe(id)]);
     },
     {
       code: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 const value = obj[assertSafe(id)];
@@ -59,7 +59,7 @@ console.log(arr[index + 1]);
     {
       // Using a computed property with a complex expression
       code: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key';
 const num = 1;
@@ -69,7 +69,7 @@ console.log(obj[assertSafe(id + num)]);
     {
       // Using a computed property with a conditional expression
       code: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key';
 const condition = true;
@@ -86,7 +86,7 @@ console.log(obj[String(id)]);
       `,
       errors: [{ messageId: 'useAssertSafe' }],
       output: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[assertSafe(id)]);
@@ -100,7 +100,7 @@ console.log(obj[\`\${id}\`]);
       `,
       errors: [{ messageId: 'useAssertSafe' }],
       output: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[assertSafe(id)]);
@@ -108,14 +108,14 @@ console.log(obj[assertSafe(id)]);
     },
     {
       code: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[String(id)]);
       `,
       errors: [{ messageId: 'useAssertSafe' }],
       output: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[assertSafe(id)]);
@@ -123,14 +123,14 @@ console.log(obj[assertSafe(id)]);
     },
     {
       code: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[\`\${id}\`]);
       `,
       errors: [{ messageId: 'useAssertSafe' }],
       output: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[assertSafe(id)]);
@@ -145,7 +145,7 @@ const value = obj[String(id)];
       `,
       errors: [{ messageId: 'useAssertSafe' }],
       output: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 import something from 'other-module';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
@@ -161,7 +161,7 @@ const value2 = obj[\`\${id}\`];
       `,
       errors: [{ messageId: 'useAssertSafe' }, { messageId: 'useAssertSafe' }],
       output: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 const value1 = obj[assertSafe(id)];
@@ -178,7 +178,7 @@ function process(id) {
       `,
       errors: [{ messageId: 'useAssertSafe' }],
       output: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 function process(id) {
   return obj[assertSafe(id)];
@@ -194,7 +194,7 @@ console.log(nested.obj[String(id)]);
       `,
       errors: [{ messageId: 'useAssertSafe' }],
       output: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 const nested = { obj };
@@ -209,7 +209,7 @@ console.log(data.users[String(userId)].name);
       `,
       errors: [{ messageId: 'useAssertSafe' }],
       output: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 const data = { users: { user1: { name: 'John' } } };
 const userId = 'user1';
 console.log(data.users[assertSafe(userId)].name);
@@ -229,7 +229,7 @@ class DataStore {
       `,
       errors: [{ messageId: 'useAssertSafe' }],
       output: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 class DataStore {
   constructor() {
     this.data = { key1: 'value1' };
@@ -250,7 +250,7 @@ console.log(obj[prop]);
       `,
       errors: [{ messageId: 'useAssertSafe' }],
       output: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 const prop = \`\${id}\`;
@@ -265,7 +265,7 @@ obj[String(id)] = 'new value';
       `,
       errors: [{ messageId: 'useAssertSafe' }],
       output: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 obj[assertSafe(id)] = 'new value';
@@ -279,7 +279,7 @@ delete obj[String(id)];
       `,
       errors: [{ messageId: 'useAssertSafe' }],
       output: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 delete obj[assertSafe(id)];
@@ -293,7 +293,7 @@ const hasKey = String(id) in obj;
       `,
       errors: [{ messageId: 'useAssertSafe' }],
       output: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 const hasKey = assertSafe(id) in obj;
@@ -307,7 +307,7 @@ const { [String(id)]: value } = obj;
       `,
       errors: [{ messageId: 'useAssertSafe' }],
       output: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 const { [assertSafe(id)]: value } = obj;
@@ -323,7 +323,7 @@ console.log(obj[\`\${id}\`]); // Unnecessary template literal usage
       `,
       errors: [{ messageId: 'useAssertSafe' }, { messageId: 'useAssertSafe' }],
       output: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[assertSafe(id)]); // Redundant string conversion
@@ -339,7 +339,7 @@ console.log(obj[id]);
       `,
       errors: [{ messageId: 'useAssertSafe' }],
       output: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[assertSafe(id)]);
@@ -354,7 +354,7 @@ console.log(obj[condition]);
       `,
       errors: [{ messageId: 'useAssertSafe' }],
       output: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 const obj = { true: 'value1', false: 'value2' };
 const condition = true;
 console.log(obj[assertSafe(condition)]);
@@ -369,7 +369,7 @@ console.log(obj[getId()]);
       `,
       errors: [{ messageId: 'useAssertSafe' }],
       output: `
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from '../../functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
 const getId = () => 'key1';
 console.log(obj[assertSafe(getId())]);

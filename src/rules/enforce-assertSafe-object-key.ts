@@ -34,8 +34,12 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       const firstImport = program.body.find(
         (node) => node.type === AST_NODE_TYPES.ImportDeclaration,
       );
+
+      // Use the correct relative path to assertSafe
+      const targetPath = '../../functions/src/util/assertSafe';
+
       const importStatement =
-        "import { assertSafe } from 'utils/assertions';\n";
+        `import { assertSafe } from '${targetPath}';\n`;
 
       if (firstImport) {
         return fixer.insertTextBefore(firstImport, importStatement);
