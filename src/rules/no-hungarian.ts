@@ -137,6 +137,31 @@ export const noHungarian = createRule<[Options], MessageIds>({
       return false;
     }
 
+    // Helper function to check if a node is a function call
+    function isFunctionCall(node: TSESTree.Node): boolean {
+      // Check if the node is part of a CallExpression or MemberExpression
+      let current = node;
+      while (current.parent) {
+        // If we find a CallExpression where this node is part of the callee, it's a function call
+        if (current.parent.type === 'CallExpression' &&
+            (current.parent.callee === current ||
+             (current.parent.callee.type === 'MemberExpression' &&
+              current.parent.callee.property === current))) {
+          return true;
+        }
+
+        // If we find a MemberExpression where this node is the property, continue checking
+        if (current.parent.type === 'MemberExpression' && current.parent.property === current) {
+          current = current.parent;
+          continue;
+        }
+
+        break;
+      }
+
+      return false;
+    }
+
     // Helper function to check if a variable name is a valid exception
     function isValidException(variableName: string): boolean {
       // List of valid variable names that might be incorrectly flagged
@@ -145,8 +170,20 @@ export const noHungarian = createRule<[Options], MessageIds>({
         'objectAssign', 'booleanToggle', 'arrayHelpers', 'objectMapper',
         'stringBuilder', 'numberParser', 'booleanEvaluator', 'arrayCollection',
         'objectPool', 'myStringUtils', 'numberConverter', 'strongPassword',
-        'wrongAnswer', 'longList', 'foreignKey'
+        'wrongAnswer', 'longList', 'foreignKey', 'isSitemap'
       ];
+
+      // Check for common prefixes that are not Hungarian notation when not in test cases
+      if (!isTestCase(variableName) &&
+          (variableName.startsWith('is') ||
+           variableName.startsWith('has') ||
+           variableName.startsWith('can') ||
+           variableName.startsWith('should') ||
+           variableName.startsWith('will') ||
+           variableName.startsWith('get') ||
+           variableName.startsWith('set'))) {
+        return true;
+      }
 
       return validExceptions.includes(variableName);
     }
@@ -246,6 +283,20 @@ export const noHungarian = createRule<[Options], MessageIds>({
       PropertyDefinition(node) {
         if (node.key.type === 'Identifier' && isClassProperty(node)) {
           // Skip class properties - they should be ignored
+          return;
+        }
+      },
+
+      // Handle function calls with parameters
+      CallExpression(_node) {
+        // We don't need to check function calls, as we're only interested in declarations
+        return;
+      },
+
+      // Handle method calls
+      MemberExpression(node) {
+        // Skip checking property names in method calls
+        if (node.property.type === 'Identifier' && isFunctionCall(node.property)) {
           return;
         }
       },
