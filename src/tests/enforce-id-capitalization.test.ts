@@ -94,12 +94,63 @@ ruleTesterTs.run('enforce-id-capitalization', enforceIdCapitalization, {
     {
       code: 'type UserData = { id: number; } // Type properties are not affected',
     },
+    // Test the specific bug scenario with parameter destructuring
+    {
+      code: `
+        export type FriendCardAddProps = {
+          id: string;
+          username: string;
+          imgUrl: string;
+          friends: string[];
+        };
+
+        const FriendCardAdd = function({ id, username, imgUrl, friends }) {
+          return null;
+        };
+      `,
+    },
+    // Test with function parameters
+    {
+      code: `
+        function processUser(id: string, name: string) {
+          return { id, name };
+        }
+      `,
+    },
+    // Test with object destructuring in variable declarations
+    {
+      code: `
+        const { id, name } = user;
+        console.log(id);
+      `,
+    },
+    // Test with nested destructuring
+    {
+      code: `
+        const { user: { id, profile } } = data;
+        console.log(id);
+      `,
+    },
   ],
   invalid: [
     {
       code: 'const message: string = "Please enter your id";',
       errors: [{ messageId: 'enforceIdCapitalization' }],
       output: 'const message: string = "Please enter your ID";',
+    },
+    // Make sure user-facing text in components with destructured parameters is still flagged
+    {
+      code: `
+        const UserProfile = function({ id, name }) {
+          return "Your user id: " + id;
+        };
+      `,
+      errors: [{ messageId: 'enforceIdCapitalization' }],
+      output: `
+        const UserProfile = function({ id, name }) {
+          return "Your user ID: " + id;
+        };
+      `,
     },
   ],
 });
