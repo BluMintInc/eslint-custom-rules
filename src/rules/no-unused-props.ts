@@ -20,6 +20,8 @@ export const noUnusedProps = createRule({
   create(context) {
     const propsTypes: Map<string, Record<string, TSESTree.Node>> = new Map();
     const usedProps: Map<string, Set<string>> = new Map();
+    // Track which spread types have been used in a component
+    const usedSpreadTypes: Map<string, Set<string>> = new Map();
     let currentComponent: { node: TSESTree.Node; typeName: string } | null =
       null;
 
@@ -27,6 +29,8 @@ export const noUnusedProps = createRule({
       TSTypeAliasDeclaration(node) {
         if (node.id.name.endsWith('Props')) {
           const props: Record<string, TSESTree.Node> = {};
+          // Track which properties come from which spread type
+          const spreadTypeProps: Record<string, string[]> = {};
 
           function extractProps(typeNode: TSESTree.TypeNode) {
             if (typeNode.type === AST_NODE_TYPES.TSTypeLiteral) {
@@ -48,6 +52,7 @@ export const noUnusedProps = createRule({
                       const [baseType, pickedProps] = type.typeParameters.params;
                       if (baseType.type === AST_NODE_TYPES.TSTypeReference &&
                           baseType.typeName.type === AST_NODE_TYPES.Identifier) {
+                        const baseTypeName = baseType.typeName.name;
                         // Extract the picked properties from the union type
                         if (pickedProps.type === AST_NODE_TYPES.TSUnionType) {
                           pickedProps.types.forEach((t) => {
@@ -55,14 +60,26 @@ export const noUnusedProps = createRule({
                                 t.literal.type === AST_NODE_TYPES.Literal &&
                                 typeof t.literal.value === 'string') {
                               // Add each picked property as a regular prop
-                              props[t.literal.value] = t.literal;
+                              const propName = t.literal.value;
+                              props[propName] = t.literal;
+                              // Track that this prop comes from the base type
+                              if (!spreadTypeProps[baseTypeName]) {
+                                spreadTypeProps[baseTypeName] = [];
+                              }
+                              spreadTypeProps[baseTypeName].push(propName);
                             }
                           });
                         } else if (pickedProps.type === AST_NODE_TYPES.TSLiteralType &&
                                  pickedProps.literal.type === AST_NODE_TYPES.Literal &&
                                  typeof pickedProps.literal.value === 'string') {
                           // Single property pick
-                          props[pickedProps.literal.value] = pickedProps.literal;
+                          const propName = pickedProps.literal.value;
+                          props[propName] = pickedProps.literal;
+                          // Track that this prop comes from the base type
+                          if (!spreadTypeProps[baseTypeName]) {
+                            spreadTypeProps[baseTypeName] = [];
+                          }
+                          spreadTypeProps[baseTypeName].push(propName);
                         }
                       }
                     } else {
@@ -74,7 +91,14 @@ export const noUnusedProps = createRule({
                       } else {
                         // If we can't find the type declaration, it's likely an imported type
                         // Mark it as a forwarded prop
-                        props[`...${typeName.name}`] = typeName;
+                        const spreadTypeName = typeName.name;
+                        props[`...${spreadTypeName}`] = typeName;
+
+                        // For imported types, we need to track individual properties that might be used
+                        // from this spread type, even if we don't know what they are yet
+                        if (!spreadTypeProps[spreadTypeName]) {
+                          spreadTypeProps[spreadTypeName] = [];
+                        }
                       }
                     }
                   }
@@ -89,6 +113,7 @@ export const noUnusedProps = createRule({
                   const [baseType, pickedProps] = typeNode.typeParameters.params;
                   if (baseType.type === AST_NODE_TYPES.TSTypeReference &&
                       baseType.typeName.type === AST_NODE_TYPES.Identifier) {
+                    const baseTypeName = baseType.typeName.name;
                     // Extract the picked properties from the union type
                     if (pickedProps.type === AST_NODE_TYPES.TSUnionType) {
                       pickedProps.types.forEach((type) => {
@@ -96,19 +121,38 @@ export const noUnusedProps = createRule({
                             type.literal.type === AST_NODE_TYPES.Literal &&
                             typeof type.literal.value === 'string') {
                           // Add each picked property as a regular prop
-                          props[type.literal.value] = type.literal;
+                          const propName = type.literal.value;
+                          props[propName] = type.literal;
+                          // Track that this prop comes from the base type
+                          if (!spreadTypeProps[baseTypeName]) {
+                            spreadTypeProps[baseTypeName] = [];
+                          }
+                          spreadTypeProps[baseTypeName].push(propName);
                         }
                       });
                     } else if (pickedProps.type === AST_NODE_TYPES.TSLiteralType &&
                              pickedProps.literal.type === AST_NODE_TYPES.Literal &&
                              typeof pickedProps.literal.value === 'string') {
                       // Single property pick
-                      props[pickedProps.literal.value] = pickedProps.literal;
+                      const propName = pickedProps.literal.value;
+                      props[propName] = pickedProps.literal;
+                      // Track that this prop comes from the base type
+                      if (!spreadTypeProps[baseTypeName]) {
+                        spreadTypeProps[baseTypeName] = [];
+                      }
+                      spreadTypeProps[baseTypeName].push(propName);
                     }
                   }
                 } else {
                   // For referenced types like FormControlLabelProps, we need to track that these props should be forwarded
-                  props[`...${typeNode.typeName.name}`] = typeNode.typeName;
+                  const spreadTypeName = typeNode.typeName.name;
+                  props[`...${spreadTypeName}`] = typeNode.typeName;
+
+                  // For imported types, we need to track individual properties that might be used
+                  // from this spread type, even if we don't know what they are yet
+                  if (!spreadTypeProps[spreadTypeName]) {
+                    spreadTypeProps[spreadTypeName] = [];
+                  }
                 }
               }
             }
@@ -116,6 +160,22 @@ export const noUnusedProps = createRule({
 
           extractProps(node.typeAnnotation);
           propsTypes.set(node.id.name, props);
+
+          // Store the mapping of spread types to their properties
+          const typeName = node.id.name;
+          usedSpreadTypes.set(typeName, new Set(Object.keys(spreadTypeProps)));
+
+          // Store the spread type properties for later reference
+          for (const [spreadType, propNames] of Object.entries(spreadTypeProps)) {
+            // Create a map entry for this spread type if it doesn't exist
+            if (!usedSpreadTypes.has(spreadType)) {
+              usedSpreadTypes.set(spreadType, new Set());
+            }
+
+            // Add the property names to the spread type's set
+            const spreadTypeSet = usedSpreadTypes.get(spreadType)!;
+            propNames.forEach(prop => spreadTypeSet.add(prop));
+          }
         }
       },
 
@@ -179,7 +239,55 @@ export const noUnusedProps = createRule({
                 // For imported types (props that start with '...'), only report if there's no rest spread operator
                 // This allows imported types to be used without being flagged when properly forwarded
                 const hasRestSpread = Array.from(used.values()).some(usedProp => usedProp.startsWith('...'));
-                if (!prop.startsWith('...') || !hasRestSpread) {
+
+                // Don't report unused props if:
+                // 1. It's a spread type and there's a rest spread operator, OR
+                // 2. It's a property from a spread type and any property from that spread type is used, OR
+                // 3. It's a spread type and any of its properties are used in the component
+
+                let shouldReport = true;
+
+                if (prop.startsWith('...') && hasRestSpread) {
+                  shouldReport = false;
+                } else if (prop.startsWith('...')) {
+                  // For spread types like "...GroupInfoBasic", check if any properties from this type are used
+                  const spreadTypeName = prop.substring(3); // Remove the "..." prefix
+
+                  // Get the properties that belong to this spread type
+                  const spreadTypeProps = usedSpreadTypes.get(spreadTypeName);
+
+                  if (spreadTypeProps) {
+                    // Check if any property from this spread type is being used in the component
+                    const anyPropFromSpreadTypeUsed = Array.from(spreadTypeProps).some(
+                      spreadProp => used.has(spreadProp)
+                    );
+
+                    if (anyPropFromSpreadTypeUsed) {
+                      shouldReport = false;
+                    }
+                  }
+                } else {
+                  // Check if this prop might be from a spread type that has other properties being used
+                  for (const [spreadType, props] of usedSpreadTypes.entries()) {
+                    // Skip the current props type
+                    if (spreadType === typeName) continue;
+
+                    // If this prop is from a spread type
+                    if (props.has(prop)) {
+                      // Check if any other prop from this spread type is being used
+                      const anyPropFromSpreadTypeUsed = Array.from(props).some(
+                        spreadProp => used.has(spreadProp)
+                      );
+
+                      if (anyPropFromSpreadTypeUsed) {
+                        shouldReport = false;
+                        break;
+                      }
+                    }
+                  }
+                }
+
+                if (shouldReport) {
                   context.report({
                     node: propsType[prop],
                     messageId: 'unusedProp',
