@@ -21,7 +21,7 @@ export const noUuidv4Base62AsKey = createRule<Options, MessageIds>({
   defaultOptions: [],
   create(context) {
     // Track JSXElements that are direct children of a map callback
-    const mapCallbackElements = new Set<TSESTree.JSXElement>();
+    const mapCallbackElements = new Set<TSESTree.JSXElement | TSESTree.JSXFragment>();
 
     // Helper function to process map calls
     const processMapCall = (node: TSESTree.CallExpression) => {
@@ -56,9 +56,13 @@ export const noUuidv4Base62AsKey = createRule<Options, MessageIds>({
           }
         }
 
-        // If we found a JSX element as the return value, mark it
-        if (returnExpr && returnExpr.type === 'JSXElement') {
-          mapCallbackElements.add(returnExpr);
+        // If we found a JSX element or fragment as the return value, mark it
+        if (returnExpr) {
+          if (returnExpr.type === 'JSXElement') {
+            mapCallbackElements.add(returnExpr);
+          } else if (returnExpr.type === 'JSXFragment') {
+            mapCallbackElements.add(returnExpr);
+          }
         }
       }
     };
@@ -75,6 +79,100 @@ export const noUuidv4Base62AsKey = createRule<Options, MessageIds>({
       return false;
     };
 
+    // Helper function to recursively check if an expression contains uuidv4Base62()
+    const containsUuidv4Base62Call = (node: TSESTree.Node): boolean => {
+      if (!node) return false;
+
+      // Direct call to uuidv4Base62()
+      if (isUuidv4Base62Call(node)) {
+        return true;
+      }
+
+      // Check template literals
+      if (node.type === 'TemplateLiteral') {
+        for (const expr of node.expressions) {
+          if (containsUuidv4Base62Call(expr)) {
+            return true;
+          }
+        }
+      }
+
+      // Check binary expressions (string concatenation, etc.)
+      if (node.type === 'BinaryExpression') {
+        return containsUuidv4Base62Call(node.left) || containsUuidv4Base62Call(node.right);
+      }
+
+      // Check conditional expressions (ternary)
+      if (node.type === 'ConditionalExpression') {
+        return (
+          containsUuidv4Base62Call(node.test) ||
+          containsUuidv4Base62Call(node.consequent) ||
+          containsUuidv4Base62Call(node.alternate)
+        );
+      }
+
+      // Check logical expressions (&&, ||, ??)
+      if (node.type === 'LogicalExpression') {
+        return containsUuidv4Base62Call(node.left) || containsUuidv4Base62Call(node.right);
+      }
+
+      // Check function calls that might contain uuidv4Base62() as an argument
+      if (node.type === 'CallExpression' && !isUuidv4Base62Call(node)) {
+        return node.arguments.some(arg => containsUuidv4Base62Call(arg));
+      }
+
+      return false;
+    };
+
+    // Helper function to check if an element is within a map callback
+    const isWithinMapCallback = (node: TSESTree.Node): boolean => {
+      if (!node) return false;
+
+      // Check if this element is directly a map callback element
+      if (
+        (node.type === 'JSXElement' || node.type === 'JSXFragment') &&
+        mapCallbackElements.has(node)
+      ) {
+        return true;
+      }
+
+      // Check if this element is nested within a map callback element
+      let parent = node.parent;
+      while (parent) {
+        if (
+          (parent.type === 'JSXElement' || parent.type === 'JSXFragment') &&
+          mapCallbackElements.has(parent)
+        ) {
+          return true;
+        }
+        parent = parent.parent;
+      }
+
+      return false;
+    };
+
+    // Helper function to check JSX attributes for uuidv4Base62 in keys
+    const checkJSXAttributesForUuidv4Base62 = (attributes: (TSESTree.JSXAttribute | TSESTree.JSXSpreadAttribute)[]) => {
+      for (const attr of attributes) {
+        if (
+          attr.type === 'JSXAttribute' &&
+          attr.name.name === 'key' &&
+          attr.value &&
+          attr.value.type === 'JSXExpressionContainer'
+        ) {
+          const expression = attr.value.expression;
+
+          // Check if the key is using uuidv4Base62() directly or in a complex expression
+          if (containsUuidv4Base62Call(expression)) {
+            context.report({
+              node: attr,
+              messageId: 'noUuidv4Base62AsKey',
+            });
+          }
+        }
+      }
+    };
+
     return {
       // Find array.map() calls
       'CallExpression[callee.property.name="map"]'(node: TSESTree.CallExpression) {
@@ -83,30 +181,32 @@ export const noUuidv4Base62AsKey = createRule<Options, MessageIds>({
 
       // Check JSX elements for key props using uuidv4Base62
       JSXElement(node: TSESTree.JSXElement) {
-        // Only check elements that are part of a map callback
-        if (!mapCallbackElements.has(node)) {
+        // Only check elements that are part of a map callback or nested within them
+        if (!isWithinMapCallback(node)) {
           return;
         }
 
         // Check if this element has a key prop
         const openingElement = node.openingElement;
         const attributes = openingElement.attributes;
+        checkJSXAttributesForUuidv4Base62(attributes);
+      },
 
-        for (const attr of attributes) {
-          if (
-            attr.type === 'JSXAttribute' &&
-            attr.name.name === 'key' &&
-            attr.value &&
-            attr.value.type === 'JSXExpressionContainer'
-          ) {
-            const expression = attr.value.expression;
+      // Handle JSX fragments (including shorthand syntax <>...</>)
+      JSXFragment(node: TSESTree.JSXFragment) {
+        // Only process if this fragment is directly within a map callback
+        // (nested elements will be handled by the JSXElement visitor)
+        if (isWithinMapCallback(node)) {
+          // Track elements we've already checked to avoid duplicates
+          const checkedElements = new Set<TSESTree.JSXElement>();
 
-            // Check if the key is using uuidv4Base62()
-            if (isUuidv4Base62Call(expression)) {
-              context.report({
-                node: attr,
-                messageId: 'noUuidv4Base62AsKey',
-              });
+          // Process all child elements within the fragment
+          for (const child of node.children) {
+            if (child.type === 'JSXElement' && !checkedElements.has(child)) {
+              checkedElements.add(child);
+              const openingElement = child.openingElement;
+              const attributes = openingElement.attributes;
+              checkJSXAttributesForUuidv4Base62(attributes);
             }
           }
         }
