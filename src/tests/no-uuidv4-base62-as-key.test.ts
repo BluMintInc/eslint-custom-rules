@@ -526,7 +526,6 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
       `,
       errors: [
         { messageId: 'noUuidv4Base62AsKey' },
-        { messageId: 'noUuidv4Base62AsKey' }
       ]
     },
 
