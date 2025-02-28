@@ -91,6 +91,7 @@ import { enforceCssMediaQueries } from './rules/enforce-css-media-queries';
 import { omitIndexHtml } from './rules/omit-index-html';
 import { enforceIdCapitalization } from './rules/enforce-id-capitalization';
 import { noUnusedUseState } from './rules/no-unused-usestate';
+import { enforceTypescriptCodeBlocks } from './rules/enforce-typescript-code-blocks';
 
 module.exports = {
   meta: {
@@ -204,6 +205,7 @@ module.exports = {
         '@blumintinc/blumint/omit-index-html': 'error',
         '@blumintinc/blumint/enforce-id-capitalization': 'error',
         '@blumintinc/blumint/no-unused-usestate': 'error',
+        '@blumintinc/blumint/enforce-typescript-code-blocks': 'error',
       },
     },
   },
@@ -304,5 +306,6 @@ module.exports = {
     'omit-index-html': omitIndexHtml,
     'enforce-id-capitalization': enforceIdCapitalization,
     'no-unused-usestate': noUnusedUseState,
+    'enforce-typescript-code-blocks': enforceTypescriptCodeBlocks,
   },
 };
