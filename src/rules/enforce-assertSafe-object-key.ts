@@ -35,7 +35,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
         (node) => node.type === AST_NODE_TYPES.ImportDeclaration,
       );
       const importStatement =
-        "import { assertSafe } from 'utils/assertions';\n";
+        "import { assertSafe } from 'functions/src/util/assertSafe';\n";
 
       if (firstImport) {
         return fixer.insertTextBefore(firstImport, importStatement);
