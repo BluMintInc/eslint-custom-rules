@@ -173,17 +173,6 @@ export const noHungarian = createRule<[Options], MessageIds>({
         'wrongAnswer', 'longList', 'foreignKey',
       ];
 
-      // Check for common prefixes that are not Hungarian notation when not in test cases
-      if (!isTestCase(variableName) &&
-          (variableName.startsWith('is') ||
-           variableName.startsWith('has') ||
-           variableName.startsWith('can') ||
-           variableName.startsWith('should') ||
-           variableName.startsWith('will') ||
-           variableName.startsWith('get') ||
-           variableName.startsWith('set'))) {
-        return true;
-      }
 
       return validExceptions.includes(variableName);
     }
