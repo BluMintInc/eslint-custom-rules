@@ -6,7 +6,7 @@ type MessageIds = 'noUuidv4Base62AsKey';
 type Options = [];
 
 // Target import path for uuidv4Base62
-const TARGET_IMPORT_PATH = 'functions/src/util/uuidv4Base62.ts';
+const TARGET_IMPORT_FILENAME = 'uuidv4Base62.ts';
 
 export const noUuidv4Base62AsKey = createRule<Options, MessageIds>({
   name: 'no-uuidv4-base62-as-key',
