@@ -170,7 +170,7 @@ export const noHungarian = createRule<[Options], MessageIds>({
         'objectAssign', 'booleanToggle', 'arrayHelpers', 'objectMapper',
         'stringBuilder', 'numberParser', 'booleanEvaluator', 'arrayCollection',
         'objectPool', 'myStringUtils', 'numberConverter', 'strongPassword',
-        'wrongAnswer', 'longList', 'foreignKey', 'isSitemap'
+        'wrongAnswer', 'longList', 'foreignKey',
       ];
 
       // Check for common prefixes that are not Hungarian notation when not in test cases
