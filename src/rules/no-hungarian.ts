@@ -137,7 +137,7 @@ export const noHungarian = createRule<[Options], MessageIds>({
       return false;
     }
 
-    // Helper function to check if a node is a function call
+    // Helper function to check if a node is a function call or part of a function call
     function isFunctionCall(node: TSESTree.Node): boolean {
       // Check if the node is part of a CallExpression or MemberExpression
       let current = node;
@@ -156,9 +156,58 @@ export const noHungarian = createRule<[Options], MessageIds>({
           continue;
         }
 
+        // Check if the node is an argument to a function call
+        if (current.parent.type === 'CallExpression' &&
+            current.parent.arguments.includes(current as any)) {
+          return true;
+        }
+
         break;
       }
 
+      return false;
+    }
+
+    // Helper function to check if a node is inside a function call argument
+    function isInsideFunctionCallArgument(node: TSESTree.Node): boolean {
+      let current = node;
+      while (current.parent) {
+        // If we find a CallExpression where this node is part of an argument, return true
+        if (current.parent.type === 'CallExpression' &&
+            current.parent.arguments.some(arg => arg === current || isDescendant(arg, current))) {
+          return true;
+        }
+
+        // If we find a MemberExpression, continue checking its parent
+        if (current.parent.type === 'MemberExpression') {
+          current = current.parent;
+          continue;
+        }
+
+        // If we find a property access in a method call, continue checking
+        if (current.parent.type === 'Property' ||
+            current.parent.type === 'ObjectExpression' ||
+            current.parent.type === 'ArrayExpression' ||
+            current.parent.type === 'SpreadElement') {
+          current = current.parent;
+          continue;
+        }
+
+        break;
+      }
+
+      return false;
+    }
+
+    // Helper function to check if a node is a descendant of another node
+    function isDescendant(parent: TSESTree.Node, child: TSESTree.Node): boolean {
+      let current = child.parent;
+      while (current) {
+        if (current === parent) {
+          return true;
+        }
+        current = current.parent;
+      }
       return false;
     }
 
@@ -194,6 +243,11 @@ export const noHungarian = createRule<[Options], MessageIds>({
       VariableDeclarator(node) {
         // Skip destructuring patterns
         if (node.id.type !== 'Identifier') {
+          return;
+        }
+
+        // Skip if this variable is part of a function call argument
+        if (isInsideFunctionCallArgument(node)) {
           return;
         }
 
@@ -286,6 +340,14 @@ export const noHungarian = createRule<[Options], MessageIds>({
       MemberExpression(node) {
         // Skip checking property names in method calls
         if (node.property.type === 'Identifier' && isFunctionCall(node.property)) {
+          return;
+        }
+      },
+
+      // Handle function parameters in function calls
+      Identifier(node) {
+        // Skip identifiers that are part of function calls or function call arguments
+        if (isFunctionCall(node) || isInsideFunctionCallArgument(node)) {
           return;
         }
       },
