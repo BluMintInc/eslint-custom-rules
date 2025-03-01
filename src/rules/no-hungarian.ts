@@ -137,6 +137,80 @@ export const noHungarian = createRule<[Options], MessageIds>({
       return false;
     }
 
+    // Helper function to check if a node is a function call or part of a function call
+    function isFunctionCall(node: TSESTree.Node): boolean {
+      // Check if the node is part of a CallExpression or MemberExpression
+      let current = node;
+      while (current.parent) {
+        // If we find a CallExpression where this node is part of the callee, it's a function call
+        if (current.parent.type === 'CallExpression' &&
+            (current.parent.callee === current ||
+             (current.parent.callee.type === 'MemberExpression' &&
+              current.parent.callee.property === current))) {
+          return true;
+        }
+
+        // If we find a MemberExpression where this node is the property, continue checking
+        if (current.parent.type === 'MemberExpression' && current.parent.property === current) {
+          current = current.parent;
+          continue;
+        }
+
+        // Check if the node is an argument to a function call
+        if (current.parent.type === 'CallExpression' &&
+            current.parent.arguments.includes(current as any)) {
+          return true;
+        }
+
+        break;
+      }
+
+      return false;
+    }
+
+    // Helper function to check if a node is inside a function call argument
+    function isInsideFunctionCallArgument(node: TSESTree.Node): boolean {
+      let current = node;
+      while (current.parent) {
+        // If we find a CallExpression where this node is part of an argument, return true
+        if (current.parent.type === 'CallExpression' &&
+            current.parent.arguments.some(arg => arg === current || isDescendant(arg, current))) {
+          return true;
+        }
+
+        // If we find a MemberExpression, continue checking its parent
+        if (current.parent.type === 'MemberExpression') {
+          current = current.parent;
+          continue;
+        }
+
+        // If we find a property access in a method call, continue checking
+        if (current.parent.type === 'Property' ||
+            current.parent.type === 'ObjectExpression' ||
+            current.parent.type === 'ArrayExpression' ||
+            current.parent.type === 'SpreadElement') {
+          current = current.parent;
+          continue;
+        }
+
+        break;
+      }
+
+      return false;
+    }
+
+    // Helper function to check if a node is a descendant of another node
+    function isDescendant(parent: TSESTree.Node, child: TSESTree.Node): boolean {
+      let current = child.parent;
+      while (current) {
+        if (current === parent) {
+          return true;
+        }
+        current = current.parent;
+      }
+      return false;
+    }
+
     // Helper function to check if a variable name is a valid exception
     function isValidException(variableName: string): boolean {
       // List of valid variable names that might be incorrectly flagged
@@ -145,8 +219,9 @@ export const noHungarian = createRule<[Options], MessageIds>({
         'objectAssign', 'booleanToggle', 'arrayHelpers', 'objectMapper',
         'stringBuilder', 'numberParser', 'booleanEvaluator', 'arrayCollection',
         'objectPool', 'myStringUtils', 'numberConverter', 'strongPassword',
-        'wrongAnswer', 'longList', 'foreignKey'
+        'wrongAnswer', 'longList', 'foreignKey',
       ];
+
 
       return validExceptions.includes(variableName);
     }
@@ -168,6 +243,11 @@ export const noHungarian = createRule<[Options], MessageIds>({
       VariableDeclarator(node) {
         // Skip destructuring patterns
         if (node.id.type !== 'Identifier') {
+          return;
+        }
+
+        // Skip if this variable is part of a function call argument
+        if (isInsideFunctionCallArgument(node)) {
           return;
         }
 
@@ -246,6 +326,28 @@ export const noHungarian = createRule<[Options], MessageIds>({
       PropertyDefinition(node) {
         if (node.key.type === 'Identifier' && isClassProperty(node)) {
           // Skip class properties - they should be ignored
+          return;
+        }
+      },
+
+      // Handle function calls with parameters
+      CallExpression(_node) {
+        // We don't need to check function calls, as we're only interested in declarations
+        return;
+      },
+
+      // Handle method calls
+      MemberExpression(node) {
+        // Skip checking property names in method calls
+        if (node.property.type === 'Identifier' && isFunctionCall(node.property)) {
+          return;
+        }
+      },
+
+      // Handle function parameters in function calls
+      Identifier(node) {
+        // Skip identifiers that are part of function calls or function call arguments
+        if (isFunctionCall(node) || isInsideFunctionCallArgument(node)) {
           return;
         }
       },
