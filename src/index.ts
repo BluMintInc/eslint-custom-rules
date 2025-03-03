@@ -96,7 +96,7 @@ import { noUuidv4Base62AsKey } from './rules/no-uuidv4-base62-as-key';
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.9.0',
+    version: '1.9.1',
   },
   parseOptions: {
     ecmaVersion: 2020,
