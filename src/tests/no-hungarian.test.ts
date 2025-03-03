@@ -350,6 +350,21 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
       }
     }
     `,
+
+    // Valid test for imported function with Hungarian notation parameters
+    {
+      code: `
+        import { processDataWithHungarianParams, variableString } from './external-module';
+        
+        // Using the imported function with Hungarian notation parameters
+        const result = processDataWithHungarianParams(variableString, 5, true);
+        
+        function foo(data: string) {
+          // Local function with clean parameters
+          return processDataWithHungarianParams(variableString, 10, false);
+        }
+      `,
+    },
   ],
   invalid: [
     {
