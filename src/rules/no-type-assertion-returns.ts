@@ -179,6 +179,22 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
         return true;
       }
 
+      // Allow type assertions in object instantiations (as constructor arguments)
+      if (node.parent?.type === AST_NODE_TYPES.ObjectExpression &&
+          node.parent.parent?.type === AST_NODE_TYPES.NewExpression) {
+        return true;
+      }
+
+      // Allow type assertions as arguments to constructors
+      if (node.parent?.type === AST_NODE_TYPES.NewExpression) {
+        return true;
+      }
+
+      // Only flag type assertions in return statements
+      if (!isInsideReturnStatement(node)) {
+        return true;
+      }
+
       return false;
     }
 
