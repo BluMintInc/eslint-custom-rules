@@ -14,14 +14,12 @@ const COMMON_TYPES = [
   'Date',
   'RegExp',
   'Promise',
-  'Map',
-  'Set',
   'Symbol',
   'BigInt',
 ];
 
-// Common Hungarian notation prefixes
-const HUNGARIAN_PREFIXES = [
+// Combined type markers (former Hungarian prefixes and type suffixes)
+const TYPE_MARKERS = [
   'str',
   'num',
   'int',
@@ -31,13 +29,8 @@ const HUNGARIAN_PREFIXES = [
   'fn',
   'func',
   'array',
-  ...COMMON_TYPES.map((type) => type.toLowerCase()),
-];
-
-// Common type suffixes that should be avoided
-const TYPE_SUFFIXES = [
   ...COMMON_TYPES,
-  'Class', // Add 'Class' as a suffix to check for
+  'Class',
   'Interface',
   'Type',
   'Enum',
@@ -208,34 +201,86 @@ export const noHungarian = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    // Check if a variable name has a Hungarian prefix
-    function hasHungarianPrefix(variableName: string): boolean {
+    // Track identifiers that have already been checked to prevent double reporting
+    const checkedIdentifiers = new Set<string>();
+
+    // Check if a variable name contains a type marker with proper word boundaries
+    function hasTypeMarker(variableName: string): boolean {
       const normalizedVarName = variableName.toLowerCase();
 
-      return HUNGARIAN_PREFIXES.some((prefix) => {
-        // Check if the variable starts with the prefix and is longer than just the prefix
-        return (
-          normalizedVarName.startsWith(prefix.toLowerCase()) &&
-          normalizedVarName.length > prefix.length &&
-          // Ensure there's a capital letter or number after the prefix
-          /[A-Z0-9]/.test(variableName[prefix.length])
-        );
-      });
-    }
+      // Handle SCREAMING_SNAKE_CASE separately
+      if (
+        variableName === variableName.toUpperCase() &&
+        variableName.includes('_')
+      ) {
+        return TYPE_MARKERS.some((marker) => {
+          const markerUpper = marker.toUpperCase();
 
-    // Check if a variable name has a type name as suffix
-    function hasTypeSuffix(variableName: string): boolean {
-      return TYPE_SUFFIXES.some((typeName) => {
-        const normalizedVarName = variableName.toLowerCase();
-        const normalizedTypeName = typeName.toLowerCase();
+          // Check if it's a prefix (PREFIX_REST)
+          if (
+            variableName.startsWith(markerUpper + '_') &&
+            variableName.length > markerUpper.length + 1
+          ) {
+            return true;
+          }
 
-        // Check if the variable ends with the type name and is longer than just the type name
-        return (
-          normalizedVarName.endsWith(normalizedTypeName) &&
-          normalizedVarName.length > normalizedTypeName.length &&
+          // Check if it's a suffix (REST_SUFFIX)
+          if (
+            variableName.endsWith('_' + markerUpper) &&
+            variableName.length > markerUpper.length + 1
+          ) {
+            return true;
+          }
+
+          // Check if it's in the middle (PART_MARKER_PART)
+          const parts = variableName.split('_');
+          return parts.some((part) => part === markerUpper);
+        });
+      }
+
+      // For camelCase, PascalCase, etc.
+      return TYPE_MARKERS.some((marker) => {
+        const normalizedMarker = marker.toLowerCase();
+
+        // If the variable name is exactly the marker, ignore it
+        if (normalizedVarName === normalizedMarker) {
+          return false;
+        }
+
+        // Check if it's a prefix with proper boundary (e.g., strName, numCount)
+        if (
+          normalizedVarName.startsWith(normalizedMarker) &&
+          normalizedVarName.length > normalizedMarker.length &&
+          /[A-Z0-9]/.test(variableName[normalizedMarker.length])
+        ) {
+          return true;
+        }
+
+        // Check if it's a suffix with proper boundary (e.g., userString, itemArray)
+        if (
+          normalizedVarName.endsWith(normalizedMarker) &&
+          normalizedVarName.length > normalizedMarker.length &&
           /[A-Z0-9]/.test(
-            variableName[variableName.length - normalizedTypeName.length],
+            variableName[variableName.length - normalizedMarker.length - 1],
           )
+        ) {
+          return true;
+        }
+
+        const markerIndex = normalizedVarName.indexOf(normalizedMarker);
+        if (markerIndex === -1) {
+          return false;
+        }
+
+        const markerPrefix = variableName.at(markerIndex);
+        const preMarkerPrefix = variableName.at(markerIndex - 1);
+        const suffix = variableName.at(markerIndex + normalizedMarker.length);
+
+        return (
+          (!markerPrefix ||
+            preMarkerPrefix === '_' ||
+            /[A-Z]/.test(markerPrefix)) &&
+          (!suffix || suffix === '_' || /[A-Z]/.test(suffix))
         );
       });
     }
@@ -270,15 +315,27 @@ export const noHungarian = createRule<[], MessageIds>({
       return false;
     }
 
-    // Check identifier for Hungarian notation
+    // Check identifier for type markers (Hungarian notation)
     function checkIdentifier(node: TSESTree.Identifier) {
       const name = node.name;
+
+      // Create a unique ID for this node to avoid checking it twice
+      // Use the name along with source location for uniqueness
+      const nodeId = `${name}:${node.loc.start.line}:${node.loc.start.column}`;
+
+      // Skip if we've already checked this identifier
+      if (checkedIdentifiers.has(nodeId)) {
+        return;
+      }
+
+      // Mark this identifier as checked
+      checkedIdentifiers.add(nodeId);
 
       // Skip if the identifier is a built-in method or imported from an external module
       if (isExternalOrBuiltIn(node)) return;
 
-      // Check for Hungarian notation
-      if (hasHungarianPrefix(name) || hasTypeSuffix(name)) {
+      // Check for type markers
+      if (hasTypeMarker(name)) {
         context.report({
           node,
           messageId: 'noHungarian',
@@ -334,6 +391,37 @@ export const noHungarian = createRule<[], MessageIds>({
       ClassDeclaration(node) {
         if (node.id) {
           checkIdentifier(node.id);
+        }
+
+        // Check class methods and properties
+        for (const member of node.body.body) {
+          if (
+            member.type === AST_NODE_TYPES.MethodDefinition &&
+            member.key.type === AST_NODE_TYPES.Identifier
+          ) {
+            // Check method name
+            checkIdentifier(member.key);
+
+            // Check method parameters
+            if (member.value.type === AST_NODE_TYPES.FunctionExpression) {
+              for (const param of member.value.params) {
+                if (param.type === AST_NODE_TYPES.Identifier) {
+                  checkIdentifier(param);
+                } else if (
+                  param.type === AST_NODE_TYPES.AssignmentPattern &&
+                  param.left.type === AST_NODE_TYPES.Identifier
+                ) {
+                  checkIdentifier(param.left);
+                }
+              }
+            }
+          } else if (
+            member.type === AST_NODE_TYPES.PropertyDefinition &&
+            member.key.type === AST_NODE_TYPES.Identifier
+          ) {
+            // Check property name
+            checkIdentifier(member.key);
+          }
         }
       },
 
