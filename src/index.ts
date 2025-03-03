@@ -91,6 +91,7 @@ import { enforceCssMediaQueries } from './rules/enforce-css-media-queries';
 import { omitIndexHtml } from './rules/omit-index-html';
 import { enforceIdCapitalization } from './rules/enforce-id-capitalization';
 import { noUnusedUseState } from './rules/no-unused-usestate';
+import { noUuidv4Base62AsKey } from './rules/no-uuidv4-base62-as-key';
 
 module.exports = {
   meta: {
@@ -130,6 +131,7 @@ module.exports = {
         '@blumintinc/blumint/no-misused-switch-case': 'error',
         '@blumintinc/blumint/no-unpinned-dependencies': 'error',
         '@blumintinc/blumint/no-unused-props': 'error',
+        '@blumintinc/blumint/no-uuidv4-base62-as-key': 'error',
         //'@blumintinc/blumint/no-useless-fragment': 'error',
         //'@blumintinc/blumint/prefer-fragment-shorthand': 'error',
         '@blumintinc/blumint/prefer-type-over-interface': 'error',
@@ -233,6 +235,7 @@ module.exports = {
     'no-unpinned-dependencies': noUnpinnedDependencies,
     'no-unused-props': noUnusedProps,
     'no-useless-fragment': noUselessFragment,
+    'no-uuidv4-base62-as-key': noUuidv4Base62AsKey,
     'prefer-fragment-shorthand': preferFragmentShorthand,
     'prefer-type-over-interface': preferTypeOverInterface,
     'require-memo': requireMemo,
