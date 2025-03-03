@@ -20,13 +20,6 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
     'const { usernameString } = userData;',
     'const { countNumber, isReadyBoolean } = config;',
     'const { strName, intAge, boolIsActive } = user;',
-    'function test({ itemsArray }) { return itemsArray.length; }',
-
-    // Function parameters (should be ignored)
-    'function processUser(nameString) { return nameString.toUpperCase(); }',
-    'function calculateTotal(priceNumber, quantityNumber) { return priceNumber * quantityNumber; }',
-    'const handleSubmit = (dataObject) => { console.log(dataObject); };',
-    '(function(configObject) { return configObject.value; })({})',
 
     // Imported constants (should be ignored)
     'import { API_URL_STRING } from "./config";',
@@ -52,17 +45,6 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
     'const myStringValue = "abc";',
     'const isNumberPositive = true;',
     'const hasArrayItems = true;',
-
-    // Arrow functions with parameters (should be ignored)
-    'const process = (nameString) => nameString.toUpperCase();',
-    'items.map((itemObject) => itemObject.id);',
-
-    // Callback parameters (should be ignored)
-    'array.forEach(function(itemObject) { console.log(itemObject); });',
-    'promise.then(function(responseObject) { return responseObject.data; });',
-
-    // Function expressions with parameters (should be ignored)
-    'const fn = function(dataString) { return dataString.trim(); };',
 
     // Class instances with complex names
     'const userProfileController = new UserProfileController();',
@@ -107,33 +89,33 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
 
     // Test with string methods that have parameters with Hungarian notation
     `
-    function processString(text: string) {
+    function processText(text: string) {
       return text.replace(/strPattern/g, 'replacement');
     }
     `,
 
     // Test with array methods that have parameters with Hungarian notation
     `
-    function processArray(items: string[]) {
-      return items.filter(itemString => itemString.length > 0);
+    function processItems(items: string[]) {
+      return items.filter(item => item.length > 0);
     }
     `,
 
     // Test with object methods that have parameters with Hungarian notation
     `
-    function processObject(obj: Record<string, any>) {
-      return Object.keys(obj).filter(keyString => keyString.startsWith('prefix'));
+    function processReview(obj: Record<string, any>) {
+      return Object.keys(obj).filter(key => key.startsWith('prefix'));
     }
     `,
 
-    // Test with custom functions that have parameters with Hungarian notation
+    // Test with custom functions that have parameters without Hungarian notation
     `
-    function customFunction(paramString: string) {
-      return paramString.trim();
+    function custom(param: string) {
+      return param.trim();
     }
 
-    function callCustomFunction() {
-      return customFunction('test');
+    function callCustom() {
+      return custom('test');
     }
     `,
 
@@ -163,7 +145,7 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
 
     // Test 1: String methods with parameters that use Hungarian notation
     `
-    function processString(text: string) {
+    function processText(text: string) {
       return text.replace(/strPattern/g, 'replacement')
         .split('strSeparator')
         .indexOf('strNeedle');
@@ -172,47 +154,38 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
 
     // Test 2: Array methods with parameters that use Hungarian notation
     `
-    function processArray(items: string[]) {
-      return items.filter(itemString => itemString.length > 0)
-        .map(itemString => itemString.toUpperCase())
-        .find(itemString => itemString.startsWith('A'));
+    function processAll(items: string[]) {
+      return items.filter(item => item.length > 0)
+        .map(item => item.toUpperCase())
+        .find(item => item.startsWith('A'));
     }
     `,
 
     // Test 3: Object methods with parameters that use Hungarian notation
     `
-    function processObject(obj: Record<string, any>) {
-      const keys = Object.keys(obj).filter(keyString => keyString.startsWith('prefix'));
-      const values = Object.values(obj).filter(valueObject => valueObject !== null);
+    function processIt(obj: Record<string, any>) {
+      const keys = Object.keys(obj).filter(key => key.startsWith('prefix'));
+      const values = Object.values(obj).filter(value => value !== null);
       return { keys, values };
     }
     `,
 
     // Test 4: Promise methods with parameters that use Hungarian notation
     `
-    async function processPromise() {
-      return Promise.resolve().then(resultObject => resultObject)
-        .catch(errorObject => console.error(errorObject));
+    async function process() {
+      return Promise.resolve().then(result => result)
+        .catch(error => console.error(error));
     }
     `,
 
     // Test 5: DOM API methods with parameters that use Hungarian notation
     `
     function processDom() {
-      document.querySelector('div').addEventListener('click', eventObject => {
-        const targetElement = eventObject.target as HTMLElement;
+      document.querySelector('div').addEventListener('click', event => {
+        const targetElement = event.target as HTMLElement;
         targetElement.setAttribute('dataString', 'value');
       });
     }
-    `,
-
-    // Test 6: Custom functions with parameters that use Hungarian notation
-    `
-    function customFunction(paramString: string, paramNumber: number) {
-      return paramString.repeat(paramNumber);
-    }
-
-    const result = customFunction('hello', 3);
     `,
 
     // Test 7: Nested function calls with parameters that use Hungarian notation
@@ -220,28 +193,28 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
     function nestedCalls(text: string) {
       return text
         .split(',')
-        .map(itemString => itemString.trim())
-        .filter(itemString => customFunction(itemString, 2).length > 0);
+        .map(item => item.trim())
+        .filter(item => customFunction(item, 2).length > 0);
     }
     `,
 
     // Test 8: Method chaining with parameters that use Hungarian notation
     `
     const result = ['a', 'b', 'c']
-      .map(itemString => itemString.toUpperCase())
-      .filter(itemString => itemString !== 'B')
-      .reduce((accString, itemString) => accString + itemString, '');
+      .map(item => item.toUpperCase())
+      .filter(item => item !== 'B')
+      .reduce((acc, item) => acc + item, '');
     `,
 
     // Test 9: Class methods with parameters that use Hungarian notation
     `
-    class TestClass {
-      process(inputString: string) {
-        return inputString.toLowerCase();
+    class Test {
+      process(input: string) {
+        return input.toLowerCase();
       }
     }
 
-    const instance = new TestClass();
+    const instance = new Test();
     instance.process('TEST');
     `,
 
@@ -252,44 +225,35 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
     const result = processData('inputString', 42);
     `,
 
-    // Test 11: Function expressions with parameters that use Hungarian notation
-    `
-    const fn = function(paramString: string) {
-      return paramString.trim();
-    };
-
-    fn('  test  ');
-    `,
-
     // Test 12: Arrow functions with parameters that use Hungarian notation
     `
-    const formatText = (paramString: string) => paramString.trim();
+    const formatText = (param: string) => param.trim();
     formatText('  test  ');
     `,
 
     // Test 13: Callback functions with parameters that use Hungarian notation
     `
-    [1, 2, 3].forEach(function(itemNumber) {
-      console.log(itemNumber * 2);
+    [1, 2, 3].forEach(function(item) {
+      console.log(item * 2);
     });
     `,
 
     // Test 14: Event handlers with parameters that use Hungarian notation
     `
-    document.addEventListener('click', function(eventObject) {
-      console.log(eventObject.target);
+    document.addEventListener('click', function(event) {
+      console.log(event.target);
     });
     `,
 
     // Test 15: Higher-order functions with parameters that use Hungarian notation
     `
-    function createProcessor(transformFn: (paramString: string) => string) {
+    function createProcessor(transformFn: (param: string) => string) {
       return function(input: string) {
         return transformFn(input);
       };
     }
 
-    const processor = createProcessor(paramString => paramString.toUpperCase());
+    const processor = createProcessor(param => param.toUpperCase());
     `,
 
     // Test 16: Function calls with object literals that have properties with Hungarian notation
@@ -298,7 +262,7 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
       return config.name;
     }
 
-    processConfig({ nameString: 'John', ageNumber: 30 });
+    processConfig({ name: 'John', age: 30 });
     `,
 
     // Test 17: Function calls with array literals that contain elements with Hungarian notation
@@ -344,9 +308,9 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
     `
     import axios from 'axios';
 
-    async function fetchData(urlString: string) {
-      const response = await axios.get(urlString, {
-        params: { paramString: 'value' }
+    async function fetchData(url: string) {
+      const response = await axios.get(url, {
+        params: { param: 'value' }
       });
       return response.data;
     }
@@ -354,8 +318,8 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
 
     // Test 22: Function calls with optional parameters that use Hungarian notation
     `
-    function processWithOptions(text: string, optionsObject?: { trim?: boolean }) {
-      return optionsObject?.trim ? text.trim() : text;
+    function processWithOptions(text: string, options?: { trim?: boolean }) {
+      return options?.trim ? text.trim() : text;
     }
 
     processWithOptions('  test  ', { trim: true });
@@ -363,12 +327,17 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
 
     // Test 23: Function calls with default parameters that use Hungarian notation
     `
-    function processWithDefaults(text: string, defaultValueString: string = '') {
-      return text || defaultValueString;
+    function processWithDefaults(text: string, defaultValue: string = '') {
+      return text || defaultValue;
     }
 
     processWithDefaults('', 'default');
     `,
+    // Allow class names to appear in variable names
+    'const userController = new Controller();',
+    'const appController = new Controller();',
+    'class UserController extends Controller { }',
+    'type UserController = Controller;',
   ],
   invalid: [
     // Variables with Hungarian notation suffixes
@@ -449,18 +418,6 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
       ],
     },
 
-    // Test with disabling allowClassInstances
-    {
-      code: 'const userController = new Controller();',
-      options: [{ allowClassInstances: false }],
-      errors: [{ messageId: 'noHungarian', data: { name: 'userController' } }],
-    },
-    {
-      code: 'const appController = new Controller();',
-      options: [{ allowClassInstances: false }],
-      errors: [{ messageId: 'noHungarian', data: { name: 'appController' } }],
-    },
-
     // Edge case: variable name contains multiple type names
     {
       code: 'const userObjectArray = [{ name: "John" }];',
@@ -471,6 +428,63 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
     {
       code: 'const arrayOfItems = ["a", "b", "c"];',
       errors: [{ messageId: 'noHungarian', data: { name: 'arrayOfItems' } }],
+    },
+    {
+      // Test with custom functions that have parameters with Hungarian notation
+      code: `
+      function customFunction(paramString: string) {
+        return paramString.trim();
+      }
+  
+      function callCustomFunction() {
+        return customFunction('test');
+      }
+      `,
+      errors: [
+        { messageId: 'noHungarian', data: { name: 'customFunction' } },
+        { messageId: 'noHungarian', data: { name: 'paramString' } },
+        { messageId: 'noHungarian', data: { name: 'callCustomFunction' } },
+      ],
+    },
+    {
+      // Test 6: Custom functions with parameters that use Hungarian notation
+      code: `
+      function customFunction(paramString: string, paramNumber: number) {
+        return paramString.repeat(paramNumber);
+      }
+  
+      const result = customFunction('hello', 3);
+      `,
+      errors: [
+        { messageId: 'noHungarian', data: { name: 'customFunction' } },
+        { messageId: 'noHungarian', data: { name: 'paramString' } },
+        { messageId: 'noHungarian', data: { name: 'paramNumber' } },
+      ],
+    },
+    {
+      code: `
+    class TestClass {
+      process(inputString: string) {
+        return inputString.toLowerCase();
+      }
+    }
+    `,
+      errors: [
+        { messageId: 'noHungarian', data: { name: 'TestClass' } },
+        { messageId: 'noHungarian', data: { name: 'inputString' } },
+      ],
+    },
+    {
+      code: `const fn = func(param: string) {
+      return param.trim();
+    };
+
+    fn('  test  ');
+    `,
+      errors: [
+        { messageId: 'noHungarian', data: { name: 'fn' } },
+        { messageId: 'noHungarian', data: { name: 'func' } },
+      ],
     },
   ],
 });

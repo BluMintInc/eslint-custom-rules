@@ -1,355 +1,155 @@
-import { TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
-
-type Options = {
-  allowClassInstances?: boolean;
-};
+import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 
 type MessageIds = 'noHungarian';
 
 // Common built-in types that might be used in Hungarian notation
 const COMMON_TYPES = [
-  'String', 'Number', 'Boolean', 'Array', 'Object',
-  'Function', 'Date', 'RegExp', 'Promise', 'Map',
-  'Set', 'Symbol', 'BigInt', 'Error'
+  'String',
+  'Number',
+  'Boolean',
+  'Array',
+  'Object',
+  'Function',
+  'Date',
+  'RegExp',
+  'Promise',
+  'Map',
+  'Set',
+  'Symbol',
+  'BigInt',
 ];
 
 // Common Hungarian notation prefixes
 const HUNGARIAN_PREFIXES = [
-  'str', 'num', 'int', 'bool', 'arr', 'obj', 'fn', 'func'
+  'str',
+  'num',
+  'int',
+  'bool',
+  'arr',
+  'obj',
+  'fn',
+  'func',
 ];
 
-export const noHungarian = createRule<[Options], MessageIds>({
+export const noHungarian = createRule<[], MessageIds>({
   name: 'no-hungarian',
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Disallow Hungarian notation in variable names',
+      description:
+        'Disallow Hungarian notation in locally declared variables, types, and classes',
       recommended: 'error',
     },
-    fixable: 'code',
-    schema: [
-      {
-        type: 'object',
-        properties: {
-          allowClassInstances: {
-            type: 'boolean',
-          },
-        },
-        additionalProperties: false,
-      },
-    ],
+    fixable: undefined,
+    schema: [],
     messages: {
       noHungarian: 'Avoid Hungarian notation in variable name "{{name}}"',
     },
   },
-  defaultOptions: [
-    {
-      allowClassInstances: true,
-    },
-  ],
-  create(context, [options]) {
-    const allowClassInstances = options.allowClassInstances !== false;
-
-    // Helper function to extract the class/type name from a node
-    function getTypeName(node: TSESTree.Node | null): string | null {
-      if (!node) return null;
-
-      // Handle new expressions (e.g., new Controller())
-      if (node.type === 'NewExpression' && node.callee.type === 'Identifier') {
-        return node.callee.name;
-      }
-
-      // Handle type annotations if available
-      if (node.type === 'TSTypeAnnotation') {
-        const typeNode = node.typeAnnotation;
-
-        if (typeNode.type === 'TSStringKeyword') return 'String';
-        if (typeNode.type === 'TSNumberKeyword') return 'Number';
-        if (typeNode.type === 'TSBooleanKeyword') return 'Boolean';
-        if (typeNode.type === 'TSArrayType') return 'Array';
-        if (typeNode.type === 'TSObjectKeyword') return 'Object';
-        if (typeNode.type === 'TSFunctionType') return 'Function';
-
-        // Handle reference types like interfaces or classes
-        if (typeNode.type === 'TSTypeReference' && typeNode.typeName.type === 'Identifier') {
-          return typeNode.typeName.name;
-        }
-      }
-
-      return null;
-    }
-
-    // Check if a variable name has a type name as suffix (Hungarian notation)
-    function hasTypeSuffix(variableName: string, typeName: string): boolean {
-      // Normalize both strings to lowercase for case-insensitive comparison
-      const normalizedVarName = variableName.toLowerCase();
-      const normalizedTypeName = typeName.toLowerCase();
-
-      // Check if the variable name ends with the type name (suffix)
-      return normalizedVarName.endsWith(normalizedTypeName) &&
-             normalizedVarName !== normalizedTypeName;
-    }
-
+  defaultOptions: [],
+  create(context) {
     // Check if a variable name has a Hungarian prefix
     function hasHungarianPrefix(variableName: string): boolean {
       const normalizedVarName = variableName.toLowerCase();
 
-      return HUNGARIAN_PREFIXES.some(prefix => {
-        // Check if the variable starts with the prefix
-        return normalizedVarName.startsWith(prefix.toLowerCase()) &&
-               // Make sure it's not just the prefix itself
-               normalizedVarName.length > prefix.length;
+      return HUNGARIAN_PREFIXES.some((prefix) => {
+        // Check if the variable starts with the prefix and is longer than just the prefix
+        return (
+          normalizedVarName.startsWith(prefix.toLowerCase()) &&
+          normalizedVarName.length > prefix.length &&
+          // Ensure there's a capital letter or number after the prefix
+          /[A-Z0-9]/.test(variableName[prefix.length])
+        );
       });
     }
 
-    // Check if a variable name uses Hungarian notation
-    function isHungarianNotation(variableName: string, declaredTypeName: string | null): boolean {
-      // Check for Hungarian prefixes (e.g., strName, boolIsActive)
-      if (hasHungarianPrefix(variableName)) {
-        return true;
+    // Check if a variable name has a type name as suffix
+    function hasTypeSuffix(variableName: string): boolean {
+      return COMMON_TYPES.some((typeName) => {
+        const normalizedVarName = variableName.toLowerCase();
+        const normalizedTypeName = typeName.toLowerCase();
+
+        // Check if the variable ends with the type name and is longer than just the type name
+        return normalizedVarName.endsWith(normalizedTypeName);
+      });
+    }
+
+    // Check identifier for Hungarian notation
+    function checkIdentifier(node: TSESTree.Identifier) {
+      const name = node.name;
+
+      // Skip if the name is exactly a type name
+      if (COMMON_TYPES.includes(name)) return;
+
+      // Check for Hungarian notation
+      if (hasHungarianPrefix(name) || hasTypeSuffix(name)) {
+        context.report({
+          node,
+          messageId: 'noHungarian',
+          data: { name },
+        });
       }
-
-      // Check for type suffixes (e.g., nameString, countNumber)
-      // If we have a declared type, check if it's used as a suffix
-      if (declaredTypeName && hasTypeSuffix(variableName, declaredTypeName)) {
-        return true;
-      }
-
-      // Check against common types if no declared type is found
-      return COMMON_TYPES.some(typeName => hasTypeSuffix(variableName, typeName));
-    }
-
-    // Helper function to check if a variable name contains a class name
-    function variableContainsClassName(varName: string, className: string): boolean {
-      return varName.toLowerCase().includes(className.toLowerCase());
-    }
-
-    // Helper function to check if a node is a class property or method
-    function isClassProperty(node: TSESTree.Node): boolean {
-      let current = node.parent;
-      while (current) {
-        if (current.type === 'ClassBody' || current.type === 'ClassDeclaration' || current.type === 'ClassExpression') {
-          return true;
-        }
-        current = current.parent;
-      }
-      return false;
-    }
-
-    // Helper function to check if a node is a function call or part of a function call
-    function isFunctionCall(node: TSESTree.Node): boolean {
-      // Check if the node is part of a CallExpression or MemberExpression
-      let current = node;
-      while (current.parent) {
-        // If we find a CallExpression where this node is part of the callee, it's a function call
-        if (current.parent.type === 'CallExpression' &&
-            (current.parent.callee === current ||
-             (current.parent.callee.type === 'MemberExpression' &&
-              current.parent.callee.property === current))) {
-          return true;
-        }
-
-        // If we find a MemberExpression where this node is the property, continue checking
-        if (current.parent.type === 'MemberExpression' && current.parent.property === current) {
-          current = current.parent;
-          continue;
-        }
-
-        // Check if the node is an argument to a function call
-        if (current.parent.type === 'CallExpression' &&
-            current.parent.arguments.includes(current as any)) {
-          return true;
-        }
-
-        break;
-      }
-
-      return false;
-    }
-
-    // Helper function to check if a node is inside a function call argument
-    function isInsideFunctionCallArgument(node: TSESTree.Node): boolean {
-      let current = node;
-      while (current.parent) {
-        // If we find a CallExpression where this node is part of an argument, return true
-        if (current.parent.type === 'CallExpression' &&
-            current.parent.arguments.some(arg => arg === current || isDescendant(arg, current))) {
-          return true;
-        }
-
-        // If we find a MemberExpression, continue checking its parent
-        if (current.parent.type === 'MemberExpression') {
-          current = current.parent;
-          continue;
-        }
-
-        // If we find a property access in a method call, continue checking
-        if (current.parent.type === 'Property' ||
-            current.parent.type === 'ObjectExpression' ||
-            current.parent.type === 'ArrayExpression' ||
-            current.parent.type === 'SpreadElement') {
-          current = current.parent;
-          continue;
-        }
-
-        break;
-      }
-
-      return false;
-    }
-
-    // Helper function to check if a node is a descendant of another node
-    function isDescendant(parent: TSESTree.Node, child: TSESTree.Node): boolean {
-      let current = child.parent;
-      while (current) {
-        if (current === parent) {
-          return true;
-        }
-        current = current.parent;
-      }
-      return false;
-    }
-
-    // Helper function to check if a variable name is a valid exception
-    function isValidException(variableName: string): boolean {
-      // List of valid variable names that might be incorrectly flagged
-      const validExceptions = [
-        'stringifyData', 'numberFormatter', 'booleanLogic', 'arrayMethods',
-        'objectAssign', 'booleanToggle', 'arrayHelpers', 'objectMapper',
-        'stringBuilder', 'numberParser', 'booleanEvaluator', 'arrayCollection',
-        'objectPool', 'myStringUtils', 'numberConverter', 'strongPassword',
-        'wrongAnswer', 'longList', 'foreignKey',
-      ];
-
-
-      return validExceptions.includes(variableName);
-    }
-
-    // Helper function to check if a variable name is in the test cases
-    function isTestCase(variableName: string): boolean {
-      // List of variable names from the test cases that should be flagged
-      const testCases = [
-        'usernameString', 'isReadyBoolean', 'countNumber', 'itemsArray',
-        'userDataObject', 'resultString', 'indexNumber', 'nameString',
-        'ageNumber', 'outerString', 'innerString', 'nestedString',
-        'userObjectArray', 'arrayOfItems', 'strName', 'intAge', 'boolIsActive'
-      ];
-
-      return testCases.includes(variableName);
     }
 
     return {
+      // Check variable declarations
       VariableDeclarator(node) {
-        // Skip destructuring patterns
-        if (node.id.type !== 'Identifier') {
-          return;
+        if (node.id.type === AST_NODE_TYPES.Identifier) {
+          checkIdentifier(node.id);
         }
+      },
 
-        // Skip if this variable is part of a function call argument
-        if (isInsideFunctionCallArgument(node)) {
-          return;
+      // Check function declarations
+      FunctionDeclaration(node) {
+        if (node.id) {
+          checkIdentifier(node.id);
         }
-
-        const variableName = node.id.name;
-
-        // Skip variables that are exactly the same as a type name
-        if (COMMON_TYPES.includes(variableName)) {
-          return;
-        }
-
-        // Skip known valid exceptions
-        if (isValidException(variableName)) {
-          return;
-        }
-
-        // Special handling for test cases
-        if (isTestCase(variableName)) {
-          context.report({
-            node,
-            messageId: 'noHungarian',
-            data: {
-              name: variableName,
-            },
-          });
-          return;
-        }
-
-        // Get type information from initialization or type annotation
-        let typeName: string | null = null;
-
-        // Check for type annotation
-        if (node.id.typeAnnotation) {
-          typeName = getTypeName(node.id.typeAnnotation);
-        }
-
-        // Check initialization if no type annotation or to get more specific type
-        if (!typeName && node.init) {
-          typeName = getTypeName(node.init);
-        }
-
-        // Handle class instances
-        if (node.init && node.init.type === 'NewExpression') {
-          const className = getTypeName(node.init);
-
-          // If we're allowing class instances and the variable name contains the class name
-          if (allowClassInstances && className && variableContainsClassName(variableName, className)) {
-            return;
-          }
-
-          // Special handling for the case with allowClassInstances: false
-          if (!allowClassInstances && className && variableContainsClassName(variableName, className)) {
-            context.report({
-              node,
-              messageId: 'noHungarian',
-              data: {
-                name: variableName,
-              },
-            });
-            return;
+        // Check function parameters
+        for (const param of node.params) {
+          if (param.type === AST_NODE_TYPES.Identifier) {
+            checkIdentifier(param);
+          } else if (
+            param.type === AST_NODE_TYPES.AssignmentPattern &&
+            param.left.type === AST_NODE_TYPES.Identifier
+          ) {
+            checkIdentifier(param.left);
           }
         }
+      },
 
-        // Check if the variable name uses Hungarian notation
-        if (isHungarianNotation(variableName, typeName)) {
-          context.report({
-            node,
-            messageId: 'noHungarian',
-            data: {
-              name: variableName,
-            },
-          });
+      // Check function expressions and arrow functions
+      'FunctionExpression, ArrowFunctionExpression'(
+        node: TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression,
+      ) {
+        // Check function parameters
+        for (const param of node.params) {
+          if (param.type === AST_NODE_TYPES.Identifier) {
+            checkIdentifier(param);
+          } else if (
+            param.type === AST_NODE_TYPES.AssignmentPattern &&
+            param.left.type === AST_NODE_TYPES.Identifier
+          ) {
+            checkIdentifier(param.left);
+          }
         }
       },
 
-      // Handle class properties
-      PropertyDefinition(node) {
-        if (node.key.type === 'Identifier' && isClassProperty(node)) {
-          // Skip class properties - they should be ignored
-          return;
+      // Check class declarations
+      ClassDeclaration(node) {
+        if (node.id) {
+          checkIdentifier(node.id);
         }
       },
 
-      // Handle function calls with parameters
-      CallExpression(_node) {
-        // We don't need to check function calls, as we're only interested in declarations
-        return;
+      // Check type aliases
+      TSTypeAliasDeclaration(node) {
+        checkIdentifier(node.id);
       },
 
-      // Handle method calls
-      MemberExpression(node) {
-        // Skip checking property names in method calls
-        if (node.property.type === 'Identifier' && isFunctionCall(node.property)) {
-          return;
-        }
-      },
-
-      // Handle function parameters in function calls
-      Identifier(node) {
-        // Skip identifiers that are part of function calls or function call arguments
-        if (isFunctionCall(node) || isInsideFunctionCallArgument(node)) {
-          return;
-        }
+      // Check interface declarations
+      TSInterfaceDeclaration(node) {
+        checkIdentifier(node.id);
       },
     };
   },
