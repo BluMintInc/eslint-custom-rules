@@ -354,6 +354,17 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
       return { id: '', value: 0 };
     }
     `,
+
+    // Good: Type assertion in object instantiation (not in return statement)
+    `
+    function createHandler() {
+      const setter = new MembershipGroupSetter({
+        before,
+        after,
+      } as MembershipChange);
+      return setter;
+    }
+    `,
   ],
   invalid: [
     // ==================== BASIC INVALID CASES ====================
