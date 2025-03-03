@@ -1,3 +1,16 @@
+# [1.9.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.8.2...v1.9.0) (2025-03-03)
+
+
+### Bug Fixes
+
+* **src/rules/no-hungarian.ts:** remove completely unnecessary code ([81fb93f](https://github.com/BluMintInc/eslint-custom-rules/commit/81fb93fb653650d16888fce38a125e63504b3a25))
+* **src/tests/no-uuidv4-base62-as-key.test.ts:** remove erroneous test case ([f4fba52](https://github.com/BluMintInc/eslint-custom-rules/commit/f4fba5289dc09560babccb8b8e1a82cf9c6c750a))
+
+
+### Features
+
+* **eslint-rule:** Enhance no-uuidv4-base62-as-key rule implementation ([bbda73e](https://github.com/BluMintInc/eslint-custom-rules/commit/bbda73e628571090091c6f2f686fa9fe55914246))
+
 ## [1.8.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.8.1...v1.8.2) (2025-02-28)
 
 
