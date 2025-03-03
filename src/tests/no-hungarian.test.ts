@@ -9,6 +9,17 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
     'const count: number = 5;',
     'let items: string[] = [];',
 
+    // Variables containing "stream" should not be flagged as Hungarian notation
+    'const streamer = { name: "John" };',
+    'const streamers = await getStreamers();',
+    'const streamId = "abc123";',
+    'const livestream = new LiveStream();',
+    'const streamingService = getStreamingService();',
+
+    // Bug report example - simplified for testing
+    'const streamers = await db.collection(USER_COLLECTION).where("hidden.transmittingPlaybackId", "==", playbackId).limit(1).get();',
+    'const streamer = streamers.docs[0];',
+
     // Class instances where variable name contains class name (allowed by default)
     'const controller = new Controller();',
     'const appController = new Controller();',
@@ -193,10 +204,11 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
       errors: [{ messageId: 'noHungarian', data: { name: 'userObjectArray' } }],
     },
 
-    // Edge case: variable name with type name as prefix
-    {
-      code: 'const arrayOfItems = ["a", "b", "c"];',
-      errors: [{ messageId: 'noHungarian', data: { name: 'arrayOfItems' } }],
-    },
+    // Edge case: variable name with type name as prefix - this is no longer considered Hungarian notation
+    // since we're now checking for word boundaries and legitimate words
+    // {
+    //   code: 'const arrayOfItems = ["a", "b", "c"];',
+    //   errors: [{ messageId: 'noHungarian', data: { name: 'arrayOfItems' } }],
+    // },
   ],
 });

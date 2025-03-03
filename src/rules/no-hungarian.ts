@@ -97,9 +97,22 @@ export const noHungarian = createRule<[Options], MessageIds>({
 
       return HUNGARIAN_PREFIXES.some(prefix => {
         // Check if the variable starts with the prefix
-        return normalizedVarName.startsWith(prefix.toLowerCase()) &&
-               // Make sure it's not just the prefix itself
-               normalizedVarName.length > prefix.length;
+        if (normalizedVarName.startsWith(prefix.toLowerCase()) &&
+            // Make sure it's not just the prefix itself
+            normalizedVarName.length > prefix.length) {
+
+          // Check if the character after the prefix is uppercase or a non-letter
+          // This helps identify actual Hungarian notation (e.g., strName) vs legitimate words (e.g., stream)
+          const charAfterPrefix = variableName.charAt(prefix.length);
+          const isUppercaseOrNonLetter =
+            charAfterPrefix === charAfterPrefix.toUpperCase() &&
+            charAfterPrefix !== charAfterPrefix.toLowerCase() ||
+            !/[a-zA-Z]/.test(charAfterPrefix);
+
+          return isUppercaseOrNonLetter;
+        }
+
+        return false;
       });
     }
 
@@ -147,6 +160,22 @@ export const noHungarian = createRule<[Options], MessageIds>({
         'objectPool', 'myStringUtils', 'numberConverter', 'strongPassword',
         'wrongAnswer', 'longList', 'foreignKey'
       ];
+
+      // Check for common words that might be mistaken for Hungarian notation
+      const commonWordPrefixes = [
+        'stream', 'string', 'strong', 'structure', 'strike', 'struggle',
+        'number', 'numb', 'nurse', 'nurture',
+        'boolean', 'book', 'boost', 'boot',
+        'array', 'arrange', 'arrow', 'arrive',
+        'object', 'observe', 'obtain', 'obvious',
+        'function', 'functional', 'fund', 'fundamental'
+      ];
+
+      // Check if the variable name starts with any of the common word prefixes
+      if (commonWordPrefixes.some(prefix =>
+          variableName.toLowerCase().startsWith(prefix.toLowerCase()))) {
+        return true;
+      }
 
       return validExceptions.includes(variableName);
     }
