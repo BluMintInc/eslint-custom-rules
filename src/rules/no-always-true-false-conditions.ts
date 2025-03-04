@@ -340,6 +340,131 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
     }
 
     /**
+     * Check if a logical expression is being used for default value assignment
+     * This includes patterns like:
+     * - variable || defaultValue
+     * - variable ?? defaultValue
+     * - variable && expression
+     */
+    function isDefaultValueAssignment(node: TSESTree.LogicalExpression): boolean {
+      // Check if this is a nullish coalescing operator (always used for defaults)
+      if (node.operator === '??') {
+        return true;
+      }
+
+      // Check if this is in a JSX attribute
+      if (
+        node.parent &&
+        (node.parent.type === AST_NODE_TYPES.JSXAttribute ||
+         node.parent.type === AST_NODE_TYPES.JSXExpressionContainer)
+      ) {
+        return true;
+      }
+
+      // Check if this is a variable assignment with a default value
+      if (
+        node.parent &&
+        (node.parent.type === AST_NODE_TYPES.VariableDeclarator ||
+         node.parent.type === AST_NODE_TYPES.AssignmentExpression)
+      ) {
+        return true;
+      }
+
+      // Check if this is a function parameter default value
+      if (
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.AssignmentPattern
+      ) {
+        return true;
+      }
+
+      // Check if this is a return statement with a default value
+      if (
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.ReturnStatement
+      ) {
+        return true;
+      }
+
+      // Check if this is a function argument (common for default values)
+      if (
+        node.parent &&
+        (node.parent.type === AST_NODE_TYPES.CallExpression ||
+         node.parent.type === AST_NODE_TYPES.NewExpression)
+      ) {
+        return true;
+      }
+
+      // Check if this is part of an object or array expression (common for default values)
+      if (
+        node.parent &&
+        (node.parent.type === AST_NODE_TYPES.ObjectExpression ||
+         node.parent.type === AST_NODE_TYPES.ArrayExpression)
+      ) {
+        return true;
+      }
+
+      // Check if this is inside a property assignment in an object
+      if (
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.Property
+      ) {
+        return true;
+      }
+
+      // Check if this is inside a template literal expression
+      if (
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.TemplateLiteral
+      ) {
+        return true;
+      }
+
+      // Check if this is inside a template element
+      if (
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.TemplateElement
+      ) {
+        return true;
+      }
+
+      // Check if this is inside a spread element
+      if (
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.SpreadElement
+      ) {
+        return true;
+      }
+
+      // Check if this is inside an array method callback (map, filter, etc.)
+      if (
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+        node.parent.parent &&
+        node.parent.parent.type === AST_NODE_TYPES.CallExpression &&
+        node.parent.parent.callee.type === AST_NODE_TYPES.MemberExpression
+      ) {
+        const methodName = node.parent.parent.callee.property.type === AST_NODE_TYPES.Identifier
+          ? node.parent.parent.callee.property.name
+          : '';
+
+        if (['map', 'filter', 'find', 'findIndex', 'some', 'every', 'forEach'].includes(methodName)) {
+          return true;
+        }
+      }
+
+      // Check if this is inside an arrow function body
+      if (
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.ArrowFunctionExpression
+      ) {
+        return true;
+      }
+
+      return false;
+    }
+
+    /**
      * Check logical expressions (&&, ||)
      */
     function checkLogicalExpression(
@@ -351,6 +476,13 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
       // Add children to evaluated list to prevent duplicate evaluations
       evaluatedParentNodes.add(node.left);
       evaluatedParentNodes.add(node.right);
+
+      // Check if this is a default value assignment pattern
+      const isDefaultValuePattern = isDefaultValueAssignment(node);
+      if (isDefaultValuePattern) {
+        // Don't flag default value assignments as always true/false conditions
+        return {};
+      }
 
       // For &&: if either side is always falsy, the whole expression is falsy
       if (node.operator === '&&') {
@@ -892,6 +1024,19 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
 
       // Template literals
       if (node.type === AST_NODE_TYPES.TemplateLiteral) {
+        // Skip template literals that are likely used for string interpolation
+        // rather than conditions
+        if (
+          node.parent &&
+          (node.parent.type === AST_NODE_TYPES.VariableDeclarator ||
+           node.parent.type === AST_NODE_TYPES.AssignmentExpression ||
+           node.parent.type === AST_NODE_TYPES.ReturnStatement ||
+           node.parent.type === AST_NODE_TYPES.Property ||
+           node.parent.type === AST_NODE_TYPES.JSXExpressionContainer)
+        ) {
+          return {};
+        }
+
         return checkTemplateLiteral(node);
       }
 
@@ -1339,9 +1484,77 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
     /**
      * Check if a condition is always truthy or falsy and report it
      */
+    /**
+     * Check if a ternary expression is being used for default value assignment
+     * This includes patterns like:
+     * - variable ? variable : defaultValue
+     */
+    function isDefaultValueTernary(node: TSESTree.ConditionalExpression): boolean {
+      // Check if the condition and the consequent are the same variable
+      // This is a common pattern for default values: status ? status : 'offline'
+      if (
+        node.test.type === AST_NODE_TYPES.Identifier &&
+        node.consequent.type === AST_NODE_TYPES.Identifier &&
+        node.test.name === node.consequent.name
+      ) {
+        return true;
+      }
+
+      // Check if this is in a JSX attribute
+      if (
+        node.parent &&
+        (node.parent.type === AST_NODE_TYPES.JSXAttribute ||
+         node.parent.type === AST_NODE_TYPES.JSXExpressionContainer)
+      ) {
+        return true;
+      }
+
+      // Check if this is a variable assignment with a default value
+      if (
+        node.parent &&
+        (node.parent.type === AST_NODE_TYPES.VariableDeclarator ||
+         node.parent.type === AST_NODE_TYPES.AssignmentExpression)
+      ) {
+        // Only if the condition and consequent are the same variable
+        if (
+          node.test.type === AST_NODE_TYPES.Identifier &&
+          node.consequent.type === AST_NODE_TYPES.Identifier &&
+          node.test.name === node.consequent.name
+        ) {
+          return true;
+        }
+      }
+
+      // Check if this is a return statement with a default value
+      if (
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.ReturnStatement
+      ) {
+        // Only if the condition and consequent are the same variable
+        if (
+          node.test.type === AST_NODE_TYPES.Identifier &&
+          node.consequent.type === AST_NODE_TYPES.Identifier &&
+          node.test.name === node.consequent.name
+        ) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
     function checkCondition(node: TSESTree.Expression): void {
       // Skip if already reported or if it's a part of a larger expression that's been reported
       if (reportedNodes.has(node) || evaluatedParentNodes.has(node)) {
+        return;
+      }
+
+      // Check if this is a ternary expression used for default values
+      if (
+        node.type === AST_NODE_TYPES.ConditionalExpression &&
+        isDefaultValueTernary(node)
+      ) {
+        // Skip checking ternaries used for default values
         return;
       }
 
