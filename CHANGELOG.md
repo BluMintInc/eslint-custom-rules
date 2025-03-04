@@ -1,3 +1,10 @@
+## [1.0.6](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.0.5...v1.0.6) (2024-12-10)
+
+
+### Bug Fixes
+
+* **enforce-id-capitalization:** fix rule to properly exclude type definitions ([#123](https://github.com/BluMintInc/eslint-custom-rules/pull/123))
+
 ## [1.0.5](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.0.4...v1.0.5) (2024-12-05)
 
 

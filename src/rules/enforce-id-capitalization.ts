@@ -108,6 +108,27 @@ export const enforceIdCapitalization = createRule<Options, MessageIds>({
         return true;
       }
 
+      // Check if the node is a string literal in a type definition context
+      // This handles cases like Pick<Type, 'id' | 'name'>
+      if (node.type === AST_NODE_TYPES.Literal && typeof node.value === 'string') {
+        let currentNode = node;
+        while (currentNode.parent) {
+          // Check for TypeScript type contexts
+          if (
+            currentNode.parent.type === AST_NODE_TYPES.TSTypeReference ||
+            currentNode.parent.type === AST_NODE_TYPES.TSTypeParameterInstantiation ||
+            currentNode.parent.type === AST_NODE_TYPES.TSUnionType ||
+            currentNode.parent.type === AST_NODE_TYPES.TSIntersectionType ||
+            currentNode.parent.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
+            currentNode.parent.type === AST_NODE_TYPES.TSInterfaceDeclaration ||
+            currentNode.parent.type === AST_NODE_TYPES.TSTypeLiteral
+          ) {
+            return true;
+          }
+          currentNode = currentNode.parent;
+        }
+      }
+
       return false;
     }
 

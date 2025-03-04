@@ -93,6 +93,8 @@ import { enforceIdCapitalization } from './rules/enforce-id-capitalization';
 import { noUnusedUseState } from './rules/no-unused-usestate';
 import { noUuidv4Base62AsKey } from './rules/no-uuidv4-base62-as-key';
 import enforceDynamicFileNaming from './rules/enforce-dynamic-file-naming';
+import { default as preferUseCallbackOverUseMemoForFunctions } from './rules/prefer-usecallback-over-usememo-for-functions';
+import { noMarginProperties } from './rules/no-margin-properties';
 
 module.exports = {
   meta: {
@@ -208,6 +210,8 @@ module.exports = {
         '@blumintinc/blumint/enforce-id-capitalization': 'error',
         '@blumintinc/blumint/no-unused-usestate': 'error',
         '@blumintinc/blumint/enforce-dynamic-file-naming': 'error',
+        '@blumintinc/blumint/prefer-usecallback-over-usememo-for-functions': 'error',
+        '@blumintinc/blumint/no-margin-properties': 'error',
       },
     },
   },
@@ -310,5 +314,7 @@ module.exports = {
     'omit-index-html': omitIndexHtml,
     'enforce-id-capitalization': enforceIdCapitalization,
     'no-unused-usestate': noUnusedUseState,
+    'prefer-usecallback-over-usememo-for-functions': preferUseCallbackOverUseMemoForFunctions,
+    'no-margin-properties': noMarginProperties,
   },
 };
