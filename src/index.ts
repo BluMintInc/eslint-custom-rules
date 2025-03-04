@@ -82,6 +82,7 @@ import { enforcePropsArgumentName } from './rules/enforce-props-argument-name';
 import { preferGlobalRouterStateKey } from './rules/prefer-global-router-state-key';
 import { preferUseMemoOverUseEffectUseState } from './rules/prefer-usememo-over-useeffect-usestate';
 import enforceDynamicImports from './rules/enforce-dynamic-imports';
+import enforceDynamicFileNaming from './rules/enforce-dynamic-file-naming';
 import { ensurePointerEventsNone } from './rules/ensure-pointer-events-none';
 import { noObjectValuesOnStrings } from './rules/no-object-values-on-strings';
 import { keyOnlyOutermostElement } from './rules/key-only-outermost-element';
@@ -198,6 +199,7 @@ module.exports = {
             allowImportType: true,
           },
         ],
+        '@blumintinc/blumint/enforce-dynamic-file-naming': 'error',
         '@blumintinc/blumint/ensure-pointer-events-none': 'error',
         '@blumintinc/blumint/no-object-values-on-strings': 'error',
         '@blumintinc/blumint/no-unnecessary-destructuring': 'error',
@@ -299,6 +301,7 @@ module.exports = {
     'prefer-usememo-over-useeffect-usestate':
       preferUseMemoOverUseEffectUseState,
     'enforce-dynamic-imports': enforceDynamicImports,
+    'enforce-dynamic-file-naming': enforceDynamicFileNaming,
     'ensure-pointer-events-none': ensurePointerEventsNone,
     'no-object-values-on-strings': noObjectValuesOnStrings,
     'no-unnecessary-destructuring': noUnnecessaryDestructuring,
