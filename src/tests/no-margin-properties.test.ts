@@ -80,6 +80,92 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         }
       `,
     },
+    // Valid usage of padding in a function-based sx prop
+    {
+      code: `
+        <Box sx={(theme) => ({ padding: theme.spacing(2) })} />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    // Valid usage of gap in a conditional expression
+    {
+      code: `
+        <Stack sx={{ gap: condition ? 2 : 4 }} />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    // Valid usage of padding in a dynamic style object
+    {
+      code: `
+        const styles = { padding: 2 };
+
+        function App() {
+          return <Box sx={styles} />;
+        }
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    // Valid usage of padding in theme overrides
+    {
+      code: `
+        import { createTheme } from '@mui/material/styles';
+
+        const theme = createTheme({
+          components: {
+            MuiButton: {
+              styleOverrides: {
+                root: {
+                  padding: 8,
+                },
+              },
+            },
+          },
+        });
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    // Valid usage of padding with MUI's css function
+    {
+      code: `
+        import { css } from '@mui/system';
+
+        const styles = css({
+          padding: 2,
+        });
+      `,
+    },
+    // Valid usage with spread operator
+    {
+      code: `
+        const baseStyles = { padding: 2 };
+        const styles = { ...baseStyles, color: 'red' };
+
+        function App() {
+          return <Box sx={styles} />;
+        }
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
   ],
   invalid: [
     // Invalid MUI Box with marginLeft
@@ -216,6 +302,236 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         },
       },
       errors: [{ messageId: 'noMarginProperties' }],
+    },
+    // Invalid margins in theme overrides
+    {
+      code: `
+        import { createTheme } from '@mui/material/styles';
+
+        const theme = createTheme({
+          components: {
+            MuiButton: {
+              styleOverrides: {
+                root: {
+                  margin: 8,
+                },
+              },
+            },
+          },
+        });
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [{ messageId: 'noMarginProperties' }],
+    },
+    // Invalid margins in MUI's css function
+    {
+      code: `
+        import { css } from '@mui/system';
+
+        const styles = css({
+          margin: 2,
+        });
+      `,
+      errors: [{ messageId: 'noMarginProperties' }],
+    },
+    // Invalid margins with direct props
+    {
+      code: `
+        <Box margin={2} />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [{ messageId: 'noMarginProperties' }],
+    },
+    // Invalid margins with multiple direct props
+    {
+      code: `
+        <Box mt={2} mb={3} ml={1} mr={1} />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [
+        { messageId: 'noMarginProperties' },
+        { messageId: 'noMarginProperties' },
+        { messageId: 'noMarginProperties' },
+        { messageId: 'noMarginProperties' },
+      ],
+    },
+    // Invalid margins with spread operator - simplified test case
+    {
+      code: `
+        const marginStyles = { margin: 2 };
+
+        function App() {
+          return <Box sx={marginStyles} />;
+        }
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [{ messageId: 'noMarginProperties' }],
+    },
+    // Invalid margins in nested objects
+    {
+      code: `
+        <Box sx={{
+          color: 'primary.main',
+          '&:hover': {
+            margin: 2
+          }
+        }} />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [{ messageId: 'noMarginProperties' }],
+    },
+    // Invalid margins in both branches of conditional
+    {
+      code: `
+        <Box sx={isSmall ? { marginTop: 1 } : { marginBottom: 2 }} />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [
+        { messageId: 'noMarginProperties' },
+        { messageId: 'noMarginProperties' },
+      ],
+    },
+    // Invalid margins in arrow function with block body
+    {
+      code: `
+        <Box sx={(theme) => {
+          return {
+            marginTop: theme.spacing(2),
+            color: theme.palette.primary.main
+          };
+        }} />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [{ messageId: 'noMarginProperties' }],
+    },
+    // Invalid margins with Object.assign
+    {
+      code: `
+        const baseStyles = { margin: 2 };
+
+        function App() {
+          return <Box sx={Object.assign({}, baseStyles, { color: 'red' })} />;
+        }
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [{ messageId: 'noMarginProperties' }],
+    },
+    // Invalid margins in complex nested theme structure
+    {
+      code: `
+        import { createTheme } from '@mui/material/styles';
+
+        const theme = createTheme({
+          components: {
+            MuiButton: {
+              styleOverrides: {
+                root: {
+                  padding: 8,
+                  '&:hover': {
+                    marginTop: 2
+                  }
+                },
+                startIcon: {
+                  marginRight: 8
+                }
+              },
+            },
+            MuiTextField: {
+              styleOverrides: {
+                root: {
+                  marginBottom: 16
+                }
+              }
+            }
+          },
+        });
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [
+        { messageId: 'noMarginProperties' },
+        { messageId: 'noMarginProperties' },
+        { messageId: 'noMarginProperties' },
+      ],
+    },
+    // Invalid margins with string literals
+    {
+      code: `
+        <Box sx={{ 'marginTop': 2 }} />;
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [{ messageId: 'noMarginProperties' }],
+    },
+    // Invalid margins with multiple components in the same file
+    {
+      code: `
+        function Header() {
+          return <Box sx={{ marginBottom: 2 }} />;
+        }
+
+        function Footer() {
+          return <Box sx={{ marginTop: 2 }} />;
+        }
+
+        function App() {
+          return (
+            <>
+              <Header />
+              <Box sx={{ margin: 2 }} />
+              <Footer />
+            </>
+          );
+        }
+      `,
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [
+        { messageId: 'noMarginProperties' },
+        { messageId: 'noMarginProperties' },
+        { messageId: 'noMarginProperties' },
+      ],
     },
   ],
 });
