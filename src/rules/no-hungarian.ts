@@ -36,6 +36,18 @@ const TYPE_MARKERS = [
   'Enum',
 ];
 
+// Allowed descriptive suffixes that should not be flagged as Hungarian notation
+const ALLOWED_SUFFIXES = [
+  'Formatted',
+  'Parsed',
+  'Processed',
+  'Transformed',
+  'Converted',
+  'Rendered',
+  'Display',
+  'Displayed',
+];
+
 // Common built-in JavaScript prototype methods
 const BUILT_IN_METHODS = new Set([
   // String methods
@@ -206,6 +218,15 @@ export const noHungarian = createRule<[], MessageIds>({
 
     // Check if a variable name contains a type marker with proper word boundaries
     function hasTypeMarker(variableName: string): boolean {
+      // Check if the variable name ends with one of the allowed descriptive suffixes
+      if (ALLOWED_SUFFIXES.some(suffix =>
+        variableName.endsWith(suffix) &&
+        variableName.length > suffix.length &&
+        /[a-z]/.test(variableName[variableName.length - suffix.length - 1])
+      )) {
+        return false;
+      }
+
       const normalizedVarName = variableName.toLowerCase();
 
       // Handle SCREAMING_SNAKE_CASE separately

@@ -213,6 +213,45 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
     processArgs(...items);
     `,
 
+    // Test for allowed descriptive suffixes
+    `
+    // Formatted suffix
+    const date = new Date();
+    const dateFormatted = format(date);
+    const priceFormatted = formatter.format(price);
+
+    // Parsed suffix
+    const dateParsed = strict.parseDate(date);
+    const authUserParsed = escapedParse(authUser);
+
+    // Processed suffix
+    const initialUrlProcessed = useRef(false);
+
+    // Transformed suffix
+    const hitsTransformed = transformHits(hits);
+
+    // Converted suffix
+    const hitsConverted = useConvertedHits(hits);
+    const priceConverted = generatePrice(price);
+
+    // Rendered suffix
+    const tabsRendered = useMemo(() => { return null; });
+    const cardRendered = renderCard(hit);
+
+    // Display/Displayed suffix
+    const rankDisplayed = useDisplayedRank({ rank });
+    const authOptionsDisplay = useAuthMethodsDisplay();
+    `,
+
+    // Test for the specific bug report example
+    `
+    function ChannelGroupSidebar() {
+      const date = new Date();
+      const dateFormatted = date ? format(date) : undefined;
+      return dateFormatted;
+    }
+    `,
+
     `
     function processUser({ name, age }: { name: string, age: number }) {
       return \`\${name} is \${age} years old\`;
