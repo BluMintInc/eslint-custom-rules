@@ -5,6 +5,11 @@
 
 * **.ts:** resolve eslint errors ([0e0af23](https://github.com/BluMintInc/eslint-custom-rules/commit/0e0af2361cfdc9e6b193fcdae2e6053160cdae98))
 
+
+### Features
+
+* **enforce-dynamic-file-naming:** add rule to enforce .dynamic.ts(x) naming convention when @blumintinc/blumint/enforce-dynamic-imports is disabled
+
 ## [1.0.4](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.0.3...v1.0.4) (2024-12-05)
 
 
