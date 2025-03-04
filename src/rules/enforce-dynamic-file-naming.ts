@@ -56,7 +56,8 @@ export default createRule<
 
           // Check for inline disable directive
           if (
-            commentText.includes('eslint-disable-next-line') &&
+            (commentText.includes('eslint-disable-next-line') ||
+              commentText.includes('ednl')) &&
             commentText.includes('@blumintinc/blumint/enforce-dynamic-imports')
           ) {
             foundDisableDirective = true;
@@ -65,7 +66,7 @@ export default createRule<
 
           // Check for block disable directive
           if (
-            commentText.includes('eslint-disable') &&
+            commentText.includes('eslint-disable ') &&
             commentText.includes('@blumintinc/blumint/enforce-dynamic-imports')
           ) {
             foundDisableDirective = true;

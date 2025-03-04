@@ -24,31 +24,31 @@ ruleTester.run(RULE_NAME, rule, {
     },
     // File with .dynamic.ts extension and disable directive
     {
-      code: `// @blumintinc/blumint/enforce-dynamic-imports
+      code: `// ednl @blumintinc/blumint/enforce-dynamic-imports
 import SomeModule from './SomeModule';`,
       filename: 'example.dynamic.ts',
     },
     // File with .dynamic.tsx extension and disable directive
     {
-      code: `// @blumintinc/blumint/enforce-dynamic-imports
+      code: `// ednl @blumintinc/blumint/enforce-dynamic-imports
 import SomeModule from './SomeModule';`,
       filename: 'example.dynamic.tsx',
     },
     // Ignore files with other extensions
     {
-      code: `// @blumintinc/blumint/enforce-dynamic-imports
+      code: `// ednl @blumintinc/blumint/enforce-dynamic-imports
 import SomeModule from './SomeModule';`,
       filename: 'example.test.ts',
     },
     // Ignore files with other extensions
     {
-      code: `// @blumintinc/blumint/enforce-dynamic-imports
+      code: `// ednl @blumintinc/blumint/enforce-dynamic-imports
 import SomeModule from './SomeModule';`,
       filename: 'example.deprecated.ts',
     },
     // Ignore non-TypeScript files
     {
-      code: `// @blumintinc/blumint/enforce-dynamic-imports
+      code: `// ednl @blumintinc/blumint/enforce-dynamic-imports
 import SomeModule from './SomeModule';`,
       filename: 'example.js',
     },
@@ -56,14 +56,14 @@ import SomeModule from './SomeModule';`,
   invalid: [
     // File without .dynamic.ts extension but with disable directive
     {
-      code: `// @blumintinc/blumint/enforce-dynamic-imports
+      code: `// ednl @blumintinc/blumint/enforce-dynamic-imports
 import SomeModule from './SomeModule';`,
       filename: 'example.ts',
       errors: [{ messageId: 'requireDynamicExtension' }],
     },
     // File without .dynamic.tsx extension but with disable directive
     {
-      code: `// @blumintinc/blumint/enforce-dynamic-imports
+      code: `// ednl @blumintinc/blumint/enforce-dynamic-imports
 import SomeModule from './SomeModule';`,
       filename: 'example.tsx',
       errors: [{ messageId: 'requireDynamicExtension' }],
@@ -82,7 +82,7 @@ import SomeModule from './SomeModule';`,
     },
     // File with .dynamic.tsx extension but with disable directive for another rule
     {
-      code: `// eslint-disable-next-line no-console
+      code: `// ednl no-console
 console.log('Debugging');`,
       filename: 'example.dynamic.tsx',
       errors: [{ messageId: 'requireDisableDirective' }],
