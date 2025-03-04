@@ -356,6 +356,60 @@ ruleTesterJsx.run(
         };
       `,
       },
+      // useMemo with JSX that is used multiple times in the component - should be allowed
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const AvatarStatusUnmemoized = ({
+          onlineStatus,
+          imgUrl,
+          height,
+          width,
+          showStatus = false,
+          badgeSx = DEFAULT_SX,
+          avatarSx = DEFAULT_SX,
+          ...props
+        }) => {
+          const theme = useTheme();
+
+          const avatar = useMemo(() => {
+            return (
+              <AvatarNext
+                height={height}
+                src={imgUrl}
+                sx={avatarSx}
+                width={width}
+                {...props}
+              />
+            );
+          }, [imgUrl, height, width, avatarSx, props]);
+
+          if (!showStatus) {
+            return avatar;
+          }
+
+          return (
+            <StatusBadge
+              color={onlineStatus}
+              sx={{
+                '& .MuiBadge-badge': {
+                  borderRadius: '50%',
+                  height: '14px',
+                  width: '14px',
+                  border: \`2px solid \${theme.palette.background.elevation[6]}\`,
+                  boxShadow: \`inset 0 0 0 1px \${theme.palette.text.primary}\`,
+                  ...badgeSx?.['.MuiBadge-badge'],
+                },
+                ...badgeSx,
+              }}
+            >
+              {avatar}
+            </StatusBadge>
+          );
+        };
+      `,
+      },
       // useMemo with computed values for props but no JSX
       {
         code: `

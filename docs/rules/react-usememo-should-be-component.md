@@ -91,6 +91,65 @@ You might consider disabling this rule if:
 1. You're working with a legacy codebase that heavily uses this pattern and refactoring would be too time-consuming
 2. You have specific performance requirements that necessitate this pattern (though this is rare)
 
+## Rule Exceptions
+
+This rule automatically allows the following exceptions:
+
+1. When the memoized JSX element is used multiple times within the same component. In this case, extracting it as a separate component could lead to unnecessary code duplication or require passing additional props.
+
+Example of allowed usage (memoized JSX used multiple times):
+
+```jsx
+const AvatarStatusUnmemoized = ({
+  onlineStatus,
+  imgUrl,
+  height,
+  width,
+  showStatus = false,
+  badgeSx = DEFAULT_SX,
+  avatarSx = DEFAULT_SX,
+  ...props
+}) => {
+  const theme = useTheme();
+
+  // This is allowed because the avatar is used multiple times
+  const avatar = useMemo(() => {
+    return (
+      <AvatarNext
+        height={height}
+        src={imgUrl}
+        sx={avatarSx}
+        width={width}
+        {...props}
+      />
+    );
+  }, [imgUrl, height, width, avatarSx, props]);
+
+  if (!showStatus) {
+    return avatar;
+  }
+
+  return (
+    <StatusBadge
+      color={onlineStatus}
+      sx={{
+        '& .MuiBadge-badge': {
+          borderRadius: '50%',
+          height: '14px',
+          width: '14px',
+          border: `2px solid ${theme.palette.background.elevation[6]}`,
+          boxShadow: `inset 0 0 0 1px ${theme.palette.text.primary}`,
+          ...badgeSx?.['.MuiBadge-badge'],
+        },
+        ...badgeSx,
+      }}
+    >
+      {avatar}
+    </StatusBadge>
+  );
+};
+```
+
 ## Further Reading
 
 - [React.memo documentation](https://reactjs.org/docs/react-api.html#reactmemo)
