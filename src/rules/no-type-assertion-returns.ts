@@ -76,7 +76,9 @@ function isInsideConditionalStatement(node: TSESTree.Node): boolean {
 /**
  * Checks if a type assertion is used to access a property
  */
-function isPropertyAccess(node: TSESTree.TSAsExpression | TSESTree.TSTypeAssertion): boolean {
+function isPropertyAccess(
+  node: TSESTree.TSAsExpression | TSESTree.TSTypeAssertion,
+): boolean {
   return (
     node.parent?.type === AST_NODE_TYPES.MemberExpression &&
     node.parent.object === node
@@ -86,7 +88,9 @@ function isPropertyAccess(node: TSESTree.TSAsExpression | TSESTree.TSTypeAsserti
 /**
  * Checks if a type assertion is used within an array includes check
  */
-function isArrayIncludesCheck(node: TSESTree.TSAsExpression | TSESTree.TSTypeAssertion): boolean {
+function isArrayIncludesCheck(
+  node: TSESTree.TSAsExpression | TSESTree.TSTypeAssertion,
+): boolean {
   return (
     node.parent?.type === AST_NODE_TYPES.CallExpression &&
     node.parent.arguments.includes(node) &&
@@ -101,7 +105,8 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce typing variables before returning them, rather than using type assertions or explicit return types',
+      description:
+        'Enforce typing variables before returning them, rather than using type assertions or explicit return types',
       recommended: 'error',
       requiresTypeChecking: false,
     },
@@ -117,8 +122,10 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
       },
     ],
     messages: {
-      noTypeAssertionReturns: 'Type assertions in return statements are not allowed. Type the variable explicitly before returning it.',
-      useExplicitVariable: 'Explicit return type annotations are not allowed. Type the variable explicitly before returning it.',
+      noTypeAssertionReturns:
+        'Type assertions in return statements are not allowed. Type the variable explicitly before returning it.',
+      useExplicitVariable:
+        'Explicit return type annotations are not allowed. Type the variable explicitly before returning it.',
     },
   },
   defaultOptions: [defaultOptions],
@@ -128,7 +135,9 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
     /**
      * Checks if a node is inside a JSX attribute or object property (which could be JSX props)
      */
-    function isInsideJSXAttributeOrObjectProperty(node: TSESTree.Node): boolean {
+    function isInsideJSXAttributeOrObjectProperty(
+      node: TSESTree.Node,
+    ): boolean {
       let current: TSESTree.Node | undefined = node;
 
       while (current?.parent) {
@@ -151,7 +160,9 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
     /**
      * Common function to check if a type assertion should be allowed
      */
-    function shouldAllowTypeAssertion(node: TSESTree.TSAsExpression | TSESTree.TSTypeAssertion): boolean {
+    function shouldAllowTypeAssertion(
+      node: TSESTree.TSAsExpression | TSESTree.TSTypeAssertion,
+    ): boolean {
       // If the parent is a return statement, we already handle it in ReturnStatement
       if (node.parent?.type === AST_NODE_TYPES.ReturnStatement) {
         return true;
@@ -169,10 +180,12 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
       }
 
       // Allow type assertions within conditional statements (if, while, do-while, for)
-      if (node.parent?.type === AST_NODE_TYPES.IfStatement ||
-          node.parent?.type === AST_NODE_TYPES.WhileStatement ||
-          node.parent?.type === AST_NODE_TYPES.DoWhileStatement ||
-          node.parent?.type === AST_NODE_TYPES.ForStatement) {
+      if (
+        node.parent?.type === AST_NODE_TYPES.IfStatement ||
+        node.parent?.type === AST_NODE_TYPES.WhileStatement ||
+        node.parent?.type === AST_NODE_TYPES.DoWhileStatement ||
+        node.parent?.type === AST_NODE_TYPES.ForStatement
+      ) {
         return true;
       }
 
@@ -182,8 +195,10 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
       }
 
       // Allow type assertions within method calls like array.includes()
-      if (node.parent?.type === AST_NODE_TYPES.CallExpression &&
-          node.parent.callee.type === AST_NODE_TYPES.MemberExpression) {
+      if (
+        node.parent?.type === AST_NODE_TYPES.CallExpression &&
+        node.parent.callee.type === AST_NODE_TYPES.MemberExpression
+      ) {
         return true;
       }
 
@@ -193,7 +208,10 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
       }
 
       // Allow type assertions within conditional expressions, but only if they're not part of a return statement
-      if (node.parent?.type === AST_NODE_TYPES.ConditionalExpression && !isInsideReturnStatement(node)) {
+      if (
+        node.parent?.type === AST_NODE_TYPES.ConditionalExpression &&
+        !isInsideReturnStatement(node)
+      ) {
         return true;
       }
 
@@ -203,8 +221,10 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
       }
 
       // Allow type assertions in object instantiations (as constructor arguments)
-      if (node.parent?.type === AST_NODE_TYPES.ObjectExpression &&
-          node.parent.parent?.type === AST_NODE_TYPES.NewExpression) {
+      if (
+        node.parent?.type === AST_NODE_TYPES.ObjectExpression &&
+        node.parent.parent?.type === AST_NODE_TYPES.NewExpression
+      ) {
         return true;
       }
 
@@ -230,17 +250,26 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
      * Common function to check function return types
      */
     function checkFunctionReturnType(
-      node: TSESTree.FunctionDeclaration | TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression
+      node:
+        | TSESTree.FunctionDeclaration
+        | TSESTree.FunctionExpression
+        | TSESTree.ArrowFunctionExpression,
     ) {
       if (!node.returnType) return;
 
       // Allow type predicates if configured
-      if (mergedOptions.allowTypePredicates && isTypePredicate(node.returnType)) {
+      if (
+        mergedOptions.allowTypePredicates &&
+        isTypePredicate(node.returnType)
+      ) {
         return;
       }
 
       // If type predicates are not allowed, report them
-      if (!mergedOptions.allowTypePredicates && isTypePredicate(node.returnType)) {
+      if (
+        !mergedOptions.allowTypePredicates &&
+        isTypePredicate(node.returnType)
+      ) {
         context.report({
           node: node.returnType,
           messageId: 'useExplicitVariable',
@@ -251,7 +280,10 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
       // Check if the function has a return statement with a direct value (not a variable)
       if (node.body && node.body.type === AST_NODE_TYPES.BlockStatement) {
         for (const statement of node.body.body) {
-          if (statement.type === AST_NODE_TYPES.ReturnStatement && statement.argument) {
+          if (
+            statement.type === AST_NODE_TYPES.ReturnStatement &&
+            statement.argument
+          ) {
             // If returning a variable reference, that's fine
             if (statement.argument.type === AST_NODE_TYPES.Identifier) {
               continue;
@@ -328,12 +360,18 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
           // Check for explicit return type
           if (node.returnType) {
             // Allow type predicates if configured
-            if (mergedOptions.allowTypePredicates && isTypePredicate(node.returnType)) {
+            if (
+              mergedOptions.allowTypePredicates &&
+              isTypePredicate(node.returnType)
+            ) {
               return;
             }
 
             // If type predicates are not allowed, report them
-            if (!mergedOptions.allowTypePredicates && isTypePredicate(node.returnType)) {
+            if (
+              !mergedOptions.allowTypePredicates &&
+              isTypePredicate(node.returnType)
+            ) {
               context.report({
                 node: node.returnType,
                 messageId: 'useExplicitVariable',
