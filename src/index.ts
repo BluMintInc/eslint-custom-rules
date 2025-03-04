@@ -2,6 +2,7 @@ import { arrayMethodsThisContext } from './rules/array-methods-this-context';
 import { classMethodsReadTopToBottom } from './rules/class-methods-read-top-to-bottom';
 import { default as consistentCallbackNaming } from './rules/consistent-callback-naming';
 import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
+import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-prefixes';
 import { enforceIdentifiableFirestoreType } from './rules/enforce-identifiable-firestore-type';
 import { default as enforceCallbackMemo } from './rules/enforce-callback-memo';
 import { enforceCallableTypes } from './rules/enforce-callable-types';
@@ -107,6 +108,7 @@ module.exports = {
       rules: {
         '@blumintinc/blumint/key-only-outermost-element': 'error',
         '@blumintinc/blumint/avoid-utils-directory': 'error',
+        '@blumintinc/blumint/enforce-boolean-naming-prefixes': 'error',
         '@blumintinc/blumint/enforce-firestore-path-utils': 'error',
         '@blumintinc/blumint/no-jsx-whitespace-literal': 'error',
         '@blumintinc/blumint/array-methods-this-context': 'error',
@@ -216,6 +218,7 @@ module.exports = {
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
     'consistent-callback-naming': consistentCallbackNaming,
     'dynamic-https-errors': dynamicHttpsErrors,
+    'enforce-boolean-naming-prefixes': enforceBooleanNamingPrefixes,
     'enforce-identifiable-firestore-type': enforceIdentifiableFirestoreType,
     'enforce-callback-memo': enforceCallbackMemo,
     'enforce-react-type-naming': enforceReactTypeNaming,
