@@ -3,18 +3,24 @@ import path from 'path';
 
 export const RULE_NAME = 'enforce-dynamic-file-naming';
 
-export default createRule<[], 'requireDynamicExtension' | 'requireDisableDirective'>({
+export default createRule<
+  [],
+  'requireDynamicExtension' | 'requireDisableDirective'
+>({
   name: RULE_NAME,
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce .dynamic.ts(x) file naming when @blumintinc/blumint/enforce-dynamic-imports rule is disabled',
+      description:
+        'Enforce .dynamic.ts(x) file naming when @blumintinc/blumint/enforce-dynamic-imports rule is disabled',
       recommended: 'error',
     },
     schema: [],
     messages: {
-      requireDynamicExtension: 'Files with disabled @blumintinc/blumint/enforce-dynamic-imports rule must use .dynamic.ts(x) extension',
-      requireDisableDirective: 'Files with .dynamic.ts(x) extension must have at least one @blumintinc/blumint/enforce-dynamic-imports disable directive',
+      requireDynamicExtension:
+        'Files with disabled @blumintinc/blumint/enforce-dynamic-imports rule must use .dynamic.ts(x) extension',
+      requireDisableDirective:
+        'Files with .dynamic.ts(x) extension must have at least one @blumintinc/blumint/enforce-dynamic-imports disable directive',
     },
   },
   defaultOptions: [],
@@ -49,15 +55,19 @@ export default createRule<[], 'requireDynamicExtension' | 'requireDisableDirecti
           const commentText = comment.value.trim();
 
           // Check for inline disable directive
-          if (commentText.includes('eslint-disable-next-line') &&
-              commentText.includes('@blumintinc/blumint/enforce-dynamic-imports')) {
+          if (
+            commentText.includes('eslint-disable-next-line') &&
+            commentText.includes('@blumintinc/blumint/enforce-dynamic-imports')
+          ) {
             foundDisableDirective = true;
             break;
           }
 
           // Check for block disable directive
-          if (commentText.includes('eslint-disable') &&
-              commentText.includes('@blumintinc/blumint/enforce-dynamic-imports')) {
+          if (
+            commentText.includes('eslint-disable') &&
+            commentText.includes('@blumintinc/blumint/enforce-dynamic-imports')
+          ) {
             foundDisableDirective = true;
             break;
           }

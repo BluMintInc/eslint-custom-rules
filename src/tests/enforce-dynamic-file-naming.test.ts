@@ -10,54 +10,6 @@ const ruleTester = new ESLintUtils.RuleTester({
   },
 });
 
-// Mock the rule implementation to avoid ESLint errors in tests
-jest.mock('../rules/enforce-dynamic-file-naming', () => {
-  const originalModule = jest.requireActual('../rules/enforce-dynamic-file-naming');
-
-  return {
-    ...originalModule,
-    default: {
-      ...originalModule.default,
-      create: (context) => {
-        const filePath = context.getFilename();
-        const hasDynamicExtension = /\.dynamic\.tsx?$/.test(filePath);
-        const isTypeScriptFile = /^[^.]+\.tsx?$/.test(filePath);
-
-        // Skip if not a TypeScript file or has other extensions
-        if (!isTypeScriptFile && !hasDynamicExtension) {
-          return {};
-        }
-
-        return {
-          Program(node) {
-            const sourceCode = context.getSourceCode().getText();
-
-            // Check if the file has a disable directive
-            const hasDisableDirective = sourceCode.includes('@blumintinc/blumint/enforce-dynamic-imports');
-
-            // If we found a disable directive but the file doesn't have .dynamic extension
-            if (hasDisableDirective && !hasDynamicExtension) {
-              context.report({
-                node,
-                messageId: 'requireDynamicExtension',
-              });
-            }
-
-            // If the file has .dynamic extension but no disable directive
-            if (hasDynamicExtension && !hasDisableDirective) {
-              context.report({
-                node,
-                messageId: 'requireDisableDirective',
-              });
-            }
-          }
-        };
-      }
-    },
-    RULE_NAME: originalModule.RULE_NAME
-  };
-});
-
 ruleTester.run(RULE_NAME, rule, {
   valid: [
     // Regular TypeScript file without disable directive
