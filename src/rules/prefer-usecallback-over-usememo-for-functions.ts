@@ -1,7 +1,12 @@
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
-type Options = [];
+type Options = [
+  {
+    allowComplexBodies?: boolean;
+    allowFunctionFactories?: boolean;
+  }
+];
 type MessageIds = 'preferUseCallback';
 
 export const preferUseCallbackOverUseMemoForFunctions = createRule<Options, MessageIds>({
@@ -13,13 +18,131 @@ export const preferUseCallbackOverUseMemoForFunctions = createRule<Options, Mess
       recommended: 'error',
     },
     fixable: 'code',
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          allowComplexBodies: {
+            type: 'boolean',
+            default: false,
+          },
+          allowFunctionFactories: {
+            type: 'boolean',
+            default: true,
+          },
+        },
+        additionalProperties: false,
+      },
+    ],
     messages: {
       preferUseCallback: 'Use useCallback instead of useMemo for memoizing functions',
     },
   },
-  defaultOptions: [],
+  defaultOptions: [{ allowComplexBodies: false, allowFunctionFactories: true }],
   create(context) {
+    const options = context.options[0] || { allowComplexBodies: false, allowFunctionFactories: true };
+
+    /**
+     * Checks if a node is a function factory (returns an object with functions or a function that generates functions)
+     */
+    function isFunctionFactory(node) {
+      // If we're not checking for function factories, return false
+      if (!options.allowFunctionFactories) {
+        return false;
+      }
+
+      // For arrow functions with implicit return
+      if (node.body.type !== AST_NODE_TYPES.BlockStatement) {
+        // Check if it's returning an object literal
+        if (node.body.type === AST_NODE_TYPES.ObjectExpression) {
+          // Check if any property in the object is a function
+          return node.body.properties.some((prop) => {
+            if (prop.type === AST_NODE_TYPES.Property) {
+              const value = prop.value;
+              return (
+                value.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+                value.type === AST_NODE_TYPES.FunctionExpression
+              );
+            }
+            return false;
+          });
+        }
+        return false;
+      }
+
+      // For arrow functions with block body
+      if (
+        node.body.body.length === 1 &&
+        node.body.body[0].type === AST_NODE_TYPES.ReturnStatement &&
+        node.body.body[0].argument
+      ) {
+        const returnValue = node.body.body[0].argument;
+
+        // Check if returning an object literal with functions
+        if (returnValue.type === AST_NODE_TYPES.ObjectExpression) {
+          return returnValue.properties.some((prop) => {
+            if (prop.type === AST_NODE_TYPES.Property) {
+              const value = prop.value;
+              return (
+                value.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+                value.type === AST_NODE_TYPES.FunctionExpression
+              );
+            }
+            return false;
+          });
+        }
+      }
+
+      return false;
+    }
+
+    /**
+     * Checks if a function body is complex (more than one statement before returning)
+     */
+    function hasComplexBody(node) {
+      if (node.body.type !== AST_NODE_TYPES.BlockStatement) {
+        return false;
+      }
+
+      // If there's more than one statement, or the single statement isn't a return
+      if (
+        node.body.body.length > 1 ||
+        (node.body.body.length === 1 && node.body.body[0].type !== AST_NODE_TYPES.ReturnStatement)
+      ) {
+        return true;
+      }
+
+      return false;
+    }
+
+    /**
+     * Checks if a node returns a function
+     */
+    function returnsFunction(node) {
+      // For arrow functions with implicit return
+      if (node.body.type !== AST_NODE_TYPES.BlockStatement) {
+        return (
+          node.body.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+          node.body.type === AST_NODE_TYPES.FunctionExpression
+        );
+      }
+
+      // For arrow functions with block body
+      if (
+        node.body.body.length === 1 &&
+        node.body.body[0].type === AST_NODE_TYPES.ReturnStatement &&
+        node.body.body[0].argument
+      ) {
+        const returnValue = node.body.body[0].argument;
+        return (
+          returnValue.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+          returnValue.type === AST_NODE_TYPES.FunctionExpression
+        );
+      }
+
+      return false;
+    }
+
     return {
       CallExpression(node) {
         // Check if the call is to useMemo
@@ -36,22 +159,18 @@ export const preferUseCallbackOverUseMemoForFunctions = createRule<Options, Mess
               callback.type === AST_NODE_TYPES.FunctionExpression) &&
             callback.body
           ) {
-            // Case 1: Arrow function with block body that returns a function
-            if (
-              callback.body.type === AST_NODE_TYPES.BlockStatement &&
-              callback.body.body.length === 1 &&
-              callback.body.body[0].type === AST_NODE_TYPES.ReturnStatement &&
-              callback.body.body[0].argument &&
-              (callback.body.body[0].argument.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-                callback.body.body[0].argument.type === AST_NODE_TYPES.FunctionExpression)
-            ) {
-              reportAndFix(node, context);
+            // Skip if it's a function factory and we're allowing those
+            if (isFunctionFactory(callback)) {
+              return;
             }
-            // Case 2: Arrow function with implicit return of a function
-            else if (
-              callback.body.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-              callback.body.type === AST_NODE_TYPES.FunctionExpression
-            ) {
+
+            // Skip if it has a complex body and we're allowing those
+            if (hasComplexBody(callback) && options.allowComplexBodies) {
+              return;
+            }
+
+            // Check if it returns a function
+            if (returnsFunction(callback)) {
               reportAndFix(node, context);
             }
           }
