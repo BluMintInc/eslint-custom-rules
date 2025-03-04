@@ -24,7 +24,7 @@ export const preferUseCallbackOverUseMemoForFunctions = createRule<Options, Mess
         properties: {
           allowComplexBodies: {
             type: 'boolean',
-            default: false,
+            default: true,
           },
           allowFunctionFactories: {
             type: 'boolean',
