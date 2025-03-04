@@ -6,7 +6,7 @@ Using "ID" (uppercase) improves readability and maintains a professional standar
 
 ## Rule Details
 
-This rule aims to enforce consistent capitalization of "ID" in user-facing text.
+This rule aims to enforce consistent capitalization of "ID" in user-facing text. It specifically excludes code-level identifiers such as variable names, property names, and type definitions, focusing only on strings that will be displayed to users.
 
 Examples of **incorrect** code for this rule:
 
@@ -36,6 +36,8 @@ const userId = 12345; // Variable names
 function getUserId() { return 123; } // Function names
 interface User { id: string; } // Interface properties
 type UserData = { id: number; } // Type properties
+export type CallerRequestButtonsProps = Pick<CallerCardBaseProps, 'status' | 'id'>; // Type definitions with Pick utility
+type UserSummary = Pick<User, 'id' | 'name'>; // Type utility with property names
 const message = "This grid system is flexible."; // "id" as part of another word
 const message = "Rapid development"; // "id" as part of another word
 ```
