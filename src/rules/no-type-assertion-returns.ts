@@ -126,6 +126,29 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
     const mergedOptions = { ...defaultOptions, ...options };
 
     /**
+     * Checks if a node is inside a JSX attribute or object property (which could be JSX props)
+     */
+    function isInsideJSXAttributeOrObjectProperty(node: TSESTree.Node): boolean {
+      let current: TSESTree.Node | undefined = node;
+
+      while (current?.parent) {
+        // Direct JSX attribute
+        if (current.parent.type === AST_NODE_TYPES.JSXAttribute) {
+          return true;
+        }
+
+        // Object property (which could be JSX props)
+        if (current.parent.type === AST_NODE_TYPES.Property) {
+          return true;
+        }
+
+        current = current.parent;
+      }
+
+      return false;
+    }
+
+    /**
      * Common function to check if a type assertion should be allowed
      */
     function shouldAllowTypeAssertion(node: TSESTree.TSAsExpression | TSESTree.TSTypeAssertion): boolean {
@@ -187,6 +210,11 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
 
       // Allow type assertions as arguments to constructors
       if (node.parent?.type === AST_NODE_TYPES.NewExpression) {
+        return true;
+      }
+
+      // Allow type assertions in JSX attributes/props or object properties
+      if (isInsideJSXAttributeOrObjectProperty(node)) {
         return true;
       }
 
