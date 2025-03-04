@@ -92,6 +92,7 @@ import { omitIndexHtml } from './rules/omit-index-html';
 import { enforceIdCapitalization } from './rules/enforce-id-capitalization';
 import { noUnusedUseState } from './rules/no-unused-usestate';
 import { noUuidv4Base62AsKey } from './rules/no-uuidv4-base62-as-key';
+import { noMarginProperties } from './rules/no-margin-properties';
 
 module.exports = {
   meta: {
@@ -206,6 +207,7 @@ module.exports = {
         '@blumintinc/blumint/omit-index-html': 'error',
         '@blumintinc/blumint/enforce-id-capitalization': 'error',
         '@blumintinc/blumint/no-unused-usestate': 'error',
+        '@blumintinc/blumint/no-margin-properties': 'error',
       },
     },
   },
@@ -307,5 +309,6 @@ module.exports = {
     'omit-index-html': omitIndexHtml,
     'enforce-id-capitalization': enforceIdCapitalization,
     'no-unused-usestate': noUnusedUseState,
+    'no-margin-properties': noMarginProperties,
   },
 };
