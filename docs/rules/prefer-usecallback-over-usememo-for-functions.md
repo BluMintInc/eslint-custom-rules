@@ -66,7 +66,7 @@ This rule accepts an options object with the following properties:
 ```js
 {
   // When true, allows useMemo for complex function bodies that have multiple statements before returning a function
-  "allowComplexBodies": false,
+  "allowComplexBodies": true,
 
   // When true, allows useMemo for function factories (returning objects with functions or functions that generate other functions)
   "allowFunctionFactories": true
