@@ -3,9 +3,9 @@ import { createRule } from '../utils/createRule';
 
 type Options = [];
 type MessageIds =
-  | 'missingParamsType'
+  | 'missingParamsPropsType'
   | 'missingResponseType'
-  | 'unusedParamsType'
+  | 'unusedParamsPropsType'
   | 'unusedResponseType';
 
 export const enforceCallableTypes = createRule<Options, MessageIds>({
@@ -14,16 +14,16 @@ export const enforceCallableTypes = createRule<Options, MessageIds>({
     type: 'problem',
     docs: {
       description:
-        'Enforce Params and Response type exports in callable functions',
+        'Enforce Props/Params and Response type exports in callable functions',
       recommended: 'error',
     },
     schema: [],
     messages: {
-      missingParamsType: 'Missing Params type export in callable function file',
+      missingParamsPropsType: 'Missing Props or Params type export in callable function file',
       missingResponseType:
         'Missing Response type export in callable function file',
-      unusedParamsType:
-        'Params type is exported but not used in the callable function',
+      unusedParamsPropsType:
+        'Props or Params type is exported but not used in the callable function',
       unusedResponseType:
         'Response type is exported but not used in the callable function',
     },
@@ -41,10 +41,10 @@ export const enforceCallableTypes = createRule<Options, MessageIds>({
       return {};
     }
 
-    let hasParamsExport = false;
+    let hasParamsOrPropsExport = false;
     let hasResponseExport = false;
     let hasCallableFunction = false;
-    let paramsTypeUsed = false;
+    let paramsOrPropsTypeUsed = false;
     let responseTypeUsed = false;
 
     return {
@@ -52,8 +52,8 @@ export const enforceCallableTypes = createRule<Options, MessageIds>({
       ExportNamedDeclaration(node) {
         if (node.declaration?.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
           const typeName = node.declaration.id.name;
-          if (typeName === 'Params') {
-            hasParamsExport = true;
+          if (typeName === 'Params' || typeName === 'Props') {
+            hasParamsOrPropsExport = true;
           } else if (typeName === 'Response') {
             hasResponseExport = true;
           }
@@ -73,8 +73,8 @@ export const enforceCallableTypes = createRule<Options, MessageIds>({
       // Check for type usage in function parameters and return types
       TSTypeReference(node) {
         if (node.typeName.type === AST_NODE_TYPES.Identifier) {
-          if (node.typeName.name === 'Params') {
-            paramsTypeUsed = true;
+          if (node.typeName.name === 'Params' || node.typeName.name === 'Props') {
+            paramsOrPropsTypeUsed = true;
           } else if (node.typeName.name === 'Response') {
             responseTypeUsed = true;
           }
@@ -86,15 +86,15 @@ export const enforceCallableTypes = createRule<Options, MessageIds>({
           return;
         }
 
-        if (!hasParamsExport) {
+        if (!hasParamsOrPropsExport) {
           context.report({
             loc: { line: 1, column: 0 },
-            messageId: 'missingParamsType',
+            messageId: 'missingParamsPropsType',
           });
-        } else if (!paramsTypeUsed) {
+        } else if (!paramsOrPropsTypeUsed) {
           context.report({
             loc: { line: 1, column: 0 },
-            messageId: 'unusedParamsType',
+            messageId: 'unusedParamsPropsType',
           });
         }
 
