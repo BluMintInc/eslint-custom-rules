@@ -76,6 +76,38 @@ export const enforceIdCapitalization = createRule<Options, MessageIds>({
         return true;
       }
 
+      // Check if the node is in an object property context
+      if (
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.Property &&
+        node.parent.value === node
+      ) {
+        // Check if this is a property in an object pattern (destructuring)
+        let currentNode = node.parent;
+        while (currentNode.parent) {
+          if (currentNode.parent.type === AST_NODE_TYPES.ObjectPattern) {
+            return true;
+          }
+          currentNode = currentNode.parent;
+        }
+      }
+
+      // Check if the node is in a property assignment context
+      if (
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.ObjectExpression
+      ) {
+        return true;
+      }
+
+      // Check if the node is in a property access context
+      if (
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.MemberExpression
+      ) {
+        return true;
+      }
+
       return false;
     }
 
