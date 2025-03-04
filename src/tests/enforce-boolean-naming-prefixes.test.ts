@@ -104,6 +104,32 @@ ruleTesterTs.run('enforce-boolean-naming-prefixes', enforceBooleanNamingPrefixes
     'function calculateTotal(items: Item[]): number { return items.reduce((sum, item) => sum + item.price, 0); }',
     'class User { name: string = ""; }',
 
+    // UPPER_SNAKE_CASE boolean variables with proper prefixes
+    'const IS_ACTIVE = true;',
+    'const HAS_PERMISSION = checkPermissions();',
+    'const CAN_EDIT = user.permissions.includes("edit");',
+
+    // Imported identifiers should not be flagged
+    `
+    import { active, verified, userExists } from './external';
+    import * as utils from './utils';
+    import ExternalClass from './external-class';
+
+    // Using imported identifiers
+    const status = active;
+    const isAuthenticated = verified;
+    function checkUser(id: string) {
+      return userExists(id);
+    }
+
+    // Using imported namespace
+    const result = utils.validate();
+
+    // Using imported class
+    const externalInstance = new ExternalClass();
+    const value = externalInstance.getValue();
+    `,
+
     // Edge cases
     'const { active } = user;', // Destructuring should be exempt
     'function process({ valid }) { /* ... */ }', // Destructuring parameters
@@ -188,34 +214,33 @@ ruleTesterTs.run('enforce-boolean-naming-prefixes', enforceBooleanNamingPrefixes
       ],
     },
 
-    // This test is skipped because it's handled differently in the implementation
-    // {
-    //   code: `
-    //   class UserAccount {
-    //     private verified = false;
-    //     static premium = false;
-    //   }
-    //   `,
-    //   filename: 'src/file.ts', // Not a test file
-    //   errors: [
-    //     {
-    //       messageId: 'missingBooleanPrefix',
-    //       data: {
-    //         type: 'property',
-    //         name: 'verified',
-    //         prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
-    //       },
-    //     },
-    //     {
-    //       messageId: 'missingBooleanPrefix',
-    //       data: {
-    //         type: 'property',
-    //         name: 'premium',
-    //         prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
-    //       },
-    //     },
-    //   ],
-    // },
+    {
+      code: `
+      class UserAccount {
+        private verified = false;
+        static premium = false;
+      }
+      `,
+      filename: 'src/file.ts', // Not a test file
+      errors: [
+        {
+          messageId: 'missingBooleanPrefix',
+          data: {
+            type: 'property',
+            name: 'verified',
+            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
+          },
+        },
+        {
+          messageId: 'missingBooleanPrefix',
+          data: {
+            type: 'property',
+            name: 'premium',
+            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
+          },
+        },
+      ],
+    },
 
     // Methods that return boolean values without proper prefixes
     {
@@ -254,21 +279,36 @@ ruleTesterTs.run('enforce-boolean-naming-prefixes', enforceBooleanNamingPrefixes
         },
       ],
     },
-    // This test is skipped because it's handled differently in the implementation
-    // {
-    //   code: 'const valid = (input: string): boolean => input.length > 0;',
-    //   filename: 'src/file.ts', // Not a test file
-    //   errors: [
-    //     {
-    //       messageId: 'missingBooleanPrefix',
-    //       data: {
-    //         type: 'variable',
-    //         name: 'valid',
-    //         prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
-    //       },
-    //     },
-    //   ],
-    // },
+    {
+      code: 'const valid = (input: string): boolean => input.length > 0;',
+      filename: 'src/file.ts', // Not a test file
+      errors: [
+        {
+          messageId: 'missingBooleanPrefix',
+          data: {
+            type: 'variable',
+            name: 'valid',
+            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
+          },
+        },
+      ],
+    },
+
+    // Arrow function with implicit boolean return
+    {
+      code: 'const valid = (input: string) => input.length > 0;',
+      filename: 'src/file.ts', // Not a test file
+      errors: [
+        {
+          messageId: 'missingBooleanPrefix',
+          data: {
+            type: 'variable',
+            name: 'valid',
+            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
+          },
+        },
+      ],
+    },
 
     // Interface properties without proper boolean prefixes
     {
@@ -322,6 +362,54 @@ ruleTesterTs.run('enforce-boolean-naming-prefixes', enforceBooleanNamingPrefixes
           data: {
             type: 'property',
             name: 'subscription',
+            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
+          },
+        },
+      ],
+    },
+
+    // UPPER_SNAKE_CASE variables without proper boolean prefixes
+    {
+      code: 'const ACTIVE = true;',
+      filename: 'src/file.ts', // Not a test file
+      errors: [
+        {
+          messageId: 'missingBooleanPrefix',
+          data: {
+            type: 'variable',
+            name: 'ACTIVE',
+            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
+          },
+        },
+      ],
+    },
+    {
+      code: 'const USER_LOGGED_IN = false;',
+      filename: 'src/file.ts', // Not a test file
+      errors: [
+        {
+          messageId: 'missingBooleanPrefix',
+          data: {
+            type: 'variable',
+            name: 'USER_LOGGED_IN',
+            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
+          },
+        },
+      ],
+    },
+    {
+      code: `
+      class Config {
+        static PRODUCTION = process.env.NODE_ENV === 'production';
+      }
+      `,
+      filename: 'src/file.ts', // Not a test file
+      errors: [
+        {
+          messageId: 'missingBooleanPrefix',
+          data: {
+            type: 'property',
+            name: 'PRODUCTION',
             prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
           },
         },

@@ -72,6 +72,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       return {};
     }
 
+    // Track imported identifiers to skip them
+    const importedIdentifiers = new Set<string>();
+
     // Check if this is a test file
     const isTestFile = filename.includes('.test.') || filename.includes('/tests/');
 
@@ -226,7 +229,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         }
         if (
           body.type === AST_NODE_TYPES.BinaryExpression &&
-          ['===', '!==', '==', '!='].includes(body.operator)
+          ['===', '!==', '==', '!=', '>', '<', '>=', '<='].includes(body.operator)
         ) {
           return true;
         }
@@ -239,6 +242,25 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         if (
           body.type === AST_NODE_TYPES.UnaryExpression &&
           body.operator === '!'
+        ) {
+          return true;
+        }
+        // Check for method calls that might return boolean
+        if (
+          body.type === AST_NODE_TYPES.CallExpression &&
+          body.callee.type === AST_NODE_TYPES.Identifier &&
+          booleanPrefixes.some(prefix => {
+            const calleeName = body.callee.type === AST_NODE_TYPES.Identifier ? body.callee.name : '';
+            return calleeName.toLowerCase().startsWith(prefix.toLowerCase());
+          })
+        ) {
+          return true;
+        }
+        // Check for member expressions that might be boolean comparisons
+        if (
+          body.type === AST_NODE_TYPES.MemberExpression &&
+          body.property.type === AST_NODE_TYPES.Identifier &&
+          ['length', 'size'].includes(body.property.name)
         ) {
           return true;
         }
@@ -314,7 +336,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       // Check if this is a boolean variable
       const isBool = isBooleanType(node.id);
 
-      if (isBool && !hasApprovedPrefix(variableName)) {
+      if (isBool && !hasApprovedPrefixForAnyCase(variableName)) {
         context.report({
           node: node.id,
           messageId: 'missingBooleanPrefix',
@@ -369,7 +391,31 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       // Check if this function returns a boolean
       const returnsBool = returnsBooleanType(node);
 
-      if (returnsBool && !hasApprovedPrefix(functionName)) {
+      // For arrow functions with expression bodies that return boolean-like expressions
+      if (node.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+          node.expression &&
+          !returnsBool) {
+        const body = node.body;
+
+        // Check for comparison operators
+        if (body.type === AST_NODE_TYPES.BinaryExpression &&
+            ['===', '!==', '==', '!=', '>', '<', '>=', '<='].includes(body.operator)) {
+          if (!hasApprovedPrefixForAnyCase(functionName)) {
+            context.report({
+              node: node.parent?.type === AST_NODE_TYPES.VariableDeclarator ? node.parent.id : node,
+              messageId: 'missingBooleanPrefix',
+              data: {
+                type: 'function',
+                name: functionName,
+                prefixes: formatPrefixes(),
+              },
+            });
+          }
+          return;
+        }
+      }
+
+      if (returnsBool && !hasApprovedPrefixForAnyCase(functionName)) {
         context.report({
           node: node.id || node,
           messageId: 'missingBooleanPrefix',
@@ -399,7 +445,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       const returnsBool = node.value.type === AST_NODE_TYPES.FunctionExpression &&
                           returnsBooleanType(node.value);
 
-      if (returnsBool && !hasApprovedPrefix(methodName)) {
+      if (returnsBool && !hasApprovedPrefixForAnyCase(methodName)) {
         context.report({
           node: node.key,
           messageId: 'missingBooleanPrefix',
@@ -476,7 +522,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         }
       }
 
-      if (isBool && !hasApprovedPrefix(propertyName)) {
+      if (isBool && !hasApprovedPrefixForAnyCase(propertyName)) {
         context.report({
           node: node.key,
           messageId: 'missingBooleanPrefix',
@@ -505,7 +551,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       // Check if this is a boolean property
       const isBool = node.typeAnnotation?.typeAnnotation.type === AST_NODE_TYPES.TSBooleanKeyword;
 
-      if (isBool && !hasApprovedPrefix(propertyName)) {
+      if (isBool && !hasApprovedPrefixForAnyCase(propertyName)) {
         context.report({
           node: node.key,
           messageId: 'missingBooleanPrefix',
@@ -550,7 +596,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         isBool = true;
       }
 
-      if (isBool && !hasApprovedPrefix(paramName)) {
+      if (isBool && !hasApprovedPrefixForAnyCase(paramName)) {
         context.report({
           node,
           messageId: 'missingBooleanPrefix',
@@ -567,7 +613,8 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
      * Check class property definitions for boolean naming
      */
     function checkClassProperty(node: any) {
-      if (node.type !== 'ClassProperty' || node.key.type !== AST_NODE_TYPES.Identifier) return;
+      if (node.type !== 'ClassProperty' && node.type !== 'PropertyDefinition') return;
+      if (node.key.type !== AST_NODE_TYPES.Identifier) return;
 
       // Skip checking in test files
       if (isTestFile) {
@@ -579,6 +626,13 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       // Check if this is a boolean property
       let isBool = false;
 
+      // Check for type annotation
+      if (
+        node.typeAnnotation?.typeAnnotation.type === AST_NODE_TYPES.TSBooleanKeyword
+      ) {
+        isBool = true;
+      }
+
       // Check for boolean literal initialization
       if (
         node.value?.type === AST_NODE_TYPES.Literal &&
@@ -587,7 +641,31 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         isBool = true;
       }
 
-      if (isBool && !hasApprovedPrefix(propertyName)) {
+      // Check for boolean expressions
+      if (
+        node.value?.type === AST_NODE_TYPES.BinaryExpression &&
+        ['===', '!==', '==', '!=', '>', '<', '>=', '<='].includes(node.value.operator)
+      ) {
+        isBool = true;
+      }
+
+      // Check for logical expressions
+      if (
+        node.value?.type === AST_NODE_TYPES.LogicalExpression &&
+        ['&&', '||'].includes(node.value.operator)
+      ) {
+        isBool = true;
+      }
+
+      // Check for unary expressions with ! operator
+      if (
+        node.value?.type === AST_NODE_TYPES.UnaryExpression &&
+        node.value.operator === '!'
+      ) {
+        isBool = true;
+      }
+
+      if (isBool && !hasApprovedPrefixForAnyCase(propertyName)) {
         context.report({
           node: node.key,
           messageId: 'missingBooleanPrefix',
@@ -600,24 +678,185 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       }
     }
 
+    /**
+     * Check if a name is in UPPER_SNAKE_CASE format
+     */
+    function isUpperSnakeCase(name: string): boolean {
+      return /^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$/.test(name);
+    }
+
+    /**
+     * Check if a name has an approved prefix, considering UPPER_SNAKE_CASE format
+     */
+    function hasApprovedPrefixForAnyCase(name: string): boolean {
+      // For UPPER_SNAKE_CASE, we need to check differently
+      if (isUpperSnakeCase(name)) {
+        return booleanPrefixes.some(prefix => {
+          const upperPrefix = prefix.toUpperCase();
+          return name.startsWith(upperPrefix) || name.startsWith(`IS_${upperPrefix.substring(2)}`);
+        });
+      }
+
+      // For regular camelCase or PascalCase
+      return hasApprovedPrefix(name);
+    }
+
+    /**
+     * Track imported identifiers to skip them in checks
+     */
+    function collectImportedIdentifiers(node: TSESTree.ImportDeclaration) {
+      node.specifiers.forEach(specifier => {
+        if (specifier.type === AST_NODE_TYPES.ImportSpecifier ||
+            specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
+            specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
+          importedIdentifiers.add(specifier.local.name);
+        }
+      });
+    }
+
     return {
-      VariableDeclarator: checkVariableDeclaration,
-      FunctionDeclaration: checkFunctionDeclaration,
+      ImportDeclaration: collectImportedIdentifiers,
+      VariableDeclarator(node: TSESTree.VariableDeclarator) {
+        // Skip imported identifiers
+        if (node.id.type === AST_NODE_TYPES.Identifier && importedIdentifiers.has(node.id.name)) {
+          return;
+        }
+        checkVariableDeclaration(node);
+      },
+      FunctionDeclaration(node: TSESTree.FunctionDeclaration) {
+        // Skip imported identifiers
+        if (node.id && importedIdentifiers.has(node.id.name)) {
+          return;
+        }
+        checkFunctionDeclaration(node);
+      },
       FunctionExpression(node: TSESTree.FunctionExpression) {
         if (node.parent?.type !== AST_NODE_TYPES.VariableDeclarator) {
           checkFunctionDeclaration(node);
         }
       },
       ArrowFunctionExpression(node: TSESTree.ArrowFunctionExpression) {
+        // Special handling for arrow functions in variable declarations
+        if (node.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+            node.parent.id.type === AST_NODE_TYPES.Identifier) {
+
+          const variableName = node.parent.id.name;
+
+          // Skip imported identifiers
+          if (importedIdentifiers.has(variableName)) {
+            return;
+          }
+
+          // Skip checking in test files
+          if (isTestFile) {
+            return;
+          }
+
+          // Check for explicit boolean return type
+          if (node.returnType?.typeAnnotation.type === AST_NODE_TYPES.TSBooleanKeyword) {
+            if (!hasApprovedPrefixForAnyCase(variableName)) {
+              context.report({
+                node: node.parent.id,
+                messageId: 'missingBooleanPrefix',
+                data: {
+                  type: 'variable',
+                  name: variableName,
+                  prefixes: formatPrefixes(),
+                },
+              });
+            }
+            return;
+          }
+
+          // Check for implicit boolean return in expression body
+          if (node.expression) {
+            const body = node.body;
+
+            // Check for comparison operators
+            if (body.type === AST_NODE_TYPES.BinaryExpression &&
+                ['===', '!==', '==', '!=', '>', '<', '>=', '<='].includes(body.operator)) {
+              if (!hasApprovedPrefixForAnyCase(variableName)) {
+                context.report({
+                  node: node.parent.id,
+                  messageId: 'missingBooleanPrefix',
+                  data: {
+                    type: 'variable',
+                    name: variableName,
+                    prefixes: formatPrefixes(),
+                  },
+                });
+              }
+              return;
+            }
+          }
+        }
+
+        // For other arrow functions
         if (node.parent?.type !== AST_NODE_TYPES.VariableDeclarator) {
           checkFunctionDeclaration(node);
         }
       },
-      MethodDefinition: checkMethodDefinition,
-      Property: checkProperty,
-      ClassProperty: checkClassProperty,
-      TSPropertySignature: checkPropertySignature,
+      MethodDefinition(node: TSESTree.MethodDefinition) {
+        // Skip methods from imported classes
+        if (node.key.type === AST_NODE_TYPES.Identifier &&
+            node.parent?.type === AST_NODE_TYPES.ClassBody &&
+            node.parent.parent?.type === AST_NODE_TYPES.ClassDeclaration &&
+            node.parent.parent.id &&
+            importedIdentifiers.has(node.parent.parent.id.name)) {
+          return;
+        }
+        checkMethodDefinition(node);
+      },
+      Property(node: TSESTree.Property) {
+        // Skip properties from imported objects
+        if (node.key.type === AST_NODE_TYPES.Identifier &&
+            node.parent?.type === AST_NODE_TYPES.ObjectExpression &&
+            node.parent.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+            node.parent.parent.id.type === AST_NODE_TYPES.Identifier &&
+            importedIdentifiers.has(node.parent.parent.id.name)) {
+          return;
+        }
+        checkProperty(node);
+      },
+      ClassProperty(node: any) {
+        // Skip properties from imported classes
+        if (node.key.type === AST_NODE_TYPES.Identifier &&
+            node.parent?.type === AST_NODE_TYPES.ClassBody &&
+            node.parent.parent?.type === AST_NODE_TYPES.ClassDeclaration &&
+            node.parent.parent.id &&
+            importedIdentifiers.has(node.parent.parent.id.name)) {
+          return;
+        }
+        checkClassProperty(node);
+      },
+      PropertyDefinition(node: any) {
+        // Skip properties from imported classes
+        if (node.key.type === AST_NODE_TYPES.Identifier &&
+            node.parent?.type === AST_NODE_TYPES.ClassBody &&
+            node.parent.parent?.type === AST_NODE_TYPES.ClassDeclaration &&
+            node.parent.parent.id &&
+            importedIdentifiers.has(node.parent.parent.id.name)) {
+          return;
+        }
+        checkClassProperty(node);
+      },
+      TSPropertySignature(node: TSESTree.TSPropertySignature) {
+        // Skip properties from imported interfaces
+        if (node.key.type === AST_NODE_TYPES.Identifier &&
+            node.parent?.type === AST_NODE_TYPES.TSInterfaceBody &&
+            node.parent.parent?.type === AST_NODE_TYPES.TSInterfaceDeclaration &&
+            node.parent.parent.id &&
+            importedIdentifiers.has(node.parent.parent.id.name)) {
+          return;
+        }
+        checkPropertySignature(node);
+      },
       Identifier(node: TSESTree.Identifier) {
+        // Skip imported identifiers
+        if (importedIdentifiers.has(node.name)) {
+          return;
+        }
+
         // Check parameter names in function declarations
         if (
           node.parent &&
