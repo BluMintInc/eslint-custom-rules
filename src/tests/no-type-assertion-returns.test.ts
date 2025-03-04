@@ -365,6 +365,46 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
       return setter;
     }
     `,
+
+    // Good: Type assertion in JSX props (simulated with function call)
+    `
+    function AvatarStatus({ avatar, onlineStatus }) {
+      // This simulates JSX with type assertions in props
+      return createElement(
+        StatusBadge,
+        {
+          color: onlineStatus as ComponentProps<typeof StatusBadge>['color'],
+          sx: {
+            '& .MuiBadge-badge': {
+              width: 10,
+              height: 10
+            }
+          }
+        },
+        avatar
+      );
+    }
+    `,
+
+    // Good: Type assertion in nested JSX props (simulated with nested object)
+    `
+    function ComplexComponent({ data, config }) {
+      // This simulates nested JSX with type assertions in props
+      return renderComponent(
+        MainComponent,
+        {
+          items: data.items.map(item => ({
+            id: item.id,
+            value: item.value as string,
+            config: {
+              enabled: config.enabled as boolean,
+              options: config.options as OptionType[]
+            }
+          }))
+        }
+      );
+    }
+    `,
   ],
   invalid: [
     // ==================== BASIC INVALID CASES ====================
