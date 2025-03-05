@@ -115,7 +115,10 @@ export class ClassGraphBuilder {
       node,
       this.graph,
       this.className,
-    ).filter((name) => !!this.graph[name] && name !== methodName);
+    ).filter((name) => {
+      // Only include dependencies that exist exactly in the graph and aren't self-references
+      return !!this.graph[name] && name !== methodName;
+    });
 
     if (this.graph[methodName]) {
       // Ensure dependencies is initialized as an array

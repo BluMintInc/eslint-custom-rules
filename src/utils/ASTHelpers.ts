@@ -438,10 +438,14 @@ export class ASTHelpers {
         break;
     }
 
-    // Removing duplicates
+    // Removing duplicates and ensuring exact matches only
     return [
       ...new Set(
-        dependencies.filter((dep) => graph?.[dep]?.type !== 'property'),
+        dependencies.filter((dep) => {
+          // Only include dependencies that exist exactly in the graph
+          // This prevents substring matches (e.g., 'nextMatches' vs 'nextMatchesWithResults')
+          return graph?.[dep] !== undefined && graph?.[dep]?.type !== 'property';
+        }),
       ),
     ];
   }
