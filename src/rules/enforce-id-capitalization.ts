@@ -76,6 +76,59 @@ export const enforceIdCapitalization = createRule<Options, MessageIds>({
         return true;
       }
 
+      // Check if the node is in an object property context
+      if (
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.Property &&
+        node.parent.value === node
+      ) {
+        // Check if this is a property in an object pattern (destructuring)
+        let currentNode = node.parent;
+        while (currentNode.parent) {
+          if (currentNode.parent.type === AST_NODE_TYPES.ObjectPattern) {
+            return true;
+          }
+          currentNode = currentNode.parent;
+        }
+      }
+
+      // Check if the node is in a property assignment context
+      if (
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.ObjectExpression
+      ) {
+        return true;
+      }
+
+      // Check if the node is in a property access context
+      if (
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.MemberExpression
+      ) {
+        return true;
+      }
+
+      // Check if the node is a string literal in a type definition context
+      // This handles cases like Pick<Type, 'id' | 'name'>
+      if (node.type === AST_NODE_TYPES.Literal && typeof node.value === 'string') {
+        let currentNode = node;
+        while (currentNode.parent) {
+          // Check for TypeScript type contexts
+          if (
+            currentNode.parent.type === AST_NODE_TYPES.TSTypeReference ||
+            currentNode.parent.type === AST_NODE_TYPES.TSTypeParameterInstantiation ||
+            currentNode.parent.type === AST_NODE_TYPES.TSUnionType ||
+            currentNode.parent.type === AST_NODE_TYPES.TSIntersectionType ||
+            currentNode.parent.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
+            currentNode.parent.type === AST_NODE_TYPES.TSInterfaceDeclaration ||
+            currentNode.parent.type === AST_NODE_TYPES.TSTypeLiteral
+          ) {
+            return true;
+          }
+          currentNode = currentNode.parent;
+        }
+      }
+
       return false;
     }
 

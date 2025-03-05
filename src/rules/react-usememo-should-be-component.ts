@@ -20,6 +20,88 @@ const isJsxElement = (node: TSESTree.Node | null): boolean => {
 };
 
 /**
+ * Checks if a variable is used multiple times in a component
+ */
+const isUsedMultipleTimes = (
+  variableName: string,
+  node: TSESTree.Node
+): boolean => {
+  // Find the function component that contains this node
+  let currentNode: TSESTree.Node | undefined = node;
+  let functionNode: TSESTree.Node | undefined;
+
+  // Walk up the AST to find the function component
+  while (currentNode.parent) {
+    currentNode = currentNode.parent;
+    if (
+      currentNode.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+      currentNode.type === AST_NODE_TYPES.FunctionDeclaration ||
+      currentNode.type === AST_NODE_TYPES.FunctionExpression
+    ) {
+      functionNode = currentNode;
+      break;
+    }
+  }
+
+  if (!functionNode) {
+    return false;
+  }
+
+  // Count occurrences of the variable in the function body
+  let count = 0;
+
+  // Function to recursively search for references to the variable
+  const findReferences = (searchNode: TSESTree.Node) => {
+    if (!searchNode) return;
+
+    // Check if this node is a reference to our variable
+    if (
+      searchNode.type === AST_NODE_TYPES.Identifier &&
+      searchNode.name === variableName &&
+      // Exclude the declaration itself
+      !(
+        searchNode.parent &&
+        searchNode.parent.type === AST_NODE_TYPES.VariableDeclarator &&
+        searchNode.parent.id === searchNode
+      )
+    ) {
+      count++;
+    }
+
+    // Recursively check all properties of the node
+    for (const key in searchNode) {
+      if (key === 'parent') continue; // Skip parent to avoid circular references
+
+      const child = (searchNode as any)[key];
+      if (child && typeof child === 'object') {
+        if (Array.isArray(child)) {
+          child.forEach(item => {
+            if (item && typeof item === 'object') {
+              findReferences(item);
+            }
+          });
+        } else {
+          findReferences(child);
+        }
+      }
+    }
+  };
+
+  // Start the search from the function body
+  if (functionNode.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+    findReferences(functionNode.body);
+  } else if (
+    functionNode.type === AST_NODE_TYPES.FunctionDeclaration ||
+    functionNode.type === AST_NODE_TYPES.FunctionExpression
+  ) {
+    findReferences(functionNode.body);
+  }
+
+  // Return true if the variable is referenced more than once
+  return count > 1;
+};
+
+/**
  * Checks if an object contains JSX elements in its properties
  */
 const containsJsxInObject = (node: TSESTree.ObjectExpression): boolean => {
@@ -385,6 +467,21 @@ export const reactUseMemoShouldBeComponent = createRule<[], MessageIds>({
     return {
       CallExpression(node) {
         if (containsJsxInUseMemo(node)) {
+          // Check if this is a variable declaration
+          if (
+            node.parent &&
+            node.parent.type === AST_NODE_TYPES.VariableDeclarator &&
+            node.parent.id.type === AST_NODE_TYPES.Identifier
+          ) {
+            const variableName = node.parent.id.name;
+
+            // Check if the variable is used multiple times in the component
+            if (isUsedMultipleTimes(variableName, node)) {
+              // If the variable is used multiple times, allow it
+              return;
+            }
+          }
+
           context.report({
             node,
             messageId: 'useMemoShouldBeComponent',

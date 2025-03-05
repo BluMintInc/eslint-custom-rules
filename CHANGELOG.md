@@ -3,6 +3,7 @@
 
 ### Bug Fixes
 
+* **enforce-id-capitalization:** fix rule to properly exclude type definitions ([#123](https://github.com/BluMintInc/eslint-custom-rules/pull/123))
 * **.cursorrules:** force release version update ([3c72788](https://github.com/BluMintInc/eslint-custom-rules/commit/3c72788907630cfb4a84635f4aaa46f4f6a27073))
 
 # [1.9.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.8.2...v1.9.0) (2025-03-03)
@@ -286,6 +287,11 @@
 ### Bug Fixes
 
 * **.ts:** resolve eslint errors ([0e0af23](https://github.com/BluMintInc/eslint-custom-rules/commit/0e0af2361cfdc9e6b193fcdae2e6053160cdae98))
+
+
+### Features
+
+* **enforce-dynamic-file-naming:** add rule to enforce .dynamic.ts(x) naming convention when @blumintinc/blumint/enforce-dynamic-imports is disabled
 
 ## [1.0.4](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.0.3...v1.0.4) (2024-12-05)
 
