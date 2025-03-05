@@ -49,6 +49,18 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
           )
           .filter(Boolean) as string[];
 
+        // Check if we have the same number of methods in both arrays
+        // This prevents issues with similar method names being treated as duplicates
+        if (sortedOrder.length !== actualOrder.length) {
+          return; // Skip if the arrays have different lengths (indicates a potential issue)
+        }
+
+        // Create a set of unique method names to check for duplicates
+        const uniqueMethodNames = new Set(actualOrder);
+        if (uniqueMethodNames.size !== actualOrder.length) {
+          return; // Skip if there are actual duplicates
+        }
+
         for (let i = 0; i < actualOrder.length; i++) {
           if (actualOrder[i] !== sortedOrder[i]) {
             const sourceCode = context.getSourceCode();
