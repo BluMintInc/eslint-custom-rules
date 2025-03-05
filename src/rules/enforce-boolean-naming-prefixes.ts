@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { TypeFlags } from 'typescript';
 
 type MessageIds = 'missingBooleanPrefix';
 type Options = [
@@ -33,6 +34,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     docs: {
       description: 'Enforce consistent naming conventions for boolean values',
       recommended: 'error',
+      requiresTypeChecking: true,
     },
     schema: [
       {
@@ -167,148 +169,163 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
      * Check if a function returns a boolean
      */
     function returnsBooleanType(node: TSESTree.FunctionDeclaration | TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression): boolean {
-      // Check for explicit boolean return type annotation
-      if (
-        node.returnType?.typeAnnotation.type === AST_NODE_TYPES.TSBooleanKeyword
-      ) {
+      const sourceCode = context.getSourceCode();
+      const parserServices = sourceCode.parserServices;
+
+      // First, check for explicit boolean return type annotation in the AST
+      if (node.returnType?.typeAnnotation.type === AST_NODE_TYPES.TSBooleanKeyword) {
         return true;
       }
 
       // Check for TypeScript type predicate (is type predicate)
-      if (
-        node.returnType?.typeAnnotation.type === AST_NODE_TYPES.TSTypePredicate
-      ) {
+      if (node.returnType?.typeAnnotation.type === AST_NODE_TYPES.TSTypePredicate) {
         return true;
       }
 
-      // Check for return statements with boolean literals or expressions
-      let returnsBool = false;
-      const returnStatements: TSESTree.ReturnStatement[] = [];
+      // If we have access to TypeScript services, use them for more accurate type checking
+      if (parserServices?.program && parserServices?.esTreeNodeToTSNodeMap) {
+        const checker = parserServices.program.getTypeChecker();
+        const nodeMap = parserServices.esTreeNodeToTSNodeMap;
 
-      // Find all return statements in the function
-      function collectReturnStatements(node: TSESTree.Node) {
-        if (node.type === AST_NODE_TYPES.ReturnStatement) {
-          returnStatements.push(node);
-        }
+        const tsNode = nodeMap.get(node);
+        if (tsNode) {
+          const signature = checker.getSignatureFromDeclaration(tsNode);
+          if (signature) {
+            const returnType = checker.getReturnTypeOfSignature(signature);
 
-        // Don't traverse into nested functions
-        if (
-          node.type !== AST_NODE_TYPES.FunctionDeclaration &&
-          node.type !== AST_NODE_TYPES.FunctionExpression &&
-          node.type !== AST_NODE_TYPES.ArrowFunctionExpression
-        ) {
-          for (const key in node) {
-            if (key === 'parent') continue;
-            const child = (node as any)[key];
-            if (child && typeof child === 'object') {
-              if (Array.isArray(child)) {
-                child.forEach(item => {
-                  if (item && typeof item === 'object') {
-                    collectReturnStatements(item);
-                  }
-                });
-              } else {
-                collectReturnStatements(child);
+            // Check if return type is boolean
+            if (returnType.flags & (TypeFlags.Boolean | TypeFlags.BooleanLiteral)) {
+              return true;
+            }
+
+            // Check if it's a union type that includes only true/false
+            if (returnType.isUnion()) {
+              const types = returnType.types;
+              const allBooleanLiterals = types.every(type =>
+                type.flags & TypeFlags.BooleanLiteral
+              );
+
+              if (allBooleanLiterals) {
+                return true;
               }
             }
           }
         }
       }
 
+      // Fallback to AST-based analysis if TypeScript services are not available
+
       // For arrow functions with expression bodies
-      if (
-        node.type === AST_NODE_TYPES.ArrowFunctionExpression &&
-        node.expression
-      ) {
+      if (node.type === AST_NODE_TYPES.ArrowFunctionExpression && node.expression) {
         const body = node.body;
-        if (
-          body.type === AST_NODE_TYPES.Literal &&
-          typeof body.value === 'boolean'
-        ) {
+
+        // Boolean literal
+        if (body.type === AST_NODE_TYPES.Literal && typeof body.value === 'boolean') {
           return true;
         }
-        if (
-          body.type === AST_NODE_TYPES.BinaryExpression &&
-          ['===', '!==', '==', '!=', '>', '<', '>=', '<='].includes(body.operator)
-        ) {
+
+        // Comparison expressions
+        if (body.type === AST_NODE_TYPES.BinaryExpression &&
+            ['===', '!==', '==', '!=', '>', '<', '>=', '<='].includes(body.operator)) {
           return true;
         }
-        if (
-          body.type === AST_NODE_TYPES.LogicalExpression &&
-          ['&&', '||'].includes(body.operator)
-        ) {
+
+        // Logical expressions
+        if (body.type === AST_NODE_TYPES.LogicalExpression &&
+            ['&&', '||'].includes(body.operator)) {
           return true;
         }
-        if (
-          body.type === AST_NODE_TYPES.UnaryExpression &&
-          body.operator === '!'
-        ) {
+
+        // Negation
+        if (body.type === AST_NODE_TYPES.UnaryExpression && body.operator === '!') {
           return true;
         }
-        // Check for method calls that might return boolean
-        if (
-          body.type === AST_NODE_TYPES.CallExpression &&
-          body.callee.type === AST_NODE_TYPES.Identifier &&
-          booleanPrefixes.some(prefix => {
-            const calleeName = body.callee.type === AST_NODE_TYPES.Identifier ? body.callee.name : '';
-            return calleeName.toLowerCase().startsWith(prefix.toLowerCase());
-          })
-        ) {
-          return true;
-        }
-        // Check for member expressions that might be boolean comparisons
-        if (
-          body.type === AST_NODE_TYPES.MemberExpression &&
-          body.property.type === AST_NODE_TYPES.Identifier &&
-          ['length', 'size'].includes(body.property.name)
-        ) {
+
+        // Function calls with boolean-like names
+        if (body.type === AST_NODE_TYPES.CallExpression &&
+            body.callee.type === AST_NODE_TYPES.Identifier &&
+            booleanPrefixes.some(prefix => {
+              const calleeName = body.callee.type === AST_NODE_TYPES.Identifier ? body.callee.name : '';
+              return calleeName.toLowerCase().startsWith(prefix.toLowerCase());
+            })) {
           return true;
         }
       } else {
-        // For functions with block bodies
+        // For functions with block bodies, analyze return statements
+        const returnStatements: TSESTree.ReturnStatement[] = [];
+
+        // Find all return statements in the function
+        function collectReturnStatements(node: TSESTree.Node) {
+          if (node.type === AST_NODE_TYPES.ReturnStatement) {
+            returnStatements.push(node);
+          }
+
+          // Don't traverse into nested functions
+          if (node.type !== AST_NODE_TYPES.FunctionDeclaration &&
+              node.type !== AST_NODE_TYPES.FunctionExpression &&
+              node.type !== AST_NODE_TYPES.ArrowFunctionExpression) {
+            for (const key in node) {
+              if (key === 'parent') continue;
+              const child = (node as any)[key];
+              if (child && typeof child === 'object') {
+                if (Array.isArray(child)) {
+                  child.forEach(item => {
+                    if (item && typeof item === 'object') {
+                      collectReturnStatements(item);
+                    }
+                  });
+                } else {
+                  collectReturnStatements(child);
+                }
+              }
+            }
+          }
+        }
+
         collectReturnStatements(node.body);
 
         // Check if any return statement returns a boolean
-        returnsBool = returnStatements.some(stmt => {
+        const returnsBool = returnStatements.some(stmt => {
           const arg = stmt.argument;
           if (!arg) return false;
 
-          if (
-            arg.type === AST_NODE_TYPES.Literal &&
-            typeof arg.value === 'boolean'
-          ) {
+          // Boolean literal
+          if (arg.type === AST_NODE_TYPES.Literal && typeof arg.value === 'boolean') {
             return true;
           }
-          if (
-            arg.type === AST_NODE_TYPES.BinaryExpression &&
-            ['===', '!==', '==', '!='].includes(arg.operator)
-          ) {
+
+          // Comparison expressions
+          if (arg.type === AST_NODE_TYPES.BinaryExpression &&
+              ['===', '!==', '==', '!=', '>', '<', '>=', '<='].includes(arg.operator)) {
             return true;
           }
-          if (
-            arg.type === AST_NODE_TYPES.LogicalExpression &&
-            ['&&', '||'].includes(arg.operator)
-          ) {
+
+          // Logical expressions
+          if (arg.type === AST_NODE_TYPES.LogicalExpression &&
+              ['&&', '||'].includes(arg.operator)) {
             return true;
           }
-          if (
-            arg.type === AST_NODE_TYPES.UnaryExpression &&
-            arg.operator === '!'
-          ) {
+
+          // Negation
+          if (arg.type === AST_NODE_TYPES.UnaryExpression && arg.operator === '!') {
             return true;
           }
-          if (
-            arg.type === AST_NODE_TYPES.Identifier &&
-            booleanPrefixes.some(prefix => arg.name.toLowerCase().startsWith(prefix.toLowerCase()))
-          ) {
+
+          // Identifiers with boolean-like names
+          if (arg.type === AST_NODE_TYPES.Identifier &&
+              booleanPrefixes.some(prefix => arg.name.toLowerCase().startsWith(prefix.toLowerCase()))) {
             return true;
           }
 
           return false;
         });
+
+        if (returnsBool) {
+          return true;
+        }
       }
 
-      return returnsBool;
+      return false;
     }
 
     /**
