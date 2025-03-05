@@ -1,0 +1,1 @@
+export declare const preferUtilityFunctionOverPrivateStatic: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"preferUtilityFunctionOverPrivateStatic", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;

@@ -99,7 +99,7 @@ import { noMarginProperties } from './rules/no-margin-properties';
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.0.5',
+    version: '1.9.1',
   },
   parseOptions: {
     ecmaVersion: 2020,
