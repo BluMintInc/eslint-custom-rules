@@ -127,7 +127,10 @@ function isTypeGuardFunction(node: TSESTree.Node): boolean {
   // Check for assertion functions (asserts keyword)
   if (typeAnnotation.type === AST_NODE_TYPES.TSTypeReference) {
     const typeName = typeAnnotation.typeName;
-    if (typeName.type === AST_NODE_TYPES.Identifier && typeName.name === 'asserts') {
+    if (
+      typeName.type === AST_NODE_TYPES.Identifier &&
+      typeName.name === 'asserts'
+    ) {
       return true;
     }
   }
@@ -143,7 +146,8 @@ export const noExplicitReturnType: TSESLint.RuleModule<
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Disallow explicit return type annotations on functions when TypeScript can infer them. This reduces code verbosity and maintenance burden while leveraging TypeScript\'s powerful type inference. Exceptions are made for type guard functions (using the `is` keyword), recursive functions, overloaded functions, interface methods, and abstract methods where explicit types improve clarity.',
+      description:
+        "Disallow explicit return type annotations on functions when TypeScript can infer them. This reduces code verbosity and maintenance burden while leveraging TypeScript's powerful type inference. Exceptions are made for type guard functions (using the `is` keyword), recursive functions, overloaded functions, interface methods, and abstract methods where explicit types improve clarity.",
       recommended: 'error',
       requiresTypeChecking: false,
       extendsBaseRule: false,

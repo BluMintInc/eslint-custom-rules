@@ -37,7 +37,9 @@ export const enforceTimestampNow = createRule<[], MessageIds>({
     // Track Timestamp imports and aliases
     const timestampAliases = new Set<string>(['Timestamp']);
 
-    function isTimestampFromDateWithNewDate(node: TSESTree.CallExpression): boolean {
+    function isTimestampFromDateWithNewDate(
+      node: TSESTree.CallExpression,
+    ): boolean {
       // Check if it's a Timestamp.fromDate(new Date()) call
       if (node.callee.type === AST_NODE_TYPES.MemberExpression) {
         const property = node.callee.property;
@@ -62,10 +64,7 @@ export const enforceTimestampNow = createRule<[], MessageIds>({
           }
 
           // Check if the argument is a variable reference to a Date object
-          if (
-            arg &&
-            arg.type === AST_NODE_TYPES.Identifier
-          ) {
+          if (arg && arg.type === AST_NODE_TYPES.Identifier) {
             // If it's a variable, we need to check if it's a Date that's being modified
             // If it's modified, we shouldn't flag it
             return false;
@@ -75,7 +74,9 @@ export const enforceTimestampNow = createRule<[], MessageIds>({
       return false;
     }
 
-    function isTimestampFromMillisWithDateNow(node: TSESTree.CallExpression): boolean {
+    function isTimestampFromMillisWithDateNow(
+      node: TSESTree.CallExpression,
+    ): boolean {
       // Check if it's a Timestamp.fromMillis(Date.now()) call
       if (node.callee.type === AST_NODE_TYPES.MemberExpression) {
         const property = node.callee.property;
@@ -118,12 +119,12 @@ export const enforceTimestampNow = createRule<[], MessageIds>({
     function isDateBeingModified(dateVar: string): boolean {
       // Look through the scope to find if this variable is modified
       const scope = context.getScope();
-      const variable = scope.variables.find(v => v.name === dateVar);
+      const variable = scope.variables.find((v) => v.name === dateVar);
 
       if (!variable) return false;
 
       // Check if any references to this variable are followed by property access and modification
-      return variable.references.some(ref => {
+      return variable.references.some((ref) => {
         const id = ref.identifier;
         const parent = id.parent;
 
@@ -133,12 +134,10 @@ export const enforceTimestampNow = createRule<[], MessageIds>({
           parent.type === AST_NODE_TYPES.MemberExpression &&
           parent.object === id &&
           parent.property.type === AST_NODE_TYPES.Identifier &&
-          (
-            parent.property.name.startsWith('set') ||
+          (parent.property.name.startsWith('set') ||
             parent.property.name === 'toISOString' ||
             parent.property.name === 'toLocaleString' ||
-            parent.property.name === 'toString'
-          )
+            parent.property.name === 'toString')
         );
       });
     }

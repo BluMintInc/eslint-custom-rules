@@ -28,7 +28,8 @@ export const noMockFirebaseAdmin = createRule<[], MessageIds>({
   create(context) {
     // Check if the current file is a test file
     const filename = context.getFilename();
-    const isTestFile = /\.test\.[jt]sx?$/.test(filename) || /\.spec\.[jt]sx?$/.test(filename);
+    const isTestFile =
+      /\.test\.[jt]sx?$/.test(filename) || /\.spec\.[jt]sx?$/.test(filename);
 
     // If it's not a test file, don't apply the rule
     if (!isTestFile) {
@@ -45,7 +46,7 @@ export const noMockFirebaseAdmin = createRule<[], MessageIds>({
           node.callee.property.name === 'mock' &&
           node.arguments.length > 0 &&
           (node.arguments[0].type === AST_NODE_TYPES.Literal ||
-           node.arguments[0].type === AST_NODE_TYPES.TemplateLiteral)
+            node.arguments[0].type === AST_NODE_TYPES.TemplateLiteral)
         ) {
           let mockPath = '';
           if (node.arguments[0].type === AST_NODE_TYPES.TemplateLiteral) {
@@ -53,8 +54,14 @@ export const noMockFirebaseAdmin = createRule<[], MessageIds>({
           } else if (node.arguments[0].type === AST_NODE_TYPES.Literal) {
             mockPath = String(node.arguments[0].value);
           }
-          const isFirebaseAdminMock = FIREBASE_ADMIN_PATHS.some(path =>
-            mockPath.endsWith(path) && !mockPath.endsWith('Helper') && !mockPath.endsWith('utils') && !mockPath.endsWith('test') && !mockPath.endsWith('mock') && !mockPath.endsWith('jest-mock')
+          const isFirebaseAdminMock = FIREBASE_ADMIN_PATHS.some(
+            (path) =>
+              mockPath.endsWith(path) &&
+              !mockPath.endsWith('Helper') &&
+              !mockPath.endsWith('utils') &&
+              !mockPath.endsWith('test') &&
+              !mockPath.endsWith('mock') &&
+              !mockPath.endsWith('jest-mock'),
           );
 
           if (isFirebaseAdminMock) {

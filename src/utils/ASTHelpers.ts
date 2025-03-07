@@ -118,7 +118,9 @@ export class ASTHelpers {
           this.declarationIncludesIdentifier(node.alternate)
         );
       case 'TemplateLiteral':
-        return node.expressions.some((expr) => this.declarationIncludesIdentifier(expr));
+        return node.expressions.some((expr) =>
+          this.declarationIncludesIdentifier(expr),
+        );
       case 'TSAsExpression':
         return this.declarationIncludesIdentifier(node.expression);
 
@@ -444,7 +446,9 @@ export class ASTHelpers {
         dependencies.filter((dep) => {
           // Only include dependencies that exist exactly in the graph
           // This prevents substring matches (e.g., 'nextMatches' vs 'nextMatchesWithResults')
-          return graph?.[dep] !== undefined && graph?.[dep]?.type !== 'property';
+          return (
+            graph?.[dep] !== undefined && graph?.[dep]?.type !== 'property'
+          );
         }),
       ),
     ];

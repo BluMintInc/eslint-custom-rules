@@ -13,7 +13,8 @@ export const noMemoizeOnStatic = createRule<[], MessageIds>({
     },
     schema: [],
     messages: {
-      noMemoizeOnStatic: '@Memoize() decorator should not be used on static methods',
+      noMemoizeOnStatic:
+        '@Memoize() decorator should not be used on static methods',
     },
   },
   defaultOptions: [],

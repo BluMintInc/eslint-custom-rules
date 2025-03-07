@@ -88,7 +88,7 @@ export const noMarginProperties = createRule<[], MessageIds>({
           current.parent.type === AST_NODE_TYPES.Property &&
           current.parent.key.type === AST_NODE_TYPES.Identifier &&
           (current.parent.key.name === 'styleOverrides' ||
-           current.parent.key.name === 'components')
+            current.parent.key.name === 'components')
         ) {
           return true;
         }
@@ -129,15 +129,20 @@ export const noMarginProperties = createRule<[], MessageIds>({
         propertyName = node.key.name;
       } else if (node.key.type === AST_NODE_TYPES.Literal) {
         propertyName = String(node.key.value);
-      } else if (node.computed && node.key.type === AST_NODE_TYPES.TemplateLiteral) {
+      } else if (
+        node.computed &&
+        node.key.type === AST_NODE_TYPES.TemplateLiteral
+      ) {
         // Handle template literals like [`${prop}Top`]
-        const quasis = node.key.quasis.map(q => q.value.raw).join('');
-        const expressions = node.key.expressions.map(exp => {
-          if (exp.type === AST_NODE_TYPES.Identifier) {
-            return exp.name;
-          }
-          return '';
-        }).join('');
+        const quasis = node.key.quasis.map((q) => q.value.raw).join('');
+        const expressions = node.key.expressions
+          .map((exp) => {
+            if (exp.type === AST_NODE_TYPES.Identifier) {
+              return exp.name;
+            }
+            return '';
+          })
+          .join('');
 
         propertyName = quasis + expressions;
       }
@@ -158,15 +163,17 @@ export const noMarginProperties = createRule<[], MessageIds>({
 
     // Check object expression for margin properties
     function checkObjectExpression(objExp: TSESTree.ObjectExpression): void {
-      objExp.properties.forEach(prop => {
+      objExp.properties.forEach((prop) => {
         if (prop.type === AST_NODE_TYPES.Property) {
           checkNode(prop);
-        } else if (prop.type === AST_NODE_TYPES.SpreadElement &&
-                  prop.argument.type === AST_NODE_TYPES.Identifier) {
+        } else if (
+          prop.type === AST_NODE_TYPES.SpreadElement &&
+          prop.argument.type === AST_NODE_TYPES.Identifier
+        ) {
           // Handle spread elements by looking up the variable
           const variableName = prop.argument.name;
           const scope = context.getScope();
-          const variable = scope.variables.find(v => v.name === variableName);
+          const variable = scope.variables.find((v) => v.name === variableName);
 
           if (variable && variable.defs.length > 0) {
             const def = variable.defs[0];
@@ -193,7 +200,8 @@ export const noMarginProperties = createRule<[], MessageIds>({
         if (
           node.name.type !== AST_NODE_TYPES.JSXIdentifier ||
           node.name.name !== 'sx'
-        ) return;
+        )
+          return;
 
         if (
           node.value?.type === AST_NODE_TYPES.JSXExpressionContainer &&
@@ -207,7 +215,7 @@ export const noMarginProperties = createRule<[], MessageIds>({
           // Handle variable reference in sx prop
           const variableName = node.value.expression.name;
           const scope = context.getScope();
-          const variable = scope.variables.find(v => v.name === variableName);
+          const variable = scope.variables.find((v) => v.name === variableName);
 
           if (variable && variable.defs.length > 0) {
             const def = variable.defs[0];
@@ -223,7 +231,9 @@ export const noMarginProperties = createRule<[], MessageIds>({
           node.value.expression.type === AST_NODE_TYPES.ArrowFunctionExpression
         ) {
           // Handle function-based sx props
-          if (node.value.expression.body.type === AST_NODE_TYPES.ObjectExpression) {
+          if (
+            node.value.expression.body.type === AST_NODE_TYPES.ObjectExpression
+          ) {
             // Arrow function with object expression body
             checkObjectExpression(node.value.expression.body);
           } else if (
@@ -231,10 +241,10 @@ export const noMarginProperties = createRule<[], MessageIds>({
           ) {
             // Arrow function with block body
             const returnStatements = node.value.expression.body.body.filter(
-              stmt => stmt.type === AST_NODE_TYPES.ReturnStatement
+              (stmt) => stmt.type === AST_NODE_TYPES.ReturnStatement,
             ) as TSESTree.ReturnStatement[];
 
-            returnStatements.forEach(returnStmt => {
+            returnStatements.forEach((returnStmt) => {
               if (
                 returnStmt.argument?.type === AST_NODE_TYPES.ObjectExpression
               ) {
@@ -247,10 +257,16 @@ export const noMarginProperties = createRule<[], MessageIds>({
           node.value.expression.type === AST_NODE_TYPES.ConditionalExpression
         ) {
           // Handle conditional expressions in sx props
-          if (node.value.expression.consequent.type === AST_NODE_TYPES.ObjectExpression) {
+          if (
+            node.value.expression.consequent.type ===
+            AST_NODE_TYPES.ObjectExpression
+          ) {
             checkObjectExpression(node.value.expression.consequent);
           }
-          if (node.value.expression.alternate.type === AST_NODE_TYPES.ObjectExpression) {
+          if (
+            node.value.expression.alternate.type ===
+            AST_NODE_TYPES.ObjectExpression
+          ) {
             checkObjectExpression(node.value.expression.alternate);
           }
         }
@@ -266,7 +282,7 @@ export const noMarginProperties = createRule<[], MessageIds>({
           const sourceCode = context.getSourceCode().getText();
 
           // Check for margin properties in the object
-          node.init.properties.forEach(prop => {
+          node.init.properties.forEach((prop) => {
             if (prop.type === AST_NODE_TYPES.Property) {
               let propertyName = '';
 
@@ -278,10 +294,11 @@ export const noMarginProperties = createRule<[], MessageIds>({
 
               if (propertyName && checkProperty(propertyName)) {
                 // Check if this variable is used in an sx prop
-                if (sourceCode.includes(`sx={${variableName}}`) ||
-                    sourceCode.includes(`sx={{ ...${variableName}`) ||
-                    sourceCode.includes(`sx={Object.assign({}, ${variableName}`)) {
-
+                if (
+                  sourceCode.includes(`sx={${variableName}}`) ||
+                  sourceCode.includes(`sx={{ ...${variableName}`) ||
+                  sourceCode.includes(`sx={Object.assign({}, ${variableName}`)
+                ) {
                   context.report({
                     node: prop,
                     messageId: 'noMarginProperties',
@@ -298,7 +315,7 @@ export const noMarginProperties = createRule<[], MessageIds>({
 
       // Handle direct margin props on MUI components
       JSXOpeningElement(node: TSESTree.JSXOpeningElement) {
-        node.attributes.forEach(attr => {
+        node.attributes.forEach((attr) => {
           if (
             attr.type === AST_NODE_TYPES.JSXAttribute &&
             attr.name.type === AST_NODE_TYPES.JSXIdentifier
@@ -341,30 +358,36 @@ export const noMarginProperties = createRule<[], MessageIds>({
 
           // Find components property in theme object
           const componentsProperty = themeObj.properties.find(
-            prop =>
+            (prop) =>
               prop.type === AST_NODE_TYPES.Property &&
               prop.key.type === AST_NODE_TYPES.Identifier &&
               prop.key.name === 'components' &&
-              prop.value.type === AST_NODE_TYPES.ObjectExpression
+              prop.value.type === AST_NODE_TYPES.ObjectExpression,
           ) as TSESTree.Property | undefined;
 
-          if (componentsProperty && componentsProperty.value.type === AST_NODE_TYPES.ObjectExpression) {
+          if (
+            componentsProperty &&
+            componentsProperty.value.type === AST_NODE_TYPES.ObjectExpression
+          ) {
             // Check each component override
-            componentsProperty.value.properties.forEach(componentProp => {
+            componentsProperty.value.properties.forEach((componentProp) => {
               if (
                 componentProp.type === AST_NODE_TYPES.Property &&
                 componentProp.value.type === AST_NODE_TYPES.ObjectExpression
               ) {
                 // Find styleOverrides property
                 const styleOverrides = componentProp.value.properties.find(
-                  prop =>
+                  (prop) =>
                     prop.type === AST_NODE_TYPES.Property &&
                     prop.key.type === AST_NODE_TYPES.Identifier &&
                     prop.key.name === 'styleOverrides' &&
-                    prop.value.type === AST_NODE_TYPES.ObjectExpression
+                    prop.value.type === AST_NODE_TYPES.ObjectExpression,
                 ) as TSESTree.Property | undefined;
 
-                if (styleOverrides && styleOverrides.value.type === AST_NODE_TYPES.ObjectExpression) {
+                if (
+                  styleOverrides &&
+                  styleOverrides.value.type === AST_NODE_TYPES.ObjectExpression
+                ) {
                   checkObjectExpression(styleOverrides.value);
                 }
               }

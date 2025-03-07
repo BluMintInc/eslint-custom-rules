@@ -8,7 +8,8 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
   meta: {
     type: 'problem',
     docs: {
-      description: 'Enforce that functions with assert- prefix must throw an error or call process.exit(1)',
+      description:
+        'Enforce that functions with assert- prefix must throw an error or call process.exit(1)',
       recommended: 'error',
     },
     schema: [],
@@ -123,7 +124,7 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
 
         // Handle BlockStatement specially
         if (node.type === AST_NODE_TYPES.BlockStatement) {
-          node.body.forEach(stmt => walk(stmt));
+          node.body.forEach((stmt) => walk(stmt));
           return;
         }
 
@@ -140,12 +141,16 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
         for (const key of Object.keys(node)) {
           const value = node[key as keyof typeof node];
           if (Array.isArray(value)) {
-            value.forEach(item => {
+            value.forEach((item) => {
               if (item && typeof item === 'object' && !('parent' in item)) {
                 walk(item as TSESTree.Node);
               }
             });
-          } else if (value && typeof value === 'object' && !('parent' in value)) {
+          } else if (
+            value &&
+            typeof value === 'object' &&
+            !('parent' in value)
+          ) {
             walk(value as TSESTree.Node);
           }
         }
@@ -167,7 +172,8 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
       let functionName = '';
 
       if (node.type === AST_NODE_TYPES.MethodDefinition) {
-        functionName = node.key.type === AST_NODE_TYPES.Identifier ? node.key.name : '';
+        functionName =
+          node.key.type === AST_NODE_TYPES.Identifier ? node.key.name : '';
       } else if (node.type === AST_NODE_TYPES.FunctionDeclaration && node.id) {
         functionName = node.id.name;
       } else if (
@@ -187,7 +193,9 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
       if (functionName.toLowerCase().startsWith('assert')) {
         currentFunction = node;
         const functionBody =
-          node.type === AST_NODE_TYPES.MethodDefinition ? node.value.body : node.body;
+          node.type === AST_NODE_TYPES.MethodDefinition
+            ? node.value.body
+            : node.body;
 
         if (functionBody && !hasThrowStatement(functionBody)) {
           context.report({

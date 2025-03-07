@@ -60,9 +60,16 @@ function isMutableValue(node: TSESTree.Expression | null): boolean {
     // Empty arrays are mutable since they can be modified later
     if (node.elements.length === 0) return true;
     // Arrays with spread elements are mutable
-    if (node.elements.some(element => !element || element.type === 'SpreadElement')) return true;
+    if (
+      node.elements.some(
+        (element) => !element || element.type === 'SpreadElement',
+      )
+    )
+      return true;
     // Arrays with non-immutable values are mutable
-    return node.elements.some(element => !isImmutableValue(element as TSESTree.Expression));
+    return node.elements.some(
+      (element) => !isImmutableValue(element as TSESTree.Expression),
+    );
   }
 
   // Check for new expressions (e.g., new Map(), new Set())
@@ -90,7 +97,7 @@ function isMutableValue(node: TSESTree.Expression | null): boolean {
         'splice',
         'reverse',
         'sort',
-        'fill'
+        'fill',
       ];
       return mutatingMethods.includes(methodName);
     }
@@ -101,7 +108,10 @@ function isMutableValue(node: TSESTree.Expression | null): boolean {
 
 function isNumericLiteral(node: TSESTree.Node | null): boolean {
   if (!node) return false;
-  return node.type === 'Literal' && typeof (node as TSESTree.Literal).value === 'number';
+  return (
+    node.type === 'Literal' &&
+    typeof (node as TSESTree.Literal).value === 'number'
+  );
 }
 
 function isZeroOrOne(node: TSESTree.Node | null): boolean {
@@ -114,9 +124,11 @@ function isAsConstExpression(node: TSESTree.Node | null): boolean {
   if (!node) return false;
 
   if (node.type === 'TSAsExpression') {
-    if (node.typeAnnotation.type === 'TSTypeReference' &&
-        node.typeAnnotation.typeName.type === 'Identifier' &&
-        node.typeAnnotation.typeName.name === 'const') {
+    if (
+      node.typeAnnotation.type === 'TSTypeReference' &&
+      node.typeAnnotation.typeName.type === 'Identifier' &&
+      node.typeAnnotation.typeName.name === 'const'
+    ) {
       return true;
     }
   }
@@ -136,7 +148,11 @@ export const extractGlobalConstants: TSESLint.RuleModule<
         }
 
         // Skip if any of the declarations are function definitions or mutable values
-        if (node.declarations.some((d) => isFunctionDefinition(d.init) || isMutableValue(d.init))) {
+        if (
+          node.declarations.some(
+            (d) => isFunctionDefinition(d.init) || isMutableValue(d.init),
+          )
+        ) {
           return;
         }
 
@@ -149,7 +165,8 @@ export const extractGlobalConstants: TSESLint.RuleModule<
 
         // Skip constants with 'as const' type assertions used in loops
         const hasAsConstAssertion = node.declarations.some(
-          (declaration) => declaration.init && isAsConstExpression(declaration.init)
+          (declaration) =>
+            declaration.init && isAsConstExpression(declaration.init),
         );
 
         // Only check function/block scoped constants without dependencies
@@ -195,7 +212,12 @@ export const extractGlobalConstants: TSESLint.RuleModule<
         // Check initialization
         if (node.init && node.init.type === 'VariableDeclaration') {
           for (const decl of node.init.declarations) {
-            if (decl.init && isNumericLiteral(decl.init) && !isZeroOrOne(decl.init) && !isAsConstExpression(decl.init)) {
+            if (
+              decl.init &&
+              isNumericLiteral(decl.init) &&
+              !isZeroOrOne(decl.init) &&
+              !isAsConstExpression(decl.init)
+            ) {
               context.report({
                 node: decl.init,
                 messageId: 'requireAsConst',
@@ -209,7 +231,11 @@ export const extractGlobalConstants: TSESLint.RuleModule<
 
         // Check test condition
         if (node.test && node.test.type === 'BinaryExpression') {
-          if (isNumericLiteral(node.test.right) && !isZeroOrOne(node.test.right) && !isAsConstExpression(node.test.right)) {
+          if (
+            isNumericLiteral(node.test.right) &&
+            !isZeroOrOne(node.test.right) &&
+            !isAsConstExpression(node.test.right)
+          ) {
             context.report({
               node: node.test.right,
               messageId: 'requireAsConst',
@@ -223,7 +249,12 @@ export const extractGlobalConstants: TSESLint.RuleModule<
         // Check update expression
         if (node.update) {
           if (node.update.type === 'AssignmentExpression') {
-            if (node.update.right && isNumericLiteral(node.update.right) && !isZeroOrOne(node.update.right) && !isAsConstExpression(node.update.right)) {
+            if (
+              node.update.right &&
+              isNumericLiteral(node.update.right) &&
+              !isZeroOrOne(node.update.right) &&
+              !isAsConstExpression(node.update.right)
+            ) {
               context.report({
                 node: node.update.right,
                 messageId: 'requireAsConst',
@@ -233,7 +264,11 @@ export const extractGlobalConstants: TSESLint.RuleModule<
               });
             }
           } else if (node.update.type === 'BinaryExpression') {
-            if (isNumericLiteral(node.update.right) && !isZeroOrOne(node.update.right) && !isAsConstExpression(node.update.right)) {
+            if (
+              isNumericLiteral(node.update.right) &&
+              !isZeroOrOne(node.update.right) &&
+              !isAsConstExpression(node.update.right)
+            ) {
               context.report({
                 node: node.update.right,
                 messageId: 'requireAsConst',
@@ -248,7 +283,11 @@ export const extractGlobalConstants: TSESLint.RuleModule<
       WhileStatement(node: TSESTree.WhileStatement) {
         // Check test condition
         if (node.test.type === 'BinaryExpression') {
-          if (isNumericLiteral(node.test.right) && !isZeroOrOne(node.test.right) && !isAsConstExpression(node.test.right)) {
+          if (
+            isNumericLiteral(node.test.right) &&
+            !isZeroOrOne(node.test.right) &&
+            !isAsConstExpression(node.test.right)
+          ) {
             context.report({
               node: node.test.right,
               messageId: 'requireAsConst',
@@ -262,7 +301,11 @@ export const extractGlobalConstants: TSESLint.RuleModule<
       DoWhileStatement(node: TSESTree.DoWhileStatement) {
         // Check test condition
         if (node.test.type === 'BinaryExpression') {
-          if (isNumericLiteral(node.test.right) && !isZeroOrOne(node.test.right) && !isAsConstExpression(node.test.right)) {
+          if (
+            isNumericLiteral(node.test.right) &&
+            !isZeroOrOne(node.test.right) &&
+            !isAsConstExpression(node.test.right)
+          ) {
             context.report({
               node: node.test.right,
               messageId: 'requireAsConst',

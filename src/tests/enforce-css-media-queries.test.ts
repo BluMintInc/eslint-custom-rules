@@ -59,7 +59,7 @@ ruleTesterJsx.run('enforce-css-media-queries', enforceCssMediaQueries, {
       errors: [
         { messageId: 'enforceCssMediaQueries' },
         { messageId: 'enforceCssMediaQueries' },
-        { messageId: 'enforceCssMediaQueries' }
+        { messageId: 'enforceCssMediaQueries' },
       ],
     },
     // Invalid component using useMediaQuery from a destructured import
@@ -75,7 +75,7 @@ ruleTesterJsx.run('enforce-css-media-queries', enforceCssMediaQueries, {
       errors: [
         { messageId: 'enforceCssMediaQueries' },
         { messageId: 'enforceCssMediaQueries' },
-        { messageId: 'enforceCssMediaQueries' }
+        { messageId: 'enforceCssMediaQueries' },
       ],
     },
     // Invalid component using react-responsive
@@ -90,7 +90,7 @@ ruleTesterJsx.run('enforce-css-media-queries', enforceCssMediaQueries, {
       `,
       errors: [
         { messageId: 'enforceCssMediaQueries' },
-        { messageId: 'enforceCssMediaQueries' }
+        { messageId: 'enforceCssMediaQueries' },
       ],
     },
     // Invalid component using useMobile hook
@@ -106,7 +106,7 @@ ruleTesterJsx.run('enforce-css-media-queries', enforceCssMediaQueries, {
       errors: [
         { messageId: 'enforceCssMediaQueries' },
         { messageId: 'enforceCssMediaQueries' },
-        { messageId: 'enforceCssMediaQueries' }
+        { messageId: 'enforceCssMediaQueries' },
       ],
     },
     // Invalid component using useMobile from a different path
@@ -122,7 +122,7 @@ ruleTesterJsx.run('enforce-css-media-queries', enforceCssMediaQueries, {
       errors: [
         { messageId: 'enforceCssMediaQueries' },
         { messageId: 'enforceCssMediaQueries' },
-        { messageId: 'enforceCssMediaQueries' }
+        { messageId: 'enforceCssMediaQueries' },
       ],
     },
     // Invalid component using useMediaQuery directly
@@ -147,7 +147,7 @@ ruleTesterJsx.run('enforce-css-media-queries', enforceCssMediaQueries, {
       errors: [
         { messageId: 'enforceCssMediaQueries' },
         { messageId: 'enforceCssMediaQueries' },
-        { messageId: 'enforceCssMediaQueries' }
+        { messageId: 'enforceCssMediaQueries' },
       ],
     },
   ],

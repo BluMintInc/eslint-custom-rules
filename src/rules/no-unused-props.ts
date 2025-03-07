@@ -49,16 +49,21 @@ export const noUnusedProps = createRule({
                   if (typeName.type === AST_NODE_TYPES.Identifier) {
                     if (typeName.name === 'Pick' && type.typeParameters) {
                       // Handle Pick utility type in intersection
-                      const [baseType, pickedProps] = type.typeParameters.params;
-                      if (baseType.type === AST_NODE_TYPES.TSTypeReference &&
-                          baseType.typeName.type === AST_NODE_TYPES.Identifier) {
+                      const [baseType, pickedProps] =
+                        type.typeParameters.params;
+                      if (
+                        baseType.type === AST_NODE_TYPES.TSTypeReference &&
+                        baseType.typeName.type === AST_NODE_TYPES.Identifier
+                      ) {
                         const baseTypeName = baseType.typeName.name;
                         // Extract the picked properties from the union type
                         if (pickedProps.type === AST_NODE_TYPES.TSUnionType) {
                           pickedProps.types.forEach((t) => {
-                            if (t.type === AST_NODE_TYPES.TSLiteralType &&
-                                t.literal.type === AST_NODE_TYPES.Literal &&
-                                typeof t.literal.value === 'string') {
+                            if (
+                              t.type === AST_NODE_TYPES.TSLiteralType &&
+                              t.literal.type === AST_NODE_TYPES.Literal &&
+                              typeof t.literal.value === 'string'
+                            ) {
                               // Add each picked property as a regular prop
                               const propName = t.literal.value;
                               props[propName] = t.literal;
@@ -69,9 +74,11 @@ export const noUnusedProps = createRule({
                               spreadTypeProps[baseTypeName].push(propName);
                             }
                           });
-                        } else if (pickedProps.type === AST_NODE_TYPES.TSLiteralType &&
-                                 pickedProps.literal.type === AST_NODE_TYPES.Literal &&
-                                 typeof pickedProps.literal.value === 'string') {
+                        } else if (
+                          pickedProps.type === AST_NODE_TYPES.TSLiteralType &&
+                          pickedProps.literal.type === AST_NODE_TYPES.Literal &&
+                          typeof pickedProps.literal.value === 'string'
+                        ) {
                           // Single property pick
                           const propName = pickedProps.literal.value;
                           props[propName] = pickedProps.literal;
@@ -85,8 +92,14 @@ export const noUnusedProps = createRule({
                     } else {
                       // For referenced types in intersections, we need to find their type declaration
                       const scope = context.getScope();
-                      const variable = scope.variables.find(v => v.name === typeName.name);
-                      if (variable && variable.defs[0]?.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
+                      const variable = scope.variables.find(
+                        (v) => v.name === typeName.name,
+                      );
+                      if (
+                        variable &&
+                        variable.defs[0]?.node.type ===
+                          AST_NODE_TYPES.TSTypeAliasDeclaration
+                      ) {
                         extractProps(variable.defs[0].node.typeAnnotation);
                       } else {
                         // If we can't find the type declaration, it's likely an imported type
@@ -108,18 +121,26 @@ export const noUnusedProps = createRule({
               });
             } else if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
               if (typeNode.typeName.type === AST_NODE_TYPES.Identifier) {
-                if (typeNode.typeName.name === 'Pick' && typeNode.typeParameters) {
+                if (
+                  typeNode.typeName.name === 'Pick' &&
+                  typeNode.typeParameters
+                ) {
                   // Handle Pick utility type
-                  const [baseType, pickedProps] = typeNode.typeParameters.params;
-                  if (baseType.type === AST_NODE_TYPES.TSTypeReference &&
-                      baseType.typeName.type === AST_NODE_TYPES.Identifier) {
+                  const [baseType, pickedProps] =
+                    typeNode.typeParameters.params;
+                  if (
+                    baseType.type === AST_NODE_TYPES.TSTypeReference &&
+                    baseType.typeName.type === AST_NODE_TYPES.Identifier
+                  ) {
                     const baseTypeName = baseType.typeName.name;
                     // Extract the picked properties from the union type
                     if (pickedProps.type === AST_NODE_TYPES.TSUnionType) {
                       pickedProps.types.forEach((type) => {
-                        if (type.type === AST_NODE_TYPES.TSLiteralType &&
-                            type.literal.type === AST_NODE_TYPES.Literal &&
-                            typeof type.literal.value === 'string') {
+                        if (
+                          type.type === AST_NODE_TYPES.TSLiteralType &&
+                          type.literal.type === AST_NODE_TYPES.Literal &&
+                          typeof type.literal.value === 'string'
+                        ) {
                           // Add each picked property as a regular prop
                           const propName = type.literal.value;
                           props[propName] = type.literal;
@@ -130,9 +151,11 @@ export const noUnusedProps = createRule({
                           spreadTypeProps[baseTypeName].push(propName);
                         }
                       });
-                    } else if (pickedProps.type === AST_NODE_TYPES.TSLiteralType &&
-                             pickedProps.literal.type === AST_NODE_TYPES.Literal &&
-                             typeof pickedProps.literal.value === 'string') {
+                    } else if (
+                      pickedProps.type === AST_NODE_TYPES.TSLiteralType &&
+                      pickedProps.literal.type === AST_NODE_TYPES.Literal &&
+                      typeof pickedProps.literal.value === 'string'
+                    ) {
                       // Single property pick
                       const propName = pickedProps.literal.value;
                       props[propName] = pickedProps.literal;
@@ -166,7 +189,9 @@ export const noUnusedProps = createRule({
           usedSpreadTypes.set(typeName, new Set(Object.keys(spreadTypeProps)));
 
           // Store the spread type properties for later reference
-          for (const [spreadType, propNames] of Object.entries(spreadTypeProps)) {
+          for (const [spreadType, propNames] of Object.entries(
+            spreadTypeProps,
+          )) {
             // Create a map entry for this spread type if it doesn't exist
             if (!usedSpreadTypes.has(spreadType)) {
               usedSpreadTypes.set(spreadType, new Set());
@@ -174,7 +199,7 @@ export const noUnusedProps = createRule({
 
             // Add the property names to the spread type's set
             const spreadTypeSet = usedSpreadTypes.get(spreadType)!;
-            propNames.forEach(prop => spreadTypeSet.add(prop));
+            propNames.forEach((prop) => spreadTypeSet.add(prop));
           }
         }
       },
@@ -238,7 +263,9 @@ export const noUnusedProps = createRule({
               if (!used.has(prop)) {
                 // For imported types (props that start with '...'), only report if there's no rest spread operator
                 // This allows imported types to be used without being flagged when properly forwarded
-                const hasRestSpread = Array.from(used.values()).some(usedProp => usedProp.startsWith('...'));
+                const hasRestSpread = Array.from(used.values()).some(
+                  (usedProp) => usedProp.startsWith('...'),
+                );
 
                 // Don't report unused props if:
                 // 1. It's a spread type and there's a rest spread operator, OR
@@ -258,9 +285,9 @@ export const noUnusedProps = createRule({
 
                   if (spreadTypeProps) {
                     // Check if any property from this spread type is being used in the component
-                    const anyPropFromSpreadTypeUsed = Array.from(spreadTypeProps).some(
-                      spreadProp => used.has(spreadProp)
-                    );
+                    const anyPropFromSpreadTypeUsed = Array.from(
+                      spreadTypeProps,
+                    ).some((spreadProp) => used.has(spreadProp));
 
                     if (anyPropFromSpreadTypeUsed) {
                       shouldReport = false;
@@ -276,7 +303,7 @@ export const noUnusedProps = createRule({
                     if (props.has(prop)) {
                       // Check if any other prop from this spread type is being used
                       const anyPropFromSpreadTypeUsed = Array.from(props).some(
-                        spreadProp => used.has(spreadProp)
+                        (spreadProp) => used.has(spreadProp),
                       );
 
                       if (anyPropFromSpreadTypeUsed) {

@@ -72,13 +72,32 @@ function getObjectUsagesInHook(
   let needsEntireObject = false;
 
   // Built-in array methods that should not be considered as object properties
-const ARRAY_METHODS = new Set([
-  'map', 'filter', 'reduce', 'forEach', 'some', 'every', 'find', 'findIndex',
-  'includes', 'indexOf', 'join', 'slice', 'splice', 'concat', 'push', 'pop',
-  'shift', 'unshift', 'sort', 'reverse', 'flat', 'flatMap'
-]);
+  const ARRAY_METHODS = new Set([
+    'map',
+    'filter',
+    'reduce',
+    'forEach',
+    'some',
+    'every',
+    'find',
+    'findIndex',
+    'includes',
+    'indexOf',
+    'join',
+    'slice',
+    'splice',
+    'concat',
+    'push',
+    'pop',
+    'shift',
+    'unshift',
+    'sort',
+    'reverse',
+    'flat',
+    'flatMap',
+  ]);
 
-function buildAccessPath(node: TSESTree.MemberExpression): string | null {
+  function buildAccessPath(node: TSESTree.MemberExpression): string | null {
     const parts: string[] = [];
     let current: TSESTree.Node = node;
     let hasOptionalChaining = false;
@@ -94,7 +113,10 @@ function buildAccessPath(node: TSESTree.MemberExpression): string | null {
       }
 
       // Skip array methods
-      if (memberExpr.property.name && ARRAY_METHODS.has(memberExpr.property.name)) {
+      if (
+        memberExpr.property.name &&
+        ARRAY_METHODS.has(memberExpr.property.name)
+      ) {
         return null;
       }
 
@@ -106,9 +128,15 @@ function buildAccessPath(node: TSESTree.MemberExpression): string | null {
     }
 
     // Check if we reached the target identifier
-    if (current.type === AST_NODE_TYPES.Identifier && current.name === objectName) {
+    if (
+      current.type === AST_NODE_TYPES.Identifier &&
+      current.name === objectName
+    ) {
       // Build the path with optional chaining
-      const path = objectName + (hasOptionalChaining ? '?' : '') + parts.map(part => '.' + part).join('');
+      const path =
+        objectName +
+        (hasOptionalChaining ? '?' : '') +
+        parts.map((part) => '.' + part).join('');
       return path;
     }
 
@@ -122,14 +150,14 @@ function buildAccessPath(node: TSESTree.MemberExpression): string | null {
     if (node.type === AST_NODE_TYPES.CallExpression) {
       // Check if the object is directly passed as an argument
       node.arguments.forEach((arg) => {
-        if (
-          arg.type === AST_NODE_TYPES.Identifier &&
-          arg.name === objectName
-        ) {
+        if (arg.type === AST_NODE_TYPES.Identifier && arg.name === objectName) {
           needsEntireObject = true;
         }
       });
-    } else if (node.type === AST_NODE_TYPES.JSXElement || node.type === AST_NODE_TYPES.JSXFragment) {
+    } else if (
+      node.type === AST_NODE_TYPES.JSXElement ||
+      node.type === AST_NODE_TYPES.JSXFragment
+    ) {
       // If we find a JSX element, check its attributes for spread operator
       if (node.type === AST_NODE_TYPES.JSXElement) {
         node.openingElement.attributes.forEach((attr) => {

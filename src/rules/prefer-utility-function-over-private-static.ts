@@ -3,12 +3,16 @@ import { createRule } from '../utils/createRule';
 
 type MessageIds = 'preferUtilityFunctionOverPrivateStatic';
 
-export const preferUtilityFunctionOverPrivateStatic = createRule<[], MessageIds>({
+export const preferUtilityFunctionOverPrivateStatic = createRule<
+  [],
+  MessageIds
+>({
   name: 'prefer-utility-function-over-private-static',
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce abstraction of private static methods into utility functions',
+      description:
+        'Enforce abstraction of private static methods into utility functions',
       recommended: 'error',
     },
     schema: [],
@@ -54,7 +58,9 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<[], MessageIds>
     };
 
     return {
-      'MethodDefinition[static=true][accessibility="private"]'(node: TSESTree.MethodDefinition) {
+      'MethodDefinition[static=true][accessibility="private"]'(
+        node: TSESTree.MethodDefinition,
+      ) {
         const sourceCode = context.getSourceCode();
         const methodBody = node.value.body;
 

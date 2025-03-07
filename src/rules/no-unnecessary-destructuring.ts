@@ -6,7 +6,8 @@ export const noUnnecessaryDestructuring = createRule({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Avoid unnecessary object destructuring when there is only one property inside the destructured object',
+      description:
+        'Avoid unnecessary object destructuring when there is only one property inside the destructured object',
       recommended: 'error',
     },
     messages: {
@@ -44,10 +45,7 @@ export const noUnnecessaryDestructuring = createRule({
               const initText = sourceCode.getText(node.init);
 
               // Replace the destructuring with direct assignment
-              return fixer.replaceText(
-                node,
-                `${restName} = ${initText}`
-              );
+              return fixer.replaceText(node, `${restName} = ${initText}`);
             },
           });
         }
@@ -72,14 +70,11 @@ export const noUnnecessaryDestructuring = createRule({
               const rightText = sourceCode.getText(node.right);
 
               // Replace the destructuring with direct assignment
-              return fixer.replaceText(
-                node,
-                `${restName} = ${rightText}`
-              );
+              return fixer.replaceText(node, `${restName} = ${rightText}`);
             },
           });
         }
-      }
+      },
     };
   },
 });

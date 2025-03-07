@@ -9,17 +9,17 @@ const BOOLEAN_NEGATIVE_PREFIXES = ['not', 'no', 'non', 'un', 'in', 'dis'];
 // Map of negative boolean terms to suggested positive alternatives
 const BOOLEAN_POSITIVE_ALTERNATIVES: Record<string, string[]> = {
   // Boolean prefixes
-  'isNot': ['is'],
-  'isUn': ['is'],
-  'isDis': ['is'],
-  'isIn': ['is'],
-  'isNon': ['is'],
-  'hasNo': ['has'],
-  'hasNot': ['has'],
-  'canNot': ['can'],
-  'shouldNot': ['should'],
-  'willNot': ['will'],
-  'doesNot': ['does'],
+  isNot: ['is'],
+  isUn: ['is'],
+  isDis: ['is'],
+  isIn: ['is'],
+  isNon: ['is'],
+  hasNo: ['has'],
+  hasNot: ['has'],
+  canNot: ['can'],
+  shouldNot: ['should'],
+  willNot: ['will'],
+  doesNot: ['does'],
 };
 
 export const enforcePositiveNaming = createRule<[], MessageIds>({
@@ -27,7 +27,8 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce positive naming for boolean variables and avoid negations',
+      description:
+        'Enforce positive naming for boolean variables and avoid negations',
       recommended: 'error',
     },
     schema: [],
@@ -60,24 +61,54 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
     /**
      * Check if a name has boolean negative naming
      */
-    function hasBooleanNegativeNaming(name: string): { isNegative: boolean; alternatives: string[] } {
+    function hasBooleanNegativeNaming(name: string): {
+      isNegative: boolean;
+      alternatives: string[];
+    } {
       // Check for exact matches in our alternatives map first
       if (BOOLEAN_POSITIVE_ALTERNATIVES[name]) {
-        return { isNegative: true, alternatives: BOOLEAN_POSITIVE_ALTERNATIVES[name] };
+        return {
+          isNegative: true,
+          alternatives: BOOLEAN_POSITIVE_ALTERNATIVES[name],
+        };
       }
 
       // Check for negative prefixes in boolean-like variables
-      if (name.startsWith('is') || name.startsWith('has') || name.startsWith('can') ||
-          name.startsWith('should') || name.startsWith('will') || name.startsWith('does')) {
+      if (
+        name.startsWith('is') ||
+        name.startsWith('has') ||
+        name.startsWith('can') ||
+        name.startsWith('should') ||
+        name.startsWith('will') ||
+        name.startsWith('does')
+      ) {
         for (const prefix of BOOLEAN_NEGATIVE_PREFIXES) {
           // Check for patterns like isNot, hasNo, canNot, etc.
           const prefixPatterns = [
-            { pattern: new RegExp(`^is${prefix}`, 'i'), key: `is${prefix.charAt(0).toUpperCase() + prefix.slice(1)}` },
-            { pattern: new RegExp(`^has${prefix}`, 'i'), key: `has${prefix.charAt(0).toUpperCase() + prefix.slice(1)}` },
-            { pattern: new RegExp(`^can${prefix}`, 'i'), key: `can${prefix.charAt(0).toUpperCase() + prefix.slice(1)}` },
-            { pattern: new RegExp(`^should${prefix}`, 'i'), key: `should${prefix.charAt(0).toUpperCase() + prefix.slice(1)}` },
-            { pattern: new RegExp(`^will${prefix}`, 'i'), key: `will${prefix.charAt(0).toUpperCase() + prefix.slice(1)}` },
-            { pattern: new RegExp(`^does${prefix}`, 'i'), key: `does${prefix.charAt(0).toUpperCase() + prefix.slice(1)}` },
+            {
+              pattern: new RegExp(`^is${prefix}`, 'i'),
+              key: `is${prefix.charAt(0).toUpperCase() + prefix.slice(1)}`,
+            },
+            {
+              pattern: new RegExp(`^has${prefix}`, 'i'),
+              key: `has${prefix.charAt(0).toUpperCase() + prefix.slice(1)}`,
+            },
+            {
+              pattern: new RegExp(`^can${prefix}`, 'i'),
+              key: `can${prefix.charAt(0).toUpperCase() + prefix.slice(1)}`,
+            },
+            {
+              pattern: new RegExp(`^should${prefix}`, 'i'),
+              key: `should${prefix.charAt(0).toUpperCase() + prefix.slice(1)}`,
+            },
+            {
+              pattern: new RegExp(`^will${prefix}`, 'i'),
+              key: `will${prefix.charAt(0).toUpperCase() + prefix.slice(1)}`,
+            },
+            {
+              pattern: new RegExp(`^does${prefix}`, 'i'),
+              key: `does${prefix.charAt(0).toUpperCase() + prefix.slice(1)}`,
+            },
           ];
 
           for (const { pattern, key } of prefixPatterns) {
@@ -92,12 +123,21 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
               if (alternatives.length > 0) {
                 // Suggest the positive version with the rest of the name
                 const restOfName = name.replace(pattern, '');
-                const suggestedAlternatives = alternatives.map(alt =>
-                  `${alt}${restOfName.charAt(0).toUpperCase() + restOfName.slice(1)}`
+                const suggestedAlternatives = alternatives.map(
+                  (alt) =>
+                    `${alt}${
+                      restOfName.charAt(0).toUpperCase() + restOfName.slice(1)
+                    }`,
                 );
-                return { isNegative: true, alternatives: suggestedAlternatives };
+                return {
+                  isNegative: true,
+                  alternatives: suggestedAlternatives,
+                };
               }
-              return { isNegative: true, alternatives: ['a positive alternative'] };
+              return {
+                isNegative: true,
+                alternatives: ['a positive alternative'],
+              };
             }
           }
         }
@@ -140,9 +180,12 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
       // Check if the node has a name that suggests it's a boolean
       if (
         node.type === AST_NODE_TYPES.Identifier &&
-        (node.name.startsWith('is') || node.name.startsWith('has') ||
-         node.name.startsWith('can') || node.name.startsWith('should') ||
-         node.name.startsWith('will') || node.name.startsWith('does'))
+        (node.name.startsWith('is') ||
+          node.name.startsWith('has') ||
+          node.name.startsWith('can') ||
+          node.name.startsWith('should') ||
+          node.name.startsWith('will') ||
+          node.name.startsWith('does'))
       ) {
         return true;
       }
@@ -160,7 +203,8 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
       if (!isBooleanLike(node.id) && !isBooleanLike(node)) return;
 
       const variableName = node.id.name;
-      const { isNegative, alternatives } = hasBooleanNegativeNaming(variableName);
+      const { isNegative, alternatives } =
+        hasBooleanNegativeNaming(variableName);
 
       if (isNegative) {
         context.report({
@@ -177,7 +221,12 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
     /**
      * Check function declarations for negative naming
      */
-    function checkFunctionDeclaration(node: TSESTree.FunctionDeclaration | TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression) {
+    function checkFunctionDeclaration(
+      node:
+        | TSESTree.FunctionDeclaration
+        | TSESTree.FunctionExpression
+        | TSESTree.ArrowFunctionExpression,
+    ) {
       // Skip anonymous functions
       if (!node.id && node.parent?.type !== AST_NODE_TYPES.VariableDeclarator) {
         return;
@@ -205,7 +254,8 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
       // Only check boolean-returning functions
       if (!isBooleanLike(node.id || node)) return;
 
-      const { isNegative, alternatives } = hasBooleanNegativeNaming(functionName);
+      const { isNegative, alternatives } =
+        hasBooleanNegativeNaming(functionName);
 
       if (isNegative) {
         context.report({
@@ -253,7 +303,8 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
       if (!isBooleanLike(node.key)) return;
 
       const propertyName = node.key.name;
-      const { isNegative, alternatives } = hasBooleanNegativeNaming(propertyName);
+      const { isNegative, alternatives } =
+        hasBooleanNegativeNaming(propertyName);
 
       if (isNegative) {
         context.report({
@@ -274,11 +325,18 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
       if (node.key.type !== AST_NODE_TYPES.Identifier) return;
 
       // Only check boolean properties
-      if (!isBooleanLike(node.key) &&
-          !(node.typeAnnotation?.typeAnnotation.type === AST_NODE_TYPES.TSBooleanKeyword)) return;
+      if (
+        !isBooleanLike(node.key) &&
+        !(
+          node.typeAnnotation?.typeAnnotation.type ===
+          AST_NODE_TYPES.TSBooleanKeyword
+        )
+      )
+        return;
 
       const propertyName = node.key.name;
-      const { isNegative, alternatives } = hasBooleanNegativeNaming(propertyName);
+      const { isNegative, alternatives } =
+        hasBooleanNegativeNaming(propertyName);
 
       if (isNegative) {
         context.report({

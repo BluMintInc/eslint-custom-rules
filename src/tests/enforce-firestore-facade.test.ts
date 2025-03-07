@@ -285,10 +285,7 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
           return { denormDocs, subGroupDoc };
         };
       `,
-      errors: [
-        { messageId: 'noDirectGet' },
-        { messageId: 'noDirectGet' }
-      ],
+      errors: [{ messageId: 'noDirectGet' }, { messageId: 'noDirectGet' }],
     },
   ],
 });

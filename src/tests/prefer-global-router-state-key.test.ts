@@ -1,12 +1,15 @@
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { preferGlobalRouterStateKey } from '../rules/prefer-global-router-state-key';
 
-ruleTesterJsx.run('prefer-global-router-state-key', preferGlobalRouterStateKey, {
-  valid: [
-    // 1. Basic Cases
-    // Using a global constant
-    {
-      code: `
+ruleTesterJsx.run(
+  'prefer-global-router-state-key',
+  preferGlobalRouterStateKey,
+  {
+    valid: [
+      // 1. Basic Cases
+      // Using a global constant
+      {
+        code: `
         const MATCH_DIALOG_KEY = 'match-session' as const;
 
         function Component() {
@@ -14,10 +17,10 @@ ruleTesterJsx.run('prefer-global-router-state-key', preferGlobalRouterStateKey, 
           return <div>{value}</div>;
         }
       `,
-    },
-    // Using a type-safe function
-    {
-      code: `
+      },
+      // Using a type-safe function
+      {
+        code: `
         type ValidPrefix = 'match' | 'tournament' | 'session';
 
         function generateKey(prefix: ValidPrefix, id: string): string {
@@ -31,10 +34,10 @@ ruleTesterJsx.run('prefer-global-router-state-key', preferGlobalRouterStateKey, 
           return <div>{value}</div>;
         }
       `,
-    },
-    // Using a prop with proper typing
-    {
-      code: `
+      },
+      // Using a prop with proper typing
+      {
+        code: `
         interface DialogProps {
           routerKey: string;
         }
@@ -44,31 +47,31 @@ ruleTesterJsx.run('prefer-global-router-state-key', preferGlobalRouterStateKey, 
           return <div>{value}</div>;
         }
       `,
-    },
-    // Using a variable
-    {
-      code: `
+      },
+      // Using a variable
+      {
+        code: `
         function Component() {
           const matchKey = getMatchKey();
           const [value, setValue] = useRouterState({ key: matchKey });
           return <div>{value}</div>;
         }
       `,
-    },
-    // Using a template literal with variables
-    {
-      code: `
+      },
+      // Using a template literal with variables
+      {
+        code: `
         function Component({ id, type }) {
           const [value, setValue] = useRouterState({ key: \`\${type}-\${id}\` });
           return <div>{value}</div>;
         }
       `,
-    },
+      },
 
-    // 2. Advanced Type-Safe Patterns
-    // Using a namespaced constant
-    {
-      code: `
+      // 2. Advanced Type-Safe Patterns
+      // Using a namespaced constant
+      {
+        code: `
         export const RouterKeys = {
           MATCH: 'match-session' as const,
           TOURNAMENT: 'tournament-details' as const,
@@ -80,10 +83,10 @@ ruleTesterJsx.run('prefer-global-router-state-key', preferGlobalRouterStateKey, 
           return <div>{value}</div>;
         }
       `,
-    },
-    // Using an enum
-    {
-      code: `
+      },
+      // Using an enum
+      {
+        code: `
         enum RouterStateKeys {
           MATCH = 'match-session',
           TOURNAMENT = 'tournament-details',
@@ -95,10 +98,10 @@ ruleTesterJsx.run('prefer-global-router-state-key', preferGlobalRouterStateKey, 
           return <div>{value}</div>;
         }
       `,
-    },
-    // Using a type-safe utility function with generics
-    {
-      code: `
+      },
+      // Using a type-safe utility function with generics
+      {
+        code: `
         type ValidNamespace = 'match' | 'tournament' | 'user';
 
         function createNamespacedKey<T extends ValidNamespace>(
@@ -116,10 +119,10 @@ ruleTesterJsx.run('prefer-global-router-state-key', preferGlobalRouterStateKey, 
           return <div>{value}</div>;
         }
       `,
-    },
-    // Using a key composition utility
-    {
-      code: `
+      },
+      // Using a key composition utility
+      {
+        code: `
         const combineKeys = <T extends string[]>(...parts: T): string => {
           return parts.join('-');
         };
@@ -131,12 +134,12 @@ ruleTesterJsx.run('prefer-global-router-state-key', preferGlobalRouterStateKey, 
           return <div>{value}</div>;
         }
       `,
-    },
+      },
 
-    // 3. Component Patterns
-    // Using a custom hook with type-safe key generation
-    {
-      code: `
+      // 3. Component Patterns
+      // Using a custom hook with type-safe key generation
+      {
+        code: `
         function useMatchState(matchId: string) {
           const key = \`match-\${matchId}\`;
           return useRouterState({ key });
@@ -147,10 +150,10 @@ ruleTesterJsx.run('prefer-global-router-state-key', preferGlobalRouterStateKey, 
           return <div>{value}</div>;
         }
       `,
-    },
-    // Using a higher-order component with router key
-    {
-      code: `
+      },
+      // Using a higher-order component with router key
+      {
+        code: `
         interface WithRouterStateProps {
           routerStateKey: string;
         }
@@ -170,10 +173,10 @@ ruleTesterJsx.run('prefer-global-router-state-key', preferGlobalRouterStateKey, 
 
         const EnhancedComponent = withRouterState(MyComponent);
       `,
-    },
-    // Using a context provider for router state
-    {
-      code: `
+      },
+      // Using a context provider for router state
+      {
+        code: `
         const RouterStateContext = React.createContext(null);
 
         function RouterStateProvider({ keyPrefix, children }) {
@@ -187,12 +190,12 @@ ruleTesterJsx.run('prefer-global-router-state-key', preferGlobalRouterStateKey, 
           );
         }
       `,
-    },
+      },
 
-    // 4. Testing Patterns
-    // Using a test utility for generating keys
-    {
-      code: `
+      // 4. Testing Patterns
+      // Using a test utility for generating keys
+      {
+        code: `
         const createTestKey = (prefix: string) => {
           return \`test-\${prefix}-\${Date.now()}\`;
         };
@@ -204,10 +207,10 @@ ruleTesterJsx.run('prefer-global-router-state-key', preferGlobalRouterStateKey, 
           });
         });
       `,
-    },
-    // Using a mock implementation for testing
-    {
-      code: `
+      },
+      // Using a mock implementation for testing
+      {
+        code: `
         jest.mock('../hooks/useRouterState', () => ({
           useRouterState: jest.fn(({ key }) => {
             const mockState = mockRouterStates[key] || null;
@@ -220,12 +223,12 @@ ruleTesterJsx.run('prefer-global-router-state-key', preferGlobalRouterStateKey, 
           render(<Component routerKey={KEY} />);
         });
       `,
-    },
+      },
 
-    // 5. Edge Cases
-    // Using a computed property name
-    {
-      code: `
+      // 5. Edge Cases
+      // Using a computed property name
+      {
+        code: `
         const KEYS = {
           MATCH: 'match',
           TOURNAMENT: 'tournament',
@@ -237,10 +240,10 @@ ruleTesterJsx.run('prefer-global-router-state-key', preferGlobalRouterStateKey, 
           return <div>{value}</div>;
         }
       `,
-    },
-    // Using a function that returns a key
-    {
-      code: `
+      },
+      // Using a function that returns a key
+      {
+        code: `
         function getKeyForEntity(entity: { type: string; id: string }) {
           return \`\${entity.type}-\${entity.id}\`;
         }
@@ -252,10 +255,10 @@ ruleTesterJsx.run('prefer-global-router-state-key', preferGlobalRouterStateKey, 
           return <div>{value}</div>;
         }
       `,
-    },
-    // Using a key with conditional logic
-    {
-      code: `
+      },
+      // Using a key with conditional logic
+      {
+        code: `
         function Component({ id, isAdmin }) {
           const prefix = isAdmin ? 'admin' : 'user';
           const key = \`\${prefix}-\${id}\`;
@@ -264,37 +267,37 @@ ruleTesterJsx.run('prefer-global-router-state-key', preferGlobalRouterStateKey, 
           return <div>{value}</div>;
         }
       `,
-    },
-    // Using a key with default values
-    {
-      code: `
+      },
+      // Using a key with default values
+      {
+        code: `
         function Component({ section = 'default', id = '0' }) {
           const key = \`section-\${section}-\${id}\`;
           const [value, setValue] = useRouterState({ key });
           return <div>{value}</div>;
         }
       `,
-    },
-  ],
-  invalid: [
-    // 1. Basic Invalid Cases
-    // Using a string literal directly
-    {
-      code: `
+      },
+    ],
+    invalid: [
+      // 1. Basic Invalid Cases
+      // Using a string literal directly
+      {
+        code: `
         function Component() {
           const [value, setValue] = useRouterState({ key: 'match-session' });
           return <div>{value}</div>;
         }
       `,
-      errors: [
-        {
-          messageId: 'preferGlobalRouterStateKey',
-        },
-      ],
-    },
-    // Using a string literal with other properties
-    {
-      code: `
+        errors: [
+          {
+            messageId: 'preferGlobalRouterStateKey',
+          },
+        ],
+      },
+      // Using a string literal with other properties
+      {
+        code: `
         function Component() {
           const [value, setValue] = useRouterState({
             key: 'tournament-details',
@@ -303,17 +306,17 @@ ruleTesterJsx.run('prefer-global-router-state-key', preferGlobalRouterStateKey, 
           return <div>{value}</div>;
         }
       `,
-      errors: [
-        {
-          messageId: 'preferGlobalRouterStateKey',
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'preferGlobalRouterStateKey',
+          },
+        ],
+      },
 
-    // 2. Complex Invalid Cases
-    // Using multiple string literals in different components
-    {
-      code: `
+      // 2. Complex Invalid Cases
+      // Using multiple string literals in different components
+      {
+        code: `
         function MatchComponent() {
           const [value, setValue] = useRouterState({ key: 'match-view' });
           return <div>{value}</div>;
@@ -324,18 +327,18 @@ ruleTesterJsx.run('prefer-global-router-state-key', preferGlobalRouterStateKey, 
           return <div>{value}</div>;
         }
       `,
-      errors: [
-        {
-          messageId: 'preferGlobalRouterStateKey',
-        },
-        {
-          messageId: 'preferGlobalRouterStateKey',
-        },
-      ],
-    },
-    // Using string literals in a custom hook
-    {
-      code: `
+        errors: [
+          {
+            messageId: 'preferGlobalRouterStateKey',
+          },
+          {
+            messageId: 'preferGlobalRouterStateKey',
+          },
+        ],
+      },
+      // Using string literals in a custom hook
+      {
+        code: `
         function useCustomRouterState(id) {
           const [matchValue, setMatchValue] = useRouterState({ key: 'match-details' });
           const [tournamentValue, setTournamentValue] = useRouterState({ key: 'tournament-details' });
@@ -346,33 +349,33 @@ ruleTesterJsx.run('prefer-global-router-state-key', preferGlobalRouterStateKey, 
           };
         }
       `,
-      errors: [
-        {
-          messageId: 'preferGlobalRouterStateKey',
-        },
-        {
-          messageId: 'preferGlobalRouterStateKey',
-        },
-      ],
-    },
-    // Using string literals with template expressions
-    {
-      code: `
+        errors: [
+          {
+            messageId: 'preferGlobalRouterStateKey',
+          },
+          {
+            messageId: 'preferGlobalRouterStateKey',
+          },
+        ],
+      },
+      // Using string literals with template expressions
+      {
+        code: `
         function Component({ id }) {
           // This should be invalid because 'user-profile-' is a string literal
           const [value, setValue] = useRouterState({ key: 'user-profile-' + id });
           return <div>{value}</div>;
         }
       `,
-      errors: [
-        {
-          messageId: 'preferGlobalRouterStateKey',
-        },
-      ],
-    },
-    // Using string literals in conditional expressions
-    {
-      code: `
+        errors: [
+          {
+            messageId: 'preferGlobalRouterStateKey',
+          },
+        ],
+      },
+      // Using string literals in conditional expressions
+      {
+        code: `
         function Component({ isAdmin }) {
           const [value, setValue] = useRouterState({
             key: isAdmin ? 'admin-dashboard' : 'user-dashboard'
@@ -380,15 +383,15 @@ ruleTesterJsx.run('prefer-global-router-state-key', preferGlobalRouterStateKey, 
           return <div>{value}</div>;
         }
       `,
-      errors: [
-        {
-          messageId: 'preferGlobalRouterStateKey',
-        },
-      ],
-    },
-    // Using string literals in array mapping
-    {
-      code: `
+        errors: [
+          {
+            messageId: 'preferGlobalRouterStateKey',
+          },
+        ],
+      },
+      // Using string literals in array mapping
+      {
+        code: `
         function MultiComponent({ sections }) {
           return (
             <div>
@@ -400,15 +403,15 @@ ruleTesterJsx.run('prefer-global-router-state-key', preferGlobalRouterStateKey, 
           );
         }
       `,
-      errors: [
-        {
-          messageId: 'preferGlobalRouterStateKey',
-        },
-      ],
-    },
-    // Using string literals in nested components
-    {
-      code: `
+        errors: [
+          {
+            messageId: 'preferGlobalRouterStateKey',
+          },
+        ],
+      },
+      // Using string literals in nested components
+      {
+        code: `
         function ParentComponent() {
           return (
             <div>
@@ -422,11 +425,12 @@ ruleTesterJsx.run('prefer-global-router-state-key', preferGlobalRouterStateKey, 
           return <div>{value}</div>;
         }
       `,
-      errors: [
-        {
-          messageId: 'preferGlobalRouterStateKey',
-        },
-      ],
-    },
-  ],
-});
+        errors: [
+          {
+            messageId: 'preferGlobalRouterStateKey',
+          },
+        ],
+      },
+    ],
+  },
+);

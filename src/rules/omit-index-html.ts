@@ -3,7 +3,7 @@ import { createRule } from '../utils/createRule';
 type Options = [
   {
     allowWithQueryOrHash?: boolean;
-  }
+  },
 ];
 type MessageIds = 'omitIndexHtml';
 
@@ -19,7 +19,10 @@ function isLikelyUrl(str: string): boolean {
     str.startsWith('/');
 
   // Exclude file system paths (containing directories like /usr/, /var/, etc.)
-  const isFilePath = /^\/(?:usr|var|etc|home|opt|tmp|bin|lib|mnt|media|root|srv|sys|boot|dev)\//.test(str);
+  const isFilePath =
+    /^\/(?:usr|var|etc|home|opt|tmp|bin|lib|mnt|media|root|srv|sys|boot|dev)\//.test(
+      str,
+    );
 
   return isUrl && !isFilePath;
 }
@@ -90,7 +93,7 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
       },
       TemplateLiteral(node) {
         // For template literals, we can only check if the static parts contain index.html
-        const value = node.quasis.map(q => q.value.raw).join('');
+        const value = node.quasis.map((q) => q.value.raw).join('');
 
         if (value.includes('/index.html')) {
           context.report({

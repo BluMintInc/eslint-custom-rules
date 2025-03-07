@@ -1,11 +1,17 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
-type MessageIds = 'noDirectGet' | 'noDirectSet' | 'noDirectUpdate' | 'noDirectDelete';
+type MessageIds =
+  | 'noDirectGet'
+  | 'noDirectSet'
+  | 'noDirectUpdate'
+  | 'noDirectDelete';
 
 const FIRESTORE_METHODS = new Set(['get', 'set', 'update', 'delete']);
 
-const isMemberExpression = (node: TSESTree.Node): node is TSESTree.MemberExpression => {
+const isMemberExpression = (
+  node: TSESTree.Node,
+): node is TSESTree.MemberExpression => {
   return node.type === AST_NODE_TYPES.MemberExpression;
 };
 
@@ -21,7 +27,11 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
   if (isIdentifier(object)) {
     const name = object.name;
     // Skip if it's a facade instance
-    if (name.includes('Fetcher') || name.includes('Setter') || name.includes('Tx')) {
+    if (
+      name.includes('Fetcher') ||
+      name.includes('Setter') ||
+      name.includes('Tx')
+    ) {
       return false;
     }
     // Check for batch or transaction
@@ -44,7 +54,10 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
       const callee = current.callee;
       if (isMemberExpression(callee)) {
         const property = callee.property;
-        if (isIdentifier(property) && (property.name === 'doc' || property.name === 'collection')) {
+        if (
+          isIdentifier(property) &&
+          (property.name === 'doc' || property.name === 'collection')
+        ) {
           foundDocOrCollection = true;
           break;
         }
@@ -64,7 +77,10 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
   if (!foundDocOrCollection && isIdentifier(object)) {
     const name = object.name;
     // If the variable name contains 'doc' or 'ref', it's likely a Firestore reference
-    if (name.toLowerCase().includes('doc') || name.toLowerCase().includes('ref')) {
+    if (
+      name.toLowerCase().includes('doc') ||
+      name.toLowerCase().includes('ref')
+    ) {
       return true;
     }
   }
@@ -72,32 +88,35 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
   return foundDocOrCollection;
 };
 
-const isCallExpression = (node: TSESTree.Node): node is TSESTree.CallExpression => {
+const isCallExpression = (
+  node: TSESTree.Node,
+): node is TSESTree.CallExpression => {
   return node.type === AST_NODE_TYPES.CallExpression;
 };
-
-
 
 const isIdentifier = (node: TSESTree.Node): node is TSESTree.Identifier => {
   return node.type === AST_NODE_TYPES.Identifier;
 };
-
-
 
 export const enforceFirestoreFacade = createRule<[], MessageIds>({
   name: 'enforce-firestore-facade',
   meta: {
     type: 'problem',
     docs: {
-      description: 'Enforce usage of Firestore facades instead of direct Firestore methods',
+      description:
+        'Enforce usage of Firestore facades instead of direct Firestore methods',
       recommended: 'error',
     },
     schema: [],
     messages: {
-      noDirectGet: 'Use FirestoreFetcher or FirestoreDocFetcher instead of direct .get() calls',
-      noDirectSet: 'Use DocSetter or DocSetterTransaction instead of direct .set() calls',
-      noDirectUpdate: 'Use DocSetter or DocSetterTransaction instead of direct .update() calls',
-      noDirectDelete: 'Use DocSetter or DocSetterTransaction instead of direct .delete() calls',
+      noDirectGet:
+        'Use FirestoreFetcher or FirestoreDocFetcher instead of direct .get() calls',
+      noDirectSet:
+        'Use DocSetter or DocSetterTransaction instead of direct .set() calls',
+      noDirectUpdate:
+        'Use DocSetter or DocSetterTransaction instead of direct .update() calls',
+      noDirectDelete:
+        'Use DocSetter or DocSetterTransaction instead of direct .delete() calls',
     },
   },
   defaultOptions: [],

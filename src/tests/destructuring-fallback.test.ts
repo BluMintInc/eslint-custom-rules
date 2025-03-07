@@ -51,6 +51,6 @@ ruleTesterTs.run(
       }
       `,
     ],
-    invalid: []
-  }
+    invalid: [],
+  },
 );

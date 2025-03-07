@@ -88,30 +88,38 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
       let current: TSESTree.Node | undefined = node;
       while (current?.parent) {
         // Check for JSX style attribute
-        if (current.parent.type === AST_NODE_TYPES.JSXAttribute &&
-            current.parent.name.type === AST_NODE_TYPES.JSXIdentifier &&
-            current.parent.name.name === 'style') {
+        if (
+          current.parent.type === AST_NODE_TYPES.JSXAttribute &&
+          current.parent.name.type === AST_NODE_TYPES.JSXIdentifier &&
+          current.parent.name.name === 'style'
+        ) {
           return true;
         }
 
         // Check for style-related variable names or properties
-        if (current.type === AST_NODE_TYPES.VariableDeclarator &&
-            current.id.type === AST_NODE_TYPES.Identifier &&
-            /style/i.test(current.id.name)) {
+        if (
+          current.type === AST_NODE_TYPES.VariableDeclarator &&
+          current.id.type === AST_NODE_TYPES.Identifier &&
+          /style/i.test(current.id.name)
+        ) {
           return true;
         }
 
         // Check for style-related object property assignments
-        if (current.parent.type === AST_NODE_TYPES.Property &&
-            current.parent.key.type === AST_NODE_TYPES.Identifier &&
-            /style/i.test(current.parent.key.name)) {
+        if (
+          current.parent.type === AST_NODE_TYPES.Property &&
+          current.parent.key.type === AST_NODE_TYPES.Identifier &&
+          /style/i.test(current.parent.key.name)
+        ) {
           return true;
         }
 
         // Skip if we're in a TypeScript type definition
-        if (current.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
-            current.type === AST_NODE_TYPES.TSInterfaceDeclaration ||
-            current.type === AST_NODE_TYPES.TSPropertySignature) {
+        if (
+          current.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
+          current.type === AST_NODE_TYPES.TSInterfaceDeclaration ||
+          current.type === AST_NODE_TYPES.TSPropertySignature
+        ) {
           return false;
         }
 

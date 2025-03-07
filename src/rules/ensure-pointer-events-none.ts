@@ -14,7 +14,10 @@ function hasPseudoElementSelector(selector: string): boolean {
 /**
  * Checks if a property name is position with absolute or fixed value
  */
-function isAbsoluteOrFixedPosition(propertyName: string, propertyValue?: string): boolean {
+function isAbsoluteOrFixedPosition(
+  propertyName: string,
+  propertyValue?: string,
+): boolean {
   if (propertyName !== 'position') return false;
   return propertyValue === 'absolute' || propertyValue === 'fixed';
 }
@@ -31,7 +34,8 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Ensure pointer-events: none is added to non-interactive pseudo-elements',
+      description:
+        'Ensure pointer-events: none is added to non-interactive pseudo-elements',
       recommended: 'error',
     },
     fixable: 'code',
@@ -44,10 +48,16 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
   defaultOptions: [],
   create(context) {
     // Track style objects that have position: absolute or fixed
-    const absolutePositionedStyles = new Map<TSESTree.ObjectExpression, boolean>();
+    const absolutePositionedStyles = new Map<
+      TSESTree.ObjectExpression,
+      boolean
+    >();
 
     // Track style objects that already have pointer-events defined
-    const stylesWithPointerEvents = new Map<TSESTree.ObjectExpression, string>();
+    const stylesWithPointerEvents = new Map<
+      TSESTree.ObjectExpression,
+      string
+    >();
 
     /**
      * Process a CSS-in-JS style object to check for position: absolute/fixed and pointer-events
@@ -66,7 +76,10 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
         // Get property name
         if (property.key.type === AST_NODE_TYPES.Identifier) {
           propertyName = property.key.name;
-        } else if (property.key.type === AST_NODE_TYPES.Literal && typeof property.key.value === 'string') {
+        } else if (
+          property.key.type === AST_NODE_TYPES.Literal &&
+          typeof property.key.value === 'string'
+        ) {
           propertyName = property.key.value;
         }
 
@@ -102,13 +115,20 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
     /**
      * Check if a style object needs pointer-events: none
      */
-    function checkStyleObject(node: TSESTree.ObjectExpression, selector?: string) {
+    function checkStyleObject(
+      node: TSESTree.ObjectExpression,
+      selector?: string,
+    ) {
       const isPseudoElement = selector && hasPseudoElementSelector(selector);
       const isAbsolutePositioned = absolutePositionedStyles.get(node) || false;
       const pointerEventsValue = stylesWithPointerEvents.get(node);
 
       // If this is a pseudo-element with absolute positioning but no pointer-events
-      if (isPseudoElement && isAbsolutePositioned && pointerEventsValue === undefined) {
+      if (
+        isPseudoElement &&
+        isAbsolutePositioned &&
+        pointerEventsValue === undefined
+      ) {
         context.report({
           node,
           messageId: 'missingPointerEventsNone',
@@ -124,16 +144,20 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
             if (lastPropertyToken) {
               return fixer.insertTextAfter(
                 lastPropertyToken,
-                `, pointerEvents: 'none'`
+                `, pointerEvents: 'none'`,
               );
             }
             return null;
-          }
+          },
         });
       }
 
       // If this is a pseudo-element with absolute positioning and pointer-events: auto
-      if (isPseudoElement && isAbsolutePositioned && pointerEventsValue === 'auto') {
+      if (
+        isPseudoElement &&
+        isAbsolutePositioned &&
+        pointerEventsValue === 'auto'
+      ) {
         // Don't report an error if pointer-events is explicitly set to 'auto'
         // This is an intentional choice by the developer
       }
@@ -146,28 +170,37 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
         const tag = node.tag;
         let isStyledComponent = false;
 
-        if (tag.type === AST_NODE_TYPES.MemberExpression &&
-            tag.object.type === AST_NODE_TYPES.Identifier &&
-            tag.object.name === 'styled') {
+        if (
+          tag.type === AST_NODE_TYPES.MemberExpression &&
+          tag.object.type === AST_NODE_TYPES.Identifier &&
+          tag.object.name === 'styled'
+        ) {
           isStyledComponent = true;
-        } else if (tag.type === AST_NODE_TYPES.Identifier &&
-                  (tag.name === 'styled' || tag.name === 'css')) {
+        } else if (
+          tag.type === AST_NODE_TYPES.Identifier &&
+          (tag.name === 'styled' || tag.name === 'css')
+        ) {
           isStyledComponent = true;
         }
 
         if (isStyledComponent) {
           // For styled-components, we need to check the template content
-          const template = node.quasi.quasis.map(q => q.value.raw).join('');
+          const template = node.quasi.quasis.map((q) => q.value.raw).join('');
 
           // Check if it contains a pseudo-element with position: absolute/fixed
-          if (hasPseudoElementSelector(template) &&
-              (template.includes('position: absolute') || template.includes('position: fixed'))) {
-
+          if (
+            hasPseudoElementSelector(template) &&
+            (template.includes('position: absolute') ||
+              template.includes('position: fixed'))
+          ) {
             // Check if it's missing pointer-events: none
-            if (!template.includes('pointer-events: none') && !template.includes('pointer-events:none')) {
+            if (
+              !template.includes('pointer-events: none') &&
+              !template.includes('pointer-events:none')
+            ) {
               context.report({
                 node,
-                messageId: 'missingPointerEventsNone'
+                messageId: 'missingPointerEventsNone',
               });
             }
           }
@@ -176,10 +209,16 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
 
       // Process style objects in JSX
       JSXAttribute(node: TSESTree.JSXAttribute) {
-        if (node.name.type !== AST_NODE_TYPES.JSXIdentifier || node.name.name !== 'style') return;
+        if (
+          node.name.type !== AST_NODE_TYPES.JSXIdentifier ||
+          node.name.name !== 'style'
+        )
+          return;
 
-        if (node.value?.type === AST_NODE_TYPES.JSXExpressionContainer &&
-            node.value.expression.type === AST_NODE_TYPES.ObjectExpression) {
+        if (
+          node.value?.type === AST_NODE_TYPES.JSXExpressionContainer &&
+          node.value.expression.type === AST_NODE_TYPES.ObjectExpression
+        ) {
           processStyleObject(node.value.expression);
           checkStyleObject(node.value.expression);
         }
@@ -195,18 +234,25 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
         let isStyleObject = false;
         let selector: string | undefined;
 
-        if (parent.type === AST_NODE_TYPES.VariableDeclarator &&
-            parent.id.type === AST_NODE_TYPES.Identifier &&
-            /style/i.test(parent.id.name)) {
+        if (
+          parent.type === AST_NODE_TYPES.VariableDeclarator &&
+          parent.id.type === AST_NODE_TYPES.Identifier &&
+          /style/i.test(parent.id.name)
+        ) {
           isStyleObject = true;
-        } else if (parent.type === AST_NODE_TYPES.Property &&
-                  parent.key.type === AST_NODE_TYPES.Identifier &&
-                  /style/i.test(parent.key.name)) {
+        } else if (
+          parent.type === AST_NODE_TYPES.Property &&
+          parent.key.type === AST_NODE_TYPES.Identifier &&
+          /style/i.test(parent.key.name)
+        ) {
           isStyleObject = true;
         } else if (parent.type === AST_NODE_TYPES.CallExpression) {
           // Check for CSS-in-JS libraries like emotion's css() function
           const callee = parent.callee;
-          if (callee.type === AST_NODE_TYPES.Identifier && callee.name === 'css') {
+          if (
+            callee.type === AST_NODE_TYPES.Identifier &&
+            callee.name === 'css'
+          ) {
             isStyleObject = true;
           }
         }
@@ -220,15 +266,16 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
       // Process CSS-in-JS libraries that use objects with selectors
       Property(node: TSESTree.Property) {
         // Check for patterns like { '&::before': { ... } }
-        if (node.key.type === AST_NODE_TYPES.Literal &&
-            typeof node.key.value === 'string' &&
-            hasPseudoElementSelector(node.key.value) &&
-            node.value.type === AST_NODE_TYPES.ObjectExpression) {
-
+        if (
+          node.key.type === AST_NODE_TYPES.Literal &&
+          typeof node.key.value === 'string' &&
+          hasPseudoElementSelector(node.key.value) &&
+          node.value.type === AST_NODE_TYPES.ObjectExpression
+        ) {
           processStyleObject(node.value);
           checkStyleObject(node.value, node.key.value);
         }
-      }
+      },
     };
   },
 });

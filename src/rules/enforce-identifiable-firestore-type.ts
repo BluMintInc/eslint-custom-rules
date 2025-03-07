@@ -68,10 +68,16 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
           hasExpectedType = true;
 
           // Find Identifiable in type's dependencies
-          const findIdentifiable = (type: any, checkedTypes = new Set<string>()): boolean => {
+          const findIdentifiable = (
+            type: any,
+            checkedTypes = new Set<string>(),
+          ): boolean => {
             if (!type) return false;
 
-            if (type.type === AST_NODE_TYPES.TSTypeReference && type.typeName.type === AST_NODE_TYPES.Identifier) {
+            if (
+              type.type === AST_NODE_TYPES.TSTypeReference &&
+              type.typeName.type === AST_NODE_TYPES.Identifier
+            ) {
               const typeName = type.typeName.name;
               if (typeName === 'Identifiable') {
                 return true;
@@ -80,27 +86,53 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
                 checkedTypes.add(typeName);
                 // Look for the type in all scopes
                 const scope = context.getScope();
-                const variable = scope.variables.find(v => v.name === typeName);
+                const variable = scope.variables.find(
+                  (v) => v.name === typeName,
+                );
                 if (variable) {
-                  const def = variable.defs.find(d => d.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration);
-                  if (def && 'typeAnnotation' in def.node && def.node.typeAnnotation) {
-                    return findIdentifiable(def.node.typeAnnotation, checkedTypes);
+                  const def = variable.defs.find(
+                    (d) =>
+                      d.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration,
+                  );
+                  if (
+                    def &&
+                    'typeAnnotation' in def.node &&
+                    def.node.typeAnnotation
+                  ) {
+                    return findIdentifiable(
+                      def.node.typeAnnotation,
+                      checkedTypes,
+                    );
                   }
                 }
                 // Try looking in the parent scope
                 if (scope.upper) {
-                  const parentVariable = scope.upper.variables.find(v => v.name === typeName);
+                  const parentVariable = scope.upper.variables.find(
+                    (v) => v.name === typeName,
+                  );
                   if (parentVariable) {
-                    const def = parentVariable.defs.find(d => d.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration);
-                    if (def && 'typeAnnotation' in def.node && def.node.typeAnnotation) {
-                      return findIdentifiable(def.node.typeAnnotation, checkedTypes);
+                    const def = parentVariable.defs.find(
+                      (d) =>
+                        d.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration,
+                    );
+                    if (
+                      def &&
+                      'typeAnnotation' in def.node &&
+                      def.node.typeAnnotation
+                    ) {
+                      return findIdentifiable(
+                        def.node.typeAnnotation,
+                        checkedTypes,
+                      );
                     }
                   }
                 }
               }
             } else if (type.type === AST_NODE_TYPES.TSIntersectionType) {
               // For intersection types, check each part
-              return type.types.some(part => findIdentifiable(part, checkedTypes));
+              return type.types.some((part) =>
+                findIdentifiable(part, checkedTypes),
+              );
             }
 
             return false;
@@ -121,7 +153,8 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
                   member.type === AST_NODE_TYPES.TSPropertySignature &&
                   member.key.type === AST_NODE_TYPES.Identifier &&
                   member.key.name === 'id' &&
-                  member.typeAnnotation?.typeAnnotation.type === AST_NODE_TYPES.TSStringKeyword
+                  member.typeAnnotation?.typeAnnotation.type ===
+                    AST_NODE_TYPES.TSStringKeyword,
               );
             }
 
@@ -150,7 +183,10 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
             }
 
             // Check if type has id: string field (only for utility types)
-            if (isUtilityType(type) && checkIdField(type.typeParameters.params[0])) {
+            if (
+              isUtilityType(type) &&
+              checkIdField(type.typeParameters.params[0])
+            ) {
               return true;
             }
 

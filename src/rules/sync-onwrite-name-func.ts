@@ -8,13 +8,15 @@ export const syncOnwriteNameFunc = createRule<[], MessageIds>({
   meta: {
     type: 'problem',
     docs: {
-      description: 'Ensure that the name field matches the func field in onWrite handlers',
+      description:
+        'Ensure that the name field matches the func field in onWrite handlers',
       recommended: 'error',
     },
     fixable: 'code',
     schema: [],
     messages: {
-      mismatchedName: 'The name field should match the func field in onWrite handlers',
+      mismatchedName:
+        'The name field should match the func field in onWrite handlers',
     },
   },
   defaultOptions: [],
@@ -48,17 +50,23 @@ export const syncOnwriteNameFunc = createRule<[], MessageIds>({
           return;
         }
 
-        const nameValue = (nameProperty.value as TSESTree.Literal).value as string;
+        const nameValue = (nameProperty.value as TSESTree.Literal)
+          .value as string;
         let funcName: string;
 
         // Handle variable references
         if (funcProperty.value.type === AST_NODE_TYPES.Identifier) {
           const funcIdentifier = funcProperty.value;
           const scope = context.getScope();
-          const variable = scope.references.find(ref => ref.identifier === funcIdentifier)?.resolved;
+          const variable = scope.references.find(
+            (ref) => ref.identifier === funcIdentifier,
+          )?.resolved;
 
-          if (variable?.defs[0]?.node.type === AST_NODE_TYPES.VariableDeclarator &&
-              variable.defs[0].node.init?.type === AST_NODE_TYPES.Identifier) {
+          if (
+            variable?.defs[0]?.node.type ===
+              AST_NODE_TYPES.VariableDeclarator &&
+            variable.defs[0].node.init?.type === AST_NODE_TYPES.Identifier
+          ) {
             // If the variable is initialized with another identifier, use that name
             funcName = variable.defs[0].node.init.name;
           } else {
@@ -76,10 +84,7 @@ export const syncOnwriteNameFunc = createRule<[], MessageIds>({
               node: nameProperty,
               messageId: 'mismatchedName',
               fix(fixer) {
-                return fixer.replaceText(
-                  value,
-                  `'${funcName}'`
-                );
+                return fixer.replaceText(value, `'${funcName}'`);
               },
             });
           }

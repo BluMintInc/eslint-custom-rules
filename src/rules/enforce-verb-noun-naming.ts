@@ -4602,7 +4602,12 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
       return /^[A-Z][a-zA-Z0-9]*$/.test(name);
     }
 
-    function hasPropsParameter(node: TSESTree.FunctionDeclaration | TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression): boolean {
+    function hasPropsParameter(
+      node:
+        | TSESTree.FunctionDeclaration
+        | TSESTree.ArrowFunctionExpression
+        | TSESTree.FunctionExpression,
+    ): boolean {
       if (!node.params.length) return false;
 
       const firstParam = node.params[0];
@@ -4628,7 +4633,11 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
       }
 
       // Check for JSX assigned to variables then returned
-      if (text.includes('const ') && text.includes('<') && text.includes('return')) {
+      if (
+        text.includes('const ') &&
+        text.includes('<') &&
+        text.includes('return')
+      ) {
         return true;
       }
 
@@ -4648,9 +4657,15 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
       let functionName = '';
       if (node.type === AST_NODE_TYPES.FunctionDeclaration && node.id) {
         functionName = node.id.name;
-      } else if (node.type === AST_NODE_TYPES.ArrowFunctionExpression || node.type === AST_NODE_TYPES.FunctionExpression) {
+      } else if (
+        node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+        node.type === AST_NODE_TYPES.FunctionExpression
+      ) {
         const parent = node.parent;
-        if (parent?.type === AST_NODE_TYPES.VariableDeclarator && parent.id.type === AST_NODE_TYPES.Identifier) {
+        if (
+          parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+          parent.id.type === AST_NODE_TYPES.Identifier
+        ) {
           functionName = parent.id.name;
         }
       }
@@ -4672,9 +4687,18 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
             const parent = node.parent;
             if (parent?.type === AST_NODE_TYPES.VariableDeclarator) {
               const id = parent.id;
-              if (id.type === AST_NODE_TYPES.Identifier && id.typeAnnotation?.type === AST_NODE_TYPES.TSTypeAnnotation) {
-                const typeText = context.getSourceCode().getText(id.typeAnnotation.typeAnnotation);
-                return typeText.includes('React.') || typeText.includes('FC') || typeText.includes('FunctionComponent');
+              if (
+                id.type === AST_NODE_TYPES.Identifier &&
+                id.typeAnnotation?.type === AST_NODE_TYPES.TSTypeAnnotation
+              ) {
+                const typeText = context
+                  .getSourceCode()
+                  .getText(id.typeAnnotation.typeAnnotation);
+                return (
+                  typeText.includes('React.') ||
+                  typeText.includes('FC') ||
+                  typeText.includes('FunctionComponent')
+                );
               }
             }
           }
@@ -4682,12 +4706,15 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
         })(),
 
         // 5. Component name ends with "Unmemoized" (common React pattern)
-        functionName && functionName.endsWith('Unmemoized')
+        functionName && functionName.endsWith('Unmemoized'),
       ];
 
       // Consider it a React component if it matches at least 2 indicators
       // OR if it has the Unmemoized suffix (strong indicator of a React component)
-      return indicators.filter(Boolean).length >= 2 || (!!functionName && functionName.endsWith('Unmemoized'));
+      return (
+        indicators.filter(Boolean).length >= 2 ||
+        (!!functionName && functionName.endsWith('Unmemoized'))
+      );
     }
     return {
       FunctionDeclaration(node) {

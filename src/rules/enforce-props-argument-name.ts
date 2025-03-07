@@ -19,7 +19,8 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce using "Props" suffix in type names for parameter objects',
+      description:
+        'Enforce using "Props" suffix in type names for parameter objects',
       recommended: 'error',
     },
     fixable: 'code',
@@ -38,7 +39,8 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
       },
     ],
     messages: {
-      usePropsForType: 'Use "Props" suffix in type name instead of "{{ typeSuffix }}"',
+      usePropsForType:
+        'Use "Props" suffix in type name instead of "{{ typeSuffix }}"',
     },
   },
   defaultOptions: [defaultOptions],
@@ -84,7 +86,15 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
         return null;
       }
 
-      const suffixes = ['Config', 'Settings', 'Options', 'Params', 'Parameters', 'Args', 'Arguments'];
+      const suffixes = [
+        'Config',
+        'Settings',
+        'Options',
+        'Params',
+        'Parameters',
+        'Args',
+        'Arguments',
+      ];
       for (const suffix of suffixes) {
         if (typeName.endsWith(suffix)) {
           return suffix;
@@ -94,9 +104,16 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
     }
 
     // Fix type name
-    function fixTypeName(fixer: any, node: TSESTree.TypeNode, oldName: string, suffix: string): any {
-      if (node.type === AST_NODE_TYPES.TSTypeReference &&
-          node.typeName.type === AST_NODE_TYPES.Identifier) {
+    function fixTypeName(
+      fixer: any,
+      node: TSESTree.TypeNode,
+      oldName: string,
+      suffix: string,
+    ): any {
+      if (
+        node.type === AST_NODE_TYPES.TSTypeReference &&
+        node.typeName.type === AST_NODE_TYPES.Identifier
+      ) {
         const baseName = oldName.slice(0, -suffix.length);
         return fixer.replaceText(node.typeName, `${baseName}Props`);
       }
@@ -105,10 +122,11 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
 
     // Check function parameters
     function checkFunctionParams(
-      node: TSESTree.FunctionDeclaration |
-            TSESTree.FunctionExpression |
-            TSESTree.ArrowFunctionExpression |
-            TSESTree.TSMethodSignature
+      node:
+        | TSESTree.FunctionDeclaration
+        | TSESTree.FunctionExpression
+        | TSESTree.ArrowFunctionExpression
+        | TSESTree.TSMethodSignature,
     ): void {
       if (node.params.length !== 1) {
         return; // Only check functions with a single parameter
@@ -117,15 +135,25 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
       const param = node.params[0];
 
       // Skip primitive parameters
-      if (param.type === AST_NODE_TYPES.Identifier && param.typeAnnotation && (
-          param.typeAnnotation.typeAnnotation.type === AST_NODE_TYPES.TSStringKeyword ||
-          param.typeAnnotation.typeAnnotation.type === AST_NODE_TYPES.TSNumberKeyword ||
-          param.typeAnnotation.typeAnnotation.type === AST_NODE_TYPES.TSBooleanKeyword)) {
+      if (
+        param.type === AST_NODE_TYPES.Identifier &&
+        param.typeAnnotation &&
+        (param.typeAnnotation.typeAnnotation.type ===
+          AST_NODE_TYPES.TSStringKeyword ||
+          param.typeAnnotation.typeAnnotation.type ===
+            AST_NODE_TYPES.TSNumberKeyword ||
+          param.typeAnnotation.typeAnnotation.type ===
+            AST_NODE_TYPES.TSBooleanKeyword)
+      ) {
         return;
       }
 
       // Check if the parameter has a type annotation
-      if (param.type === AST_NODE_TYPES.Identifier && param.typeAnnotation && param.typeAnnotation.typeAnnotation) {
+      if (
+        param.type === AST_NODE_TYPES.Identifier &&
+        param.typeAnnotation &&
+        param.typeAnnotation.typeAnnotation
+      ) {
         const typeName = getTypeName(param.typeAnnotation.typeAnnotation);
 
         if (typeName) {
@@ -136,12 +164,13 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
               node: param.typeAnnotation.typeAnnotation,
               messageId: 'usePropsForType',
               data: { typeSuffix: nonPropsSuffix },
-              fix: (fixer) => fixTypeName(
-                fixer,
-                param.typeAnnotation!.typeAnnotation,
-                typeName,
-                nonPropsSuffix
-              ),
+              fix: (fixer) =>
+                fixTypeName(
+                  fixer,
+                  param.typeAnnotation!.typeAnnotation,
+                  typeName,
+                  nonPropsSuffix,
+                ),
             });
           }
         }
@@ -162,15 +191,25 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
       const param = constructor.params[0];
 
       // Skip primitive parameters
-      if (param.type === AST_NODE_TYPES.Identifier && param.typeAnnotation && (
-          param.typeAnnotation.typeAnnotation.type === AST_NODE_TYPES.TSStringKeyword ||
-          param.typeAnnotation.typeAnnotation.type === AST_NODE_TYPES.TSNumberKeyword ||
-          param.typeAnnotation.typeAnnotation.type === AST_NODE_TYPES.TSBooleanKeyword)) {
+      if (
+        param.type === AST_NODE_TYPES.Identifier &&
+        param.typeAnnotation &&
+        (param.typeAnnotation.typeAnnotation.type ===
+          AST_NODE_TYPES.TSStringKeyword ||
+          param.typeAnnotation.typeAnnotation.type ===
+            AST_NODE_TYPES.TSNumberKeyword ||
+          param.typeAnnotation.typeAnnotation.type ===
+            AST_NODE_TYPES.TSBooleanKeyword)
+      ) {
         return;
       }
 
       // Check if the parameter has a type annotation
-      if (param.type === AST_NODE_TYPES.Identifier && param.typeAnnotation && param.typeAnnotation.typeAnnotation) {
+      if (
+        param.type === AST_NODE_TYPES.Identifier &&
+        param.typeAnnotation &&
+        param.typeAnnotation.typeAnnotation
+      ) {
         const typeName = getTypeName(param.typeAnnotation.typeAnnotation);
 
         if (typeName) {
@@ -181,12 +220,13 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
               node: param.typeAnnotation.typeAnnotation,
               messageId: 'usePropsForType',
               data: { typeSuffix: nonPropsSuffix },
-              fix: (fixer) => fixTypeName(
-                fixer,
-                param.typeAnnotation!.typeAnnotation,
-                typeName,
-                nonPropsSuffix
-              ),
+              fix: (fixer) =>
+                fixTypeName(
+                  fixer,
+                  param.typeAnnotation!.typeAnnotation,
+                  typeName,
+                  nonPropsSuffix,
+                ),
             });
           }
         }

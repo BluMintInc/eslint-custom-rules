@@ -219,11 +219,14 @@ export const noHungarian = createRule<[], MessageIds>({
     // Check if a variable name contains a type marker with proper word boundaries
     function hasTypeMarker(variableName: string): boolean {
       // Check if the variable name ends with one of the allowed descriptive suffixes
-      if (ALLOWED_SUFFIXES.some(suffix =>
-        variableName.endsWith(suffix) &&
-        variableName.length > suffix.length &&
-        /[a-z]/.test(variableName[variableName.length - suffix.length - 1])
-      )) {
+      if (
+        ALLOWED_SUFFIXES.some(
+          (suffix) =>
+            variableName.endsWith(suffix) &&
+            variableName.length > suffix.length &&
+            /[a-z]/.test(variableName[variableName.length - suffix.length - 1]),
+        )
+      ) {
         return false;
       }
 

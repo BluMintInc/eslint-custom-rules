@@ -19,7 +19,8 @@ export const enforceCallableTypes = createRule<Options, MessageIds>({
     },
     schema: [],
     messages: {
-      missingParamsPropsType: 'Missing Props or Params type export in callable function file',
+      missingParamsPropsType:
+        'Missing Props or Params type export in callable function file',
       missingResponseType:
         'Missing Response type export in callable function file',
       unusedParamsPropsType:
@@ -73,7 +74,10 @@ export const enforceCallableTypes = createRule<Options, MessageIds>({
       // Check for type usage in function parameters and return types
       TSTypeReference(node) {
         if (node.typeName.type === AST_NODE_TYPES.Identifier) {
-          if (node.typeName.name === 'Params' || node.typeName.name === 'Props') {
+          if (
+            node.typeName.name === 'Params' ||
+            node.typeName.name === 'Props'
+          ) {
             paramsOrPropsTypeUsed = true;
           } else if (node.typeName.name === 'Response') {
             responseTypeUsed = true;

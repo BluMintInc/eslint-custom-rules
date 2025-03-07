@@ -40,14 +40,14 @@ export = createRule({
           const httpsErrorSpecifier = node.specifiers.find(
             (spec) =>
               spec.type === AST_NODE_TYPES.ImportSpecifier &&
-              spec.imported.name === 'HttpsError'
+              spec.imported.name === 'HttpsError',
           );
 
           // Check for https import that could be used for https.HttpsError
           const httpsSpecifier = node.specifiers.find(
             (spec) =>
               spec.type === AST_NODE_TYPES.ImportSpecifier &&
-              spec.imported.name === 'https'
+              spec.imported.name === 'https',
           );
 
           if (httpsErrorSpecifier && 'local' in httpsErrorSpecifier) {

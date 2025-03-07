@@ -26,7 +26,8 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
     let hasCentralizedImport = false;
     const mockFirestoreNodes: Set<TSESTree.Node> = new Set();
     const customMockFirestoreNames: Set<string> = new Set();
-    const customMockFirestoreCallExpressions: Set<TSESTree.CallExpression> = new Set();
+    const customMockFirestoreCallExpressions: Set<TSESTree.CallExpression> =
+      new Set();
     const thisExpressions: TSESTree.MemberExpression[] = [];
 
     return {
@@ -205,15 +206,19 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
               const linesToRemove = new Set<number>();
 
               // Process all nodes that need to be removed
-              mockFirestoreNodes.forEach(node => {
-                const startLine = sourceCode.getLocFromIndex(node.range[0]).line - 1;
-                const endLine = sourceCode.getLocFromIndex(node.range[1]).line - 1;
+              mockFirestoreNodes.forEach((node) => {
+                const startLine =
+                  sourceCode.getLocFromIndex(node.range[0]).line - 1;
+                const endLine =
+                  sourceCode.getLocFromIndex(node.range[1]).line - 1;
 
                 if (node.parent?.type === AST_NODE_TYPES.VariableDeclaration) {
                   // If it's the only declarator, remove the entire declaration
                   if (node.parent.declarations.length === 1) {
-                    const declStartLine = sourceCode.getLocFromIndex(node.parent.range[0]).line - 1;
-                    const declEndLine = sourceCode.getLocFromIndex(node.parent.range[1]).line - 1;
+                    const declStartLine =
+                      sourceCode.getLocFromIndex(node.parent.range[0]).line - 1;
+                    const declEndLine =
+                      sourceCode.getLocFromIndex(node.parent.range[1]).line - 1;
                     for (let i = declStartLine; i <= declEndLine; i++) {
                       linesToRemove.add(i);
                     }
@@ -235,22 +240,22 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
               const replacements: Array<[number, string, string]> = [];
 
               // Add replacements for custom mockFirestore names
-              customMockFirestoreCallExpressions.forEach(node => {
+              customMockFirestoreCallExpressions.forEach((node) => {
                 if (node.callee.type === AST_NODE_TYPES.Identifier) {
                   replacements.push([
                     node.callee.range[0],
                     node.callee.name,
-                    'mockFirestore'
+                    'mockFirestore',
                   ]);
                 }
               });
 
               // Add replacements for this.mockFirestore
-              thisExpressions.forEach(expr => {
+              thisExpressions.forEach((expr) => {
                 replacements.push([
                   expr.range[0],
                   sourceCode.getText(expr),
-                  'mockFirestore'
+                  'mockFirestore',
                 ]);
               });
 
@@ -267,7 +272,9 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
               }
 
               // Filter out the lines to remove
-              const fixedLines = fixedText.split('\n').filter((_, i) => !linesToRemove.has(i));
+              const fixedLines = fixedText
+                .split('\n')
+                .filter((_, i) => !linesToRemove.has(i));
 
               // Add the import statement at the beginning
               if (!hasCentralizedImport) {

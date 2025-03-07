@@ -10,12 +10,14 @@ export const enforceRealtimedbPathUtils = createRule<[], MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce usage of utility functions for Realtime Database paths',
+      description:
+        'Enforce usage of utility functions for Realtime Database paths',
       recommended: 'error',
     },
     schema: [],
     messages: {
-      requirePathUtil: 'Use a utility function for Realtime Database paths to ensure type safety and maintainability. Instead of `ref("users/" + userId)`, create and use a utility function: `const toUserPath = (id: string) => `users/${id}`; ref(toUserPath(userId))`.',
+      requirePathUtil:
+        'Use a utility function for Realtime Database paths to ensure type safety and maintainability. Instead of `ref("users/" + userId)`, create and use a utility function: `const toUserPath = (id: string) => `users/${id}`; ref(toUserPath(userId))`.',
     },
   },
   defaultOptions: [],
@@ -62,7 +64,8 @@ export const enforceRealtimedbPathUtils = createRule<[], MessageIds>({
 
     function isStringLiteralOrTemplate(node: TSESTree.Node): boolean {
       return (
-        (node.type === AST_NODE_TYPES.Literal && typeof node.value === 'string') ||
+        (node.type === AST_NODE_TYPES.Literal &&
+          typeof node.value === 'string') ||
         node.type === AST_NODE_TYPES.TemplateLiteral
       );
     }

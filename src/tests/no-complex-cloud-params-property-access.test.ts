@@ -1,11 +1,14 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noComplexCloudParams } from '../rules/no-complex-cloud-params';
 
-ruleTesterTs.run('no-complex-cloud-params-property-access', noComplexCloudParams, {
-  valid: [
-    // Property access expressions that resolve to primitive values should be valid
-    {
-      code: `
+ruleTesterTs.run(
+  'no-complex-cloud-params-property-access',
+  noComplexCloudParams,
+  {
+    valid: [
+      // Property access expressions that resolve to primitive values should be valid
+      {
+        code: `
         const remove = async () => {
           const { setGroupChannelGroup } = await import('src/firebaseCloud/messaging/setGroupChannelGroup');
           const groupFilter = [{ groupId: { $in: ['group-123'] } }];
@@ -17,10 +20,10 @@ ruleTesterTs.run('no-complex-cloud-params-property-access', noComplexCloudParams
           });
         };
       `,
-    },
-    // Multiple levels of property access
-    {
-      code: `
+      },
+      // Multiple levels of property access
+      {
+        code: `
         const remove = async () => {
           const { setGroupChannelGroup } = await import('src/firebaseCloud/messaging/setGroupChannelGroup');
           const data = {
@@ -39,10 +42,10 @@ ruleTesterTs.run('no-complex-cloud-params-property-access', noComplexCloudParams
           });
         };
       `,
-    },
-    // Property access with computed properties
-    {
-      code: `
+      },
+      // Property access with computed properties
+      {
+        code: `
         const remove = async () => {
           const { setGroupChannelGroup } = await import('src/firebaseCloud/messaging/setGroupChannelGroup');
           const data = {
@@ -61,12 +64,12 @@ ruleTesterTs.run('no-complex-cloud-params-property-access', noComplexCloudParams
           });
         };
       `,
-    },
-  ],
-  invalid: [
-    // Property access that resolves to a complex object should still be invalid
-    {
-      code: `
+      },
+    ],
+    invalid: [
+      // Property access that resolves to a complex object should still be invalid
+      {
+        code: `
         const remove = async () => {
           const { setGroupChannelGroup } = await import('src/firebaseCloud/messaging/setGroupChannelGroup');
           const data = {
@@ -87,7 +90,8 @@ ruleTesterTs.run('no-complex-cloud-params-property-access', noComplexCloudParams
           });
         };
       `,
-      errors: [{ messageId: 'noComplexObjects' }],
-    },
-  ],
-});
+        errors: [{ messageId: 'noComplexObjects' }],
+      },
+    ],
+  },
+);

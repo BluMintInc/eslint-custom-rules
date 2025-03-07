@@ -210,7 +210,8 @@ module.exports = {
         '@blumintinc/blumint/enforce-id-capitalization': 'error',
         '@blumintinc/blumint/no-unused-usestate': 'error',
         '@blumintinc/blumint/enforce-dynamic-file-naming': 'error',
-        '@blumintinc/blumint/prefer-usecallback-over-usememo-for-functions': 'error',
+        '@blumintinc/blumint/prefer-usecallback-over-usememo-for-functions':
+          'error',
         '@blumintinc/blumint/no-margin-properties': 'error',
       },
     },
@@ -314,7 +315,8 @@ module.exports = {
     'omit-index-html': omitIndexHtml,
     'enforce-id-capitalization': enforceIdCapitalization,
     'no-unused-usestate': noUnusedUseState,
-    'prefer-usecallback-over-usememo-for-functions': preferUseCallbackOverUseMemoForFunctions,
+    'prefer-usecallback-over-usememo-for-functions':
+      preferUseCallbackOverUseMemoForFunctions,
     'no-margin-properties': noMarginProperties,
   },
 };

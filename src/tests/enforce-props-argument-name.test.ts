@@ -141,7 +141,7 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
       errors: [
         { messageId: 'usePropsForType', data: { typeSuffix: 'Settings' } },
         { messageId: 'usePropsForType', data: { typeSuffix: 'Settings' } },
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Settings' } }
+        { messageId: 'usePropsForType', data: { typeSuffix: 'Settings' } },
       ],
       output: `
         type PendingStrategyProps = {
@@ -168,7 +168,7 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
       `,
       errors: [
         { messageId: 'usePropsForType', data: { typeSuffix: 'Params' } },
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Params' } }
+        { messageId: 'usePropsForType', data: { typeSuffix: 'Params' } },
       ],
       output: `
         type AreQueuesEmptyProps = {
@@ -188,7 +188,9 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
           configureOptions: Required<UseConfigureProps, 'filters'>;
         };
       `,
-      errors: [{ messageId: 'usePropsForType', data: { typeSuffix: 'Config' } }],
+      errors: [
+        { messageId: 'usePropsForType', data: { typeSuffix: 'Config' } },
+      ],
       output: `
         type AlgoliaLayoutProps = {
           CatalogWrapper: RenderCatalogWrapper;

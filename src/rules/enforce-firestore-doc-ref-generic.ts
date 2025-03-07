@@ -20,13 +20,15 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
   meta: {
     type: 'problem',
     docs: {
-      description: 'Enforce generic argument for Firestore DocumentReference, CollectionReference and CollectionGroup',
+      description:
+        'Enforce generic argument for Firestore DocumentReference, CollectionReference and CollectionGroup',
       recommended: 'error',
       requiresTypeChecking: true,
     },
     schema: [],
     messages: {
-      missingGeneric: '{{ type }} must specify a generic type argument for type safety. Instead of `const docRef = doc(collection)`, use `const docRef = doc<YourType>(collection)`.',
+      missingGeneric:
+        '{{ type }} must specify a generic type argument for type safety. Instead of `const docRef = doc(collection)`, use `const docRef = doc<YourType>(collection)`.',
       invalidGeneric:
         '{{ type }} must not use "any" or "{}" as generic type argument. Define a proper interface/type for your document: `interface UserDoc { name: string; age: number; }` and use it: `const docRef = doc<UserDoc>(collection)`.',
     },
@@ -136,19 +138,28 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
           return true;
         }
         // Variable declarations with type annotations
-        if (current.type === AST_NODE_TYPES.VariableDeclarator && current.id.typeAnnotation) {
+        if (
+          current.type === AST_NODE_TYPES.VariableDeclarator &&
+          current.id.typeAnnotation
+        ) {
           nodeCache.set(node, true);
           return true;
         }
         // Class property definitions with type annotations
-        if (current.type === AST_NODE_TYPES.PropertyDefinition && current.typeAnnotation) {
+        if (
+          current.type === AST_NODE_TYPES.PropertyDefinition &&
+          current.typeAnnotation
+        ) {
           nodeCache.set(node, true);
           return true;
         }
         // Return statements in functions with return type annotations
         if (current.type === AST_NODE_TYPES.ReturnStatement) {
           const func = current.parent?.parent;
-          if (func?.type === AST_NODE_TYPES.FunctionDeclaration && func.returnType) {
+          if (
+            func?.type === AST_NODE_TYPES.FunctionDeclaration &&
+            func.returnType
+          ) {
             nodeCache.set(node, true);
             return true;
           }
@@ -165,7 +176,8 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
                   (member): member is TSESTree.PropertyDefinition =>
                     member.type === AST_NODE_TYPES.PropertyDefinition &&
                     member.key.type === AST_NODE_TYPES.Identifier &&
-                    member.key.name === (left.property as TSESTree.Identifier).name
+                    member.key.name ===
+                      (left.property as TSESTree.Identifier).name,
                 );
                 if (property?.typeAnnotation) {
                   nodeCache.set(node, true);
@@ -181,7 +193,9 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
       return false;
     }
 
-    function findParentClass(node: TSESTree.Node): TSESTree.ClassDeclaration | undefined {
+    function findParentClass(
+      node: TSESTree.Node,
+    ): TSESTree.ClassDeclaration | undefined {
       let current: TSESTree.Node | undefined = node;
       while (current) {
         if (current.type === AST_NODE_TYPES.ClassDeclaration) {
@@ -223,8 +237,8 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
         if (
           node.typeName.type === AST_NODE_TYPES.Identifier &&
           (node.typeName.name === 'DocumentReference' ||
-           node.typeName.name === 'CollectionReference' ||
-           node.typeName.name === 'CollectionGroup')
+            node.typeName.name === 'CollectionReference' ||
+            node.typeName.name === 'CollectionGroup')
         ) {
           const typeName = node.typeName.name;
           // Check if generic type argument is missing
@@ -232,7 +246,7 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
             context.report({
               node,
               messageId: 'missingGeneric',
-              data: { type: typeName }
+              data: { type: typeName },
             });
             return;
           }
@@ -243,7 +257,7 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
             context.report({
               node,
               messageId: 'invalidGeneric',
-              data: { type: typeName }
+              data: { type: typeName },
             });
           }
         }
@@ -265,13 +279,13 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
             context.report({
               node,
               messageId: 'missingGeneric',
-              data: { type: 'DocumentReference' }
+              data: { type: 'DocumentReference' },
             });
           } else if (hasInvalidType(typeAnnotation.params[0])) {
             context.report({
               node,
               messageId: 'invalidGeneric',
-              data: { type: 'DocumentReference' }
+              data: { type: 'DocumentReference' },
             });
           }
         }
@@ -287,13 +301,13 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
             context.report({
               node,
               messageId: 'missingGeneric',
-              data: { type: 'CollectionReference' }
+              data: { type: 'CollectionReference' },
             });
           } else if (hasInvalidType(typeAnnotation.params[0])) {
             context.report({
               node,
               messageId: 'invalidGeneric',
-              data: { type: 'CollectionReference' }
+              data: { type: 'CollectionReference' },
             });
           }
         }
@@ -308,13 +322,13 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
             context.report({
               node,
               messageId: 'missingGeneric',
-              data: { type: 'CollectionGroup' }
+              data: { type: 'CollectionGroup' },
             });
           } else if (hasInvalidType(typeAnnotation.params[0])) {
             context.report({
               node,
               messageId: 'invalidGeneric',
-              data: { type: 'CollectionGroup' }
+              data: { type: 'CollectionGroup' },
             });
           }
         }

@@ -244,7 +244,7 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
     function hasABPattern(params: TSESTree.Parameter[]): boolean {
       if (params.length !== 2) return false;
 
-      const paramNames = params.map(param => {
+      const paramNames = params.map((param) => {
         if (param.type === AST_NODE_TYPES.Identifier) {
           return param.name;
         }
