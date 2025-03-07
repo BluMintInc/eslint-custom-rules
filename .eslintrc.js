@@ -33,6 +33,13 @@ module.exports = {
       'error',
       'always',
       { exceptAfterSingleLine: true }
+    ],
+    'no-restricted-globals': [
+      'warn',
+      {
+        name: 'setInterval',
+        message: 'setInterval continues to run when a tab is not in focus, though potentially at a reduced frequency. This is appropriate for background tasks that need to continue regardless of UI visibility. If you need animations that pause when a tab is not visible, consider requestAnimationFrame instead.'
+      }
     ]
   },
   overrides: [
