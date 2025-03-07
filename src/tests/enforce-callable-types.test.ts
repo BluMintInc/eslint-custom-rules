@@ -6,28 +6,6 @@ const ruleTester = ruleTesterTs;
 ruleTester.run('enforce-callable-types', enforceCallableTypes, {
   valid: [
     {
-      // Valid case with Params type exported and used
-      code: `
-        import { onCall } from '../../v2/https/onCall';
-
-        export type Params = {
-          userId: string;
-        };
-
-        export type Response = {
-          success: boolean;
-        };
-
-        const myCallableFunction = async (request: CallableRequest<Params>): Promise<Response> => {
-          const { userId } = request.data;
-          return { success: true };
-        };
-
-        export default onCall(myCallableFunction);
-      `,
-      filename: 'src/callable/myFunction.f.ts',
-    },
-    {
       // Valid case with Props type exported and used (new convention)
       code: `
         import { onCall } from '../../v2/https/onCall';
@@ -43,25 +21,6 @@ ruleTester.run('enforce-callable-types', enforceCallableTypes, {
         const myCallableFunction = async (request: CallableRequest<Props>): Promise<Response> => {
           const { userId } = request.data;
           return { success: true };
-        };
-
-        export default onCall(myCallableFunction);
-      `,
-      filename: 'src/callable/myFunction.f.ts',
-    },
-    {
-      // Valid case with void response
-      code: `
-        import { onCall } from '../../v2/https/onCall';
-
-        export type Params = {
-          userId: string;
-        };
-
-        export type Response = void;
-
-        const myCallableFunction = async (request: CallableRequest<Params>): Promise<Response> => {
-          const { userId } = request.data;
         };
 
         export default onCall(myCallableFunction);
@@ -112,7 +71,7 @@ ruleTester.run('enforce-callable-types', enforceCallableTypes, {
   ],
   invalid: [
     {
-      // Missing Props/Params type and unused Response type
+      // Missing Props type and unused Response type
       code: `
         import { onCall } from '../../v2/https/onCall';
 
@@ -128,7 +87,7 @@ ruleTester.run('enforce-callable-types', enforceCallableTypes, {
       `,
       filename: 'src/callable/myFunction.f.ts',
       errors: [
-        { messageId: 'missingParamsPropsType' },
+        { messageId: 'missingPropsType' },
         { messageId: 'unusedResponseType' },
       ],
     },
@@ -152,7 +111,7 @@ ruleTester.run('enforce-callable-types', enforceCallableTypes, {
       errors: [{ messageId: 'missingResponseType' }],
     },
     {
-      // Missing Response type with Params
+      // Missing Props type (using Params instead)
       code: `
         import { onCall } from '../../v2/https/onCall';
 
@@ -160,7 +119,11 @@ ruleTester.run('enforce-callable-types', enforceCallableTypes, {
           userId: string;
         };
 
-        const myCallableFunction = async (request: CallableRequest<Params>) => {
+        export type Response = {
+          success: boolean;
+        };
+
+        const myCallableFunction = async (request: CallableRequest<Params>): Promise<Response> => {
           const { userId } = request.data;
           return { success: true };
         };
@@ -168,7 +131,7 @@ ruleTester.run('enforce-callable-types', enforceCallableTypes, {
         export default onCall(myCallableFunction);
       `,
       filename: 'src/callable/myFunction.f.ts',
-      errors: [{ messageId: 'missingResponseType' }],
+      errors: [{ messageId: 'missingPropsType' }],
     },
     {
       // Unused Props type
@@ -190,29 +153,7 @@ ruleTester.run('enforce-callable-types', enforceCallableTypes, {
         export default onCall(myCallableFunction);
       `,
       filename: 'src/callable/myFunction.f.ts',
-      errors: [{ messageId: 'unusedParamsPropsType' }],
-    },
-    {
-      // Unused Params type
-      code: `
-        import { onCall } from '../../v2/https/onCall';
-
-        export type Params = {
-          userId: string;
-        };
-
-        export type Response = {
-          success: boolean;
-        };
-
-        const myCallableFunction = async (): Promise<Response> => {
-          return { success: true };
-        };
-
-        export default onCall(myCallableFunction);
-      `,
-      filename: 'src/callable/myFunction.f.ts',
-      errors: [{ messageId: 'unusedParamsPropsType' }],
+      errors: [{ messageId: 'unusedPropsType' }],
     },
     {
       // Unused Response type with Props
