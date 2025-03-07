@@ -30,7 +30,7 @@
     "lint:eslint-docs": "npm-run-all \"update:eslint-docs -- --check\"",
     "lint:js": "eslint ./src",
     "lint:shell": "shellcheck .devcontainer/git-flow-completion.bash",
-    "lint:fix": "tsc && eslint ./**/* --quiet --fix",
+    "lint:fix": "tsc && eslint \"./src/**/*\" --quiet --fix",
     "test": "jest --passWithNoTests --reporters=default --reporters=jest-junit",
     "test:ci": "jest --ci --passWithNoTests --reporters=default --reporters=jest-junit",
     "docs": "./scripts/make-docs.sh && npm run update:eslint-docs",
