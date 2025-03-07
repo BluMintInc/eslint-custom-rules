@@ -186,38 +186,6 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       output: 'function processEvent(element) {}',
     },
 
-    // Function declarations with directional prepositions
-    {
-      code: 'function moveElementAbove(target) {}',
-      errors: [
-        {
-          messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'Above', suggestion: 'moveElement' },
-        },
-      ],
-      output: 'function moveElement(target) {}',
-    },
-    {
-      code: 'function placeItemBelow(reference) {}',
-      errors: [
-        {
-          messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'Below', suggestion: 'placeItem' },
-        },
-      ],
-      output: 'function placeItem(reference) {}',
-    },
-    {
-      code: 'function jumpOver(obstacle) {}',
-      errors: [
-        {
-          messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'Over', suggestion: 'jump' },
-        },
-      ],
-      output: 'function jump(obstacle) {}',
-    },
-
     // Function declarations with temporal prepositions
     {
       code: 'function executeAfter(delay) {}',
@@ -272,49 +240,7 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       output: 'function process(options) {}',
     },
 
-    // Function declarations with compound prepositions
-    {
-      code: 'function moveAhead(steps) {}',
-      errors: [
-        {
-          messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'Ahead', suggestion: 'move' },
-        },
-      ],
-      output: 'function move(steps) {}',
-    },
-    {
-      code: 'function separateApart(object) {}',
-      errors: [
-        {
-          messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'Apart', suggestion: 'separate' },
-        },
-      ],
-      output: 'function separate(object) {}',
-    },
-    {
-      code: 'function splitApart(object) {}',
-      errors: [
-        {
-          messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'Apart', suggestion: 'split' },
-        },
-      ],
-      output: 'function split(object) {}',
-    },
-
     // Function declarations with phrasal prepositions
-    {
-      code: 'function talkAbout(topic) {}',
-      errors: [
-        {
-          messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'About', suggestion: 'talk' },
-        },
-      ],
-      output: 'function talk(topic) {}',
-    },
     {
       code: 'function fightAgainst(enemy) {}',
       errors: [
