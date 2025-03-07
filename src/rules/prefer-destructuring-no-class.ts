@@ -155,6 +155,23 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
     };
 
     /**
+     * Check if we're inside a class method
+     */
+    function isInsideClassMethod(node: TSESTree.Node): boolean {
+      let current: TSESTree.Node | undefined = node;
+
+      // Traverse up the AST to find a MethodDefinition
+      while (current && current.parent) {
+        current = current.parent;
+        if (current.type === AST_NODE_TYPES.MethodDefinition) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    /**
      * Check if destructuring should be used for this node
      */
     function shouldUseDestructuring(
@@ -165,6 +182,14 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
       if (
         isClassInstance(node, context) ||
         isStaticClassMember(node, context)
+      ) {
+        return false;
+      }
+
+      // Skip if the object is 'this' and we're inside a class method
+      if (
+        node.object.type === AST_NODE_TYPES.ThisExpression &&
+        isInsideClassMethod(node)
       ) {
         return false;
       }
