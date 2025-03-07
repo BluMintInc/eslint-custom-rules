@@ -13,24 +13,6 @@ const COMMON_PREPOSITION_SUFFIXES = new Set([
   'At',
   'Of',
 
-  // Directional prepositions
-  'Above',
-  'Below',
-  'Over',
-  'Under',
-  'Up',
-  'Down',
-  'Into',
-  'Onto',
-  'Out',
-  'Off',
-  'Through',
-  'Throughout',
-  'Across',
-  'Along',
-  'Around',
-  'Past',
-
   // Temporal prepositions
   'After',
   'Before',
@@ -51,24 +33,9 @@ const COMMON_PREPOSITION_SUFFIXES = new Set([
 
   // Comparative prepositions
   'Than',
-  'Like',
   'As',
 
-  // Compound prepositions
-  'According',
-  'Ahead',
-  'Apart',
-  'Aside',
-  'Away',
-  'Back',
-  'Forward',
-  'Backward',
-  'Inside',
-  'Outside',
-  'Together',
-
   // Phrasal prepositions (common endings)
-  'About',
   'Against',
   'Among',
   'Amongst',
