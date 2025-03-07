@@ -6,6 +6,19 @@ ruleTesterTs.run(
   noAlwaysTrueFalseConditions,
   {
     valid: [
+      // Test case for the bug with optional chaining on array length
+      `
+      function countOwned() {
+        const filtered = itemsInFirestore.filter((token) => {
+          return \`\${token.contract.itemId}\` === \`\${identifier}\`;
+        });
+        if (filtered?.length) {
+          return filtered[0]?.amount || 0;
+        }
+        return 0;
+      }
+      `,
+
       // Common patterns for default values
       `
       const safeArray = items || [];
