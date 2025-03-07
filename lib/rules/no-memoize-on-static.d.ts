@@ -1,1 +1,0 @@
-export declare const noMemoizeOnStatic: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"noMemoizeOnStatic", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;

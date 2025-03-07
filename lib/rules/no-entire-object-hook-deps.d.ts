@@ -1,1 +1,0 @@
-export declare const noEntireObjectHookDeps: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"avoidEntireObject", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;

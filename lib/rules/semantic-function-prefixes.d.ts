@@ -1,1 +1,0 @@
-export declare const semanticFunctionPrefixes: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"avoidGenericPrefix", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;
