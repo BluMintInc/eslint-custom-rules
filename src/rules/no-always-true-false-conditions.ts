@@ -459,6 +459,36 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
         return true;
       }
 
+      // Check if this is used for property access
+      // This handles cases like: (obj.prop || {}).value or (array[index] || []).length
+      if (
+        node.parent &&
+        node.parent.parent &&
+        node.parent.parent.type === AST_NODE_TYPES.MemberExpression &&
+        node.parent.parent.object === node.parent
+      ) {
+        return true;
+      }
+
+      // Check if the right side is an empty object or array literal (common default pattern)
+      if (
+        node.operator === '||' &&
+        ((node.right.type === AST_NODE_TYPES.ObjectExpression &&
+          node.right.properties.length === 0) ||
+         (node.right.type === AST_NODE_TYPES.ArrayExpression &&
+          node.right.elements.length === 0))
+      ) {
+        return true;
+      }
+
+      // Check if this is a member expression with optional chaining followed by || {}
+      if (
+        node.operator === '||' &&
+        node.left.type === AST_NODE_TYPES.ChainExpression
+      ) {
+        return true;
+      }
+
       return false;
     }
 

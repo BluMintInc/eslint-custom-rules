@@ -6,6 +6,26 @@ ruleTesterTs.run(
   noAlwaysTrueFalseConditions,
   {
     valid: [
+      // Test case for object property access with OR operator for default value
+      `
+      const roles = (channel.data?.roles || {}) as RoleMap<T>;
+      `,
+
+      // Test case for array property access with OR operator for default value
+      `
+      return (roles[assertSafe(role)] || []).includes(uid);
+      `,
+
+      // Test case for nested property access with OR operator
+      `
+      const value = (obj.prop?.subProp || {}).value;
+      `,
+
+      // Test case for function result with OR operator
+      `
+      const result = (getResult() || {}).value;
+      `,
+
       // Common patterns for default values
       `
       const safeArray = items || [];
