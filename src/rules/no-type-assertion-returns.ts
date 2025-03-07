@@ -277,6 +277,27 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
         return;
       }
 
+      // Check if this is a class method by looking at the parent chain
+      let isClassMethod = false;
+      let current: TSESTree.Node | undefined = node;
+
+      while (current?.parent) {
+        if (current.parent.type === AST_NODE_TYPES.MethodDefinition) {
+          isClassMethod = true;
+          break;
+        }
+        current = current.parent;
+      }
+
+      // Don't flag class methods with explicit return types
+      if (isClassMethod) {
+        return;
+      }
+
+      // Only check functions with return statements that have complex expressions
+      // Don't flag functions that don't have problematic return statements
+      let hasProblematicReturn = false;
+
       // Check if the function has a return statement with a direct value (not a variable)
       if (node.body && node.body.type === AST_NODE_TYPES.BlockStatement) {
         for (const statement of node.body.body) {
@@ -296,13 +317,18 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
               statement.argument.type === AST_NODE_TYPES.ArrayExpression ||
               statement.argument.type === AST_NODE_TYPES.CallExpression
             ) {
-              context.report({
-                node: node.returnType,
-                messageId: 'useExplicitVariable',
-              });
+              hasProblematicReturn = true;
               break;
             }
           }
+        }
+
+        // Only report if we found a problematic return statement
+        if (hasProblematicReturn) {
+          context.report({
+            node: node.returnType,
+            messageId: 'useExplicitVariable',
+          });
         }
       }
     }
@@ -379,7 +405,8 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
               return;
             }
 
-            // If returning an object literal with explicit return type, report it
+            // Only flag explicit return types with object/array literals
+            // This prevents flagging simple arrow functions with return types
             if (
               node.body.type === AST_NODE_TYPES.ObjectExpression ||
               node.body.type === AST_NODE_TYPES.ArrayExpression
@@ -398,11 +425,15 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
               return;
             }
 
+            // For arrow functions with expression bodies, we always flag type assertions
+            // This maintains the original behavior for arrow functions
             context.report({
               node: node.body,
               messageId: 'noTypeAssertionReturns',
             });
           } else if (node.body.type === AST_NODE_TYPES.TSTypeAssertion) {
+            // For arrow functions with expression bodies, we always flag type assertions
+            // This maintains the original behavior for arrow functions
             context.report({
               node: node.body,
               messageId: 'noTypeAssertionReturns',
