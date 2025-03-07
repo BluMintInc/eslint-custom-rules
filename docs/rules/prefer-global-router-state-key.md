@@ -1,6 +1,6 @@
 # Enforce using global constants or type-safe functions for useRouterState key parameter (`@blumintinc/blumint/prefer-global-router-state-key`)
 
-⚠️ This rule _warns_ in the ✅ `recommended` config.
+💼 This rule is enabled in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
 
@@ -53,10 +53,6 @@ function Dialog({ routerKey }: DialogProps) {
   const [value, setValue] = useRouterState({ key: routerKey });
 }
 ```
-
-## Options
-
-This rule has no options.
 
 ## When Not To Use It
 

@@ -1,4 +1,10 @@
-# key-only-outermost-element
+# Enforce that only the outermost element in list rendering has a key prop (`@blumintinc/blumint/key-only-outermost-element`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
 
 Enforce that only the outermost element in list rendering has a key prop.
 
