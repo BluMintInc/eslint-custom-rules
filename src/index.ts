@@ -10,6 +10,7 @@ import { enforceMuiRoundedIcons } from './rules/enforce-mui-rounded-icons';
 import { enforceReactTypeNaming } from './rules/enforce-react-type-naming';
 import { exportIfInDoubt } from './rules/export-if-in-doubt';
 import { extractGlobalConstants } from './rules/extract-global-constants';
+import { enforceGlobalConstants } from './rules/enforce-global-constants';
 import { genericStartsWithT } from './rules/generic-starts-with-t';
 import { default as globalConstStyle } from './rules/global-const-style';
 import { noAsyncArrayFilter } from './rules/no-async-array-filter';
@@ -126,6 +127,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-react-type-naming': 'error',
         // '@blumintinc/blumint/export-if-in-doubt': 'warn',
         '@blumintinc/blumint/extract-global-constants': 'error',
+        '@blumintinc/blumint/enforce-global-constants': 'error',
         '@blumintinc/blumint/generic-starts-with-t': 'error',
         '@blumintinc/blumint/global-const-style': 'error',
         '@blumintinc/blumint/no-async-array-filter': 'error',
@@ -235,6 +237,7 @@ module.exports = {
     'enforce-mui-rounded-icons': enforceMuiRoundedIcons,
     'export-if-in-doubt': exportIfInDoubt,
     'extract-global-constants': extractGlobalConstants,
+    'enforce-global-constants': enforceGlobalConstants,
     'generic-starts-with-t': genericStartsWithT,
     'global-const-style': globalConstStyle,
     'no-async-array-filter': noAsyncArrayFilter,
