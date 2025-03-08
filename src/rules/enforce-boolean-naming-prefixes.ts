@@ -2,10 +2,14 @@ import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import { TypeFlags } from 'typescript';
 
-type MessageIds = 'missingBooleanPrefix';
+type MessageIds = 'missingBooleanPrefix' | 'negatedBooleanName';
 type Options = [
   {
     prefixes?: string[];
+    exemptFrameworkSpecific?: boolean;
+    exemptObjectLiterals?: boolean;
+    exemptGetters?: boolean;
+    frameworkPrefixes?: string[];
   }
 ];
 
@@ -27,6 +31,25 @@ const DEFAULT_BOOLEAN_PREFIXES = [
   'needs',
 ];
 
+// Common framework-specific boolean property names that don't follow the prefix convention
+const DEFAULT_FRAMEWORK_PREFIXES = [
+  'disabled',
+  'enabled',
+  'checked',
+  'selected',
+  'active',
+  'visible',
+  'hidden',
+  'loading',
+  'required',
+  'optional',
+  'readonly',
+  'async',
+  'multiple',
+  'open',
+  'closed',
+];
+
 export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
   name: 'enforce-boolean-naming-prefixes',
   meta: {
@@ -46,6 +69,21 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
               type: 'string',
             },
           },
+          exemptFrameworkSpecific: {
+            type: 'boolean',
+          },
+          exemptObjectLiterals: {
+            type: 'boolean',
+          },
+          exemptGetters: {
+            type: 'boolean',
+          },
+          frameworkPrefixes: {
+            type: 'array',
+            items: {
+              type: 'string',
+            },
+          },
         },
         additionalProperties: false,
       },
@@ -53,11 +91,23 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     messages: {
       missingBooleanPrefix:
         'Boolean {{type}} "{{name}}" should start with an approved prefix: {{prefixes}}',
+      negatedBooleanName:
+        'Avoid negated boolean names like "{{name}}". Consider using a positive form with logical negation instead.',
     },
   },
-  defaultOptions: [{ prefixes: DEFAULT_BOOLEAN_PREFIXES }],
+  defaultOptions: [{
+    prefixes: DEFAULT_BOOLEAN_PREFIXES,
+    exemptFrameworkSpecific: false,
+    exemptObjectLiterals: false,
+    exemptGetters: false,
+    frameworkPrefixes: DEFAULT_FRAMEWORK_PREFIXES
+  }],
   create(context, [options]) {
     const booleanPrefixes = options.prefixes || DEFAULT_BOOLEAN_PREFIXES;
+    const frameworkPrefixes = options.frameworkPrefixes || DEFAULT_FRAMEWORK_PREFIXES;
+    const exemptFrameworkSpecific = options.exemptFrameworkSpecific === true;
+    const exemptObjectLiterals = options.exemptObjectLiterals === true;
+    const exemptGetters = options.exemptGetters === true;
 
     // Get the filename from the context
     const filename = context.getFilename();
@@ -82,7 +132,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
 
     // Skip checking for object literals in test files
     // This is to handle test cases with external API patterns
-    const skipObjectLiteralsInTests = isTestFile;
+    const skipObjectLiteralsInTests = isTestFile || exemptObjectLiterals;
 
     /**
      * Check if a name starts with an approved boolean prefix
@@ -91,6 +141,28 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       return booleanPrefixes.some(prefix =>
         name.toLowerCase().startsWith(prefix.toLowerCase())
       );
+    }
+
+    /**
+     * Check if a name is a framework-specific boolean name that should be exempted
+     */
+    function isFrameworkSpecificName(name: string): boolean {
+      if (!exemptFrameworkSpecific) return false;
+
+      return frameworkPrefixes.some(prefix =>
+        name.toLowerCase() === prefix.toLowerCase() ||
+        name.toLowerCase().endsWith(prefix.toLowerCase())
+      );
+    }
+
+    /**
+     * Check if a name has a negation prefix like "not" or "no"
+     */
+    function hasNegationPrefix(name: string): boolean {
+      const lowerName = name.toLowerCase();
+      return lowerName.startsWith('not') ||
+             lowerName.startsWith('no') ||
+             lowerName.includes('not');
     }
 
     /**
@@ -348,21 +420,39 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         return;
       }
 
+      // Skip imported identifiers
+      if (importedIdentifiers.has(node.id.name)) {
+        return;
+      }
+
       const variableName = node.id.name;
 
       // Check if this is a boolean variable
       const isBool = isBooleanType(node.id);
 
-      if (isBool && !hasApprovedPrefixForAnyCase(variableName)) {
-        context.report({
-          node: node.id,
-          messageId: 'missingBooleanPrefix',
-          data: {
-            type: 'variable',
-            name: variableName,
-            prefixes: formatPrefixes(),
-          },
-        });
+      if (isBool) {
+        // Check for negated boolean names
+        if (hasNegationPrefix(variableName)) {
+          context.report({
+            node: node.id,
+            messageId: 'negatedBooleanName',
+            data: {
+              name: variableName,
+            },
+          });
+        }
+        // Check for missing approved prefix
+        else if (!hasApprovedPrefixForAnyCase(variableName)) {
+          context.report({
+            node: node.id,
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'variable',
+              name: variableName,
+              prefixes: formatPrefixes(),
+            },
+          });
+        }
       }
     }
 
@@ -405,6 +495,11 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
 
       if (!functionName) return;
 
+      // Skip imported identifiers
+      if (importedIdentifiers.has(functionName)) {
+        return;
+      }
+
       // Check if this function returns a boolean
       const returnsBool = returnsBooleanType(node);
 
@@ -417,7 +512,18 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         // Check for comparison operators
         if (body.type === AST_NODE_TYPES.BinaryExpression &&
             ['===', '!==', '==', '!=', '>', '<', '>=', '<='].includes(body.operator)) {
-          if (!hasApprovedPrefixForAnyCase(functionName)) {
+          // Check for negated boolean names
+          if (hasNegationPrefix(functionName)) {
+            context.report({
+              node: node.parent?.type === AST_NODE_TYPES.VariableDeclarator ? node.parent.id : node,
+              messageId: 'negatedBooleanName',
+              data: {
+                name: functionName,
+              },
+            });
+          }
+          // Check for missing approved prefix
+          else if (!hasApprovedPrefixForAnyCase(functionName)) {
             context.report({
               node: node.parent?.type === AST_NODE_TYPES.VariableDeclarator ? node.parent.id : node,
               messageId: 'missingBooleanPrefix',
@@ -432,16 +538,29 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         }
       }
 
-      if (returnsBool && !hasApprovedPrefixForAnyCase(functionName)) {
-        context.report({
-          node: node.id || node,
-          messageId: 'missingBooleanPrefix',
-          data: {
-            type: 'function',
-            name: functionName,
-            prefixes: formatPrefixes(),
-          },
-        });
+      if (returnsBool) {
+        // Check for negated boolean names
+        if (hasNegationPrefix(functionName)) {
+          context.report({
+            node: node.id || node,
+            messageId: 'negatedBooleanName',
+            data: {
+              name: functionName,
+            },
+          });
+        }
+        // Check for missing approved prefix
+        else if (!hasApprovedPrefixForAnyCase(functionName)) {
+          context.report({
+            node: node.id || node,
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'function',
+              name: functionName,
+              prefixes: formatPrefixes(),
+            },
+          });
+        }
       }
     }
 
@@ -458,20 +577,43 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
 
       const methodName = node.key.name;
 
+      // Skip imported identifiers
+      if (importedIdentifiers.has(methodName)) {
+        return;
+      }
+
+      // Special handling for getter methods
+      if (node.kind === 'get' && exemptGetters) {
+        return;
+      }
+
       // Check if this method returns a boolean
       const returnsBool = node.value.type === AST_NODE_TYPES.FunctionExpression &&
                           returnsBooleanType(node.value);
 
-      if (returnsBool && !hasApprovedPrefixForAnyCase(methodName)) {
-        context.report({
-          node: node.key,
-          messageId: 'missingBooleanPrefix',
-          data: {
-            type: 'method',
-            name: methodName,
-            prefixes: formatPrefixes(),
-          },
-        });
+      if (returnsBool) {
+        // Check for negated boolean names
+        if (hasNegationPrefix(methodName)) {
+          context.report({
+            node: node.key,
+            messageId: 'negatedBooleanName',
+            data: {
+              name: methodName,
+            },
+          });
+        }
+        // Check for missing approved prefix
+        else if (!hasApprovedPrefixForAnyCase(methodName)) {
+          context.report({
+            node: node.key,
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'method',
+              name: methodName,
+              prefixes: formatPrefixes(),
+            },
+          });
+        }
       }
     }
 
@@ -539,16 +681,34 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         }
       }
 
-      if (isBool && !hasApprovedPrefixForAnyCase(propertyName)) {
-        context.report({
-          node: node.key,
-          messageId: 'missingBooleanPrefix',
-          data: {
-            type: 'property',
-            name: propertyName,
-            prefixes: formatPrefixes(),
-          },
-        });
+      // Skip imported identifiers
+      if (importedIdentifiers.has(propertyName)) {
+        return;
+      }
+
+      if (isBool) {
+        // Check for negated boolean names
+        if (hasNegationPrefix(propertyName)) {
+          context.report({
+            node: node.key,
+            messageId: 'negatedBooleanName',
+            data: {
+              name: propertyName,
+            },
+          });
+        }
+        // Check for missing approved prefix
+        else if (!hasApprovedPrefixForAnyCase(propertyName)) {
+          context.report({
+            node: node.key,
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'property',
+              name: propertyName,
+              prefixes: formatPrefixes(),
+            },
+          });
+        }
       }
     }
 
@@ -565,19 +725,37 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
 
       const propertyName = node.key.name;
 
+      // Skip imported identifiers
+      if (importedIdentifiers.has(propertyName)) {
+        return;
+      }
+
       // Check if this is a boolean property
       const isBool = node.typeAnnotation?.typeAnnotation.type === AST_NODE_TYPES.TSBooleanKeyword;
 
-      if (isBool && !hasApprovedPrefixForAnyCase(propertyName)) {
-        context.report({
-          node: node.key,
-          messageId: 'missingBooleanPrefix',
-          data: {
-            type: 'property',
-            name: propertyName,
-            prefixes: formatPrefixes(),
-          },
-        });
+      if (isBool) {
+        // Check for negated boolean names
+        if (hasNegationPrefix(propertyName)) {
+          context.report({
+            node: node.key,
+            messageId: 'negatedBooleanName',
+            data: {
+              name: propertyName,
+            },
+          });
+        }
+        // Check for missing approved prefix
+        else if (!hasApprovedPrefixForAnyCase(propertyName)) {
+          context.report({
+            node: node.key,
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'property',
+              name: propertyName,
+              prefixes: formatPrefixes(),
+            },
+          });
+        }
       }
     }
 
@@ -613,16 +791,29 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         isBool = true;
       }
 
-      if (isBool && !hasApprovedPrefixForAnyCase(paramName)) {
-        context.report({
-          node,
-          messageId: 'missingBooleanPrefix',
-          data: {
-            type: 'parameter',
-            name: paramName,
-            prefixes: formatPrefixes(),
-          },
-        });
+      if (isBool) {
+        // Check for negated boolean names
+        if (hasNegationPrefix(paramName)) {
+          context.report({
+            node,
+            messageId: 'negatedBooleanName',
+            data: {
+              name: paramName,
+            },
+          });
+        }
+        // Check for missing approved prefix
+        else if (!hasApprovedPrefixForAnyCase(paramName)) {
+          context.report({
+            node,
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'parameter',
+              name: paramName,
+              prefixes: formatPrefixes(),
+            },
+          });
+        }
       }
     }
 
@@ -682,16 +873,34 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         isBool = true;
       }
 
-      if (isBool && !hasApprovedPrefixForAnyCase(propertyName)) {
-        context.report({
-          node: node.key,
-          messageId: 'missingBooleanPrefix',
-          data: {
-            type: 'property',
-            name: propertyName,
-            prefixes: formatPrefixes(),
-          },
-        });
+      // Skip imported identifiers
+      if (importedIdentifiers.has(propertyName)) {
+        return;
+      }
+
+      if (isBool) {
+        // Check for negated boolean names
+        if (hasNegationPrefix(propertyName)) {
+          context.report({
+            node: node.key,
+            messageId: 'negatedBooleanName',
+            data: {
+              name: propertyName,
+            },
+          });
+        }
+        // Check for missing approved prefix
+        else if (!hasApprovedPrefixForAnyCase(propertyName)) {
+          context.report({
+            node: node.key,
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'property',
+              name: propertyName,
+              prefixes: formatPrefixes(),
+            },
+          });
+        }
       }
     }
 
@@ -706,6 +915,11 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
      * Check if a name has an approved prefix, considering UPPER_SNAKE_CASE format
      */
     function hasApprovedPrefixForAnyCase(name: string): boolean {
+      // Check for framework-specific names that should be exempted
+      if (isFrameworkSpecificName(name)) {
+        return true;
+      }
+
       // For UPPER_SNAKE_CASE, we need to check differently
       if (isUpperSnakeCase(name)) {
         return booleanPrefixes.some(prefix => {
