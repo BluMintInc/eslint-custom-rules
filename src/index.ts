@@ -1,5 +1,6 @@
 import { arrayMethodsThisContext } from './rules/array-methods-this-context';
 import { classMethodsReadTopToBottom } from './rules/class-methods-read-top-to-bottom';
+import { functionsReadTopToBottom } from './rules/functions-read-top-to-bottom';
 import { default as consistentCallbackNaming } from './rules/consistent-callback-naming';
 import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
 import { enforceIdentifiableFirestoreType } from './rules/enforce-identifiable-firestore-type';
@@ -116,6 +117,7 @@ module.exports = {
         '@blumintinc/blumint/no-jsx-whitespace-literal': 'error',
         '@blumintinc/blumint/array-methods-this-context': 'error',
         '@blumintinc/blumint/class-methods-read-top-to-bottom': 'error',
+        '@blumintinc/blumint/functions-read-top-to-bottom': 'error',
         '@blumintinc/blumint/consistent-callback-naming': 'error',
         '@blumintinc/blumint/dynamic-https-errors': 'error',
         '@blumintinc/blumint/enforce-mui-rounded-icons': 'error',
@@ -225,6 +227,7 @@ module.exports = {
     'key-only-outermost-element': keyOnlyOutermostElement,
     'array-methods-this-context': arrayMethodsThisContext,
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
+    'functions-read-top-to-bottom': functionsReadTopToBottom,
     'consistent-callback-naming': consistentCallbackNaming,
     'dynamic-https-errors': dynamicHttpsErrors,
     'enforce-identifiable-firestore-type': enforceIdentifiableFirestoreType,
