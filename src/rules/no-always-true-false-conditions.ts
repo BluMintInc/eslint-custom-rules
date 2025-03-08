@@ -1359,6 +1359,17 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
             return { isTruthy: true };
           }
 
+          // Special case for array length checks with optional chaining
+          // This handles cases like `filtered?.length` where filtered could be undefined
+          if (
+            node.expression.property.type === AST_NODE_TYPES.Identifier &&
+            node.expression.property.name === 'length'
+          ) {
+            // For array length checks with optional chaining, we can't determine
+            // if the condition is always truthy or falsy, so return empty result
+            return {};
+          }
+
           // For other cases like arrays, identifiers, etc., we can't determine
           // if the condition is always truthy or falsy, so return empty result
           return {};
