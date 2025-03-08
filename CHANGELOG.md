@@ -1,3 +1,16 @@
+# [1.10.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.9.1...v1.10.0) (2025-03-05)
+
+
+### Bug Fixes
+
+* **docs/rules/prefer-usecallback-over-usememo-for-functions.md:** default allowComplexBodies to true ([ed9f6ca](https://github.com/BluMintInc/eslint-custom-rules/commit/ed9f6ca80dfe284066d302fd138848cc50a9e655))
+* **src/rules/prefer-usecallback-over-usememo-for-functions.ts:** default true for allowComplexBodies ([9584277](https://github.com/BluMintInc/eslint-custom-rules/commit/9584277da66740b1ded13e85cf6efbd65faedb83))
+
+
+### Features
+
+* **enforce-dynamic-file-naming:** Add support for shortened disable directive 'ednl' ([caff6c3](https://github.com/BluMintInc/eslint-custom-rules/commit/caff6c3d4df76cf35864b797fd221beaa21ff7c0))
+
 ## [1.9.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.9.0...v1.9.1) (2025-03-03)
 
 
