@@ -303,5 +303,52 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    {
+      // Test case for the bug report example
+      code: `
+        import { useTheme } from '@mui/material/styles';
+
+        const MyComponent = ({ user }: { user: { address: { city: string } } }) => {
+          const theme: { palette: { background: { elevation: string[] } } } = useTheme();
+
+          const backgroundColor = useMemo(() => {
+            if (type === 'deleted') {
+              return theme.palette.background.elevation[4];
+            }
+            if (isMine) {
+              return theme.palette.primary.dark;
+            }
+            return theme.palette.background.elevation[10];
+          }, [isMine, theme, type]);
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'theme',
+            fields:
+              'theme.palette.background.elevation[4], theme.palette.primary.dark, theme.palette.background.elevation[10]',
+          },
+        },
+      ],
+      output: `
+        import { useTheme } from '@mui/material/styles';
+
+        const MyComponent = ({ user }: { user: { address: { city: string } } }) => {
+          const theme: { palette: { background: { elevation: string[] } } } = useTheme();
+
+          const backgroundColor = useMemo(() => {
+            if (type === 'deleted') {
+              return theme.palette.background.elevation[4];
+            }
+            if (isMine) {
+              return theme.palette.primary.dark;
+            }
+            return theme.palette.background.elevation[10];
+          }, [isMine, theme.palette.background.elevation[4], theme.palette.primary.dark, theme.palette.background.elevation[10], type]);
+        };
+      `,
+    },
   ],
 });

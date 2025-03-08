@@ -66,6 +66,7 @@ function isArrayOrPrimitive(
 function getObjectUsagesInHook(
   hookBody: TSESTree.Node,
   objectName: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   context: any,
 ): Set<string> {
   const usages = new Set<string>();
@@ -123,7 +124,9 @@ function getObjectUsagesInHook(
         } else {
           // For other computed properties, use the exact expression
           try {
-            const propertyText = context.getSourceCode().getText(memberExpr.property);
+            const propertyText = context
+              .getSourceCode()
+              .getText(memberExpr.property);
             parts.unshift(`[${propertyText}]`);
           } catch (e) {
             // Fallback to wildcard if we can't get the source text
@@ -249,12 +252,29 @@ function getObjectUsagesInHook(
 
   // Filter out intermediate paths
   const paths = Array.from(usages);
-  const filteredPaths = paths.filter(
-    (path) =>
-      !paths.some(
-        (otherPath) => otherPath !== path && otherPath.startsWith(path + '.'),
-      ),
-  );
+
+  // Filter out array paths when we're already accessing specific indices
+  // For example, don't include 'obj.arr' if we have 'obj.arr[0]'
+  const filteredPaths = paths.filter((path) => {
+    // Skip intermediate paths (if path is prefix of another path)
+    const isIntermediatePath = paths.some(
+      (otherPath) => otherPath !== path && otherPath.startsWith(path + '.'),
+    );
+
+    // Skip array paths if we're accessing specific indices
+    const isArrayWithSpecificIndices = paths.some(
+      (otherPath) =>
+        otherPath !== path &&
+        (otherPath.startsWith(path + '[') ||
+          otherPath.match(
+            new RegExp(
+              `^${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\[\\d+\\]`,
+            ),
+          )),
+    );
+
+    return !isIntermediatePath && !isArrayWithSpecificIndices;
+  });
 
   return new Set(filteredPaths);
 }
@@ -280,7 +300,8 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
   create(context) {
     // For testing purposes, we'll make the rule work without TypeScript services
     const parserServices = context.parserServices;
-    const hasFullTypeChecking = parserServices?.program && parserServices?.esTreeNodeToTSNodeMap;
+    const hasFullTypeChecking =
+      parserServices?.program && parserServices?.esTreeNodeToTSNodeMap;
 
     // Skip type checking if we don't have TypeScript services
     if (hasFullTypeChecking) {
@@ -311,36 +332,6 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
           return;
         }
 
-        // Special case for the bug report example with computed properties
-        const sourceCode = context.getSourceCode().getText();
-        if (sourceCode.includes('theme.palette.background.elevation[4]') ||
-            sourceCode.includes('theme.palette.background.elevation[10]') ||
-            sourceCode.includes('theme.palette.primary.dark')) {
-          // Find the 'theme' identifier in the dependencies array
-          const themeElement = depsArg.elements.find(
-            (el) => el?.type === AST_NODE_TYPES.Identifier && el.name === 'theme'
-          );
-
-          if (themeElement) {
-            context.report({
-              node: themeElement,
-              messageId: 'avoidEntireObject',
-              data: {
-                objectName: 'theme',
-                fields: 'theme.palette.background.elevation[4], theme.palette.primary.dark, theme.palette.background.elevation[10]',
-              },
-              fix(fixer) {
-                // Replace 'theme' with the exact format expected in the test
-                return fixer.replaceText(
-                  themeElement,
-                  '\n   theme.palette.background.elevation[4], theme.palette.primary.dark, theme.palette.background.elevation[10]'
-                );
-              },
-            });
-            return;
-          }
-        }
-
         // Check each dependency in the array
         depsArg.elements.forEach((element) => {
           if (!element) return; // Skip null elements (holes in the array)
@@ -359,7 +350,11 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
               }
             }
 
-            const usages = getObjectUsagesInHook(callbackArg.body, objectName, context);
+            const usages = getObjectUsagesInHook(
+              callbackArg.body,
+              objectName,
+              context,
+            );
 
             // If we found specific field usages and the entire object is in deps
             // Skip reporting if usages is empty (indicates spread operator usage)
