@@ -13,6 +13,16 @@ const isJsxElement = (node: TSESTree.Node | null): boolean => {
     return isJsxElement(node.consequent) || isJsxElement(node.alternate);
   }
 
+  // For logical expressions like '&&', the result can be a non-JSX value
+  if (node.type === AST_NODE_TYPES.LogicalExpression) {
+    // If it's a logical AND (&&), it can return the left operand which might be non-JSX
+    if (node.operator === '&&') {
+      return false;
+    }
+    // For other logical operators, check both sides
+    return isJsxElement(node.left) || isJsxElement(node.right);
+  }
+
   return (
     node.type === AST_NODE_TYPES.JSXElement ||
     node.type === AST_NODE_TYPES.JSXFragment
@@ -250,6 +260,13 @@ const containsJsxInExpression = (node: TSESTree.Expression): boolean => {
       );
 
     case AST_NODE_TYPES.LogicalExpression:
+      // For logical AND (&&) expressions, if the left side can be falsy,
+      // then the expression can return a non-JSX value, so we should not flag it
+      if (node.operator === '&&') {
+        // If the left side is a boolean expression or can be falsy, this can return a non-JSX value
+        return false;
+      }
+
       return (
         containsJsxInExpression(node.left) ||
         containsJsxInExpression(node.right)
@@ -519,6 +536,12 @@ const containsJsxInUseMemo = (node: TSESTree.CallExpression): boolean => {
         // Direct JSX element - this is the primary case we want to catch
         if (isJsxElement(callback.body)) {
           return true;
+        }
+
+        // Special case for logical expressions that can return non-JSX values
+        if (callback.body.type === AST_NODE_TYPES.LogicalExpression &&
+            callback.body.operator === '&&') {
+          return false;
         }
 
         // For non-JSX expressions, we need to check if they contain JSX
