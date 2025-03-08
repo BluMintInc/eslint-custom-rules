@@ -79,7 +79,7 @@ ruleTesterTs.run('enforce-boolean-naming-prefixes', enforceBooleanNamingPrefixes
           data: {
             type: 'variable',
             name: 'active',
-            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
+            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
           },
         },
       ],
@@ -92,7 +92,7 @@ ruleTesterTs.run('enforce-boolean-naming-prefixes', enforceBooleanNamingPrefixes
           data: {
             type: 'variable',
             name: 'userLoggedIn',
-            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
+            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
           },
         },
       ],
@@ -105,7 +105,7 @@ ruleTesterTs.run('enforce-boolean-naming-prefixes', enforceBooleanNamingPrefixes
           data: {
             type: 'variable',
             name: 'completed',
-            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
+            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
           },
         },
       ],
@@ -120,7 +120,7 @@ ruleTesterTs.run('enforce-boolean-naming-prefixes', enforceBooleanNamingPrefixes
           data: {
             type: 'parameter',
             name: 'enabled',
-            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
+            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
           },
         },
       ],
@@ -133,7 +133,7 @@ ruleTesterTs.run('enforce-boolean-naming-prefixes', enforceBooleanNamingPrefixes
           data: {
             type: 'parameter',
             name: 'valid',
-            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
+            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
           },
         },
       ],
@@ -157,7 +157,7 @@ ruleTesterTs.run('enforce-boolean-naming-prefixes', enforceBooleanNamingPrefixes
           data: {
             type: 'property',
             name: 'verified',
-            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
+            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
           },
         },
         {
@@ -165,7 +165,7 @@ ruleTesterTs.run('enforce-boolean-naming-prefixes', enforceBooleanNamingPrefixes
           data: {
             type: 'property',
             name: 'premium',
-            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
+            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
           },
         },
         {
@@ -173,7 +173,7 @@ ruleTesterTs.run('enforce-boolean-naming-prefixes', enforceBooleanNamingPrefixes
           data: {
             type: 'method',
             name: 'accountLocked',
-            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
+            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
           },
         },
       ],
@@ -193,7 +193,7 @@ ruleTesterTs.run('enforce-boolean-naming-prefixes', enforceBooleanNamingPrefixes
           data: {
             type: 'property',
             name: 'active',
-            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
+            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
           },
         },
         {
@@ -201,7 +201,7 @@ ruleTesterTs.run('enforce-boolean-naming-prefixes', enforceBooleanNamingPrefixes
           data: {
             type: 'property',
             name: 'subscription',
-            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
+            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
           },
         },
       ],
@@ -216,7 +216,7 @@ ruleTesterTs.run('enforce-boolean-naming-prefixes', enforceBooleanNamingPrefixes
           data: {
             type: 'property',
             name: 'enabled',
-            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
+            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
           },
         },
         {
@@ -224,7 +224,7 @@ ruleTesterTs.run('enforce-boolean-naming-prefixes', enforceBooleanNamingPrefixes
           data: {
             type: 'property',
             name: 'feature',
-            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
+            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
           },
         },
       ],
@@ -239,7 +239,7 @@ ruleTesterTs.run('enforce-boolean-naming-prefixes', enforceBooleanNamingPrefixes
           data: {
             type: 'function',
             name: 'authorized',
-            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
+            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
           },
         },
       ],
@@ -252,7 +252,7 @@ ruleTesterTs.run('enforce-boolean-naming-prefixes', enforceBooleanNamingPrefixes
           data: {
             type: 'function',
             name: 'userExists',
-            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
+            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
           },
         },
       ],
@@ -267,7 +267,7 @@ ruleTesterTs.run('enforce-boolean-naming-prefixes', enforceBooleanNamingPrefixes
           data: {
             type: 'variable',
             name: 'valid',
-            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
+            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
           },
         },
       ],
@@ -280,7 +280,7 @@ ruleTesterTs.run('enforce-boolean-naming-prefixes', enforceBooleanNamingPrefixes
           data: {
             type: 'variable',
             name: 'permission',
-            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs',
+            prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
           },
         },
       ],
