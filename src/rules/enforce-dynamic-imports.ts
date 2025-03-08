@@ -6,7 +6,7 @@ type Options = [
   {
     libraries: string[];
     allowImportType?: boolean;
-  }
+  },
 ];
 
 export default createRule<Options, 'dynamicImportRequired'>({
@@ -14,7 +14,8 @@ export default createRule<Options, 'dynamicImportRequired'>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce dynamic imports for specified libraries to optimize bundle size',
+      description:
+        'Enforce dynamic imports for specified libraries to optimize bundle size',
       recommended: 'error',
     },
     schema: [
@@ -73,9 +74,13 @@ export default createRule<Options, 'dynamicImportRequired'>({
           }
 
           // Check if all specifiers are type imports
-          if (node.specifiers.length > 0 &&
-              node.specifiers.every(spec =>
-                (spec.type === 'ImportSpecifier' && spec.importKind === 'type'))) {
+          if (
+            node.specifiers.length > 0 &&
+            node.specifiers.every(
+              (spec) =>
+                spec.type === 'ImportSpecifier' && spec.importKind === 'type',
+            )
+          ) {
             return;
           }
         }

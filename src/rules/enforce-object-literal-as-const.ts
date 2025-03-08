@@ -34,8 +34,8 @@ export const enforceObjectLiteralAsConst = createRule({
           if (
             callee.type === 'Identifier' &&
             (callee.name === 'useMemo' ||
-             callee.name === 'useCallback' ||
-             callee.name.startsWith('use'))
+              callee.name === 'useCallback' ||
+              callee.name.startsWith('use'))
           ) {
             return true;
           }
@@ -54,7 +54,7 @@ export const enforceObjectLiteralAsConst = createRule({
 
       // Check if any element in the array is an object literal
       return node.elements.some(
-        (elem) => elem !== null && elem.type === 'ObjectExpression'
+        (elem) => elem !== null && elem.type === 'ObjectExpression',
       );
     }
 
@@ -117,7 +117,9 @@ export const enforceObjectLiteralAsConst = createRule({
         // Skip if the return value uses spread operator
         if (
           (argument.type === 'ObjectExpression' &&
-            argument.properties.some((prop) => prop.type === 'SpreadElement')) ||
+            argument.properties.some(
+              (prop) => prop.type === 'SpreadElement',
+            )) ||
           (argument.type === 'ArrayExpression' &&
             argument.elements.some(
               (elem) => elem !== null && elem.type === 'SpreadElement',
@@ -129,9 +131,11 @@ export const enforceObjectLiteralAsConst = createRule({
         // Skip arrays with object literals inside React hooks (likely component props)
         if (
           isInsideReactHook(ancestors) &&
-          isArrayWithObjectLiterals(argument.type === 'TSAsExpression'
-            ? (argument as TSESTree.TSAsExpression).expression
-            : argument)
+          isArrayWithObjectLiterals(
+            argument.type === 'TSAsExpression'
+              ? (argument as TSESTree.TSAsExpression).expression
+              : argument,
+          )
         ) {
           return;
         }

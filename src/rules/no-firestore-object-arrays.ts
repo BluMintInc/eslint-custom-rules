@@ -47,12 +47,14 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
   meta: {
     type: 'problem',
     docs: {
-      description: 'Disallow arrays of objects in Firestore type definitions to optimize performance and avoid unnecessary fetches',
+      description:
+        'Disallow arrays of objects in Firestore type definitions to optimize performance and avoid unnecessary fetches',
       recommended: 'warn',
     },
     schema: [],
     messages: {
-      noObjectArrays: 'Arrays of objects are not recommended in Firestore. Use subcollections, arrays of IDs, or structured maps (Record<string, T>) instead.',
+      noObjectArrays:
+        'Arrays of objects are not recommended in Firestore. Use subcollections, arrays of IDs, or structured maps (Record<string, T>) instead.',
     },
   },
   defaultOptions: [],
@@ -73,7 +75,10 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
       TSTypeReference(node) {
         // Handle Array<T> and ReadonlyArray<T> syntax
         const typeName = (node.typeName as TSESTree.Identifier).name;
-        if ((typeName === 'Array' || typeName === 'ReadonlyArray') && node.typeParameters) {
+        if (
+          (typeName === 'Array' || typeName === 'ReadonlyArray') &&
+          node.typeParameters
+        ) {
           const elementType = node.typeParameters.params[0];
           if (isObjectType(elementType)) {
             context.report({

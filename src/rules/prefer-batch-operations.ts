@@ -4,9 +4,19 @@ import { createRule } from '../utils/createRule';
 type MessageIds = 'preferSetAll' | 'preferOverwriteAll';
 
 const SETTER_METHODS = new Set(['set', 'overwrite']);
-const ARRAY_METHODS = new Set(['map', 'forEach', 'filter', 'reduce', 'every', 'some']);
+const ARRAY_METHODS = new Set([
+  'map',
+  'forEach',
+  'filter',
+  'reduce',
+  'every',
+  'some',
+]);
 
-function isArrayMethod(node: TSESTree.Node): { isValid: boolean; methodName?: string } {
+function isArrayMethod(node: TSESTree.Node): {
+  isValid: boolean;
+  methodName?: string;
+} {
   if (node.type !== AST_NODE_TYPES.CallExpression) return { isValid: false };
   const callee = node.callee;
   if (
@@ -31,7 +41,9 @@ function isPromiseAll(node: TSESTree.Node): boolean {
   );
 }
 
-function findLoopNode(node: TSESTree.Node): { node: TSESTree.Node; isArrayMethod?: string } | undefined {
+function findLoopNode(
+  node: TSESTree.Node,
+): { node: TSESTree.Node; isArrayMethod?: string } | undefined {
   let current: TSESTree.Node | undefined = node;
   let loopNode: TSESTree.Node | null = null;
 
@@ -51,14 +63,22 @@ function findLoopNode(node: TSESTree.Node): { node: TSESTree.Node; isArrayMethod
           return { node: current, isArrayMethod: 'map' };
         }
         // Check for array methods
-        const { isValid, methodName: currentMethodName } = isArrayMethod(current);
+        const { isValid, methodName: currentMethodName } =
+          isArrayMethod(current);
         if (isValid && currentMethodName) {
           // For sequential array methods, check if the callback is async
-          if (currentMethodName === 'forEach' || currentMethodName === 'reduce' || currentMethodName === 'filter') {
+          if (
+            currentMethodName === 'forEach' ||
+            currentMethodName === 'reduce' ||
+            currentMethodName === 'filter'
+          ) {
             const callback = current.arguments[0];
-            if (callback && (callback.type === AST_NODE_TYPES.ArrowFunctionExpression || 
-                           callback.type === AST_NODE_TYPES.FunctionExpression) && 
-                callback.async) {
+            if (
+              callback &&
+              (callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+                callback.type === AST_NODE_TYPES.FunctionExpression) &&
+              callback.async
+            ) {
               return { node: current, isArrayMethod: currentMethodName };
             }
           }
@@ -102,14 +122,20 @@ function isMapInstance(node: TSESTree.Node): boolean {
   return false;
 }
 
-function findVariableDeclaration(node: TSESTree.Node, varName: string): TSESTree.VariableDeclarator | undefined {
+function findVariableDeclaration(
+  node: TSESTree.Node,
+  varName: string,
+): TSESTree.VariableDeclarator | undefined {
   let current: TSESTree.Node | undefined = node;
   while (current) {
     if (current.type === AST_NODE_TYPES.Program) {
       for (const statement of current.body) {
         if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
           for (const decl of statement.declarations) {
-            if (decl.id.type === AST_NODE_TYPES.Identifier && decl.id.name === varName) {
+            if (
+              decl.id.type === AST_NODE_TYPES.Identifier &&
+              decl.id.name === varName
+            ) {
               return decl;
             }
           }
@@ -121,11 +147,17 @@ function findVariableDeclaration(node: TSESTree.Node, varName: string): TSESTree
   return undefined;
 }
 
-function isSetterMethodCall(node: TSESTree.Node): { isValid: boolean; methodName?: string; setterInstance?: string } {
+function isSetterMethodCall(node: TSESTree.Node): {
+  isValid: boolean;
+  methodName?: string;
+  setterInstance?: string;
+} {
   if (node.type !== AST_NODE_TYPES.CallExpression) return { isValid: false };
   const callee = node.callee;
-  if (callee.type !== AST_NODE_TYPES.MemberExpression) return { isValid: false };
-  if (callee.property.type !== AST_NODE_TYPES.Identifier) return { isValid: false };
+  if (callee.type !== AST_NODE_TYPES.MemberExpression)
+    return { isValid: false };
+  if (callee.property.type !== AST_NODE_TYPES.Identifier)
+    return { isValid: false };
   if (!SETTER_METHODS.has(callee.property.name)) return { isValid: false };
 
   // Get the setter instance
@@ -162,14 +194,17 @@ export const preferBatchOperations = createRule<[], MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce using setAll() and overwriteAll() instead of multiple set() or overwrite() calls',
+      description:
+        'Enforce using setAll() and overwriteAll() instead of multiple set() or overwrite() calls',
       recommended: 'error',
     },
     fixable: 'code',
     schema: [],
     messages: {
-      preferSetAll: 'Use setAll() instead of multiple set() calls for better performance',
-      preferOverwriteAll: 'Use overwriteAll() instead of multiple overwrite() calls for better performance',
+      preferSetAll:
+        'Use setAll() instead of multiple set() calls for better performance',
+      preferOverwriteAll:
+        'Use overwriteAll() instead of multiple overwrite() calls for better performance',
     },
   },
   defaultOptions: [],
@@ -181,7 +216,8 @@ export const preferBatchOperations = createRule<[], MessageIds>({
       },
 
       CallExpression(node) {
-        const { isValid, methodName, setterInstance } = isSetterMethodCall(node);
+        const { isValid, methodName, setterInstance } =
+          isSetterMethodCall(node);
         if (!isValid || !methodName || !setterInstance) return;
 
         // Check if we're in a loop or Promise.all
@@ -210,7 +246,9 @@ export const preferBatchOperations = createRule<[], MessageIds>({
         // For Promise.all and array methods, report on the first occurrence
         // For regular loops, report on the first occurrence too since we know it's in a loop
         const shouldReport = loopInfo.isArrayMethod
-          ? ['forEach', 'reduce', 'filter', 'map'].includes(loopInfo.isArrayMethod)
+          ? ['forEach', 'reduce', 'filter', 'map'].includes(
+              loopInfo.isArrayMethod,
+            )
           : setterCalls.get(key)!.count === 1;
 
         // Don't report if we have multiple different setter instances in a loop
@@ -223,7 +261,11 @@ export const preferBatchOperations = createRule<[], MessageIds>({
             // Each setter operates on a different collection, so they can't be batched together
             // We only want to report when using the same setter instance multiple times
             // For example: userSetter.set(doc.user) multiple times should use userSetter.setAll()
-            if (loopInfo.node.type.startsWith('For') || loopInfo.node.type.startsWith('While') || loopInfo.node.type.startsWith('Do')) {
+            if (
+              loopInfo.node.type.startsWith('For') ||
+              loopInfo.node.type.startsWith('While') ||
+              loopInfo.node.type.startsWith('Do')
+            ) {
               return;
             }
           }
@@ -233,7 +275,8 @@ export const preferBatchOperations = createRule<[], MessageIds>({
         // For Promise.all and array methods, report on the first occurrence
         // For regular loops, report on the first occurrence too since we know it's in a loop
         if (shouldReport) {
-          const messageId = methodName === 'set' ? 'preferSetAll' : 'preferOverwriteAll';
+          const messageId =
+            methodName === 'set' ? 'preferSetAll' : 'preferOverwriteAll';
           context.report({
             node,
             messageId,

@@ -76,6 +76,7 @@ import { enforcePositiveNaming } from './rules/enforce-positive-naming';
 import { noTypeAssertionReturns } from './rules/no-type-assertion-returns';
 import { preferUtilityFunctionOverPrivateStatic } from './rules/prefer-utility-function-over-private-static';
 import { enforceMicrodiff } from './rules/enforce-microdiff';
+import { fastDeepEqualOverMicrodiff } from './rules/fast-deep-equal-over-microdiff';
 import { enforceTimestampNow } from './rules/enforce-timestamp-now';
 import { noAlwaysTrueFalseConditions } from './rules/no-always-true-false-conditions';
 import { enforcePropsArgumentName } from './rules/enforce-props-argument-name';
@@ -95,6 +96,7 @@ import { noUuidv4Base62AsKey } from './rules/no-uuidv4-base62-as-key';
 import enforceDynamicFileNaming from './rules/enforce-dynamic-file-naming';
 import { default as preferUseCallbackOverUseMemoForFunctions } from './rules/prefer-usecallback-over-usememo-for-functions';
 import { noMarginProperties } from './rules/no-margin-properties';
+import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-prefixes';
 
 module.exports = {
   meta: {
@@ -189,6 +191,7 @@ module.exports = {
         '@blumintinc/blumint/prefer-utility-function-over-private-static':
           'error',
         '@blumintinc/blumint/enforce-microdiff': 'error',
+        '@blumintinc/blumint/fast-deep-equal-over-microdiff': 'error',
         '@blumintinc/blumint/enforce-timestamp-now': 'error',
         '@blumintinc/blumint/no-always-true-false-conditions': 'error',
         '@blumintinc/blumint/enforce-props-argument-name': 'error',
@@ -210,8 +213,10 @@ module.exports = {
         '@blumintinc/blumint/enforce-id-capitalization': 'error',
         '@blumintinc/blumint/no-unused-usestate': 'error',
         '@blumintinc/blumint/enforce-dynamic-file-naming': 'error',
-        '@blumintinc/blumint/prefer-usecallback-over-usememo-for-functions': 'error',
+        '@blumintinc/blumint/prefer-usecallback-over-usememo-for-functions':
+          'error',
         '@blumintinc/blumint/no-margin-properties': 'error',
+        '@blumintinc/blumint/enforce-boolean-naming-prefixes': 'error',
       },
     },
   },
@@ -299,6 +304,7 @@ module.exports = {
     'prefer-utility-function-over-private-static':
       preferUtilityFunctionOverPrivateStatic,
     'enforce-microdiff': enforceMicrodiff,
+    'fast-deep-equal-over-microdiff': fastDeepEqualOverMicrodiff,
     'enforce-timestamp-now': enforceTimestampNow,
     'no-always-true-false-conditions': noAlwaysTrueFalseConditions,
     'enforce-props-argument-name': enforcePropsArgumentName,
@@ -314,7 +320,9 @@ module.exports = {
     'omit-index-html': omitIndexHtml,
     'enforce-id-capitalization': enforceIdCapitalization,
     'no-unused-usestate': noUnusedUseState,
-    'prefer-usecallback-over-usememo-for-functions': preferUseCallbackOverUseMemoForFunctions,
+    'prefer-usecallback-over-usememo-for-functions':
+      preferUseCallbackOverUseMemoForFunctions,
     'no-margin-properties': noMarginProperties,
+    'enforce-boolean-naming-prefixes': enforceBooleanNamingPrefixes,
   },
 };

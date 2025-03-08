@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { createRule } from '../utils/createRule';
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import * as ts from 'typescript';
@@ -53,11 +54,17 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
         // Check for JSX element types
         if (ts.isTypeAliasDeclaration(declaration)) {
           const typeText = declaration.type.getText();
-          return typeText.includes('JSX.Element') || typeText.includes('ReactElement');
+          return (
+            typeText.includes('JSX.Element') ||
+            typeText.includes('ReactElement')
+          );
         }
 
         // Check for class/interface component patterns
-        if (ts.isClassDeclaration(declaration) || ts.isInterfaceDeclaration(declaration)) {
+        if (
+          ts.isClassDeclaration(declaration) ||
+          ts.isInterfaceDeclaration(declaration)
+        ) {
           const name = declaration.name?.text ?? '';
           return (
             name.includes('Component') ||
@@ -72,12 +79,11 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
 
       // Check if the type itself is a component or element type
       const typeString = checker.typeToString(type);
-      const isComponentType = (
+      const isComponentType =
         typeString.includes('JSX.Element') ||
         typeString.includes('ReactElement') ||
         typeString.includes('Component') ||
-        typeString.includes('FC')
-      );
+        typeString.includes('FC');
 
       return isComponent || isComponentType;
     }
@@ -131,7 +137,8 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
 
           // Skip props on components that commonly use function props that aren't callbacks
           const parentName = (node.parent as TSESTree.JSXOpeningElement)?.name;
-          const componentName = parentName?.type === 'JSXIdentifier' ? parentName.name : undefined;
+          const componentName =
+            parentName?.type === 'JSXIdentifier' ? parentName.name : undefined;
           const componentsWithFunctionProps = new Set([
             'ThemeProvider', // MUI ThemeProvider
             'Transition', // React Transition Group
@@ -183,7 +190,10 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
 
           // Skip autofixing for class parameters and getters
           const parent = node.parent;
-          if (parent?.type === AST_NODE_TYPES.PropertyDefinition || parent?.type === AST_NODE_TYPES.MethodDefinition) {
+          if (
+            parent?.type === AST_NODE_TYPES.PropertyDefinition ||
+            parent?.type === AST_NODE_TYPES.MethodDefinition
+          ) {
             context.report({
               node,
               messageId: 'callbackFunctionPrefix',
@@ -193,7 +203,7 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
 
           // Get all references to this variable
           const scope = context.getScope();
-          const variable = scope.variables.find(v => v.name === functionName);
+          const variable = scope.variables.find((v) => v.name === functionName);
           const references = new Set(variable?.references ?? []);
 
           // Get references from all scopes
@@ -207,17 +217,19 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
           // Get references from all scopes and their children
           for (const s of allScopes) {
             // Get references from current scope
-            const currentVar = s.variables.find(v => v.name === functionName);
+            const currentVar = s.variables.find((v) => v.name === functionName);
             if (currentVar) {
-              currentVar.references.forEach(ref => references.add(ref));
+              currentVar.references.forEach((ref) => references.add(ref));
             }
 
             // Get references from child scopes
             const childScopes = s.childScopes;
             for (const childScope of childScopes) {
-              const childVar = childScope.variables.find(v => v.name === functionName);
+              const childVar = childScope.variables.find(
+                (v) => v.name === functionName,
+              );
               if (childVar) {
-                childVar.references.forEach(ref => references.add(ref));
+                childVar.references.forEach((ref) => references.add(ref));
               }
             }
           }
@@ -226,9 +238,11 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
           const siblingScopes = scope.upper?.childScopes ?? [];
           for (const siblingScope of siblingScopes) {
             if (siblingScope !== scope) {
-              const siblingVar = siblingScope.variables.find(v => v.name === functionName);
+              const siblingVar = siblingScope.variables.find(
+                (v) => v.name === functionName,
+              );
               if (siblingVar) {
-                siblingVar.references.forEach(ref => references.add(ref));
+                siblingVar.references.forEach((ref) => references.add(ref));
               }
             }
           }
@@ -236,23 +250,28 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
           // Get references from global scope
           const sourceCode = context.getSourceCode();
           if (sourceCode.scopeManager?.globalScope) {
-            const globalVar = sourceCode.scopeManager.globalScope.variables.find(v => v.name === functionName);
+            const globalVar =
+              sourceCode.scopeManager.globalScope.variables.find(
+                (v) => v.name === functionName,
+              );
             if (globalVar) {
-              globalVar.references.forEach(ref => references.add(ref));
+              globalVar.references.forEach((ref) => references.add(ref));
             }
           }
 
           context.report({
             node,
             messageId: 'callbackFunctionPrefix',
-            *fix(fixer) {
+            fix(fixer) {
               // Remove 'handle' prefix and convert first character to lowercase
               const newName =
                 functionName.slice(6).charAt(0).toLowerCase() +
                 functionName.slice(7);
 
               // Fix the declaration and all references
-              const fixes: Array<import('@typescript-eslint/utils').TSESLint.RuleFix> = [];
+              const fixes: Array<
+                import('@typescript-eslint/utils').TSESLint.RuleFix
+              > = [];
               fixes.push(fixer.replaceText(node.id!, newName));
               for (const ref of references) {
                 if (ref.identifier !== node.id) {
@@ -308,7 +327,7 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
       },
 
       // Check constructor parameters
-      'TSParameterProperty'(node: TSESTree.TSParameterProperty) {
+      TSParameterProperty(node: TSESTree.TSParameterProperty) {
         if (
           node.parameter.type === 'Identifier' &&
           node.parameter.name.startsWith('handle')

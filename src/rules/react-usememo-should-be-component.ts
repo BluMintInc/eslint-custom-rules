@@ -13,6 +13,16 @@ const isJsxElement = (node: TSESTree.Node | null): boolean => {
     return isJsxElement(node.consequent) || isJsxElement(node.alternate);
   }
 
+  // For logical expressions like '&&', the result can be a non-JSX value
+  if (node.type === AST_NODE_TYPES.LogicalExpression) {
+    // If it's a logical AND (&&), it can return the left operand which might be non-JSX
+    if (node.operator === '&&') {
+      return false;
+    }
+    // For other logical operators, check both sides
+    return isJsxElement(node.left) || isJsxElement(node.right);
+  }
+
   return (
     node.type === AST_NODE_TYPES.JSXElement ||
     node.type === AST_NODE_TYPES.JSXFragment
@@ -24,7 +34,7 @@ const isJsxElement = (node: TSESTree.Node | null): boolean => {
  */
 const isUsedMultipleTimes = (
   variableName: string,
-  node: TSESTree.Node
+  node: TSESTree.Node,
 ): boolean => {
   // Find the function component that contains this node
   let currentNode: TSESTree.Node | undefined = node;
@@ -75,7 +85,7 @@ const isUsedMultipleTimes = (
       const child = (searchNode as any)[key];
       if (child && typeof child === 'object') {
         if (Array.isArray(child)) {
-          child.forEach(item => {
+          child.forEach((item) => {
             if (item && typeof item === 'object') {
               findReferences(item);
             }
@@ -125,10 +135,15 @@ const containsJsxInObject = (node: TSESTree.ObjectExpression): boolean => {
 /**
  * Checks if a switch statement contains JSX elements
  */
-const containsJsxInSwitchStatement = (node: TSESTree.SwitchStatement): boolean => {
+const containsJsxInSwitchStatement = (
+  node: TSESTree.SwitchStatement,
+): boolean => {
   for (const switchCase of node.cases) {
     for (const statement of switchCase.consequent) {
-      if (statement.type === AST_NODE_TYPES.ReturnStatement && statement.argument) {
+      if (
+        statement.type === AST_NODE_TYPES.ReturnStatement &&
+        statement.argument
+      ) {
         if (isJsxElement(statement.argument)) {
           return true;
         }
@@ -148,7 +163,10 @@ const containsJsxInSwitchStatement = (node: TSESTree.SwitchStatement): boolean =
  * Checks if a function contains JSX elements
  */
 const containsJsxInFunction = (
-  node: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression | TSESTree.FunctionDeclaration
+  node:
+    | TSESTree.ArrowFunctionExpression
+    | TSESTree.FunctionExpression
+    | TSESTree.FunctionDeclaration,
 ): boolean => {
   // For FunctionDeclaration, we need to check the body
   if (node.type === AST_NODE_TYPES.FunctionDeclaration) {
@@ -172,24 +190,41 @@ const containsJsxInFunction = (
 
   // Check for array methods returning JSX
   if (body.type === AST_NODE_TYPES.CallExpression) {
-    if (body.callee.type === AST_NODE_TYPES.MemberExpression &&
-        body.callee.property.type === AST_NODE_TYPES.Identifier) {
+    if (
+      body.callee.type === AST_NODE_TYPES.MemberExpression &&
+      body.callee.property.type === AST_NODE_TYPES.Identifier
+    ) {
       // Check array methods like map, filter, find, etc.
-      const arrayMethods = ['map', 'filter', 'find', 'findIndex', 'some', 'every', 'reduce'];
-      if (arrayMethods.includes(body.callee.property.name) && body.arguments.length > 0) {
+      const arrayMethods = [
+        'map',
+        'filter',
+        'find',
+        'findIndex',
+        'some',
+        'every',
+        'reduce',
+      ];
+      if (
+        arrayMethods.includes(body.callee.property.name) &&
+        body.arguments.length > 0
+      ) {
         const callback = body.arguments[0];
-        if ((callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-             callback.type === AST_NODE_TYPES.FunctionExpression) &&
-            containsJsxInFunction(callback)) {
+        if (
+          (callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+            callback.type === AST_NODE_TYPES.FunctionExpression) &&
+          containsJsxInFunction(callback)
+        ) {
           return true;
         }
       }
     }
 
     // Check for IIFE
-    if ((body.callee.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-         body.callee.type === AST_NODE_TYPES.FunctionExpression) &&
-        containsJsxInFunction(body.callee)) {
+    if (
+      (body.callee.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+        body.callee.type === AST_NODE_TYPES.FunctionExpression) &&
+      containsJsxInFunction(body.callee)
+    ) {
       return true;
     }
 
@@ -219,10 +254,23 @@ const containsJsxInExpression = (node: TSESTree.Expression): boolean => {
 
   switch (node.type) {
     case AST_NODE_TYPES.ConditionalExpression:
-      return containsJsxInExpression(node.consequent) || containsJsxInExpression(node.alternate);
+      return (
+        containsJsxInExpression(node.consequent) ||
+        containsJsxInExpression(node.alternate)
+      );
 
     case AST_NODE_TYPES.LogicalExpression:
-      return containsJsxInExpression(node.left) || containsJsxInExpression(node.right);
+      // For logical AND (&&) expressions, if the left side can be falsy,
+      // then the expression can return a non-JSX value, so we should not flag it
+      if (node.operator === '&&') {
+        // If the left side is a boolean expression or can be falsy, this can return a non-JSX value
+        return false;
+      }
+
+      return (
+        containsJsxInExpression(node.left) ||
+        containsJsxInExpression(node.right)
+      );
 
     case AST_NODE_TYPES.ObjectExpression:
       // Special case: If this is an object with both JSX and non-JSX properties,
@@ -255,19 +303,22 @@ const containsJsxInExpression = (node: TSESTree.Expression): boolean => {
 
     case AST_NODE_TYPES.CallExpression:
       // Special case for array methods that return data structures with JSX
-      if (node.callee.type === AST_NODE_TYPES.MemberExpression &&
-          node.callee.property.type === AST_NODE_TYPES.Identifier &&
-          node.callee.property.name === 'map' &&
-          node.arguments.length > 0) {
-
+      if (
+        node.callee.type === AST_NODE_TYPES.MemberExpression &&
+        node.callee.property.type === AST_NODE_TYPES.Identifier &&
+        node.callee.property.name === 'map' &&
+        node.arguments.length > 0
+      ) {
         const callback = node.arguments[0];
-        if ((callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-             callback.type === AST_NODE_TYPES.FunctionExpression)) {
-
+        if (
+          callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+          callback.type === AST_NODE_TYPES.FunctionExpression
+        ) {
           // Check if the callback returns an object with both JSX and non-JSX properties
-          if (callback.body.type !== AST_NODE_TYPES.BlockStatement &&
-              callback.body.type === AST_NODE_TYPES.ObjectExpression) {
-
+          if (
+            callback.body.type !== AST_NODE_TYPES.BlockStatement &&
+            callback.body.type === AST_NODE_TYPES.ObjectExpression
+          ) {
             let hasNonJsxProperties = false;
             let hasJsxProperties = false;
 
@@ -275,7 +326,9 @@ const containsJsxInExpression = (node: TSESTree.Expression): boolean => {
               if (property.type === AST_NODE_TYPES.Property && property.value) {
                 if (isJsxElement(property.value)) {
                   hasJsxProperties = true;
-                } else if (property.value.type !== AST_NODE_TYPES.ObjectExpression) {
+                } else if (
+                  property.value.type !== AST_NODE_TYPES.ObjectExpression
+                ) {
                   hasNonJsxProperties = true;
                 }
               }
@@ -293,19 +346,35 @@ const containsJsxInExpression = (node: TSESTree.Expression): boolean => {
       }
 
       // Check if it's an IIFE
-      if (node.callee.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-          node.callee.type === AST_NODE_TYPES.FunctionExpression) {
+      if (
+        node.callee.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+        node.callee.type === AST_NODE_TYPES.FunctionExpression
+      ) {
         return containsJsxInFunction(node.callee);
       }
 
       // Check array methods
-      if (node.callee.type === AST_NODE_TYPES.MemberExpression &&
-          node.callee.property.type === AST_NODE_TYPES.Identifier) {
-        const arrayMethods = ['filter', 'find', 'findIndex', 'some', 'every', 'reduce'];
-        if (arrayMethods.includes(node.callee.property.name) && node.arguments.length > 0) {
+      if (
+        node.callee.type === AST_NODE_TYPES.MemberExpression &&
+        node.callee.property.type === AST_NODE_TYPES.Identifier
+      ) {
+        const arrayMethods = [
+          'filter',
+          'find',
+          'findIndex',
+          'some',
+          'every',
+          'reduce',
+        ];
+        if (
+          arrayMethods.includes(node.callee.property.name) &&
+          node.arguments.length > 0
+        ) {
           const callback = node.arguments[0];
-          if ((callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-               callback.type === AST_NODE_TYPES.FunctionExpression)) {
+          if (
+            callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+            callback.type === AST_NODE_TYPES.FunctionExpression
+          ) {
             return containsJsxInFunction(callback);
           }
         }
@@ -313,7 +382,10 @@ const containsJsxInExpression = (node: TSESTree.Expression): boolean => {
 
       // Check arguments for JSX
       for (const arg of node.arguments) {
-        if (arg.type !== AST_NODE_TYPES.SpreadElement && containsJsxInExpression(arg)) {
+        if (
+          arg.type !== AST_NODE_TYPES.SpreadElement &&
+          containsJsxInExpression(arg)
+        ) {
           return true;
         }
       }
@@ -331,10 +403,15 @@ const containsJsxInExpression = (node: TSESTree.Expression): boolean => {
 /**
  * Checks if a block statement contains JSX elements
  */
-const containsJsxInBlockStatement = (node: TSESTree.BlockStatement): boolean => {
+const containsJsxInBlockStatement = (
+  node: TSESTree.BlockStatement,
+): boolean => {
   for (const statement of node.body) {
     // Check return statements
-    if (statement.type === AST_NODE_TYPES.ReturnStatement && statement.argument) {
+    if (
+      statement.type === AST_NODE_TYPES.ReturnStatement &&
+      statement.argument
+    ) {
       if (containsJsxInExpression(statement.argument)) {
         return true;
       }
@@ -342,21 +419,31 @@ const containsJsxInBlockStatement = (node: TSESTree.BlockStatement): boolean => 
 
     // Check if statements
     if (statement.type === AST_NODE_TYPES.IfStatement) {
-      if (statement.consequent.type === AST_NODE_TYPES.ReturnStatement &&
-          statement.consequent.argument && containsJsxInExpression(statement.consequent.argument)) {
+      if (
+        statement.consequent.type === AST_NODE_TYPES.ReturnStatement &&
+        statement.consequent.argument &&
+        containsJsxInExpression(statement.consequent.argument)
+      ) {
         return true;
       }
-      if (statement.consequent.type === AST_NODE_TYPES.BlockStatement &&
-          containsJsxInBlockStatement(statement.consequent)) {
+      if (
+        statement.consequent.type === AST_NODE_TYPES.BlockStatement &&
+        containsJsxInBlockStatement(statement.consequent)
+      ) {
         return true;
       }
       if (statement.alternate) {
-        if (statement.alternate.type === AST_NODE_TYPES.ReturnStatement &&
-            statement.alternate.argument && containsJsxInExpression(statement.alternate.argument)) {
+        if (
+          statement.alternate.type === AST_NODE_TYPES.ReturnStatement &&
+          statement.alternate.argument &&
+          containsJsxInExpression(statement.alternate.argument)
+        ) {
           return true;
         }
-        if (statement.alternate.type === AST_NODE_TYPES.BlockStatement &&
-            containsJsxInBlockStatement(statement.alternate)) {
+        if (
+          statement.alternate.type === AST_NODE_TYPES.BlockStatement &&
+          containsJsxInBlockStatement(statement.alternate)
+        ) {
           return true;
         }
         if (statement.alternate.type === AST_NODE_TYPES.IfStatement) {
@@ -364,12 +451,18 @@ const containsJsxInBlockStatement = (node: TSESTree.BlockStatement): boolean => 
           if (containsJsxInExpression(statement.alternate.test)) {
             return true;
           }
-          if (statement.alternate.consequent &&
-              ((statement.alternate.consequent.type === AST_NODE_TYPES.ReturnStatement &&
-                statement.alternate.consequent.argument &&
-                containsJsxInExpression(statement.alternate.consequent.argument)) ||
-               (statement.alternate.consequent.type === AST_NODE_TYPES.BlockStatement &&
-                containsJsxInBlockStatement(statement.alternate.consequent)))) {
+          if (
+            statement.alternate.consequent &&
+            ((statement.alternate.consequent.type ===
+              AST_NODE_TYPES.ReturnStatement &&
+              statement.alternate.consequent.argument &&
+              containsJsxInExpression(
+                statement.alternate.consequent.argument,
+              )) ||
+              (statement.alternate.consequent.type ===
+                AST_NODE_TYPES.BlockStatement &&
+                containsJsxInBlockStatement(statement.alternate.consequent)))
+          ) {
             return true;
           }
         }
@@ -393,8 +486,10 @@ const containsJsxInBlockStatement = (node: TSESTree.BlockStatement): boolean => 
     }
 
     // Check expressions
-    if (statement.type === AST_NODE_TYPES.ExpressionStatement &&
-        containsJsxInExpression(statement.expression)) {
+    if (
+      statement.type === AST_NODE_TYPES.ExpressionStatement &&
+      containsJsxInExpression(statement.expression)
+    ) {
       return true;
     }
   }
@@ -418,16 +513,19 @@ const containsJsxInUseMemo = (node: TSESTree.CallExpression): boolean => {
     node.arguments.length > 0
   ) {
     const callback = node.arguments[0];
-    if (callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-        callback.type === AST_NODE_TYPES.FunctionExpression) {
-
+    if (
+      callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+      callback.type === AST_NODE_TYPES.FunctionExpression
+    ) {
       // For block statements, we need to check if any return statement contains JSX
       if (callback.body.type === AST_NODE_TYPES.BlockStatement) {
         // Check each return statement to see if it returns JSX
         for (const statement of callback.body.body) {
-          if (statement.type === AST_NODE_TYPES.ReturnStatement &&
-              statement.argument &&
-              isJsxElement(statement.argument)) {
+          if (
+            statement.type === AST_NODE_TYPES.ReturnStatement &&
+            statement.argument &&
+            isJsxElement(statement.argument)
+          ) {
             return true;
           }
         }
@@ -438,6 +536,14 @@ const containsJsxInUseMemo = (node: TSESTree.CallExpression): boolean => {
         // Direct JSX element - this is the primary case we want to catch
         if (isJsxElement(callback.body)) {
           return true;
+        }
+
+        // Special case for logical expressions that can return non-JSX values
+        if (
+          callback.body.type === AST_NODE_TYPES.LogicalExpression &&
+          callback.body.operator === '&&'
+        ) {
+          return false;
         }
 
         // For non-JSX expressions, we need to check if they contain JSX
@@ -453,7 +559,8 @@ export const reactUseMemoShouldBeComponent = createRule<[], MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce that useMemo hooks explicitly returning JSX should be abstracted into separate React components',
+      description:
+        'Enforce that useMemo hooks explicitly returning JSX should be abstracted into separate React components',
       recommended: 'error',
     },
     schema: [],

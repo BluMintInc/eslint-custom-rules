@@ -36,21 +36,23 @@ export const preferCloneDeep = createRule<[], MessageIds>({
           if (depth > 0) {
             hasNestedSpread = true;
           }
-        } else if (node.type === AST_NODE_TYPES.FunctionExpression ||
-                  node.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+        } else if (
+          node.type === AST_NODE_TYPES.FunctionExpression ||
+          node.type === AST_NODE_TYPES.ArrowFunctionExpression
+        ) {
           hasFunction = true;
         } else if (
           // Check for Symbol usage in computed properties
           (node.type === AST_NODE_TYPES.Property &&
-           node.computed &&
-           node.key.type === AST_NODE_TYPES.Identifier &&
-           node.key.name === 'Symbol') ||
+            node.computed &&
+            node.key.type === AST_NODE_TYPES.Identifier &&
+            node.key.name === 'Symbol') ||
           // Check for direct Symbol constructor calls
           (node.type === AST_NODE_TYPES.Property &&
-           node.computed &&
-           node.key.type === AST_NODE_TYPES.CallExpression &&
-           node.key.callee.type === AST_NODE_TYPES.Identifier &&
-           node.key.callee.name === 'Symbol')
+            node.computed &&
+            node.key.type === AST_NODE_TYPES.CallExpression &&
+            node.key.callee.type === AST_NODE_TYPES.Identifier &&
+            node.key.callee.name === 'Symbol')
         ) {
           hasSymbol = true;
         }
@@ -60,7 +62,7 @@ export const preferCloneDeep = createRule<[], MessageIds>({
           if (depth > 0) {
             hasNestedObject = true;
           }
-          node.properties.forEach(prop => visit(prop, depth + 1));
+          node.properties.forEach((prop) => visit(prop, depth + 1));
         } else if (node.type === AST_NODE_TYPES.Property) {
           visit(node.value, depth);
         } else if (node.type === AST_NODE_TYPES.SpreadElement) {
@@ -69,7 +71,13 @@ export const preferCloneDeep = createRule<[], MessageIds>({
       }
 
       visit(node);
-      return hasSpread && hasNestedSpread && hasNestedObject && !hasFunction && !hasSymbol;
+      return (
+        hasSpread &&
+        hasNestedSpread &&
+        hasNestedObject &&
+        !hasFunction &&
+        !hasSymbol
+      );
     }
 
     function generateCloneDeepFix(node: TSESTree.ObjectExpression): string {
@@ -90,16 +98,20 @@ export const preferCloneDeep = createRule<[], MessageIds>({
       if (baseObj === null) {
         // Check if this is a membership pattern (object with membership property)
         const membershipProp = node.properties.find(
-          prop => prop.type === AST_NODE_TYPES.Property &&
-                 !prop.computed &&
-                 prop.key.type === AST_NODE_TYPES.Identifier &&
-                 prop.key.name === 'membership'
+          (prop) =>
+            prop.type === AST_NODE_TYPES.Property &&
+            !prop.computed &&
+            prop.key.type === AST_NODE_TYPES.Identifier &&
+            prop.key.name === 'membership',
         ) as TSESTree.Property | undefined;
 
-        if (membershipProp && membershipProp.value.type === AST_NODE_TYPES.ObjectExpression) {
+        if (
+          membershipProp &&
+          membershipProp.value.type === AST_NODE_TYPES.ObjectExpression
+        ) {
           // Find the first spread in the membership object
           const membershipSpread = membershipProp.value.properties.find(
-            prop => prop.type === AST_NODE_TYPES.SpreadElement
+            (prop) => prop.type === AST_NODE_TYPES.SpreadElement,
           );
 
           if (membershipSpread) {
@@ -131,10 +143,12 @@ export const preferCloneDeep = createRule<[], MessageIds>({
         // based on the base object name
         if (baseObj === 'baseObj') {
           // Check for template literal key
-          const hasTemplateLiteral = node.properties.some(p =>
+          const hasTemplateLiteral = node.properties.some(
+            (p) =>
               p.type === AST_NODE_TYPES.Property &&
               p.computed &&
-              p.key.type === AST_NODE_TYPES.TemplateLiteral);
+              p.key.type === AST_NODE_TYPES.TemplateLiteral,
+          );
 
           if (hasTemplateLiteral) {
             return `cloneDeep(baseObj, {
@@ -144,10 +158,14 @@ export const preferCloneDeep = createRule<[], MessageIds>({
             }
           }
         } as const)`;
-          } else if (node.properties.some(p =>
-              p.type === AST_NODE_TYPES.Property &&
-              p.key.type === AST_NODE_TYPES.Identifier &&
-              p.key.name === 'settings')) {
+          } else if (
+            node.properties.some(
+              (p) =>
+                p.type === AST_NODE_TYPES.Property &&
+                p.key.type === AST_NODE_TYPES.Identifier &&
+                p.key.name === 'settings',
+            )
+          ) {
             return `cloneDeep(baseObj, {
           settings: {
             ...(condition ? {
@@ -160,11 +178,15 @@ export const preferCloneDeep = createRule<[], MessageIds>({
             }
           }
         } as const)`;
-          } else if (node.properties.some(p =>
-              p.type === AST_NODE_TYPES.Property &&
-              p.computed &&
-              p.key.type === AST_NODE_TYPES.Identifier &&
-              p.key.name === 'key')) {
+          } else if (
+            node.properties.some(
+              (p) =>
+                p.type === AST_NODE_TYPES.Property &&
+                p.computed &&
+                p.key.type === AST_NODE_TYPES.Identifier &&
+                p.key.name === 'key',
+            )
+          ) {
             return `cloneDeep(baseObj, {
           [key]: {
             nested: {
@@ -184,15 +206,21 @@ export const preferCloneDeep = createRule<[], MessageIds>({
         } as const)`;
           }
         } else if (baseObj === 'baseConfig') {
-          if (node.properties.some(p =>
-              p.type === AST_NODE_TYPES.Property &&
-              p.key.type === AST_NODE_TYPES.Identifier &&
-              p.key.name === 'features' &&
-              p.value.type === AST_NODE_TYPES.ObjectExpression &&
-              p.value.properties.some(sp =>
-                sp.type === AST_NODE_TYPES.Property &&
-                sp.key.type === AST_NODE_TYPES.Identifier &&
-                sp.key.name === 'items'))) {
+          if (
+            node.properties.some(
+              (p) =>
+                p.type === AST_NODE_TYPES.Property &&
+                p.key.type === AST_NODE_TYPES.Identifier &&
+                p.key.name === 'features' &&
+                p.value.type === AST_NODE_TYPES.ObjectExpression &&
+                p.value.properties.some(
+                  (sp) =>
+                    sp.type === AST_NODE_TYPES.Property &&
+                    sp.key.type === AST_NODE_TYPES.Identifier &&
+                    sp.key.name === 'items',
+                ),
+            )
+          ) {
             return `cloneDeep(baseConfig, {
           features: {
             items: [
@@ -285,8 +313,10 @@ export const preferCloneDeep = createRule<[], MessageIds>({
           }
 
           overrides.push(`${key}: ${value}`);
-        } else if (prop.type === AST_NODE_TYPES.SpreadElement &&
-                  prop.argument.type === AST_NODE_TYPES.ConditionalExpression) {
+        } else if (
+          prop.type === AST_NODE_TYPES.SpreadElement &&
+          prop.argument.type === AST_NODE_TYPES.ConditionalExpression
+        ) {
           // Handle conditional spread elements (like ...(condition ? {...} : {}))
           const text = sourceCode.getText(prop);
           overrides.push(text);
@@ -297,15 +327,19 @@ export const preferCloneDeep = createRule<[], MessageIds>({
     }
 
     // Find the outermost object expression that needs cloneDeep
-    function findOutermostObjectWithNestedSpread(node: TSESTree.ObjectExpression): TSESTree.ObjectExpression {
+    function findOutermostObjectWithNestedSpread(
+      node: TSESTree.ObjectExpression,
+    ): TSESTree.ObjectExpression {
       let current: TSESTree.Node | undefined = node.parent;
       let result: TSESTree.ObjectExpression = node;
 
       // Walk up the tree to find the outermost object expression
       while (current) {
-        if (current.type === AST_NODE_TYPES.Property &&
-            current.parent &&
-            current.parent.type === AST_NODE_TYPES.ObjectExpression) {
+        if (
+          current.type === AST_NODE_TYPES.Property &&
+          current.parent &&
+          current.parent.type === AST_NODE_TYPES.ObjectExpression
+        ) {
           // If this is a property of an object expression, check if that object has nested spreads
           if (hasNestedSpread(current.parent)) {
             result = current.parent;
@@ -332,7 +366,7 @@ export const preferCloneDeep = createRule<[], MessageIds>({
           const markProcessed = (n: TSESTree.Node): void => {
             if (n.type === AST_NODE_TYPES.ObjectExpression) {
               processedNodes.add(n);
-              n.properties.forEach(prop => {
+              n.properties.forEach((prop) => {
                 if (prop.type === AST_NODE_TYPES.Property) {
                   markProcessed(prop.value);
                 } else if (prop.type === AST_NODE_TYPES.SpreadElement) {

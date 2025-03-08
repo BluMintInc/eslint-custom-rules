@@ -78,7 +78,10 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
       return typeParams;
     }
 
-    function getTypeNames(node: TSESTree.TypeNode | undefined, typeParams?: Set<string>): string[] {
+    function getTypeNames(
+      node: TSESTree.TypeNode | undefined,
+      typeParams?: Set<string>,
+    ): string[] {
       if (!node) return [];
 
       // Initialize type parameters if not provided
@@ -530,7 +533,9 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
       // Handle type aliases in variable declarations
       if (parent.type === AST_NODE_TYPES.VariableDeclarator) {
         if (parent.parent?.type === AST_NODE_TYPES.VariableDeclaration) {
-          if (parent.parent.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration) {
+          if (
+            parent.parent.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration
+          ) {
             return true;
           }
         }
@@ -540,7 +545,9 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
       if (parent.type === AST_NODE_TYPES.Identifier) {
         if (parent.parent?.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
           // Check if the type alias itself is exported
-          if (parent.parent.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration) {
+          if (
+            parent.parent.parent?.type === AST_NODE_TYPES.ExportNamedDeclaration
+          ) {
             return true;
           }
           // If not exported, return false

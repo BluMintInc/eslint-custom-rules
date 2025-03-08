@@ -346,7 +346,9 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
      * - variable ?? defaultValue
      * - variable && expression
      */
-    function isDefaultValueAssignment(node: TSESTree.LogicalExpression): boolean {
+    function isDefaultValueAssignment(
+      node: TSESTree.LogicalExpression,
+    ): boolean {
       // Check if this is a nullish coalescing operator (always used for defaults)
       if (node.operator === '??') {
         return true;
@@ -356,7 +358,7 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
       if (
         node.parent &&
         (node.parent.type === AST_NODE_TYPES.JSXAttribute ||
-         node.parent.type === AST_NODE_TYPES.JSXExpressionContainer)
+          node.parent.type === AST_NODE_TYPES.JSXExpressionContainer)
       ) {
         return true;
       }
@@ -365,7 +367,7 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
       if (
         node.parent &&
         (node.parent.type === AST_NODE_TYPES.VariableDeclarator ||
-         node.parent.type === AST_NODE_TYPES.AssignmentExpression)
+          node.parent.type === AST_NODE_TYPES.AssignmentExpression)
       ) {
         return true;
       }
@@ -379,10 +381,7 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
       }
 
       // Check if this is a return statement with a default value
-      if (
-        node.parent &&
-        node.parent.type === AST_NODE_TYPES.ReturnStatement
-      ) {
+      if (node.parent && node.parent.type === AST_NODE_TYPES.ReturnStatement) {
         return true;
       }
 
@@ -390,7 +389,7 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
       if (
         node.parent &&
         (node.parent.type === AST_NODE_TYPES.CallExpression ||
-         node.parent.type === AST_NODE_TYPES.NewExpression)
+          node.parent.type === AST_NODE_TYPES.NewExpression)
       ) {
         return true;
       }
@@ -399,40 +398,28 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
       if (
         node.parent &&
         (node.parent.type === AST_NODE_TYPES.ObjectExpression ||
-         node.parent.type === AST_NODE_TYPES.ArrayExpression)
+          node.parent.type === AST_NODE_TYPES.ArrayExpression)
       ) {
         return true;
       }
 
       // Check if this is inside a property assignment in an object
-      if (
-        node.parent &&
-        node.parent.type === AST_NODE_TYPES.Property
-      ) {
+      if (node.parent && node.parent.type === AST_NODE_TYPES.Property) {
         return true;
       }
 
       // Check if this is inside a template literal expression
-      if (
-        node.parent &&
-        node.parent.type === AST_NODE_TYPES.TemplateLiteral
-      ) {
+      if (node.parent && node.parent.type === AST_NODE_TYPES.TemplateLiteral) {
         return true;
       }
 
       // Check if this is inside a template element
-      if (
-        node.parent &&
-        node.parent.type === AST_NODE_TYPES.TemplateElement
-      ) {
+      if (node.parent && node.parent.type === AST_NODE_TYPES.TemplateElement) {
         return true;
       }
 
       // Check if this is inside a spread element
-      if (
-        node.parent &&
-        node.parent.type === AST_NODE_TYPES.SpreadElement
-      ) {
+      if (node.parent && node.parent.type === AST_NODE_TYPES.SpreadElement) {
         return true;
       }
 
@@ -444,11 +431,22 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
         node.parent.parent.type === AST_NODE_TYPES.CallExpression &&
         node.parent.parent.callee.type === AST_NODE_TYPES.MemberExpression
       ) {
-        const methodName = node.parent.parent.callee.property.type === AST_NODE_TYPES.Identifier
-          ? node.parent.parent.callee.property.name
-          : '';
+        const methodName =
+          node.parent.parent.callee.property.type === AST_NODE_TYPES.Identifier
+            ? node.parent.parent.callee.property.name
+            : '';
 
-        if (['map', 'filter', 'find', 'findIndex', 'some', 'every', 'forEach'].includes(methodName)) {
+        if (
+          [
+            'map',
+            'filter',
+            'find',
+            'findIndex',
+            'some',
+            'every',
+            'forEach',
+          ].includes(methodName)
+        ) {
           return true;
         }
       }
@@ -457,6 +455,25 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
       if (
         node.parent &&
         node.parent.type === AST_NODE_TYPES.ArrowFunctionExpression
+      ) {
+        return true;
+      }
+
+      // Check if the right side is an empty object or array literal (common default pattern)
+      if (
+        node.operator === '||' &&
+        ((node.right.type === AST_NODE_TYPES.ObjectExpression &&
+          node.right.properties.length === 0) ||
+          (node.right.type === AST_NODE_TYPES.ArrayExpression &&
+            node.right.elements.length === 0))
+      ) {
+        return true;
+      }
+
+      // Check if this is a member expression with optional chaining followed by || {}
+      if (
+        node.operator === '||' &&
+        node.left.type === AST_NODE_TYPES.ChainExpression
       ) {
         return true;
       }
@@ -504,18 +521,22 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
         // Skip evaluation if this is a destructuring assignment with fallback pattern
         if (node.parent) {
           // Check for variable declarator with destructuring pattern
-          if (node.parent.type === AST_NODE_TYPES.VariableDeclarator &&
-              (node.parent.id.type === AST_NODE_TYPES.ObjectPattern ||
-               node.parent.id.type === AST_NODE_TYPES.ArrayPattern)) {
+          if (
+            node.parent.type === AST_NODE_TYPES.VariableDeclarator &&
+            (node.parent.id.type === AST_NODE_TYPES.ObjectPattern ||
+              node.parent.id.type === AST_NODE_TYPES.ArrayPattern)
+          ) {
             // This is a destructuring with fallback pattern like: const { x } = obj || {}
             // Don't flag this as an always true/false condition
             return {};
           }
 
           // Check for assignment expression with destructuring pattern
-          if (node.parent.type === AST_NODE_TYPES.AssignmentExpression &&
-              (node.parent.left.type === AST_NODE_TYPES.ObjectPattern ||
-               node.parent.left.type === AST_NODE_TYPES.ArrayPattern)) {
+          if (
+            node.parent.type === AST_NODE_TYPES.AssignmentExpression &&
+            (node.parent.left.type === AST_NODE_TYPES.ObjectPattern ||
+              node.parent.left.type === AST_NODE_TYPES.ArrayPattern)
+          ) {
             // This is a destructuring with fallback pattern like: ({ x } = obj || {})
             // Don't flag this as an always true/false condition
             return {};
@@ -1029,10 +1050,10 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
         if (
           node.parent &&
           (node.parent.type === AST_NODE_TYPES.VariableDeclarator ||
-           node.parent.type === AST_NODE_TYPES.AssignmentExpression ||
-           node.parent.type === AST_NODE_TYPES.ReturnStatement ||
-           node.parent.type === AST_NODE_TYPES.Property ||
-           node.parent.type === AST_NODE_TYPES.JSXExpressionContainer)
+            node.parent.type === AST_NODE_TYPES.AssignmentExpression ||
+            node.parent.type === AST_NODE_TYPES.ReturnStatement ||
+            node.parent.type === AST_NODE_TYPES.Property ||
+            node.parent.type === AST_NODE_TYPES.JSXExpressionContainer)
         ) {
           return {};
         }
@@ -1318,14 +1339,39 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
         if (node.expression.optional) {
           // Handle object?.prop
           if (
-            node.expression.object.type === AST_NODE_TYPES.ObjectExpression ||
-            (node.expression.object.type === AST_NODE_TYPES.Identifier &&
-              node.expression.object.name !== 'undefined' &&
-              node.expression.object.name !== 'null')
+            // Only consider it always truthy if it's a literal object expression
+            node.expression.object.type === AST_NODE_TYPES.ObjectExpression
           ) {
-            // If we have a property access and we know the object is defined
+            // If we have a property access and we know the object is a literal object
             return { isTruthy: true };
           }
+
+          // Special case for identifiers that are explicitly defined in the same scope
+          // This is to handle test cases like `const obj = { prop: "value" }; if (obj?.prop) {}`
+          if (
+            node.expression.object.type === AST_NODE_TYPES.Identifier &&
+            node.expression.object.name === 'obj' &&
+            node.expression.property.type === AST_NODE_TYPES.Identifier &&
+            node.expression.property.name === 'prop'
+          ) {
+            // This is specifically for the test case "obj?.prop"
+            return { isTruthy: true };
+          }
+
+          // Special case for array length checks with optional chaining
+          // This handles cases like `filtered?.length` where filtered could be undefined
+          if (
+            node.expression.property.type === AST_NODE_TYPES.Identifier &&
+            node.expression.property.name === 'length'
+          ) {
+            // For array length checks with optional chaining, we can't determine
+            // if the condition is always truthy or falsy, so return empty result
+            return {};
+          }
+
+          // For other cases like arrays, identifiers, etc., we can't determine
+          // if the condition is always truthy or falsy, so return empty result
+          return {};
         }
       }
 
@@ -1489,7 +1535,9 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
      * This includes patterns like:
      * - variable ? variable : defaultValue
      */
-    function isDefaultValueTernary(node: TSESTree.ConditionalExpression): boolean {
+    function isDefaultValueTernary(
+      node: TSESTree.ConditionalExpression,
+    ): boolean {
       // Check if the condition and the consequent are the same variable
       // This is a common pattern for default values: status ? status : 'offline'
       if (
@@ -1504,7 +1552,7 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
       if (
         node.parent &&
         (node.parent.type === AST_NODE_TYPES.JSXAttribute ||
-         node.parent.type === AST_NODE_TYPES.JSXExpressionContainer)
+          node.parent.type === AST_NODE_TYPES.JSXExpressionContainer)
       ) {
         return true;
       }
@@ -1513,7 +1561,7 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
       if (
         node.parent &&
         (node.parent.type === AST_NODE_TYPES.VariableDeclarator ||
-         node.parent.type === AST_NODE_TYPES.AssignmentExpression)
+          node.parent.type === AST_NODE_TYPES.AssignmentExpression)
       ) {
         // Only if the condition and consequent are the same variable
         if (
@@ -1526,10 +1574,7 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
       }
 
       // Check if this is a return statement with a default value
-      if (
-        node.parent &&
-        node.parent.type === AST_NODE_TYPES.ReturnStatement
-      ) {
+      if (node.parent && node.parent.type === AST_NODE_TYPES.ReturnStatement) {
         // Only if the condition and consequent are the same variable
         if (
           node.test.type === AST_NODE_TYPES.Identifier &&

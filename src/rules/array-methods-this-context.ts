@@ -63,8 +63,10 @@ export const arrayMethodsThisContext: TSESLint.RuleModule<
     },
     schema: [],
     messages: {
-      unexpected: 'Use an arrow function to preserve "this" context in array methods. Instead of `array.map(this.method)`, use `array.map((x) => this.method(x))`.',
-      preferArrow: 'Use an arrow function instead of binding "this". Instead of `array.map(function(x) {}.bind(this))`, use `array.map((x) => {...})`.',
+      unexpected:
+        'Use an arrow function to preserve "this" context in array methods. Instead of `array.map(this.method)`, use `array.map((x) => this.method(x))`.',
+      preferArrow:
+        'Use an arrow function instead of binding "this". Instead of `array.map(function(x) {}.bind(this))`, use `array.map((x) => {...})`.',
     },
   },
   defaultOptions: [],

@@ -1,4 +1,8 @@
-# no-uuidv4-base62-as-key
+# Disallow using uuidv4Base62() to generate keys for elements in a list or loop (`@blumintinc/blumint/no-uuidv4-base62-as-key`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 Avoid using `uuidv4Base62()` as React list keys.
 

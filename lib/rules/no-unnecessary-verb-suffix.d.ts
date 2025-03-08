@@ -1,1 +1,0 @@
-export declare const noUnnecessaryVerbSuffix: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"unnecessaryVerbSuffix", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;

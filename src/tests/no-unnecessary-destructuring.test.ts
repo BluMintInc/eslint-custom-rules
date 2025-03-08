@@ -131,9 +131,9 @@ ruleTester.run('no-unnecessary-destructuring', noUnnecessaryDestructuring, {
     },
     // With template literal - invalid
     {
-      code: "const { ...config } = configs[`${env}-settings`];",
+      code: 'const { ...config } = configs[`${env}-settings`];',
       errors: [{ messageId: 'noUnnecessaryDestructuring' }],
-      output: "const config = configs[`${env}-settings`];",
+      output: 'const config = configs[`${env}-settings`];',
     },
     // With new expression - invalid
     {
@@ -158,7 +158,7 @@ ruleTester.run('no-unnecessary-destructuring', noUnnecessaryDestructuring, {
       code: `for (let { ...item } = getNext(); item; { ...item } = getNext()) { console.log(item); }`,
       errors: [
         { messageId: 'noUnnecessaryDestructuring' },
-        { messageId: 'noUnnecessaryDestructuring' }
+        { messageId: 'noUnnecessaryDestructuring' },
       ],
       output: `for (let item = getNext(); item; item = getNext()) { console.log(item); }`,
     },

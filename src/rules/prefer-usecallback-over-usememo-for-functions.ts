@@ -5,16 +5,20 @@ type Options = [
   {
     allowComplexBodies?: boolean;
     allowFunctionFactories?: boolean;
-  }
+  },
 ];
 type MessageIds = 'preferUseCallback';
 
-export const preferUseCallbackOverUseMemoForFunctions = createRule<Options, MessageIds>({
+export const preferUseCallbackOverUseMemoForFunctions = createRule<
+  Options,
+  MessageIds
+>({
   name: 'prefer-usecallback-over-usememo-for-functions',
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce using useCallback instead of useMemo for memoizing functions',
+      description:
+        'Enforce using useCallback instead of useMemo for memoizing functions',
       recommended: 'error',
     },
     fixable: 'code',
@@ -35,12 +39,16 @@ export const preferUseCallbackOverUseMemoForFunctions = createRule<Options, Mess
       },
     ],
     messages: {
-      preferUseCallback: 'Use useCallback instead of useMemo for memoizing functions',
+      preferUseCallback:
+        'Use useCallback instead of useMemo for memoizing functions',
     },
   },
   defaultOptions: [{ allowComplexBodies: false, allowFunctionFactories: true }],
   create(context) {
-    const options = context.options[0] || { allowComplexBodies: false, allowFunctionFactories: true };
+    const options = context.options[0] || {
+      allowComplexBodies: false,
+      allowFunctionFactories: true,
+    };
 
     /**
      * Checks if a node is a function factory (returns an object with functions or a function that generates functions)
@@ -107,7 +115,8 @@ export const preferUseCallbackOverUseMemoForFunctions = createRule<Options, Mess
       // If there's more than one statement, or the single statement isn't a return
       if (
         node.body.body.length > 1 ||
-        (node.body.body.length === 1 && node.body.body[0].type !== AST_NODE_TYPES.ReturnStatement)
+        (node.body.body.length === 1 &&
+          node.body.body[0].type !== AST_NODE_TYPES.ReturnStatement)
       ) {
         return true;
       }
@@ -183,7 +192,9 @@ export const preferUseCallbackOverUseMemoForFunctions = createRule<Options, Mess
 function reportAndFix(node, context) {
   const sourceCode = context.getSourceCode();
   const useMemoCallback = node.arguments[0];
-  const dependencyArray = node.arguments[1] ? sourceCode.getText(node.arguments[1]) : '[]';
+  const dependencyArray = node.arguments[1]
+    ? sourceCode.getText(node.arguments[1])
+    : '[]';
 
   // Get the returned function from useMemo
   let returnedFunction;
@@ -201,7 +212,9 @@ function reportAndFix(node, context) {
 
   // Check if useMemo has TypeScript generic type parameters
   const hasTypeParameters = node.typeParameters !== undefined;
-  const typeParametersText = hasTypeParameters ? sourceCode.getText(node.typeParameters) : '';
+  const typeParametersText = hasTypeParameters
+    ? sourceCode.getText(node.typeParameters)
+    : '';
 
   context.report({
     node,
@@ -209,7 +222,7 @@ function reportAndFix(node, context) {
     fix: (fixer) => {
       return fixer.replaceText(
         node,
-        `useCallback${typeParametersText}(${returnedFunctionText}, ${dependencyArray})`
+        `useCallback${typeParametersText}(${returnedFunctionText}, ${dependencyArray})`,
       );
     },
   });

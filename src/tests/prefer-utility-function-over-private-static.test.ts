@@ -1,11 +1,14 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { preferUtilityFunctionOverPrivateStatic } from '../rules/prefer-utility-function-over-private-static';
 
-ruleTesterTs.run('prefer-utility-function-over-private-static', preferUtilityFunctionOverPrivateStatic, {
-  valid: [
-    // Non-static private method
-    {
-      code: `
+ruleTesterTs.run(
+  'prefer-utility-function-over-private-static',
+  preferUtilityFunctionOverPrivateStatic,
+  {
+    valid: [
+      // Non-static private method
+      {
+        code: `
         export class Example {
           private nonStaticMethod() {
             const result = this.someValue + 42;
@@ -13,30 +16,30 @@ ruleTesterTs.run('prefer-utility-function-over-private-static', preferUtilityFun
           }
         }
       `,
-    },
-    // Public static method
-    {
-      code: `
+      },
+      // Public static method
+      {
+        code: `
         export class Example {
           public static publicStaticMethod() {
             return computeSomething();
           }
         }
       `,
-    },
-    // Protected static method
-    {
-      code: `
+      },
+      // Protected static method
+      {
+        code: `
         export class Example {
           protected static protectedStaticMethod() {
             return computeSomething();
           }
         }
       `,
-    },
-    // Private static method that uses this
-    {
-      code: `
+      },
+      // Private static method that uses this
+      {
+        code: `
         export class Example {
           private static methodUsingThis() {
             return this.anotherMethod();
@@ -47,37 +50,37 @@ ruleTesterTs.run('prefer-utility-function-over-private-static', preferUtilityFun
           }
         }
       `,
-    },
-    // Private static method that is very small (less than 3 lines)
-    {
-      code: `
+      },
+      // Private static method that is very small (less than 3 lines)
+      {
+        code: `
         export class Example {
           private static smallMethod() { return 42; }
         }
       `,
-    },
-    // Private static method with small body
-    {
-      code: `
+      },
+      // Private static method with small body
+      {
+        code: `
         export class Example {
           private static anotherSmallMethod() {
             return 42;
           }
         }
       `,
-    },
-    // Already a utility function
-    {
-      code: `
+      },
+      // Already a utility function
+      {
+        code: `
         export const utilityFunction = (param: string) => {
           const result = param.toUpperCase();
           return result + '!';
         };
       `,
-    },
-    // Private static method that uses this.constructor
-    {
-      code: `
+      },
+      // Private static method that uses this.constructor
+      {
+        code: `
         export class Example {
           private static methodUsingThisConstructor() {
             const className = this.constructor.name;
@@ -85,10 +88,10 @@ ruleTesterTs.run('prefer-utility-function-over-private-static', preferUtilityFun
           }
         }
       `,
-    },
-    // Private static method that uses this in a nested function
-    {
-      code: `
+      },
+      // Private static method that uses this in a nested function
+      {
+        code: `
         export class Example {
           private static methodWithNestedThisReference() {
             const helper = () => {
@@ -98,10 +101,10 @@ ruleTesterTs.run('prefer-utility-function-over-private-static', preferUtilityFun
           }
         }
       `,
-    },
-    // Private static method that uses this in a callback
-    {
-      code: `
+      },
+      // Private static method that uses this in a callback
+      {
+        code: `
         export class Example {
           private static methodWithThisInCallback() {
             const items = [1, 2, 3];
@@ -115,20 +118,20 @@ ruleTesterTs.run('prefer-utility-function-over-private-static', preferUtilityFun
           }
         }
       `,
-    },
-    // Private static method with exactly 3 lines (including braces) - edge case
-    {
-      code: `
+      },
+      // Private static method with exactly 3 lines (including braces) - edge case
+      {
+        code: `
         export class Example {
           private static exactlyThreeLines() {
             return 42;
           }
         }
       `,
-    },
-    // Private static method that accesses static class properties
-    {
-      code: `
+      },
+      // Private static method that accesses static class properties
+      {
+        code: `
         export class Example {
           private static readonly CONFIG = { baseUrl: 'https://api.example.com' };
 
@@ -137,10 +140,10 @@ ruleTesterTs.run('prefer-utility-function-over-private-static', preferUtilityFun
           }
         }
       `,
-    },
-    // Private static method that uses class name directly - with this reference
-    {
-      code: `
+      },
+      // Private static method that uses class name directly - with this reference
+      {
+        code: `
         export class Example {
           private static readonly CACHE = new Map<string, any>();
 
@@ -152,10 +155,10 @@ ruleTesterTs.run('prefer-utility-function-over-private-static', preferUtilityFun
           }
         }
       `,
-    },
-    // Private static method with JSDoc comments that might make it look larger
-    {
-      code: `
+      },
+      // Private static method with JSDoc comments that might make it look larger
+      {
+        code: `
         export class Example {
           /**
            * This is a small method with a large JSDoc comment
@@ -167,20 +170,20 @@ ruleTesterTs.run('prefer-utility-function-over-private-static', preferUtilityFun
           }
         }
       `,
-    },
-    // Private static method with generic type
-    {
-      code: `
+      },
+      // Private static method with generic type
+      {
+        code: `
         export class Example {
           private static identity<T>(value: T): T {
             return value;
           }
         }
       `,
-    },
-    // Private static method with destructuring that uses this
-    {
-      code: `
+      },
+      // Private static method with destructuring that uses this
+      {
+        code: `
         export class Example {
           private static readonly CONFIG = { timeout: 1000, retries: 3 };
 
@@ -190,12 +193,12 @@ ruleTesterTs.run('prefer-utility-function-over-private-static', preferUtilityFun
           }
         }
       `,
-    },
-  ],
-  invalid: [
-    // Basic case: private static method that should be a utility function
-    {
-      code: `
+      },
+    ],
+    invalid: [
+      // Basic case: private static method that should be a utility function
+      {
+        code: `
         export class TemporaryChannelGroupCategorizer {
           private static extractUniqueIdentifiers(sessionStorage: SessionStorage) {
             const identifiersAll = Object.values(sessionStorage).reduce<
@@ -218,11 +221,11 @@ ruleTesterTs.run('prefer-utility-function-over-private-static', preferUtilityFun
           }
         }
       `,
-      errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
-    },
-    // Private static method with complex logic
-    {
-      code: `
+        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+      },
+      // Private static method with complex logic
+      {
+        code: `
         export class DataProcessor {
           private static processData(data: any[]) {
             const filtered = data.filter(item => item.active);
@@ -236,11 +239,11 @@ ruleTesterTs.run('prefer-utility-function-over-private-static', preferUtilityFun
           }
         }
       `,
-      errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
-    },
-    // Private static method with multiple parameters
-    {
-      code: `
+        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+      },
+      // Private static method with multiple parameters
+      {
+        code: `
         export class Calculator {
           private static calculateTotal(items: Item[], taxRate: number, discount: number) {
             const subtotal = items.reduce((sum, item) => sum + item.price, 0);
@@ -250,11 +253,11 @@ ruleTesterTs.run('prefer-utility-function-over-private-static', preferUtilityFun
           }
         }
       `,
-      errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
-    },
-    // Private static method with async/await
-    {
-      code: `
+        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+      },
+      // Private static method with async/await
+      {
+        code: `
         export class ApiClient {
           private static async fetchAndTransform(url: string) {
             const response = await fetch(url);
@@ -267,11 +270,11 @@ ruleTesterTs.run('prefer-utility-function-over-private-static', preferUtilityFun
           }
         }
       `,
-      errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
-    },
-    // Private static method with generic types
-    {
-      code: `
+        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+      },
+      // Private static method with generic types
+      {
+        code: `
         export class Transformer {
           private static transform<T, U>(input: T[], transformFn: (item: T) => U): U[] {
             const result: U[] = [];
@@ -283,11 +286,11 @@ ruleTesterTs.run('prefer-utility-function-over-private-static', preferUtilityFun
           }
         }
       `,
-      errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
-    },
-    // Private static method with destructuring parameters
-    {
-      code: `
+        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+      },
+      // Private static method with destructuring parameters
+      {
+        code: `
         export class ConfigParser {
           private static parseConfig({ baseUrl, timeout, retries }: Config) {
             const normalizedUrl = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
@@ -303,11 +306,11 @@ ruleTesterTs.run('prefer-utility-function-over-private-static', preferUtilityFun
           }
         }
       `,
-      errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
-    },
-    // Private static method with complex return type
-    {
-      code: `
+        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+      },
+      // Private static method with complex return type
+      {
+        code: `
         export class ResponseFormatter {
           private static formatResponse<T>(
             data: T,
@@ -325,11 +328,11 @@ ruleTesterTs.run('prefer-utility-function-over-private-static', preferUtilityFun
           }
         }
       `,
-      errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
-    },
-    // Private static method with complex control flow
-    {
-      code: `
+        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+      },
+      // Private static method with complex control flow
+      {
+        code: `
         export class PathResolver {
           private static resolvePath(basePath: string, relativePath: string): string {
             if (!basePath) {
@@ -362,11 +365,11 @@ ruleTesterTs.run('prefer-utility-function-over-private-static', preferUtilityFun
           }
         }
       `,
-      errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
-    },
-    // Private static method with try/catch
-    {
-      code: `
+        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+      },
+      // Private static method with try/catch
+      {
+        code: `
         export class JsonParser {
           private static safeParseJson(input: string, fallback: any = null) {
             try {
@@ -384,11 +387,11 @@ ruleTesterTs.run('prefer-utility-function-over-private-static', preferUtilityFun
           }
         }
       `,
-      errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
-    },
-    // Private static method with complex regex
-    {
-      code: `
+        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+      },
+      // Private static method with complex regex
+      {
+        code: `
         export class UrlParser {
           private static extractQueryParams(url: string): Record<string, string> {
             const queryParamRegex = /[?&]([^=#]+)=([^&#]*)/g;
@@ -409,11 +412,11 @@ ruleTesterTs.run('prefer-utility-function-over-private-static', preferUtilityFun
           }
         }
       `,
-      errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
-    },
-    // Private static method with nested functions
-    {
-      code: `
+        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+      },
+      // Private static method with nested functions
+      {
+        code: `
         export class StringFormatter {
           private static formatCamelCaseToTitleCase(input: string): string {
             if (!input) {
@@ -437,11 +440,11 @@ ruleTesterTs.run('prefer-utility-function-over-private-static', preferUtilityFun
           }
         }
       `,
-      errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
-    },
-    // Private static method with complex array operations
-    {
-      code: `
+        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+      },
+      // Private static method with complex array operations
+      {
+        code: `
         export class ArrayProcessor {
           private static groupByProperty<T>(
             items: T[],
@@ -472,11 +475,11 @@ ruleTesterTs.run('prefer-utility-function-over-private-static', preferUtilityFun
           }
         }
       `,
-      errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
-    },
-    // Private static method with template literals and string manipulation
-    {
-      code: `
+        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+      },
+      // Private static method with template literals and string manipulation
+      {
+        code: `
         export class TemplateEngine {
           private static renderTemplate(template: string, context: Record<string, any>): string {
             const variableRegex = /\\{\\{\\s*([\\w.]+)\\s*\\}\\}/g;
@@ -503,7 +506,8 @@ ruleTesterTs.run('prefer-utility-function-over-private-static', preferUtilityFun
           }
         }
       `,
-      errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
-    },
-  ],
-});
+        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+      },
+    ],
+  },
+);

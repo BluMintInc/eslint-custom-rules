@@ -88,7 +88,7 @@ ruleTesterTs.run('no-unused-props with imported types', noUnusedProps, {
         ecmaVersion: 2018,
         sourceType: 'module',
       },
-    }
+    },
   ],
-  invalid: []
+  invalid: [],
 });

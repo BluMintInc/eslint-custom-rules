@@ -9,7 +9,8 @@ export const keyOnlyOutermostElement = createRule<Options, MessageIds>({
   meta: {
     type: 'problem',
     docs: {
-      description: 'Enforce that only the outermost element in list rendering has a key prop',
+      description:
+        'Enforce that only the outermost element in list rendering has a key prop',
       recommended: 'error',
     },
     messages: {
@@ -35,16 +36,19 @@ export const keyOnlyOutermostElement = createRule<Options, MessageIds>({
       // Get the callback function
       const callback = node.arguments[0];
 
-      if (callback && (
-        callback.type === 'ArrowFunctionExpression' ||
-        callback.type === 'FunctionExpression'
-      )) {
+      if (
+        callback &&
+        (callback.type === 'ArrowFunctionExpression' ||
+          callback.type === 'FunctionExpression')
+      ) {
         // Find the return statement or expression
         let returnExpr: TSESTree.Expression | null = null;
 
-        if (callback.type === 'ArrowFunctionExpression' &&
-            callback.expression &&
-            callback.body.type !== 'BlockStatement') {
+        if (
+          callback.type === 'ArrowFunctionExpression' &&
+          callback.expression &&
+          callback.body.type !== 'BlockStatement'
+        ) {
           // Arrow function with implicit return
           returnExpr = callback.body;
         } else {
@@ -80,7 +84,9 @@ export const keyOnlyOutermostElement = createRule<Options, MessageIds>({
 
     return {
       // Find array.map() calls
-      'CallExpression[callee.property.name="map"]'(node: TSESTree.CallExpression) {
+      'CallExpression[callee.property.name="map"]'(
+        node: TSESTree.CallExpression,
+      ) {
         processMapCall(node);
       },
 
@@ -97,14 +103,22 @@ export const keyOnlyOutermostElement = createRule<Options, MessageIds>({
 
         for (let i = 0; i < attributes.length; i++) {
           const attr = attributes[i];
-          if (attr.type === 'JSXAttribute' && attr.name.name === 'key' && !reportedAttributes.has(attr)) {
+          if (
+            attr.type === 'JSXAttribute' &&
+            attr.name.name === 'key' &&
+            !reportedAttributes.has(attr)
+          ) {
             // Check if this element is nested inside a map callback element or fragment
             let parent = node.parent;
             let isNestedInMapCallback = false;
 
             while (parent) {
-              if ((parent.type === 'JSXElement' && mapCallbackElements.has(parent)) ||
-                  (parent.type === 'JSXFragment' && mapCallbackFragments.has(parent))) {
+              if (
+                (parent.type === 'JSXElement' &&
+                  mapCallbackElements.has(parent)) ||
+                (parent.type === 'JSXFragment' &&
+                  mapCallbackFragments.has(parent))
+              ) {
                 isNestedInMapCallback = true;
                 break;
               }
@@ -129,7 +143,10 @@ export const keyOnlyOutermostElement = createRule<Options, MessageIds>({
 
                   // Check if there's a space after the attribute
                   let rangeEnd = endPos;
-                  if (rangeEnd < fullText.length && fullText[rangeEnd] === ' ') {
+                  if (
+                    rangeEnd < fullText.length &&
+                    fullText[rangeEnd] === ' '
+                  ) {
                     rangeEnd++;
                   }
 
@@ -144,30 +161,36 @@ export const keyOnlyOutermostElement = createRule<Options, MessageIds>({
       // Handle conditional expressions that might contain map callbacks
       ConditionalExpression(node: TSESTree.ConditionalExpression) {
         // Check both the consequent and alternate branches
-        if (node.consequent.type === 'CallExpression' &&
-            node.consequent.callee.type === 'MemberExpression' &&
-            node.consequent.callee.property.type === 'Identifier' &&
-            node.consequent.callee.property.name === 'map') {
+        if (
+          node.consequent.type === 'CallExpression' &&
+          node.consequent.callee.type === 'MemberExpression' &&
+          node.consequent.callee.property.type === 'Identifier' &&
+          node.consequent.callee.property.name === 'map'
+        ) {
           processMapCall(node.consequent);
         }
 
-        if (node.alternate.type === 'CallExpression' &&
-            node.alternate.callee.type === 'MemberExpression' &&
-            node.alternate.callee.property.type === 'Identifier' &&
-            node.alternate.callee.property.name === 'map') {
+        if (
+          node.alternate.type === 'CallExpression' &&
+          node.alternate.callee.type === 'MemberExpression' &&
+          node.alternate.callee.property.type === 'Identifier' &&
+          node.alternate.callee.property.name === 'map'
+        ) {
           processMapCall(node.alternate);
         }
       },
 
       // Handle logical expressions (&&, ||) that might contain map callbacks
       LogicalExpression(node: TSESTree.LogicalExpression) {
-        if (node.right.type === 'CallExpression' &&
-            node.right.callee.type === 'MemberExpression' &&
-            node.right.callee.property.type === 'Identifier' &&
-            node.right.callee.property.name === 'map') {
+        if (
+          node.right.type === 'CallExpression' &&
+          node.right.callee.type === 'MemberExpression' &&
+          node.right.callee.property.type === 'Identifier' &&
+          node.right.callee.property.name === 'map'
+        ) {
           processMapCall(node.right);
         }
-      }
+      },
     };
   },
 });

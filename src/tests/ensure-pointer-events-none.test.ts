@@ -384,7 +384,7 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
           }
         };
       `,
-    }
+    },
   ],
   invalid: [
     // Invalid case: pseudo-element with position: absolute but no pointer-events

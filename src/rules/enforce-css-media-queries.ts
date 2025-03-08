@@ -33,7 +33,7 @@ export const enforceCssMediaQueries = createRule<[], MessageIds>({
             (specifier) =>
               specifier.type === AST_NODE_TYPES.ImportSpecifier &&
               specifier.imported.type === AST_NODE_TYPES.Identifier &&
-              specifier.imported.name === 'useMediaQuery'
+              specifier.imported.name === 'useMediaQuery',
           )
         ) {
           context.report({
@@ -60,7 +60,7 @@ export const enforceCssMediaQueries = createRule<[], MessageIds>({
             (specifier) =>
               specifier.type === AST_NODE_TYPES.ImportSpecifier &&
               specifier.imported.type === AST_NODE_TYPES.Identifier &&
-              specifier.imported.name === 'useMobile'
+              specifier.imported.name === 'useMobile',
           )
         ) {
           context.report({
@@ -76,13 +76,11 @@ export const enforceCssMediaQueries = createRule<[], MessageIds>({
           node.parent &&
           node.parent.type === AST_NODE_TYPES.ImportDeclaration &&
           node.imported.type === AST_NODE_TYPES.Identifier &&
-          (
-            // Check for useMediaQuery from @mui/material
-            (node.parent.source.value === '@mui/material' &&
-             node.imported.name === 'useMediaQuery') ||
+          // Check for useMediaQuery from @mui/material
+          ((node.parent.source.value === '@mui/material' &&
+            node.imported.name === 'useMediaQuery') ||
             // Check for useMobile from any source
-            node.imported.name === 'useMobile'
-          )
+            node.imported.name === 'useMobile')
         ) {
           context.report({
             node,
@@ -95,7 +93,8 @@ export const enforceCssMediaQueries = createRule<[], MessageIds>({
       CallExpression(node) {
         if (
           node.callee.type === AST_NODE_TYPES.Identifier &&
-          (node.callee.name === 'useMediaQuery' || node.callee.name === 'useMobile')
+          (node.callee.name === 'useMediaQuery' ||
+            node.callee.name === 'useMobile')
         ) {
           context.report({
             node,

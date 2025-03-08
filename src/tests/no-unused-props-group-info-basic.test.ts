@@ -53,7 +53,7 @@ ruleTesterTs.run('no-unused-props with GroupInfoBasic spread', noUnusedProps, {
         ecmaVersion: 2018,
         sourceType: 'module',
       },
-    }
+    },
   ],
-  invalid: []
+  invalid: [],
 });

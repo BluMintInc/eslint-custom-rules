@@ -1,4 +1,8 @@
-# no-object-values-on-strings
+# Disallow Object.values() on strings as it treats strings as arrays of characters, which is likely unintended behavior (`@blumintinc/blumint/no-object-values-on-strings`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 Disallows using `Object.values()` on strings to prevent unintended behavior.
 

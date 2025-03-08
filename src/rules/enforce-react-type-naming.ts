@@ -1,7 +1,9 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
-type MessageIds = 'reactNodeShouldBeLowercase' | 'componentTypeShouldBeUppercase';
+type MessageIds =
+  | 'reactNodeShouldBeLowercase'
+  | 'componentTypeShouldBeUppercase';
 
 // Types that should have lowercase variable names
 const LOWERCASE_TYPES = ['ReactNode', 'JSX.Element'];
@@ -54,7 +56,9 @@ export const enforceReactTypeNaming = createRule<[], MessageIds>({
     /**
      * Extracts the type name from a type annotation
      */
-    function getTypeName(typeAnnotation: TSESTree.TypeNode | undefined): string | null {
+    function getTypeName(
+      typeAnnotation: TSESTree.TypeNode | undefined,
+    ): string | null {
       if (!typeAnnotation) return null;
 
       // Handle TSTypeReference (e.g., ReactNode, ComponentType)
@@ -64,9 +68,10 @@ export const enforceReactTypeNaming = createRule<[], MessageIds>({
         }
         // Handle qualified names like JSX.Element
         if (typeAnnotation.typeName.type === AST_NODE_TYPES.TSQualifiedName) {
-          const left = typeAnnotation.typeName.left.type === AST_NODE_TYPES.Identifier
-            ? typeAnnotation.typeName.left.name
-            : '';
+          const left =
+            typeAnnotation.typeName.left.type === AST_NODE_TYPES.Identifier
+              ? typeAnnotation.typeName.left.name
+              : '';
           const right = typeAnnotation.typeName.right.name;
           return `${left}.${right}`;
         }
@@ -95,7 +100,7 @@ export const enforceReactTypeNaming = createRule<[], MessageIds>({
       return (
         node.parent?.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
         (node.parent?.type === AST_NODE_TYPES.ImportSpecifier &&
-         node.parent.local.name !== node.parent.imported?.name)
+          node.parent.local.name !== node.parent.imported?.name)
       );
     }
 

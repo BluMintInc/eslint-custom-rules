@@ -90,7 +90,9 @@ ruleTester.run(RULE_NAME, rule, {
     // Type imports should be invalid if allowImportType is false
     {
       code: `import type { VideoCallProps } from '@stream-io/video-react-sdk';`,
-      options: [{ libraries: ['@stream-io/video-react-sdk'], allowImportType: false }],
+      options: [
+        { libraries: ['@stream-io/video-react-sdk'], allowImportType: false },
+      ],
       errors: [{ messageId: 'dynamicImportRequired' }],
     },
   ],

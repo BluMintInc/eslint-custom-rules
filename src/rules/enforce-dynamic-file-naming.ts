@@ -12,15 +12,15 @@ export default createRule<
     type: 'suggestion',
     docs: {
       description:
-        'Enforce .dynamic.ts(x) file naming when @blumintinc/blumint/enforce-dynamic-imports rule is disabled',
+        'Enforce .dynamic.ts(x) file naming when @blumintinc/blumint/enforce-dynamic-imports or @blumintinc/blumint/require-dynamic-firebase-imports rule is disabled',
       recommended: 'error',
     },
     schema: [],
     messages: {
       requireDynamicExtension:
-        'Files with disabled @blumintinc/blumint/enforce-dynamic-imports rule must use .dynamic.ts(x) extension',
+        'Files with disabled @blumintinc/blumint/enforce-dynamic-imports or @blumintinc/blumint/require-dynamic-firebase-imports rule must use .dynamic.ts(x) extension',
       requireDisableDirective:
-        'Files with .dynamic.ts(x) extension must have at least one @blumintinc/blumint/enforce-dynamic-imports disable directive',
+        'Files with .dynamic.ts(x) extension must have at least one @blumintinc/blumint/enforce-dynamic-imports or @blumintinc/blumint/require-dynamic-firebase-imports disable directive',
     },
   },
   defaultOptions: [],
@@ -54,20 +54,30 @@ export default createRule<
         for (const comment of comments) {
           const commentText = comment.value.trim();
 
-          // Check for inline disable directive
+          // Check for inline disable directive for either rule
           if (
             (commentText.includes('eslint-disable-next-line') ||
               commentText.includes('ednl')) &&
-            commentText.includes('@blumintinc/blumint/enforce-dynamic-imports')
+            (commentText.includes(
+              '@blumintinc/blumint/enforce-dynamic-imports',
+            ) ||
+              commentText.includes(
+                '@blumintinc/blumint/require-dynamic-firebase-imports',
+              ))
           ) {
             foundDisableDirective = true;
             break;
           }
 
-          // Check for block disable directive
+          // Check for block disable directive for either rule
           if (
             commentText.includes('eslint-disable ') &&
-            commentText.includes('@blumintinc/blumint/enforce-dynamic-imports')
+            (commentText.includes(
+              '@blumintinc/blumint/enforce-dynamic-imports',
+            ) ||
+              commentText.includes(
+                '@blumintinc/blumint/require-dynamic-firebase-imports',
+              ))
           ) {
             foundDisableDirective = true;
             break;

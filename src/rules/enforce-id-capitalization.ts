@@ -14,7 +14,8 @@ export const enforceIdCapitalization = createRule<Options, MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce the use of "ID" instead of "id" in user-facing text',
+      description:
+        'Enforce the use of "ID" instead of "id" in user-facing text',
       recommended: 'error',
     },
     fixable: 'code',
@@ -93,30 +94,39 @@ export const enforceIdCapitalization = createRule<Options, MessageIds>({
       }
 
       // Check if the node is in a property assignment context
-      if (
-        node.parent &&
-        node.parent.type === AST_NODE_TYPES.ObjectExpression
-      ) {
+      if (node.parent && node.parent.type === AST_NODE_TYPES.ObjectExpression) {
         return true;
       }
 
       // Check if the node is in a property access context
+      if (node.parent && node.parent.type === AST_NODE_TYPES.MemberExpression) {
+        return true;
+      }
+
+      // Check if the node is a string literal used for property access
+      // This handles cases like obj['id'] or OverwolfGame['id']
       if (
         node.parent &&
-        node.parent.type === AST_NODE_TYPES.MemberExpression
+        node.parent.type === AST_NODE_TYPES.MemberExpression &&
+        node.parent.computed === true &&
+        node.parent.property === node
       ) {
         return true;
       }
 
       // Check if the node is a string literal in a type definition context
       // This handles cases like Pick<Type, 'id' | 'name'>
-      if (node.type === AST_NODE_TYPES.Literal && typeof node.value === 'string') {
+      if (
+        node.type === AST_NODE_TYPES.Literal &&
+        typeof node.value === 'string'
+      ) {
         let currentNode = node;
         while (currentNode.parent) {
           // Check for TypeScript type contexts
           if (
             currentNode.parent.type === AST_NODE_TYPES.TSTypeReference ||
-            currentNode.parent.type === AST_NODE_TYPES.TSTypeParameterInstantiation ||
+            currentNode.parent.type ===
+              AST_NODE_TYPES.TSTypeParameterInstantiation ||
             currentNode.parent.type === AST_NODE_TYPES.TSUnionType ||
             currentNode.parent.type === AST_NODE_TYPES.TSIntersectionType ||
             currentNode.parent.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
@@ -140,6 +150,19 @@ export const enforceIdCapitalization = createRule<Options, MessageIds>({
 
       // Skip checking if the node is in an excluded context
       if (isExcludedContext(node)) return;
+
+      // Check if this is a variable declaration with a string literal containing 'id'
+      if (
+        node.type === AST_NODE_TYPES.Literal &&
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.VariableDeclarator &&
+        node.parent.init === node &&
+        node.parent.id.type === AST_NODE_TYPES.Identifier &&
+        node.parent.id.name.toLowerCase().includes('id')
+      ) {
+        // Skip checking variable assignments where the variable name contains 'id'
+        return;
+      }
 
       // Reset the regex lastIndex to ensure consistent behavior
       idRegex.lastIndex = 0;

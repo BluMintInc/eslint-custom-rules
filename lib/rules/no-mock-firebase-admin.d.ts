@@ -1,1 +1,0 @@
-export declare const noMockFirebaseAdmin: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"noMockFirebaseAdmin", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;

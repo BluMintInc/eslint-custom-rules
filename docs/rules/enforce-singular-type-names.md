@@ -1,4 +1,8 @@
-# enforce-singular-type-names
+# Enforce TypeScript type names to be singular (`@blumintinc/blumint/enforce-singular-type-names`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 This rule enforces a naming convention where type names are singular. This convention enhances readability, maintainability, and consistency across the codebase. It prevents confusion between individual items and collections, improving developer experience.
 

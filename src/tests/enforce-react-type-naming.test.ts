@@ -262,7 +262,8 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
           },
         },
       ],
-      output: 'const createComponent = (Component) => { return <component />; };',
+      output:
+        'const createComponent = (Component) => { return <component />; };',
     },
     {
       code: 'const withHOC = (wrapper: ComponentType) => (props) => <wrapper {...props} />;',

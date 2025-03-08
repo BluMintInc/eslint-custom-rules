@@ -59,14 +59,22 @@ export default createRule<[], MessageIds>({
 
     function hasJSXWithFunction(node: TSESTree.Node): boolean {
       if (node.type === TSESTree.AST_NODE_TYPES.JSXElement) {
-        return (node as TSESTree.JSXElement).openingElement.attributes.some((attr) => {
-          if (attr.type === TSESTree.AST_NODE_TYPES.JSXAttribute && attr.value) {
-            if (attr.value.type === TSESTree.AST_NODE_TYPES.JSXExpressionContainer) {
-              return containsFunction(attr.value.expression);
+        return (node as TSESTree.JSXElement).openingElement.attributes.some(
+          (attr) => {
+            if (
+              attr.type === TSESTree.AST_NODE_TYPES.JSXAttribute &&
+              attr.value
+            ) {
+              if (
+                attr.value.type ===
+                TSESTree.AST_NODE_TYPES.JSXExpressionContainer
+              ) {
+                return containsFunction(attr.value.expression);
+              }
             }
-          }
-          return false;
-        });
+            return false;
+          },
+        );
       }
 
       return false;
@@ -109,7 +117,10 @@ export default createRule<[], MessageIds>({
         (containsFunction(expression) || hasJSXWithFunction(expression))
       ) {
         // Skip reporting if this is a JSX element and we already reported an inline function
-        if (expression.type === TSESTree.AST_NODE_TYPES.JSXElement && hasJSXWithFunction(expression)) {
+        if (
+          expression.type === TSESTree.AST_NODE_TYPES.JSXElement &&
+          hasJSXWithFunction(expression)
+        ) {
           return;
         }
         context.report({

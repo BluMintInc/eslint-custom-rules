@@ -1,4 +1,8 @@
-# enforce-dynamic-imports
+# Enforce dynamic imports for specified libraries to optimize bundle size (`@blumintinc/blumint/enforce-dynamic-imports`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 Enforce dynamic imports for specified libraries to optimize bundle size.
 

@@ -24,16 +24,20 @@ const isJsxReturnType = (node: TSESTree.TSTypeAnnotation): boolean => {
       return ['JSX', 'ReactNode', 'ReactElement'].includes(typeName.name);
     }
     if (typeName.type === AST_NODE_TYPES.TSQualifiedName) {
-      return typeName.left.type === AST_NODE_TYPES.Identifier &&
-             typeName.left.name === 'JSX' &&
-             typeName.right.type === AST_NODE_TYPES.Identifier &&
-             typeName.right.name === 'Element';
+      return (
+        typeName.left.type === AST_NODE_TYPES.Identifier &&
+        typeName.left.name === 'JSX' &&
+        typeName.right.type === AST_NODE_TYPES.Identifier &&
+        typeName.right.name === 'Element'
+      );
     }
   }
   return false;
 };
 
-const containsJsxInBlockStatement = (node: TSESTree.BlockStatement): boolean => {
+const containsJsxInBlockStatement = (
+  node: TSESTree.BlockStatement,
+): boolean => {
   const variablesWithJsx = new Set<string>();
 
   for (const statement of node.body) {
@@ -41,8 +45,10 @@ const containsJsxInBlockStatement = (node: TSESTree.BlockStatement): boolean => 
     if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
       for (const declarator of statement.declarations) {
         if (declarator.init) {
-          if (declarator.init.type === AST_NODE_TYPES.CallExpression &&
-              containsJsxInUseMemo(declarator.init)) {
+          if (
+            declarator.init.type === AST_NODE_TYPES.CallExpression &&
+            containsJsxInUseMemo(declarator.init)
+          ) {
             if (declarator.id.type === AST_NODE_TYPES.Identifier) {
               variablesWithJsx.add(declarator.id.name);
             }
@@ -52,7 +58,10 @@ const containsJsxInBlockStatement = (node: TSESTree.BlockStatement): boolean => 
     }
 
     // Check return statements
-    if (statement.type === AST_NODE_TYPES.ReturnStatement && statement.argument) {
+    if (
+      statement.type === AST_NODE_TYPES.ReturnStatement &&
+      statement.argument
+    ) {
       if (isJsxElement(statement.argument)) {
         return true;
       }
@@ -61,41 +70,55 @@ const containsJsxInBlockStatement = (node: TSESTree.BlockStatement): boolean => 
           return true;
         }
       }
-      if (statement.argument.type === AST_NODE_TYPES.Identifier &&
-          variablesWithJsx.has(statement.argument.name)) {
+      if (
+        statement.argument.type === AST_NODE_TYPES.Identifier &&
+        variablesWithJsx.has(statement.argument.name)
+      ) {
         return true;
       }
     }
 
     // Check if statements
     if (statement.type === AST_NODE_TYPES.IfStatement) {
-      if (statement.consequent.type === AST_NODE_TYPES.ReturnStatement &&
-          statement.consequent.argument) {
+      if (
+        statement.consequent.type === AST_NODE_TYPES.ReturnStatement &&
+        statement.consequent.argument
+      ) {
         if (isJsxElement(statement.consequent.argument)) {
           return true;
         }
-        if (statement.consequent.argument.type === AST_NODE_TYPES.Identifier &&
-            variablesWithJsx.has(statement.consequent.argument.name)) {
+        if (
+          statement.consequent.argument.type === AST_NODE_TYPES.Identifier &&
+          variablesWithJsx.has(statement.consequent.argument.name)
+        ) {
           return true;
         }
       }
-      if (statement.consequent.type === AST_NODE_TYPES.BlockStatement &&
-          containsJsxInBlockStatement(statement.consequent)) {
+      if (
+        statement.consequent.type === AST_NODE_TYPES.BlockStatement &&
+        containsJsxInBlockStatement(statement.consequent)
+      ) {
         return true;
       }
       if (statement.alternate) {
-        if (statement.alternate.type === AST_NODE_TYPES.ReturnStatement &&
-            statement.alternate.argument) {
+        if (
+          statement.alternate.type === AST_NODE_TYPES.ReturnStatement &&
+          statement.alternate.argument
+        ) {
           if (isJsxElement(statement.alternate.argument)) {
             return true;
           }
-          if (statement.alternate.argument.type === AST_NODE_TYPES.Identifier &&
-              variablesWithJsx.has(statement.alternate.argument.name)) {
+          if (
+            statement.alternate.argument.type === AST_NODE_TYPES.Identifier &&
+            variablesWithJsx.has(statement.alternate.argument.name)
+          ) {
             return true;
           }
         }
-        if (statement.alternate.type === AST_NODE_TYPES.BlockStatement &&
-            containsJsxInBlockStatement(statement.alternate)) {
+        if (
+          statement.alternate.type === AST_NODE_TYPES.BlockStatement &&
+          containsJsxInBlockStatement(statement.alternate)
+        ) {
           return true;
         }
       }
@@ -111,8 +134,10 @@ const containsJsxInUseMemo = (node: TSESTree.CallExpression): boolean => {
     node.arguments.length > 0
   ) {
     const callback = node.arguments[0];
-    if (callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-        callback.type === AST_NODE_TYPES.FunctionExpression) {
+    if (
+      callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+      callback.type === AST_NODE_TYPES.FunctionExpression
+    ) {
       const body = callback.body;
       if (isJsxElement(body)) {
         return true;
@@ -120,14 +145,18 @@ const containsJsxInUseMemo = (node: TSESTree.CallExpression): boolean => {
       if (body.type === AST_NODE_TYPES.BlockStatement) {
         return containsJsxInBlockStatement(body);
       }
-      if (body.type === AST_NODE_TYPES.CallExpression &&
-          body.callee.type === AST_NODE_TYPES.MemberExpression &&
-          body.callee.property.type === AST_NODE_TYPES.Identifier &&
-          body.callee.property.name === 'map') {
+      if (
+        body.type === AST_NODE_TYPES.CallExpression &&
+        body.callee.type === AST_NODE_TYPES.MemberExpression &&
+        body.callee.property.type === AST_NODE_TYPES.Identifier &&
+        body.callee.property.name === 'map'
+      ) {
         const mapCallback = body.arguments[0];
-        if ((mapCallback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-             mapCallback.type === AST_NODE_TYPES.FunctionExpression) &&
-            isJsxElement(mapCallback.body)) {
+        if (
+          (mapCallback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+            mapCallback.type === AST_NODE_TYPES.FunctionExpression) &&
+          isJsxElement(mapCallback.body)
+        ) {
           return true;
         }
       }

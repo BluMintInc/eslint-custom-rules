@@ -9,13 +9,15 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce @Memoize() decorator on async methods with 0-1 parameters to cache results and prevent redundant API calls or expensive computations. This improves performance by reusing previous results when the same parameters are provided, particularly useful for data fetching methods.',
+      description:
+        'Enforce @Memoize() decorator on async methods with 0-1 parameters to cache results and prevent redundant API calls or expensive computations. This improves performance by reusing previous results when the same parameters are provided, particularly useful for data fetching methods.',
       recommended: 'error',
     },
     fixable: 'code',
     schema: [],
     messages: {
-      requireMemoize: 'Async methods with 0-1 parameters should be decorated with @Memoize() to cache results and improve performance. Instead of `async getData(id?: string)`, use `@Memoize()\nasync getData(id?: string)`. Import Memoize from "typescript-memoize".',
+      requireMemoize:
+        'Async methods with 0-1 parameters should be decorated with @Memoize() to cache results and improve performance. Instead of `async getData(id?: string)`, use `@Memoize()\nasync getData(id?: string)`. Import Memoize from "typescript-memoize".',
     },
   },
   defaultOptions: [],
@@ -27,9 +29,9 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
       ImportDeclaration(node) {
         if (node.source.value === 'typescript-memoize') {
           const memoizeSpecifier = node.specifiers.find(
-            spec =>
+            (spec) =>
               spec.type === AST_NODE_TYPES.ImportSpecifier &&
-              spec.imported.name === 'Memoize'
+              spec.imported.name === 'Memoize',
           );
           if (memoizeSpecifier) {
             hasMemoizeImport = true;
@@ -56,7 +58,7 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
         }
 
         // Check if method already has @Memoize decorator
-        const hasDecorator = node.decorators?.some(decorator => {
+        const hasDecorator = node.decorators?.some((decorator) => {
           if (decorator.expression.type !== AST_NODE_TYPES.CallExpression) {
             return false;
           }
@@ -76,7 +78,7 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
               // Add decorator
               return fixer.insertTextBefore(
                 node,
-                `@${memoizeAlias}()\n${' '.repeat(node.loc.start.column)}`
+                `@${memoizeAlias}()\n${' '.repeat(node.loc.start.column)}`,
               );
             },
           });

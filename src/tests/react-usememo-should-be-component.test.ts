@@ -6,6 +6,46 @@ ruleTesterJsx.run(
   reactUseMemoShouldBeComponent,
   {
     valid: [
+      // Test case for the specific bug: useMemo returning conditional JSX that can be false (with logical AND)
+      {
+        code: `
+        import React, { useMemo } from 'react';
+        import { SponsorsV3 } from '../SponsorsV3';
+        import { useTheme } from '@mui/material/styles';
+
+        const Component = ({ sponsors }) => {
+          const theme = useTheme();
+
+          const sponsorsPanel = useMemo(() => {
+            return (
+              !!sponsors && (
+                <SponsorsV3 sponsors={sponsors} sx={{ ...theme.panels[0] }} />
+              )
+            );
+          }, [sponsors?.length]);
+
+          return <div>{sponsorsPanel}</div>;
+        };
+      `,
+      },
+      // Test case for the specific bug: useMemo returning conditional JSX that can be false (with logical AND and comparison)
+      {
+        code: `
+        import React, { useMemo } from 'react';
+        import { MatchTop3 } from './MatchTop3';
+
+        const Component = ({ match }) => {
+          const top3 = useMemo(() => {
+            return (
+              !!match &&
+              match.resultsAggregation.winThresholdExceeders.length > 3 && <MatchTop3 />
+            );
+          }, [match?.resultsAggregation.winThresholdExceeders.length]);
+
+          return <div>{top3}</div>;
+        };
+      `,
+      },
       // Test case for the specific bug: useMemo returning a number calculation
       {
         code: `

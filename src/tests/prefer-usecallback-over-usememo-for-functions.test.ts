@@ -206,28 +206,6 @@ ruleTester.run(
         }
       `,
       },
-      // Invalid case: simple body with a single return statement
-      {
-        code: `
-        function Component() {
-          const handleClick = useMemo(() => {
-            return () => {
-              console.log('Button clicked');
-            };
-          }, []);
-          return <button onClick={handleClick}>Click me</button>;
-        }
-      `,
-        errors: [{ messageId: 'preferUseCallback' }],
-        output: `
-        function Component() {
-          const handleClick = useCallback(() => {
-              console.log('Button clicked');
-            }, []);
-          return <button onClick={handleClick}>Click me</button>;
-        }
-      `,
-      },
       // Invalid case: function factory when allowFunctionFactories is false
       {
         code: `

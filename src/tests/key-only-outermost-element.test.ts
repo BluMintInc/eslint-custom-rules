@@ -166,7 +166,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
         )
       }))}
     />
-    `
+    `,
   ],
   invalid: [
     // Basic invalid case - key on nested element
@@ -185,7 +185,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
           <span >{item.name}</span>
         </div>
       ))}
-      `
+      `,
     },
 
     // Invalid case with multiple nested keys
@@ -200,7 +200,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
       `,
       errors: [
         { messageId: 'keyOnlyOutermostElement' },
-        { messageId: 'keyOnlyOutermostElement' }
+        { messageId: 'keyOnlyOutermostElement' },
       ],
       output: `
       {items.map((item) => (
@@ -209,7 +209,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
           <p >{item.description}</p>
         </div>
       ))}
-      `
+      `,
     },
 
     // Invalid case with Fragment shorthand without key but nested elements with keys
@@ -225,7 +225,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
       errors: [
         { messageId: 'fragmentShouldHaveKey' },
         { messageId: 'keyOnlyOutermostElement' },
-        { messageId: 'keyOnlyOutermostElement' }
+        { messageId: 'keyOnlyOutermostElement' },
       ],
       output: `
       {items.map((item) => (
@@ -234,7 +234,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
           <p >{item.description}</p>
         </>
       ))}
-      `
+      `,
     },
 
     // Invalid case with nested map and redundant keys
@@ -263,7 +263,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
           </ul>
         </div>
       ))}
-      `
+      `,
     },
 
     // Invalid case with conditional rendering and nested keys
@@ -282,7 +282,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
           <p >{item.name}</p>
         </div>
       ))}
-      `
+      `,
     },
 
     // Invalid case with ternary operator and nested keys
@@ -307,7 +307,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
             </div>
           ))
       }
-      `
+      `,
     },
 
     // Invalid case with key on every element in a deeply nested structure
@@ -330,7 +330,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
         { messageId: 'keyOnlyOutermostElement' },
         { messageId: 'keyOnlyOutermostElement' },
         { messageId: 'keyOnlyOutermostElement' },
-        { messageId: 'keyOnlyOutermostElement' }
+        { messageId: 'keyOnlyOutermostElement' },
       ],
       output: `
       {items.map((item) => (
@@ -344,7 +344,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
           </section>
         </div>
       ))}
-      `
+      `,
     },
 
     // Invalid case with key on element inside a component in map
@@ -363,7 +363,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
           <div >{item.name}</div>
         </CustomComponent>
       ))}
-      `
+      `,
     },
 
     // Invalid case with multiple maps and keys at wrong levels
@@ -391,7 +391,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
       `,
       errors: [
         { messageId: 'keyOnlyOutermostElement' },
-        { messageId: 'keyOnlyOutermostElement' }
+        { messageId: 'keyOnlyOutermostElement' },
       ],
       output: `
       <div>
@@ -413,7 +413,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
           </section>
         ))}
       </div>
-      `
+      `,
     },
 
     // Invalid case with dynamic component rendering and nested keys
@@ -438,7 +438,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
           </Component>
         );
       })}
-      `
+      `,
     },
 
     // Invalid case with complex conditional logic and nested keys
@@ -471,7 +471,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
               </div>
             ))
       }
-      `
+      `,
     },
 
     // Invalid case with Fragment that should use React.Fragment with key
@@ -492,7 +492,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
           <div>{item.description}</div>
         </>
       ))}
-      `
-    }
+      `,
+    },
   ],
 });

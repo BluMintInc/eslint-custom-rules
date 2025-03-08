@@ -29,7 +29,10 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
      */
     function containsStringLiteral(node: TSESTree.Node): boolean {
       // Direct string literal
-      if (node.type === AST_NODE_TYPES.Literal && typeof node.value === 'string') {
+      if (
+        node.type === AST_NODE_TYPES.Literal &&
+        typeof node.value === 'string'
+      ) {
         return true;
       }
 
@@ -45,7 +48,8 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
       // Conditional (ternary) expression with string literals
       if (
         node.type === AST_NODE_TYPES.ConditionalExpression &&
-        (containsStringLiteral(node.consequent) || containsStringLiteral(node.alternate))
+        (containsStringLiteral(node.consequent) ||
+          containsStringLiteral(node.alternate))
       ) {
         return true;
       }
@@ -54,10 +58,10 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
       if (node.type === AST_NODE_TYPES.TemplateLiteral) {
         // Only report if there's a meaningful static part in the template
         // This allows dynamic templates like `${prefix}-${id}` but catches `static-${id}`
-        const hasSignificantStaticPart = node.quasis.some(quasi => {
+        const hasSignificantStaticPart = node.quasis.some((quasi) => {
           const content = quasi.value.raw.trim();
           // Allow common separators like '-', '_', ':', '/' as they're just joining dynamic parts
-          return content.length > 0 && !(/^[-_:/.]+$/.test(content));
+          return content.length > 0 && !/^[-_:/.]+$/.test(content);
         });
         return hasSignificantStaticPart;
       }
@@ -83,7 +87,7 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                 (prop): prop is TSESTree.Property =>
                   prop.type === AST_NODE_TYPES.Property &&
                   prop.key.type === AST_NODE_TYPES.Identifier &&
-                  prop.key.name === 'key'
+                  prop.key.name === 'key',
               );
 
               // If key property exists, check its value

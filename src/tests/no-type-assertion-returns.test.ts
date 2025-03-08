@@ -468,7 +468,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
       `,
       errors: [
         { messageId: 'noTypeAssertionReturns' },
-        { messageId: 'noTypeAssertionReturns' }
+        { messageId: 'noTypeAssertionReturns' },
       ],
     },
 
@@ -662,7 +662,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
       errors: [
         { messageId: 'noTypeAssertionReturns' },
         { messageId: 'noTypeAssertionReturns' },
-        { messageId: 'noTypeAssertionReturns' }
+        { messageId: 'noTypeAssertionReturns' },
       ],
     },
 
@@ -719,7 +719,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
       `,
       errors: [
         { messageId: 'noTypeAssertionReturns' },
-        { messageId: 'noTypeAssertionReturns' }
+        { messageId: 'noTypeAssertionReturns' },
       ],
     },
 

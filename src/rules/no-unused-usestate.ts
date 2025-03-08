@@ -1,7 +1,8 @@
 import { ESLintUtils, TSESTree } from '@typescript-eslint/utils';
 
 const createRule = ESLintUtils.RuleCreator(
-  (name) => `https://github.com/BluMintInc/eslint-custom-rules/blob/main/docs/rules/${name}.md`
+  (name) =>
+    `https://github.com/BluMintInc/eslint-custom-rules/blob/main/docs/rules/${name}.md`,
 );
 
 /**
@@ -18,7 +19,8 @@ export const noUnusedUseState = createRule({
     },
     fixable: 'code',
     messages: {
-      unusedUseState: 'The state variable is ignored. Remove the unused useState hook.',
+      unusedUseState:
+        'The state variable is ignored. Remove the unused useState hook.',
     },
     schema: [],
   },
@@ -45,8 +47,10 @@ export const noUnusedUseState = createRule({
             if (
               arrayPattern.elements.length > 0 &&
               arrayPattern.elements[0] &&
-              arrayPattern.elements[0].type === TSESTree.AST_NODE_TYPES.Identifier &&
-              (arrayPattern.elements[0].name === '_' || arrayPattern.elements[0].name.startsWith('_'))
+              arrayPattern.elements[0].type ===
+                TSESTree.AST_NODE_TYPES.Identifier &&
+              (arrayPattern.elements[0].name === '_' ||
+                arrayPattern.elements[0].name.startsWith('_'))
             ) {
               context.report({
                 node,
@@ -56,15 +60,25 @@ export const noUnusedUseState = createRule({
                   const sourceCode = context.getSourceCode();
                   const parentStatement = node.parent;
 
-                  if (parentStatement && parentStatement.type === TSESTree.AST_NODE_TYPES.VariableDeclaration) {
+                  if (
+                    parentStatement &&
+                    parentStatement.type ===
+                      TSESTree.AST_NODE_TYPES.VariableDeclaration
+                  ) {
                     // If this is the only declarator, remove the entire statement and any extra whitespace
                     if (parentStatement.declarations.length === 1) {
                       // Get the next token after the statement to handle whitespace properly
-                      const nextToken = sourceCode.getTokenAfter(parentStatement, { includeComments: true });
+                      const nextToken = sourceCode.getTokenAfter(
+                        parentStatement,
+                        { includeComments: true },
+                      );
 
                       if (nextToken) {
                         // Remove the statement and any whitespace up to the next token
-                        return fixer.removeRange([parentStatement.range[0], nextToken.range[0]]);
+                        return fixer.removeRange([
+                          parentStatement.range[0],
+                          nextToken.range[0],
+                        ]);
                       }
 
                       return fixer.remove(parentStatement);
@@ -76,13 +90,19 @@ export const noUnusedUseState = createRule({
                     // Check if there's a comma after this declarator
                     const tokenAfter = sourceCode.getTokenAfter(node);
                     if (tokenAfter && tokenAfter.value === ',') {
-                      return fixer.removeRange([declaratorRange[0], tokenAfter.range[1]]);
+                      return fixer.removeRange([
+                        declaratorRange[0],
+                        tokenAfter.range[1],
+                      ]);
                     }
 
                     // Check if there's a comma before this declarator
                     const tokenBefore = sourceCode.getTokenBefore(node);
                     if (tokenBefore && tokenBefore.value === ',') {
-                      return fixer.removeRange([tokenBefore.range[0], declaratorRange[1]]);
+                      return fixer.removeRange([
+                        tokenBefore.range[0],
+                        declaratorRange[1],
+                      ]);
                     }
 
                     return fixer.remove(node);

@@ -8,13 +8,15 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce React hooks with optional parameters to default to an empty object',
+      description:
+        'Enforce React hooks with optional parameters to default to an empty object',
       recommended: 'error',
     },
     fixable: 'code',
     schema: [],
     messages: {
-      requireDefaultParams: 'React hooks with all optional parameters should default to an empty object',
+      requireDefaultParams:
+        'React hooks with all optional parameters should default to an empty object',
     },
   },
   defaultOptions: [],
@@ -23,10 +25,15 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
       return name.startsWith('use') && name[3]?.toUpperCase() === name[3];
     }
 
-    function hasAllOptionalProperties(typeNode: TSESTree.TypeNode | TSESTree.TSTypeAliasDeclaration | TSESTree.TSInterfaceDeclaration): boolean {
+    function hasAllOptionalProperties(
+      typeNode:
+        | TSESTree.TypeNode
+        | TSESTree.TSTypeAliasDeclaration
+        | TSESTree.TSInterfaceDeclaration,
+    ): boolean {
       // Handle type literals directly
       if (typeNode.type === AST_NODE_TYPES.TSTypeLiteral) {
-        return typeNode.members.every(member => {
+        return typeNode.members.every((member) => {
           if (member.type !== AST_NODE_TYPES.TSPropertySignature) {
             return false;
           }
@@ -42,7 +49,7 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
         }
 
         const scope = context.getScope();
-        const variable = scope.variables.find(v => v.name === typeName.name);
+        const variable = scope.variables.find((v) => v.name === typeName.name);
         if (!variable || !variable.defs[0]?.node) {
           // If we can't find the type definition, assume it's a type with required properties
           // This handles cases where the type is imported from another module
@@ -53,7 +60,7 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
         if (def.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
           return hasAllOptionalProperties(def.typeAnnotation);
         } else if (def.type === AST_NODE_TYPES.TSInterfaceDeclaration) {
-          return def.body.body.every(member => {
+          return def.body.body.every((member) => {
             if (member.type !== AST_NODE_TYPES.TSPropertySignature) {
               return false;
             }
@@ -74,7 +81,7 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
 
       // Handle interface declarations
       if (typeNode.type === AST_NODE_TYPES.TSInterfaceDeclaration) {
-        return typeNode.body.body.every(member => {
+        return typeNode.body.body.every((member) => {
           if (member.type !== AST_NODE_TYPES.TSPropertySignature) {
             return false;
           }
@@ -86,7 +93,9 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
     }
 
     return {
-      'ArrowFunctionExpression, FunctionDeclaration'(node: TSESTree.ArrowFunctionExpression | TSESTree.FunctionDeclaration): void {
+      'ArrowFunctionExpression, FunctionDeclaration'(
+        node: TSESTree.ArrowFunctionExpression | TSESTree.FunctionDeclaration,
+      ): void {
         // Check if it's a hook function
         let isHook = false;
         if (node.type === AST_NODE_TYPES.FunctionDeclaration) {
@@ -119,13 +128,18 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
         }
 
         // Check if the parameter has a type annotation
-        if (param.type === AST_NODE_TYPES.ObjectPattern && param.typeAnnotation) {
+        if (
+          param.type === AST_NODE_TYPES.ObjectPattern &&
+          param.typeAnnotation
+        ) {
           const typeAnnotation = param.typeAnnotation.typeAnnotation;
           if (typeAnnotation.type === AST_NODE_TYPES.TSTypeReference) {
             const typeName = typeAnnotation.typeName;
             if (typeName.type === AST_NODE_TYPES.Identifier) {
               const scope = context.getScope();
-              const variable = scope.variables.find(v => v.name === typeName.name);
+              const variable = scope.variables.find(
+                (v) => v.name === typeName.name,
+              );
               if (variable && variable.defs[0]?.node) {
                 const def = variable.defs[0].node;
                 if (def.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
@@ -134,23 +148,29 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
                       node: param,
                       messageId: 'requireDefaultParams',
                       fix(fixer) {
-                        const paramText = context.getSourceCode().getText(param);
+                        const paramText = context
+                          .getSourceCode()
+                          .getText(param);
                         return fixer.replaceText(param, `${paramText} = {}`);
                       },
                     });
                   }
                 } else if (def.type === AST_NODE_TYPES.TSInterfaceDeclaration) {
-                  if (def.body.body.every(member => {
-                    if (member.type !== AST_NODE_TYPES.TSPropertySignature) {
-                      return false;
-                    }
-                    return member.optional === true;
-                  })) {
+                  if (
+                    def.body.body.every((member) => {
+                      if (member.type !== AST_NODE_TYPES.TSPropertySignature) {
+                        return false;
+                      }
+                      return member.optional === true;
+                    })
+                  ) {
                     context.report({
                       node: param,
                       messageId: 'requireDefaultParams',
                       fix(fixer) {
-                        const paramText = context.getSourceCode().getText(param);
+                        const paramText = context
+                          .getSourceCode()
+                          .getText(param);
                         return fixer.replaceText(param, `${paramText} = {}`);
                       },
                     });
@@ -159,8 +179,11 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
               } else {
                 // If we can't find the type definition, check if it's defined in the same file
                 const program = context.getSourceCode().ast;
-                const typeDefinitions = program.body.filter(node => {
-                  if (node.type === AST_NODE_TYPES.TSTypeAliasDeclaration || node.type === AST_NODE_TYPES.TSInterfaceDeclaration) {
+                const typeDefinitions = program.body.filter((node) => {
+                  if (
+                    node.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
+                    node.type === AST_NODE_TYPES.TSInterfaceDeclaration
+                  ) {
                     if (node.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
                       return node.id.name === typeName.name;
                     } else {
@@ -178,23 +201,33 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
                         node: param,
                         messageId: 'requireDefaultParams',
                         fix(fixer) {
-                          const paramText = context.getSourceCode().getText(param);
+                          const paramText = context
+                            .getSourceCode()
+                            .getText(param);
                           return fixer.replaceText(param, `${paramText} = {}`);
                         },
                       });
                     }
-                  } else if (def.type === AST_NODE_TYPES.TSInterfaceDeclaration) {
-                    if (def.body.body.every(member => {
-                      if (member.type !== AST_NODE_TYPES.TSPropertySignature) {
-                        return false;
-                      }
-                      return member.optional === true;
-                    })) {
+                  } else if (
+                    def.type === AST_NODE_TYPES.TSInterfaceDeclaration
+                  ) {
+                    if (
+                      def.body.body.every((member) => {
+                        if (
+                          member.type !== AST_NODE_TYPES.TSPropertySignature
+                        ) {
+                          return false;
+                        }
+                        return member.optional === true;
+                      })
+                    ) {
                       context.report({
                         node: param,
                         messageId: 'requireDefaultParams',
                         fix(fixer) {
-                          const paramText = context.getSourceCode().getText(param);
+                          const paramText = context
+                            .getSourceCode()
+                            .getText(param);
                           return fixer.replaceText(param, `${paramText} = {}`);
                         },
                       });
@@ -204,12 +237,14 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
               }
             }
           } else if (typeAnnotation.type === AST_NODE_TYPES.TSTypeLiteral) {
-            if (typeAnnotation.members.every(member => {
-              if (member.type !== AST_NODE_TYPES.TSPropertySignature) {
-                return false;
-              }
-              return member.optional === true;
-            })) {
+            if (
+              typeAnnotation.members.every((member) => {
+                if (member.type !== AST_NODE_TYPES.TSPropertySignature) {
+                  return false;
+                }
+                return member.optional === true;
+              })
+            ) {
               context.report({
                 node: param,
                 messageId: 'requireDefaultParams',

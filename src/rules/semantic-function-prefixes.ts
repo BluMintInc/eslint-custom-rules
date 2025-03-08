@@ -3,9 +3,20 @@ import { createRule } from '../utils/createRule';
 
 type MessageIds = 'avoidGenericPrefix';
 
-const DISALLOWED_PREFIXES = new Set(['get', 'update', 'check', 'manage', 'process', 'do']);
+const DISALLOWED_PREFIXES = new Set([
+  'get',
+  'update',
+  'check',
+  'manage',
+  'process',
+  'do',
+]);
 
-const NEXTJS_DATA_FUNCTIONS = new Set(['getServerSideProps', 'getStaticProps', 'getStaticPaths']);
+const NEXTJS_DATA_FUNCTIONS = new Set([
+  'getServerSideProps',
+  'getStaticProps',
+  'getStaticPaths',
+]);
 
 const SUGGESTED_ALTERNATIVES = {
   get: ['fetch', 'retrieve', 'compute', 'derive'],
@@ -21,7 +32,8 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce semantic function prefixes over generic ones like "get" and "update"',
+      description:
+        'Enforce semantic function prefixes over generic ones like "get" and "update"',
       recommended: 'error',
     },
     schema: [],
@@ -38,7 +50,8 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
         return;
       }
 
-      const methodName = node.key.type === AST_NODE_TYPES.Identifier ? node.key.name : '';
+      const methodName =
+        node.key.type === AST_NODE_TYPES.Identifier ? node.key.name : '';
       if (!methodName) return;
 
       // Skip if method starts with 'is' (boolean check methods are okay)
@@ -64,7 +77,10 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
             messageId: 'avoidGenericPrefix',
             data: {
               prefix,
-              alternatives: SUGGESTED_ALTERNATIVES[prefix as keyof typeof SUGGESTED_ALTERNATIVES].join(', '),
+              alternatives:
+                SUGGESTED_ALTERNATIVES[
+                  prefix as keyof typeof SUGGESTED_ALTERNATIVES
+                ].join(', '),
             },
           });
           break;
@@ -72,7 +88,12 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
       }
     }
 
-    function checkFunctionName(node: TSESTree.FunctionDeclaration | TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression) {
+    function checkFunctionName(
+      node:
+        | TSESTree.FunctionDeclaration
+        | TSESTree.FunctionExpression
+        | TSESTree.ArrowFunctionExpression,
+    ) {
       // Skip anonymous functions
       if (!node.id && node.parent?.type !== AST_NODE_TYPES.VariableDeclarator) {
         return;
@@ -82,7 +103,10 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
       let functionName = '';
       if (node.id) {
         functionName = node.id.name;
-      } else if (node.parent?.type === AST_NODE_TYPES.VariableDeclarator && node.parent.id.type === AST_NODE_TYPES.Identifier) {
+      } else if (
+        node.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+        node.parent.id.type === AST_NODE_TYPES.Identifier
+      ) {
         functionName = node.parent.id.name;
       }
 
@@ -111,7 +135,10 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
             messageId: 'avoidGenericPrefix',
             data: {
               prefix,
-              alternatives: SUGGESTED_ALTERNATIVES[prefix as keyof typeof SUGGESTED_ALTERNATIVES].join(', '),
+              alternatives:
+                SUGGESTED_ALTERNATIVES[
+                  prefix as keyof typeof SUGGESTED_ALTERNATIVES
+                ].join(', '),
             },
           });
           break;

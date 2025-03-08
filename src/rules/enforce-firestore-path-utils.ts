@@ -10,12 +10,14 @@ export const enforceFirestorePathUtils = createRule<[], MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce usage of utility functions for Firestore paths to ensure type safety, maintainability, and consistent path construction. This prevents errors from manual string concatenation and makes path changes easier to manage.',
+      description:
+        'Enforce usage of utility functions for Firestore paths to ensure type safety, maintainability, and consistent path construction. This prevents errors from manual string concatenation and makes path changes easier to manage.',
       recommended: 'error',
     },
     schema: [],
     messages: {
-      requirePathUtil: 'Use a utility function for Firestore paths to ensure type safety and maintainability. Instead of `doc("users/" + userId)`, create and use a utility function: `const toUserPath = (id: string) => `users/${id}`; doc(toUserPath(userId))`.',
+      requirePathUtil:
+        'Use a utility function for Firestore paths to ensure type safety and maintainability. Instead of `doc("users/" + userId)`, create and use a utility function: `const toUserPath = (id: string) => `users/${id}`; doc(toUserPath(userId))`.',
     },
   },
   defaultOptions: [],
@@ -35,7 +37,8 @@ export const enforceFirestorePathUtils = createRule<[], MessageIds>({
 
     function isStringLiteralOrTemplate(node: TSESTree.Node): boolean {
       return (
-        node.type === AST_NODE_TYPES.Literal && typeof node.value === 'string' ||
+        (node.type === AST_NODE_TYPES.Literal &&
+          typeof node.value === 'string') ||
         node.type === AST_NODE_TYPES.TemplateLiteral
       );
     }
@@ -78,7 +81,11 @@ export const enforceFirestorePathUtils = createRule<[], MessageIds>({
 
         // Skip test files
         const filename = context.getFilename();
-        if (filename.includes('__tests__') || filename.includes('.test.') || filename.includes('.spec.')) {
+        if (
+          filename.includes('__tests__') ||
+          filename.includes('.test.') ||
+          filename.includes('.spec.')
+        ) {
           return;
         }
 

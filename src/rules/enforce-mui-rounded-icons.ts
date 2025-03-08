@@ -54,7 +54,7 @@ export const enforceMuiRoundedIcons = createRule<Options, MessageIds>({
               // Replace the import path with the rounded variant
               return fixer.replaceText(
                 node.source,
-                `'@mui/icons-material/${roundedVariant}'`
+                `'@mui/icons-material/${roundedVariant}'`,
               );
             },
           });
