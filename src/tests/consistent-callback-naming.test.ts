@@ -197,6 +197,17 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         };
       `,
       errors: [{ messageId: 'callbackFunctionPrefix' }],
+      output: `
+        const Component = () => {
+          const submit = async (data: FormData): Promise<void> => {
+            await fetch('/api', { method: 'POST', body: data });
+          };
+
+          return (
+            <form onSubmit={(e) => submit(new FormData(e.target))} />
+          );
+        };
+      `,
     },
     // Object method with 'handle' prefix
     {
@@ -264,7 +275,7 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         }
 
         const Form = ({ submitForm, validateInput }: Props) => {
-          const handleFormSubmit = async (e: React.FormEvent) => {
+          const formSubmit = async (e: React.FormEvent) => {
             e.preventDefault();
             await submitForm(new FormData(e.target as HTMLFormElement));
           };
@@ -274,7 +285,7 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
           };
 
           return (
-            <form onSubmit={handleFormSubmit}>
+            <form onSubmit={formSubmit}>
               <input onValidateInput={handleValidation} />
             </form>
           );
