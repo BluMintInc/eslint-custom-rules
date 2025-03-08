@@ -1,4 +1,4 @@
-# Enforce .dynamic.ts(x) file naming when @blumintinc/blumint/enforce-dynamic-imports or @blumintinc/blumint/require-dynamic-firebase-imports rule is disabled (`@blumintinc/blumint/enforce-dynamic-file-naming`)
+# Enforce .dynamic.ts(x) file naming when @blumintinc/blumint/enforce-dynamic-imports rule is disabled (`@blumintinc/blumint/enforce-dynamic-file-naming`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

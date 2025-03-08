@@ -58,8 +58,12 @@ export default createRule<
           if (
             (commentText.includes('eslint-disable-next-line') ||
               commentText.includes('ednl')) &&
-            (commentText.includes('@blumintinc/blumint/enforce-dynamic-imports') ||
-             commentText.includes('@blumintinc/blumint/require-dynamic-firebase-imports'))
+            (commentText.includes(
+              '@blumintinc/blumint/enforce-dynamic-imports',
+            ) ||
+              commentText.includes(
+                '@blumintinc/blumint/require-dynamic-firebase-imports',
+              ))
           ) {
             foundDisableDirective = true;
             break;
@@ -68,8 +72,12 @@ export default createRule<
           // Check for block disable directive for either rule
           if (
             commentText.includes('eslint-disable ') &&
-            (commentText.includes('@blumintinc/blumint/enforce-dynamic-imports') ||
-             commentText.includes('@blumintinc/blumint/require-dynamic-firebase-imports'))
+            (commentText.includes(
+              '@blumintinc/blumint/enforce-dynamic-imports',
+            ) ||
+              commentText.includes(
+                '@blumintinc/blumint/require-dynamic-firebase-imports',
+              ))
           ) {
             foundDisableDirective = true;
             break;

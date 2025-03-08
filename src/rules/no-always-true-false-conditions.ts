@@ -459,14 +459,13 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
         return true;
       }
 
-
       // Check if the right side is an empty object or array literal (common default pattern)
       if (
         node.operator === '||' &&
         ((node.right.type === AST_NODE_TYPES.ObjectExpression &&
           node.right.properties.length === 0) ||
-         (node.right.type === AST_NODE_TYPES.ArrayExpression &&
-          node.right.elements.length === 0))
+          (node.right.type === AST_NODE_TYPES.ArrayExpression &&
+            node.right.elements.length === 0))
       ) {
         return true;
       }

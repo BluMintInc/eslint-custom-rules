@@ -539,8 +539,10 @@ const containsJsxInUseMemo = (node: TSESTree.CallExpression): boolean => {
         }
 
         // Special case for logical expressions that can return non-JSX values
-        if (callback.body.type === AST_NODE_TYPES.LogicalExpression &&
-            callback.body.operator === '&&') {
+        if (
+          callback.body.type === AST_NODE_TYPES.LogicalExpression &&
+          callback.body.operator === '&&'
+        ) {
           return false;
         }
 

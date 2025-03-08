@@ -43,8 +43,10 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
       // Check for binary expressions like diff(a, b).length === 0
       if (
         node.type === AST_NODE_TYPES.BinaryExpression &&
-        ((node.operator === '===' || node.operator === '==') ||
-          (node.operator === '!==' || node.operator === '!=')) &&
+        (node.operator === '===' ||
+          node.operator === '==' ||
+          node.operator === '!==' ||
+          node.operator === '!=') &&
         node.right.type === AST_NODE_TYPES.Literal &&
         node.right.value === 0 &&
         node.left.type === AST_NODE_TYPES.MemberExpression &&
@@ -88,7 +90,7 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
       fixer: any,
       node: TSESTree.Node,
       diffCall: TSESTree.CallExpression,
-      isEquality: boolean
+      isEquality: boolean,
     ) {
       const args = diffCall.arguments;
 
@@ -104,23 +106,23 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
         // Find the end of the microdiff import statement
         const importDeclarations = sourceCode.ast.body.filter(
           (node): node is TSESTree.ImportDeclaration =>
-            node.type === AST_NODE_TYPES.ImportDeclaration
+            node.type === AST_NODE_TYPES.ImportDeclaration,
         );
 
         const microdiffImport = importDeclarations.find(
-          (node) => node.source.value === 'microdiff'
+          (node) => node.source.value === 'microdiff',
         );
 
         const importFix = fixer.insertTextAfter(
           microdiffImport!,
-          `\nimport isEqual from 'fast-deep-equal';`
+          `\nimport isEqual from 'fast-deep-equal';`,
         );
 
         const replaceFix = fixer.replaceText(
           node,
           isEquality
             ? `isEqual(${arg1}, ${arg2})`
-            : `!isEqual(${arg1}, ${arg2})`
+            : `!isEqual(${arg1}, ${arg2})`,
         );
 
         return [importFix, replaceFix];
@@ -131,7 +133,7 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
         node,
         isEquality
           ? `${fastDeepEqualImportName}(${arg1}, ${arg2})`
-          : `!${fastDeepEqualImportName}(${arg1}, ${arg2})`
+          : `!${fastDeepEqualImportName}(${arg1}, ${arg2})`,
       );
     }
 
@@ -154,7 +156,10 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
         }
 
         // Check for fast-deep-equal import
-        if (importSource === 'fast-deep-equal' || importSource === 'fast-deep-equal/es6') {
+        if (
+          importSource === 'fast-deep-equal' ||
+          importSource === 'fast-deep-equal/es6'
+        ) {
           hasFastDeepEqualImport = true;
           // Get the local name of the imported isEqual function
           node.specifiers.forEach((specifier) => {
@@ -166,7 +171,9 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
       },
 
       // Check expressions for microdiff equality patterns
-      ['BinaryExpression, UnaryExpression'](node: TSESTree.BinaryExpression | TSESTree.UnaryExpression) {
+      ['BinaryExpression, UnaryExpression'](
+        node: TSESTree.BinaryExpression | TSESTree.UnaryExpression,
+      ) {
         // Skip if we've already reported this node
         if (reportedNodes.has(node)) {
           return;
@@ -179,8 +186,13 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
             node,
             messageId: 'useFastDeepEqual',
             fix(fixer) {
-              return createFix(fixer, node, result.diffCall!, result.isEquality);
-            }
+              return createFix(
+                fixer,
+                node,
+                result.diffCall!,
+                result.isEquality,
+              );
+            },
           });
         }
       },
@@ -199,8 +211,13 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
             node: node.test,
             messageId: 'useFastDeepEqual',
             fix(fixer) {
-              return createFix(fixer, node.test, result.diffCall!, result.isEquality);
-            }
+              return createFix(
+                fixer,
+                node.test,
+                result.diffCall!,
+                result.isEquality,
+              );
+            },
           });
         }
       },
@@ -220,8 +237,13 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
             messageId: 'useFastDeepEqual',
             fix(fixer) {
               // We already checked that node.argument is not null above
-              return createFix(fixer, node.argument as TSESTree.Node, result.diffCall!, result.isEquality);
-            }
+              return createFix(
+                fixer,
+                node.argument as TSESTree.Node,
+                result.diffCall!,
+                result.isEquality,
+              );
+            },
           });
         }
       },

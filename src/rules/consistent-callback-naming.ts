@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
 import { createRule } from '../utils/createRule';
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import * as ts from 'typescript';
@@ -261,7 +262,7 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
           context.report({
             node,
             messageId: 'callbackFunctionPrefix',
-            *fix(fixer) {
+            fix(fixer) {
               // Remove 'handle' prefix and convert first character to lowercase
               const newName =
                 functionName.slice(6).charAt(0).toLowerCase() +

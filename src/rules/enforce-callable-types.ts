@@ -19,8 +19,7 @@ export const enforceCallableTypes = createRule<Options, MessageIds>({
     },
     schema: [],
     messages: {
-      missingPropsType:
-        'Missing Props type export in callable function file',
+      missingPropsType: 'Missing Props type export in callable function file',
       missingResponseType:
         'Missing Response type export in callable function file',
       unusedPropsType:

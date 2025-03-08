@@ -5,7 +5,7 @@ type MessageIds = 'missingBooleanPrefix';
 type Options = [
   {
     prefixes?: string[];
-  }
+  },
 ];
 
 // Default approved boolean prefixes
@@ -64,8 +64,8 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
      * Check if a name starts with any of the approved prefixes
      */
     function hasApprovedPrefix(name: string): boolean {
-      return approvedPrefixes.some(prefix =>
-        name.toLowerCase().startsWith(prefix.toLowerCase())
+      return approvedPrefixes.some((prefix) =>
+        name.toLowerCase().startsWith(prefix.toLowerCase()),
       );
     }
 
@@ -86,7 +86,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         node.parent.parent.parent?.type === AST_NODE_TYPES.FunctionDeclaration
       ) {
         const typeAnnotation = node.parent;
-        return typeAnnotation.typeAnnotation.type === AST_NODE_TYPES.TSTypePredicate;
+        return (
+          typeAnnotation.typeAnnotation.type === AST_NODE_TYPES.TSTypePredicate
+        );
       }
       return false;
     }
@@ -98,7 +100,8 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       if (node.type === AST_NODE_TYPES.Identifier) {
         // Check for explicit boolean type annotation
         if (
-          node.typeAnnotation?.typeAnnotation.type === AST_NODE_TYPES.TSBooleanKeyword
+          node.typeAnnotation?.typeAnnotation.type ===
+          AST_NODE_TYPES.TSBooleanKeyword
         ) {
           return true;
         }
@@ -109,7 +112,11 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           node.parent?.type === AST_NODE_TYPES.FunctionExpression ||
           node.parent?.type === AST_NODE_TYPES.ArrowFunctionExpression
         ) {
-          if (node.typeAnnotation?.typeAnnotation && node.typeAnnotation.typeAnnotation.type === AST_NODE_TYPES.TSBooleanKeyword as any) {
+          if (
+            node.typeAnnotation?.typeAnnotation &&
+            node.typeAnnotation.typeAnnotation.type ===
+              (AST_NODE_TYPES.TSBooleanKeyword as any)
+          ) {
             return true;
           }
         }
@@ -118,7 +125,8 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       // Check for property signature with boolean type
       if (
         node.type === AST_NODE_TYPES.TSPropertySignature &&
-        node.typeAnnotation?.typeAnnotation.type === AST_NODE_TYPES.TSBooleanKeyword
+        node.typeAnnotation?.typeAnnotation.type ===
+          AST_NODE_TYPES.TSBooleanKeyword
       ) {
         return true;
       }
@@ -130,10 +138,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
      * Check if a node is initialized with a boolean value
      */
     function hasInitialBooleanValue(node: TSESTree.Node): boolean {
-      if (
-        node.type === AST_NODE_TYPES.VariableDeclarator &&
-        node.init
-      ) {
+      if (node.type === AST_NODE_TYPES.VariableDeclarator && node.init) {
         // Check for direct boolean literal initialization
         if (
           node.init.type === AST_NODE_TYPES.Literal &&
@@ -145,7 +150,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         // Check for logical expressions that typically return boolean
         if (
           node.init.type === AST_NODE_TYPES.BinaryExpression &&
-          ['===', '!==', '==', '!=', '>', '<', '>=', '<='].includes(node.init.operator)
+          ['===', '!==', '==', '!=', '>', '<', '>=', '<='].includes(
+            node.init.operator,
+          )
         ) {
           return true;
         }
@@ -173,8 +180,8 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         ) {
           const calleeName = node.init.callee.name;
           // Check if the function name suggests it returns a boolean
-          return approvedPrefixes.some(prefix =>
-            calleeName.toLowerCase().startsWith(prefix.toLowerCase())
+          return approvedPrefixes.some((prefix) =>
+            calleeName.toLowerCase().startsWith(prefix.toLowerCase()),
           );
         }
       }
@@ -189,7 +196,8 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       // Check for explicit boolean return type annotation
       if (
         node.returnType?.typeAnnotation &&
-        node.returnType.typeAnnotation.type === AST_NODE_TYPES.TSBooleanKeyword as any
+        node.returnType.typeAnnotation.type ===
+          (AST_NODE_TYPES.TSBooleanKeyword as any)
       ) {
         return true;
       }
@@ -200,12 +208,17 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         node.expression &&
         node.body
       ) {
-        if (node.body.type === AST_NODE_TYPES.Literal && typeof node.body.value === 'boolean') {
+        if (
+          node.body.type === AST_NODE_TYPES.Literal &&
+          typeof node.body.value === 'boolean'
+        ) {
           return true;
         }
         if (
           node.body.type === AST_NODE_TYPES.BinaryExpression &&
-          ['===', '!==', '==', '!=', '>', '<', '>=', '<='].includes(node.body.operator)
+          ['===', '!==', '==', '!=', '>', '<', '>=', '<='].includes(
+            node.body.operator,
+          )
         ) {
           return true;
         }
@@ -225,8 +238,11 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           variableDeclarator.id.type === AST_NODE_TYPES.Identifier
         ) {
           // Check if the arrow function has a boolean return type annotation
-          if (node.returnType?.typeAnnotation &&
-              node.returnType.typeAnnotation.type === AST_NODE_TYPES.TSBooleanKeyword as any) {
+          if (
+            node.returnType?.typeAnnotation &&
+            node.returnType.typeAnnotation.type ===
+              (AST_NODE_TYPES.TSBooleanKeyword as any)
+          ) {
             return true;
           }
         }
@@ -247,13 +263,15 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       if (isTypePredicate(node.id)) return;
 
       // Check if it's a boolean variable
-      let isBooleanVar = hasBooleanTypeAnnotation(node.id) || hasInitialBooleanValue(node);
+      let isBooleanVar =
+        hasBooleanTypeAnnotation(node.id) || hasInitialBooleanValue(node);
 
       // Check if it's an arrow function with boolean return type
       if (
         node.init?.type === AST_NODE_TYPES.ArrowFunctionExpression &&
         node.init.returnType?.typeAnnotation &&
-        node.init.returnType.typeAnnotation.type === AST_NODE_TYPES.TSBooleanKeyword as any
+        node.init.returnType.typeAnnotation.type ===
+          (AST_NODE_TYPES.TSBooleanKeyword as any)
       ) {
         isBooleanVar = true;
       }
@@ -275,7 +293,10 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
      * Check function declarations for boolean return values
      */
     function checkFunctionDeclaration(
-      node: TSESTree.FunctionDeclaration | TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression
+      node:
+        | TSESTree.FunctionDeclaration
+        | TSESTree.FunctionExpression
+        | TSESTree.ArrowFunctionExpression,
     ) {
       // Skip anonymous functions
       if (!node.id && node.parent?.type !== AST_NODE_TYPES.VariableDeclarator) {
@@ -306,7 +327,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       if (!functionName) return;
 
       // Skip checking if it's a type predicate (these are allowed to use 'is' prefix regardless)
-      if (node.returnType?.typeAnnotation.type === AST_NODE_TYPES.TSTypePredicate) {
+      if (
+        node.returnType?.typeAnnotation.type === AST_NODE_TYPES.TSTypePredicate
+      ) {
         return;
       }
 
@@ -335,7 +358,8 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       // Skip checking if it's a type predicate
       if (
         node.value.returnType?.typeAnnotation &&
-        node.value.returnType.typeAnnotation.type === AST_NODE_TYPES.TSTypePredicate as any
+        node.value.returnType.typeAnnotation.type ===
+          (AST_NODE_TYPES.TSTypePredicate as any)
       ) {
         return;
       }
@@ -343,7 +367,8 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       // Check if it returns a boolean
       if (
         node.value.returnType?.typeAnnotation &&
-        node.value.returnType.typeAnnotation.type === AST_NODE_TYPES.TSBooleanKeyword as any &&
+        node.value.returnType.typeAnnotation.type ===
+          (AST_NODE_TYPES.TSBooleanKeyword as any) &&
         !hasApprovedPrefix(methodName)
       ) {
         context.report({
@@ -372,7 +397,8 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       // Check if it has a boolean type annotation
       if (
         node.typeAnnotation?.typeAnnotation &&
-        node.typeAnnotation.typeAnnotation.type === AST_NODE_TYPES.TSBooleanKeyword as any
+        node.typeAnnotation.typeAnnotation.type ===
+          (AST_NODE_TYPES.TSBooleanKeyword as any)
       ) {
         isBooleanProperty = true;
       }
@@ -412,7 +438,8 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       // Check if it has a boolean type annotation
       if (
         node.typeAnnotation?.typeAnnotation &&
-        node.typeAnnotation.typeAnnotation.type === AST_NODE_TYPES.TSBooleanKeyword as any
+        node.typeAnnotation.typeAnnotation.type ===
+          (AST_NODE_TYPES.TSBooleanKeyword as any)
       ) {
         isBooleanProperty = true;
       }
@@ -450,15 +477,19 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       let isBooleanProperty = false;
 
       // Check if it's initialized with a boolean value
-      if (node.value.type === AST_NODE_TYPES.Literal && typeof node.value.value === 'boolean') {
+      if (
+        node.value.type === AST_NODE_TYPES.Literal &&
+        typeof node.value.value === 'boolean'
+      ) {
         isBooleanProperty = true;
       }
 
       // Check if it's a method that returns a boolean
       if (
         (node.value.type === AST_NODE_TYPES.FunctionExpression ||
-         node.value.type === AST_NODE_TYPES.ArrowFunctionExpression) &&
-        node.value.returnType?.typeAnnotation.type === AST_NODE_TYPES.TSBooleanKeyword
+          node.value.type === AST_NODE_TYPES.ArrowFunctionExpression) &&
+        node.value.returnType?.typeAnnotation.type ===
+          AST_NODE_TYPES.TSBooleanKeyword
       ) {
         isBooleanProperty = true;
       }
@@ -487,7 +518,8 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       // Check if it has a boolean type
       if (
         node.typeAnnotation?.typeAnnotation &&
-        node.typeAnnotation.typeAnnotation.type === AST_NODE_TYPES.TSBooleanKeyword as any &&
+        node.typeAnnotation.typeAnnotation.type ===
+          (AST_NODE_TYPES.TSBooleanKeyword as any) &&
         !hasApprovedPrefix(propertyName)
       ) {
         context.report({
@@ -513,7 +545,8 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       // Check if it has a boolean type annotation
       if (
         node.typeAnnotation?.typeAnnotation &&
-        node.typeAnnotation.typeAnnotation.type === AST_NODE_TYPES.TSBooleanKeyword as any &&
+        node.typeAnnotation.typeAnnotation.type ===
+          (AST_NODE_TYPES.TSBooleanKeyword as any) &&
         !hasApprovedPrefix(paramName)
       ) {
         context.report({
