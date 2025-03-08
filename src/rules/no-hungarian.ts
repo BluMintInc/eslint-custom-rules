@@ -11,7 +11,7 @@ const COMMON_TYPES = [
   'Array',
   'Object',
   'Function',
-  'Date',
+  // 'Date', too many false positives
   'RegExp',
   'Promise',
   'Symbol',

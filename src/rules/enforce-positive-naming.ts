@@ -6,6 +6,9 @@ type MessageIds = 'avoidNegativeNaming';
 // Common negative prefixes for boolean variables
 const BOOLEAN_NEGATIVE_PREFIXES = ['not', 'no', 'non', 'un', 'in', 'dis'];
 
+// Words that contain negative prefixes but should be treated as valid
+const EXCEPTION_WORDS = ['interaction', 'interactions'];
+
 // Map of negative boolean terms to suggested positive alternatives
 const BOOLEAN_POSITIVE_ALTERNATIVES: Record<string, string[]> = {
   // Boolean prefixes
@@ -82,6 +85,14 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
         name.startsWith('will') ||
         name.startsWith('does')
       ) {
+        // Check if the name contains any exception words
+        for (const exceptionWord of EXCEPTION_WORDS) {
+          const lowerCaseName = name.toLowerCase();
+          if (lowerCaseName.includes(exceptionWord.toLowerCase())) {
+            return { isNegative: false, alternatives: [] };
+          }
+        }
+
         for (const prefix of BOOLEAN_NEGATIVE_PREFIXES) {
           // Check for patterns like isNot, hasNo, canNot, etc.
           const prefixPatterns = [

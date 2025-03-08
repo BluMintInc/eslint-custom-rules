@@ -45,6 +45,46 @@ ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
       const outer = new Outer();
       const value = outer.inner.value;
     `,
+    // Direct property access within a class method should be allowed
+    `
+      export class UtcPrefixPrepender extends UtcPrefixModifier {
+        public prepend(response: NextResponse | null) {
+          if (!response || this.isPathIgnored) {
+            return response;
+          }
+
+          // This should not be flagged
+          const utcOffset = this.utcOffset;
+          return utcOffset;
+        }
+      }
+    `,
+    // Complex class method with multiple this references
+    `
+      class DataProcessor {
+        private data: any;
+        private config: any;
+
+        constructor(data: any, config: any) {
+          this.data = data;
+          this.config = config;
+        }
+
+        public process() {
+          // These should not be flagged
+          const config = this.config;
+          const data = this.data;
+
+          if (config.debug) {
+            console.log(data);
+          }
+
+          return data.map((item: any) => {
+            return item * config.multiplier;
+          });
+        }
+      }
+    `,
   ],
   invalid: [
     // Basic object property access
