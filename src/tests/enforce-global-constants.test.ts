@@ -75,26 +75,6 @@ ruleTesterJsx.run('enforce-global-constants', enforceGlobalConstants, {
           messageId: 'useGlobalConstant',
         },
       ],
-      output: `
-      const MyComponent = () => {
-        const roomOptions = /* TODO: Move this to a global constant:
-const ROOM_OPTIONS = {
-            disconnectOnPageLeave: true,
-          } as const;
-*/
-{
-            disconnectOnPageLeave: true,
-          };
-
-        return (
-          <div>
-            {Object.entries(roomOptions).map(([key, option]) => (
-              <Option key={key} label={option.label} icon={option.icon} />
-            ))}
-          </div>
-        );
-      };
-      `,
     },
     // useMemo with empty dependency array and implicit return of object literal
     {
@@ -118,26 +98,6 @@ const ROOM_OPTIONS = {
           messageId: 'useGlobalConstant',
         },
       ],
-      output: `
-      const MyComponent = () => {
-        const roomOptions = /* TODO: Move this to a global constant:
-const ROOM_OPTIONS = {
-          disconnectOnPageLeave: true,
-        } as const;
-*/
-{
-          disconnectOnPageLeave: true,
-        };
-
-        return (
-          <div>
-            {Object.entries(roomOptions).map(([key, option]) => (
-              <Option key={key} label={option.label} icon={option.icon} />
-            ))}
-          </div>
-        );
-      };
-      `,
     },
     // useMemo with empty dependency array returning array of object literals
     {
@@ -162,28 +122,6 @@ const ROOM_OPTIONS = {
           messageId: 'useGlobalConstant',
         },
       ],
-      output: `
-      const MyComponent = () => {
-        const options = /* TODO: Move this to a global constant:
-const OPTIONS = [
-          { id: 1, label: 'Option 1' },
-          { id: 2, label: 'Option 2' },
-        ] as const;
-*/
-[
-          { id: 1, label: 'Option 1' },
-          { id: 2, label: 'Option 2' },
-        ];
-
-        return (
-          <div>
-            {options.map(option => (
-              <Option key={option.id} label={option.label} />
-            ))}
-          </div>
-        );
-      };
-      `,
     },
   ],
 });

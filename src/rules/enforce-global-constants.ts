@@ -12,7 +12,6 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
         'Enforce using global static constants instead of useMemo with empty dependency arrays for object literals',
       recommended: 'error',
     },
-    fixable: 'code',
     schema: [],
     messages: {
       useGlobalConstant:
@@ -21,8 +20,6 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.getSourceCode();
-
     return {
       CallExpression(node) {
         // Check if it's a useMemo call
@@ -92,48 +89,6 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
           context.report({
             node,
             messageId: 'useGlobalConstant',
-            fix(fixer) {
-              // Get the parent variable declaration if it exists
-              let parentVarDecl = node.parent;
-              while (
-                parentVarDecl &&
-                parentVarDecl.type !== AST_NODE_TYPES.VariableDeclarator
-              ) {
-                parentVarDecl = parentVarDecl.parent;
-              }
-
-              // Get the object literal text without 'as const'
-              const objectText = sourceCode.getText(actualReturnValue);
-
-              if (
-                parentVarDecl &&
-                parentVarDecl.type === AST_NODE_TYPES.VariableDeclarator &&
-                parentVarDecl.id.type === AST_NODE_TYPES.Identifier
-              ) {
-                // Get the variable name and convert to UPPER_SNAKE_CASE
-                const varName = parentVarDecl.id.name;
-                const constName = varName
-                  .replace(/([A-Z])/g, '_$1')
-                  .toUpperCase()
-                  .replace(/^_/, '');
-
-                return fixer.replaceText(
-                  node,
-                  `/* TODO: Move this to a global constant:
-const ${constName} = ${objectText} as const;
-*/
-${objectText}`
-                );
-              }
-
-              return fixer.replaceText(
-                node,
-                `/* TODO: Move this to a global constant:
-const GLOBAL_CONSTANT = ${objectText} as const;
-*/
-${objectText}`
-              );
-            },
           });
         }
       },
