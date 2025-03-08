@@ -1,3 +1,24 @@
+# [1.11.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.10.0...v1.11.0) (2025-03-08)
+
+
+### Bug Fixes
+
+* **no-entire-object-hook-deps:** Improve object usage detection and add specific test case ([029792b](https://github.com/BluMintInc/eslint-custom-rules/commit/029792b79c243982ecbeae9db84ea2937d8bb7e7))
+* **no-hungarian:** Remove 'Date' from common types to reduce false positives ([c9ac748](https://github.com/BluMintInc/eslint-custom-rules/commit/c9ac748fd51016e4e45fe3dc8cc373c8fccd5da1))
+* **no-unnecessary-verb-suffix.test.ts:** remove prepositions that could be nouns ([f3d7c8c](https://github.com/BluMintInc/eslint-custom-rules/commit/f3d7c8cb51ebfac98be67fa77e35f4cc077e1b05))
+* **no-unnecessary-verb-suffix.ts:** remove prepositions that could be nouns ([f9158f2](https://github.com/BluMintInc/eslint-custom-rules/commit/f9158f2c37c0418696e116cdd5a076416890683d))
+* **openhands-resolver.yml:** revert to main. Issue was lib/ pushed in ([68532f1](https://github.com/BluMintInc/eslint-custom-rules/commit/68532f1539f90ca636f111e8865f71e6ca0d5c0a))
+* **openhands-resolver.yml:** rollback further ([92f04ea](https://github.com/BluMintInc/eslint-custom-rules/commit/92f04eaa8af45d06407b136c78233155a3bd5cf7))
+* **openhands-resolver.yml:** rollback to 3/3/25 until token limit error is resolved ([e6f8811](https://github.com/BluMintInc/eslint-custom-rules/commit/e6f88112b0cd9b99f7cb14825de91b3654be7e68))
+* **src/rules/no-always-true-false-conditions.ts:** remove excessive shortcircuit ([11b5d5a](https://github.com/BluMintInc/eslint-custom-rules/commit/11b5d5a196fc90f1fac61bb7aa8f2b3e8d34d23b))
+* **test-case/simple-test.ts:** delete claude3.7 phantom file ([35f9e80](https://github.com/BluMintInc/eslint-custom-rules/commit/35f9e80e2def8f8a0e6a8a1126909ff9f77efcc3))
+* **test-case/test.ts:** remove claude3.7 phantom code ([9a91ebb](https://github.com/BluMintInc/eslint-custom-rules/commit/9a91ebb50e22b93e5d65cee47a236344a087b0c4))
+
+
+### Features
+
+* **docs:** Enhance rule documentation with improved headers and metadata ([fa251ce](https://github.com/BluMintInc/eslint-custom-rules/commit/fa251cecdf8344b4c827cd0cd33e03763aba87e1))
+
 # [1.10.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.9.1...v1.10.0) (2025-03-05)
 
 

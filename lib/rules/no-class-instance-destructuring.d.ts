@@ -1,0 +1,1 @@
+export declare const noClassInstanceDestructuring: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"noClassInstanceDestructuring", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;
