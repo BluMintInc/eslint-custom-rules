@@ -103,6 +103,17 @@ export const enforceIdCapitalization = createRule<Options, MessageIds>({
         return true;
       }
 
+      // Check if the node is a string literal used for property access
+      // This handles cases like obj['id'] or OverwolfGame['id']
+      if (
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.MemberExpression &&
+        node.parent.computed === true &&
+        node.parent.property === node
+      ) {
+        return true;
+      }
+
       // Check if the node is a string literal in a type definition context
       // This handles cases like Pick<Type, 'id' | 'name'>
       if (
@@ -139,6 +150,19 @@ export const enforceIdCapitalization = createRule<Options, MessageIds>({
 
       // Skip checking if the node is in an excluded context
       if (isExcludedContext(node)) return;
+
+      // Check if this is a variable declaration with a string literal containing 'id'
+      if (
+        node.type === AST_NODE_TYPES.Literal &&
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.VariableDeclarator &&
+        node.parent.init === node &&
+        node.parent.id.type === AST_NODE_TYPES.Identifier &&
+        node.parent.id.name.toLowerCase().includes('id')
+      ) {
+        // Skip checking variable assignments where the variable name contains 'id'
+        return;
+      }
 
       // Reset the regex lastIndex to ensure consistent behavior
       idRegex.lastIndex = 0;
