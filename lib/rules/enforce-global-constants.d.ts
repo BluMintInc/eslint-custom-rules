@@ -1,0 +1,1 @@
+export declare const enforceGlobalConstants: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"useGlobalConstant", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;

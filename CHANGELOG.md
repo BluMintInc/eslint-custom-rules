@@ -1,3 +1,10 @@
+## [1.11.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.11.0...v1.11.1) (2025-03-10)
+
+
+### Bug Fixes
+
+* **no-hungarian.ts:** remove "Type" ([854b749](https://github.com/BluMintInc/eslint-custom-rules/commit/854b749bce08f705acdfd0acc47fb47b89cfdaef))
+
 # [1.11.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.10.0...v1.11.0) (2025-03-08)
 
 
