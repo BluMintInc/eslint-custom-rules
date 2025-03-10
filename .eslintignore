@@ -36,4 +36,4 @@ pids
 .vscode/
 
 # Jest test reports
-reports/jest-*.xml
+**/reports/jest-*.xml
