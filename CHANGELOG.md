@@ -1,3 +1,18 @@
+# [1.12.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.11.1...v1.12.0) (2025-03-10)
+
+
+### Bug Fixes
+
+* **enforce-positive-naming.ts:** add include ([f20f149](https://github.com/BluMintInc/eslint-custom-rules/commit/f20f1499d44e626603d6072c52358206df9ab8cd))
+* **src/tests/external-api-bug.ts:** delete Claude3.7 phantom file ([5c7aeac](https://github.com/BluMintInc/eslint-custom-rules/commit/5c7aeac1f579adf41524333f3f71bf96f20bc42f))
+
+
+### Features
+
+* **enforce-boolean-naming-prefixes:** Improve handling of boolean properties in parameter type annotations ([d6c1bb6](https://github.com/BluMintInc/eslint-custom-rules/commit/d6c1bb62c2f4c943964bc140bd19fdf4116f84af))
+* **enforce-positive-naming:** Enhance word splitting and negative prefix detection ([eadc89c](https://github.com/BluMintInc/eslint-custom-rules/commit/eadc89ca6273076ac23ca73e573270d720011bb3))
+* **enforce-positive-naming:** Expand exception lists for negative prefixes ([4b150b7](https://github.com/BluMintInc/eslint-custom-rules/commit/4b150b792bfdd61020cce1a338678aba66f30ad1))
+
 ## [1.11.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.11.0...v1.11.1) (2025-03-10)
 
 

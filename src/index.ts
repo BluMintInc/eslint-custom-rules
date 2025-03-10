@@ -102,7 +102,7 @@ import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-pre
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.11.1',
+    version: '1.12.0',
   },
   parseOptions: {
     ecmaVersion: 2020,
