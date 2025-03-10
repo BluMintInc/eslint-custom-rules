@@ -32,7 +32,7 @@ const TYPE_MARKERS = [
   ...COMMON_TYPES,
   'Class',
   'Interface',
-  'Type',
+  //'Type', people like to use 'type' as a general purpose noun
   'Enum',
 ];
 
