@@ -494,16 +494,44 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         isBooleanProperty = true;
       }
 
+      // Skip checking if this property is part of an object literal passed to an external function
       if (isBooleanProperty && !hasApprovedPrefix(propertyName)) {
-        context.report({
-          node: node.key,
-          messageId: 'missingBooleanPrefix',
-          data: {
-            type: 'property',
-            name: propertyName,
-            prefixes: formatPrefixes(),
-          },
-        });
+        // Check if this property is in an object literal that's an argument to a function call
+        let isExternalApiCall = false;
+
+        // Navigate up to find if we're in an object expression that's an argument to a function call
+        if (
+          node.parent?.type === AST_NODE_TYPES.ObjectExpression &&
+          node.parent.parent?.type === AST_NODE_TYPES.CallExpression
+        ) {
+          const callExpression = node.parent.parent;
+
+          // Check if the function being called is an identifier (like mkdirSync, createServer, etc.)
+          if (callExpression.callee.type === AST_NODE_TYPES.Identifier) {
+            // We assume it's an external API call if it's a direct function call
+            // This is a simplification - in a more robust solution, we might check
+            // if the function is imported from an external module
+            isExternalApiCall = true;
+          }
+
+          // Also check for member expressions like fs.mkdirSync
+          if (callExpression.callee.type === AST_NODE_TYPES.MemberExpression) {
+            isExternalApiCall = true;
+          }
+        }
+
+        // Only report if it's not an external API call
+        if (!isExternalApiCall) {
+          context.report({
+            node: node.key,
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'property',
+              name: propertyName,
+              prefixes: formatPrefixes(),
+            },
+          });
+        }
       }
     }
 
