@@ -366,6 +366,15 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
     }
     `,
 
+    // Good: Type assertion as direct constructor argument (bug fix case)
+    `
+    function processData(req: Request) {
+      const { body } = req;
+      const processor = new DataProcessor(body as DataPayload);
+      return processor.process();
+    }
+    `,
+
     // Good: Type assertion in JSX props (simulated with function call)
     `
     function AvatarStatus({ avatar, onlineStatus }) {
