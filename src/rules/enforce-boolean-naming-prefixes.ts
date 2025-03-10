@@ -510,9 +510,11 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       // Skip checking if this property is part of an object literal passed to an external function
       if (isBooleanProperty && !hasApprovedPrefix(propertyName)) {
         // Special cases for common Node.js API boolean properties
-        if ((propertyName === 'recursive' || propertyName === 'keepAlive') &&
-            node.parent?.type === AST_NODE_TYPES.ObjectExpression &&
-            node.parent.parent?.type === AST_NODE_TYPES.CallExpression) {
+        if (
+          (propertyName === 'recursive' || propertyName === 'keepAlive') &&
+          node.parent?.type === AST_NODE_TYPES.ObjectExpression &&
+          node.parent.parent?.type === AST_NODE_TYPES.CallExpression
+        ) {
           return; // Skip checking for these properties in object literals passed to functions
         }
 
@@ -577,15 +579,39 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           (AST_NODE_TYPES.TSBooleanKeyword as any) &&
         !hasApprovedPrefix(propertyName)
       ) {
-        context.report({
-          node: node.key,
-          messageId: 'missingBooleanPrefix',
-          data: {
-            type: 'property',
-            name: propertyName,
-            prefixes: formatPrefixes(),
-          },
-        });
+        // Skip if this property is part of a parameter's type annotation
+        // Check if this property signature is inside a parameter's type annotation
+        let isInParameterType = false;
+        let parent = node.parent;
+
+        while (parent) {
+          if (parent.type === AST_NODE_TYPES.TSTypeLiteral) {
+            const grandParent = parent.parent;
+            if (
+              grandParent?.type === AST_NODE_TYPES.TSTypeAnnotation &&
+              grandParent.parent?.type === AST_NODE_TYPES.Identifier &&
+              grandParent.parent.parent?.type ===
+                AST_NODE_TYPES.FunctionDeclaration
+            ) {
+              isInParameterType = true;
+              break;
+            }
+          }
+          parent = parent.parent as TSESTree.Node;
+        }
+
+        // Only report if not in a parameter type annotation
+        if (!isInParameterType) {
+          context.report({
+            node: node.key,
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'property',
+              name: propertyName,
+              prefixes: formatPrefixes(),
+            },
+          });
+        }
       }
     }
 
@@ -613,6 +639,38 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
             prefixes: formatPrefixes(),
           },
         });
+      }
+
+      // Check if the parameter has an object type with boolean properties
+      if (
+        node.typeAnnotation?.typeAnnotation &&
+        node.typeAnnotation.typeAnnotation.type === AST_NODE_TYPES.TSTypeLiteral
+      ) {
+        const typeLiteral = node.typeAnnotation.typeAnnotation;
+
+        // Check each member of the type literal
+        for (const member of typeLiteral.members) {
+          if (
+            member.type === AST_NODE_TYPES.TSPropertySignature &&
+            member.key.type === AST_NODE_TYPES.Identifier &&
+            member.typeAnnotation?.typeAnnotation.type ===
+              AST_NODE_TYPES.TSBooleanKeyword
+          ) {
+            const propertyName = member.key.name;
+
+            if (!hasApprovedPrefix(propertyName)) {
+              context.report({
+                node: member.key,
+                messageId: 'missingBooleanPrefix',
+                data: {
+                  type: 'property',
+                  name: propertyName,
+                  prefixes: formatPrefixes(),
+                },
+              });
+            }
+          }
+        }
       }
     }
 
