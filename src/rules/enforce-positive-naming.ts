@@ -7,7 +7,7 @@ type MessageIds = 'avoidNegativeNaming';
 const BOOLEAN_NEGATIVE_PREFIXES = ['not', 'no', 'non', 'un', 'in', 'dis'];
 
 // Words that contain negative prefixes but should be treated as valid
-const EXCEPTION_WORDS = ['interaction', 'interactions'];
+const EXCEPTION_WORDS = ['interaction', 'interactions', 'including', 'include'];
 
 // Map of negative boolean terms to suggested positive alternatives
 const BOOLEAN_POSITIVE_ALTERNATIVES: Record<string, string[]> = {
