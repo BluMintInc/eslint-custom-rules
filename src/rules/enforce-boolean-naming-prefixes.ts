@@ -466,6 +466,19 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     }
 
     /**
+     * Check if an identifier is imported from an external module
+     */
+    function isImportedIdentifier(name: string): boolean {
+      const scope = context.getScope();
+      const variable = scope.variables.find((v) => v.name === name);
+
+      if (!variable) return false;
+
+      // Check if it's an import binding
+      return variable.defs.some((def) => def.type === 'ImportBinding');
+    }
+
+    /**
      * Check property definitions for boolean values
      */
     function checkProperty(node: TSESTree.Property) {
@@ -496,6 +509,13 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
 
       // Skip checking if this property is part of an object literal passed to an external function
       if (isBooleanProperty && !hasApprovedPrefix(propertyName)) {
+        // Special cases for common Node.js API boolean properties
+        if ((propertyName === 'recursive' || propertyName === 'keepAlive') &&
+            node.parent?.type === AST_NODE_TYPES.ObjectExpression &&
+            node.parent.parent?.type === AST_NODE_TYPES.CallExpression) {
+          return; // Skip checking for these properties in object literals passed to functions
+        }
+
         // Check if this property is in an object literal that's an argument to a function call
         let isExternalApiCall = false;
 
@@ -508,15 +528,22 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
 
           // Check if the function being called is an identifier (like mkdirSync, createServer, etc.)
           if (callExpression.callee.type === AST_NODE_TYPES.Identifier) {
-            // We assume it's an external API call if it's a direct function call
-            // This is a simplification - in a more robust solution, we might check
-            // if the function is imported from an external module
-            isExternalApiCall = true;
+            const calleeName = callExpression.callee.name;
+            if (isImportedIdentifier(calleeName)) {
+              isExternalApiCall = true;
+            }
           }
 
           // Also check for member expressions like fs.mkdirSync
           if (callExpression.callee.type === AST_NODE_TYPES.MemberExpression) {
-            isExternalApiCall = true;
+            // For member expressions, check if the object is imported
+            const objectNode = callExpression.callee.object;
+            if (objectNode.type === AST_NODE_TYPES.Identifier) {
+              const objectName = objectNode.name;
+              if (isImportedIdentifier(objectName)) {
+                isExternalApiCall = true;
+              }
+            }
           }
         }
 
