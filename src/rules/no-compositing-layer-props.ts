@@ -41,7 +41,7 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Warn when using CSS properties that trigger compositing layers, which can impact performance. Properties like transform, opacity, filter, and will-change create new GPU layers. While sometimes beneficial for animations, excessive layer creation can increase memory usage and hurt performance. Consider alternatives or explicitly document intentional layer promotion.',
+        'Warn when using CSS properties that trigger compositing layers, which can impact performance. Properties like transform, opacity, filter, and will-change create new GPU layers. While sometimes beneficial for animations, excessive layer creation can increase memory usage and hurt performance. This rule checks both regular style objects and MUI sx props. Consider alternatives or explicitly document intentional layer promotion.',
       recommended: 'error',
     },
     schema: [],
@@ -91,7 +91,7 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
         if (
           current.parent.type === AST_NODE_TYPES.JSXAttribute &&
           current.parent.name.type === AST_NODE_TYPES.JSXIdentifier &&
-          current.parent.name.name === 'style'
+          (current.parent.name.name === 'style' || current.parent.name.name === 'sx')
         ) {
           return true;
         }
@@ -109,7 +109,7 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
         if (
           current.parent.type === AST_NODE_TYPES.Property &&
           current.parent.key.type === AST_NODE_TYPES.Identifier &&
-          /style/i.test(current.parent.key.name)
+          (/style/i.test(current.parent.key.name) || current.parent.key.name === 'sx')
         ) {
           return true;
         }
@@ -169,9 +169,9 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
         checkNode(node);
       },
 
-      // Handle JSX style attributes
+      // Handle JSX style and sx attributes
       JSXAttribute(node: TSESTree.JSXAttribute) {
-        if (node.name.name !== 'style') return;
+        if (node.name.name !== 'style' && node.name.name !== 'sx') return;
 
         if (
           node.value?.type === AST_NODE_TYPES.JSXExpressionContainer &&
