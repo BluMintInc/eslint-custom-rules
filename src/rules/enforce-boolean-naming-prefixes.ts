@@ -160,9 +160,62 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         // Check for logical expressions (&&, ||)
         if (
           node.init.type === AST_NODE_TYPES.LogicalExpression &&
-          ['&&', '||'].includes(node.init.operator)
+          node.init.operator === '&&'
         ) {
           return true;
+        }
+
+        // Special case for logical OR (||) - only consider it boolean if:
+        // 1. It's used with boolean literals or
+        // 2. It's not used with array/object literals as fallbacks
+        if (
+          node.init.type === AST_NODE_TYPES.LogicalExpression &&
+          node.init.operator === '||'
+        ) {
+          // Check if right side is a non-boolean literal (array, object, string, number)
+          const rightSide = node.init.right;
+          if (
+            rightSide.type === AST_NODE_TYPES.ArrayExpression ||
+            rightSide.type === AST_NODE_TYPES.ObjectExpression ||
+            (rightSide.type === AST_NODE_TYPES.Literal &&
+             typeof rightSide.value !== 'boolean')
+          ) {
+            return false;
+          }
+
+          // If right side is a boolean literal, it's likely a boolean variable
+          if (
+            rightSide.type === AST_NODE_TYPES.Literal &&
+            typeof rightSide.value === 'boolean'
+          ) {
+            return true;
+          }
+
+          // For other cases, we need to be more careful
+          // If we can determine the left side is a boolean, then it's a boolean variable
+          const leftSide = node.init.left;
+          if (
+            (leftSide.type === AST_NODE_TYPES.Literal &&
+             typeof leftSide.value === 'boolean') ||
+            (leftSide.type === AST_NODE_TYPES.UnaryExpression &&
+             leftSide.operator === '!')
+          ) {
+            return true;
+          }
+
+          // For function calls, check if the function name suggests it returns a boolean
+          if (
+            leftSide.type === AST_NODE_TYPES.CallExpression &&
+            leftSide.callee.type === AST_NODE_TYPES.Identifier
+          ) {
+            const calleeName = leftSide.callee.name;
+            return approvedPrefixes.some((prefix) =>
+              calleeName.toLowerCase().startsWith(prefix.toLowerCase())
+            );
+          }
+
+          // Default to false for other cases with || to avoid false positives
+          return false;
         }
 
         // Check for unary expressions with ! operator
