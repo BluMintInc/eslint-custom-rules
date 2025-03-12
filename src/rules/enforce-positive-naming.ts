@@ -950,14 +950,17 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
       const words = splitNameIntoWords(name);
 
       // Check if this follows the pattern IS_NOT_SOMETHING or HAS_NO_SOMETHING
-      const secondWord = words[1].toLowerCase();
+      // Make sure words[1] exists before trying to access it
+      if (words.length > 1) {
+        const secondWord = words[1].toLowerCase();
 
-      if (
-        EXCEPTION_WORDS.some(
-          (exception) => secondWord === exception.toLowerCase(),
-        )
-      ) {
-        return { isNegative: false, alternatives: [] };
+        if (
+          EXCEPTION_WORDS.some(
+            (exception) => secondWord === exception.toLowerCase(),
+          )
+        ) {
+          return { isNegative: false, alternatives: [] };
+        }
       }
 
       const nameLowercase = name.toLowerCase();
