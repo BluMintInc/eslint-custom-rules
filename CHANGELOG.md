@@ -1,3 +1,10 @@
+## [1.12.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.12.1...v1.12.2) (2025-03-13)
+
+
+### Bug Fixes
+
+* **.cursorrules:** force patch version upgrade in semvar release ([d5f9375](https://github.com/BluMintInc/eslint-custom-rules/commit/d5f9375dffb3e15c40b0ad11dbdeb648378836a5))
+
 ## [1.12.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.12.0...v1.12.1) (2025-03-12)
 
 
