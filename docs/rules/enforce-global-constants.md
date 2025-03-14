@@ -1,4 +1,4 @@
-# Use global static constants instead of useMemo with empty dependency arrays for object literals (`@blumintinc/blumint/enforce-global-constants`)
+# Enforce using global static constants instead of useMemo with empty dependency arrays for object literals (`@blumintinc/blumint/enforce-global-constants`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
