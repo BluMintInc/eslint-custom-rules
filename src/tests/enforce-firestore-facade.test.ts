@@ -113,6 +113,46 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
         }
       `,
     },
+    // Valid realtimeDb.ref().get() usage - should not trigger the rule
+    {
+      code: `
+        import { realtimeDb } from '../../../config/firebaseAdmin';
+        import { ONLINE_STATUSES } from '../../../types/realtimeDb/Status';
+        import { toStatusPath } from '../../../types/realtimeDb/Status/path';
+
+        export async function fetchOnlineStatus(uid: string) {
+          const onlineStatusRef = realtimeDb.ref(toStatusPath(uid));
+          const onlineStatusSnapshot = await onlineStatusRef.get();
+          const status = onlineStatusSnapshot.val();
+          return ONLINE_STATUSES.includes(status) ? status : null;
+        }
+      `,
+    },
+    // Valid realtimeDb reference with variable
+    {
+      code: `
+        import { realtimeDb } from '../../../config/firebaseAdmin';
+
+        export async function fetchData(path: string) {
+          const ref = realtimeDb.ref(path);
+          const snapshot = await ref.get();
+          return snapshot.val();
+        }
+      `,
+    },
+    // Valid realtimeDb reference with nested paths
+    {
+      code: `
+        import { realtimeDb } from '../../../config/firebaseAdmin';
+
+        export async function fetchNestedData(userId: string) {
+          const userRef = realtimeDb.ref('users/' + userId);
+          const statusRef = userRef.child('status');
+          const snapshot = await statusRef.get();
+          return snapshot.val();
+        }
+      `,
+    },
   ],
   invalid: [
     // Invalid direct get usage
