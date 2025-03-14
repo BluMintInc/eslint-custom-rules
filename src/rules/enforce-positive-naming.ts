@@ -938,6 +938,11 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
       isNegative: boolean;
       alternatives: string[];
     } {
+      // Safety check: if name is undefined or null, return not negative
+      if (!name) {
+        return { isNegative: false, alternatives: [] };
+      }
+
       // Check for exact matches in our alternatives map first
       if (BOOLEAN_POSITIVE_ALTERNATIVES[name]) {
         return {
@@ -1267,6 +1272,7 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
      * Check TSPropertySignature for negative naming (in interfaces)
      */
     function checkPropertySignature(node: TSESTree.TSPropertySignature) {
+      // Skip non-identifier keys (like computed properties)
       if (node.key.type !== AST_NODE_TYPES.Identifier) return;
 
       // Only check boolean properties
@@ -1279,7 +1285,10 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
       )
         return;
 
+      // Ensure we have a valid property name
       const propertyName = node.key.name;
+      if (!propertyName) return;
+
       const { isNegative, alternatives } =
         hasBooleanNegativeNaming(propertyName);
 
