@@ -98,6 +98,7 @@ import enforceDynamicFileNaming from './rules/enforce-dynamic-file-naming';
 import { default as preferUseCallbackOverUseMemoForFunctions } from './rules/prefer-usecallback-over-usememo-for-functions';
 import { noMarginProperties } from './rules/no-margin-properties';
 import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-prefixes';
+import { enforceFieldPathSyntaxInDocSetter } from './rules/enforce-fieldpath-syntax-in-docsetter';
 
 module.exports = {
   meta: {
@@ -219,6 +220,7 @@ module.exports = {
           'error',
         '@blumintinc/blumint/no-margin-properties': 'error',
         '@blumintinc/blumint/enforce-boolean-naming-prefixes': 'error',
+        '@blumintinc/blumint/enforce-fieldpath-syntax-in-docsetter': 'error',
       },
     },
   },
@@ -327,5 +329,6 @@ module.exports = {
       preferUseCallbackOverUseMemoForFunctions,
     'no-margin-properties': noMarginProperties,
     'enforce-boolean-naming-prefixes': enforceBooleanNamingPrefixes,
+    'enforce-fieldpath-syntax-in-docsetter': enforceFieldPathSyntaxInDocSetter,
   },
 };
