@@ -18,6 +18,27 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
       `,
       filename: 'functions/src/types/firestore/user.ts',
     },
+    // Test: Allow string enum/type alias arrays
+    {
+      code: `
+        export type ChannelGroupPermanence = 'temporary' | 'pinned' | 'permanent';
+        export const TEMPORARY_PERMANENCE_TYPES: ChannelGroupPermanence[] = [
+          'temporary',
+          'pinned',
+        ];
+      `,
+      filename: 'functions/src/types/firestore/User/ChannelGroup/util/isTemporary.ts',
+    },
+    // Test: Allow union of string literals
+    {
+      code: `
+        export type Status = 'active' | 'inactive' | 'pending';
+        export type UserData = {
+          statuses: Status[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/user-status.ts',
+    },
     // Test: Allow map/record structure
     {
       code: `
