@@ -610,6 +610,65 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
 
       // Skip checking if this property is part of an object literal passed to an external function
       if (isBooleanProperty && !hasApprovedPrefix(propertyName)) {
+        // List of common boolean props from external libraries that should be exempt
+        // but only when used in a context that suggests they're being passed to an external component
+        const commonExternalBooleanProps = [
+          // React built-in props
+          'disabled', 'required', 'checked', 'readOnly', 'multiple', 'selected', 'defaultChecked',
+          'autoFocus', 'autoPlay', 'controls', 'loop', 'muted', 'open', 'scoped', 'seamless',
+          'allowFullScreen', 'async', 'defer', 'formNoValidate', 'hidden', 'noValidate',
+          // GetStream props
+          'grow',
+          // Other common UI library props
+          'active', 'bordered', 'centered', 'circular', 'clearable', 'closable', 'compact',
+          'default', 'dense', 'draggable', 'editable', 'expandable', 'fill', 'fluid', 'fullWidth',
+          'ghost', 'hoverable', 'inline', 'inverted', 'loading', 'minimal', 'multiline', 'outline',
+          'primary', 'responsive', 'round', 'rounded', 'secondary', 'selectable', 'simple',
+          'small', 'solid', 'square', 'sticky', 'stretch', 'striped', 'transparent', 'vertical',
+          'visible'
+        ];
+
+        // Check if this property is in a context where it's likely being passed to an external component
+        let isExternalComponentContext = false;
+
+        // Check if we're in a JSX context or being passed to an imported function
+        if (
+          // Check if we're in an object that's being spread into a JSX component
+          (node.parent?.type === AST_NODE_TYPES.ObjectExpression &&
+           node.parent.parent?.type === AST_NODE_TYPES.SpreadElement) ||
+          // Check if we're a JSX attribute (props passed directly to components)
+          (node.parent?.type === AST_NODE_TYPES.JSXAttribute) ||
+          // Check if we're in an object that's an argument to a function call
+          (node.parent?.type === AST_NODE_TYPES.ObjectExpression &&
+           node.parent.parent?.type === AST_NODE_TYPES.CallExpression)
+        ) {
+          // For CallExpression, check if it's React.createElement or an imported component
+          if (node.parent?.parent?.type === AST_NODE_TYPES.CallExpression) {
+            const callExpression = node.parent.parent;
+
+            // Check if it's React.createElement
+            if (callExpression.callee.type === AST_NODE_TYPES.MemberExpression &&
+                callExpression.callee.object.type === AST_NODE_TYPES.Identifier &&
+                callExpression.callee.object.name === 'React' &&
+                callExpression.callee.property.type === AST_NODE_TYPES.Identifier &&
+                callExpression.callee.property.name === 'createElement') {
+              isExternalComponentContext = true;
+            }
+            // Check if it's an imported component
+            else if (callExpression.callee.type === AST_NODE_TYPES.Identifier &&
+                     isImportedIdentifier(callExpression.callee.name)) {
+              isExternalComponentContext = true;
+            }
+          } else {
+            isExternalComponentContext = true;
+          }
+        }
+
+        // Skip checking for common external boolean props only in external component contexts
+        if (commonExternalBooleanProps.includes(propertyName) && isExternalComponentContext) {
+          return;
+        }
+
         // Special cases for common Node.js API boolean properties
         if (
           (propertyName === 'recursive' || propertyName === 'keepAlive') &&
@@ -648,6 +707,16 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
               }
             }
           }
+        }
+
+        // Check if this property is in an object that's being spread into a JSX component
+        // or passed to a component from an external library
+        if (
+          node.parent?.type === AST_NODE_TYPES.ObjectExpression &&
+          node.parent.parent?.type === AST_NODE_TYPES.SpreadElement
+        ) {
+          // This might be a props object being spread into a component
+          isExternalApiCall = true;
         }
 
         // Only report if it's not an external API call
