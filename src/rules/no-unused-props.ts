@@ -121,6 +121,16 @@ export const noUnusedProps = createRule({
               });
             } else if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
               if (typeNode.typeName.type === AST_NODE_TYPES.Identifier) {
+                // List of TypeScript utility types that transform other types
+                const utilityTypes = ['Pick', 'Omit', 'Partial', 'Required', 'Record', 'Exclude', 'Extract', 'NonNullable', 'ReturnType', 'InstanceType', 'ThisType'];
+
+                // Skip checking for utility type parameters (T, K, etc.) as they're not actual props
+                if (typeNode.typeName.name.length === 1 && /^[A-Z]$/.test(typeNode.typeName.name)) {
+                  // This is likely a generic type parameter (T, K, etc.), not a real type
+                  // Skip it to avoid false positives
+                  return;
+                }
+
                 if (
                   typeNode.typeName.name === 'Pick' &&
                   typeNode.typeParameters
@@ -164,6 +174,26 @@ export const noUnusedProps = createRule({
                         spreadTypeProps[baseTypeName] = [];
                       }
                       spreadTypeProps[baseTypeName].push(propName);
+                    }
+                  }
+                } else if (
+                  // Handle other utility types like Required, Partial, etc.
+                  utilityTypes.includes(typeNode.typeName.name) &&
+                  typeNode.typeParameters
+                ) {
+                  // For utility types like Required<T, K>, we need to handle the base type
+                  const baseType = typeNode.typeParameters.params[0];
+                  if (
+                    baseType.type === AST_NODE_TYPES.TSTypeReference &&
+                    baseType.typeName.type === AST_NODE_TYPES.Identifier
+                  ) {
+                    // Mark the base type as used via the utility type
+                    const baseTypeName = baseType.typeName.name;
+                    props[`...${baseTypeName}`] = baseType.typeName;
+
+                    // For utility types, we need to track individual properties that might be used
+                    if (!spreadTypeProps[baseTypeName]) {
+                      spreadTypeProps[baseTypeName] = [];
                     }
                   }
                 } else {
@@ -274,7 +304,11 @@ export const noUnusedProps = createRule({
 
                 let shouldReport = true;
 
-                if (prop.startsWith('...') && hasRestSpread) {
+                // Skip reporting for generic type parameters (T, K, etc.)
+                if (prop.startsWith('...') && prop.length === 4 && /^\.\.\.([A-Z])$/.test(prop)) {
+                  // This is a generic type parameter like ...T, ...K, etc.
+                  shouldReport = false;
+                } else if (prop.startsWith('...') && hasRestSpread) {
                   shouldReport = false;
                 } else if (prop.startsWith('...')) {
                   // For spread types like "...GroupInfoBasic", check if any properties from this type are used
