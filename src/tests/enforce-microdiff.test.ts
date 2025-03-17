@@ -101,6 +101,22 @@ function compareWithOptimization(oldItems, newItems) {
   return false;
 }`,
     },
+    // Using fast-deep-equal (should not be flagged as it's an allowed alternative)
+    {
+      code: `import isEqual from 'fast-deep-equal';
+
+function isTournamentEqual(beforeTournament, tournament) {
+  return isEqual(beforeTournament, tournament);
+}`,
+    },
+    // Using fast-deep-equal/es6 (should not be flagged as it's an allowed alternative)
+    {
+      code: `import isEqual from 'fast-deep-equal/es6';
+
+function areObjectsEqual(obj1, obj2) {
+  return isEqual(obj1, obj2);
+}`,
+    },
   ],
   invalid: [
     // Using deep-diff
@@ -196,72 +212,8 @@ function detectDifferences(original, updated) {
   return diff(original, updated, _.isEqual);
 }`,
     },
-    // Using fast-deep-equal
-    {
-      code: `import fastDeepEqual from 'fast-deep-equal';
-
-function hasStateChanged(prevState, nextState) {
-  return !fastDeepEqual(prevState, nextState);
-}`,
-      errors: [
-        {
-          messageId: 'enforceMicrodiffImport',
-          data: { importSource: 'fast-deep-equal' },
-        },
-        { messageId: 'enforceMicrodiff' },
-      ],
-      output: `import { diff } from 'microdiff';
-
-function hasStateChanged(prevState, nextState) {
-  return !diff(prevState, nextState);
-}`,
-    },
-    // Using fast-deep-equal with ES6 import
-    {
-      code: `import isEqual from 'fast-deep-equal/es6';
-
-function configsAreEqual(oldConfig, newConfig) {
-  return isEqual(oldConfig, newConfig);
-}`,
-      errors: [
-        {
-          messageId: 'enforceMicrodiffImport',
-          data: { importSource: 'fast-deep-equal/es6' },
-        },
-        { messageId: 'enforceMicrodiff' },
-      ],
-      output: `import { diff } from 'microdiff';
-
-function configsAreEqual(oldConfig, newConfig) {
-  return diff(oldConfig, newConfig);
-}`,
-    },
-    // Using fast-deep-equal in conditions
-    {
-      code: `import fastDeepEqual from 'fast-deep-equal';
-
-function shouldUpdate(props, nextProps) {
-  if (!fastDeepEqual(props.settings, nextProps.settings)) {
-    return true;
-  }
-  return false;
-}`,
-      errors: [
-        {
-          messageId: 'enforceMicrodiffImport',
-          data: { importSource: 'fast-deep-equal' },
-        },
-        { messageId: 'enforceMicrodiff' },
-      ],
-      output: `import { diff } from 'microdiff';
-
-function shouldUpdate(props, nextProps) {
-  if (!diff(props.settings, nextProps.settings)) {
-    return true;
-  }
-  return false;
-}`,
-    },
+    // These test cases for fast-deep-equal have been removed since fast-deep-equal is now allowed
+    // as a valid alternative to microdiff
     // Manual object comparison with JSON.stringify
     {
       code: `function hasConfigChanged(oldConfig, newConfig) {
