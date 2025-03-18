@@ -98,6 +98,7 @@ import enforceDynamicFileNaming from './rules/enforce-dynamic-file-naming';
 import { default as preferUseCallbackOverUseMemoForFunctions } from './rules/prefer-usecallback-over-usememo-for-functions';
 import { noMarginProperties } from './rules/no-margin-properties';
 import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-prefixes';
+import { enforceEarlyDestructuring } from './rules/enforce-early-destructuring';
 
 module.exports = {
   meta: {
@@ -219,6 +220,7 @@ module.exports = {
           'error',
         '@blumintinc/blumint/no-margin-properties': 'error',
         '@blumintinc/blumint/enforce-boolean-naming-prefixes': 'error',
+        '@blumintinc/blumint/enforce-early-destructuring': 'error',
       },
     },
   },
@@ -235,6 +237,7 @@ module.exports = {
     'enforce-callable-types': enforceCallableTypes,
     'enforce-dynamic-firebase-imports': enforceFirebaseImports,
     'enforce-mui-rounded-icons': enforceMuiRoundedIcons,
+    'enforce-early-destructuring': enforceEarlyDestructuring,
     'export-if-in-doubt': exportIfInDoubt,
     'extract-global-constants': extractGlobalConstants,
     'enforce-global-constants': enforceGlobalConstants,
