@@ -48,6 +48,13 @@ const ALLOWED_SUFFIXES = [
   'Displayed',
 ];
 
+// Common compound nouns that should not be flagged as Hungarian notation
+const ALLOWED_COMPOUND_NOUNS = [
+  'PhoneNumber',
+  'EmailAddress',
+  'PostalCode',
+];
+
 // Common built-in JavaScript prototype methods
 const BUILT_IN_METHODS = new Set([
   // String methods
@@ -218,6 +225,28 @@ export const noHungarian = createRule<[], MessageIds>({
 
     // Check if a variable name contains a type marker with proper word boundaries
     function hasTypeMarker(variableName: string): boolean {
+      // Check if the variable name is exactly one of the allowed compound nouns
+      // or if it contains one of the allowed compound nouns but is not a prefix like "strPhoneNumber"
+      for (const compoundNoun of ALLOWED_COMPOUND_NOUNS) {
+        // If the variable name is exactly the compound noun (case-insensitive)
+        if (variableName.toLowerCase() === compoundNoun.toLowerCase()) {
+          return false;
+        }
+
+        // If the variable name contains the compound noun
+        if (variableName.includes(compoundNoun)) {
+          // Check if it's a prefix like "strPhoneNumber" (which should be flagged)
+          const prefix = variableName.substring(0, variableName.indexOf(compoundNoun));
+          if (TYPE_MARKERS.some(marker => prefix.toLowerCase() === marker.toLowerCase())) {
+            // This is a type marker prefix + compound noun, so it should be flagged
+            return true;
+          }
+
+          // Otherwise, it's a valid use of the compound noun
+          return false;
+        }
+      }
+
       // Check if the variable name ends with one of the allowed descriptive suffixes
       if (
         ALLOWED_SUFFIXES.some(
