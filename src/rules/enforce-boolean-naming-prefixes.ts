@@ -25,6 +25,7 @@ const DEFAULT_BOOLEAN_PREFIXES = [
   'supports',
   'needs',
   'asserts',
+  'includes',
 ];
 
 export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
