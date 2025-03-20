@@ -112,9 +112,9 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
       output: `
         const MyComponent = () => {
           const audioPlayback = useAudioPlayback();
-
+          const { canPlayAudio, startAudio } = audioPlayback;
+          
           useEffect(() => {
-            const { canPlayAudio, startAudio } = audioPlayback;
             if (!canPlayAudio) return;
             startAudio();
           }, [canPlayAudio, startAudio]);
