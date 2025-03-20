@@ -13,7 +13,7 @@ ruleTesterTs.run(
       function ChatComponent() {
         // Using a property with an approved prefix
         const messageInputProps = {
-          isGrowing: true,
+          grow: true,
           hasTextArea: true,
         };
 
