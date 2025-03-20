@@ -87,8 +87,8 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
             'fast-diff',
             'diff',
             'deep-object-diff',
-            'fast-deep-equal',
-            'fast-deep-equal/es6',
+            // Removed 'fast-deep-equal' and 'fast-deep-equal/es6' from this list
+            // as they are allowed alternatives to microdiff
           ].includes(importSource)
         ) {
           // Track imported function names and their sources
@@ -102,15 +102,8 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
               // Track the local name (which could be different due to renaming)
               const localName = specifier.local.name;
               importedFunctions.set(localName, importSource);
-            } else if (
-              importSource === 'fast-deep-equal' ||
-              importSource === 'fast-deep-equal/es6'
-            ) {
-              // Handle default imports for fast-deep-equal
-              if (specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
-                importedFunctions.set(specifier.local.name, importSource);
-              }
             }
+            // Removed the fast-deep-equal handling since it's now allowed
           });
 
           // Report all competing diffing libraries right away
@@ -146,13 +139,25 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
             return false;
           });
 
-          if (
-            hasDiffImport ||
-            importSource === 'fast-deep-equal' ||
-            importSource === 'fast-deep-equal/es6'
-          ) {
+          if (hasDiffImport) {
             importedDiffLibraries.set(importSource, node);
           }
+        }
+
+        // Special handling for fast-deep-equal: track it but don't report it
+        if (
+          importSource === 'fast-deep-equal' ||
+          importSource === 'fast-deep-equal/es6'
+        ) {
+          // Track imported function names for later reference
+          node.specifiers.forEach((specifier) => {
+            if (specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
+              importedFunctions.set(specifier.local.name, importSource);
+            }
+          });
+
+          // Add to importedDiffLibraries for tracking but don't report
+          importedDiffLibraries.set(importSource, node);
         }
       },
 
@@ -173,7 +178,15 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
           if (importedFunctions.has(name)) {
             usedImportNames.add(name);
 
-            // Always report it if it's from a tracked library
+            // Get the source of the imported function
+            const importSource = importedFunctions.get(name);
+
+            // Skip reporting if it's from fast-deep-equal
+            if (importSource === 'fast-deep-equal' || importSource === 'fast-deep-equal/es6') {
+              return;
+            }
+
+            // Report it if it's from any other tracked library
             reportedNodes.add(node);
             context.report({
               node,
@@ -191,8 +204,7 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
             'fastDiff',
             'diffArrays',
             'detailedDiff',
-            'fastDeepEqual',
-            'isEqual',
+            // Removed 'fastDeepEqual' and 'isEqual' as they are allowed alternatives
           ].includes(name);
 
           if (isDiffFunction) {

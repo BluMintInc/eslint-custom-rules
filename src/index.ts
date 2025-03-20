@@ -99,6 +99,7 @@ import { default as preferUseCallbackOverUseMemoForFunctions } from './rules/pre
 import { noMarginProperties } from './rules/no-margin-properties';
 import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-prefixes';
 import { preferBlockCommentsForDeclarations } from './rules/prefer-block-comments-for-declarations';
+import { noUndefinedNullPassthrough } from './rules/no-undefined-null-passthrough';
 
 module.exports = {
   meta: {
@@ -221,6 +222,7 @@ module.exports = {
           'error',
         '@blumintinc/blumint/no-margin-properties': 'error',
         '@blumintinc/blumint/enforce-boolean-naming-prefixes': 'error',
+        '@blumintinc/blumint/no-undefined-null-passthrough': 'error',
       },
     },
   },
@@ -330,5 +332,6 @@ module.exports = {
       preferUseCallbackOverUseMemoForFunctions,
     'no-margin-properties': noMarginProperties,
     'enforce-boolean-naming-prefixes': enforceBooleanNamingPrefixes,
+    'no-undefined-null-passthrough': noUndefinedNullPassthrough,
   },
 };

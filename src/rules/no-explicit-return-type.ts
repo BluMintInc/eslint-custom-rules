@@ -267,8 +267,9 @@ export const noExplicitReturnType: TSESLint.RuleModule<
         if (!node.value.returnType) return;
 
         if (
-          mergedOptions.allowAbstractMethodSignatures &&
-          isInterfaceOrAbstractMethodSignature(node)
+          isTypeGuardFunction(node.value) ||
+          (mergedOptions.allowAbstractMethodSignatures &&
+          isInterfaceOrAbstractMethodSignature(node))
         ) {
           return;
         }
