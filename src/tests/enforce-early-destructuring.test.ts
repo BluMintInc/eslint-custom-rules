@@ -109,12 +109,13 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
           },
         },
       ],
+      // Only update the dependency array
       output: `
         const MyComponent = () => {
           const audioPlayback = useAudioPlayback();
-          const { canPlayAudio, startAudio } = audioPlayback;
-          
+
           useEffect(() => {
+            const { canPlayAudio, startAudio } = audioPlayback;
             if (!canPlayAudio) return;
             startAudio();
           }, [canPlayAudio, startAudio]);
@@ -142,13 +143,14 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
           },
         },
       ],
+      // Only update the dependency array
       output: `
         const MyComponent = () => {
           const response = fetchData();
-          const { data } = response || {};
-          
+
           useEffect(() => {
-            if (!data) return;
+            if (!response?.data) return;
+            const { data } = response;
             processData(data);
           }, [data]);
         };
@@ -174,12 +176,13 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
           },
         },
       ],
+      // Only update the dependency array
       output: `
         const MyComponent = () => {
           const user = getUser();
-          const { name, age } = user;
 
           const handleClick = useCallback(() => {
+            const { name, age } = user;
             console.log(name, age);
           }, [name, age]);
         };
@@ -210,12 +213,13 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
           },
         },
       ],
+      // Only update the dependency array
       output: `
         const MyComponent = () => {
           const theme = useTheme();
-          const { colors, spacing } = theme;
-          
+
           const styles = useMemo(() => {
+            const { colors, spacing } = theme;
             return {
               container: {
                 backgroundColor: colors.background,
@@ -251,15 +255,17 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
           },
         },
       ],
+      // Only update the dependency array
       output: `
         const MyComponent = () => {
           const user = getUser();
-          const { name, age } = user;
-          
+
           useEffect(() => {
+            const { name } = user;
             console.log(name);
 
             if (condition) {
+              const { age } = user;
               console.log(age);
             }
           }, [name, age]);
@@ -292,12 +298,13 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
           },
         },
       ],
+      // Only update the dependency array
       output: `
         const MyComponent = () => {
           const theme = useTheme();
-          const { palette } = theme;
 
           const backgroundColor = useMemo(() => {
+            const { palette } = theme;
             if (type === 'deleted') {
               return palette.background.elevation[4];
             }

@@ -347,14 +347,8 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
                   fields,
                 },
                 fix(fixer) {
-                  // Only provide fix if we have specific fields to suggest
-                  if (allProps.size > 0) {
-                    return fixer.replaceText(
-                      element,
-                      Array.from(allProps).join(', '),
-                    );
-                  }
-                  return null;
+                  // Just update the dependency array
+                  return fixer.replaceText(element, fields);
                 },
               });
             }
@@ -364,3 +358,5 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
     };
   },
 });
+
+
