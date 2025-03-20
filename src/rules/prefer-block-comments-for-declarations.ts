@@ -22,6 +22,16 @@ export const preferBlockCommentsForDeclarations: TSESLint.RuleModule<
         return false;
       }
 
+      // Ignore ESLint directive comments
+      const commentText = comment.value.trim();
+      if (commentText.startsWith('eslint-disable') ||
+          commentText.startsWith('eslint-enable') ||
+          commentText.startsWith('eslint-env') ||
+          commentText.startsWith('global ') ||
+          commentText.startsWith('globals ')) {
+        return false;
+      }
+
       // Check if the comment is directly before the node
       const commentLine = comment.loc.end.line;
       const nodeLine = node.loc.start.line;
