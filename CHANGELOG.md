@@ -1,3 +1,10 @@
+## [1.12.3](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.12.2...v1.12.3) (2025-03-20)
+
+
+### Bug Fixes
+
+* **.cursorrules:** force patch version update ([140507e](https://github.com/BluMintInc/eslint-custom-rules/commit/140507e9fac48a51252c9ca082ae0a8abe86f487))
+
 ## [1.12.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.12.1...v1.12.2) (2025-03-13)
 
 
