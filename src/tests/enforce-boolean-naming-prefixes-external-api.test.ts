@@ -56,7 +56,7 @@ ruleTesterTs.run(
               type: 'property',
               name: 'enabled',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
             },
           },
           {
@@ -65,7 +65,7 @@ ruleTesterTs.run(
               type: 'property',
               name: 'visible',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
             },
           },
         ],
@@ -86,7 +86,7 @@ ruleTesterTs.run(
               type: 'property',
               name: 'enabled',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
             },
             line: 2,
             column: 41,
@@ -97,7 +97,7 @@ ruleTesterTs.run(
               type: 'property',
               name: 'enabled',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
             },
             line: 6,
             column: 38,
