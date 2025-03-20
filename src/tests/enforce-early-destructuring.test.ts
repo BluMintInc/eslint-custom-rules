@@ -177,9 +177,9 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
       output: `
         const MyComponent = () => {
           const user = getUser();
+          const { name, age } = user;
 
           const handleClick = useCallback(() => {
-            const { name, age } = user;
             console.log(name, age);
           }, [name, age]);
         };
