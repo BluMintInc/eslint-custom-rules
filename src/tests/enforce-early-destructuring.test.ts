@@ -254,13 +254,12 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
       output: `
         const MyComponent = () => {
           const user = getUser();
-
+          const { name, age } = user;
+          
           useEffect(() => {
-            const { name } = user;
             console.log(name);
 
             if (condition) {
-              const { age } = user;
               console.log(age);
             }
           }, [name, age]);
