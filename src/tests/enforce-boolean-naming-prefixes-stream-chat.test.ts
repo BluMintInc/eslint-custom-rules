@@ -8,10 +8,7 @@ ruleTesterTs.run(
     valid: [
       // Test case for a property that should be exempted
       `
-      // Mock the external API
-      function Thread(props) {
-        return props;
-      }
+      import { Thread } from 'stream-chat-react';
 
       function ChatComponent() {
         // Using a property with an approved prefix
