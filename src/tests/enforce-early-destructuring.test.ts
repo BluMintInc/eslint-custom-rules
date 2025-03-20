@@ -128,7 +128,7 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
           const response = fetchData();
 
           useEffect(() => {
-            if (!response) return;
+            if (!response?.data) return;
             const { data } = response;
             processData(data);
           }, [response]);
