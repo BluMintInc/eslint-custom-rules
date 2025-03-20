@@ -104,7 +104,7 @@ import { noUndefinedNullPassthrough } from './rules/no-undefined-null-passthroug
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.12.3',
+    version: '1.12.4',
   },
   parseOptions: {
     ecmaVersion: 2020,

@@ -1,3 +1,10 @@
+## [1.12.4](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.12.3...v1.12.4) (2025-03-20)
+
+
+### Bug Fixes
+
+* force update ([ece6878](https://github.com/BluMintInc/eslint-custom-rules/commit/ece6878fa391978d7df2aa695dec8cb3dcdc0d35))
+
 ## [1.12.3](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.12.2...v1.12.3) (2025-03-20)
 
 
