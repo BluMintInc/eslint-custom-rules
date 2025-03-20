@@ -213,9 +213,9 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
       output: `
         const MyComponent = () => {
           const theme = useTheme();
-
+          const { colors, spacing } = theme;
+          
           const styles = useMemo(() => {
-            const { colors, spacing } = theme;
             return {
               container: {
                 backgroundColor: colors.background,
