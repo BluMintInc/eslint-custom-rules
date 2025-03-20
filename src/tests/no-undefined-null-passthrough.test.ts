@@ -3,12 +3,6 @@ import { ruleTesterTs } from '../utils/ruleTester';
 
 ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
   valid: [
-    // Functions with multiple parameters are valid
-    `function processData(data, options) {
-      if (!data) return;
-      return data.process(options);
-    }`,
-
     // Functions that do something with null/undefined other than returning it
     `function processData(data) {
       if (!data) return [];
@@ -32,12 +26,6 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
       return useContext(FeatureFlagContext)[flagName];
     }`,
 
-    // Arrow functions with multiple parameters
-    `const processItems = (items, filter) => {
-      if (!items) return;
-      return items.filter(filter);
-    }`,
-
     // Functions that handle null/undefined in a different way
     `function getFirstItem(items) {
       return items?.[0];
@@ -47,6 +35,15 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
     `function processData(data) {
       if (!data) return null;
       return transformData(data);
+    }`,
+
+    // Functions with multiple parameters that don't have early returns
+    `function processMultipleParams(data, options) {
+      return data?.process(options);
+    }`,
+
+    `const processMultipleParams = (data, options) => {
+      return data?.process(options);
     }`,
   ],
   invalid: [
@@ -115,6 +112,24 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
     // Arrow function with conditional expression
     {
       code: `const getData = (data) => data ? data.value : null`,
+      errors: [{ messageId: 'unexpected' }],
+    },
+
+    // Function with multiple parameters and early return
+    {
+      code: `function processData(data, options) {
+        if (!data) return;
+        return data.process(options);
+      }`,
+      errors: [{ messageId: 'unexpected' }],
+    },
+
+    // Arrow function with multiple parameters and early return
+    {
+      code: `const processItems = (items, filter) => {
+        if (!items) return;
+        return items.filter(filter);
+      }`,
       errors: [{ messageId: 'unexpected' }],
     },
   ],
