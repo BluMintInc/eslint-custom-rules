@@ -42,7 +42,7 @@ ruleTesterTs.run(
               type: 'variable',
               name: 'active',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
             },
           },
         ],
@@ -59,7 +59,7 @@ ruleTesterTs.run(
               type: 'variable',
               name: 'loggedIn',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
             },
           },
         ],

@@ -48,6 +48,13 @@ const ALLOWED_SUFFIXES = [
   'Displayed',
 ];
 
+// Common compound nouns that should not be flagged as Hungarian notation
+const ALLOWED_COMPOUND_NOUNS = [
+  'PhoneNumber',
+  'EmailAddress',
+  'PostalCode',
+];
+
 // Common built-in JavaScript prototype methods
 const BUILT_IN_METHODS = new Set([
   // String methods
@@ -218,6 +225,28 @@ export const noHungarian = createRule<[], MessageIds>({
 
     // Check if a variable name contains a type marker with proper word boundaries
     function hasTypeMarker(variableName: string): boolean {
+      // Check if the variable name is exactly one of the allowed compound nouns
+      // or if it contains one of the allowed compound nouns but is not a prefix like "strPhoneNumber"
+      for (const compoundNoun of ALLOWED_COMPOUND_NOUNS) {
+        // If the variable name is exactly the compound noun (case-insensitive)
+        if (variableName.toLowerCase() === compoundNoun.toLowerCase()) {
+          return false;
+        }
+
+        // If the variable name contains the compound noun
+        if (variableName.includes(compoundNoun)) {
+          // Check if it's a prefix like "strPhoneNumber" (which should be flagged)
+          const prefix = variableName.substring(0, variableName.indexOf(compoundNoun));
+          if (TYPE_MARKERS.some(marker => prefix.toLowerCase() === marker.toLowerCase())) {
+            // This is a type marker prefix + compound noun, so it should be flagged
+            return true;
+          }
+
+          // Otherwise, it's a valid use of the compound noun
+          return false;
+        }
+      }
+
       // Check if the variable name ends with one of the allowed descriptive suffixes
       if (
         ALLOWED_SUFFIXES.some(
@@ -234,9 +263,13 @@ export const noHungarian = createRule<[], MessageIds>({
 
       // Handle SCREAMING_SNAKE_CASE separately
       if (
-        variableName === variableName.toUpperCase() &&
-        variableName.includes('_')
+        variableName === variableName.toUpperCase()
       ) {
+        // Special case for all-caps variables without underscores (like BREAKPOINTS)
+        // These should not be flagged as Hungarian notation
+        if (!variableName.includes('_')) {
+          return false;
+        }
         return TYPE_MARKERS.some((marker) => {
           const markerUpper = marker.toUpperCase();
 
@@ -258,6 +291,7 @@ export const noHungarian = createRule<[], MessageIds>({
 
           // Check if it's in the middle (PART_MARKER_PART)
           const parts = variableName.split('_');
+          // Only consider exact matches for parts, not substrings
           return parts.some((part) => part === markerUpper);
         });
       }
@@ -291,6 +325,8 @@ export const noHungarian = createRule<[], MessageIds>({
           return true;
         }
 
+        // Check for word boundaries to avoid matching substrings
+        // For example, avoid matching "int" in "points" or "str" in "stream"
         const markerIndex = normalizedVarName.indexOf(normalizedMarker);
         if (markerIndex === -1) {
           return false;
@@ -300,12 +336,16 @@ export const noHungarian = createRule<[], MessageIds>({
         const preMarkerPrefix = variableName.at(markerIndex - 1);
         const suffix = variableName.at(markerIndex + normalizedMarker.length);
 
-        return (
-          (!markerPrefix ||
-            preMarkerPrefix === '_' ||
-            /[A-Z]/.test(markerPrefix)) &&
-          (!suffix || suffix === '_' || /[A-Z]/.test(suffix))
-        );
+        // Ensure we have proper word boundaries
+        // A word boundary is defined by:
+        // 1. Start of string OR underscore OR capital letter before the marker
+        // 2. End of string OR underscore OR capital letter after the marker
+        const hasStartBoundary = markerIndex === 0 || preMarkerPrefix === '_' || /[A-Z]/.test(markerPrefix || '');
+        const hasEndBoundary = markerIndex + normalizedMarker.length === normalizedVarName.length ||
+                              suffix === '_' ||
+                              /[A-Z]/.test(suffix || '');
+
+        return hasStartBoundary && hasEndBoundary;
       });
     }
 
