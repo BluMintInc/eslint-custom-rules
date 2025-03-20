@@ -295,9 +295,9 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
       output: `
         const MyComponent = () => {
           const theme = useTheme();
+          const { palette } = theme;
 
           const backgroundColor = useMemo(() => {
-            const { palette } = theme;
             if (type === 'deleted') {
               return palette.background.elevation[4];
             }
