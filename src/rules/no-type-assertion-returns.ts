@@ -264,6 +264,14 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
     }
 
     /**
+     * Check if the current file is a .f.ts file
+     */
+    function isFunctionFile(context: any): boolean {
+      const filename = context.getFilename();
+      return filename.endsWith('.f.ts');
+    }
+
+    /**
      * Common function to check function return types
      */
     function checkFunctionReturnType(
@@ -273,6 +281,11 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
         | TSESTree.ArrowFunctionExpression,
     ) {
       if (!node.returnType) return;
+
+      // Skip checking return types in .f.ts files
+      if (isFunctionFile(context)) {
+        return;
+      }
 
       // Allow type predicates if configured
       if (
@@ -376,6 +389,11 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
         if (node.body.type !== AST_NODE_TYPES.BlockStatement) {
           // Check for explicit return type
           if (node.returnType) {
+            // Skip checking return types in .f.ts files
+            if (isFunctionFile(context)) {
+              return;
+            }
+
             // Allow type predicates if configured
             if (
               mergedOptions.allowTypePredicates &&
