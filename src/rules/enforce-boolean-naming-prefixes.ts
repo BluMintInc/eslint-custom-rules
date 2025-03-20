@@ -588,16 +588,6 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
 
       if (!variable) return false;
 
-      // For our test case, if the variable is named 'messageInputProps',
-      // and it's used with a function called 'Thread' that's imported,
-      // we should consider it as used with an external API
-      if (variableName === 'messageInputProps') {
-        // Check if Thread is imported
-        const threadVariable = scope.variables.find(v => v.name === 'Thread');
-        if (threadVariable && threadVariable.defs.some(def => def.type === 'ImportBinding')) {
-          return true;
-        }
-      }
 
       // Check all references to this variable
       for (const reference of variable.references) {
