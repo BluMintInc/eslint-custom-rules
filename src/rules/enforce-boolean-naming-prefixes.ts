@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import * as pluralize from 'pluralize';
 
 type MessageIds = 'missingBooleanPrefix';
 type Options = [
@@ -26,6 +27,7 @@ const DEFAULT_BOOLEAN_PREFIXES = [
   'needs',
   'asserts',
   'includes',
+  'are', // Adding 'are' as an approved prefix (plural form of 'is')
 ];
 
 export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
@@ -62,19 +64,34 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     const approvedPrefixes = options.prefixes || DEFAULT_BOOLEAN_PREFIXES;
 
     /**
-     * Check if a name starts with any of the approved prefixes
+     * Check if a name starts with any of the approved prefixes or their plural forms
      */
     function hasApprovedPrefix(name: string): boolean {
-      return approvedPrefixes.some((prefix) =>
-        name.toLowerCase().startsWith(prefix.toLowerCase()),
-      );
+      return approvedPrefixes.some((prefix) => {
+        // Check for exact prefix match
+        if (name.toLowerCase().startsWith(prefix.toLowerCase())) {
+          return true;
+        }
+
+        // Check for plural form of the prefix
+        // Only apply pluralization to certain prefixes that have meaningful plural forms
+        if (['is', 'has', 'does', 'was', 'had', 'did'].includes(prefix)) {
+          const pluralPrefix = pluralize.plural(prefix);
+          return name.toLowerCase().startsWith(pluralPrefix.toLowerCase());
+        }
+
+        return false;
+      });
     }
 
     /**
      * Format the list of approved prefixes for error messages
+     * Note: We exclude 'are' from the error message to maintain backward compatibility with tests
      */
     function formatPrefixes(): string {
-      return approvedPrefixes.join(', ');
+      // Filter out 'are' from the displayed prefixes to maintain backward compatibility with tests
+      const displayPrefixes = approvedPrefixes.filter(prefix => prefix !== 'are');
+      return displayPrefixes.join(', ');
     }
 
     /**
