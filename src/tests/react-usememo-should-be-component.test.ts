@@ -6,6 +6,43 @@ ruleTesterJsx.run(
   reactUseMemoShouldBeComponent,
   {
     valid: [
+      // Test case for the specific bug: useMemo returning an array of JSX elements via map
+      {
+        code: `
+        import React, { useMemo, memo } from 'react';
+
+        const RoundStepper = memo(function RoundStepperUnmemoized({
+          roundStepsRendered,
+          isLoserBracket
+        }) {
+          const formatPayout = (tokens) => \`\${tokens} tokens\`;
+
+          // This useMemo should NOT be flagged by the ESLint rule
+          const roundStepsComponents = useMemo(() => {
+            return roundStepsRendered.map((roundStep) => {
+              const { payout, roundNumber, isReversed } = roundStep;
+
+              const roundPayout = formatPayout(payout.payout?.tokens);
+              return (
+                <RoundStep
+                  key={\`\${isReversed}-\${roundNumber}\`}
+                  {...roundStep}
+                  isInverted={isLoserBracket}
+                  payout={roundPayout}
+                />
+              );
+            });
+          }, [roundStepsRendered, formatPayout, isLoserBracket]);
+
+          return <div>{roundStepsComponents}</div>;
+        });
+
+        // Mock component for testing
+        const RoundStep = ({ isInverted, payout, ...props }) => {
+          return <div>{payout}</div>;
+        };
+        `,
+      },
       // Test case for the specific bug: useMemo returning conditional JSX that can be false (with logical AND)
       {
         code: `
@@ -245,6 +282,54 @@ ruleTesterJsx.run(
               {items.map(item => <span key={item}>{item}</span>)}
             </div>
           );
+        };
+      `,
+      },
+      // useMemo returning an array of JSX elements via map should be valid
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const elements = useMemo(() => {
+            return items.map(item => (
+              <div key={item.id}>{item.name}</div>
+            ));
+          }, [items]);
+
+          return <div>{elements}</div>;
+        };
+      `,
+      },
+      // useMemo returning an array of JSX elements via map with inline arrow function should be valid
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const renderedItems = useMemo(() =>
+            items.map(item => <ListItem key={item.id}>{item.name}</ListItem>)
+          , [items]);
+
+          return <List>{renderedItems}</List>;
+        };
+      `,
+      },
+      // useMemo returning an array of JSX elements via map with inner function should be valid
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ data }) => {
+          const processedContent = useMemo(() => {
+            const renderItem = (item) => {
+              return <div key={item.id}>{item.name}</div>;
+            };
+
+            return data.map(renderItem);
+          }, [data]);
+
+          return <div>{processedContent}</div>;
         };
       `,
       },
@@ -497,23 +582,6 @@ ruleTesterJsx.run(
       `,
         errors: [{ messageId: 'useMemoShouldBeComponent' }],
       },
-      // useMemo returning an array of JSX elements directly should be invalid
-      {
-        code: `
-        import React, { useMemo } from 'react';
-
-        const Component = ({ items }) => {
-          const elements = useMemo(() => {
-            return items.map(item => (
-              <div key={item.id}>{item.name}</div>
-            ));
-          }, [items]);
-
-          return <div>{elements}</div>;
-        };
-      `,
-        errors: [{ messageId: 'useMemoShouldBeComponent' }],
-      },
       // useMemo with direct JSX return (no block)
       {
         code: `
@@ -549,21 +617,7 @@ ruleTesterJsx.run(
       `,
         errors: [{ messageId: 'useMemoShouldBeComponent' }],
       },
-      // useMemo with array.map returning JSX
-      {
-        code: `
-        import React, { useMemo } from 'react';
-
-        const Component = ({ items }) => {
-          const renderedItems = useMemo(() =>
-            items.map(item => <ListItem key={item.id}>{item.name}</ListItem>)
-          , [items]);
-
-          return <List>{renderedItems}</List>;
-        };
-      `,
-        errors: [{ messageId: 'useMemoShouldBeComponent' }],
-      },
+      // This test case was moved to the valid section
       // Multiple useMemo with JSX in the same component
       {
         code: `
@@ -735,25 +789,7 @@ ruleTesterJsx.run(
       `,
         errors: [{ messageId: 'useMemoShouldBeComponent' }],
       },
-      // useMemo with JSX in nested functions
-      {
-        code: `
-        import React, { useMemo } from 'react';
-
-        const Component = ({ data }) => {
-          const processedContent = useMemo(() => {
-            const renderItem = (item) => {
-              return <div key={item.id}>{item.name}</div>;
-            };
-
-            return data.map(renderItem);
-          }, [data]);
-
-          return <div>{processedContent}</div>;
-        };
-      `,
-        errors: [{ messageId: 'useMemoShouldBeComponent' }],
-      },
+      // This test case was moved to the valid section
       // useMemo with JSX in IIFE
       {
         code: `

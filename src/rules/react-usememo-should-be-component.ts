@@ -309,40 +309,9 @@ const containsJsxInExpression = (node: TSESTree.Expression): boolean => {
         node.callee.property.name === 'map' &&
         node.arguments.length > 0
       ) {
-        const callback = node.arguments[0];
-        if (
-          callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-          callback.type === AST_NODE_TYPES.FunctionExpression
-        ) {
-          // Check if the callback returns an object with both JSX and non-JSX properties
-          if (
-            callback.body.type !== AST_NODE_TYPES.BlockStatement &&
-            callback.body.type === AST_NODE_TYPES.ObjectExpression
-          ) {
-            let hasNonJsxProperties = false;
-            let hasJsxProperties = false;
-
-            for (const property of callback.body.properties) {
-              if (property.type === AST_NODE_TYPES.Property && property.value) {
-                if (isJsxElement(property.value)) {
-                  hasJsxProperties = true;
-                } else if (
-                  property.value.type !== AST_NODE_TYPES.ObjectExpression
-                ) {
-                  hasNonJsxProperties = true;
-                }
-              }
-            }
-
-            // If the object has both JSX and non-JSX properties, it's likely a data object
-            if (hasNonJsxProperties && hasJsxProperties) {
-              return false;
-            }
-          }
-
-          // For other cases, check if the function returns JSX directly
-          return containsJsxInFunction(callback);
-        }
+        // Map operations that return JSX elements are a valid pattern and should not be flagged
+        // This is a common pattern for rendering lists of components
+        return false;
       }
 
       // Check if it's an IIFE
@@ -519,18 +488,32 @@ const containsJsxInUseMemo = (node: TSESTree.CallExpression): boolean => {
     ) {
       // For block statements, we need to check if any return statement contains JSX
       if (callback.body.type === AST_NODE_TYPES.BlockStatement) {
-        // Check each return statement to see if it returns JSX
+        // Check each return statement to see if it returns JSX directly (not via mapping)
         for (const statement of callback.body.body) {
           if (
             statement.type === AST_NODE_TYPES.ReturnStatement &&
-            statement.argument &&
-            isJsxElement(statement.argument)
+            statement.argument
           ) {
-            return true;
+            // Skip if the return statement is a map function that returns JSX elements
+            if (
+              statement.argument.type === AST_NODE_TYPES.CallExpression &&
+              statement.argument.callee.type === AST_NODE_TYPES.MemberExpression &&
+              statement.argument.callee.property.type === AST_NODE_TYPES.Identifier &&
+              statement.argument.callee.property.name === 'map'
+            ) {
+              // This is a map function, which is a valid pattern - don't flag it
+              return false;
+            }
+
+            // Direct JSX element return - this should be flagged
+            if (isJsxElement(statement.argument)) {
+              return true;
+            }
           }
         }
 
-        // If we didn't find any return statements with JSX, check for more complex patterns
+        // If we didn't find any return statements with direct JSX, check for more complex patterns
+        // but exclude map operations
         return containsJsxInBlockStatement(callback.body);
       } else {
         // Direct JSX element - this is the primary case we want to catch
@@ -543,6 +526,17 @@ const containsJsxInUseMemo = (node: TSESTree.CallExpression): boolean => {
           callback.body.type === AST_NODE_TYPES.LogicalExpression &&
           callback.body.operator === '&&'
         ) {
+          return false;
+        }
+
+        // Special case for map operations that return JSX elements
+        if (
+          callback.body.type === AST_NODE_TYPES.CallExpression &&
+          callback.body.callee.type === AST_NODE_TYPES.MemberExpression &&
+          callback.body.callee.property.type === AST_NODE_TYPES.Identifier &&
+          callback.body.callee.property.name === 'map'
+        ) {
+          // This is a map function, which is a valid pattern - don't flag it
           return false;
         }
 
