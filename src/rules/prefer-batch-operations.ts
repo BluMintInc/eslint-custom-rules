@@ -99,11 +99,11 @@ function findLoopNode(
 }
 
 function isFirestoreSetterInstance(node: TSESTree.Node): boolean {
-  // Check if it's a DocSetter instance
+  // Check if it's a DocSetter or DocSetterTransaction instance
   if (node.type === AST_NODE_TYPES.NewExpression) {
     return (
       node.callee.type === AST_NODE_TYPES.Identifier &&
-      node.callee.name === 'DocSetter'
+      (node.callee.name === 'DocSetter' || node.callee.name === 'DocSetterTransaction')
     );
   }
 
@@ -128,7 +128,23 @@ function findVariableDeclaration(
 ): TSESTree.VariableDeclarator | undefined {
   let current: TSESTree.Node | undefined = node;
   while (current) {
-    if (current.type === AST_NODE_TYPES.Program) {
+    // Check if we're in a block statement (like function body or transaction callback)
+    if (current.type === AST_NODE_TYPES.BlockStatement) {
+      for (const statement of current.body) {
+        if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
+          for (const decl of statement.declarations) {
+            if (
+              decl.id.type === AST_NODE_TYPES.Identifier &&
+              decl.id.name === varName
+            ) {
+              return decl;
+            }
+          }
+        }
+      }
+    }
+    // Also check at program level
+    else if (current.type === AST_NODE_TYPES.Program) {
       for (const statement of current.body) {
         if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
           for (const decl of statement.declarations) {
@@ -195,16 +211,16 @@ export const preferBatchOperations = createRule<[], MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Enforce using setAll() and overwriteAll() instead of multiple set() or overwrite() calls',
+        'Enforce using setAll() and overwriteAll() instead of multiple set() or overwrite() calls in DocSetter and DocSetterTransaction',
       recommended: 'error',
     },
     fixable: 'code',
     schema: [],
     messages: {
       preferSetAll:
-        'Use setAll() instead of multiple set() calls for better performance',
+        'Use setAll() instead of multiple set() calls in DocSetter or DocSetterTransaction for better performance',
       preferOverwriteAll:
-        'Use overwriteAll() instead of multiple overwrite() calls for better performance',
+        'Use overwriteAll() instead of multiple overwrite() calls in DocSetter or DocSetterTransaction for better performance',
     },
   },
   defaultOptions: [],
