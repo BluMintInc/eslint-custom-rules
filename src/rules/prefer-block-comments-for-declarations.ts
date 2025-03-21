@@ -11,32 +11,15 @@ export const preferBlockCommentsForDeclarations: TSESLint.RuleModule<
 > = createRule({
   create(context) {
     /**
-     * Check if a comment is a line comment that should be converted to a block comment
+     * Check if a comment is an ESLint directive comment
      */
-    const isLineCommentBeforeDeclaration = (
-      comment: TSESTree.Comment,
-      node: TSESTree.Node
-    ): boolean => {
-      // Only process line comments
-      if (comment.type !== 'Line') {
-        return false;
-      }
-
-      // Ignore ESLint directive comments
+    const isEslintDirectiveComment = (comment: TSESTree.Comment): boolean => {
       const commentText = comment.value.trim();
-      if (commentText.startsWith('eslint-disable') ||
-          commentText.startsWith('eslint-enable') ||
-          commentText.startsWith('eslint-env') ||
-          commentText.startsWith('global ') ||
-          commentText.startsWith('globals ')) {
-        return false;
-      }
-
-      // Check if the comment is directly before the node
-      const commentLine = comment.loc.end.line;
-      const nodeLine = node.loc.start.line;
-
-      return commentLine === nodeLine - 1;
+      return commentText.startsWith('eslint-disable') ||
+             commentText.startsWith('eslint-enable') ||
+             commentText.startsWith('eslint-env') ||
+             commentText.startsWith('global ') ||
+             commentText.startsWith('globals ');
     };
 
     /**
@@ -78,15 +61,27 @@ export const preferBlockCommentsForDeclarations: TSESLint.RuleModule<
       // Find the closest comment to the node
       const lastComment = comments[comments.length - 1];
 
-      if (lastComment && isLineCommentBeforeDeclaration(lastComment, node)) {
-        context.report({
-          loc: lastComment.loc,
-          messageId: 'preferBlockComment',
-          fix: (fixer) => {
-            const commentText = lastComment.value.trim();
-            return fixer.replaceText(lastComment, `/** ${commentText} */`);
-          },
-        });
+      // Skip if there's no comment or if it's an ESLint directive comment
+      if (!lastComment || isEslintDirectiveComment(lastComment)) {
+        return;
+      }
+
+      // Only process line comments for conversion
+      if (lastComment.type === 'Line') {
+        // Check if the comment is directly before the node
+        const commentLine = lastComment.loc.end.line;
+        const nodeLine = node.loc.start.line;
+
+        if (commentLine === nodeLine - 1) {
+          context.report({
+            loc: lastComment.loc,
+            messageId: 'preferBlockComment',
+            fix: (fixer) => {
+              const commentText = lastComment.value.trim();
+              return fixer.replaceText(lastComment, `/** ${commentText} */`);
+            },
+          });
+        }
       }
     };
 

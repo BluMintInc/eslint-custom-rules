@@ -45,6 +45,16 @@ ruleTesterTs.run('prefer-block-comments-for-declarations', preferBlockCommentsFo
       win: typeof window;
     };`,
 
+// Block comment ESLint directives should be ignored - single directive
+    `/* eslint-disable */
+    import { ComponentProps, ComponentType, FC, useMemo } from 'react';`,
+
+// Multiple block comments should be ignored if they're ESLint directives
+    `/* eslint-disable */
+    /* eslint-enable */
+    /* eslint-env browser */
+    import { ComponentProps, ComponentType, FC, useMemo } from 'react';`,
+
     // Interface with block comment
     `/** User type */
     interface User {
