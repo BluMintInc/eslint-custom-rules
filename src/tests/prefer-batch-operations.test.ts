@@ -30,25 +30,53 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
         }, [hits]);
       };
     `,
-    // Single set() call is allowed
+    // Single set() call is allowed for DocSetter
     `
       const setter = new DocSetter(collectionRef);
       await setter.set(doc);
     `,
-    // Single overwrite() call is allowed
+    // Single set() call is allowed for DocSetterTransaction
+    `
+      const transaction = db.runTransaction(async (t) => {
+        const setter = new DocSetterTransaction(collectionRef, { transaction: t });
+        await setter.set(doc);
+      });
+    `,
+    // Single overwrite() call is allowed for DocSetter
     `
       const setter = new DocSetter(collectionRef);
       await setter.overwrite(doc);
     `,
-    // Using setAll() is valid
+    // Single overwrite() call is allowed for DocSetterTransaction
+    `
+      const transaction = db.runTransaction(async (t) => {
+        const setter = new DocSetterTransaction(collectionRef, { transaction: t });
+        await setter.overwrite(doc);
+      });
+    `,
+    // Using setAll() is valid for DocSetter
     `
       const setter = new DocSetter(collectionRef);
       await setter.setAll(documents);
     `,
-    // Using overwriteAll() is valid
+    // Using setAll() is valid for DocSetterTransaction
+    `
+      const transaction = db.runTransaction(async (t) => {
+        const setter = new DocSetterTransaction(collectionRef, { transaction: t });
+        await setter.setAll(documents);
+      });
+    `,
+    // Using overwriteAll() is valid for DocSetter
     `
       const setter = new DocSetter(collectionRef);
       await setter.overwriteAll(documents);
+    `,
+    // Using overwriteAll() is valid for DocSetterTransaction
+    `
+      const transaction = db.runTransaction(async (t) => {
+        const setter = new DocSetterTransaction(collectionRef, { transaction: t });
+        await setter.overwriteAll(documents);
+      });
     `,
     // Different method calls in loop are allowed
     `
@@ -57,15 +85,29 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
         await setter.validate(doc);
       }
     `,
-    // Using setAll() with array methods
+    // Using setAll() with array methods for DocSetter
     `
       const setter = new DocSetter(collectionRef);
       await setter.setAll(documents.filter(doc => doc.shouldUpdate));
     `,
-    // Using overwriteAll() with array methods
+    // Using setAll() with array methods for DocSetterTransaction
+    `
+      const transaction = db.runTransaction(async (t) => {
+        const setter = new DocSetterTransaction(collectionRef, { transaction: t });
+        await setter.setAll(documents.filter(doc => doc.shouldUpdate));
+      });
+    `,
+    // Using overwriteAll() with array methods for DocSetter
     `
       const setter = new DocSetter(collectionRef);
       await setter.overwriteAll(documents.map(doc => ({ ...doc, updated: true })));
+    `,
+    // Using overwriteAll() with array methods for DocSetterTransaction
+    `
+      const transaction = db.runTransaction(async (t) => {
+        const setter = new DocSetterTransaction(collectionRef, { transaction: t });
+        await setter.overwriteAll(documents.map(doc => ({ ...doc, updated: true })));
+      });
     `,
     // Using setAll() with spread operator
     `
@@ -104,7 +146,21 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
       `,
       errors: [{ messageId: 'preferSetAll' }],
     },
-    // For...of loop with set()
+    // Different DocSetterTransaction instances in loop are not allowed
+    {
+      code: `
+        const transaction = db.runTransaction(async (t) => {
+          const userSetter = new DocSetterTransaction(usersRef, { transaction: t });
+          const orderSetter = new DocSetterTransaction(ordersRef, { transaction: t });
+          for (const doc of documents) {
+            userSetter.set(doc.user);
+            orderSetter.set(doc.order);
+          }
+        });
+      `,
+      errors: [{ messageId: 'preferSetAll' }],
+    },
+    // For...of loop with set() in DocSetter
     {
       code: `
         const setter = new DocSetter(collectionRef);
@@ -114,13 +170,37 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
       `,
       errors: [{ messageId: 'preferSetAll' }],
     },
-    // For...of loop with overwrite()
+    // For...of loop with set() in DocSetterTransaction
+    {
+      code: `
+        const transaction = db.runTransaction(async (t) => {
+          const setter = new DocSetterTransaction(collectionRef, { transaction: t });
+          for (const doc of documents) {
+            setter.set(doc);
+          }
+        });
+      `,
+      errors: [{ messageId: 'preferSetAll' }],
+    },
+    // For...of loop with overwrite() in DocSetter
     {
       code: `
         const setter = new DocSetter(collectionRef);
         for (const doc of documents) {
           await setter.overwrite(doc);
         }
+      `,
+      errors: [{ messageId: 'preferOverwriteAll' }],
+    },
+    // For...of loop with overwrite() in DocSetterTransaction
+    {
+      code: `
+        const transaction = db.runTransaction(async (t) => {
+          const setter = new DocSetterTransaction(collectionRef, { transaction: t });
+          for (const doc of documents) {
+            setter.overwrite(doc);
+          }
+        });
       `,
       errors: [{ messageId: 'preferOverwriteAll' }],
     },
@@ -134,7 +214,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
       `,
       errors: [{ messageId: 'preferSetAll' }],
     },
-    // Array.forEach with set()
+    // Array.forEach with set() in DocSetter
     {
       code: `
         const setter = new DocSetter(collectionRef);
@@ -144,11 +224,33 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
       `,
       errors: [{ messageId: 'preferSetAll' }],
     },
-    // Promise.all with map and set()
+    // Array.forEach with set() in DocSetterTransaction
+    {
+      code: `
+        const transaction = db.runTransaction(async (t) => {
+          const setter = new DocSetterTransaction(collectionRef, { transaction: t });
+          documents.forEach(doc => {
+            setter.set(doc);
+          });
+        });
+      `,
+      errors: [{ messageId: 'preferSetAll' }],
+    },
+    // Promise.all with map and set() in DocSetter
     {
       code: `
         const setter = new DocSetter(collectionRef);
         await Promise.all(documents.map(doc => setter.set(doc)));
+      `,
+      errors: [{ messageId: 'preferSetAll' }],
+    },
+    // Promise.all with map and set() in DocSetterTransaction
+    {
+      code: `
+        const transaction = db.runTransaction(async (t) => {
+          const setter = new DocSetterTransaction(collectionRef, { transaction: t });
+          Promise.all(documents.map(doc => setter.set(doc)));
+        });
       `,
       errors: [{ messageId: 'preferSetAll' }],
     },
