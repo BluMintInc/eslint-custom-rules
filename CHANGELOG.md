@@ -1,3 +1,10 @@
+## [1.12.6](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.12.5...v1.12.6) (2025-03-22)
+
+
+### Reverts
+
+* Revert "chore(release): 1.12.5 [skip ci]" ([539df6b](https://github.com/BluMintInc/eslint-custom-rules/commit/539df6be6d586f3556fa3706f0bc9f7853f4c53d))
+
 ## [1.12.4](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.12.3...v1.12.4) (2025-03-20)
 
 
