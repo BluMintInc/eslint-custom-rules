@@ -105,7 +105,7 @@ import { default as noRestrictedImportsDynamic } from './rules/no-restricted-imp
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.12.5',
+    version: '1.12.4',
   },
   parseOptions: {
     ecmaVersion: 2020,
