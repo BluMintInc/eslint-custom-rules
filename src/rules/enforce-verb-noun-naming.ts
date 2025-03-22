@@ -4632,6 +4632,11 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
         return true;
       }
 
+      // Also check for JSX elements with line breaks
+      if (text.includes('return (') && text.includes('<')) {
+        return true;
+      }
+
       // Check for JSX assigned to variables then returned
       if (
         text.includes('const ') &&
@@ -4708,6 +4713,15 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
         // 5. Component name ends with "Unmemoized" (common React pattern)
         functionName && functionName.endsWith('Unmemoized'),
       ];
+
+      // If the function has a PascalCase name AND returns JSX, it's definitely a React component
+      if (
+        functionName &&
+        isPascalCase(functionName) &&
+        hasJsxReturn(node)
+      ) {
+        return true;
+      }
 
       // Consider it a React component if it matches at least 2 indicators
       // OR if it has the Unmemoized suffix (strong indicator of a React component)
