@@ -14,10 +14,18 @@ const PRIMITIVE_TYPES = new Set([
   'GeoPoint',
 ]);
 
+// Type aliases that we know are string/number/boolean unions or enums
+// This helps with custom types like ChannelGroupPermanence that are just string unions
+const STRING_UNION_TYPES = new Set([
+  'ChannelGroupPermanence',
+  'Status',
+]);
+
 const isInFirestoreTypesDirectory = (filename: string): boolean => {
   return filename.includes('functions/src/types/firestore');
 };
 
+// Check if a type is a primitive or a union of primitives
 const isObjectType = (node: TSESTree.TypeNode): boolean => {
   switch (node.type) {
     case AST_NODE_TYPES.TSTypeLiteral:
@@ -25,7 +33,8 @@ const isObjectType = (node: TSESTree.TypeNode): boolean => {
     case AST_NODE_TYPES.TSTypeReference:
       if (node.typeName.type === AST_NODE_TYPES.Identifier) {
         const typeName = node.typeName.name;
-        return !PRIMITIVE_TYPES.has(typeName);
+        // Check if it's a known primitive type or a known string union type
+        return !PRIMITIVE_TYPES.has(typeName) && !STRING_UNION_TYPES.has(typeName);
       } else if (node.typeName.type === AST_NODE_TYPES.TSQualifiedName) {
         // Handle namespace.Type cases
         return true;
@@ -37,6 +46,16 @@ const isObjectType = (node: TSESTree.TypeNode): boolean => {
     case AST_NODE_TYPES.TSMappedType:
     case AST_NODE_TYPES.TSIndexedAccessType:
       return true;
+    case AST_NODE_TYPES.TSLiteralType:
+      // String, number, boolean literals are not objects
+      return false;
+    case AST_NODE_TYPES.TSStringKeyword:
+    case AST_NODE_TYPES.TSNumberKeyword:
+    case AST_NODE_TYPES.TSBooleanKeyword:
+    case AST_NODE_TYPES.TSNullKeyword:
+    case AST_NODE_TYPES.TSUndefinedKeyword:
+      // Primitive types are not objects
+      return false;
     default:
       return false;
   }
