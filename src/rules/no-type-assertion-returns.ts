@@ -41,13 +41,6 @@ function isInsideReturnStatement(node: TSESTree.Node): boolean {
   let current: TSESTree.Node | undefined = node;
 
   while (current?.parent) {
-    // If we encounter a variable declaration before a return statement,
-    // then the node is not directly inside a return statement
-    if (current.parent.type === AST_NODE_TYPES.VariableDeclarator ||
-        current.parent.type === AST_NODE_TYPES.VariableDeclaration) {
-      return false;
-    }
-
     if (current.parent.type === AST_NODE_TYPES.ReturnStatement) {
       return true;
     }
