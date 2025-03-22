@@ -6,8 +6,8 @@ export const noUndefinedNullPassthrough: TSESLint.RuleModule<'unexpected', never
     create(context) {
       return {
         FunctionDeclaration(node) {
-          // Only apply to functions with exactly one parameter
-          if (node.params.length !== 1) {
+          // Skip functions with no parameters
+          if (node.params.length === 0) {
             return;
           }
 
@@ -20,11 +20,17 @@ export const noUndefinedNullPassthrough: TSESLint.RuleModule<'unexpected', never
             return;
           }
 
-          checkFunctionBody(node.body, node.params[0], context);
+          // For functions with exactly one parameter, check if it's passing through null/undefined
+          if (node.params.length === 1) {
+            checkFunctionBody(node.body, node.params[0], context);
+          } else {
+            // For functions with multiple parameters, check for early returns without arguments
+            checkFunctionBodyForEarlyReturns(node.body, context);
+          }
         },
         ArrowFunctionExpression(node) {
-          // Only apply to arrow functions with exactly one parameter
-          if (node.params.length !== 1) {
+          // Skip functions with no parameters
+          if (node.params.length === 0) {
             return;
           }
 
@@ -41,15 +47,20 @@ export const noUndefinedNullPassthrough: TSESLint.RuleModule<'unexpected', never
 
           // For arrow functions with block body
           if (node.body.type === 'BlockStatement') {
-            checkFunctionBody(node.body, node.params[0], context);
-          } else {
-            // For arrow functions with expression body (implicit return)
+            if (node.params.length === 1) {
+              checkFunctionBody(node.body, node.params[0], context);
+            } else {
+              // For functions with multiple parameters, check for early returns without arguments
+              checkFunctionBodyForEarlyReturns(node.body, context);
+            }
+          } else if (node.params.length === 1) {
+            // For arrow functions with expression body (implicit return) and one parameter
             checkImplicitReturn(node, context);
           }
         },
         FunctionExpression(node) {
-          // Only apply to functions with exactly one parameter
-          if (node.params.length !== 1) {
+          // Skip functions with no parameters
+          if (node.params.length === 0) {
             return;
           }
 
@@ -64,7 +75,13 @@ export const noUndefinedNullPassthrough: TSESLint.RuleModule<'unexpected', never
             return;
           }
 
-          checkFunctionBody(node.body, node.params[0], context);
+          // For functions with exactly one parameter, check if it's passing through null/undefined
+          if (node.params.length === 1) {
+            checkFunctionBody(node.body, node.params[0], context);
+          } else {
+            // For functions with multiple parameters, check for early returns without arguments
+            checkFunctionBodyForEarlyReturns(node.body, context);
+          }
         },
       };
     },
@@ -320,4 +337,44 @@ function isParameterReference(
 ): boolean {
   if (!paramName) return false;
   return node.type === 'Identifier' && node.name === paramName;
+}
+
+/**
+ * Check function body for early returns without arguments (implicit undefined)
+ */
+function checkFunctionBodyForEarlyReturns(
+  body: TSESTree.BlockStatement,
+  context: TSESLint.RuleContext<'unexpected', never[]>
+): void {
+  // Look for early returns without arguments
+  for (const statement of body.body) {
+    if (statement.type === 'IfStatement') {
+      // Check if the consequent is a block statement with a return
+      if (statement.consequent.type === 'BlockStatement') {
+        for (const consequentStmt of statement.consequent.body) {
+          if (
+            consequentStmt.type === 'ReturnStatement' &&
+            !consequentStmt.argument
+          ) {
+            context.report({
+              node: statement,
+              messageId: 'unexpected',
+            });
+            return;
+          }
+        }
+      }
+      // Check if the consequent is a direct return statement without an argument
+      else if (
+        statement.consequent.type === 'ReturnStatement' &&
+        !statement.consequent.argument
+      ) {
+        context.report({
+          node: statement,
+          messageId: 'unexpected',
+        });
+        return;
+      }
+    }
+  }
 }
