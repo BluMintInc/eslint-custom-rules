@@ -73,6 +73,18 @@ function getObjectUsagesInHook(
   const visited = new Set<TSESTree.Node>();
   let needsEntireObject = false;
 
+  // Manually check for optional chaining patterns like `userData?.id`
+  const sourceCode = context.getSourceCode();
+  const sourceText = sourceCode.getText(hookBody);
+  const optionalChainingPattern = new RegExp(`${objectName}\\?\\.(\\w+)`, 'g');
+  const matches = sourceText.match(optionalChainingPattern);
+
+  if (matches) {
+    for (const match of matches) {
+      usages.add(match);
+    }
+  }
+
   // Built-in array methods that should not be considered as object properties
   const ARRAY_METHODS = new Set([
     'map',
@@ -221,6 +233,33 @@ function getObjectUsagesInHook(
       if (path) {
         usages.add(path);
       }
+    } else if (node.type === AST_NODE_TYPES.ChainExpression) {
+      // Handle optional chaining expressions
+      if (node.expression.type === AST_NODE_TYPES.MemberExpression) {
+        const path = buildAccessPath(node.expression);
+        if (path) {
+          usages.add(path);
+        }
+      }
+    } else if (node.type === AST_NODE_TYPES.BinaryExpression || node.type === AST_NODE_TYPES.LogicalExpression) {
+      // Handle binary expressions like `userId || userData?.id`
+      visit(node.left);
+      visit(node.right);
+    } else if (node.type === AST_NODE_TYPES.ConditionalExpression) {
+      // Handle ternary expressions
+      visit(node.test);
+      visit(node.consequent);
+      visit(node.alternate);
+    } else if (node.type === AST_NODE_TYPES.VariableDeclaration) {
+      // Handle variable declarations
+      node.declarations.forEach((declaration) => {
+        if (declaration.init) {
+          visit(declaration.init);
+        }
+      });
+    } else if (node.type === AST_NODE_TYPES.AssignmentExpression) {
+      // Handle assignments
+      visit(node.right);
     }
 
     // Visit all child nodes
@@ -332,6 +371,10 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
           return;
         }
 
+        // Get the source code of the hook body to check for optional chaining
+        const sourceCode = context.getSourceCode();
+        const callbackBodyText = sourceCode.getText(callbackArg.body);
+
         // Check each dependency in the array
         depsArg.elements.forEach((element) => {
           if (!element) return; // Skip null elements (holes in the array)
@@ -350,6 +393,30 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
               }
             }
 
+            // Check for optional chaining pattern directly in the source code
+            const optionalChainingPattern = new RegExp(`${objectName}\\?\\.(\\w+)`, 'g');
+            const optionalChainingMatches = callbackBodyText.match(optionalChainingPattern);
+
+            if (optionalChainingMatches && optionalChainingMatches.length > 0) {
+              // We found optional chaining usage, report it
+              context.report({
+                node: element,
+                messageId: 'avoidEntireObject',
+                data: {
+                  objectName,
+                  fields: optionalChainingMatches.join(', '),
+                },
+                fix(fixer) {
+                  return fixer.replaceText(
+                    element,
+                    optionalChainingMatches.join(', ')
+                  );
+                },
+              });
+              return;
+            }
+
+            // Continue with the regular AST-based analysis
             const usages = getObjectUsagesInHook(
               callbackArg.body,
               objectName,
