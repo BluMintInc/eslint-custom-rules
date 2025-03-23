@@ -304,6 +304,9 @@ export const noUnusedProps = createRule({
 
                 let shouldReport = true;
 
+                // List of TypeScript utility types that should not be reported
+                const utilityTypes = ['Pick', 'Omit', 'Partial', 'Required', 'Record', 'Exclude', 'Extract', 'NonNullable', 'ReturnType', 'InstanceType', 'ThisType'];
+
                 // Skip reporting for generic type parameters (T, K, etc.)
                 if (prop.startsWith('...') && prop.length === 4 && /^\.\.\.([A-Z])$/.test(prop)) {
                   // This is a generic type parameter like ...T, ...K, etc.
@@ -314,17 +317,22 @@ export const noUnusedProps = createRule({
                   // For spread types like "...GroupInfoBasic", check if any properties from this type are used
                   const spreadTypeName = prop.substring(3); // Remove the "..." prefix
 
-                  // Get the properties that belong to this spread type
-                  const spreadTypeProps = usedSpreadTypes.get(spreadTypeName);
+                  // Skip reporting for TypeScript utility types
+                  if (utilityTypes.includes(spreadTypeName)) {
+                    shouldReport = false;
+                  } else {
+                    // Get the properties that belong to this spread type
+                    const spreadTypeProps = usedSpreadTypes.get(spreadTypeName);
 
-                  if (spreadTypeProps) {
-                    // Check if any property from this spread type is being used in the component
-                    const anyPropFromSpreadTypeUsed = Array.from(
-                      spreadTypeProps,
-                    ).some((spreadProp) => used.has(spreadProp));
+                    if (spreadTypeProps) {
+                      // Check if any property from this spread type is being used in the component
+                      const anyPropFromSpreadTypeUsed = Array.from(
+                        spreadTypeProps,
+                      ).some((spreadProp) => used.has(spreadProp));
 
-                    if (anyPropFromSpreadTypeUsed) {
-                      shouldReport = false;
+                      if (anyPropFromSpreadTypeUsed) {
+                        shouldReport = false;
+                      }
                     }
                   }
                 } else {
