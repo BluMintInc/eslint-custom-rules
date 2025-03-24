@@ -156,5 +156,51 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
         }
       `,
     },
+    // Missing decorator on async method without Memoize import (no output since we can't fix)
+    {
+      code: `
+        class Example {
+          async getData() {
+            return await fetch('data');
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+    },
+    // Missing decorator on async method with one parameter without Memoize import (no output since we can't fix)
+    {
+      code: `
+        class Example {
+          async getData(id: string) {
+            return await fetch(\`data/\${id}\`);
+          }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoize' }],
+    },
+    // Missing decorator on multiple async methods without Memoize import (no output since we can't fix)
+    {
+      code: `
+        class CohortIO {
+          public async execute() {
+            const cohorts = await this.fetchCohorts();
+            return cohorts;
+          }
+
+          private async fetchCohorts() {
+            return [];
+          }
+
+          private async applyUpdates(updates: any[]) {
+            return;
+          }
+        }
+      `,
+      errors: [
+        { messageId: 'requireMemoize' },
+        { messageId: 'requireMemoize' },
+        { messageId: 'requireMemoize' },
+      ],
+    },
   ],
 });

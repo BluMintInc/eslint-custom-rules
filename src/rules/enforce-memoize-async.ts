@@ -69,12 +69,16 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
           );
         });
 
-        if (!hasDecorator && hasMemoizeImport) {
+        if (!hasDecorator) {
           context.report({
             node,
             messageId: 'requireMemoize',
             fix(fixer) {
-              // Add import if needed
+              // If Memoize is not imported, we can't provide a fix
+              if (!hasMemoizeImport) {
+                return null;
+              }
+
               // Add decorator
               return fixer.insertTextBefore(
                 node,
