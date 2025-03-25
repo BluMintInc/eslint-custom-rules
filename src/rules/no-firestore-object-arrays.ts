@@ -48,13 +48,13 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
     type: 'problem',
     docs: {
       description:
-        'Disallow arrays of objects in Firestore type definitions to optimize performance and avoid unnecessary fetches',
+        'Disallow arrays of objects in Firestore type definitions to optimize performance, enable querying, prevent destructive updates, and avoid concurrency issues. Use map structures with index fields instead.',
       recommended: 'warn',
     },
     schema: [],
     messages: {
       noObjectArrays:
-        'Arrays of objects are not recommended in Firestore. Use subcollections, arrays of IDs, or structured maps (Record<string, T>) instead.',
+        'Arrays of objects are not recommended in Firestore because they are not queryable, updates are destructive, and they can cause concurrency issues. Instead, use a map structure (Record<string, T>) with an index field to preserve ordering. This pattern enables individual item updates, efficient querying, and maintains order when converting back to arrays. See documentation for the Array-Map Conversion system.',
     },
   },
   defaultOptions: [],
