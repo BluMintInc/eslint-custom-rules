@@ -63,8 +63,14 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
 
     /**
      * Check if a name starts with any of the approved prefixes
+     * or if it starts with an underscore (which indicates a private/internal property)
      */
     function hasApprovedPrefix(name: string): boolean {
+      // Skip checking properties that start with an underscore (private/internal properties)
+      if (name.startsWith('_')) {
+        return true;
+      }
+
       return approvedPrefixes.some((prefix) =>
         name.toLowerCase().startsWith(prefix.toLowerCase()),
       );
