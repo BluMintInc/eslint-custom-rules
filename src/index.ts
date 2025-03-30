@@ -169,7 +169,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-exported-function-types': 'error',
         '@blumintinc/blumint/no-redundant-param-types': 'error',
         '@blumintinc/blumint/no-class-instance-destructuring': 'error',
-        '@blumintinc/blumint/no-firestore-object-arrays': 'warn',
+        '@blumintinc/blumint/no-firestore-object-arrays': 'error',
         '@blumintinc/blumint/no-memoize-on-static': 'error',
         '@blumintinc/blumint/no-unsafe-firestore-spread': 'error',
         '@blumintinc/blumint/no-jsx-in-hooks': 'error',
