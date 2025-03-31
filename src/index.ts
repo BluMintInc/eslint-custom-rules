@@ -81,6 +81,7 @@ import { fastDeepEqualOverMicrodiff } from './rules/fast-deep-equal-over-microdi
 import { enforceTimestampNow } from './rules/enforce-timestamp-now';
 import { noAlwaysTrueFalseConditions } from './rules/no-always-true-false-conditions';
 import { enforcePropsArgumentName } from './rules/enforce-props-argument-name';
+import { enforcePropsNamingConsistency } from './rules/enforce-props-naming-consistency';
 import { preferGlobalRouterStateKey } from './rules/prefer-global-router-state-key';
 import { preferUseMemoOverUseEffectUseState } from './rules/prefer-usememo-over-useeffect-usestate';
 import enforceDynamicImports from './rules/enforce-dynamic-imports';
@@ -200,6 +201,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-timestamp-now': 'error',
         '@blumintinc/blumint/no-always-true-false-conditions': 'error',
         '@blumintinc/blumint/enforce-props-argument-name': 'error',
+        '@blumintinc/blumint/enforce-props-naming-consistency': 'error',
         '@blumintinc/blumint/prefer-global-router-state-key': 'error',
         '@blumintinc/blumint/prefer-usememo-over-useeffect-usestate': 'error',
         '@blumintinc/blumint/enforce-dynamic-imports': [
@@ -316,6 +318,7 @@ module.exports = {
     'enforce-timestamp-now': enforceTimestampNow,
     'no-always-true-false-conditions': noAlwaysTrueFalseConditions,
     'enforce-props-argument-name': enforcePropsArgumentName,
+    'enforce-props-naming-consistency': enforcePropsNamingConsistency,
     'prefer-global-router-state-key': preferGlobalRouterStateKey,
     'prefer-usememo-over-useeffect-usestate':
       preferUseMemoOverUseEffectUseState,
