@@ -100,6 +100,7 @@ import { noMarginProperties } from './rules/no-margin-properties';
 import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-prefixes';
 import { preferBlockCommentsForDeclarations } from './rules/prefer-block-comments-for-declarations';
 import { noUndefinedNullPassthrough } from './rules/no-undefined-null-passthrough';
+import { firestoreTransactionReadsBeforeWrites } from './rules/firestore-transaction-reads-before-writes';
 
 module.exports = {
   meta: {
@@ -113,6 +114,7 @@ module.exports = {
     recommended: {
       plugins: ['@blumintinc/blumint'],
       rules: {
+        '@blumintinc/blumint/firestore-transaction-reads-before-writes': 'error',
         '@blumintinc/blumint/prefer-block-comments-for-declarations': 'error',
         '@blumintinc/blumint/key-only-outermost-element': 'error',
         '@blumintinc/blumint/avoid-utils-directory': 'error',
@@ -228,6 +230,7 @@ module.exports = {
   },
 
   rules: {
+    'firestore-transaction-reads-before-writes': firestoreTransactionReadsBeforeWrites,
     'prefer-block-comments-for-declarations': preferBlockCommentsForDeclarations,
     'key-only-outermost-element': keyOnlyOutermostElement,
     'array-methods-this-context': arrayMethodsThisContext,
