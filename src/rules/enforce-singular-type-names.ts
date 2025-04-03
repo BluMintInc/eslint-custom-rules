@@ -16,12 +16,13 @@ export const enforceSingularTypeNames: TSESLint.RuleModule<
       // Skip checking if name is too short (less than 3 characters)
       if (name.length < 3) return false;
 
-      // Skip checking if name ends with 'Props' or 'Params'
+      // Skip checking if name ends with 'Props', 'Params', 'Data', etc.
       if (
         name.endsWith('Props') ||
         name.endsWith('Params') ||
         name.endsWith('Options') ||
-        name.endsWith('Settings')
+        name.endsWith('Settings') ||
+        name.endsWith('Data')
       )
         return false;
 

@@ -34,6 +34,13 @@ ruleTesterTs.run('enforce-singular-type-names', enforceSingularTypeNames, {
     // Types ending with 'Params' should be allowed even if plural
     'type FetchDataParams = { id: string; };',
     'type UpdateUsersParams = { userIds: string[]; };',
+
+    // Types ending with 'Data' should be allowed even if it's technically plural
+    'type AuthenticationEnterPhonePageUserData = { phoneNumber: string; };',
+    'type UserData = { name: string; age: number; };',
+
+    // Specific test case from bug report
+    'type AuthenticationEnterPhonePageUserData = { phoneNumber: string; /* other properties */ };',
   ],
   invalid: [
     // Plural type alias
