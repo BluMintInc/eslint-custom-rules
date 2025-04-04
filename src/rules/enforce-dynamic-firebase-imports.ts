@@ -10,6 +10,7 @@ export const enforceFirebaseImports = createRule({
         'Enforce dynamic importing for modules within the firebaseCloud directory to optimize initial bundle size. This ensures Firebase-related code is only loaded when needed, improving application startup time and reducing the main bundle size.',
       recommended: 'error',
     },
+    fixable: 'code',
     schema: [],
     messages: {
       noDynamicImport:
