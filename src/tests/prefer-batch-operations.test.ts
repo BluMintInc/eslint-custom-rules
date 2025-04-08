@@ -3,6 +3,31 @@ import { preferBatchOperations } from '../rules/prefer-batch-operations';
 
 ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
   valid: [
+    // Different operations in Promise.all with conditional execution should not be flagged
+    `
+      class NotificationSender {
+        private smsSendable: any;
+        private emailSendable: any;
+        private pushSendable: any;
+
+        private async sendEmail() {
+          // Email sending logic
+        }
+
+        private async sendPush() {
+          // Push notification logic
+        }
+
+        public async send() {
+          const SMS_DOC_SETTER = new DocSetter(collectionRef);
+          await Promise.all([
+            this.smsSendable && SMS_DOC_SETTER.set(this.smsSendable),
+            this.emailSendable && this.sendEmail(),
+            this.pushSendable && this.sendPush(),
+          ]);
+        }
+      }
+    `,
     // Map.set() calls should not be flagged
     `
       const seen = new Map();

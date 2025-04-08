@@ -60,6 +60,40 @@ function findLoopNode(
       case AST_NODE_TYPES.CallExpression:
         // Check for Promise.all
         if (isPromiseAll(current)) {
+          // Check if Promise.all contains conditional operations with different types
+          if (current.arguments.length > 0 && current.arguments[0].type === AST_NODE_TYPES.ArrayExpression) {
+            const arrayElements = current.arguments[0].elements;
+
+            // Check if any elements are logical expressions (&&, ||)
+            const hasConditionalOperations = arrayElements.some(
+              element => element && element.type === AST_NODE_TYPES.LogicalExpression
+            );
+
+            // Check if there are different operation types in the array
+            const hasDifferentOperationTypes = arrayElements.some(element => {
+              // Skip if not a logical expression
+              if (!element || element.type !== AST_NODE_TYPES.LogicalExpression) return false;
+
+              // Check if the right side is not a setter call
+              if (element.right.type === AST_NODE_TYPES.CallExpression) {
+                const callee = element.right.callee;
+                if (
+                  callee.type === AST_NODE_TYPES.MemberExpression &&
+                  callee.property.type === AST_NODE_TYPES.Identifier
+                ) {
+                  // If it's not a setter method, it's a different operation type
+                  return !SETTER_METHODS.has(callee.property.name);
+                }
+              }
+              return true;
+            });
+
+            // If we have conditional operations with different types, don't flag
+            if (hasConditionalOperations && hasDifferentOperationTypes) {
+              return undefined;
+            }
+          }
+
           return { node: current, isArrayMethod: 'map' };
         }
         // Check for array methods
