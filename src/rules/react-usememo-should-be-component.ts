@@ -30,6 +30,96 @@ const isJsxElement = (node: TSESTree.Node | null): boolean => {
 };
 
 /**
+ * Checks if a variable is used as a prop value in a JSX element
+ */
+const isUsedAsComponentProp = (
+  variableName: string,
+  node: TSESTree.Node,
+): boolean => {
+  // Find the function component that contains this node
+  let currentNode: TSESTree.Node | undefined = node;
+  let functionNode: TSESTree.Node | undefined;
+
+  // Walk up the AST to find the function component
+  while (currentNode.parent) {
+    currentNode = currentNode.parent;
+    if (
+      currentNode.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+      currentNode.type === AST_NODE_TYPES.FunctionDeclaration ||
+      currentNode.type === AST_NODE_TYPES.FunctionExpression
+    ) {
+      functionNode = currentNode;
+      break;
+    }
+  }
+
+  if (!functionNode) {
+    return false;
+  }
+
+  // Flag to track if the variable is used as a prop
+  let isUsedAsProp = false;
+
+  // Function to recursively search for references to the variable
+  const findPropUsage = (searchNode: TSESTree.Node) => {
+    if (!searchNode || isUsedAsProp) return;
+
+    // Check if this node is a reference to our variable
+    if (
+      searchNode.type === AST_NODE_TYPES.Identifier &&
+      searchNode.name === variableName &&
+      // Exclude the declaration itself
+      !(
+        searchNode.parent &&
+        searchNode.parent.type === AST_NODE_TYPES.VariableDeclarator &&
+        searchNode.parent.id === searchNode
+      )
+    ) {
+      // Check if this identifier is being used as a JSX attribute value
+      if (
+        searchNode.parent &&
+        searchNode.parent.type === AST_NODE_TYPES.JSXExpressionContainer &&
+        searchNode.parent.parent &&
+        searchNode.parent.parent.type === AST_NODE_TYPES.JSXAttribute
+      ) {
+        isUsedAsProp = true;
+        return;
+      }
+    }
+
+    // Recursively check all properties of the node
+    for (const key in searchNode) {
+      if (key === 'parent') continue; // Skip parent to avoid circular references
+
+      const child = (searchNode as any)[key];
+      if (child && typeof child === 'object') {
+        if (Array.isArray(child)) {
+          child.forEach((item) => {
+            if (item && typeof item === 'object') {
+              findPropUsage(item);
+            }
+          });
+        } else {
+          findPropUsage(child);
+        }
+      }
+    }
+  };
+
+  // Start the search from the function body
+  if (functionNode.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+    findPropUsage(functionNode.body);
+  } else if (
+    functionNode.type === AST_NODE_TYPES.FunctionDeclaration ||
+    functionNode.type === AST_NODE_TYPES.FunctionExpression
+  ) {
+    findPropUsage(functionNode.body);
+  }
+
+  return isUsedAsProp;
+};
+
+/**
  * Checks if a variable is used multiple times in a component
  */
 const isUsedMultipleTimes = (
@@ -585,6 +675,12 @@ export const reactUseMemoShouldBeComponent = createRule<[], MessageIds>({
             // Check if the variable is used multiple times in the component
             if (isUsedMultipleTimes(variableName, node)) {
               // If the variable is used multiple times, allow it
+              return;
+            }
+
+            // Check if the variable is used as a prop value in a JSX element
+            if (isUsedAsComponentProp(variableName, node)) {
+              // If the variable is used as a prop value, allow it
               return;
             }
           }

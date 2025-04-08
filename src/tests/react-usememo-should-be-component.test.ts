@@ -6,6 +6,41 @@ ruleTesterJsx.run(
   reactUseMemoShouldBeComponent,
   {
     valid: [
+      // Test case for JSX returned from useMemo passed directly to another component via a prop
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ value, isTournamentAdmin }) => {
+          const infoPanel = useMemo(
+            () => (
+              <Stack alignItems="center" direction="row" spacing={2}>
+                <Typography sx={{ textTransform: 'uppercase' }} variant="h6">
+                  {value}
+                </Typography>
+
+                {isTournamentAdmin && (
+                  <GradientIcon
+                    IconComponent={ArrowDropDownIcon}
+                    sx={{ height: 26, width: 26 }}
+                  />
+                )}
+              </Stack>
+            ),
+            [value, isTournamentAdmin]
+          );
+
+          return (
+            <TournamentInfoPanel
+              IconComponent={phaseIcon}
+              iconGradientColor="primary.horizontalLight"
+              title={PHASE_PANEL_TITLE}
+              value={infoPanel}
+            />
+          );
+        };
+      `,
+      },
       // Test case for the specific bug: useMemo returning conditional JSX that can be false (with logical AND)
       {
         code: `
