@@ -16,7 +16,7 @@ const isHttpsErrorCall = (callee: TSESTree.LeftHandSideExpression): boolean => {
 };
 
 export const dynamicHttpsErrors: TSESLint.RuleModule<
-  'dynamicHttpsErrors',
+  'dynamicHttpsErrors' | 'missingDetailsArg',
   never[]
 > = createRule({
   name: 'dynamic-https-errors',
@@ -24,13 +24,15 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<
     type: 'suggestion',
     docs: {
       description:
-        'Dynamic error details should only be in the third argument of the HttpsError constructor. The second argument is hashed to produce a unique id.',
+        'Dynamic error details should only be in the third argument of the HttpsError constructor. The second argument is hashed to produce a unique id. The third argument (details) is required for context information.',
       recommended: 'error',
     },
     schema: [],
     messages: {
       dynamicHttpsErrors:
         'Found dynamic error details in the second argument of the HttpsError constructor - the "message" field. This field is hashed to produce a unique id for error monitoring. Move any dynamic details to the third argument - the "details" field - to preserve the unique id and to monitor the error correctly.',
+      missingDetailsArg:
+        'Missing third argument (details) in HttpsError constructor. Always provide a third argument with contextual information to aid in debugging.',
     },
   },
   defaultOptions: [],
@@ -40,6 +42,7 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<
     ) => {
       const callee = node.callee;
       if (isHttpsErrorCall(callee)) {
+        // Check for dynamic content in second argument
         const secondArg = node.arguments[1];
         if (secondArg && secondArg.type === 'TemplateLiteral') {
           if (secondArg.expressions.length > 0) {
@@ -48,6 +51,15 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<
               messageId: 'dynamicHttpsErrors',
             });
           }
+        }
+
+        // Check for missing third argument
+        const thirdArg = node.arguments[2];
+        if (!thirdArg) {
+          context.report({
+            node,
+            messageId: 'missingDetailsArg',
+          });
         }
       }
     };
