@@ -110,6 +110,10 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
     if (realtimeDbRefVariables.has(name) || realtimeDbChildVariables.has(name)) {
       return false;
     }
+    // Skip if it's a BatchManager instance
+    if (name.includes('batchManager') || name.includes('BatchManager')) {
+      return false;
+    }
     // Check for batch or transaction
     if (/batch|transaction/i.test(name)) {
       return true;
