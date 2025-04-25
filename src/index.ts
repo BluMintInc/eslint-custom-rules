@@ -100,6 +100,7 @@ import { noMarginProperties } from './rules/no-margin-properties';
 import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-prefixes';
 import { preferBlockCommentsForDeclarations } from './rules/prefer-block-comments-for-declarations';
 import { noUndefinedNullPassthrough } from './rules/no-undefined-null-passthrough';
+import { preferNullishCoalescingOverride } from './rules/prefer-nullish-coalescing-override';
 
 module.exports = {
   meta: {
@@ -113,6 +114,9 @@ module.exports = {
     recommended: {
       plugins: ['@blumintinc/blumint'],
       rules: {
+        // Override the @typescript-eslint/prefer-nullish-coalescing rule
+        '@typescript-eslint/prefer-nullish-coalescing': 'off',
+        '@blumintinc/blumint/prefer-nullish-coalescing-override': 'error',
         '@blumintinc/blumint/prefer-block-comments-for-declarations': 'error',
         '@blumintinc/blumint/key-only-outermost-element': 'error',
         '@blumintinc/blumint/avoid-utils-directory': 'error',
@@ -228,6 +232,7 @@ module.exports = {
   },
 
   rules: {
+    'prefer-nullish-coalescing-override': preferNullishCoalescingOverride,
     'prefer-block-comments-for-declarations': preferBlockCommentsForDeclarations,
     'key-only-outermost-element': keyOnlyOutermostElement,
     'array-methods-this-context': arrayMethodsThisContext,
