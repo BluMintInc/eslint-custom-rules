@@ -100,6 +100,7 @@ import { noMarginProperties } from './rules/no-margin-properties';
 import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-prefixes';
 import { preferBlockCommentsForDeclarations } from './rules/prefer-block-comments-for-declarations';
 import { noUndefinedNullPassthrough } from './rules/no-undefined-null-passthrough';
+import { noRestrictedPropertiesFix } from './rules/no-restricted-properties-fix';
 
 module.exports = {
   meta: {
@@ -223,11 +224,13 @@ module.exports = {
         '@blumintinc/blumint/no-margin-properties': 'error',
         '@blumintinc/blumint/enforce-boolean-naming-prefixes': 'error',
         '@blumintinc/blumint/no-undefined-null-passthrough': 'error',
+        '@blumintinc/blumint/no-restricted-properties-fix': 'error',
       },
     },
   },
 
   rules: {
+    'no-restricted-properties-fix': noRestrictedPropertiesFix,
     'prefer-block-comments-for-declarations': preferBlockCommentsForDeclarations,
     'key-only-outermost-element': keyOnlyOutermostElement,
     'array-methods-this-context': arrayMethodsThisContext,
