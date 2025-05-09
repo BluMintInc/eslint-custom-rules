@@ -100,6 +100,7 @@ import { noMarginProperties } from './rules/no-margin-properties';
 import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-prefixes';
 import { preferBlockCommentsForDeclarations } from './rules/prefer-block-comments-for-declarations';
 import { noUndefinedNullPassthrough } from './rules/no-undefined-null-passthrough';
+import { noOverridableMethodCallsInConstructor } from './rules/no-overridable-method-calls-in-constructor';
 
 module.exports = {
   meta: {
@@ -223,6 +224,7 @@ module.exports = {
         '@blumintinc/blumint/no-margin-properties': 'error',
         '@blumintinc/blumint/enforce-boolean-naming-prefixes': 'error',
         '@blumintinc/blumint/no-undefined-null-passthrough': 'error',
+        '@blumintinc/blumint/no-overridable-method-calls-in-constructor': 'error',
       },
     },
   },
@@ -333,5 +335,6 @@ module.exports = {
     'no-margin-properties': noMarginProperties,
     'enforce-boolean-naming-prefixes': enforceBooleanNamingPrefixes,
     'no-undefined-null-passthrough': noUndefinedNullPassthrough,
+    'no-overridable-method-calls-in-constructor': noOverridableMethodCallsInConstructor,
   },
 };
