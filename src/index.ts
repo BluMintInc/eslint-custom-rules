@@ -8,6 +8,7 @@ import { enforceCallableTypes } from './rules/enforce-callable-types';
 import { enforceFirebaseImports } from './rules/enforce-dynamic-firebase-imports';
 import { enforceMuiRoundedIcons } from './rules/enforce-mui-rounded-icons';
 import { enforceReactTypeNaming } from './rules/enforce-react-type-naming';
+import { default as enforceUseDeepCompareMemo } from './rules/enforce-useDeepCompareMemo';
 import { exportIfInDoubt } from './rules/export-if-in-doubt';
 import { extractGlobalConstants } from './rules/extract-global-constants';
 import { enforceGlobalConstants } from './rules/enforce-global-constants';
@@ -127,6 +128,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-callback-memo': 'error',
         '@blumintinc/blumint/enforce-callable-types': 'error',
         '@blumintinc/blumint/enforce-dynamic-firebase-imports': 'error',
+        '@blumintinc/blumint/enforce-useDeepCompareMemo': 'error',
         '@blumintinc/blumint/enforce-react-type-naming': 'error',
         // '@blumintinc/blumint/export-if-in-doubt': 'warn',
         '@blumintinc/blumint/extract-global-constants': 'error',
@@ -236,6 +238,7 @@ module.exports = {
     'dynamic-https-errors': dynamicHttpsErrors,
     'enforce-identifiable-firestore-type': enforceIdentifiableFirestoreType,
     'enforce-callback-memo': enforceCallbackMemo,
+    'enforce-useDeepCompareMemo': enforceUseDeepCompareMemo,
     'enforce-react-type-naming': enforceReactTypeNaming,
     'enforce-callable-types': enforceCallableTypes,
     'enforce-dynamic-firebase-imports': enforceFirebaseImports,
