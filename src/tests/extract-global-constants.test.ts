@@ -249,6 +249,65 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
         }
       `,
     },
+    // Should handle destructuring pattern with empty declarations array
+    {
+      code: `
+        import type { DocumentData } from 'firebase-admin/firestore';
+
+        interface PropagatorFactory<T, U> {}
+        interface AlgoliaPropagatorFactoryProps<T, U> {}
+        interface AlgoliaPropagatorBuildProps<T, U> {}
+        class AlgoliaPropagator {
+          constructor(props: any) {}
+        }
+
+        class AlgoliaPropagatorFactory<
+          TData extends DocumentData,
+          TDataTransformed extends DocumentData = TData,
+        > implements PropagatorFactory<TData, TDataTransformed>
+        {
+          constructor(
+            private readonly props: AlgoliaPropagatorFactoryProps<
+              TData,
+              TDataTransformed
+            >,
+          ) {}
+
+          public buildAll({
+            data,
+            beforeData,
+            path,
+            fieldPrepperFactory,
+          }: AlgoliaPropagatorBuildProps<TData, TDataTransformed>) {
+            const dataUnprepped = this.transformData
+              ? this.transformData(data)
+              : (data as unknown as TDataTransformed);
+
+            const beforeDataUnprepped =
+              beforeData && this.transformData
+                ? this.transformData(beforeData)
+                : (beforeData as unknown as TDataTransformed);
+            return [
+              new AlgoliaPropagator({
+                unpreppedData: dataUnprepped,
+                unpreppedDataBefore: beforeDataUnprepped,
+                path,
+                index: this.index,
+                fieldPrepperFactory,
+              }),
+            ] as const;
+          }
+
+          private get transformData() {
+            return this.props.transformData;
+          }
+
+          private get index() {
+            return this.props.index;
+          }
+        }
+      `,
+    },
   ],
   invalid: [
     // Should flag immutable string constants
