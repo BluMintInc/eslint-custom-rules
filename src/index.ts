@@ -57,6 +57,7 @@ import { noUnsafeFirestoreSpread } from './rules/no-unsafe-firestore-spread';
 import { noJsxInHooks } from './rules/no-jsx-in-hooks';
 import { enforceAssertThrows } from './rules/enforce-assert-throws';
 import { preferBatchOperations } from './rules/prefer-batch-operations';
+import { default as memoNestedReactComponents } from './rules/memo-nested-react-components';
 import { noComplexCloudParams } from './rules/no-complex-cloud-params';
 import { noMixedFirestoreTransactions } from './rules/no-mixed-firestore-transactions';
 import { enforceFirestoreFacade } from './rules/enforce-firestore-facade';
@@ -125,6 +126,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-mui-rounded-icons': 'error',
         '@blumintinc/blumint/enforce-identifiable-firestore-type': 'error',
         '@blumintinc/blumint/enforce-callback-memo': 'error',
+        '@blumintinc/blumint/memo-nested-react-components': 'error',
         '@blumintinc/blumint/enforce-callable-types': 'error',
         '@blumintinc/blumint/enforce-dynamic-firebase-imports': 'error',
         '@blumintinc/blumint/enforce-react-type-naming': 'error',
@@ -333,5 +335,6 @@ module.exports = {
     'no-margin-properties': noMarginProperties,
     'enforce-boolean-naming-prefixes': enforceBooleanNamingPrefixes,
     'no-undefined-null-passthrough': noUndefinedNullPassthrough,
+    'memo-nested-react-components': memoNestedReactComponents,
   },
 };
