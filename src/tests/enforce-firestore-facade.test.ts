@@ -3,6 +3,43 @@ import { enforceFirestoreFacade } from '../rules/enforce-firestore-facade';
 
 ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
   valid: [
+    // Valid usage of Set.prototype.delete() - should not trigger the rule
+    {
+      code: `
+        export const PENDING_WRITES_DOCUMENT_IDS = new Set<string>();
+
+        export const addPendingWrite = (docId: string) => {
+          PENDING_WRITES_DOCUMENT_IDS.add(docId);
+        };
+
+        export const removePendingWrite = (docId: string) => {
+          PENDING_WRITES_DOCUMENT_IDS.delete(docId); // This should not trigger an ESLint error
+        };
+
+        export const hasPendingWrite = (docId: string) => {
+          return PENDING_WRITES_DOCUMENT_IDS.has(docId);
+        };
+      `,
+    },
+    // Valid usage of Set.prototype.delete() with variable assignment
+    {
+      code: `
+        let mySet;
+
+        function initializeSet() {
+          mySet = new Set<string>();
+          mySet.add('item1');
+          mySet.add('item2');
+        }
+
+        function removeItem(item: string) {
+          mySet.delete(item); // This should not trigger an ESLint error
+        }
+
+        initializeSet();
+        removeItem('item1');
+      `,
+    },
     // Valid FirestoreFetcher usage
     {
       code: `

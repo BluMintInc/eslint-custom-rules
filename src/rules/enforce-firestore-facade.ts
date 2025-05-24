@@ -18,6 +18,29 @@ const isMemberExpression = (
 // Track variables that are assigned realtimeDb references
 const realtimeDbRefVariables = new Set<string>();
 const realtimeDbChildVariables = new Set<string>();
+// Track variables that are JavaScript Set objects
+const setObjectVariables = new Set<string>();
+
+const isSetObjectAssignment = (node: TSESTree.Node): boolean => {
+  if (node.type !== AST_NODE_TYPES.VariableDeclarator) return false;
+
+  const init = node.init;
+  if (!init) return false;
+
+  // Check for direct Set constructor calls
+  // e.g., const mySet = new Set<string>();
+  if (init.type === AST_NODE_TYPES.NewExpression &&
+      isIdentifier(init.callee) &&
+      init.callee.name === 'Set') {
+
+    if (isIdentifier(node.id)) {
+      setObjectVariables.add(node.id.name);
+      return true;
+    }
+  }
+
+  return false;
+};
 
 const isRealtimeDbRefAssignment = (node: TSESTree.Node): boolean => {
   if (node.type !== AST_NODE_TYPES.VariableDeclarator) return false;
@@ -108,6 +131,10 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
     }
     // Skip if it's a realtimeDb reference variable
     if (realtimeDbRefVariables.has(name) || realtimeDbChildVariables.has(name)) {
+      return false;
+    }
+    // Skip if it's a JavaScript Set object
+    if (setObjectVariables.has(name)) {
       return false;
     }
     // Check for batch or transaction
@@ -208,11 +235,13 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
     // Clear the sets at the beginning of each file analysis
     realtimeDbRefVariables.clear();
     realtimeDbChildVariables.clear();
+    setObjectVariables.clear();
 
     return {
-      // Track variable declarations that are assigned realtimeDb references
+      // Track variable declarations that are assigned realtimeDb references or Set objects
       VariableDeclarator(node) {
         isRealtimeDbRefAssignment(node);
+        isSetObjectAssignment(node);
       },
 
       CallExpression(node) {
