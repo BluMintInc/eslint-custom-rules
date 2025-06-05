@@ -232,6 +232,92 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
       return false;
     }
 
+    function isTypedCollectionReference(node: TSESTree.Node): boolean {
+      // Check if the node is a call to .collection() with generics
+      if (
+        node.type === AST_NODE_TYPES.CallExpression &&
+        node.callee.type === AST_NODE_TYPES.MemberExpression &&
+        node.callee.property.type === AST_NODE_TYPES.Identifier &&
+        node.callee.property.name === 'collection' &&
+        node.typeParameters &&
+        node.typeParameters.params.length > 0
+      ) {
+        return true;
+      }
+
+      // Check if the node is a member expression (like this.collectionRef)
+      if (node.type === AST_NODE_TYPES.MemberExpression) {
+        const obj = node.object;
+        const property = node.property;
+
+        if (obj.type === AST_NODE_TYPES.ThisExpression && property.type === AST_NODE_TYPES.Identifier) {
+          // Look for class property with CollectionReference type
+          const classNode = findParentClass(node);
+          if (classNode) {
+            const classProp = classNode.body.body.find(
+              (member): member is TSESTree.PropertyDefinition =>
+                member.type === AST_NODE_TYPES.PropertyDefinition &&
+                member.key.type === AST_NODE_TYPES.Identifier &&
+                member.key.name === property.name,
+            );
+            if (classProp?.typeAnnotation) {
+              return hasCollectionReferenceType(classProp.typeAnnotation.typeAnnotation);
+            }
+          }
+        }
+      }
+
+      // Check if the node is an identifier that refers to a typed variable
+      if (node.type === AST_NODE_TYPES.Identifier) {
+        // Look for variable declaration with CollectionReference type
+        let current: TSESTree.Node | undefined = node;
+        while (current) {
+          if (current.type === AST_NODE_TYPES.Program) {
+            // Search in program body for variable declarations
+            const varDecl = current.body.find((stmt): stmt is TSESTree.VariableDeclaration =>
+              stmt.type === AST_NODE_TYPES.VariableDeclaration &&
+              stmt.declarations.some(
+                (decl): decl is TSESTree.VariableDeclarator =>
+                  decl.type === AST_NODE_TYPES.VariableDeclarator &&
+                  decl.id.type === AST_NODE_TYPES.Identifier &&
+                  decl.id.name === node.name &&
+                  decl.id.typeAnnotation !== undefined
+              )
+            );
+            if (varDecl) {
+              const declarator = varDecl.declarations.find(
+                (decl): decl is TSESTree.VariableDeclarator =>
+                  decl.type === AST_NODE_TYPES.VariableDeclarator &&
+                  decl.id.type === AST_NODE_TYPES.Identifier &&
+                  decl.id.name === node.name &&
+                  decl.id.typeAnnotation !== undefined
+              );
+              if (declarator?.id.typeAnnotation) {
+                return hasCollectionReferenceType(declarator.id.typeAnnotation.typeAnnotation);
+              }
+            }
+            break;
+          }
+          current = current.parent as TSESTree.Node;
+        }
+      }
+
+      return false;
+    }
+
+    function hasCollectionReferenceType(typeNode: TSESTree.TypeNode): boolean {
+      if (
+        typeNode.type === AST_NODE_TYPES.TSTypeReference &&
+        typeNode.typeName.type === AST_NODE_TYPES.Identifier &&
+        typeNode.typeName.name === 'CollectionReference' &&
+        typeNode.typeParameters &&
+        typeNode.typeParameters.params.length > 0
+      ) {
+        return true;
+      }
+      return false;
+    }
+
     return {
       TSTypeReference(node: TSESTree.TSTypeReference): void {
         if (
@@ -275,6 +361,22 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
           node.callee.property.name === 'doc'
         ) {
           const typeAnnotation = node.typeParameters;
+          const isOnTypedCollection = isTypedCollectionReference(node.callee.object);
+
+          // If this is a .doc() call on a typed CollectionReference,
+          // only check for invalid generics, not missing generics
+          if (isOnTypedCollection) {
+            if (typeAnnotation && hasInvalidType(typeAnnotation.params[0])) {
+              context.report({
+                node,
+                messageId: 'invalidGeneric',
+                data: { type: 'DocumentReference' },
+              });
+            }
+            return; // Skip the missing generic check for typed CollectionReference.doc() calls
+          }
+
+          // For standalone doc() calls or calls on untyped collections
           if (!typeAnnotation) {
             context.report({
               node,

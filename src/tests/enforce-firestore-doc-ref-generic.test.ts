@@ -298,6 +298,67 @@ ruleTesterTs.run(
         const userRef = db.collection<User>('users').doc<User>(userId);
       `,
       },
+      // CollectionReference.doc() should inherit type from collection - this is the bug case
+      {
+        code: `
+        interface SomeType {
+          name: string;
+          value: number;
+        }
+        class TestClass {
+          private collectionRef: CollectionReference<SomeType>;
+
+          constructor() {
+            this.collectionRef = db.collection<SomeType>('test');
+          }
+
+          private get docRef() {
+            return this.collectionRef.doc(this.pathHashed);
+          }
+        }
+      `,
+      },
+      // Another case: typed collection reference calling doc()
+      {
+        code: `
+        interface User {
+          name: string;
+          age: number;
+        }
+        const usersCollection: CollectionReference<User> = db.collection<User>('users');
+        const userDoc = usersCollection.doc('user123');
+      `,
+      },
+      // Method chaining with typed collection
+      {
+        code: `
+        interface Product {
+          name: string;
+          price: number;
+        }
+        const productDoc = db.collection<Product>('products').doc('product123');
+      `,
+      },
+      // Class property with CollectionReference type calling doc()
+      {
+        code: `
+        interface Order {
+          id: string;
+          total: number;
+        }
+        class OrderService {
+          private ordersCollection: CollectionReference<Order>;
+
+          constructor() {
+            this.ordersCollection = db.collection<Order>('orders');
+          }
+
+          getOrder(id: string) {
+            return this.ordersCollection.doc(id);
+          }
+        }
+      `,
+      },
     ],
     invalid: [
       // Missing generic type - DocumentReference
@@ -484,6 +545,29 @@ ruleTesterTs.run(
         const ref: DocumentReference<User | {}> = db.collection('users').doc(userId);
       `,
         errors: [{ messageId: 'invalidGeneric' }],
+      },
+      // Invalid generic on typed collection should still be caught
+      {
+        code: `
+        interface User {
+          name: string;
+          age: number;
+        }
+        const usersCollection: CollectionReference<User> = db.collection<User>('users');
+        const userDoc = usersCollection.doc<any>('user123');
+      `,
+        errors: [{ messageId: 'invalidGeneric', data: { type: 'DocumentReference' } }],
+      },
+      // Invalid generic on method chained typed collection should still be caught
+      {
+        code: `
+        interface Product {
+          name: string;
+          price: number;
+        }
+        const productDoc = db.collection<Product>('products').doc<{}>('product123');
+      `,
+        errors: [{ messageId: 'invalidGeneric', data: { type: 'DocumentReference' } }],
       },
     ],
   },
