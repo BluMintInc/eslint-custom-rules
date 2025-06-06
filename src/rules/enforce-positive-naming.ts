@@ -850,6 +850,15 @@ const DIS_EXCEPTIONS = [
   'dismissal',
   'disk',
   'disks',
+  // Business domain terms that are legitimate despite containing 'dis'
+  'dispute',
+  'disputed',
+  'disputes',
+  'disputing',
+  'discount',
+  'discounted',
+  'discounts',
+  'discounting',
 ];
 
 // Words that contain negative prefixes but should be treated as valid

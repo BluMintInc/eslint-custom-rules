@@ -46,6 +46,49 @@ ruleTesterTs.run('enforce-positive-naming', enforcePositiveNaming, {
     // Non-boolean methods should not be flagged
     'const utils = { disableFeature(id: string) { /* implementation */ } };',
     'class ErrorHandler { handleError(err: Error) { /* implementation */ } }',
+
+    // Business domain terms should not be flagged even if they contain negative prefixes
+    'const isDispute = this.winnersCount > this.maxWinners;',
+    'const hasDispute: boolean = checkForDisputes();',
+    'const canDispute = user.permissions.includes("dispute");',
+    'const shouldDispute: boolean = condition;',
+    'const willDispute = false;',
+    'const doesDispute = checkDisputeStatus();',
+    'function isDisputed(match: Match): boolean { return match.disputed; }',
+    'function hasDisputes(): boolean { return disputes.length > 0; }',
+    `
+    interface MatchState {
+      isDisputed: boolean;
+      hasDisputes: boolean;
+    }
+    `,
+    `
+    class DisputeDetector {
+      isDispute(): boolean {
+        return this.winnersCount > this.maxWinners;
+      }
+    }
+    `,
+    'const obj = { isDisputed(): boolean { return true; } };',
+
+    // Additional business domain terms should not be flagged
+    'const hasDiscount: boolean = checkForDiscounts();',
+    'const isDiscounted = price < originalPrice;',
+    'function canDiscount(): boolean { return user.permissions.includes("discount"); }',
+
+    // Specific test case from the bug report - should not be flagged
+    `
+    export class DisputeDetector implements MessageGeneratorTeam {
+      constructor(private readonly match: Match) {}
+      public get forTeam() {
+        const isDispute = this.winnersCount > this.maxWinners;
+        if (!isDispute) {
+          return;
+        }
+        // ... rest of implementation
+      }
+    }
+    `,
   ],
   invalid: [
     // Invalid boolean variables with "not" prefix
