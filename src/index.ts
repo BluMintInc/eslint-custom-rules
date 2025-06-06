@@ -50,6 +50,7 @@ import { enforceRealtimedbPathUtils } from './rules/enforce-realtimedb-path-util
 import { enforceMemoizeAsync } from './rules/enforce-memoize-async';
 import { enforceExportedFunctionTypes } from './rules/enforce-exported-function-types';
 import { noRedundantParamTypes } from './rules/no-redundant-param-types';
+import { noRedundantTypeAnnotationAndCasting } from './rules/no-redundant-type-annotation-and-casting';
 import { noClassInstanceDestructuring } from './rules/no-class-instance-destructuring';
 import { noFirestoreObjectArrays } from './rules/no-firestore-object-arrays';
 import { noMemoizeOnStatic } from './rules/no-memoize-on-static';
@@ -168,6 +169,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-memoize-async': 'error',
         '@blumintinc/blumint/enforce-exported-function-types': 'error',
         '@blumintinc/blumint/no-redundant-param-types': 'error',
+        '@blumintinc/blumint/no-redundant-type-annotation-and-casting': 'error',
         '@blumintinc/blumint/no-class-instance-destructuring': 'error',
         '@blumintinc/blumint/no-firestore-object-arrays': 'error',
         '@blumintinc/blumint/no-memoize-on-static': 'error',
@@ -228,7 +230,8 @@ module.exports = {
   },
 
   rules: {
-    'prefer-block-comments-for-declarations': preferBlockCommentsForDeclarations,
+    'prefer-block-comments-for-declarations':
+      preferBlockCommentsForDeclarations,
     'key-only-outermost-element': keyOnlyOutermostElement,
     'array-methods-this-context': arrayMethodsThisContext,
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
@@ -284,6 +287,8 @@ module.exports = {
     'enforce-memoize-async': enforceMemoizeAsync,
     'enforce-exported-function-types': enforceExportedFunctionTypes,
     'no-redundant-param-types': noRedundantParamTypes,
+    'no-redundant-type-annotation-and-casting':
+      noRedundantTypeAnnotationAndCasting,
     'no-class-instance-destructuring': noClassInstanceDestructuring,
     'no-firestore-object-arrays': noFirestoreObjectArrays,
     'no-memoize-on-static': noMemoizeOnStatic,
