@@ -27,13 +27,15 @@ const isRealtimeDbRefAssignment = (node: TSESTree.Node): boolean => {
 
   // Check for direct realtimeDb.ref() assignments
   // e.g., const ref = realtimeDb.ref(path);
-  if (init.type === AST_NODE_TYPES.CallExpression &&
-      isMemberExpression(init.callee) &&
-      isIdentifier(init.callee.property) &&
-      init.callee.property.name === 'ref' &&
-      isIdentifier(init.callee.object) &&
-      (init.callee.object.name === 'realtimeDb' || init.callee.object.name.includes('realtimeDb'))) {
-
+  if (
+    init.type === AST_NODE_TYPES.CallExpression &&
+    isMemberExpression(init.callee) &&
+    isIdentifier(init.callee.property) &&
+    init.callee.property.name === 'ref' &&
+    isIdentifier(init.callee.object) &&
+    (init.callee.object.name === 'realtimeDb' ||
+      init.callee.object.name.includes('realtimeDb'))
+  ) {
     if (isIdentifier(node.id)) {
       realtimeDbRefVariables.add(node.id.name);
       return true;
@@ -42,13 +44,14 @@ const isRealtimeDbRefAssignment = (node: TSESTree.Node): boolean => {
 
   // Check for child() method calls on realtimeDb refs
   // e.g., const childRef = parentRef.child('path');
-  if (init.type === AST_NODE_TYPES.CallExpression &&
-      isMemberExpression(init.callee) &&
-      isIdentifier(init.callee.property) &&
-      init.callee.property.name === 'child' &&
-      isIdentifier(init.callee.object) &&
-      realtimeDbRefVariables.has(init.callee.object.name)) {
-
+  if (
+    init.type === AST_NODE_TYPES.CallExpression &&
+    isMemberExpression(init.callee) &&
+    isIdentifier(init.callee.property) &&
+    init.callee.property.name === 'child' &&
+    isIdentifier(init.callee.object) &&
+    realtimeDbRefVariables.has(init.callee.object.name)
+  ) {
     if (isIdentifier(node.id)) {
       realtimeDbChildVariables.add(node.id.name);
       return true;
@@ -60,27 +63,36 @@ const isRealtimeDbRefAssignment = (node: TSESTree.Node): boolean => {
 
 const isRealtimeDbReference = (node: TSESTree.Node): boolean => {
   // Check if it's a direct realtimeDb.ref() call
-  if (node.type === AST_NODE_TYPES.CallExpression &&
-      isMemberExpression(node.callee) &&
-      isIdentifier(node.callee.property) &&
-      node.callee.property.name === 'ref' &&
-      isIdentifier(node.callee.object) &&
-      (node.callee.object.name === 'realtimeDb' || node.callee.object.name.includes('realtimeDb'))) {
+  if (
+    node.type === AST_NODE_TYPES.CallExpression &&
+    isMemberExpression(node.callee) &&
+    isIdentifier(node.callee.property) &&
+    node.callee.property.name === 'ref' &&
+    isIdentifier(node.callee.object) &&
+    (node.callee.object.name === 'realtimeDb' ||
+      node.callee.object.name.includes('realtimeDb'))
+  ) {
     return true;
   }
 
   // Check if it's a variable that holds a realtimeDb reference
   if (isIdentifier(node)) {
-    return realtimeDbRefVariables.has(node.name) || realtimeDbChildVariables.has(node.name);
+    return (
+      realtimeDbRefVariables.has(node.name) ||
+      realtimeDbChildVariables.has(node.name)
+    );
   }
 
   // Check if it's a child() call on a realtimeDb reference
-  if (node.type === AST_NODE_TYPES.CallExpression &&
-      isMemberExpression(node.callee) &&
-      isIdentifier(node.callee.property) &&
-      node.callee.property.name === 'child' &&
-      isIdentifier(node.callee.object) &&
-      (realtimeDbRefVariables.has(node.callee.object.name) || realtimeDbChildVariables.has(node.callee.object.name))) {
+  if (
+    node.type === AST_NODE_TYPES.CallExpression &&
+    isMemberExpression(node.callee) &&
+    isIdentifier(node.callee.property) &&
+    node.callee.property.name === 'child' &&
+    isIdentifier(node.callee.object) &&
+    (realtimeDbRefVariables.has(node.callee.object.name) ||
+      realtimeDbChildVariables.has(node.callee.object.name))
+  ) {
     return true;
   }
 
@@ -107,7 +119,10 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
       return false;
     }
     // Skip if it's a realtimeDb reference variable
-    if (realtimeDbRefVariables.has(name) || realtimeDbChildVariables.has(name)) {
+    if (
+      realtimeDbRefVariables.has(name) ||
+      realtimeDbChildVariables.has(name)
+    ) {
       return false;
     }
     // Check for batch or transaction
@@ -160,7 +175,8 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
     // If the variable name contains 'doc' or 'ref', it's likely a Firestore reference
     // But exclude realtimeDb references
     if (
-      (name.toLowerCase().includes('doc') || name.toLowerCase().includes('ref')) &&
+      (name.toLowerCase().includes('doc') ||
+        name.toLowerCase().includes('ref')) &&
       !name.includes('realtimeDb') &&
       !realtimeDbRefVariables.has(name) &&
       !realtimeDbChildVariables.has(name)
