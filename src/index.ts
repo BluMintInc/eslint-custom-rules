@@ -88,6 +88,7 @@ import { ensurePointerEventsNone } from './rules/ensure-pointer-events-none';
 import { noObjectValuesOnStrings } from './rules/no-object-values-on-strings';
 import { keyOnlyOutermostElement } from './rules/key-only-outermost-element';
 import { noUnnecessaryDestructuring } from './rules/no-unnecessary-destructuring';
+import { noUnnecessaryDestructuringRename } from './rules/no-unnecessary-destructuring-rename';
 import { enforceSingularTypeNames } from './rules/enforce-singular-type-names';
 import { enforceCssMediaQueries } from './rules/enforce-css-media-queries';
 import { omitIndexHtml } from './rules/omit-index-html';
@@ -212,6 +213,7 @@ module.exports = {
         '@blumintinc/blumint/ensure-pointer-events-none': 'error',
         '@blumintinc/blumint/no-object-values-on-strings': 'error',
         '@blumintinc/blumint/no-unnecessary-destructuring': 'error',
+        '@blumintinc/blumint/no-unnecessary-destructuring-rename': 'error',
         '@blumintinc/blumint/enforce-singular-type-names': 'error',
         '@blumintinc/blumint/enforce-css-media-queries': 'error',
         '@blumintinc/blumint/omit-index-html': 'error',
@@ -228,7 +230,8 @@ module.exports = {
   },
 
   rules: {
-    'prefer-block-comments-for-declarations': preferBlockCommentsForDeclarations,
+    'prefer-block-comments-for-declarations':
+      preferBlockCommentsForDeclarations,
     'key-only-outermost-element': keyOnlyOutermostElement,
     'array-methods-this-context': arrayMethodsThisContext,
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
@@ -323,6 +326,7 @@ module.exports = {
     'ensure-pointer-events-none': ensurePointerEventsNone,
     'no-object-values-on-strings': noObjectValuesOnStrings,
     'no-unnecessary-destructuring': noUnnecessaryDestructuring,
+    'no-unnecessary-destructuring-rename': noUnnecessaryDestructuringRename,
     'enforce-singular-type-names': enforceSingularTypeNames,
     'enforce-css-media-queries': enforceCssMediaQueries,
     'omit-index-html': omitIndexHtml,
