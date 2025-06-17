@@ -48,16 +48,34 @@ interface DocSetterInstance {
  * Recursively checks if an object has deeply nested objects
  */
 const hasDeepNestedObjects = (node: TSESTree.Node): boolean => {
-  if (!isObjectExpression(node)) return false;
+  if (isObjectExpression(node)) {
+    for (const property of node.properties) {
+      if (!isProperty(property)) continue;
 
-  for (const property of node.properties) {
-    if (!isProperty(property)) continue;
+      const value = property.value;
 
-    const value = property.value;
+      // If the property value is an object, it's a nested object
+      if (isObjectExpression(value)) {
+        return true;
+      }
 
-    // If the property value is an object, it's a nested object
-    if (isObjectExpression(value)) {
-      return true;
+      // Check arrays for nested objects
+      if (value.type === AST_NODE_TYPES.ArrayExpression) {
+        for (const element of value.elements) {
+          if (element && hasDeepNestedObjects(element)) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+
+  // Check arrays for nested objects
+  if (node.type === AST_NODE_TYPES.ArrayExpression) {
+    for (const element of node.elements) {
+      if (element && hasDeepNestedObjects(element)) {
+        return true;
+      }
     }
   }
 
