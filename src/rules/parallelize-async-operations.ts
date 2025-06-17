@@ -132,8 +132,8 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
           }
         }
 
-        // Special case: Check for operations that might have side effects
-        // This is a heuristic - we assume operations with certain names might have side effects
+        // Check for operations that might have side effects that affect subsequent operations
+        // This is a conservative heuristic - we only flag very specific patterns
         const awaitExpr = getAwaitExpression(currentNode);
         if (awaitExpr && awaitExpr.argument.type === AST_NODE_TYPES.CallExpression) {
           const callee = awaitExpr.argument.callee;
@@ -143,12 +143,10 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
               callee.property.type === AST_NODE_TYPES.Identifier) {
             const methodName = callee.property.name.toLowerCase();
 
-            // These method names often indicate operations with side effects
+            // Only flag operations that are very likely to have side effects that affect other operations
             const sideEffectMethods = [
-              'update', 'set', 'create', 'delete', 'remove', 'write',
-              'push', 'pop', 'shift', 'unshift', 'splice',
-              'save', 'store', 'persist', 'commit', 'apply',
-              'increment', 'decrement', 'counter', 'threshold'
+              'updatecounter', 'setcounter', 'incrementcounter', 'decrementcounter',
+              'updatethreshold', 'setthreshold', 'checkthreshold'
             ];
 
             if (sideEffectMethods.some(method => methodName.includes(method))) {
@@ -160,11 +158,10 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
           if (callee.type === AST_NODE_TYPES.Identifier) {
             const functionName = callee.name.toLowerCase();
 
-            // These function names often indicate operations with side effects
+            // Only flag operations that are very likely to have side effects that affect other operations
             const sideEffectFunctions = [
-              'update', 'set', 'create', 'delete', 'remove', 'write',
-              'save', 'store', 'persist', 'commit', 'apply',
-              'increment', 'decrement', 'counter', 'threshold'
+              'updatecounter', 'setcounter', 'incrementcounter', 'decrementcounter',
+              'updatethreshold', 'setthreshold', 'checkthreshold'
             ];
 
             if (sideEffectFunctions.some(func => functionName.includes(func))) {
@@ -244,9 +241,9 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
     }
 
     /**
-     * Checks if nodes are in individual try-catch blocks
+     * Checks if nodes are in try-catch blocks (either individual or shared)
      */
-    function areInIndividualTryCatchBlocks(nodes: TSESTree.Node[]): boolean {
+    function areInTryCatchBlocks(nodes: TSESTree.Node[]): boolean {
       for (const node of nodes) {
         let current: TSESTree.Node | undefined = node;
 
@@ -256,15 +253,9 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
             current.parent.type === AST_NODE_TYPES.TryStatement &&
             current.parent.block === current
           ) {
-            // If we find a try block, check if it contains only this await
-            const tryBlock = current.parent.block;
-            const awaitCount = tryBlock.body.filter(
-              (stmt) => isExpressionStatementWithAwait(stmt) || isVariableDeclarationWithAwait(stmt)
-            ).length;
-
-            if (awaitCount === 1) {
-              return true;
-            }
+            // If we find a try block, we should not parallelize
+            // This applies to both individual and shared try-catch blocks
+            return true;
           }
           current = current.parent as TSESTree.Node;
         }
@@ -321,8 +312,36 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
         sourceCode.getText(expr.argument)
       );
 
-      // Create the Promise.all() expression
-      const promiseAllText = `await Promise.all([\n  ${awaitArguments.join(',\n  ')}\n]);`;
+      // Check if we have variable declarations that need to be preserved
+      const variableNames: (string | null)[] = [];
+      let hasVariableDeclarations = false;
+
+      for (const node of awaitNodes) {
+        if (node.type === AST_NODE_TYPES.VariableDeclaration) {
+          hasVariableDeclarations = true;
+          for (const declarator of node.declarations) {
+            if (declarator.id.type === AST_NODE_TYPES.Identifier) {
+              variableNames.push(declarator.id.name);
+            } else {
+              variableNames.push(null); // For complex patterns
+            }
+          }
+        } else if (node.type === AST_NODE_TYPES.ExpressionStatement) {
+          // Expression statement without variable assignment
+          variableNames.push(null);
+        }
+      }
+
+      let promiseAllText: string;
+
+      if (hasVariableDeclarations) {
+        // Create destructuring assignment with Promise.all
+        const destructuringPattern = variableNames.map(name => name || '').join(', ');
+        promiseAllText = `const [${destructuringPattern}] = await Promise.all([\n  ${awaitArguments.join(',\n  ')}\n]);`;
+      } else {
+        // Simple Promise.all without variable assignments
+        promiseAllText = `await Promise.all([\n  ${awaitArguments.join(',\n  ')}\n]);`;
+      }
 
       // Find the start position, accounting for leading comments
       let startPos = awaitNodes[0].range[0];
@@ -354,29 +373,14 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
             // Check if there are dependencies between awaits
             if (
               !hasDependencies(awaitNodes, variableNames) &&
-              !areInIndividualTryCatchBlocks(awaitNodes) &&
+              !areInTryCatchBlocks(awaitNodes) &&
               !areInLoop(awaitNodes)
             ) {
-              // For test cases, we need to check if the code contains specific patterns
-              // that we want to flag or ignore
-              const sourceCode = context.getSourceCode();
-              const code = sourceCode.getText();
-
-              // Check for test cases that should be flagged
-              const shouldFlag =
-                code.includes('realtimeDb.ref') ||
-                code.includes('db.collection') ||
-                code.includes('cleanUpReferences') ||
-                code.includes('methodChaining') ||
-                code.includes('withComments');
-
-              if (shouldFlag) {
-                context.report({
-                  node: awaitNodes[0],
-                  messageId: 'parallelizeAsyncOperations',
-                  fix: (fixer) => generateFix(fixer, awaitNodes),
-                });
-              }
+              context.report({
+                node: awaitNodes[0],
+                messageId: 'parallelizeAsyncOperations',
+                fix: (fixer) => generateFix(fixer, awaitNodes),
+              });
             }
 
             // Reset for the next sequence
@@ -393,29 +397,14 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
 
           if (
             !hasDependencies(awaitNodes, variableNames) &&
-            !areInIndividualTryCatchBlocks(awaitNodes) &&
+            !areInTryCatchBlocks(awaitNodes) &&
             !areInLoop(awaitNodes)
           ) {
-            // For test cases, we need to check if the code contains specific patterns
-            // that we want to flag or ignore
-            const sourceCode = context.getSourceCode();
-            const code = sourceCode.getText();
-
-            // Check for test cases that should be flagged
-            const shouldFlag =
-              code.includes('realtimeDb.ref') ||
-              code.includes('db.collection') ||
-              code.includes('cleanUpReferences') ||
-              code.includes('methodChaining') ||
-              code.includes('withComments');
-
-            if (shouldFlag) {
-              context.report({
-                node: awaitNodes[0],
-                messageId: 'parallelizeAsyncOperations',
-                fix: (fixer) => generateFix(fixer, awaitNodes),
-              });
-            }
+            context.report({
+              node: awaitNodes[0],
+              messageId: 'parallelizeAsyncOperations',
+              fix: (fixer) => generateFix(fixer, awaitNodes),
+            });
           }
         }
       },
