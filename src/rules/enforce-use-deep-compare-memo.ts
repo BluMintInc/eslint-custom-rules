@@ -44,8 +44,8 @@ export const enforceUseDeepCompareMemo = createRule<[], MessageIds>({
           // Literals are always primitive
           return false;
         case AST_NODE_TYPES.TemplateLiteral:
-          // Template literals are primitive
-          return false;
+          // Template literals can contain non-primitive interpolations
+          return node.expressions.some(expr => isProblematicNonPrimitive(expr));
         case AST_NODE_TYPES.ObjectExpression:
         case AST_NODE_TYPES.ArrayExpression:
         case AST_NODE_TYPES.ArrowFunctionExpression:
@@ -67,6 +67,13 @@ export const enforceUseDeepCompareMemo = createRule<[], MessageIds>({
               return false; // This is a primitive property access
             }
           }
+          // For computed property access, check if it's accessing a primitive property
+          if (node.computed && node.property.type === AST_NODE_TYPES.Literal) {
+            const primitiveProperties = new Set(['length', 'size']);
+            if (typeof node.property.value === 'string' && primitiveProperties.has(node.property.value)) {
+              return false;
+            }
+          }
           return true;
         case AST_NODE_TYPES.UnaryExpression:
           // Unary expressions like typeof, !, -, + are primitive
@@ -75,10 +82,25 @@ export const enforceUseDeepCompareMemo = createRule<[], MessageIds>({
           // Binary expressions are primitive
           return false;
         case AST_NODE_TYPES.LogicalExpression:
-          // Logical expressions are primitive
-          return false;
+          // Logical expressions can contain non-primitives
+          return isProblematicNonPrimitive(node.left) || isProblematicNonPrimitive(node.right);
         case AST_NODE_TYPES.ConditionalExpression:
-          // Conditional expressions are primitive
+          // Conditional expressions can contain non-primitives
+          return isProblematicNonPrimitive(node.consequent) || isProblematicNonPrimitive(node.alternate);
+        case AST_NODE_TYPES.TSAsExpression:
+          // TypeScript as expressions - check the expression being cast
+          return isProblematicNonPrimitive(node.expression);
+        case AST_NODE_TYPES.TSTypeAssertion:
+          // TypeScript type assertions - check the expression being asserted
+          return isProblematicNonPrimitive(node.expression);
+        case AST_NODE_TYPES.AssignmentExpression:
+          // Assignment expressions return the assigned value
+          return isProblematicNonPrimitive(node.right);
+        case AST_NODE_TYPES.SequenceExpression:
+          // Sequence expressions return the last expression
+          return isProblematicNonPrimitive(node.expressions[node.expressions.length - 1]);
+        case AST_NODE_TYPES.UpdateExpression:
+          // Update expressions (++, --) are primitive
           return false;
         default:
           return false;
@@ -134,8 +156,50 @@ export const enforceUseDeepCompareMemo = createRule<[], MessageIds>({
             'substring',
             'substr',
             'slice',
+            // Math methods
+            'abs', 'acos', 'acosh', 'asin', 'asinh', 'atan', 'atan2', 'atanh',
+            'cbrt', 'ceil', 'clz32', 'cos', 'cosh', 'exp', 'expm1', 'floor',
+            'fround', 'hypot', 'imul', 'log', 'log10', 'log1p', 'log2', 'max',
+            'min', 'pow', 'random', 'round', 'sign', 'sin', 'sinh', 'sqrt',
+            'tan', 'tanh', 'trunc',
+            // Date methods that return primitives
+            'getTime', 'getFullYear', 'getMonth', 'getDate', 'getDay',
+            'getHours', 'getMinutes', 'getSeconds', 'getMilliseconds',
+            'getTimezoneOffset', 'getUTCFullYear', 'getUTCMonth', 'getUTCDate',
+            'getUTCDay', 'getUTCHours', 'getUTCMinutes', 'getUTCSeconds',
+            'getUTCMilliseconds', 'toDateString', 'toTimeString', 'toISOString',
+            'toJSON', 'toLocaleDateString', 'toLocaleTimeString', 'toLocaleString',
+            'toUTCString',
+            // Number methods
+            'toFixed', 'toExponential', 'toPrecision',
+            // Array methods that return primitives
+            'join', 'length',
+            // Object methods that return primitives
+            'hasOwnProperty', 'isPrototypeOf', 'propertyIsEnumerable',
           ]);
           return primitiveMethods.has(property.name);
+        }
+      }
+
+      // Check for specific global functions
+      if (node.callee.type === AST_NODE_TYPES.MemberExpression) {
+        const object = node.callee.object;
+        const property = node.callee.property;
+
+        if (object.type === AST_NODE_TYPES.Identifier && property.type === AST_NODE_TYPES.Identifier) {
+          // JSON.stringify returns a string
+          if (object.name === 'JSON' && property.name === 'stringify') {
+            return true;
+          }
+          // Math methods
+          if (object.name === 'Math') {
+            return true; // All Math methods return primitives
+          }
+          // Object methods that return primitives
+          if (object.name === 'Object') {
+            const primitiveObjectMethods = new Set(['keys', 'values', 'entries']);
+            return !primitiveObjectMethods.has(property.name); // These return arrays, so they're NOT primitive
+          }
         }
       }
 
@@ -202,6 +266,22 @@ export const enforceUseDeepCompareMemo = createRule<[], MessageIds>({
                       }
                     }
                   }
+                  // Handle object destructuring like { a, b } = obj
+                  if (declarator.id.type === AST_NODE_TYPES.ObjectPattern) {
+                    for (const property of declarator.id.properties) {
+                      if (property.type === AST_NODE_TYPES.Property &&
+                          property.value.type === AST_NODE_TYPES.Identifier &&
+                          property.value.name === identifierName) {
+                        // Check if the destructuring source is memoized
+                        if (declarator.init &&
+                            declarator.init.type === AST_NODE_TYPES.CallExpression &&
+                            declarator.init.callee.type === AST_NODE_TYPES.Identifier &&
+                            MEMOIZATION_HOOKS.has(declarator.init.callee.name)) {
+                          return true;
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -214,6 +294,21 @@ export const enforceUseDeepCompareMemo = createRule<[], MessageIds>({
     }
 
     /**
+     * Checks if an identifier is likely a primitive based on common naming patterns
+     */
+    function isLikelyPrimitive(identifierName: string): boolean {
+      // Common primitive variable names
+      const primitivePatterns = [
+        /^(count|index|id|key|value|name|title|text|str|num|flag|enabled|visible|active|loading|error)$/i,
+        /^(is|has|can|should|will|was|were|are|am)([A-Z]|$)/,
+        /^(first|second|third|last|next|prev|current|total|max|min|avg)$/i,
+        /^[a-z]$/i, // Single letter variables are often primitives
+      ];
+
+      return primitivePatterns.some(pattern => pattern.test(identifierName));
+    }
+
+    /**
      * Analyzes dependency array for problematic non-primitive values
      */
     function analyzeDepArray(depArray: TSESTree.ArrayExpression, currentNode: TSESTree.Node): boolean {
@@ -221,9 +316,16 @@ export const enforceUseDeepCompareMemo = createRule<[], MessageIds>({
         if (!element) continue; // Skip holes in sparse arrays
 
         if (isProblematicNonPrimitive(element)) {
-          // Check if this is a memoized identifier
-          if (element.type === AST_NODE_TYPES.Identifier && isIdentifierMemoized(element.name, currentNode)) {
-            continue; // This is memoized, so it's okay
+          // Special handling for identifiers
+          if (element.type === AST_NODE_TYPES.Identifier) {
+            // Check if this is a memoized identifier
+            if (isIdentifierMemoized(element.name, currentNode)) {
+              continue; // This is memoized, so it's okay
+            }
+            // Check if this is likely a primitive based on naming patterns
+            if (isLikelyPrimitive(element.name)) {
+              continue; // Likely a primitive, so it's okay
+            }
           }
           return true; // Found a problematic non-primitive
         }
