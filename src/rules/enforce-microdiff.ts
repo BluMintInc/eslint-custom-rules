@@ -182,7 +182,10 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
             const importSource = importedFunctions.get(name);
 
             // Skip reporting if it's from fast-deep-equal
-            if (importSource === 'fast-deep-equal' || importSource === 'fast-deep-equal/es6') {
+            if (
+              importSource === 'fast-deep-equal' ||
+              importSource === 'fast-deep-equal/es6'
+            ) {
               return;
             }
 

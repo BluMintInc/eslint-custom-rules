@@ -100,6 +100,7 @@ import { noMarginProperties } from './rules/no-margin-properties';
 import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-prefixes';
 import { preferBlockCommentsForDeclarations } from './rules/prefer-block-comments-for-declarations';
 import { noUndefinedNullPassthrough } from './rules/no-undefined-null-passthrough';
+import { reactNoSeparateLoadingState } from './rules/react-no-separate-loading-state';
 
 module.exports = {
   meta: {
@@ -223,12 +224,14 @@ module.exports = {
         '@blumintinc/blumint/no-margin-properties': 'error',
         '@blumintinc/blumint/enforce-boolean-naming-prefixes': 'error',
         '@blumintinc/blumint/no-undefined-null-passthrough': 'error',
+        '@blumintinc/blumint/react-no-separate-loading-state': 'error',
       },
     },
   },
 
   rules: {
-    'prefer-block-comments-for-declarations': preferBlockCommentsForDeclarations,
+    'prefer-block-comments-for-declarations':
+      preferBlockCommentsForDeclarations,
     'key-only-outermost-element': keyOnlyOutermostElement,
     'array-methods-this-context': arrayMethodsThisContext,
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
@@ -333,5 +336,6 @@ module.exports = {
     'no-margin-properties': noMarginProperties,
     'enforce-boolean-naming-prefixes': enforceBooleanNamingPrefixes,
     'no-undefined-null-passthrough': noUndefinedNullPassthrough,
+    'react-no-separate-loading-state': reactNoSeparateLoadingState,
   },
 };
