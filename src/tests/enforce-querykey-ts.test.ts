@@ -446,7 +446,12 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
           return <div>{value}</div>;
         }
       `,
-      errors: [{ messageId: 'enforceQueryKeyConstant', data: { variableName: 'MY_KEY' } }],
+      errors: [
+        {
+          messageId: 'enforceQueryKeyConstant',
+          data: { variableName: 'MY_KEY' },
+        },
+      ],
     },
 
     // 9. Import from wrong source
@@ -459,7 +464,12 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
           return <div>{value}</div>;
         }
       `,
-      errors: [{ messageId: 'enforceQueryKeyConstant', data: { variableName: 'QUERY_KEY_WRONG' } }],
+      errors: [
+        {
+          messageId: 'enforceQueryKeyConstant',
+          data: { variableName: 'QUERY_KEY_WRONG' },
+        },
+      ],
     },
 
     // 10. Constant not following QUERY_KEY_ pattern
@@ -472,7 +482,12 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
           return <div>{value}</div>;
         }
       `,
-      errors: [{ messageId: 'enforceQueryKeyConstant', data: { variableName: 'WRONG_PATTERN' } }],
+      errors: [
+        {
+          messageId: 'enforceQueryKeyConstant',
+          data: { variableName: 'WRONG_PATTERN' },
+        },
+      ],
     },
 
     // 11. Mixed valid and invalid usage
@@ -574,7 +589,12 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
           return <div>{value}</div>;
         }
       `,
-      errors: [{ messageId: 'enforceQueryKeyConstant', data: { variableName: 'keyName' } }],
+      errors: [
+        {
+          messageId: 'enforceQueryKeyConstant',
+          data: { variableName: 'keyName' },
+        },
+      ],
     },
 
     // 16. Template literal with significant static content
