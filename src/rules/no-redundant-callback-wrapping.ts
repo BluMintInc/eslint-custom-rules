@@ -12,6 +12,14 @@ const DEFAULT_HOOK_PATTERNS = [
   'use*', // Any hook starting with 'use'
 ];
 
+const EXCLUDED_HOOK_PATTERNS = [
+  'useContext', // useContext doesn't return memoized functions
+  'useState', // useState doesn't return memoized functions
+  'useReducer', // useReducer doesn't return memoized functions
+  'useRef', // useRef doesn't return memoized functions
+  'useImperativeHandle', // useImperativeHandle doesn't return memoized functions
+];
+
 const DEFAULT_ALLOWED_WRAPPER_PATTERNS = [
   'useCallback',
   'useMemo',
@@ -86,11 +94,16 @@ export const noRedundantCallbackWrapping = createRule<[Options], MessageIds>({
     }
 
     /**
-     * Check if a function call is a hook call
+     * Check if a function call is a hook call that returns memoized functions
      */
     function isHookCall(node: TSESTree.CallExpression): boolean {
       if (node.callee.type === AST_NODE_TYPES.Identifier) {
-        return matchesPattern(node.callee.name, hookPatterns);
+        const hookName = node.callee.name;
+        // Check if it matches hook patterns but is not in excluded patterns
+        return (
+          matchesPattern(hookName, hookPatterns) &&
+          !EXCLUDED_HOOK_PATTERNS.includes(hookName)
+        );
       }
       return false;
     }
@@ -144,69 +157,112 @@ export const noRedundantCallbackWrapping = createRule<[Options], MessageIds>({
     function hasSubstantialLogic(
       body: TSESTree.Statement | TSESTree.Expression,
       targetFunction: string,
+      targetFunctionCall: TSESTree.CallExpression,
     ): boolean {
       // If it's a block statement, check all statements
       if (body.type === AST_NODE_TYPES.BlockStatement) {
         const statements = body.body;
 
-        // Count non-trivial statements
-        let otherStatementCount = 0;
+        // Count substantial statements (excluding non-substantial ones)
+        let substantialStatementCount = 0;
+        let consoleCallCount = 0;
 
         statements.forEach((stmt) => {
           if (stmt.type === AST_NODE_TYPES.ExpressionStatement) {
             const expr = stmt.expression;
             if (expr.type === AST_NODE_TYPES.CallExpression) {
+              // Check if this is the target function call
+              if (expr === targetFunctionCall) {
+                return; // Target function call is not substantial
+              }
+
+              // Check for preventDefault (only this specific call is non-substantial)
               if (
                 expr.callee.type === AST_NODE_TYPES.MemberExpression &&
                 expr.callee.property.type === AST_NODE_TYPES.Identifier &&
                 expr.callee.property.name === 'preventDefault'
               ) {
-                // preventDefault is not substantial
-              } else if (
-                expr.callee.type === AST_NODE_TYPES.Identifier &&
-                expr.callee.name === targetFunction
-              ) {
-                // Target function call is not substantial
-              } else {
-                otherStatementCount++;
+                return; // preventDefault is not substantial
               }
+
+              // Check for console.log and similar debugging calls
+              if (
+                expr.callee.type === AST_NODE_TYPES.MemberExpression &&
+                expr.callee.object.type === AST_NODE_TYPES.Identifier &&
+                expr.callee.object.name === 'console'
+              ) {
+                consoleCallCount++;
+                // Multiple console calls are substantial, single console call is not
+                if (consoleCallCount > 1) {
+                  substantialStatementCount++;
+                }
+                return;
+              }
+
+              // All other function calls are substantial
+              substantialStatementCount++;
             } else {
-              otherStatementCount++;
+              // Non-call expressions are substantial
+              substantialStatementCount++;
             }
+          } else if (stmt.type === AST_NODE_TYPES.VariableDeclaration) {
+            // Variable declarations are generally substantial
+            // Only very simple literal assignments might be considered non-substantial
+            const isSimpleDeclaration = stmt.declarations.every((decl) => {
+              return (
+                decl.init &&
+                (decl.init.type === AST_NODE_TYPES.Literal ||
+                  decl.init.type === AST_NODE_TYPES.TemplateLiteral)
+              );
+            });
+
+            if (!isSimpleDeclaration) {
+              substantialStatementCount++;
+            }
+          } else if (stmt.type === AST_NODE_TYPES.ReturnStatement) {
+            // Check if it's just returning the target function call
+            if (stmt.argument === targetFunctionCall) {
+              return; // Simple return of target function is not substantial
+            }
+            // Other return statements are substantial
+            substantialStatementCount++;
           } else {
-            otherStatementCount++;
+            // Other statement types are substantial
+            substantialStatementCount++;
           }
         });
 
-        // Only substantial if there are other statements beyond preventDefault and target function call
-        return otherStatementCount > 0;
+        // If we have multiple console calls, count the first one as substantial too
+        if (consoleCallCount > 1) {
+          substantialStatementCount += consoleCallCount - 1; // We already counted the extra ones
+        }
+
+        // Only non-substantial if there are no substantial statements
+        return substantialStatementCount > 0;
       }
 
       // For expression bodies, check if it's just calling the target function
-      if (
-        body.type === AST_NODE_TYPES.CallExpression &&
-        body.callee.type === AST_NODE_TYPES.Identifier &&
-        body.callee.name === targetFunction
-      ) {
+      if (body === targetFunctionCall) {
         return false;
       }
 
       // For arrow function expressions that return another function
       if (body.type === AST_NODE_TYPES.ArrowFunctionExpression) {
-        return hasSubstantialLogic(body.body, targetFunction);
+        return hasSubstantialLogic(body.body, targetFunction, targetFunctionCall);
       }
 
       return true;
     }
 
     /**
-     * Check if the callback has parameter transformation or uses parameters
+     * Check if the callback has parameter transformation or uses parameters in substantial ways
      */
     function hasParameterTransformation(
       callbackParams: TSESTree.Parameter[],
       callbackBody: TSESTree.Statement | TSESTree.Expression,
+      targetFunctionCall: TSESTree.CallExpression,
     ): boolean {
-      // If the callback has parameters, check if they're used in any way
+      // If the callback has parameters, check if they're used in substantial ways
       if (callbackParams.length > 0) {
         // Extract parameter names
         const paramNames = callbackParams
@@ -214,44 +270,72 @@ export const noRedundantCallbackWrapping = createRule<[Options], MessageIds>({
           .map((param) => (param as TSESTree.Identifier).name);
 
         if (paramNames.length > 0) {
-          // Check if any parameter is used in the callback body
-          return usesAnyParameter(callbackBody, paramNames);
+          // Check if any parameter is used in substantial ways (not just preventDefault)
+          return usesParameterSubstantially(callbackBody, paramNames, targetFunctionCall);
         }
       }
       return false;
     }
 
     /**
-     * Check if the callback body uses any of the given parameters
+     * Check if the callback body uses parameters in substantial ways (not just preventDefault)
      */
-    function usesAnyParameter(
+    function usesParameterSubstantially(
       node: TSESTree.Node,
       paramNames: string[],
+      targetFunctionCall: TSESTree.CallExpression,
     ): boolean {
-      if (node.type === AST_NODE_TYPES.Identifier) {
-        return paramNames.includes(node.name);
-      }
-
       if (node.type === AST_NODE_TYPES.BlockStatement) {
-        return node.body.some((stmt) => usesAnyParameter(stmt, paramNames));
+        return node.body.some((stmt) =>
+          usesParameterSubstantially(stmt, paramNames, targetFunctionCall)
+        );
       }
 
       if (node.type === AST_NODE_TYPES.ExpressionStatement) {
-        return usesAnyParameter(node.expression, paramNames);
+        const expr = node.expression;
+
+        // Skip the target function call
+        if (expr === targetFunctionCall) {
+          return false;
+        }
+
+        // Check if this is preventDefault call - not substantial
+        if (
+          expr.type === AST_NODE_TYPES.CallExpression &&
+          expr.callee.type === AST_NODE_TYPES.MemberExpression &&
+          expr.callee.property.type === AST_NODE_TYPES.Identifier &&
+          expr.callee.property.name === 'preventDefault'
+        ) {
+          return false;
+        }
+
+        return usesParameterSubstantially(expr, paramNames, targetFunctionCall);
       }
 
       if (node.type === AST_NODE_TYPES.CallExpression) {
+        // Skip the target function call
+        if (node === targetFunctionCall) {
+          return false;
+        }
+
         return (
-          usesAnyParameter(node.callee, paramNames) ||
-          node.arguments.some((arg) => usesAnyParameter(arg, paramNames))
+          usesParameterSubstantially(node.callee, paramNames, targetFunctionCall) ||
+          node.arguments.some((arg) =>
+            usesParameterSubstantially(arg, paramNames, targetFunctionCall)
+          )
         );
       }
 
       if (node.type === AST_NODE_TYPES.MemberExpression) {
         return (
-          usesAnyParameter(node.object, paramNames) ||
-          (node.computed && usesAnyParameter(node.property, paramNames))
+          usesParameterSubstantially(node.object, paramNames, targetFunctionCall) ||
+          (node.computed &&
+            usesParameterSubstantially(node.property, paramNames, targetFunctionCall))
         );
+      }
+
+      if (node.type === AST_NODE_TYPES.Identifier) {
+        return paramNames.includes(node.name);
       }
 
       // Add more node types as needed
@@ -264,13 +348,13 @@ export const noRedundantCallbackWrapping = createRule<[Options], MessageIds>({
               (item) =>
                 item &&
                 typeof item === 'object' &&
-                usesAnyParameter(item, paramNames),
+                usesParameterSubstantially(item, paramNames, targetFunctionCall),
             )
           ) {
             return true;
           }
         } else if (value && typeof value === 'object' && value.type) {
-          if (usesAnyParameter(value, paramNames)) {
+          if (usesParameterSubstantially(value, paramNames, targetFunctionCall)) {
             return true;
           }
         }
@@ -379,6 +463,16 @@ export const noRedundantCallbackWrapping = createRule<[Options], MessageIds>({
                   break;
                 }
               }
+            } else if (stmt.type === AST_NODE_TYPES.ReturnStatement && stmt.argument) {
+              const result = extractTargetFunction(stmt.argument);
+              if (result) {
+                // Check if this is a memoized function
+                if (memoizedFunctions.has(result.name)) {
+                  targetFunctionCall = result.call;
+                  targetFunctionName = result.name;
+                  break;
+                }
+              }
             }
           }
         } else {
@@ -403,12 +497,12 @@ export const noRedundantCallbackWrapping = createRule<[Options], MessageIds>({
         // Check edge cases that justify the wrapping
 
         // 1. Check for substantial additional logic
-        if (hasSubstantialLogic(callback.body, targetFunctionName)) {
+        if (hasSubstantialLogic(callback.body, targetFunctionName, targetFunctionCall)) {
           return;
         }
 
         // 2. Check for parameter transformation
-        if (hasParameterTransformation(callback.params, callback.body)) {
+        if (hasParameterTransformation(callback.params, callback.body, targetFunctionCall)) {
           return;
         }
 
