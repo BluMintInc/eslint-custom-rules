@@ -294,8 +294,14 @@ export const noRedundantCallbackWrapping = createRule<[Options], MessageIds>({
       if (node.type === AST_NODE_TYPES.ExpressionStatement) {
         const expr = node.expression;
 
-        // Skip the target function call
+        // Check if this is the target function call
         if (expr === targetFunctionCall) {
+          // Don't skip the target function call entirely - check if its arguments use parameters
+          if (expr.type === AST_NODE_TYPES.CallExpression) {
+            return expr.arguments.some((arg) =>
+              usesParameterSubstantially(arg, paramNames, targetFunctionCall)
+            );
+          }
           return false;
         }
 
@@ -313,9 +319,11 @@ export const noRedundantCallbackWrapping = createRule<[Options], MessageIds>({
       }
 
       if (node.type === AST_NODE_TYPES.CallExpression) {
-        // Skip the target function call
+        // For the target function call, only check arguments (not the callee)
         if (node === targetFunctionCall) {
-          return false;
+          return node.arguments.some((arg) =>
+            usesParameterSubstantially(arg, paramNames, targetFunctionCall)
+          );
         }
 
         return (
@@ -332,6 +340,16 @@ export const noRedundantCallbackWrapping = createRule<[Options], MessageIds>({
           (node.computed &&
             usesParameterSubstantially(node.property, paramNames, targetFunctionCall))
         );
+      }
+
+      // Handle TypeScript type assertions (e.g., data as ProcessableData)
+      if (node.type === AST_NODE_TYPES.TSAsExpression) {
+        return usesParameterSubstantially(node.expression, paramNames, targetFunctionCall);
+      }
+
+      // Handle TypeScript type assertions (legacy syntax)
+      if (node.type === AST_NODE_TYPES.TSTypeAssertion) {
+        return usesParameterSubstantially(node.expression, paramNames, targetFunctionCall);
       }
 
       if (node.type === AST_NODE_TYPES.Identifier) {

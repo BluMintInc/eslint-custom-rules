@@ -505,14 +505,15 @@ ruleTesterJsx.run(
 
       // ===== PREVENT FALSE POSITIVES =====
 
-      // Valid: preventDefault only (should be allowed as non-substantial)
+      // Valid: preventDefault with additional substantial logic
       {
         code: `
         function Component() {
           const { submit } = useFormContext();
           const handleSubmit = useCallback((event) => {
             event.preventDefault();
-            submit();
+            const formData = new FormData(event.target);
+            submit(formData);
           }, [submit]);
           return <form onSubmit={handleSubmit}></form>;
         }
