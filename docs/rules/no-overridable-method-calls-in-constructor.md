@@ -1,4 +1,8 @@
-# Avoid Overridable Method Calls in Constructors (no-overridable-method-calls-in-constructor)
+# Disallow calling overridable methods in constructors to prevent unexpected behavior (`@blumintinc/blumint/no-overridable-method-calls-in-constructor`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 This rule aims to prevent a common pitfall in object-oriented programming where an overridable method (a method in a base class that is intended to be implemented or overridden by derived classes) is called from the constructor of the base class.
 
