@@ -1,11 +1,14 @@
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { noRedundantCallbackWrapping } from '../rules/no-redundant-callback-wrapping';
 
-ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping, {
-  valid: [
-    // Valid: Function not from a hook
-    {
-      code: `
+ruleTesterJsx.run(
+  'no-redundant-callback-wrapping',
+  noRedundantCallbackWrapping,
+  {
+    valid: [
+      // Valid: Function not from a hook
+      {
+        code: `
         function SignInButton() {
           const handleClick = () => console.log('click');
           const memoizedHandler = useCallback(() => {
@@ -14,11 +17,11 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           return <button onClick={memoizedHandler}>Sign In</button>;
         }
       `,
-    },
+      },
 
-    // Valid: Function with substantial additional logic
-    {
-      code: `
+      // Valid: Function with substantial additional logic
+      {
+        code: `
         function SignInButton() {
           const { signIn } = useAuthSubmit();
           const handleSignIn = useCallback(() => {
@@ -29,11 +32,11 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           return <button onClick={handleSignIn}>Sign In</button>;
         }
       `,
-    },
+      },
 
-    // Valid: Parameter transformation
-    {
-      code: `
+      // Valid: Parameter transformation
+      {
+        code: `
         function UserForm() {
           const { updateUser } = useUserContext();
           const handleSubmit = useCallback((event) => {
@@ -44,11 +47,11 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           return <form onSubmit={handleSubmit}></form>;
         }
       `,
-    },
+      },
 
-    // Valid: Multiple dependencies with arguments
-    {
-      code: `
+      // Valid: Multiple dependencies with arguments
+      {
+        code: `
         function SignInButton() {
           const { signIn } = useAuthSubmit();
           const [username, setUsername] = useState('');
@@ -58,21 +61,21 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           return <button onClick={handleSignInWithUsername}>Sign In</button>;
         }
       `,
-    },
+      },
 
-    // Valid: Direct function usage (no wrapping)
-    {
-      code: `
+      // Valid: Direct function usage (no wrapping)
+      {
+        code: `
         function SignInButton() {
           const { signIn } = useAuthSubmit();
           return <button onClick={signIn}>Sign In</button>;
         }
       `,
-    },
+      },
 
-    // Valid: useMemo for complex objects
-    {
-      code: `
+      // Valid: useMemo for complex objects
+      {
+        code: `
         function Component() {
           const { signIn } = useAuthSubmit();
           const config = useMemo(() => ({
@@ -83,11 +86,11 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           return <Form config={config} />;
         }
       `,
-    },
+      },
 
-    // Valid: Function from non-hook source
-    {
-      code: `
+      // Valid: Function from non-hook source
+      {
+        code: `
         function Component() {
           const utils = getUtils();
           const handleClick = useCallback(() => {
@@ -96,11 +99,11 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           return <button onClick={handleClick}>Click</button>;
         }
       `,
-    },
+      },
 
-    // Valid: Complex parameter processing
-    {
-      code: `
+      // Valid: Complex parameter processing
+      {
+        code: `
         function Component() {
           const { updateData } = useDataContext();
           const handleUpdate = useCallback((event) => {
@@ -110,11 +113,11 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           return <input onChange={handleUpdate} />;
         }
       `,
-    },
+      },
 
-    // Valid: preventDefault is allowed as non-substantial
-    {
-      code: `
+      // Valid: preventDefault is allowed as non-substantial
+      {
+        code: `
         function Component() {
           const { submit } = useFormContext();
           const handleSubmit = useCallback((event) => {
@@ -124,11 +127,11 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           return <form onSubmit={handleSubmit}></form>;
         }
       `,
-    },
+      },
 
-    // Valid: Custom hook pattern not matching default patterns
-    {
-      code: `
+      // Valid: Custom hook pattern not matching default patterns
+      {
+        code: `
         function Component() {
           const { process } = getProcessor(); // Not a hook
           const handleProcess = useCallback(() => {
@@ -137,11 +140,11 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           return <button onClick={handleProcess}>Process</button>;
         }
       `,
-    },
+      },
 
-    // Valid: Renamed destructuring
-    {
-      code: `
+      // Valid: Renamed destructuring
+      {
+        code: `
         function Component() {
           const { signIn: customSignIn } = useAuthSubmit();
           const handleClick = useCallback((data) => {
@@ -150,11 +153,11 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           return <button onClick={handleClick}>Sign In</button>;
         }
       `,
-    },
+      },
 
-    // Valid: Function with complex body structure
-    {
-      code: `
+      // Valid: Function with complex body structure
+      {
+        code: `
         function Component() {
           const { signIn } = useAuthSubmit();
           const handleSignIn = useCallback(() => {
@@ -167,11 +170,11 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           return <button onClick={handleSignIn}>Sign In</button>;
         }
       `,
-    },
+      },
 
-    // Valid: useDeepCompareCallback (custom memoization hook)
-    {
-      code: `
+      // Valid: useDeepCompareCallback (custom memoization hook)
+      {
+        code: `
         function Component() {
           const { signIn } = useAuthSubmit();
           const handleSignIn = useDeepCompareCallback(() => {
@@ -180,11 +183,11 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           return <button onClick={handleSignIn}>Sign In</button>;
         }
       `,
-    },
+      },
 
-    // Valid: Function call with complex arguments
-    {
-      code: `
+      // Valid: Function call with complex arguments
+      {
+        code: `
         function Component() {
           const { updateUser } = useUserContext();
           const handleUpdate = useCallback(() => {
@@ -197,11 +200,11 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           return <button onClick={handleUpdate}>Update</button>;
         }
       `,
-    },
+      },
 
-    // Valid: Arrow function with block body and multiple statements
-    {
-      code: `
+      // Valid: Arrow function with block body and multiple statements
+      {
+        code: `
         function Component() {
           const { signIn } = useAuthSubmit();
           const handleSignIn = useCallback(() => {
@@ -212,11 +215,11 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           return <button onClick={handleSignIn}>Sign In</button>;
         }
       `,
-    },
+      },
 
-    // Valid: Method access on memoized object
-    {
-      code: `
+      // Valid: Method access on memoized object
+      {
+        code: `
         function Component() {
           const authSubmit = useAuthSubmit();
           const handleSignIn = useCallback(() => {
@@ -225,13 +228,13 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           return <button onClick={handleSignIn}>Sign In</button>;
         }
       `,
-    },
-  ],
+      },
+    ],
 
-  invalid: [
-    // Invalid: Simple redundant wrapping
-    {
-      code: `
+    invalid: [
+      // Invalid: Simple redundant wrapping
+      {
+        code: `
         function SignInButton() {
           const { signIn } = useAuthSubmit();
           const handleSignIn = useCallback(() => {
@@ -240,84 +243,84 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           return <button onClick={handleSignIn}>Sign In</button>;
         }
       `,
-      errors: [
-        {
-          messageId: 'redundantWrapper',
-          data: {
-            wrapperName: 'useCallback',
-            functionName: 'signIn',
-            hookName: 'useAuthSubmit',
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'signIn',
+              hookName: 'useAuthSubmit',
+            },
           },
-        },
-      ],
-      output: `
+        ],
+        output: `
         function SignInButton() {
           const { signIn } = useAuthSubmit();
           const handleSignIn = signIn;
           return <button onClick={handleSignIn}>Sign In</button>;
         }
       `,
-    },
+      },
 
-    // Invalid: Expression body redundant wrapping
-    {
-      code: `
+      // Invalid: Expression body redundant wrapping
+      {
+        code: `
         function Component() {
           const { process } = useProcessor();
           const handleProcess = useCallback(() => process(), [process]);
           return <button onClick={handleProcess}>Process</button>;
         }
       `,
-      errors: [
-        {
-          messageId: 'redundantWrapper',
-          data: {
-            wrapperName: 'useCallback',
-            functionName: 'process',
-            hookName: 'useProcessor',
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'process',
+              hookName: 'useProcessor',
+            },
           },
-        },
-      ],
-      output: `
+        ],
+        output: `
         function Component() {
           const { process } = useProcessor();
           const handleProcess = process;
           return <button onClick={handleProcess}>Process</button>;
         }
       `,
-    },
+      },
 
-    // Invalid: useMemo redundant wrapping
-    {
-      code: `
+      // Invalid: useMemo redundant wrapping
+      {
+        code: `
         function Component() {
           const { calculate } = useCalculator();
           const memoizedCalculate = useMemo(() => () => calculate(), [calculate]);
           return <button onClick={memoizedCalculate}>Calculate</button>;
         }
       `,
-      errors: [
-        {
-          messageId: 'redundantWrapper',
-          data: {
-            wrapperName: 'useMemo',
-            functionName: 'calculate',
-            hookName: 'useCalculator',
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useMemo',
+              functionName: 'calculate',
+              hookName: 'useCalculator',
+            },
           },
-        },
-      ],
-      output: `
+        ],
+        output: `
         function Component() {
           const { calculate } = useCalculator();
           const memoizedCalculate = calculate;
           return <button onClick={memoizedCalculate}>Calculate</button>;
         }
       `,
-    },
+      },
 
-    // Invalid: Multiple functions from same hook
-    {
-      code: `
+      // Invalid: Multiple functions from same hook
+      {
+        code: `
         function Component() {
           const { signIn, signOut } = useAuthSubmit();
           const handleSignIn = useCallback(() => {
@@ -334,25 +337,25 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           );
         }
       `,
-      errors: [
-        {
-          messageId: 'redundantWrapper',
-          data: {
-            wrapperName: 'useCallback',
-            functionName: 'signIn',
-            hookName: 'useAuthSubmit',
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'signIn',
+              hookName: 'useAuthSubmit',
+            },
           },
-        },
-        {
-          messageId: 'redundantWrapper',
-          data: {
-            wrapperName: 'useCallback',
-            functionName: 'signOut',
-            hookName: 'useAuthSubmit',
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'signOut',
+              hookName: 'useAuthSubmit',
+            },
           },
-        },
-      ],
-      output: `
+        ],
+        output: `
         function Component() {
           const { signIn, signOut } = useAuthSubmit();
           const handleSignIn = signIn;
@@ -365,11 +368,11 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           );
         }
       `,
-    },
+      },
 
-    // Invalid: Renamed destructuring
-    {
-      code: `
+      // Invalid: Renamed destructuring
+      {
+        code: `
         function Component() {
           const { signIn: customSignIn } = useAuthSubmit();
           const handleSignIn = useCallback(() => {
@@ -378,28 +381,28 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           return <button onClick={handleSignIn}>Sign In</button>;
         }
       `,
-      errors: [
-        {
-          messageId: 'redundantWrapper',
-          data: {
-            wrapperName: 'useCallback',
-            functionName: 'customSignIn',
-            hookName: 'useAuthSubmit',
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'customSignIn',
+              hookName: 'useAuthSubmit',
+            },
           },
-        },
-      ],
-      output: `
+        ],
+        output: `
         function Component() {
           const { signIn: customSignIn } = useAuthSubmit();
           const handleSignIn = customSignIn;
           return <button onClick={handleSignIn}>Sign In</button>;
         }
       `,
-    },
+      },
 
-    // Invalid: Function from custom hook with different naming
-    {
-      code: `
+      // Invalid: Function from custom hook with different naming
+      {
+        code: `
         function Component() {
           const { handleSubmit } = useFormHandler();
           const onSubmit = useCallback(() => {
@@ -408,28 +411,28 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           return <form onSubmit={onSubmit}></form>;
         }
       `,
-      errors: [
-        {
-          messageId: 'redundantWrapper',
-          data: {
-            wrapperName: 'useCallback',
-            functionName: 'handleSubmit',
-            hookName: 'useFormHandler',
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'handleSubmit',
+              hookName: 'useFormHandler',
+            },
           },
-        },
-      ],
-      output: `
+        ],
+        output: `
         function Component() {
           const { handleSubmit } = useFormHandler();
           const onSubmit = handleSubmit;
           return <form onSubmit={onSubmit}></form>;
         }
       `,
-    },
+      },
 
-    // Invalid: Function from context hook
-    {
-      code: `
+      // Invalid: Function from context hook
+      {
+        code: `
         function Component() {
           const { updateSettings } = useSettingsContext();
           const handleUpdate = useCallback(() => {
@@ -438,30 +441,28 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           return <button onClick={handleUpdate}>Update</button>;
         }
       `,
-      errors: [
-        {
-          messageId: 'redundantWrapper',
-          data: {
-            wrapperName: 'useCallback',
-            functionName: 'updateSettings',
-            hookName: 'useSettingsContext',
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'updateSettings',
+              hookName: 'useSettingsContext',
+            },
           },
-        },
-      ],
-      output: `
+        ],
+        output: `
         function Component() {
           const { updateSettings } = useSettingsContext();
           const handleUpdate = updateSettings;
           return <button onClick={handleUpdate}>Update</button>;
         }
       `,
-    },
+      },
 
-
-
-    // Invalid: Function with no additional dependencies
-    {
-      code: `
+      // Invalid: Function with no additional dependencies
+      {
+        code: `
         function Component() {
           const { process } = useDataProcessor();
           const handleProcess = useCallback(() => {
@@ -470,28 +471,28 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           return <button onClick={handleProcess}>Process</button>;
         }
       `,
-      errors: [
-        {
-          messageId: 'redundantWrapper',
-          data: {
-            wrapperName: 'useCallback',
-            functionName: 'process',
-            hookName: 'useDataProcessor',
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'process',
+              hookName: 'useDataProcessor',
+            },
           },
-        },
-      ],
-      output: `
+        ],
+        output: `
         function Component() {
           const { process } = useDataProcessor();
           const handleProcess = process;
           return <button onClick={handleProcess}>Process</button>;
         }
       `,
-    },
+      },
 
-    // Invalid: useDeepCompareCallback with simple wrapping
-    {
-      code: `
+      // Invalid: useDeepCompareCallback with simple wrapping
+      {
+        code: `
         function Component() {
           const { save } = useSaveHandler();
           const handleSave = useDeepCompareCallback(() => {
@@ -500,28 +501,28 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           return <button onClick={handleSave}>Save</button>;
         }
       `,
-      errors: [
-        {
-          messageId: 'redundantWrapper',
-          data: {
-            wrapperName: 'useDeepCompareCallback',
-            functionName: 'save',
-            hookName: 'useSaveHandler',
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useDeepCompareCallback',
+              functionName: 'save',
+              hookName: 'useSaveHandler',
+            },
           },
-        },
-      ],
-      output: `
+        ],
+        output: `
         function Component() {
           const { save } = useSaveHandler();
           const handleSave = save;
           return <button onClick={handleSave}>Save</button>;
         }
       `,
-    },
+      },
 
-    // Invalid: Function expression instead of arrow function
-    {
-      code: `
+      // Invalid: Function expression instead of arrow function
+      {
+        code: `
         function Component() {
           const { delete: deleteItem } = useItemManager();
           const handleDelete = useCallback(function() {
@@ -530,56 +531,56 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           return <button onClick={handleDelete}>Delete</button>;
         }
       `,
-      errors: [
-        {
-          messageId: 'redundantWrapper',
-          data: {
-            wrapperName: 'useCallback',
-            functionName: 'deleteItem',
-            hookName: 'useItemManager',
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'deleteItem',
+              hookName: 'useItemManager',
+            },
           },
-        },
-      ],
-      output: `
+        ],
+        output: `
         function Component() {
           const { delete: deleteItem } = useItemManager();
           const handleDelete = deleteItem;
           return <button onClick={handleDelete}>Delete</button>;
         }
       `,
-    },
+      },
 
-    // Invalid: Direct function call from hook object
-    {
-      code: `
+      // Invalid: Direct function call from hook object
+      {
+        code: `
         function Component() {
           const { signIn } = useAuthSubmit();
           const handleSignIn = useCallback(() => signIn(), [signIn]);
           return <button onClick={handleSignIn}>Sign In</button>;
         }
       `,
-      errors: [
-        {
-          messageId: 'redundantWrapper',
-          data: {
-            wrapperName: 'useCallback',
-            functionName: 'signIn',
-            hookName: 'useAuthSubmit',
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'signIn',
+              hookName: 'useAuthSubmit',
+            },
           },
-        },
-      ],
-      output: `
+        ],
+        output: `
         function Component() {
           const { signIn } = useAuthSubmit();
           const handleSignIn = signIn;
           return <button onClick={handleSignIn}>Sign In</button>;
         }
       `,
-    },
+      },
 
-    // Invalid: Custom memoization hook
-    {
-      code: `
+      // Invalid: Custom memoization hook
+      {
+        code: `
         function Component() {
           const { process } = useCustomProcessor();
           const handleProcess = useCustomMemo(() => {
@@ -588,28 +589,29 @@ ruleTesterJsx.run('no-redundant-callback-wrapping', noRedundantCallbackWrapping,
           return <button onClick={handleProcess}>Process</button>;
         }
       `,
-      options: [
-        {
-          allowedWrapperPatterns: ['useCallback', 'useMemo', 'useCustomMemo'],
-        },
-      ],
-      errors: [
-        {
-          messageId: 'redundantWrapper',
-          data: {
-            wrapperName: 'useCustomMemo',
-            functionName: 'process',
-            hookName: 'useCustomProcessor',
+        options: [
+          {
+            allowedWrapperPatterns: ['useCallback', 'useMemo', 'useCustomMemo'],
           },
-        },
-      ],
-      output: `
+        ],
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCustomMemo',
+              functionName: 'process',
+              hookName: 'useCustomProcessor',
+            },
+          },
+        ],
+        output: `
         function Component() {
           const { process } = useCustomProcessor();
           const handleProcess = process;
           return <button onClick={handleProcess}>Process</button>;
         }
       `,
-    },
-  ],
-});
+      },
+    ],
+  },
+);
