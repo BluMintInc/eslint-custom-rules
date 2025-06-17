@@ -167,43 +167,51 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           const rightSide = node.init.right;
           if (rightSide.type === AST_NODE_TYPES.CallExpression) {
             // If the method name doesn't suggest it returns a boolean, don't flag it
-            if (rightSide.callee.type === AST_NODE_TYPES.MemberExpression &&
-                rightSide.callee.property.type === AST_NODE_TYPES.Identifier) {
+            if (
+              rightSide.callee.type === AST_NODE_TYPES.MemberExpression &&
+              rightSide.callee.property.type === AST_NODE_TYPES.Identifier
+            ) {
               const methodName = rightSide.callee.property.name;
 
               // Check if the method name suggests it returns a boolean
               const isBooleanMethod = approvedPrefixes.some((prefix) =>
-                methodName.toLowerCase().startsWith(prefix.toLowerCase())
+                methodName.toLowerCase().startsWith(prefix.toLowerCase()),
               );
 
               // If the method name suggests it returns a boolean (starts with a boolean prefix or contains 'boolean' or 'enabled'),
               // then the variable should be treated as a boolean
-              if (isBooleanMethod ||
-                  methodName.toLowerCase().includes('boolean') ||
-                  methodName.toLowerCase().includes('enabled') ||
-                  methodName.toLowerCase().includes('auth') ||
-                  methodName.toLowerCase().includes('valid') ||
-                  methodName.toLowerCase().includes('check')) {
+              if (
+                isBooleanMethod ||
+                methodName.toLowerCase().includes('boolean') ||
+                methodName.toLowerCase().includes('enabled') ||
+                methodName.toLowerCase().includes('auth') ||
+                methodName.toLowerCase().includes('valid') ||
+                methodName.toLowerCase().includes('check')
+              ) {
                 return true;
               }
 
               // For methods like getVolume(), getData(), etc., assume they return non-boolean values
-              if (methodName.toLowerCase().startsWith('get') ||
-                  methodName.toLowerCase().startsWith('fetch') ||
-                  methodName.toLowerCase().startsWith('retrieve') ||
-                  methodName.toLowerCase().startsWith('load') ||
-                  methodName.toLowerCase().startsWith('read')) {
+              if (
+                methodName.toLowerCase().startsWith('get') ||
+                methodName.toLowerCase().startsWith('fetch') ||
+                methodName.toLowerCase().startsWith('retrieve') ||
+                methodName.toLowerCase().startsWith('load') ||
+                methodName.toLowerCase().startsWith('read')
+              ) {
                 return false;
               }
             }
           }
 
           // For property access like user.isAuthenticated, treat as boolean
-          if (rightSide.type === AST_NODE_TYPES.MemberExpression &&
-              rightSide.property.type === AST_NODE_TYPES.Identifier) {
+          if (
+            rightSide.type === AST_NODE_TYPES.MemberExpression &&
+            rightSide.property.type === AST_NODE_TYPES.Identifier
+          ) {
             const propertyName = rightSide.property.name;
             const isBooleanProperty = approvedPrefixes.some((prefix) =>
-              propertyName.toLowerCase().startsWith(prefix.toLowerCase())
+              propertyName.toLowerCase().startsWith(prefix.toLowerCase()),
             );
             if (isBooleanProperty) {
               return true;
@@ -227,7 +235,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
             rightSide.type === AST_NODE_TYPES.ArrayExpression ||
             rightSide.type === AST_NODE_TYPES.ObjectExpression ||
             (rightSide.type === AST_NODE_TYPES.Literal &&
-             typeof rightSide.value !== 'boolean')
+              typeof rightSide.value !== 'boolean')
           ) {
             return false;
           }
@@ -245,9 +253,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           const leftSide = node.init.left;
           if (
             (leftSide.type === AST_NODE_TYPES.Literal &&
-             typeof leftSide.value === 'boolean') ||
+              typeof leftSide.value === 'boolean') ||
             (leftSide.type === AST_NODE_TYPES.UnaryExpression &&
-             leftSide.operator === '!')
+              leftSide.operator === '!')
           ) {
             return true;
           }
@@ -259,7 +267,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           ) {
             const calleeName = leftSide.callee.name;
             return approvedPrefixes.some((prefix) =>
-              calleeName.toLowerCase().startsWith(prefix.toLowerCase())
+              calleeName.toLowerCase().startsWith(prefix.toLowerCase()),
             );
           }
 
