@@ -413,13 +413,42 @@ ruleTesterJsx.run(
 
       // ===== TYPESCRIPT SPECIFIC CASES =====
 
-      // Valid: Function with type assertions
+      // Valid: Function with type assertions and substantial parameter usage
       {
         code: `
         function Component() {
           const { process } = useProcessor();
           const handleProcess = useCallback((data: unknown) => {
             process(data as ProcessableData);
+          }, [process]);
+          return <button onClick={handleProcess}>Process</button>;
+        }
+      `,
+      },
+
+      // Valid: Type assertion with complex parameter transformation
+      {
+        code: `
+        function Component() {
+          const { updateUser } = useUserContext();
+          const handleUpdate = useCallback((rawData: unknown) => {
+            const userData = rawData as UserData;
+            updateUser({ ...userData, lastModified: Date.now() });
+          }, [updateUser]);
+          return <button onClick={handleUpdate}>Update</button>;
+        }
+      `,
+      },
+
+      // Valid: Multiple type assertions with parameter usage
+      {
+        code: `
+        function Component() {
+          const { process } = useDataProcessor();
+          const handleProcess = useCallback((input: unknown, config: unknown) => {
+            const data = input as ProcessableData;
+            const options = config as ProcessingOptions;
+            process(data, options);
           }, [process]);
           return <button onClick={handleProcess}>Process</button>;
         }
@@ -520,6 +549,56 @@ ruleTesterJsx.run(
       `,
       },
 
+      // Valid: preventDefault with parameter transformation
+      {
+        code: `
+        function Component() {
+          const { handleSubmit } = useFormHandler();
+          const onSubmit = useCallback((event) => {
+            event.preventDefault();
+            const formData = new FormData(event.target);
+            const data = Object.fromEntries(formData);
+            handleSubmit(data);
+          }, [handleSubmit]);
+          return <form onSubmit={onSubmit}></form>;
+        }
+      `,
+      },
+
+      // Valid: preventDefault with conditional logic
+      {
+        code: `
+        function Component() {
+          const { submit } = useFormSubmitter();
+          const handleSubmit = useCallback((event) => {
+            if (event.shiftKey) {
+              event.preventDefault();
+              submit({ draft: true });
+            } else {
+              submit();
+            }
+          }, [submit]);
+          return <form onSubmit={handleSubmit}></form>;
+        }
+      `,
+      },
+
+      // Valid: preventDefault with multiple operations
+      {
+        code: `
+        function Component() {
+          const { save } = useSaveHandler();
+          const handleSave = useCallback((event) => {
+            event.preventDefault();
+            setLoading(true);
+            save();
+            setLoading(false);
+          }, [save, setLoading]);
+          return <form onSubmit={handleSave}></form>;
+        }
+      `,
+      },
+
       // Valid: Simple variable assignment before call
       {
         code: `
@@ -576,6 +655,202 @@ ruleTesterJsx.run(
             setResult(result);
           }, [calculate, offset, setResult]);
           return <button onClick={handleCalculate}>Calculate</button>;
+        }
+      `,
+      },
+
+      // ===== ADDITIONAL EDGE CASES FOR COMPREHENSIVE TESTING =====
+
+      // Valid: Complex parameter destructuring with type assertions
+      {
+        code: `
+        function Component() {
+          const { processData } = useDataProcessor();
+          const handleProcess = useCallback((event: Event) => {
+            const target = event.target as HTMLFormElement;
+            const formData = new FormData(target);
+            const data = Object.fromEntries(formData) as ProcessableData;
+            processData(data);
+          }, [processData]);
+          return <form onSubmit={handleProcess}></form>;
+        }
+      `,
+      },
+
+      // Valid: Nested function calls with parameter usage
+      {
+        code: `
+        function Component() {
+          const { updateUser } = useUserContext();
+          const handleUpdate = useCallback((userId: string, changes: UserChanges) => {
+            updateUser(userId, {
+              ...changes,
+              lastModified: Date.now(),
+              version: (changes.version || 0) + 1
+            });
+          }, [updateUser]);
+          return <button onClick={handleUpdate}>Update</button>;
+        }
+      `,
+      },
+
+      // Valid: Error handling with parameter usage
+      {
+        code: `
+        function Component() {
+          const { saveData } = useSaveHandler();
+          const handleSave = useCallback(async (data: SaveData) => {
+            try {
+              await saveData(data);
+              showSuccess('Data saved successfully');
+            } catch (error) {
+              showError(\`Failed to save: \${error.message}\`);
+            }
+          }, [saveData, showSuccess, showError]);
+          return <button onClick={handleSave}>Save</button>;
+        }
+      `,
+      },
+
+      // Valid: Complex conditional logic with parameters
+      {
+        code: `
+        function Component() {
+          const { processItem } = useItemProcessor();
+          const handleProcess = useCallback((item: Item, options: ProcessOptions) => {
+            if (options.validate && !item.isValid) {
+              throw new Error('Invalid item');
+            }
+
+            const processedItem = options.transform ?
+              options.transform(item) :
+              item;
+
+            processItem(processedItem, {
+              ...options,
+              timestamp: Date.now()
+            });
+          }, [processItem]);
+          return <button onClick={handleProcess}>Process</button>;
+        }
+      `,
+      },
+
+      // Valid: Array/object manipulation with parameters
+      {
+        code: `
+        function Component() {
+          const { updateItems } = useItemManager();
+          const handleUpdate = useCallback((newItems: Item[]) => {
+            const processedItems = newItems
+              .filter(item => item.isActive)
+              .map(item => ({
+                ...item,
+                lastUpdated: Date.now(),
+                version: item.version + 1
+              }))
+              .sort((a, b) => a.priority - b.priority);
+
+            updateItems(processedItems);
+          }, [updateItems]);
+          return <button onClick={handleUpdate}>Update</button>;
+        }
+      `,
+      },
+
+      // Valid: Multiple memoized functions with substantial logic
+      {
+        code: `
+        function Component() {
+          const { saveData, validateData } = useDataHandler();
+          const handleSave = useCallback(async (data: FormData) => {
+            const validation = await validateData(data);
+            if (!validation.isValid) {
+              showErrors(validation.errors);
+              return;
+            }
+
+            const result = await saveData(validation.cleanedData);
+            showSuccess(\`Saved with ID: \${result.id}\`);
+          }, [saveData, validateData, showErrors, showSuccess]);
+          return <button onClick={handleSave}>Save</button>;
+        }
+      `,
+      },
+
+      // Valid: Recursive/nested function calls
+      {
+        code: `
+        function Component() {
+          const { processNode } = useTreeProcessor();
+          const handleProcess = useCallback((node: TreeNode) => {
+            const processChildren = (children: TreeNode[]) => {
+              return children.map(child => ({
+                ...child,
+                processed: true,
+                children: child.children ? processChildren(child.children) : []
+              }));
+            };
+
+            const processedNode = {
+              ...node,
+              processed: true,
+              children: node.children ? processChildren(node.children) : []
+            };
+
+            processNode(processedNode);
+          }, [processNode]);
+          return <button onClick={handleProcess}>Process</button>;
+        }
+      `,
+      },
+
+      // Valid: Generator/iterator patterns
+      {
+        code: `
+        function Component() {
+          const { processBatch } = useBatchProcessor();
+          const handleProcess = useCallback(function* (items: Item[]) {
+            for (const item of items) {
+              yield item.id;
+              processBatch([item]);
+            }
+          }, [processBatch]);
+          return <button onClick={handleProcess}>Process</button>;
+        }
+      `,
+      },
+
+      // Valid: Class method binding patterns
+      {
+        code: `
+        function Component() {
+          const { processor } = useProcessorInstance();
+          const handleProcess = useCallback((data: ProcessData) => {
+            const boundMethod = processor.process.bind(processor);
+            return boundMethod(data, { timestamp: Date.now() });
+          }, [processor]);
+          return <button onClick={handleProcess}>Process</button>;
+        }
+      `,
+      },
+
+      // Valid: Dynamic property access with parameters
+      {
+        code: `
+        function Component() {
+          const { updateField } = useFieldUpdater();
+          const handleUpdate = useCallback((fieldName: string, value: any) => {
+            const normalizedValue = typeof value === 'string' ?
+              value.trim() :
+              value;
+
+            updateField(fieldName, normalizedValue, {
+              timestamp: Date.now(),
+              source: 'user_input'
+            });
+          }, [updateField]);
+          return <button onClick={handleUpdate}>Update</button>;
         }
       `,
       },
@@ -1498,6 +1773,540 @@ ruleTesterJsx.run(
             messageId: 'redundantWrapper',
             data: {
               wrapperName: 'useCallback',
+              functionName: 'action',
+              hookName: 'useActionProvider',
+            },
+          },
+        ],
+        output: `
+        function Component() {
+          const { action } = useActionProvider();
+          const handleAction = action;
+          return <button onClick={handleAction}>Action</button>;
+        }
+      `,
+      },
+
+      // ===== EDGE CASES THAT SHOULD BE FLAGGED AS REDUNDANT =====
+
+      // Invalid: preventDefault only with memoized function (no substantial logic)
+      {
+        code: `
+        function Component() {
+          const { submit } = useFormSubmitter();
+          const handleSubmit = useCallback((event) => {
+            event.preventDefault();
+            submit();
+          }, [submit]);
+          return <form onSubmit={handleSubmit}></form>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'submit',
+              hookName: 'useFormSubmitter',
+            },
+          },
+        ],
+        output: `
+        function Component() {
+          const { submit } = useFormSubmitter();
+          const handleSubmit = submit;
+          return <form onSubmit={handleSubmit}></form>;
+        }
+      `,
+      },
+
+      // Invalid: Type assertion without substantial parameter usage
+      {
+        code: `
+        function Component() {
+          const { process } = useProcessor();
+          const handleProcess = useCallback(() => {
+            process(data as ProcessableData);
+          }, [process]);
+          return <button onClick={handleProcess}>Process</button>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'process',
+              hookName: 'useProcessor',
+            },
+          },
+        ],
+        output: `
+        function Component() {
+          const { process } = useProcessor();
+          const handleProcess = process;
+          return <button onClick={handleProcess}>Process</button>;
+        }
+      `,
+      },
+
+      // Invalid: Simple variable assignment with memoized function (unused variable)
+      {
+        code: `
+        function Component() {
+          const { save } = useSaveHandler();
+          const handleSave = useCallback(() => {
+            const unused = 'literal';
+            save();
+          }, [save]);
+          return <button onClick={handleSave}>Save</button>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'save',
+              hookName: 'useSaveHandler',
+            },
+          },
+        ],
+        output: `
+        function Component() {
+          const { save } = useSaveHandler();
+          const handleSave = save;
+          return <button onClick={handleSave}>Save</button>;
+        }
+      `,
+      },
+
+      // Invalid: Member access on memoized object without additional logic
+      {
+        code: `
+        function Component() {
+          const authSubmit = useAuthSubmit();
+          const handleSignIn = useCallback(() => {
+            authSubmit.signIn();
+          }, [authSubmit]);
+          return <button onClick={handleSignIn}>Sign In</button>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'authSubmit',
+              hookName: 'useAuthSubmit',
+            },
+          },
+        ],
+        output: `
+        function Component() {
+          const authSubmit = useAuthSubmit();
+          const handleSignIn = authSubmit;
+          return <button onClick={handleSignIn}>Sign In</button>;
+        }
+      `,
+      },
+
+      // Invalid: Return statement with only memoized function call
+      {
+        code: `
+        function Component() {
+          const { calculate } = useCalculator();
+          const handleCalculate = useCallback(() => {
+            return calculate();
+          }, [calculate]);
+          return <button onClick={handleCalculate}>Calculate</button>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'calculate',
+              hookName: 'useCalculator',
+            },
+          },
+        ],
+        output: `
+        function Component() {
+          const { calculate } = useCalculator();
+          const handleCalculate = calculate;
+          return <button onClick={handleCalculate}>Calculate</button>;
+        }
+      `,
+      },
+
+      // Invalid: Comments only with memoized function call
+      {
+        code: `
+        function Component() {
+          const { process } = useProcessor();
+          const handleProcess = useCallback(() => {
+            // This is just a comment
+            process();
+            // Another comment
+          }, [process]);
+          return <button onClick={handleProcess}>Process</button>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'process',
+              hookName: 'useProcessor',
+            },
+          },
+        ],
+        output: `
+        function Component() {
+          const { process } = useProcessor();
+          const handleProcess = process;
+          return <button onClick={handleProcess}>Process</button>;
+        }
+      `,
+      },
+
+      // Invalid: Empty block with only memoized function call
+      {
+        code: `
+        function Component() {
+          const { action } = useActionHandler();
+          const handleAction = useCallback(() => {
+            {
+              action();
+            }
+          }, [action]);
+          return <button onClick={handleAction}>Action</button>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'action',
+              hookName: 'useActionHandler',
+            },
+          },
+        ],
+        output: `
+        function Component() {
+          const { action } = useActionHandler();
+          const handleAction = action;
+          return <button onClick={handleAction}>Action</button>;
+        }
+      `,
+      },
+
+      // Invalid: Literal assignment with memoized function call
+      {
+        code: `
+        function Component() {
+          const { submit } = useSubmitHandler();
+          const handleSubmit = useCallback(() => {
+            const isSubmitting = true;
+            submit();
+          }, [submit]);
+          return <form onSubmit={handleSubmit}></form>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'submit',
+              hookName: 'useSubmitHandler',
+            },
+          },
+        ],
+        output: `
+        function Component() {
+          const { submit } = useSubmitHandler();
+          const handleSubmit = submit;
+          return <form onSubmit={handleSubmit}></form>;
+        }
+      `,
+      },
+
+      // ===== ADDITIONAL EDGE CASES THAT SHOULD BE FLAGGED =====
+
+      // Invalid: Multiple nested blocks with only memoized function
+      {
+        code: `
+        function Component() {
+          const { process } = useProcessor();
+          const handleProcess = useCallback(() => {
+            {
+              {
+                process();
+              }
+            }
+          }, [process]);
+          return <button onClick={handleProcess}>Process</button>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'process',
+              hookName: 'useProcessor',
+            },
+          },
+        ],
+        output: `
+        function Component() {
+          const { process } = useProcessor();
+          const handleProcess = process;
+          return <button onClick={handleProcess}>Process</button>;
+        }
+      `,
+      },
+
+      // Invalid: Template literal assignment with memoized function
+      {
+        code: `
+        function Component() {
+          const { log } = useLogger();
+          const handleLog = useCallback(() => {
+            const message = \`Logging at \${Date.now()}\`;
+            log();
+          }, [log]);
+          return <button onClick={handleLog}>Log</button>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'log',
+              hookName: 'useLogger',
+            },
+          },
+        ],
+        output: `
+        function Component() {
+          const { log } = useLogger();
+          const handleLog = log;
+          return <button onClick={handleLog}>Log</button>;
+        }
+      `,
+      },
+
+      // Invalid: Single console.log call with memoized function
+      {
+        code: `
+        function Component() {
+          const { action } = useActionHandler();
+          const handleAction = useCallback(() => {
+            console.log('Executing action');
+            action();
+          }, [action]);
+          return <button onClick={handleAction}>Action</button>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'action',
+              hookName: 'useActionHandler',
+            },
+          },
+        ],
+        output: `
+        function Component() {
+          const { action } = useActionHandler();
+          const handleAction = action;
+          return <button onClick={handleAction}>Action</button>;
+        }
+      `,
+      },
+
+      // Invalid: Mixed block and expression with only memoized function
+      {
+        code: `
+        function Component() {
+          const { calculate } = useCalculator();
+          const handleCalculate = useCallback(() => {
+            {
+              return calculate();
+            }
+          }, [calculate]);
+          return <button onClick={handleCalculate}>Calculate</button>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'calculate',
+              hookName: 'useCalculator',
+            },
+          },
+        ],
+        output: `
+        function Component() {
+          const { calculate } = useCalculator();
+          const handleCalculate = calculate;
+          return <button onClick={handleCalculate}>Calculate</button>;
+        }
+      `,
+      },
+
+      // Invalid: Function expression with only memoized function call
+      {
+        code: `
+        function Component() {
+          const { save } = useSaveHandler();
+          const handleSave = useCallback(function saveHandler() {
+            save();
+          }, [save]);
+          return <button onClick={handleSave}>Save</button>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'save',
+              hookName: 'useSaveHandler',
+            },
+          },
+        ],
+        output: `
+        function Component() {
+          const { save } = useSaveHandler();
+          const handleSave = save;
+          return <button onClick={handleSave}>Save</button>;
+        }
+      `,
+      },
+
+      // Invalid: Async function with only memoized function call
+      {
+        code: `
+        function Component() {
+          const { fetchData } = useDataFetcher();
+          const handleFetch = useCallback(async () => {
+            await fetchData();
+          }, [fetchData]);
+          return <button onClick={handleFetch}>Fetch</button>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'fetchData',
+              hookName: 'useDataFetcher',
+            },
+          },
+        ],
+        output: `
+        function Component() {
+          const { fetchData } = useDataFetcher();
+          const handleFetch = fetchData;
+          return <button onClick={handleFetch}>Fetch</button>;
+        }
+      `,
+      },
+
+      // Invalid: Arrow function with parentheses around memoized function call
+      {
+        code: `
+        function Component() {
+          const { update } = useUpdater();
+          const handleUpdate = useCallback(() => {
+            (update());
+          }, [update]);
+          return <button onClick={handleUpdate}>Update</button>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCallback',
+              functionName: 'update',
+              hookName: 'useUpdater',
+            },
+          },
+        ],
+        output: `
+        function Component() {
+          const { update } = useUpdater();
+          const handleUpdate = update;
+          return <button onClick={handleUpdate}>Update</button>;
+        }
+      `,
+      },
+
+      // Invalid: useMemo with arrow function returning memoized function call
+      {
+        code: `
+        function Component() {
+          const { process } = useProcessor();
+          const memoizedProcess = useMemo(() => () => {
+            process();
+          }, [process]);
+          return <button onClick={memoizedProcess}>Process</button>;
+        }
+      `,
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useMemo',
+              functionName: 'process',
+              hookName: 'useProcessor',
+            },
+          },
+        ],
+        output: `
+        function Component() {
+          const { process } = useProcessor();
+          const memoizedProcess = process;
+          return <button onClick={memoizedProcess}>Process</button>;
+        }
+      `,
+      },
+
+      // Invalid: Custom memoization hook with only memoized function call
+      {
+        code: `
+        function Component() {
+          const { action } = useActionProvider();
+          const handleAction = useCustomCallback(() => {
+            action();
+          }, [action]);
+          return <button onClick={handleAction}>Action</button>;
+        }
+      `,
+        options: [
+          {
+            allowedWrapperPatterns: ['useCallback', 'useMemo', 'useCustomCallback'],
+          },
+        ],
+        errors: [
+          {
+            messageId: 'redundantWrapper',
+            data: {
+              wrapperName: 'useCustomCallback',
               functionName: 'action',
               hookName: 'useActionProvider',
             },

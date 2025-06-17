@@ -207,15 +207,24 @@ export const noRedundantCallbackWrapping = createRule<[Options], MessageIds>({
             }
           } else if (stmt.type === AST_NODE_TYPES.VariableDeclaration) {
             // Variable declarations are generally substantial
-            // Only very simple literal assignments might be considered non-substantial
+            // Only very simple literal assignments that are not used are considered non-substantial
             const isSimpleDeclaration = stmt.declarations.every((decl) => {
-              return (
-                decl.init &&
-                (decl.init.type === AST_NODE_TYPES.Literal ||
-                  decl.init.type === AST_NODE_TYPES.TemplateLiteral)
-              );
+              if (!decl.init) return false;
+
+              // Simple literals are non-substantial
+              if (decl.init.type === AST_NODE_TYPES.Literal) {
+                return true;
+              }
+
+              // Template literals are only non-substantial if they don't contain expressions
+              if (decl.init.type === AST_NODE_TYPES.TemplateLiteral) {
+                return decl.init.expressions.length === 0;
+              }
+
+              return false;
             });
 
+            // Simple literal declarations are non-substantial, all others are substantial
             if (!isSimpleDeclaration) {
               substantialStatementCount++;
             }
@@ -226,6 +235,32 @@ export const noRedundantCallbackWrapping = createRule<[Options], MessageIds>({
             }
             // Other return statements are substantial
             substantialStatementCount++;
+          } else if (stmt.type === AST_NODE_TYPES.BlockStatement) {
+            // Handle nested block statements recursively
+            // A nested block is only substantial if it contains substantial logic
+            const nestedHasSubstantial = stmt.body.some((nestedStmt) => {
+              if (nestedStmt.type === AST_NODE_TYPES.ExpressionStatement) {
+                const expr = nestedStmt.expression;
+                // Check if this expression is the target function call
+                if (expr === targetFunctionCall) {
+                  return false; // Target function call is not substantial
+                }
+                // Check if this is a call to the target function (different reference but same call)
+                if (expr.type === AST_NODE_TYPES.CallExpression &&
+                    expr.callee.type === AST_NODE_TYPES.Identifier &&
+                    expr.callee.name === targetFunction) {
+                  return false; // Target function call is not substantial
+                }
+                // Other expressions in nested blocks are substantial
+                return true;
+              }
+              // Other statement types in nested blocks are substantial
+              return true;
+            });
+
+            if (nestedHasSubstantial) {
+              substantialStatementCount++;
+            }
           } else {
             // Other statement types are substantial
             substantialStatementCount++;
@@ -469,29 +504,34 @@ export const noRedundantCallbackWrapping = createRule<[Options], MessageIds>({
           // Handle block body
           const statements = callback.body.body;
 
-          // Look for the target function call among all statements
-          for (const stmt of statements) {
-            if (stmt.type === AST_NODE_TYPES.ExpressionStatement) {
-              const result = extractTargetFunction(stmt.expression);
-              if (result) {
-                // Check if this is a memoized function
-                if (memoizedFunctions.has(result.name)) {
-                  targetFunctionCall = result.call;
-                  targetFunctionName = result.name;
-                  break;
+          // Look for the target function call among all statements (including nested blocks)
+          function findTargetFunctionInStatements(stmts: TSESTree.Statement[]): { call: TSESTree.CallExpression; name: string } | null {
+            for (const stmt of stmts) {
+              if (stmt.type === AST_NODE_TYPES.ExpressionStatement) {
+                const result = extractTargetFunction(stmt.expression);
+                if (result && memoizedFunctions.has(result.name)) {
+                  return result;
                 }
-              }
-            } else if (stmt.type === AST_NODE_TYPES.ReturnStatement && stmt.argument) {
-              const result = extractTargetFunction(stmt.argument);
-              if (result) {
-                // Check if this is a memoized function
-                if (memoizedFunctions.has(result.name)) {
-                  targetFunctionCall = result.call;
-                  targetFunctionName = result.name;
-                  break;
+              } else if (stmt.type === AST_NODE_TYPES.ReturnStatement && stmt.argument) {
+                const result = extractTargetFunction(stmt.argument);
+                if (result && memoizedFunctions.has(result.name)) {
+                  return result;
+                }
+              } else if (stmt.type === AST_NODE_TYPES.BlockStatement) {
+                // Recursively search nested block statements
+                const nestedResult = findTargetFunctionInStatements(stmt.body);
+                if (nestedResult) {
+                  return nestedResult;
                 }
               }
             }
+            return null;
+          }
+
+          const result = findTargetFunctionInStatements(statements);
+          if (result) {
+            targetFunctionCall = result.call;
+            targetFunctionName = result.name;
           }
         } else {
           // Handle expression body
