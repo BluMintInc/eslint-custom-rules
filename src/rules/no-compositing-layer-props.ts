@@ -91,7 +91,8 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
         if (
           current.parent.type === AST_NODE_TYPES.JSXAttribute &&
           current.parent.name.type === AST_NODE_TYPES.JSXIdentifier &&
-          (current.parent.name.name === 'style' || current.parent.name.name === 'sx')
+          (current.parent.name.name === 'style' ||
+            current.parent.name.name === 'sx')
         ) {
           return true;
         }
@@ -109,7 +110,8 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
         if (
           current.parent.type === AST_NODE_TYPES.Property &&
           current.parent.key.type === AST_NODE_TYPES.Identifier &&
-          (/style/i.test(current.parent.key.name) || current.parent.key.name === 'sx')
+          (/style/i.test(current.parent.key.name) ||
+            current.parent.key.name === 'sx')
         ) {
           return true;
         }
