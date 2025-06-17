@@ -1,4 +1,10 @@
-# use-latest-callback
+# Enforce using useLatestCallback from use-latest-callback instead of React useCallback (`@blumintinc/blumint/use-latest-callback`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
 
 Enforces the use of `useLatestCallback` from the `use-latest-callback` package instead of React's built-in `useCallback` hook.
 
@@ -43,10 +49,6 @@ function MyComponent({ onAction }) {
   return <button onClick={handleClick}>Click Me</button>;
 }
 ```
-
-## Options
-
-This rule has no options.
 
 ## When Not To Use It
 

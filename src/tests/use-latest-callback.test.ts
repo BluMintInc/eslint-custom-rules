@@ -60,7 +60,7 @@ ruleTesterJsx.run('use-latest-callback', useLatestCallback, {
       }`,
       errors: [
         { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' }
+        { messageId: 'useLatestCallback' },
       ],
     },
     // useCallback with dependencies
@@ -86,7 +86,7 @@ ruleTesterJsx.run('use-latest-callback', useLatestCallback, {
       }`,
       errors: [
         { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' }
+        { messageId: 'useLatestCallback' },
       ],
     },
     // useCallback with other React imports
@@ -118,7 +118,7 @@ import { useState, useEffect } from 'react';
       }`,
       errors: [
         { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' }
+        { messageId: 'useLatestCallback' },
       ],
     },
     // useCallback with renamed import
@@ -140,9 +140,7 @@ import { useState, useEffect } from 'react';
         }, []);
         return <button onClick={handleClick}>Click me</button>;
       }`,
-      errors: [
-        { messageId: 'useLatestCallback' }
-      ],
+      errors: [{ messageId: 'useLatestCallback' }],
     },
     // useCallback with existing useLatestCallback import
     {
@@ -182,7 +180,7 @@ import { useCallback } from 'react';
       }`,
       errors: [
         { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' }
+        { messageId: 'useLatestCallback' },
       ],
     },
     // Arrow function with implicit return (not JSX)
@@ -202,7 +200,7 @@ import { useCallback } from 'react';
       }`,
       errors: [
         { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' }
+        { messageId: 'useLatestCallback' },
       ],
     },
     // Async function
@@ -228,7 +226,7 @@ import { useCallback } from 'react';
       }`,
       errors: [
         { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' }
+        { messageId: 'useLatestCallback' },
       ],
     },
     // Edge case: useCallback returning JSX (should be replaced at the import level)
@@ -246,9 +244,7 @@ import { useCallback } from 'react';
         const renderItem = useCallback((item) => <div key={item.id}>{item.name}</div>, []);
         return <div>{items.map(renderItem)}</div>;
       }`,
-      errors: [
-        { messageId: 'useLatestCallback' }
-      ],
+      errors: [{ messageId: 'useLatestCallback' }],
     },
     // Edge case: useCallback with block body returning JSX (should be replaced at the import level)
     {
@@ -269,9 +265,7 @@ import { useCallback } from 'react';
         }, []);
         return <div>{items.map(renderItem)}</div>;
       }`,
-      errors: [
-        { messageId: 'useLatestCallback' }
-      ],
+      errors: [{ messageId: 'useLatestCallback' }],
     },
   ],
 });

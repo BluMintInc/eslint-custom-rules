@@ -8,13 +8,15 @@ export const useLatestCallback = createRule<[], MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce using useLatestCallback from use-latest-callback instead of React useCallback',
+      description:
+        'Enforce using useLatestCallback from use-latest-callback instead of React useCallback',
       recommended: 'error',
     },
     fixable: 'code',
     schema: [],
     messages: {
-      useLatestCallback: 'Use useLatestCallback from use-latest-callback instead of useCallback from react',
+      useLatestCallback:
+        'Use useLatestCallback from use-latest-callback instead of useCallback from react',
     },
   },
   defaultOptions: [],
@@ -29,11 +31,15 @@ export const useLatestCallback = createRule<[], MessageIds>({
         if (node.source.value === 'use-latest-callback') {
           // Check if useLatestCallback is imported
           const specifiers = node.specifiers.filter(
-            (specifier): specifier is TSESTree.ImportSpecifier | TSESTree.ImportDefaultSpecifier =>
+            (
+              specifier,
+            ): specifier is
+              | TSESTree.ImportSpecifier
+              | TSESTree.ImportDefaultSpecifier =>
               (specifier.type === AST_NODE_TYPES.ImportSpecifier &&
                 specifier.imported.type === AST_NODE_TYPES.Identifier &&
                 specifier.imported.name === 'useLatestCallback') ||
-              specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier
+              specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier,
           );
 
           if (specifiers.length > 0) {
@@ -41,7 +47,9 @@ export const useLatestCallback = createRule<[], MessageIds>({
             // Get the local name of the import (in case it's renamed)
             if (specifiers[0].type === AST_NODE_TYPES.ImportSpecifier) {
               useLatestCallbackImportName = specifiers[0].local.name;
-            } else if (specifiers[0].type === AST_NODE_TYPES.ImportDefaultSpecifier) {
+            } else if (
+              specifiers[0].type === AST_NODE_TYPES.ImportDefaultSpecifier
+            ) {
               useLatestCallbackImportName = specifiers[0].local.name;
             }
           }
@@ -76,7 +84,11 @@ export const useLatestCallback = createRule<[], MessageIds>({
 
                 // If we need to add the useLatestCallback import and modify the react import
                 if (!hasUseLatestCallbackImport) {
-                  const importText = `import ${useCallbackLocalName === 'useCallback' ? 'useLatestCallback' : useCallbackLocalName} from 'use-latest-callback';\n`;
+                  const importText = `import ${
+                    useCallbackLocalName === 'useCallback'
+                      ? 'useLatestCallback'
+                      : useCallbackLocalName
+                  } from 'use-latest-callback';\n`;
 
                   // If useCallback is the only import from react, replace the entire import with useLatestCallback import
                   if (otherSpecifiers.length === 0) {
@@ -88,7 +100,7 @@ export const useLatestCallback = createRule<[], MessageIds>({
                       .join(', ')} } from 'react';`;
                     return [
                       fixer.insertTextBefore(node, importText),
-                      fixer.replaceText(node, reactImport)
+                      fixer.replaceText(node, reactImport),
                     ];
                   }
                 } else {
@@ -129,10 +141,12 @@ export const useLatestCallback = createRule<[], MessageIds>({
               }
             }
             // For functions with block body
-            else if (callback.body.body.length === 1 &&
-                    callback.body.body[0].type === AST_NODE_TYPES.ReturnStatement &&
-                    callback.body.body[0].argument &&
-                    isJSXElement(callback.body.body[0].argument)) {
+            else if (
+              callback.body.body.length === 1 &&
+              callback.body.body[0].type === AST_NODE_TYPES.ReturnStatement &&
+              callback.body.body[0].argument &&
+              isJSXElement(callback.body.body[0].argument)
+            ) {
               return; // Skip JSX-returning callbacks
             }
           }
@@ -147,7 +161,7 @@ export const useLatestCallback = createRule<[], MessageIds>({
               // Replace useCallback with useLatestCallback and remove the dependency array
               return fixer.replaceText(
                 node,
-                `${useLatestCallbackImportName}(${callbackText})`
+                `${useLatestCallbackImportName}(${callbackText})`,
               );
             },
           });
@@ -171,7 +185,10 @@ function isJSXElement(node: TSESTree.Node): boolean {
   }
 
   // For arrow functions with implicit return
-  if (node.type === AST_NODE_TYPES.ArrowFunctionExpression && node.body.type !== AST_NODE_TYPES.BlockStatement) {
+  if (
+    node.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+    node.body.type !== AST_NODE_TYPES.BlockStatement
+  ) {
     return isJSXElement(node.body);
   }
 
@@ -180,9 +197,12 @@ function isJSXElement(node: TSESTree.Node): boolean {
     node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
     node.type === AST_NODE_TYPES.FunctionExpression
   ) {
-    if (node.body.type === AST_NODE_TYPES.BlockStatement && node.body.body.length > 0) {
+    if (
+      node.body.type === AST_NODE_TYPES.BlockStatement &&
+      node.body.body.length > 0
+    ) {
       const returnStatement = node.body.body.find(
-        statement => statement.type === AST_NODE_TYPES.ReturnStatement
+        (statement) => statement.type === AST_NODE_TYPES.ReturnStatement,
       ) as TSESTree.ReturnStatement | undefined;
 
       if (returnStatement && returnStatement.argument) {

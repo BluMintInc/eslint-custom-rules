@@ -1,90 +1,92 @@
 import { createRule } from '../utils/createRule';
 import { TSESLint, TSESTree } from '@typescript-eslint/utils';
 
-export const noUndefinedNullPassthrough: TSESLint.RuleModule<'unexpected', never[]> =
-  createRule({
-    create(context) {
-      return {
-        FunctionDeclaration(node) {
-          // Only apply to functions with exactly one parameter
-          if (node.params.length !== 1) {
-            return;
-          }
+export const noUndefinedNullPassthrough: TSESLint.RuleModule<
+  'unexpected',
+  never[]
+> = createRule({
+  create(context) {
+    return {
+      FunctionDeclaration(node) {
+        // Only apply to functions with exactly one parameter
+        if (node.params.length !== 1) {
+          return;
+        }
 
-          // Skip React hooks (functions starting with 'use')
-          if (
-            node.id &&
-            node.id.type === 'Identifier' &&
-            node.id.name.startsWith('use')
-          ) {
-            return;
-          }
+        // Skip React hooks (functions starting with 'use')
+        if (
+          node.id &&
+          node.id.type === 'Identifier' &&
+          node.id.name.startsWith('use')
+        ) {
+          return;
+        }
 
-          checkFunctionBody(node.body, node.params[0], context);
-        },
-        ArrowFunctionExpression(node) {
-          // Only apply to arrow functions with exactly one parameter
-          if (node.params.length !== 1) {
-            return;
-          }
-
-          // Skip if the function is part of a variable declaration that starts with 'use' (React hook)
-          const parent = node.parent;
-          if (
-            parent &&
-            parent.type === 'VariableDeclarator' &&
-            parent.id.type === 'Identifier' &&
-            parent.id.name.startsWith('use')
-          ) {
-            return;
-          }
-
-          // For arrow functions with block body
-          if (node.body.type === 'BlockStatement') {
-            checkFunctionBody(node.body, node.params[0], context);
-          } else {
-            // For arrow functions with expression body (implicit return)
-            checkImplicitReturn(node, context);
-          }
-        },
-        FunctionExpression(node) {
-          // Only apply to functions with exactly one parameter
-          if (node.params.length !== 1) {
-            return;
-          }
-
-          // Skip if the function is part of a variable declaration that starts with 'use' (React hook)
-          const parent = node.parent;
-          if (
-            parent &&
-            parent.type === 'VariableDeclarator' &&
-            parent.id.type === 'Identifier' &&
-            parent.id.name.startsWith('use')
-          ) {
-            return;
-          }
-
-          checkFunctionBody(node.body, node.params[0], context);
-        },
-      };
-    },
-
-    name: 'no-undefined-null-passthrough',
-    meta: {
-      type: 'suggestion',
-      docs: {
-        description:
-          'Avoid functions that return undefined or null when their single argument is undefined or null',
-        recommended: 'error',
+        checkFunctionBody(node.body, node.params[0], context);
       },
-      schema: [],
-      messages: {
-        unexpected:
-          'Avoid functions that return undefined or null when their single argument is undefined or null. Move the null/undefined check to the caller instead.',
+      ArrowFunctionExpression(node) {
+        // Only apply to arrow functions with exactly one parameter
+        if (node.params.length !== 1) {
+          return;
+        }
+
+        // Skip if the function is part of a variable declaration that starts with 'use' (React hook)
+        const parent = node.parent;
+        if (
+          parent &&
+          parent.type === 'VariableDeclarator' &&
+          parent.id.type === 'Identifier' &&
+          parent.id.name.startsWith('use')
+        ) {
+          return;
+        }
+
+        // For arrow functions with block body
+        if (node.body.type === 'BlockStatement') {
+          checkFunctionBody(node.body, node.params[0], context);
+        } else {
+          // For arrow functions with expression body (implicit return)
+          checkImplicitReturn(node, context);
+        }
       },
+      FunctionExpression(node) {
+        // Only apply to functions with exactly one parameter
+        if (node.params.length !== 1) {
+          return;
+        }
+
+        // Skip if the function is part of a variable declaration that starts with 'use' (React hook)
+        const parent = node.parent;
+        if (
+          parent &&
+          parent.type === 'VariableDeclarator' &&
+          parent.id.type === 'Identifier' &&
+          parent.id.name.startsWith('use')
+        ) {
+          return;
+        }
+
+        checkFunctionBody(node.body, node.params[0], context);
+      },
+    };
+  },
+
+  name: 'no-undefined-null-passthrough',
+  meta: {
+    type: 'suggestion',
+    docs: {
+      description:
+        'Avoid functions that return undefined or null when their single argument is undefined or null',
+      recommended: 'error',
     },
-    defaultOptions: [],
-  });
+    schema: [],
+    messages: {
+      unexpected:
+        'Avoid functions that return undefined or null when their single argument is undefined or null. Move the null/undefined check to the caller instead.',
+    },
+  },
+  defaultOptions: [],
+});
 
 /**
  * Check function body for early returns when parameter is null/undefined
@@ -92,7 +94,7 @@ export const noUndefinedNullPassthrough: TSESLint.RuleModule<'unexpected', never
 function checkFunctionBody(
   body: TSESTree.BlockStatement,
   param: TSESTree.Parameter,
-  context: TSESLint.RuleContext<'unexpected', never[]>
+  context: TSESLint.RuleContext<'unexpected', never[]>,
 ): void {
   // Get the parameter name
   let paramName: string | null = null;
@@ -122,7 +124,7 @@ function checkFunctionBody(
             if (
               consequentStmt.type === 'ReturnStatement' &&
               (!consequentStmt.argument ||
-               isNullOrUndefinedLiteral(consequentStmt.argument))
+                isNullOrUndefinedLiteral(consequentStmt.argument))
             ) {
               // Check if there's a transformation in the function
               const hasTransformation = checkForTransformation(body, paramName);
@@ -140,7 +142,7 @@ function checkFunctionBody(
         else if (
           statement.consequent.type === 'ReturnStatement' &&
           (!statement.consequent.argument ||
-           isNullOrUndefinedLiteral(statement.consequent.argument))
+            isNullOrUndefinedLiteral(statement.consequent.argument))
         ) {
           // Check if there's a transformation in the function
           const hasTransformation = checkForTransformation(body, paramName);
@@ -162,7 +164,7 @@ function checkFunctionBody(
  */
 function checkForTransformation(
   body: TSESTree.BlockStatement,
-  paramName: string | null
+  paramName: string | null,
 ): boolean {
   if (!paramName) return false;
 
@@ -172,8 +174,8 @@ function checkForTransformation(
       // Check for return transformData(data) pattern
       if (
         statement.argument.type === 'CallExpression' &&
-        statement.argument.arguments.some(arg =>
-          arg.type === 'Identifier' && arg.name === paramName
+        statement.argument.arguments.some(
+          (arg) => arg.type === 'Identifier' && arg.name === paramName,
         )
       ) {
         return true;
@@ -189,7 +191,7 @@ function checkForTransformation(
  */
 function checkImplicitReturn(
   node: TSESTree.ArrowFunctionExpression,
-  context: TSESLint.RuleContext<'unexpected', never[]>
+  context: TSESLint.RuleContext<'unexpected', never[]>,
 ): void {
   // Get the parameter name
   let paramName: string | null = null;
@@ -241,7 +243,7 @@ function checkImplicitReturn(
  */
 function isNullUndefinedCheck(
   node: TSESTree.Expression,
-  paramName: string
+  paramName: string,
 ): boolean {
   // Check for !param
   if (
@@ -256,8 +258,10 @@ function isNullUndefinedCheck(
   // Check for param === null, param === undefined, etc.
   if (
     node.type === 'BinaryExpression' &&
-    (node.operator === '===' || node.operator === '==' ||
-     node.operator === '!==' || node.operator === '!=')
+    (node.operator === '===' ||
+      node.operator === '==' ||
+      node.operator === '!==' ||
+      node.operator === '!=')
   ) {
     const left = node.left;
     const right = node.right;
@@ -283,10 +287,7 @@ function isNullUndefinedCheck(
   }
 
   // Check for param === null || param === undefined
-  if (
-    node.type === 'LogicalExpression' &&
-    node.operator === '||'
-  ) {
+  if (node.type === 'LogicalExpression' && node.operator === '||') {
     return (
       isNullUndefinedCheck(node.left, paramName) ||
       isNullUndefinedCheck(node.right, paramName)
@@ -316,7 +317,7 @@ function isNullOrUndefinedLiteral(node: TSESTree.Expression): boolean {
  */
 function isParameterReference(
   node: TSESTree.Expression,
-  paramName: string | null
+  paramName: string | null,
 ): boolean {
   if (!paramName) return false;
   return node.type === 'Identifier' && node.name === paramName;
