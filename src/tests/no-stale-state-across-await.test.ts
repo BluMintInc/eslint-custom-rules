@@ -1,6 +1,18 @@
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { noStaleStateAcrossAwait } from '../rules/no-stale-state-across-await';
 
+/*
+ * Note: Loading sentinel pattern with explicit disable comment
+ *
+ * When intentionally using loading sentinels (e.g., setProfile('loading')),
+ * the rule should be disabled with an explicit comment to document the intent:
+ *
+ * // eslint-disable-next-line @blumintinc/blumint/no-stale-state-across-await
+ * setProfile('loading');
+ *
+ * This pattern is discouraged by default but can be used when necessary.
+ */
+
 ruleTesterJsx.run('no-stale-state-across-await', noStaleStateAcrossAwait, {
   valid: [
     // Valid: Single update after await (atomic update)
@@ -528,7 +540,7 @@ ruleTesterJsx.run('no-stale-state-across-await', noStaleStateAcrossAwait, {
       ],
     },
 
-    // Invalid: Multiple setters with one violating
+    // Invalid: Multiple setters both violating
     {
       code: `
         import React, { useState } from 'react';
@@ -554,6 +566,10 @@ ruleTesterJsx.run('no-stale-state-across-await', noStaleStateAcrossAwait, {
         {
           messageId: 'staleStateAcrossAwait',
           data: { setterName: 'setProfile' },
+        },
+        {
+          messageId: 'staleStateAcrossAwait',
+          data: { setterName: 'setLoading' },
         },
       ],
     },
