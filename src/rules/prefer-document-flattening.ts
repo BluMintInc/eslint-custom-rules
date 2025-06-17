@@ -31,9 +31,7 @@ const isObjectExpression = (
 /**
  * Checks if a node is a property
  */
-const isProperty = (
-  node: TSESTree.Node,
-): node is TSESTree.Property => {
+const isProperty = (node: TSESTree.Node): node is TSESTree.Property => {
   return node.type === AST_NODE_TYPES.Property;
 };
 
@@ -97,7 +95,8 @@ export const preferDocumentFlattening = createRule<[], MessageIds>({
         const className = node.callee.name;
 
         // Only check DocSetter and DocSetterTransaction classes
-        if (className !== 'DocSetter' && className !== 'DocSetterTransaction') return;
+        if (className !== 'DocSetter' && className !== 'DocSetterTransaction')
+          return;
 
         // Check if shouldFlatten option is provided
         let hasShouldFlatten = false;
@@ -110,7 +109,10 @@ export const preferDocumentFlattening = createRule<[], MessageIds>({
             for (const property of optionsArg.properties) {
               if (!isProperty(property)) continue;
 
-              if (isIdentifier(property.key) && property.key.name === 'shouldFlatten') {
+              if (
+                isIdentifier(property.key) &&
+                property.key.name === 'shouldFlatten'
+              ) {
                 hasShouldFlatten = true;
                 break;
               }
@@ -152,7 +154,9 @@ export const preferDocumentFlattening = createRule<[], MessageIds>({
 
         // Check if this is a DocSetter instance we're tracking
         const instanceName = object.name;
-        const instance = docSetterInstances.find(i => i.name === instanceName);
+        const instance = docSetterInstances.find(
+          (i) => i.name === instanceName,
+        );
 
         if (!instance) return;
 
@@ -168,8 +172,11 @@ export const preferDocumentFlattening = createRule<[], MessageIds>({
           // For setAll method with array argument
           if (
             dataArg.type === AST_NODE_TYPES.ArrayExpression &&
-            dataArg.elements.some(element =>
-              element && isObjectExpression(element) && hasDeepNestedObjects(element)
+            dataArg.elements.some(
+              (element) =>
+                element &&
+                isObjectExpression(element) &&
+                hasDeepNestedObjects(element),
             )
           ) {
             docSetterWithNestedObjects.add(instanceName);

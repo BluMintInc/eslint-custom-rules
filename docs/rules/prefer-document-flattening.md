@@ -1,4 +1,8 @@
-# prefer-document-flattening
+# Enforce using the shouldFlatten option when setting deeply nested objects in Firestore documents (`@blumintinc/blumint/prefer-document-flattening`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 Enforces using the `shouldFlatten` option and field path notation when setting deeply nested objects in Firestore documents.
 
