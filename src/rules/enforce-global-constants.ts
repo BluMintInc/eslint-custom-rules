@@ -57,7 +57,7 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
         if (callback.body.type === AST_NODE_TYPES.BlockStatement) {
           // If it's a block, find the return statement
           const returnStatement = callback.body.body.find(
-            (stmt) => stmt.type === AST_NODE_TYPES.ReturnStatement
+            (stmt) => stmt.type === AST_NODE_TYPES.ReturnStatement,
           ) as TSESTree.ReturnStatement | undefined;
 
           if (!returnStatement || !returnStatement.argument) {
@@ -83,7 +83,7 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
             actualReturnValue.elements.some(
               (element) =>
                 element !== null &&
-                element.type === AST_NODE_TYPES.ObjectExpression
+                element.type === AST_NODE_TYPES.ObjectExpression,
             ))
         ) {
           context.report({
