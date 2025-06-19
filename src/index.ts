@@ -1,6 +1,7 @@
 import { arrayMethodsThisContext } from './rules/array-methods-this-context';
 import { classMethodsReadTopToBottom } from './rules/class-methods-read-top-to-bottom';
 import { default as consistentCallbackNaming } from './rules/consistent-callback-naming';
+import { parallelizeAsyncOperations } from './rules/parallelize-async-operations';
 import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
 import { enforceIdentifiableFirestoreType } from './rules/enforce-identifiable-firestore-type';
 import { default as enforceCallbackMemo } from './rules/enforce-callback-memo';
@@ -101,6 +102,7 @@ import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-pre
 import { preferBlockCommentsForDeclarations } from './rules/prefer-block-comments-for-declarations';
 import { noUndefinedNullPassthrough } from './rules/no-undefined-null-passthrough';
 import { noSeparateLoadingState } from './rules/no-separate-loading-state';
+import { optimizeObjectBooleanConditions } from './rules/optimize-object-boolean-conditions';
 
 module.exports = {
   meta: {
@@ -116,6 +118,7 @@ module.exports = {
       rules: {
         '@blumintinc/blumint/prefer-block-comments-for-declarations': 'error',
         '@blumintinc/blumint/key-only-outermost-element': 'error',
+        '@blumintinc/blumint/parallelize-async-operations': 'error',
         '@blumintinc/blumint/avoid-utils-directory': 'error',
         '@blumintinc/blumint/enforce-firestore-path-utils': 'error',
         '@blumintinc/blumint/no-jsx-whitespace-literal': 'error',
@@ -225,16 +228,19 @@ module.exports = {
         '@blumintinc/blumint/enforce-boolean-naming-prefixes': 'error',
         '@blumintinc/blumint/no-undefined-null-passthrough': 'error',
         '@blumintinc/blumint/no-separate-loading-state': 'error',
+        '@blumintinc/blumint/optimize-object-boolean-conditions': 'error',
       },
     },
   },
 
   rules: {
-    'prefer-block-comments-for-declarations': preferBlockCommentsForDeclarations,
+    'prefer-block-comments-for-declarations':
+      preferBlockCommentsForDeclarations,
     'key-only-outermost-element': keyOnlyOutermostElement,
     'array-methods-this-context': arrayMethodsThisContext,
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
     'consistent-callback-naming': consistentCallbackNaming,
+    'parallelize-async-operations': parallelizeAsyncOperations,
     'dynamic-https-errors': dynamicHttpsErrors,
     'enforce-identifiable-firestore-type': enforceIdentifiableFirestoreType,
     'enforce-callback-memo': enforceCallbackMemo,
@@ -336,5 +342,6 @@ module.exports = {
     'enforce-boolean-naming-prefixes': enforceBooleanNamingPrefixes,
     'no-undefined-null-passthrough': noUndefinedNullPassthrough,
     'no-separate-loading-state': noSeparateLoadingState,
+    'optimize-object-boolean-conditions': optimizeObjectBooleanConditions,
   },
 };
