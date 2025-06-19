@@ -729,7 +729,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
   ],
 
   invalid: [
-    // Basic .ref.parent.id usage in DocumentChangeHandler
+    // Basic .ref.parent.id usage in DocumentChangeHandler (no auto-fix when params not in scope)
     {
       code: `
         export const updateRelatedDocuments: DocumentChangeHandler<
@@ -744,21 +744,9 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const updateRelatedDocuments: DocumentChangeHandler<
-          OverwolfUpdate,
-          OverwolfUpdatePath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const userId = params.userId;
-
-          const userProfile = await db.doc(\`UserProfile/\${userId}\`).get();
-        };
-      `,
     },
 
-    // Using .ref.parent.id directly in expression
+    // Using .ref.parent.id directly in expression (no auto-fix when params not in scope)
     {
       code: `
         export const directUsage: DocumentChangeHandler<
@@ -771,19 +759,9 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const directUsage: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const userProfile = await db.doc(\`UserProfile/\${params.userId}\`).get();
-        };
-      `,
     },
 
-    // Using change.before.ref.parent.id
+    // Using change.before.ref.parent.id (no auto-fix when params not in scope)
     {
       code: `
         export const beforeRefUsage: DocumentChangeHandler<
@@ -796,19 +774,34 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const beforeRefUsage: DocumentChangeHandler<
+    },
+
+    // Auto-fix should work when params is in scope
+    {
+      code: `
+        export const withParamsInScope: DocumentChangeHandler<
           UserData,
           UserPath
         > = async (event) => {
-          const { data: change } = event;
+          const { data: change, params } = event;
+
+          const userId = change.after.ref.parent.id;
+        };
+      `,
+      errors: [{ messageId: 'preferParams' }],
+      output: `
+        export const withParamsInScope: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change, params } = event;
 
           const userId = params.userId;
         };
       `,
     },
 
-    // Optional chaining usage
+    // Optional chaining usage (no auto-fix when params not in scope)
     {
       code: `
         export const optionalChaining: DocumentChangeHandler<
@@ -821,19 +814,9 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const optionalChaining: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const userId = params?.userId;
-        };
-      `,
     },
 
-    // Multiple parent levels (grandparent)
+    // Multiple parent levels (grandparent) (no auto-fix when params not in scope)
     {
       code: `
         export const grandparentAccess: DocumentChangeHandler<
@@ -846,16 +829,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const grandparentAccess: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const grandparentId = params.parentId;
-        };
-      `,
     },
 
     // DocumentChangeHandlerTransaction
