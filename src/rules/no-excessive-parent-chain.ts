@@ -54,25 +54,33 @@ export const noExcessiveParentChain = createRule<[], MessageIds>({
           const typeNode = parent.id.typeAnnotation.typeAnnotation;
 
           // Check if it's a reference to one of our handler types
-          if (typeNode.type === AST_NODE_TYPES.TSTypeReference &&
-              typeNode.typeName.type === AST_NODE_TYPES.Identifier &&
-              HANDLER_TYPES.has(typeNode.typeName.name)) {
+          if (
+            typeNode.type === AST_NODE_TYPES.TSTypeReference &&
+            typeNode.typeName.type === AST_NODE_TYPES.Identifier &&
+            HANDLER_TYPES.has(typeNode.typeName.name)
+          ) {
             return true;
           }
 
           // Check for generic types that might be handlers
-          if (typeNode.type === AST_NODE_TYPES.TSTypeReference &&
-              typeNode.typeName.type === AST_NODE_TYPES.Identifier) {
+          if (
+            typeNode.type === AST_NODE_TYPES.TSTypeReference &&
+            typeNode.typeName.type === AST_NODE_TYPES.Identifier
+          ) {
             // Try to resolve the type name to see if it's one of our handler types
             const scope = context.getScope();
             const typeName = typeNode.typeName.name;
-            const variable = scope.variables.find(v => v.name === typeName);
+            const variable = scope.variables.find((v) => v.name === typeName);
             if (variable && variable.defs.length > 0) {
               const def = variable.defs[0];
-              if (def.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration &&
-                  def.node.typeAnnotation.type === AST_NODE_TYPES.TSTypeReference &&
-                  def.node.typeAnnotation.typeName.type === AST_NODE_TYPES.Identifier &&
-                  HANDLER_TYPES.has(def.node.typeAnnotation.typeName.name)) {
+              if (
+                def.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration &&
+                def.node.typeAnnotation.type ===
+                  AST_NODE_TYPES.TSTypeReference &&
+                def.node.typeAnnotation.typeName.type ===
+                  AST_NODE_TYPES.Identifier &&
+                HANDLER_TYPES.has(def.node.typeAnnotation.typeName.name)
+              ) {
                 return true;
               }
             }
@@ -84,13 +92,17 @@ export const noExcessiveParentChain = createRule<[], MessageIds>({
       if (
         parent?.type === AST_NODE_TYPES.ExportNamedDeclaration &&
         parent.declaration?.type === AST_NODE_TYPES.VariableDeclaration &&
-        parent.declaration.declarations[0]?.id.type === AST_NODE_TYPES.Identifier &&
+        parent.declaration.declarations[0]?.id.type ===
+          AST_NODE_TYPES.Identifier &&
         parent.declaration.declarations[0].id.typeAnnotation?.typeAnnotation
       ) {
-        const typeNode = parent.declaration.declarations[0].id.typeAnnotation.typeAnnotation;
-        if (typeNode.type === AST_NODE_TYPES.TSTypeReference &&
-            typeNode.typeName.type === AST_NODE_TYPES.Identifier &&
-            HANDLER_TYPES.has(typeNode.typeName.name)) {
+        const typeNode =
+          parent.declaration.declarations[0].id.typeAnnotation.typeAnnotation;
+        if (
+          typeNode.type === AST_NODE_TYPES.TSTypeReference &&
+          typeNode.typeName.type === AST_NODE_TYPES.Identifier &&
+          HANDLER_TYPES.has(typeNode.typeName.name)
+        ) {
           return true;
         }
       }
@@ -121,10 +133,7 @@ export const noExcessiveParentChain = createRule<[], MessageIds>({
     return {
       // Track variable assignments that contain event data
       VariableDeclarator(node) {
-        if (
-          node.id.type === AST_NODE_TYPES.Identifier &&
-          node.init
-        ) {
+        if (node.id.type === AST_NODE_TYPES.Identifier && node.init) {
           // Track direct event.data assignments
           if (
             node.init.type === AST_NODE_TYPES.MemberExpression &&
@@ -142,7 +151,10 @@ export const noExcessiveParentChain = createRule<[], MessageIds>({
             eventDataVariables.has(node.init.name)
           ) {
             // Store the variable name with the same source as the original variable
-            eventDataVariables.set(node.id.name, eventDataVariables.get(node.init.name) || '');
+            eventDataVariables.set(
+              node.id.name,
+              eventDataVariables.get(node.init.name) || '',
+            );
           }
 
           // Track assignments from event data properties
@@ -152,7 +164,10 @@ export const noExcessiveParentChain = createRule<[], MessageIds>({
             eventDataVariables.has(node.init.object.name)
           ) {
             // Store the variable name with the same source as the original variable
-            eventDataVariables.set(node.id.name, eventDataVariables.get(node.init.object.name) || '');
+            eventDataVariables.set(
+              node.id.name,
+              eventDataVariables.get(node.init.object.name) || '',
+            );
           }
         }
 
@@ -195,8 +210,10 @@ export const noExcessiveParentChain = createRule<[], MessageIds>({
         let current: TSESTree.Node | undefined = node;
         let inHandler = false;
         while (current) {
-          if (current.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-              current.type === AST_NODE_TYPES.FunctionExpression) {
+          if (
+            current.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+            current.type === AST_NODE_TYPES.FunctionExpression
+          ) {
             if (isHandlerFunction(current)) {
               inHandler = true;
               break;
