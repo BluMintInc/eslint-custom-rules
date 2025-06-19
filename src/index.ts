@@ -1,6 +1,7 @@
 import { arrayMethodsThisContext } from './rules/array-methods-this-context';
 import { classMethodsReadTopToBottom } from './rules/class-methods-read-top-to-bottom';
 import { default as consistentCallbackNaming } from './rules/consistent-callback-naming';
+import { parallelizeAsyncOperations } from './rules/parallelize-async-operations';
 import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
 import { enforceIdentifiableFirestoreType } from './rules/enforce-identifiable-firestore-type';
 import { default as enforceCallbackMemo } from './rules/enforce-callback-memo';
@@ -101,6 +102,9 @@ import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-pre
 import { preferBlockCommentsForDeclarations } from './rules/prefer-block-comments-for-declarations';
 import { noUndefinedNullPassthrough } from './rules/no-undefined-null-passthrough';
 import { enforceQueryKeyTs } from './rules/enforce-querykey-ts';
+import { noStaleStateAcrossAwait } from './rules/no-stale-state-across-await';
+import { noSeparateLoadingState } from './rules/no-separate-loading-state';
+import { optimizeObjectBooleanConditions } from './rules/optimize-object-boolean-conditions';
 
 module.exports = {
   meta: {
@@ -116,6 +120,7 @@ module.exports = {
       rules: {
         '@blumintinc/blumint/prefer-block-comments-for-declarations': 'error',
         '@blumintinc/blumint/key-only-outermost-element': 'error',
+        '@blumintinc/blumint/parallelize-async-operations': 'error',
         '@blumintinc/blumint/avoid-utils-directory': 'error',
         '@blumintinc/blumint/enforce-firestore-path-utils': 'error',
         '@blumintinc/blumint/no-jsx-whitespace-literal': 'error',
@@ -129,7 +134,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-callable-types': 'error',
         '@blumintinc/blumint/enforce-dynamic-firebase-imports': 'error',
         '@blumintinc/blumint/enforce-react-type-naming': 'error',
-        // '@blumintinc/blumint/export-if-in-doubt': 'warn',
+        '@blumintinc/blumint/export-if-in-doubt': 'error',
         '@blumintinc/blumint/extract-global-constants': 'error',
         '@blumintinc/blumint/enforce-global-constants': 'error',
         '@blumintinc/blumint/generic-starts-with-t': 'error',
@@ -143,8 +148,8 @@ module.exports = {
         '@blumintinc/blumint/no-unpinned-dependencies': 'error',
         '@blumintinc/blumint/no-unused-props': 'error',
         '@blumintinc/blumint/no-uuidv4-base62-as-key': 'error',
-        //'@blumintinc/blumint/no-useless-fragment': 'error',
-        //'@blumintinc/blumint/prefer-fragment-shorthand': 'error',
+        '@blumintinc/blumint/no-useless-fragment': 'error',
+        '@blumintinc/blumint/prefer-fragment-shorthand': 'error',
         '@blumintinc/blumint/prefer-type-over-interface': 'error',
         '@blumintinc/blumint/require-memo': 'error',
         '@blumintinc/blumint/require-dynamic-firebase-imports': 'error',
@@ -225,6 +230,9 @@ module.exports = {
         '@blumintinc/blumint/enforce-boolean-naming-prefixes': 'error',
         '@blumintinc/blumint/no-undefined-null-passthrough': 'error',
         '@blumintinc/blumint/enforce-querykey-ts': 'error',
+        '@blumintinc/blumint/no-stale-state-across-await': 'error',
+        '@blumintinc/blumint/no-separate-loading-state': 'error',
+        '@blumintinc/blumint/optimize-object-boolean-conditions': 'error',
       },
     },
   },
@@ -236,6 +244,7 @@ module.exports = {
     'array-methods-this-context': arrayMethodsThisContext,
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
     'consistent-callback-naming': consistentCallbackNaming,
+    'parallelize-async-operations': parallelizeAsyncOperations,
     'dynamic-https-errors': dynamicHttpsErrors,
     'enforce-identifiable-firestore-type': enforceIdentifiableFirestoreType,
     'enforce-callback-memo': enforceCallbackMemo,
@@ -337,5 +346,8 @@ module.exports = {
     'enforce-boolean-naming-prefixes': enforceBooleanNamingPrefixes,
     'no-undefined-null-passthrough': noUndefinedNullPassthrough,
     'enforce-querykey-ts': enforceQueryKeyTs,
+    'no-stale-state-across-await': noStaleStateAcrossAwait,
+    'no-separate-loading-state': noSeparateLoadingState,
+    'optimize-object-boolean-conditions': optimizeObjectBooleanConditions,
   },
 };
