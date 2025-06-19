@@ -101,6 +101,7 @@ import { noMarginProperties } from './rules/no-margin-properties';
 import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-prefixes';
 import { preferBlockCommentsForDeclarations } from './rules/prefer-block-comments-for-declarations';
 import { noUndefinedNullPassthrough } from './rules/no-undefined-null-passthrough';
+import { enforceQueryKeyTs } from './rules/enforce-querykey-ts';
 import { noStaleStateAcrossAwait } from './rules/no-stale-state-across-await';
 import { noSeparateLoadingState } from './rules/no-separate-loading-state';
 import { optimizeObjectBooleanConditions } from './rules/optimize-object-boolean-conditions';
@@ -133,7 +134,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-callable-types': 'error',
         '@blumintinc/blumint/enforce-dynamic-firebase-imports': 'error',
         '@blumintinc/blumint/enforce-react-type-naming': 'error',
-        // '@blumintinc/blumint/export-if-in-doubt': 'warn',
+        '@blumintinc/blumint/export-if-in-doubt': 'error',
         '@blumintinc/blumint/extract-global-constants': 'error',
         '@blumintinc/blumint/enforce-global-constants': 'error',
         '@blumintinc/blumint/generic-starts-with-t': 'error',
@@ -147,8 +148,8 @@ module.exports = {
         '@blumintinc/blumint/no-unpinned-dependencies': 'error',
         '@blumintinc/blumint/no-unused-props': 'error',
         '@blumintinc/blumint/no-uuidv4-base62-as-key': 'error',
-        //'@blumintinc/blumint/no-useless-fragment': 'error',
-        //'@blumintinc/blumint/prefer-fragment-shorthand': 'error',
+        '@blumintinc/blumint/no-useless-fragment': 'error',
+        '@blumintinc/blumint/prefer-fragment-shorthand': 'error',
         '@blumintinc/blumint/prefer-type-over-interface': 'error',
         '@blumintinc/blumint/require-memo': 'error',
         '@blumintinc/blumint/require-dynamic-firebase-imports': 'error',
@@ -228,6 +229,7 @@ module.exports = {
         '@blumintinc/blumint/no-margin-properties': 'error',
         '@blumintinc/blumint/enforce-boolean-naming-prefixes': 'error',
         '@blumintinc/blumint/no-undefined-null-passthrough': 'error',
+        '@blumintinc/blumint/enforce-querykey-ts': 'error',
         '@blumintinc/blumint/no-stale-state-across-await': 'error',
         '@blumintinc/blumint/no-separate-loading-state': 'error',
         '@blumintinc/blumint/optimize-object-boolean-conditions': 'error',
@@ -343,6 +345,7 @@ module.exports = {
     'no-margin-properties': noMarginProperties,
     'enforce-boolean-naming-prefixes': enforceBooleanNamingPrefixes,
     'no-undefined-null-passthrough': noUndefinedNullPassthrough,
+    'enforce-querykey-ts': enforceQueryKeyTs,
     'no-stale-state-across-await': noStaleStateAcrossAwait,
     'no-separate-loading-state': noSeparateLoadingState,
     'optimize-object-boolean-conditions': optimizeObjectBooleanConditions,
