@@ -8,6 +8,7 @@ import { default as enforceCallbackMemo } from './rules/enforce-callback-memo';
 import { enforceCallableTypes } from './rules/enforce-callable-types';
 import { enforceFirebaseImports } from './rules/enforce-dynamic-firebase-imports';
 import { enforceMuiRoundedIcons } from './rules/enforce-mui-rounded-icons';
+import { enforceQueryKeyTs } from './rules/enforce-querykey-ts';
 import { enforceReactTypeNaming } from './rules/enforce-react-type-naming';
 import { exportIfInDoubt } from './rules/export-if-in-doubt';
 import { extractGlobalConstants } from './rules/extract-global-constants';
@@ -101,8 +102,8 @@ import { noMarginProperties } from './rules/no-margin-properties';
 import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-prefixes';
 import { preferBlockCommentsForDeclarations } from './rules/prefer-block-comments-for-declarations';
 import { noUndefinedNullPassthrough } from './rules/no-undefined-null-passthrough';
+import { noOverridableMethodCallsInConstructor } from './rules/no-overridable-method-calls-in-constructor';
 import { useLatestCallback } from './rules/use-latest-callback';
-import { enforceQueryKeyTs } from './rules/enforce-querykey-ts';
 import { noStaleStateAcrossAwait } from './rules/no-stale-state-across-await';
 import { noSeparateLoadingState } from './rules/no-separate-loading-state';
 import { optimizeObjectBooleanConditions } from './rules/optimize-object-boolean-conditions';
@@ -230,6 +231,7 @@ module.exports = {
         '@blumintinc/blumint/no-margin-properties': 'error',
         '@blumintinc/blumint/enforce-boolean-naming-prefixes': 'error',
         '@blumintinc/blumint/no-undefined-null-passthrough': 'error',
+        '@blumintinc/blumint/no-overridable-method-calls-in-constructor': 'error',
         '@blumintinc/blumint/use-latest-callback': 'error',
         '@blumintinc/blumint/enforce-querykey-ts': 'error',
         '@blumintinc/blumint/no-stale-state-across-await': 'error',
@@ -347,6 +349,7 @@ module.exports = {
     'no-margin-properties': noMarginProperties,
     'enforce-boolean-naming-prefixes': enforceBooleanNamingPrefixes,
     'no-undefined-null-passthrough': noUndefinedNullPassthrough,
+    'no-overridable-method-calls-in-constructor': noOverridableMethodCallsInConstructor,
     'use-latest-callback': useLatestCallback,
     'enforce-querykey-ts': enforceQueryKeyTs,
     'no-stale-state-across-await': noStaleStateAcrossAwait,
