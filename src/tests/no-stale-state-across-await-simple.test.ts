@@ -1,11 +1,14 @@
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { noStaleStateAcrossAwait } from '../rules/no-stale-state-across-await';
 
-ruleTesterJsx.run('no-stale-state-across-await-simple', noStaleStateAcrossAwait, {
-  valid: [
-    // Valid: Single update after await (atomic update)
-    {
-      code: `
+ruleTesterJsx.run(
+  'no-stale-state-across-await-simple',
+  noStaleStateAcrossAwait,
+  {
+    valid: [
+      // Valid: Single update after await (atomic update)
+      {
+        code: `
         import React, { useState } from 'react';
 
         function Component() {
@@ -19,13 +22,13 @@ ruleTesterJsx.run('no-stale-state-across-await-simple', noStaleStateAcrossAwait,
           return <div>{profile?.name}</div>;
         }
       `,
-    },
-  ],
+      },
+    ],
 
-  invalid: [
-    // Invalid: Basic violation with await
-    {
-      code: `
+    invalid: [
+      // Invalid: Basic violation with await
+      {
+        code: `
         import React, { useState } from 'react';
 
         function Component() {
@@ -40,17 +43,17 @@ ruleTesterJsx.run('no-stale-state-across-await-simple', noStaleStateAcrossAwait,
           return <div>{profile?.name}</div>;
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setProfile' },
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setProfile' },
+          },
+        ],
+      },
 
-    // Invalid: Basic violation with .then()
-    {
-      code: `
+      // Invalid: Basic violation with .then()
+      {
+        code: `
         import React, { useState } from 'react';
 
         function Component() {
@@ -66,12 +69,13 @@ ruleTesterJsx.run('no-stale-state-across-await-simple', noStaleStateAcrossAwait,
           return <div>{profile?.name}</div>;
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setProfile' },
-        },
-      ],
-    },
-  ],
-});
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setProfile' },
+          },
+        ],
+      },
+    ],
+  },
+);

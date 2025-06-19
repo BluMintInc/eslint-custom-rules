@@ -4,8 +4,8 @@ import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 type MessageIds = 'separateLoadingState';
 
 const LOADING_PATTERNS = [
-  /^is.*Loading$/i,  // isXLoading pattern
-  /^isLoading.+/i,   // isLoadingX pattern
+  /^is.*Loading$/i, // isXLoading pattern
+  /^isLoading.+/i, // isLoadingX pattern
 ];
 
 export const noSeparateLoadingState = createRule<[], MessageIds>({
@@ -13,22 +13,27 @@ export const noSeparateLoadingState = createRule<[], MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Disallow separate loading state variables that track the loading status of other state',
+      description:
+        'Disallow separate loading state variables that track the loading status of other state',
       recommended: 'error',
     },
     fixable: undefined, // No autofix as mentioned in the spec
     schema: [],
     messages: {
-      separateLoadingState: 'Avoid separate loading state. Encode loading status directly in the primary state using a sentinel value like "loading".',
+      separateLoadingState:
+        'Avoid separate loading state. Encode loading status directly in the primary state using a sentinel value like "loading".',
     },
   },
   defaultOptions: [],
   create(context) {
-    const loadingStateVariables = new Map<string, TSESTree.VariableDeclarator>();
-    const setterUsages = new Map<string, { truthy: boolean, falsy: boolean }>();
+    const loadingStateVariables = new Map<
+      string,
+      TSESTree.VariableDeclarator
+    >();
+    const setterUsages = new Map<string, { truthy: boolean; falsy: boolean }>();
 
     function isLoadingPattern(name: string): boolean {
-      return LOADING_PATTERNS.some(pattern => pattern.test(name));
+      return LOADING_PATTERNS.some((pattern) => pattern.test(name));
     }
 
     function isUseStateCall(node: TSESTree.CallExpression): boolean {
@@ -58,8 +63,13 @@ export const noSeparateLoadingState = createRule<[], MessageIds>({
       return false;
     }
 
-    function getSetterName(declarator: TSESTree.VariableDeclarator): string | null {
-      if (declarator.id.type === AST_NODE_TYPES.ArrayPattern && declarator.id.elements.length >= 2) {
+    function getSetterName(
+      declarator: TSESTree.VariableDeclarator,
+    ): string | null {
+      if (
+        declarator.id.type === AST_NODE_TYPES.ArrayPattern &&
+        declarator.id.elements.length >= 2
+      ) {
         const setterElement = declarator.id.elements[1];
         if (setterElement?.type === AST_NODE_TYPES.Identifier) {
           return setterElement.name;
@@ -89,7 +99,10 @@ export const noSeparateLoadingState = createRule<[], MessageIds>({
               isLoadingPattern(stateElement.name)
             ) {
               loadingStateVariables.set(stateElement.name, node);
-              setterUsages.set(setterElement.name, { truthy: false, falsy: false });
+              setterUsages.set(setterElement.name, {
+                truthy: false,
+                falsy: false,
+              });
             }
           }
         }
