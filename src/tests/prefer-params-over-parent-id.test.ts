@@ -845,17 +845,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const transactionHandler: DocumentChangeHandlerTransaction<
-          UserData,
-          UserPath
-        > = async (event, transaction) => {
-          const { data: change } = event;
-
-          const userId = params.userId;
-          transaction.update(db.doc(\`User/\${userId}\`), { updated: true });
-        };
-      `,
     },
 
     // RealtimeDbChangeHandler
@@ -871,16 +860,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const realtimeHandler: RealtimeDbChangeHandler<
-          GameData,
-          GamePath
-        > = async (event) => {
-          const { data: snapshot } = event;
-
-          const gameId = params.userId;
-        };
-      `,
     },
 
     // RealtimeDbChangeHandlerTransaction
@@ -897,17 +876,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const realtimeTransactionHandler: RealtimeDbChangeHandlerTransaction<
-          GameData,
-          GamePath
-        > = async (event, transaction) => {
-          const { data: snapshot } = event;
-
-          const gameId = params.userId;
-          transaction.update(\`games/\${gameId}\`, { active: true });
-        };
-      `,
     },
 
     // Arrow function with implicit return
@@ -919,12 +887,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         > = (event) => event.data.after.ref.parent.id;
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const implicitReturn: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = (event) => params.userId;
-      `,
     },
 
     // Function expression
@@ -936,12 +898,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        const handler: DocumentChangeHandler<UserData, UserPath> = function(event) {
-          const parentId = params.userId;
-          return parentId;
-        };
-      `,
     },
 
     // Multiple usages in same function
@@ -958,17 +914,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
-      output: `
-        export const multipleUsages: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const userId1 = params.userId;
-          const userId2 = params.userId;
-        };
-      `,
     },
 
     // Complex member expression chain
@@ -984,16 +929,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const complexChain: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const result = someFunction(params.userId, 'other', 'args');
-        };
-      `,
     },
 
     // Nested function calls
@@ -1009,16 +944,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const nestedCalls: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          await updateUser(params.userId);
-        };
-      `,
     },
 
     // Object property access
@@ -1037,19 +962,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const objectProperty: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const config = {
-            userId: params.userId,
-            timestamp: Date.now()
-          };
-        };
-      `,
     },
 
     // Template literal usage
@@ -1065,16 +977,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const templateLiteral: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const message = \`User \${params.userId} was updated\`;
-        };
-      `,
     },
 
     // Conditional expression
@@ -1090,16 +992,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const conditionalExpression: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const id = change.after ? params.userId : null;
-        };
-      `,
     },
 
     // Array element
@@ -1115,16 +1007,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const arrayElement: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const ids = [params.userId, 'other-id'];
-        };
-      `,
     },
 
     // Return statement
@@ -1140,16 +1022,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const returnStatement: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          return params.userId;
-        };
-      `,
     },
 
     // Assignment to existing variable
@@ -1166,17 +1038,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const assignment: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-          let userId;
-
-          userId = params.userId;
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Complex destructuring in function parameters
@@ -1216,15 +1077,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const deeplyNested: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-          const greatGrandparentId = params.parentId;
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Mixed optional and non-optional chaining
@@ -1239,15 +1091,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const mixedChaining: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-          const parentId = params?.userId;
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with different parameter name
@@ -1262,15 +1105,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const differentParamName: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (evt) => {
-          const { data: change } = evt;
-          const parentId = params.userId;
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with rest parameters
@@ -1285,15 +1119,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const handlerWithRestParams: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event, ...args) => {
-          const { data: change } = event;
-          const parentId = params.userId;
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with default parameters
@@ -1308,15 +1133,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const handlerWithDefaultParams: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event, options = {}) => {
-          const { data: change } = event;
-          const parentId = params.userId;
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler function in class method with proper type (not detected by current rule)
@@ -1348,17 +1164,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const edgeCaseHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          // These should all trigger the rule
-          const parentId1 = params.userId;
-        };
-      `,
     },
 
     // EDGE CASE: Handler with snapshot.ref.parent.id (RealtimeDB)
@@ -1374,16 +1179,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const realtimeEdgeCase: RealtimeDbChangeHandler<
-          GameData,
-          GamePath
-        > = async (event) => {
-          const { data: snapshot } = event;
-
-          const parentId = params.userId;
-        };
-      `,
     },
 
     // EDGE CASE: Handler with data.ref.parent.id (alternative destructuring)
@@ -1399,16 +1194,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const alternativeDestructuring: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data } = event;
-
-          const parentId = params.userId;
-        };
-      `,
     },
 
     // EDGE CASE: Handler with event.data.after.ref.parent.id (no destructuring)
@@ -1422,14 +1207,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const noDestructuring: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const parentId = params.userId;
-        };
-      `,
     },
 
     // EDGE CASE: Handler with mixed access patterns
@@ -1451,18 +1228,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         { messageId: 'preferParams' },
         { messageId: 'preferParams' },
       ],
-      output: `
-        export const mixedPatterns: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const beforeParent = params?.userId;
-          const afterParent = params.userId;
-          const directAccess = params.userId;
-        };
-      `,
     },
 
     // EDGE CASE: Handler with very deep parent access
@@ -1478,16 +1243,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const veryDeepAccess: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const deepParent = params.parentId;
-        };
-      `,
     },
 
     // EDGE CASE: Handler with ref.parent.id in complex expressions
@@ -1519,26 +1274,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         { messageId: 'preferParams' },
         { messageId: 'preferParams' },
       ],
-      output: `
-        export const complexExpressions: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const result = {
-            id: params.userId,
-            path: \`/users/\${params.userId}/profile\`,
-            condition: params.userId === 'admin',
-            array: [params.userId, 'other'],
-            nested: {
-              deep: {
-                value: params.userId
-              }
-            }
-          };
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Multiple handlers in same file
@@ -1553,15 +1288,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
-      output: `
-        export const handler1: DocumentChangeHandler<UserData, UserPath> = async (event) => {
-          const parentId = params.userId;
-        };
-
-        export const handler2: DocumentChangeHandler<UserData, UserPath> = async (event) => {
-          const parentId = params.userId;
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with conditional logic
@@ -1580,19 +1306,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const conditionalHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          if (change.after) {
-            const parentId = params.userId;
-            console.log(parentId);
-          }
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with loop containing access
@@ -1611,19 +1324,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const loopHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          for (let i = 0; i < 5; i++) {
-            const parentId = params.userId;
-            console.log(parentId, i);
-          }
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with try-catch block
@@ -1644,21 +1344,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const tryCatchHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          try {
-            const parentId = params.userId;
-            await processParent(parentId);
-          } catch (error) {
-            console.error(error);
-          }
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with async/await patterns
@@ -1678,20 +1363,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const asyncHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const parentId = params.userId;
-          const result = await Promise.all([
-            fetchUser(parentId),
-            fetchProfile(parentId)
-          ]);
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with JSDoc comments
@@ -1710,19 +1381,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        /**
-         * Handles document changes for user data
-         * @param event - The change event
-         */
-        export const documentedHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-          const parentId = params.userId;
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler function declaration (not detected by current rule)
@@ -1746,20 +1404,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const complexMemberChain: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const result = {
-            parentId: params.userId,
-            data: change.after.data(),
-            path: change.after.ref.path
-          };
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with spread operator usage
@@ -1778,19 +1422,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const spreadHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const config = {
-            ...defaultConfig,
-            parentId: params.userId
-          };
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with logical operators
@@ -1807,17 +1438,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const logicalHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const parentId = change.after && params.userId;
-          const fallback = parentId || 'default-id';
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with nullish coalescing
@@ -1833,16 +1453,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const nullishHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const parentId = params?.userId ?? 'default';
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with array destructuring
@@ -1858,16 +1468,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const arrayDestructuringHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const [parentId] = [params.userId];
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with computed property names
@@ -1886,19 +1486,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const computedPropertyHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-          const key = 'parentId';
-
-          const obj = {
-            [key]: params.userId
-          };
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with function calls as arguments
@@ -1915,17 +1502,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
-      output: `
-        export const functionCallHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          await Promise.resolve(params.userId);
-          setTimeout(() => console.log(params.userId), 1000);
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with nested object access
@@ -1947,22 +1523,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const nestedObjectHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const nested = {
-            level1: {
-              level2: {
-                parentId: params.userId
-              }
-            }
-          };
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with switch statement
@@ -1984,22 +1544,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const switchHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          switch (params.userId) {
-            case 'user1':
-              console.log('User 1');
-              break;
-            default:
-              console.log('Other user');
-          }
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with while loop
@@ -2019,20 +1563,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const whileLoopHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-          let count = 0;
-
-          while (count < 3) {
-            console.log(params.userId, count);
-            count++;
-          }
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with for...of loop
@@ -2050,18 +1580,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const forOfHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          for (const item of ['a', 'b', 'c']) {
-            console.log(item, params.userId);
-          }
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with for...in loop
@@ -2080,19 +1598,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const forInHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-          const obj = { a: 1, b: 2 };
-
-          for (const key in obj) {
-            console.log(key, params.userId);
-          }
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with do...while loop
@@ -2112,20 +1617,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const doWhileHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-          let count = 0;
-
-          do {
-            console.log(params.userId, count);
-            count++;
-          } while (count < 2);
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with labeled statement
@@ -2146,21 +1637,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const labeledHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          outer: for (let i = 0; i < 2; i++) {
-            for (let j = 0; j < 2; j++) {
-              if (i === 1) break outer;
-              console.log(params.userId, i, j);
-            }
-          }
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with generator function
@@ -2180,20 +1656,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const generatorHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          function* generator() {
-            yield params.userId;
-          }
-
-          const gen = generator();
-        };
-      `,
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with class expression
@@ -2211,18 +1673,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const classExpressionHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const MyClass = class {
-            parentId = params.userId;
-          };
-        };
-      `,
     },
 
     // EDGE CASE: Access through destructuring in handler
@@ -2237,15 +1687,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const destructuringAccessHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: { after } } = event;
-          const parentId = params.userId;
-        };
-      `,
     },
 
     // EDGE CASE: Nested functions in handlers should still trigger
@@ -2265,20 +1706,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const nestedFunctionHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const process = () => {
-            return params.userId;
-          };
-
-          return process();
-        };
-      `,
     },
 
     // EDGE CASE: Callbacks in handlers should trigger
@@ -2295,17 +1722,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const callbackHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const items = ['a', 'b', 'c'];
-          items.map(() => params.userId);
-        };
-      `,
     },
 
     // EDGE CASE: Transaction handlers with multiple operations
@@ -2324,19 +1740,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const multiOpTransactionHandler: DocumentChangeHandlerTransaction<
-          UserData,
-          UserPath
-        > = async (event, transaction) => {
-          const { data: change } = event;
-
-          const userId = params.userId;
-          const userRef = db.doc(\`User/\${userId}\`);
-          await transaction.get(userRef);
-          transaction.set(db.doc(\`Profile/\${userId}\`), { userId });
-        };
-      `,
     },
 
     // EDGE CASE: Missing params destructuring should error
@@ -2354,18 +1757,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const missingParamsHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-          // Missing params destructuring - should error
-          const userId = params.userId;
-
-          const userProfile = await db.doc(\`UserProfile/\${userId}\`).get();
-        };
-      `,
     },
 
     // EDGE CASE: Mixed usage - params in scope but still using ref.parent.id
@@ -2411,17 +1802,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
-      output: `
-        export const templateLiteralRefHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const path = \`users/\${params.userId}/profile\`;
-          const message = \`Processing user \${params.userId}\`;
-        };
-      `,
     },
 
     // EDGE CASE: Document references using ref.parent.id
@@ -2438,17 +1818,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
-      output: `
-        export const docRefHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const userProfile = await db.doc(\`UserProfile/\${params.userId}\`).get();
-          const userSettings = await db.doc(\`UserSettings/\${params.userId}\`).get();
-        };
-      `,
     },
 
     // EDGE CASE: Collection queries using ref.parent.id
@@ -2465,17 +1834,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
-      output: `
-        export const collectionQueryHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const users = await db.collection('users').where('parentId', '==', params.userId).get();
-          const profiles = await db.collection('profiles').where('userId', '==', params.userId).get();
-        };
-      `,
     },
 
     // EDGE CASE: Batch operations using ref.parent.id
@@ -2494,19 +1852,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
-      output: `
-        export const batchRefHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const batch = db.batch();
-          batch.set(db.doc(\`users/\${params.userId}\`), { active: true });
-          batch.update(db.doc(\`profiles/\${params.userId}\`), { updated: true });
-          await batch.commit();
-        };
-      `,
     },
 
     // EDGE CASE: Multi-level path parameters (grandparent access)
@@ -2529,19 +1874,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         { messageId: 'preferParams' },
         { messageId: 'preferParams' },
       ],
-      output: `
-        export const multiLevelHandler: DocumentChangeHandler<
-          GameData,
-          GamePath
-        > = async (event) => {
-          const { data: change } = event;
-
-          // Path: /Game/{gameId}/Tournament/{tournamentId}/Round/{roundId}
-          const gameId = params.parentId;
-          const tournamentId = params.parentId;
-          const roundId = params.userId;
-        };
-      `,
     },
 
     // EDGE CASE: Variable assignment and reuse
@@ -2562,21 +1894,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }],
-      output: `
-        export const variableReuseHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const parentId = params.userId;
-
-          // Used in multiple places
-          const userRef = db.doc(\`User/\${parentId}\`);
-          const profileRef = db.doc(\`Profile/\${parentId}\`);
-          console.log(\`Processing \${parentId}\`);
-        };
-      `,
     },
 
     // EDGE CASE: Complex reference chains
@@ -2593,17 +1910,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
-      output: `
-        export const complexRefChainHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const greatGrandparentId = params.parentId;
-          const grandparentId = params.parentId;
-        };
-      `,
     },
 
     // EDGE CASE: Optional chaining variants
@@ -2625,18 +1931,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         { messageId: 'preferParams' },
         { messageId: 'preferParams' },
       ],
-      output: `
-        export const optionalChainingVariantsHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data: change } = event;
-
-          const maybeParentId1 = params?.userId;
-          const maybeParentId2 = params?.userId;
-          const maybeParentId3 = params?.userId;
-        };
-      `,
     },
 
     // EDGE CASE: All handler type variations
@@ -2664,23 +1958,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         { messageId: 'preferParams' },
         { messageId: 'preferParams' },
       ],
-      output: `
-        export const docChangeHandler: DocumentChangeHandler<UserData, UserPath> = async (event) => {
-          const parentId = params.userId;
-        };
-
-        export const docChangeTransactionHandler: DocumentChangeHandlerTransaction<UserData, UserPath> = async (event, transaction) => {
-          const parentId = params.userId;
-        };
-
-        export const realtimeHandler: RealtimeDbChangeHandler<GameData, GamePath> = async (event) => {
-          const parentId = params.userId;
-        };
-
-        export const realtimeTransactionHandler: RealtimeDbChangeHandlerTransaction<GameData, GamePath> = async (event, transaction) => {
-          const parentId = params.userId;
-        };
-      `,
     },
 
     // EDGE CASE: Handler with arrow function and complex destructuring
@@ -2722,17 +1999,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
-      output: `
-        export const snapshotHandler: RealtimeDbChangeHandler<
-          GameData,
-          GamePath
-        > = async (event) => {
-          const { data: snapshot } = event;
-
-          const parentId = params.userId;
-          const grandparentId = params.parentId;
-        };
-      `,
     },
 
     // EDGE CASE: Handler with data.ref.parent.id (alternative destructuring)
@@ -2749,17 +2015,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
       errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
-      output: `
-        export const dataRefHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const { data } = event;
-
-          const afterParentId = params.userId;
-          const beforeParentId = params?.userId;
-        };
-      `,
     },
 
     // EDGE CASE: Handler with event.data.after.ref.parent.id (no destructuring)
@@ -2779,16 +2034,6 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         { messageId: 'preferParams' },
         { messageId: 'preferParams' },
       ],
-      output: `
-        export const noDestructuringRefHandler: DocumentChangeHandler<
-          UserData,
-          UserPath
-        > = async (event) => {
-          const afterParentId = params.userId;
-          const beforeParentId = params?.userId;
-          const snapshotParentId = params?.userId;
-        };
-      `,
     },
   ],
 });
