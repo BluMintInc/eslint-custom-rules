@@ -15,13 +15,16 @@ import { noStaleStateAcrossAwait } from '../rules/no-stale-state-across-await';
  * 8. Edge cases and complex patterns
  */
 
-ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcrossAwait, {
-  valid: [
-    // ===== CLASS COMPONENTS =====
+ruleTesterJsx.run(
+  'no-stale-state-across-await-comprehensive',
+  noStaleStateAcrossAwait,
+  {
+    valid: [
+      // ===== CLASS COMPONENTS =====
 
-    // Valid: Class component with setState - no violation (different methods)
-    {
-      code: `
+      // Valid: Class component with setState - no violation (different methods)
+      {
+        code: `
         class Component extends React.Component {
           state = { loading: false, data: null };
 
@@ -35,11 +38,11 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-    },
+      },
 
-    // Valid: Class component with setState - only after async
-    {
-      code: `
+      // Valid: Class component with setState - only after async
+      {
+        code: `
         class Component extends React.Component {
           state = { loading: false, data: null };
 
@@ -50,13 +53,13 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-    },
+      },
 
-    // ===== useReducer PATTERNS =====
+      // ===== useReducer PATTERNS =====
 
-    // Valid: useReducer with different dispatch calls (no violation)
-    {
-      code: `
+      // Valid: useReducer with different dispatch calls (no violation)
+      {
+        code: `
         function Component() {
           const [state, dispatch] = useReducer(reducer, initialState);
 
@@ -67,11 +70,11 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-    },
+      },
 
-    // Valid: useReducer with only post-async dispatch
-    {
-      code: `
+      // Valid: useReducer with only post-async dispatch
+      {
+        code: `
         function Component() {
           const [state, dispatch] = useReducer(reducer, initialState);
 
@@ -82,13 +85,13 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-    },
+      },
 
-    // ===== CUSTOM HOOKS =====
+      // ===== CUSTOM HOOKS =====
 
-    // Valid: Custom hook with atomic update
-    {
-      code: `
+      // Valid: Custom hook with atomic update
+      {
+        code: `
         function useAsyncData() {
           const [data, setData] = useState(null);
 
@@ -100,11 +103,11 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           return { data, fetchData };
         }
       `,
-    },
+      },
 
-    // Valid: Custom hook with different state setters
-    {
-      code: `
+      // Valid: Custom hook with different state setters
+      {
+        code: `
         function useAsyncData() {
           const [data, setData] = useState(null);
           const [loading, setLoading] = useState(false);
@@ -118,13 +121,13 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           return { data, loading, fetchData };
         }
       `,
-    },
+      },
 
-    // ===== useEffect PATTERNS =====
+      // ===== useEffect PATTERNS =====
 
-    // Valid: useEffect with atomic update
-    {
-      code: `
+      // Valid: useEffect with atomic update
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -137,11 +140,11 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }, []);
         }
       `,
-    },
+      },
 
-    // Valid: useEffect with different setters
-    {
-      code: `
+      // Valid: useEffect with different setters
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
           const [loading, setLoading] = useState(false);
@@ -156,13 +159,13 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }, []);
         }
       `,
-    },
+      },
 
-    // ===== ADVANCED ASYNC PATTERNS =====
+      // ===== ADVANCED ASYNC PATTERNS =====
 
-    // Valid: Promise.all with different setters
-    {
-      code: `
+      // Valid: Promise.all with different setters
+      {
+        code: `
         function Component() {
           const [users, setUsers] = useState([]);
           const [posts, setPosts] = useState([]);
@@ -177,11 +180,11 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-    },
+      },
 
-    // Valid: Async iterator with different setters
-    {
-      code: `
+      // Valid: Async iterator with different setters
+      {
+        code: `
         function Component() {
           const [status, setStatus] = useState('idle');
           const [items, setItems] = useState([]);
@@ -195,13 +198,13 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-    },
+      },
 
-    // ===== FALSE POSITIVE PREVENTION =====
+      // ===== FALSE POSITIVE PREVENTION =====
 
-    // Valid: Nested functions with separate scopes
-    {
-      code: `
+      // Valid: Nested functions with separate scopes
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -217,11 +220,11 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-    },
+      },
 
-    // Valid: Truly separate conditional branches (different functions)
-    {
-      code: `
+      // Valid: Truly separate conditional branches (different functions)
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -235,11 +238,11 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-    },
+      },
 
-    // Valid: Multiple async boundaries but no same-setter violations
-    {
-      code: `
+      // Valid: Multiple async boundaries but no same-setter violations
+      {
+        code: `
         function Component() {
           const [users, setUsers] = useState([]);
           const [posts, setPosts] = useState([]);
@@ -257,11 +260,11 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-    },
+      },
 
-    // Valid: Error handling without violations
-    {
-      code: `
+      // Valid: Error handling without violations
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
           const [error, setError] = useState(null);
@@ -276,11 +279,11 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-    },
+      },
 
-    // Valid: Loop patterns without violations
-    {
-      code: `
+      // Valid: Loop patterns without violations
+      {
+        code: `
         function Component() {
           const [items, setItems] = useState([]);
 
@@ -294,11 +297,11 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-    },
+      },
 
-    // Valid: Complex Promise chains without violations
-    {
-      code: `
+      // Valid: Complex Promise chains without violations
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -312,11 +315,11 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-    },
+      },
 
-    // Valid: Generator function without violations
-    {
-      code: `
+      // Valid: Generator function without violations
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -326,11 +329,11 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-    },
+      },
 
-    // Valid: Mixed async patterns without violations
-    {
-      code: `
+      // Valid: Mixed async patterns without violations
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
           const [status, setStatus] = useState('idle');
@@ -348,11 +351,11 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-    },
+      },
 
-    // Valid: Destructured useState with different patterns
-    {
-      code: `
+      // Valid: Destructured useState with different patterns
+      {
+        code: `
         function Component() {
           const [state, setState] = useState({ data: null, loading: false });
 
@@ -362,11 +365,11 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-    },
+      },
 
-    // Valid: Multiple useState hooks with complex patterns
-    {
-      code: `
+      // Valid: Multiple useState hooks with complex patterns
+      {
+        code: `
         function Component() {
           const [user, setUser] = useState(null);
           const [profile, setProfile] = useState(null);
@@ -384,11 +387,11 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-    },
+      },
 
-    // Valid: Async function with no await (edge case)
-    {
-      code: `
+      // Valid: Async function with no await (edge case)
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -398,21 +401,21 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-    },
+      },
 
-    // Valid: Function with no useState calls
-    {
-      code: `
+      // Valid: Function with no useState calls
+      {
+        code: `
         async function utilityFunction() {
           const data = await api.get('/data');
           return data;
         }
       `,
-    },
+      },
 
-    // Valid: Empty function body
-    {
-      code: `
+      // Valid: Empty function body
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -421,11 +424,11 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-    },
+      },
 
-    // Valid: Single setter call
-    {
-      code: `
+      // Valid: Single setter call
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -435,11 +438,11 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-    },
+      },
 
-    // Valid: Callback patterns without violations
-    {
-      code: `
+      // Valid: Callback patterns without violations
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -450,11 +453,11 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-    },
+      },
 
-    // Valid: setTimeout/setInterval patterns
-    {
-      code: `
+      // Valid: setTimeout/setInterval patterns
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -467,27 +470,27 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-    },
-  ],
+      },
+    ],
 
-  invalid: [
-    // ===== CLASS COMPONENTS =====
+    invalid: [
+      // ===== CLASS COMPONENTS =====
 
-    // Invalid: Class component setState patterns (Note: This rule focuses on useState, not setState)
-    // The rule currently only tracks useState setters, so setState violations won't be caught
-    // This is by design as the rule is specifically for React hooks
+      // Invalid: Class component setState patterns (Note: This rule focuses on useState, not setState)
+      // The rule currently only tracks useState setters, so setState violations won't be caught
+      // This is by design as the rule is specifically for React hooks
 
-    // ===== useReducer PATTERNS =====
+      // ===== useReducer PATTERNS =====
 
-    // Invalid: useReducer dispatch across async (Note: dispatch is not a useState setter)
-    // The rule currently only tracks useState setters, not useReducer dispatch
-    // This is by design as dispatch calls are different from useState setters
+      // Invalid: useReducer dispatch across async (Note: dispatch is not a useState setter)
+      // The rule currently only tracks useState setters, not useReducer dispatch
+      // This is by design as dispatch calls are different from useState setters
 
-    // ===== CUSTOM HOOKS =====
+      // ===== CUSTOM HOOKS =====
 
-    // Invalid: Custom hook with async state management violation
-    {
-      code: `
+      // Invalid: Custom hook with async state management violation
+      {
+        code: `
         function useAsyncData() {
           const [data, setData] = useState(null);
 
@@ -500,17 +503,17 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           return { data, fetchData };
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setData' },
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setData' },
+          },
+        ],
+      },
 
-    // Invalid: Custom hook with complex violation
-    {
-      code: `
+      // Invalid: Custom hook with complex violation
+      {
+        code: `
         function useComplexData() {
           const [data, setData] = useState(null);
           const [cache, setCache] = useState({});
@@ -528,23 +531,23 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           return { data, cache, fetchData };
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setData' },
-        },
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setCache' },
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setData' },
+          },
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setCache' },
+          },
+        ],
+      },
 
-    // ===== useEffect PATTERNS =====
+      // ===== useEffect PATTERNS =====
 
-    // Invalid: useEffect with async effects and state updates
-    {
-      code: `
+      // Invalid: useEffect with async effects and state updates
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -558,17 +561,17 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }, []);
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setData' },
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setData' },
+          },
+        ],
+      },
 
-    // Invalid: useEffect with complex async pattern
-    {
-      code: `
+      // Invalid: useEffect with complex async pattern
+      {
+        code: `
         function Component() {
           const [users, setUsers] = useState([]);
           const [loading, setLoading] = useState(false);
@@ -587,23 +590,23 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }, []);
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setUsers' },
-        },
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setLoading' },
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setUsers' },
+          },
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setLoading' },
+          },
+        ],
+      },
 
-    // ===== ADVANCED ASYNC PATTERNS =====
+      // ===== ADVANCED ASYNC PATTERNS =====
 
-    // Invalid: Promise.all with violations
-    {
-      code: `
+      // Invalid: Promise.all with violations
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -617,17 +620,17 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setData' },
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setData' },
+          },
+        ],
+      },
 
-    // Invalid: Async iterators with violations
-    {
-      code: `
+      // Invalid: Async iterators with violations
+      {
+        code: `
         function Component() {
           const [status, setStatus] = useState('idle');
 
@@ -640,17 +643,17 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setStatus' },
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setStatus' },
+          },
+        ],
+      },
 
-    // Invalid: Complex Promise chains with violations
-    {
-      code: `
+      // Invalid: Complex Promise chains with violations
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -665,17 +668,17 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setData' },
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setData' },
+          },
+        ],
+      },
 
-    // Invalid: Nested Promise chains with violations
-    {
-      code: `
+      // Invalid: Nested Promise chains with violations
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -692,17 +695,17 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setData' },
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setData' },
+          },
+        ],
+      },
 
-    // Invalid: Generator with violations
-    {
-      code: `
+      // Invalid: Generator with violations
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -713,17 +716,17 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setData' },
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setData' },
+          },
+        ],
+      },
 
-    // Invalid: Mixed async patterns with violations
-    {
-      code: `
+      // Invalid: Mixed async patterns with violations
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -740,17 +743,17 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setData' },
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setData' },
+          },
+        ],
+      },
 
-    // Invalid: Error handling with violations
-    {
-      code: `
+      // Invalid: Error handling with violations
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -766,17 +769,17 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setData' },
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setData' },
+          },
+        ],
+      },
 
-    // Invalid: Loop patterns with violations
-    {
-      code: `
+      // Invalid: Loop patterns with violations
+      {
+        code: `
         function Component() {
           const [items, setItems] = useState([]);
 
@@ -792,17 +795,17 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setItems' },
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setItems' },
+          },
+        ],
+      },
 
-    // Invalid: Conditional async with violations
-    {
-      code: `
+      // Invalid: Conditional async with violations
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -816,17 +819,17 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setData' },
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setData' },
+          },
+        ],
+      },
 
-    // Invalid: Conditional branches with async violation (even with early return)
-    {
-      code: `
+      // Invalid: Conditional branches with async violation (even with early return)
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -841,17 +844,17 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setData' },
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setData' },
+          },
+        ],
+      },
 
-    // Invalid: Multiple async boundaries with violations
-    {
-      code: `
+      // Invalid: Multiple async boundaries with violations
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -866,17 +869,17 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setData' },
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setData' },
+          },
+        ],
+      },
 
-    // Invalid: Arrow function with violation
-    {
-      code: `
+      // Invalid: Arrow function with violation
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -887,17 +890,17 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           };
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setData' },
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setData' },
+          },
+        ],
+      },
 
-    // Invalid: Function expression with violation
-    {
-      code: `
+      // Invalid: Function expression with violation
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -908,17 +911,17 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           };
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setData' },
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setData' },
+          },
+        ],
+      },
 
-    // Invalid: Destructured useState with violation
-    {
-      code: `
+      // Invalid: Destructured useState with violation
+      {
+        code: `
         function Component() {
           const [{ data }, setData] = useState({ data: null });
 
@@ -929,17 +932,17 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setData' },
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setData' },
+          },
+        ],
+      },
 
-    // Invalid: Complex control flow with violation
-    {
-      code: `
+      // Invalid: Complex control flow with violation
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -957,17 +960,17 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setData' },
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setData' },
+          },
+        ],
+      },
 
-    // Invalid: Nested async with violation in outer scope
-    {
-      code: `
+      // Invalid: Nested async with violation in outer scope
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -983,17 +986,17 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setData' },
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setData' },
+          },
+        ],
+      },
 
-    // Invalid: Promise race with violation
-    {
-      code: `
+      // Invalid: Promise race with violation
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -1009,17 +1012,17 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setData' },
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setData' },
+          },
+        ],
+      },
 
-    // Invalid: Promise.allSettled with violation
-    {
-      code: `
+      // Invalid: Promise.allSettled with violation
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -1035,17 +1038,17 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setData' },
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setData' },
+          },
+        ],
+      },
 
-    // Invalid: Async generator with multiple violations
-    {
-      code: `
+      // Invalid: Async generator with multiple violations
+      {
+        code: `
         function Component() {
           const [status, setStatus] = useState('idle');
           const [progress, setProgress] = useState(0);
@@ -1063,21 +1066,21 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setStatus' },
-        },
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setProgress' },
-        },
-      ],
-    },
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setStatus' },
+          },
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setProgress' },
+          },
+        ],
+      },
 
-    // Invalid: Timeout with async violation
-    {
-      code: `
+      // Invalid: Timeout with async violation
+      {
+        code: `
         function Component() {
           const [data, setData] = useState(null);
 
@@ -1097,12 +1100,13 @@ ruleTesterJsx.run('no-stale-state-across-await-comprehensive', noStaleStateAcros
           }
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setData' },
-        },
-      ],
-    },
-  ],
-});
+        errors: [
+          {
+            messageId: 'staleStateAcrossAwait',
+            data: { setterName: 'setData' },
+          },
+        ],
+      },
+    ],
+  },
+);

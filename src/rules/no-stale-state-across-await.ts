@@ -46,7 +46,10 @@ export const noStaleStateAcrossAwait = createRule<[], MessageIds>({
 
       // Check functions for violations
       'FunctionDeclaration, FunctionExpression, ArrowFunctionExpression'(
-        node: TSESTree.FunctionDeclaration | TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression
+        node:
+          | TSESTree.FunctionDeclaration
+          | TSESTree.FunctionExpression
+          | TSESTree.ArrowFunctionExpression,
       ) {
         // Collect all setter calls and async boundaries in this function
         const setterCalls: { name: string; position: number }[] = [];
@@ -117,8 +120,8 @@ export const noStaleStateAcrossAwait = createRule<[], MessageIds>({
                   if (
                     skipNestedFunctions &&
                     (item.type === AST_NODE_TYPES.FunctionDeclaration ||
-                     item.type === AST_NODE_TYPES.FunctionExpression ||
-                     item.type === AST_NODE_TYPES.ArrowFunctionExpression)
+                      item.type === AST_NODE_TYPES.FunctionExpression ||
+                      item.type === AST_NODE_TYPES.ArrowFunctionExpression)
                   ) {
                     continue;
                   }
@@ -130,8 +133,8 @@ export const noStaleStateAcrossAwait = createRule<[], MessageIds>({
               if (
                 skipNestedFunctions &&
                 (value.type === AST_NODE_TYPES.FunctionDeclaration ||
-                 value.type === AST_NODE_TYPES.FunctionExpression ||
-                 value.type === AST_NODE_TYPES.ArrowFunctionExpression)
+                  value.type === AST_NODE_TYPES.FunctionExpression ||
+                  value.type === AST_NODE_TYPES.ArrowFunctionExpression)
               ) {
                 return;
               }
@@ -146,7 +149,10 @@ export const noStaleStateAcrossAwait = createRule<[], MessageIds>({
         }
 
         // Check for violations
-        const setterCallsByName = new Map<string, { name: string; position: number }[]>();
+        const setterCallsByName = new Map<
+          string,
+          { name: string; position: number }[]
+        >();
         for (const call of setterCalls) {
           if (!setterCallsByName.has(call.name)) {
             setterCallsByName.set(call.name, []);
@@ -160,8 +166,12 @@ export const noStaleStateAcrossAwait = createRule<[], MessageIds>({
 
           // Check if there are calls both before and after any async boundary
           for (const boundary of asyncBoundaries) {
-            const callsBefore = calls.filter(call => call.position < boundary.position);
-            const callsAfter = calls.filter(call => call.position > boundary.position);
+            const callsBefore = calls.filter(
+              (call) => call.position < boundary.position,
+            );
+            const callsAfter = calls.filter(
+              (call) => call.position > boundary.position,
+            );
 
             if (callsBefore.length > 0 && callsAfter.length > 0) {
               // Report violation on the function node

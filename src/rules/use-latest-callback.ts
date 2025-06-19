@@ -71,7 +71,7 @@ export const useLatestCallback = createRule<[], MessageIds>({
 
           if (useCallbackSpecifiers.length > 0) {
             useCallbackFromReact = true;
-            useCallbackSpecifiers.forEach(spec => {
+            useCallbackSpecifiers.forEach((spec) => {
               useCallbackLocalNames.add(spec.local.name);
             });
           }
@@ -103,7 +103,8 @@ export const useLatestCallback = createRule<[], MessageIds>({
             // For functions with block body - check all return statements
             else if (callback.body.type === AST_NODE_TYPES.BlockStatement) {
               const returnStatements = callback.body.body.filter(
-                (statement) => statement.type === AST_NODE_TYPES.ReturnStatement,
+                (statement) =>
+                  statement.type === AST_NODE_TYPES.ReturnStatement,
               ) as TSESTree.ReturnStatement[];
 
               // If there are return statements, check if any return JSX
@@ -131,7 +132,8 @@ export const useLatestCallback = createRule<[], MessageIds>({
 
                 // Use the renamed import name if useLatestCallback is already imported,
                 // otherwise use 'useLatestCallback' for standard imports or the renamed name for renamed imports
-                const currentCallbackName = (node.callee as TSESTree.Identifier).name;
+                const currentCallbackName = (node.callee as TSESTree.Identifier)
+                  .name;
                 let replacementName: string;
 
                 if (hasUseLatestCallbackImport) {
@@ -251,7 +253,10 @@ function isJSXElement(node: TSESTree.Node): boolean {
   // Check for conditional expressions that might return JSX
   if (node.type === AST_NODE_TYPES.ConditionalExpression) {
     const conditionalNode = node as TSESTree.ConditionalExpression;
-    return isJSXElement(conditionalNode.consequent) || isJSXElement(conditionalNode.alternate);
+    return (
+      isJSXElement(conditionalNode.consequent) ||
+      isJSXElement(conditionalNode.alternate)
+    );
   }
 
   // Check for logical expressions that might return JSX
