@@ -53,6 +53,8 @@ const ALLOWED_COMPOUND_NOUNS = ['PhoneNumber', 'EmailAddress', 'PostalCode'];
 
 // Common built-in JavaScript prototype methods
 const BUILT_IN_METHODS = new Set([
+  // Whitelisted methods
+  'toArr',
   // String methods
   'charAt',
   'charCodeAt',

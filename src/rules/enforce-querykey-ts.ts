@@ -1,15 +1,15 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
-type MessageIds = 'preferGlobalRouterStateKey' | 'invalidQueryKeySource';
+type MessageIds = 'enforceQueryKeyImport' | 'enforceQueryKeyConstant';
 
 /**
  * Rule to enforce the use of centralized router state key constants imported from
  * `src/util/routing/queryKeys.ts` instead of arbitrary string literals when calling
  * router methods that accept key parameters.
  */
-export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
-  name: 'prefer-global-router-state-key',
+export const enforceQueryKeyTs = createRule<[], MessageIds>({
+  name: 'enforce-querykey-ts',
   meta: {
     type: 'problem',
     docs: {
@@ -20,9 +20,9 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
     fixable: 'code',
     schema: [],
     messages: {
-      preferGlobalRouterStateKey:
+      enforceQueryKeyImport:
         'Router state key must be imported from "@/util/routing/queryKeys" or "src/util/routing/queryKeys". Use a QUERY_KEY_* constant instead of string literals.',
-      invalidQueryKeySource:
+      enforceQueryKeyConstant:
         'Router state key must use a QUERY_KEY_* constant from queryKeys.ts. Variable "{{variableName}}" is not imported from the correct source.',
     },
   },
@@ -31,23 +31,8 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
     // Track imports from queryKeys.ts
     const queryKeyImports = new Map<
       string,
-      {
-        source: string;
-        imported: string;
-        isNamespace?: boolean;
-        isDefault?: boolean;
-      }
+      { source: string; imported: string }
     >();
-
-    // Track namespace imports (import * as QueryKeys from ...)
-    const namespaceImports = new Map<string, string>();
-
-    // Track default imports (import queryKeys from ...)
-    const defaultImports = new Map<string, string>();
-
-    // Track re-exports and variable assignments
-    const variableAssignments = new Map<string, TSESTree.Node>();
-
     const validQueryKeySources = new Set([
       '@/util/routing/queryKeys',
       'src/util/routing/queryKeys',
@@ -56,20 +41,15 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
       '../../util/routing/queryKeys',
       '../../../util/routing/queryKeys',
       '../../../../util/routing/queryKeys',
-      '@/constants',
-      '@/constants/index',
     ]);
 
     /**
-     * Check if a source path refers to queryKeys.ts or re-exports from it
+     * Check if a source path refers to queryKeys.ts
      */
     function isQueryKeysSource(source: string): boolean {
       return (
         validQueryKeySources.has(source) ||
-        source.endsWith('/util/routing/queryKeys') ||
-        source.includes('queryKeys') ||
-        source.endsWith('/constants') ||
-        source.endsWith('/constants/index')
+        source.endsWith('/util/routing/queryKeys')
       );
     }
 
@@ -81,11 +61,15 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
     }
 
     /**
+     * Track variable assignments to detect variables derived from query key constants
+     */
+    const variableAssignments = new Map<string, TSESTree.Node>();
+
+    /**
      * Check if a node represents a valid query key usage
      */
     function isValidQueryKeyUsage(node: TSESTree.Node): boolean {
       if (node.type === AST_NODE_TYPES.Identifier) {
-        // Check direct imports
         const importInfo = queryKeyImports.get(node.name);
         if (importInfo && isQueryKeysSource(importInfo.source)) {
           return isValidQueryKeyConstant(importInfo.imported);
@@ -101,22 +85,6 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
       // Allow member expressions accessing query key constants
       if (node.type === AST_NODE_TYPES.MemberExpression) {
         if (node.object.type === AST_NODE_TYPES.Identifier) {
-          // Check namespace imports (QueryKeys.QUERY_KEY_USER)
-          const namespaceSource = namespaceImports.get(node.object.name);
-          if (namespaceSource && isQueryKeysSource(namespaceSource)) {
-            if (node.property.type === AST_NODE_TYPES.Identifier) {
-              return isValidQueryKeyConstant(node.property.name);
-            }
-            return false; // Invalid property access on namespace import
-          }
-
-          // Check default imports (queryKeys.QUERY_KEY_USER)
-          const defaultSource = defaultImports.get(node.object.name);
-          if (defaultSource && isQueryKeysSource(defaultSource)) {
-            return true; // Allow any property access on default imports
-          }
-
-          // Check regular imports
           const importInfo = queryKeyImports.get(node.object.name);
           if (importInfo && isQueryKeysSource(importInfo.source)) {
             return true;
@@ -126,14 +94,14 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
 
       // Allow template literals if they use valid query keys
       if (node.type === AST_NODE_TYPES.TemplateLiteral) {
+        // If there are expressions, at least one should be a valid query key
         if (node.expressions.length > 0) {
           return node.expressions.some((expr) => isValidQueryKeyUsage(expr));
         }
-        // Template literals with no expressions are just static strings
+        // If no expressions, it's just a static template literal (should be invalid)
         return false;
       }
 
-      // Allow binary expressions if they use valid query keys
       if (
         node.type === AST_NODE_TYPES.BinaryExpression &&
         node.operator === '+'
@@ -153,17 +121,9 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
 
       // Allow function calls that might return query keys
       if (node.type === AST_NODE_TYPES.CallExpression) {
-        return true; // Permissive for function calls
-      }
-
-      // Allow type assertions (key as const)
-      if (node.type === AST_NODE_TYPES.TSAsExpression) {
-        return isValidQueryKeyUsage(node.expression);
-      }
-
-      // Allow array access and member expressions that might be valid
-      if (node.type === AST_NODE_TYPES.MemberExpression) {
-        return true; // Be permissive for complex member expressions
+        // This is a more permissive approach - we assume function calls might be valid
+        // In a real implementation, you might want to be more strict
+        return true;
       }
 
       return false;
@@ -202,16 +162,12 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
 
       // Template literal with static parts (but allow if it uses query key variables)
       if (node.type === AST_NODE_TYPES.TemplateLiteral) {
-        // If no expressions, it's just a static template literal
-        if (node.expressions.length === 0) {
-          return true;
-        }
-
         const hasSignificantStaticPart = node.quasis.some((quasi) => {
           const content = quasi.value.raw.trim();
           return content.length > 0 && !/^[-_:/.]+$/.test(content);
         });
         if (hasSignificantStaticPart) {
+          // Check if expressions use valid query keys
           return !node.expressions.every((expr) => isValidQueryKeyUsage(expr));
         }
       }
@@ -223,6 +179,7 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
      * Generate auto-fix suggestion for string literals
      */
     function generateAutoFix(keyValue: string): string | null {
+      // Simple heuristic to suggest query key constant names
       const normalizedKey = keyValue
         .toUpperCase()
         .replace(/[^A-Z0-9]/g, '_')
@@ -246,12 +203,6 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                 const imported = spec.imported.name;
                 const local = spec.local.name;
                 queryKeyImports.set(local, { source, imported });
-              } else if (
-                spec.type === AST_NODE_TYPES.ImportNamespaceSpecifier
-              ) {
-                namespaceImports.set(spec.local.name, source);
-              } else if (spec.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
-                defaultImports.set(spec.local.name, source);
               }
             });
           }
@@ -265,16 +216,6 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
         }
       },
 
-      // Track assignment expressions
-      AssignmentExpression(node: TSESTree.AssignmentExpression) {
-        if (
-          node.left.type === AST_NODE_TYPES.Identifier &&
-          node.operator === '='
-        ) {
-          variableAssignments.set(node.left.name, node.right);
-        }
-      },
-
       // Check useRouterState calls
       CallExpression(node: TSESTree.CallExpression) {
         // Check if this is a call to useRouterState
@@ -282,10 +223,13 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
           node.callee.type === AST_NODE_TYPES.Identifier &&
           node.callee.name === 'useRouterState'
         ) {
+          // Check if there are arguments
           if (node.arguments.length > 0) {
             const firstArg = node.arguments[0];
 
+            // Check if the first argument is an object expression
             if (firstArg.type === AST_NODE_TYPES.ObjectExpression) {
+              // Find the key property in the object
               const keyProperty = firstArg.properties.find(
                 (prop): prop is TSESTree.Property =>
                   prop.type === AST_NODE_TYPES.Property &&
@@ -293,15 +237,19 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                   prop.key.name === 'key',
               );
 
+              // If key property exists, check its value
               if (keyProperty && keyProperty.value) {
                 const keyValue = keyProperty.value;
 
+                // Check if it's a valid query key usage
                 if (!isValidQueryKeyUsage(keyValue)) {
+                  // Check if it contains invalid string literals
                   if (containsInvalidStringLiteral(keyValue)) {
                     context.report({
                       node: keyValue,
-                      messageId: 'preferGlobalRouterStateKey',
+                      messageId: 'enforceQueryKeyImport',
                       fix(fixer) {
+                        // Only provide auto-fix for simple string literals
                         if (
                           keyValue.type === AST_NODE_TYPES.Literal &&
                           typeof keyValue.value === 'string'
@@ -320,9 +268,10 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                       },
                     });
                   } else if (keyValue.type === AST_NODE_TYPES.Identifier) {
+                    // Report variables that aren't from the correct source
                     context.report({
                       node: keyValue,
-                      messageId: 'invalidQueryKeySource',
+                      messageId: 'enforceQueryKeyConstant',
                       data: {
                         variableName: keyValue.name,
                       },
