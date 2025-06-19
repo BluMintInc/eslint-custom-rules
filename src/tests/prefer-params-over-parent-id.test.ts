@@ -436,6 +436,296 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         };
       `,
     },
+
+    // FALSE POSITIVE PREVENTION: Access through destructuring without handler type
+    {
+      code: `
+        const regularFunction = async (event) => {
+          const { data: { after } } = event;
+          const parentId = after.ref.parent.id;
+          return parentId;
+        };
+      `,
+    },
+
+    // FALSE POSITIVE PREVENTION: Nested functions with params in scope but not handler
+    {
+      code: `
+        function outerFunction() {
+          const params = { userId: 'test' };
+
+          function innerFunction(event) {
+            const parentId = event.data.after.ref.parent.id;
+            return parentId;
+          }
+
+          return innerFunction;
+        }
+      `,
+    },
+
+    // FALSE POSITIVE PREVENTION: Handler type in generic constraint
+    {
+      code: `
+        function processHandler<T extends DocumentChangeHandler<any, any>>(handler: T) {
+          const someDoc = { ref: { parent: { id: 'test' } } };
+          return someDoc.ref.parent.id;
+        }
+      `,
+    },
+
+    // FALSE POSITIVE PREVENTION: Multiple params with different names
+    {
+      code: `
+        export const multiParamHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { params: { userId, groupId, documentId } } = event;
+          console.log(userId, groupId, documentId);
+        };
+      `,
+    },
+
+    // FALSE POSITIVE PREVENTION: Optional chaining with params
+    {
+      code: `
+        export const optionalParamsHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const userId = params?.userId;
+          const groupId = params?.groupId;
+          console.log(userId, groupId);
+        };
+      `,
+    },
+
+    // FALSE POSITIVE PREVENTION: Batch operations with params
+    {
+      code: `
+        export const batchHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { params: { userId } } = event;
+          const batch = db.batch();
+          batch.set(db.doc(\`users/\${userId}\`), { active: true });
+          await batch.commit();
+        };
+      `,
+    },
+
+    // FALSE POSITIVE PREVENTION: Collection queries with params
+    {
+      code: `
+        export const queryHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { params: { userId } } = event;
+          const users = await db.collection('users').where('parentId', '==', userId).get();
+          console.log(users.size);
+        };
+      `,
+    },
+
+    // FALSE POSITIVE PREVENTION: Transaction operations with params
+    {
+      code: `
+        export const transactionParamsHandler: DocumentChangeHandlerTransaction<
+          UserData,
+          UserPath
+        > = async (event, transaction) => {
+          const { params: { userId } } = event;
+          const userRef = db.doc(\`User/\${userId}\`);
+          transaction.update(userRef, { parentId: userId });
+        };
+      `,
+    },
+
+    // FALSE POSITIVE PREVENTION: Nested destructuring with params
+    {
+      code: `
+        export const nestedDestructuringHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change, params: { userId, docId } } = event;
+          console.log(\`User \${userId}, doc \${docId}\`);
+        };
+      `,
+    },
+
+    // FALSE POSITIVE PREVENTION: Handler with mixed params access patterns
+    {
+      code: `
+        export const mixedParamsHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { params } = event;
+          const { userId, groupId } = params;
+          const documentId = params.documentId;
+          console.log(userId, groupId, documentId);
+        };
+      `,
+    },
+
+    // FALSE POSITIVE PREVENTION: Handler with template literals using params
+    {
+      code: `
+        export const templateParamsHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { params: { userId } } = event;
+          const path = \`users/\${userId}/profile\`;
+          console.log(path);
+        };
+      `,
+    },
+
+    // FALSE POSITIVE PREVENTION: Handler with complex params destructuring
+    {
+      code: `
+        export const complexParamsHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async ({ data: change, params: { userId, ...otherParams } }) => {
+          console.log(userId, otherParams);
+        };
+      `,
+    },
+
+    // FALSE POSITIVE PREVENTION: Handler with params in conditional
+    {
+      code: `
+        export const conditionalParamsHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { params } = event;
+          if (params.userId) {
+            console.log(\`Processing user \${params.userId}\`);
+          }
+        };
+      `,
+    },
+
+    // FALSE POSITIVE PREVENTION: Handler with params in loop
+    {
+      code: `
+        export const loopParamsHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { params: { userId } } = event;
+          for (let i = 0; i < 3; i++) {
+            console.log(\`Iteration \${i} for user \${userId}\`);
+          }
+        };
+      `,
+    },
+
+    // FALSE POSITIVE PREVENTION: Handler with params in async operations
+    {
+      code: `
+        export const asyncParamsHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { params: { userId } } = event;
+          const results = await Promise.all([
+            db.doc(\`UserProfile/\${userId}\`).get(),
+            db.doc(\`UserSettings/\${userId}\`).get()
+          ]);
+          console.log(results);
+        };
+      `,
+    },
+
+    // FALSE POSITIVE PREVENTION: Handler with params in error handling
+    {
+      code: `
+        export const errorHandlingParamsHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { params: { userId } } = event;
+          try {
+            await processUser(userId);
+          } catch (error) {
+            console.error(\`Error processing user \${userId}:\`, error);
+          }
+        };
+      `,
+    },
+
+    // FALSE POSITIVE PREVENTION: Handler with params in object spread
+    {
+      code: `
+        export const spreadParamsHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { params } = event;
+          const config = {
+            ...defaultConfig,
+            userId: params.userId,
+            groupId: params.groupId
+          };
+          console.log(config);
+        };
+      `,
+    },
+
+    // FALSE POSITIVE PREVENTION: Handler with params in array operations
+    {
+      code: `
+        export const arrayParamsHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { params: { userId } } = event;
+          const userIds = [userId, 'admin', 'system'];
+          const results = userIds.map(id => \`user-\${id}\`);
+          console.log(results);
+        };
+      `,
+    },
+
+    // FALSE POSITIVE PREVENTION: Handler with params in switch statement
+    {
+      code: `
+        export const switchParamsHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { params: { userId } } = event;
+          switch (userId) {
+            case 'admin':
+              console.log('Admin user');
+              break;
+            default:
+              console.log('Regular user');
+          }
+        };
+      `,
+    },
+
+    // FALSE POSITIVE PREVENTION: Handler with params in return statement
+    {
+      code: `
+        export const returnParamsHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { params: { userId } } = event;
+          return { userId, timestamp: Date.now() };
+        };
+      `,
+    },
   ],
 
   invalid: [
@@ -694,10 +984,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const userId2 = change.before.ref.parent.id;
         };
       `,
-      errors: [
-        { messageId: 'preferParams' },
-        { messageId: 'preferParams' }
-      ],
+      errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
       output: `
         export const multipleUsages: DocumentChangeHandler<
           UserData,
@@ -1189,7 +1476,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
       errors: [
         { messageId: 'preferParams' },
         { messageId: 'preferParams' },
-        { messageId: 'preferParams' }
+        { messageId: 'preferParams' },
       ],
       output: `
         export const mixedPatterns: DocumentChangeHandler<
@@ -1257,7 +1544,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         { messageId: 'preferParams' },
         { messageId: 'preferParams' },
         { messageId: 'preferParams' },
-        { messageId: 'preferParams' }
+        { messageId: 'preferParams' },
       ],
       output: `
         export const complexExpressions: DocumentChangeHandler<
@@ -1292,10 +1579,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const parentId = event.data.before.ref.parent.id;
         };
       `,
-      errors: [
-        { messageId: 'preferParams' },
-        { messageId: 'preferParams' }
-      ],
+      errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
       output: `
         export const handler1: DocumentChangeHandler<UserData, UserPath> = async (event) => {
           const parentId = params.userId;
@@ -1657,10 +1941,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           setTimeout(() => console.log(change.after.ref.parent.id), 1000);
         };
       `,
-      errors: [
-        { messageId: 'preferParams' },
-        { messageId: 'preferParams' }
-      ],
+      errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
       output: `
         export const functionCallHandler: DocumentChangeHandler<
           UserData,
@@ -1967,6 +2248,572 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const MyClass = class {
             parentId = params.userId;
           };
+        };
+      `,
+    },
+
+    // EDGE CASE: Access through destructuring in handler
+    {
+      code: `
+        export const destructuringAccessHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: { after } } = event;
+          const parentId = after.ref.parent.id;
+        };
+      `,
+      errors: [{ messageId: 'preferParams' }],
+      output: `
+        export const destructuringAccessHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: { after } } = event;
+          const parentId = params.userId;
+        };
+      `,
+    },
+
+    // EDGE CASE: Nested functions in handlers should still trigger
+    {
+      code: `
+        export const nestedFunctionHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change } = event;
+
+          const process = () => {
+            return change.after.ref.parent.id;
+          };
+
+          return process();
+        };
+      `,
+      errors: [{ messageId: 'preferParams' }],
+      output: `
+        export const nestedFunctionHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change } = event;
+
+          const process = () => {
+            return params.userId;
+          };
+
+          return process();
+        };
+      `,
+    },
+
+    // EDGE CASE: Callbacks in handlers should trigger
+    {
+      code: `
+        export const callbackHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change } = event;
+
+          const items = ['a', 'b', 'c'];
+          items.map(() => change.after.ref.parent.id);
+        };
+      `,
+      errors: [{ messageId: 'preferParams' }],
+      output: `
+        export const callbackHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change } = event;
+
+          const items = ['a', 'b', 'c'];
+          items.map(() => params.userId);
+        };
+      `,
+    },
+
+    // EDGE CASE: Transaction handlers with multiple operations
+    {
+      code: `
+        export const multiOpTransactionHandler: DocumentChangeHandlerTransaction<
+          UserData,
+          UserPath
+        > = async (event, transaction) => {
+          const { data: change } = event;
+
+          const userId = change.after.ref.parent.id;
+          const userRef = db.doc(\`User/\${userId}\`);
+          await transaction.get(userRef);
+          transaction.set(db.doc(\`Profile/\${userId}\`), { userId });
+        };
+      `,
+      errors: [{ messageId: 'preferParams' }],
+      output: `
+        export const multiOpTransactionHandler: DocumentChangeHandlerTransaction<
+          UserData,
+          UserPath
+        > = async (event, transaction) => {
+          const { data: change } = event;
+
+          const userId = params.userId;
+          const userRef = db.doc(\`User/\${userId}\`);
+          await transaction.get(userRef);
+          transaction.set(db.doc(\`Profile/\${userId}\`), { userId });
+        };
+      `,
+    },
+
+    // EDGE CASE: Missing params destructuring should error
+    {
+      code: `
+        export const missingParamsHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change } = event;
+          // Missing params destructuring - should error
+          const userId = change.after.ref.parent.id;
+
+          const userProfile = await db.doc(\`UserProfile/\${userId}\`).get();
+        };
+      `,
+      errors: [{ messageId: 'preferParams' }],
+      output: `
+        export const missingParamsHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change } = event;
+          // Missing params destructuring - should error
+          const userId = params.userId;
+
+          const userProfile = await db.doc(\`UserProfile/\${userId}\`).get();
+        };
+      `,
+    },
+
+    // EDGE CASE: Mixed usage - params in scope but still using ref.parent.id
+    {
+      code: `
+        export const mixedUsageHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change, params } = event;
+
+          // Even with params in scope, should error when using ref.parent.id
+          const userId = change.after.ref.parent.id;
+          console.log(params.groupId);
+        };
+      `,
+      errors: [{ messageId: 'preferParams' }],
+      output: `
+        export const mixedUsageHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change, params } = event;
+
+          // Even with params in scope, should error when using ref.parent.id
+          const userId = params.userId;
+          console.log(params.groupId);
+        };
+      `,
+    },
+
+    // EDGE CASE: Template literals with ref.parent.id
+    {
+      code: `
+        export const templateLiteralRefHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change } = event;
+
+          const path = \`users/\${change.after.ref.parent.id}/profile\`;
+          const message = \`Processing user \${change.after.ref.parent.id}\`;
+        };
+      `,
+      errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
+      output: `
+        export const templateLiteralRefHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change } = event;
+
+          const path = \`users/\${params.userId}/profile\`;
+          const message = \`Processing user \${params.userId}\`;
+        };
+      `,
+    },
+
+    // EDGE CASE: Document references using ref.parent.id
+    {
+      code: `
+        export const docRefHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change } = event;
+
+          const userProfile = await db.doc(\`UserProfile/\${change.after.ref.parent.id}\`).get();
+          const userSettings = await db.doc(\`UserSettings/\${change.before.ref.parent.id}\`).get();
+        };
+      `,
+      errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
+      output: `
+        export const docRefHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change } = event;
+
+          const userProfile = await db.doc(\`UserProfile/\${params.userId}\`).get();
+          const userSettings = await db.doc(\`UserSettings/\${params.userId}\`).get();
+        };
+      `,
+    },
+
+    // EDGE CASE: Collection queries using ref.parent.id
+    {
+      code: `
+        export const collectionQueryHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change } = event;
+
+          const users = await db.collection('users').where('parentId', '==', change.after.ref.parent.id).get();
+          const profiles = await db.collection('profiles').where('userId', '==', change.after.ref.parent.id).get();
+        };
+      `,
+      errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
+      output: `
+        export const collectionQueryHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change } = event;
+
+          const users = await db.collection('users').where('parentId', '==', params.userId).get();
+          const profiles = await db.collection('profiles').where('userId', '==', params.userId).get();
+        };
+      `,
+    },
+
+    // EDGE CASE: Batch operations using ref.parent.id
+    {
+      code: `
+        export const batchRefHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change } = event;
+
+          const batch = db.batch();
+          batch.set(db.doc(\`users/\${change.after.ref.parent.id}\`), { active: true });
+          batch.update(db.doc(\`profiles/\${change.after.ref.parent.id}\`), { updated: true });
+          await batch.commit();
+        };
+      `,
+      errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
+      output: `
+        export const batchRefHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change } = event;
+
+          const batch = db.batch();
+          batch.set(db.doc(\`users/\${params.userId}\`), { active: true });
+          batch.update(db.doc(\`profiles/\${params.userId}\`), { updated: true });
+          await batch.commit();
+        };
+      `,
+    },
+
+    // EDGE CASE: Multi-level path parameters (grandparent access)
+    {
+      code: `
+        export const multiLevelHandler: DocumentChangeHandler<
+          GameData,
+          GamePath
+        > = async (event) => {
+          const { data: change } = event;
+
+          // Path: /Game/{gameId}/Tournament/{tournamentId}/Round/{roundId}
+          const gameId = change.after.ref.parent.parent.parent.id;
+          const tournamentId = change.after.ref.parent.parent.id;
+          const roundId = change.after.ref.parent.id;
+        };
+      `,
+      errors: [
+        { messageId: 'preferParams' },
+        { messageId: 'preferParams' },
+        { messageId: 'preferParams' },
+      ],
+      output: `
+        export const multiLevelHandler: DocumentChangeHandler<
+          GameData,
+          GamePath
+        > = async (event) => {
+          const { data: change } = event;
+
+          // Path: /Game/{gameId}/Tournament/{tournamentId}/Round/{roundId}
+          const gameId = params.parentId;
+          const tournamentId = params.parentId;
+          const roundId = params.userId;
+        };
+      `,
+    },
+
+    // EDGE CASE: Variable assignment and reuse
+    {
+      code: `
+        export const variableReuseHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change } = event;
+
+          const parentId = change.after.ref.parent.id;
+
+          // Used in multiple places
+          const userRef = db.doc(\`User/\${parentId}\`);
+          const profileRef = db.doc(\`Profile/\${parentId}\`);
+          console.log(\`Processing \${parentId}\`);
+        };
+      `,
+      errors: [{ messageId: 'preferParams' }],
+      output: `
+        export const variableReuseHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change } = event;
+
+          const parentId = params.userId;
+
+          // Used in multiple places
+          const userRef = db.doc(\`User/\${parentId}\`);
+          const profileRef = db.doc(\`Profile/\${parentId}\`);
+          console.log(\`Processing \${parentId}\`);
+        };
+      `,
+    },
+
+    // EDGE CASE: Complex reference chains
+    {
+      code: `
+        export const complexRefChainHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change } = event;
+
+          const greatGrandparentId = change.after.ref.parent.parent.parent.parent.id;
+          const grandparentId = change.after.ref.parent.parent.parent.id;
+        };
+      `,
+      errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
+      output: `
+        export const complexRefChainHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change } = event;
+
+          const greatGrandparentId = params.parentId;
+          const grandparentId = params.parentId;
+        };
+      `,
+    },
+
+    // EDGE CASE: Optional chaining variants
+    {
+      code: `
+        export const optionalChainingVariantsHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change } = event;
+
+          const maybeParentId1 = change.after?.ref?.parent?.id;
+          const maybeParentId2 = change?.after?.ref?.parent?.id;
+          const maybeParentId3 = change.before?.ref?.parent?.id;
+        };
+      `,
+      errors: [
+        { messageId: 'preferParams' },
+        { messageId: 'preferParams' },
+        { messageId: 'preferParams' },
+      ],
+      output: `
+        export const optionalChainingVariantsHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data: change } = event;
+
+          const maybeParentId1 = params?.userId;
+          const maybeParentId2 = params?.userId;
+          const maybeParentId3 = params?.userId;
+        };
+      `,
+    },
+
+    // EDGE CASE: All handler type variations
+    {
+      code: `
+        export const docChangeHandler: DocumentChangeHandler<UserData, UserPath> = async (event) => {
+          const parentId = event.data.after.ref.parent.id;
+        };
+
+        export const docChangeTransactionHandler: DocumentChangeHandlerTransaction<UserData, UserPath> = async (event, transaction) => {
+          const parentId = event.data.after.ref.parent.id;
+        };
+
+        export const realtimeHandler: RealtimeDbChangeHandler<GameData, GamePath> = async (event) => {
+          const parentId = event.data.ref.parent.id;
+        };
+
+        export const realtimeTransactionHandler: RealtimeDbChangeHandlerTransaction<GameData, GamePath> = async (event, transaction) => {
+          const parentId = event.data.ref.parent.id;
+        };
+      `,
+      errors: [
+        { messageId: 'preferParams' },
+        { messageId: 'preferParams' },
+        { messageId: 'preferParams' },
+        { messageId: 'preferParams' },
+      ],
+      output: `
+        export const docChangeHandler: DocumentChangeHandler<UserData, UserPath> = async (event) => {
+          const parentId = params.userId;
+        };
+
+        export const docChangeTransactionHandler: DocumentChangeHandlerTransaction<UserData, UserPath> = async (event, transaction) => {
+          const parentId = params.userId;
+        };
+
+        export const realtimeHandler: RealtimeDbChangeHandler<GameData, GamePath> = async (event) => {
+          const parentId = params.userId;
+        };
+
+        export const realtimeTransactionHandler: RealtimeDbChangeHandlerTransaction<GameData, GamePath> = async (event, transaction) => {
+          const parentId = params.userId;
+        };
+      `,
+    },
+
+    // EDGE CASE: Handler with arrow function and complex destructuring
+    {
+      code: `
+        export const complexArrowHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async ({ data: { after, before }, params: existingParams, ...rest }) => {
+          // Should still error even with params destructured
+          const afterParentId = after.ref.parent.id;
+          const beforeParentId = before?.ref?.parent?.id;
+        };
+      `,
+      errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
+      output: `
+        export const complexArrowHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async ({ data: { after, before }, params: existingParams, ...rest }) => {
+          // Should still error even with params destructured
+          const afterParentId = params.userId;
+          const beforeParentId = params?.userId;
+        };
+      `,
+    },
+
+    // EDGE CASE: Handler with snapshot.ref.parent.id (RealtimeDB specific)
+    {
+      code: `
+        export const snapshotHandler: RealtimeDbChangeHandler<
+          GameData,
+          GamePath
+        > = async (event) => {
+          const { data: snapshot } = event;
+
+          const parentId = snapshot.ref.parent.id;
+          const grandparentId = snapshot.ref.parent.parent.id;
+        };
+      `,
+      errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
+      output: `
+        export const snapshotHandler: RealtimeDbChangeHandler<
+          GameData,
+          GamePath
+        > = async (event) => {
+          const { data: snapshot } = event;
+
+          const parentId = params.userId;
+          const grandparentId = params.parentId;
+        };
+      `,
+    },
+
+    // EDGE CASE: Handler with data.ref.parent.id (alternative destructuring)
+    {
+      code: `
+        export const dataRefHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data } = event;
+
+          const afterParentId = data.after.ref.parent.id;
+          const beforeParentId = data.before?.ref?.parent?.id;
+        };
+      `,
+      errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
+      output: `
+        export const dataRefHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const { data } = event;
+
+          const afterParentId = params.userId;
+          const beforeParentId = params?.userId;
+        };
+      `,
+    },
+
+    // EDGE CASE: Handler with event.data.after.ref.parent.id (no destructuring)
+    {
+      code: `
+        export const noDestructuringRefHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const afterParentId = event.data.after.ref.parent.id;
+          const beforeParentId = event.data.before?.ref?.parent?.id;
+          const snapshotParentId = event.data.ref?.parent?.id;
+        };
+      `,
+      errors: [
+        { messageId: 'preferParams' },
+        { messageId: 'preferParams' },
+        { messageId: 'preferParams' },
+      ],
+      output: `
+        export const noDestructuringRefHandler: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async (event) => {
+          const afterParentId = params.userId;
+          const beforeParentId = params?.userId;
+          const snapshotParentId = params?.userId;
         };
       `,
     },
