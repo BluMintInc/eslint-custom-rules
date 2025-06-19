@@ -101,7 +101,8 @@ import { default as preferUseCallbackOverUseMemoForFunctions } from './rules/pre
 import { noMarginProperties } from './rules/no-margin-properties';
 import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-prefixes';
 import { preferBlockCommentsForDeclarations } from './rules/prefer-block-comments-for-declarations';
-import { noUndefinedNullPassthrough } from './rules/no-undefined-null-passthrough';
+
+import { noExcessiveParentChain } from './rules/no-excessive-parent-chain';
 import { preferDocumentFlattening } from './rules/prefer-document-flattening';
 import { noOverridableMethodCallsInConstructor } from './rules/no-overridable-method-calls-in-constructor';
 import { useLatestCallback } from './rules/use-latest-callback';
@@ -122,6 +123,7 @@ module.exports = {
     recommended: {
       plugins: ['@blumintinc/blumint'],
       rules: {
+        '@blumintinc/blumint/no-excessive-parent-chain': 'error',
         '@blumintinc/blumint/prefer-document-flattening': 'error',
         '@blumintinc/blumint/prefer-block-comments-for-declarations': 'error',
         '@blumintinc/blumint/key-only-outermost-element': 'error',
@@ -247,9 +249,9 @@ module.exports = {
   },
 
   rules: {
+    'no-excessive-parent-chain': noExcessiveParentChain,
     'prefer-document-flattening': preferDocumentFlattening,
-    'prefer-block-comments-for-declarations':
-      preferBlockCommentsForDeclarations,
+    'prefer-block-comments-for-declarations': preferBlockCommentsForDeclarations,
     'key-only-outermost-element': keyOnlyOutermostElement,
     'array-methods-this-context': arrayMethodsThisContext,
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
@@ -354,9 +356,7 @@ module.exports = {
       preferUseCallbackOverUseMemoForFunctions,
     'no-margin-properties': noMarginProperties,
     'enforce-boolean-naming-prefixes': enforceBooleanNamingPrefixes,
-    'no-undefined-null-passthrough': noUndefinedNullPassthrough,
-    'no-overridable-method-calls-in-constructor':
-      noOverridableMethodCallsInConstructor,
+    'no-overridable-method-calls-in-constructor': noOverridableMethodCallsInConstructor,
     'use-latest-callback': useLatestCallback,
     'enforce-querykey-ts': enforceQueryKeyTs,
     'no-stale-state-across-await': noStaleStateAcrossAwait,
