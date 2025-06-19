@@ -101,6 +101,7 @@ import { default as preferUseCallbackOverUseMemoForFunctions } from './rules/pre
 import { noMarginProperties } from './rules/no-margin-properties';
 import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-prefixes';
 import { preferBlockCommentsForDeclarations } from './rules/prefer-block-comments-for-declarations';
+import { enforceUniqueCursorHeaders } from './rules/enforce-unique-cursor-headers';
 
 import { noExcessiveParentChain } from './rules/no-excessive-parent-chain';
 import { preferDocumentFlattening } from './rules/prefer-document-flattening';
@@ -126,6 +127,7 @@ module.exports = {
         '@blumintinc/blumint/no-excessive-parent-chain': 'error',
         '@blumintinc/blumint/prefer-document-flattening': 'error',
         '@blumintinc/blumint/prefer-block-comments-for-declarations': 'error',
+        '@blumintinc/blumint/enforce-unique-cursor-headers': 'error',
         '@blumintinc/blumint/key-only-outermost-element': 'error',
         '@blumintinc/blumint/parallelize-async-operations': 'error',
         '@blumintinc/blumint/avoid-utils-directory': 'error',
@@ -251,7 +253,9 @@ module.exports = {
   rules: {
     'no-excessive-parent-chain': noExcessiveParentChain,
     'prefer-document-flattening': preferDocumentFlattening,
-    'prefer-block-comments-for-declarations': preferBlockCommentsForDeclarations,
+    'prefer-block-comments-for-declarations':
+      preferBlockCommentsForDeclarations,
+    'enforce-unique-cursor-headers': enforceUniqueCursorHeaders,
     'key-only-outermost-element': keyOnlyOutermostElement,
     'array-methods-this-context': arrayMethodsThisContext,
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
@@ -356,7 +360,8 @@ module.exports = {
       preferUseCallbackOverUseMemoForFunctions,
     'no-margin-properties': noMarginProperties,
     'enforce-boolean-naming-prefixes': enforceBooleanNamingPrefixes,
-    'no-overridable-method-calls-in-constructor': noOverridableMethodCallsInConstructor,
+    'no-overridable-method-calls-in-constructor':
+      noOverridableMethodCallsInConstructor,
     'use-latest-callback': useLatestCallback,
     'enforce-querykey-ts': enforceQueryKeyTs,
     'no-stale-state-across-await': noStaleStateAcrossAwait,
