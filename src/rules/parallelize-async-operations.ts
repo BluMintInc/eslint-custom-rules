@@ -8,13 +8,15 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce the use of Promise.all() when multiple independent asynchronous operations are awaited sequentially',
+      description:
+        'Enforce the use of Promise.all() when multiple independent asynchronous operations are awaited sequentially',
       recommended: 'error',
     },
     fixable: 'code',
     schema: [],
     messages: {
-      parallelizeAsyncOperations: 'Multiple sequential awaits detected. Consider using Promise.all() to parallelize independent async operations for better performance.',
+      parallelizeAsyncOperations:
+        'Multiple sequential awaits detected. Consider using Promise.all() to parallelize independent async operations for better performance.',
     },
   },
   defaultOptions: [],
@@ -22,7 +24,9 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
     /**
      * Checks if a node is an await expression
      */
-    function isAwaitExpression(node: TSESTree.Node): node is TSESTree.AwaitExpression {
+    function isAwaitExpression(
+      node: TSESTree.Node,
+    ): node is TSESTree.AwaitExpression {
       return node.type === AST_NODE_TYPES.AwaitExpression;
     }
 
@@ -36,7 +40,7 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
 
       return node.declarations.some(
         (declaration) =>
-          declaration.init && isAwaitExpression(declaration.init)
+          declaration.init && isAwaitExpression(declaration.init),
       );
     }
 
@@ -53,12 +57,17 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
     /**
      * Extracts the await expression from a node
      */
-    function getAwaitExpression(node: TSESTree.Node): TSESTree.AwaitExpression | null {
+    function getAwaitExpression(
+      node: TSESTree.Node,
+    ): TSESTree.AwaitExpression | null {
       if (isAwaitExpression(node)) {
         return node;
       }
 
-      if (node.type === AST_NODE_TYPES.ExpressionStatement && isAwaitExpression(node.expression)) {
+      if (
+        node.type === AST_NODE_TYPES.ExpressionStatement &&
+        isAwaitExpression(node.expression)
+      ) {
         return node.expression;
       }
 
@@ -76,11 +85,17 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
     /**
      * Checks if an identifier is used in a node
      */
-    function isIdentifierUsedInNode(identifier: string, node: TSESTree.Node): boolean {
+    function isIdentifierUsedInNode(
+      identifier: string,
+      node: TSESTree.Node,
+    ): boolean {
       let isUsed = false;
 
       function visit(node: TSESTree.Node) {
-        if (node.type === AST_NODE_TYPES.Identifier && node.name === identifier) {
+        if (
+          node.type === AST_NODE_TYPES.Identifier &&
+          node.name === identifier
+        ) {
           isUsed = true;
           return;
         }
@@ -113,7 +128,7 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
      */
     function hasDependencies(
       awaitNodes: TSESTree.Node[],
-      variableNames: Set<string>
+      variableNames: Set<string>,
     ): boolean {
       // If we have fewer than 2 nodes, there are no dependencies to check
       if (awaitNodes.length < 2) {
@@ -127,7 +142,10 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
         // Check if any previous variable is used in the current await expression
         for (const varName of variableNames) {
           const awaitExpr = getAwaitExpression(currentNode);
-          if (awaitExpr && isIdentifierUsedInNode(varName, awaitExpr.argument)) {
+          if (
+            awaitExpr &&
+            isIdentifierUsedInNode(varName, awaitExpr.argument)
+          ) {
             return true;
           }
         }
@@ -135,21 +153,33 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
         // Check for operations that might have side effects that affect subsequent operations
         // This is a conservative heuristic - we only flag very specific patterns
         const awaitExpr = getAwaitExpression(currentNode);
-        if (awaitExpr && awaitExpr.argument.type === AST_NODE_TYPES.CallExpression) {
+        if (
+          awaitExpr &&
+          awaitExpr.argument.type === AST_NODE_TYPES.CallExpression
+        ) {
           const callee = awaitExpr.argument.callee;
 
           // Check for method calls that might indicate side effects
-          if (callee.type === AST_NODE_TYPES.MemberExpression &&
-              callee.property.type === AST_NODE_TYPES.Identifier) {
+          if (
+            callee.type === AST_NODE_TYPES.MemberExpression &&
+            callee.property.type === AST_NODE_TYPES.Identifier
+          ) {
             const methodName = callee.property.name.toLowerCase();
 
             // Only flag operations that are very likely to have side effects that affect other operations
             const sideEffectMethods = [
-              'updatecounter', 'setcounter', 'incrementcounter', 'decrementcounter',
-              'updatethreshold', 'setthreshold', 'checkthreshold'
+              'updatecounter',
+              'setcounter',
+              'incrementcounter',
+              'decrementcounter',
+              'updatethreshold',
+              'setthreshold',
+              'checkthreshold',
             ];
 
-            if (sideEffectMethods.some(method => methodName.includes(method))) {
+            if (
+              sideEffectMethods.some((method) => methodName.includes(method))
+            ) {
               return true;
             }
           }
@@ -160,11 +190,18 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
 
             // Only flag operations that are very likely to have side effects that affect other operations
             const sideEffectFunctions = [
-              'updatecounter', 'setcounter', 'incrementcounter', 'decrementcounter',
-              'updatethreshold', 'setthreshold', 'checkthreshold'
+              'updatecounter',
+              'setcounter',
+              'incrementcounter',
+              'decrementcounter',
+              'updatethreshold',
+              'setthreshold',
+              'checkthreshold',
             ];
 
-            if (sideEffectFunctions.some(func => functionName.includes(func))) {
+            if (
+              sideEffectFunctions.some((func) => functionName.includes(func))
+            ) {
               return true;
             }
           }
@@ -294,7 +331,7 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
      */
     function generateFix(
       fixer: TSESLint.RuleFixer,
-      awaitNodes: TSESTree.Node[]
+      awaitNodes: TSESTree.Node[],
     ): TSESLint.RuleFix | null {
       const sourceCode = context.getSourceCode();
 
@@ -309,7 +346,7 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
 
       // Get the text of each await argument
       const awaitArguments = awaitExpressions.map((expr) =>
-        sourceCode.getText(expr.argument)
+        sourceCode.getText(expr.argument),
       );
 
       // Check if we have variable declarations that need to be preserved
@@ -336,11 +373,17 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
 
       if (hasVariableDeclarations) {
         // Create destructuring assignment with Promise.all
-        const destructuringPattern = variableNames.map(name => name || '').join(', ');
-        promiseAllText = `const [${destructuringPattern}] = await Promise.all([\n  ${awaitArguments.join(',\n  ')}\n]);`;
+        const destructuringPattern = variableNames
+          .map((name) => name || '')
+          .join(', ');
+        promiseAllText = `const [${destructuringPattern}] = await Promise.all([\n  ${awaitArguments.join(
+          ',\n  ',
+        )}\n]);`;
       } else {
         // Simple Promise.all without variable assignments
-        promiseAllText = `await Promise.all([\n  ${awaitArguments.join(',\n  ')}\n]);`;
+        promiseAllText = `await Promise.all([\n  ${awaitArguments.join(
+          ',\n  ',
+        )}\n]);`;
       }
 
       // Find the start position, accounting for leading comments

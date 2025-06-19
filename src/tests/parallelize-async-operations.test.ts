@@ -107,7 +107,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         const { data: data2 } = await fetchData2();
         return { data1, data2 };
       }
-      `
+      `,
     },
 
     // Using await with complex expressions
@@ -281,8 +281,6 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
       return result;
     }
     `,
-
-
 
     // Edge case: Awaits in different loop types
     `
@@ -1224,7 +1222,5 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
       }
       `,
     },
-
-
   ],
 });
