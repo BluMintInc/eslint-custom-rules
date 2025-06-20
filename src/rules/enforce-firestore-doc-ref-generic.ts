@@ -245,64 +245,407 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
         return true;
       }
 
-      // Check if the node is a member expression (like this.collectionRef)
+      // Check if the node is a member expression
       if (node.type === AST_NODE_TYPES.MemberExpression) {
-        const obj = node.object;
-        const property = node.property;
+        return checkMemberExpressionForCollectionReference(node);
+      }
 
-        if (obj.type === AST_NODE_TYPES.ThisExpression && property.type === AST_NODE_TYPES.Identifier) {
-          // Look for class property with CollectionReference type
-          const classNode = findParentClass(node);
-          if (classNode) {
-            const classProp = classNode.body.body.find(
-              (member): member is TSESTree.PropertyDefinition =>
-                member.type === AST_NODE_TYPES.PropertyDefinition &&
-                member.key.type === AST_NODE_TYPES.Identifier &&
-                member.key.name === property.name,
+      // Check if the node is an identifier that refers to a typed variable or parameter
+      if (node.type === AST_NODE_TYPES.Identifier) {
+        return checkIdentifierForCollectionReference(node);
+      }
+
+      // Check if the node is a call expression that returns a CollectionReference
+      if (node.type === AST_NODE_TYPES.CallExpression) {
+        return checkCallExpressionForCollectionReference(node);
+      }
+
+      return false;
+    }
+
+    function checkMemberExpressionForCollectionReference(
+      node: TSESTree.MemberExpression,
+    ): boolean {
+      const obj = node.object;
+      const property = node.property;
+
+      // Handle this.property access
+      if (
+        obj.type === AST_NODE_TYPES.ThisExpression &&
+        property.type === AST_NODE_TYPES.Identifier
+      ) {
+        const classNode = findParentClass(node);
+        if (classNode) {
+          const classProp = classNode.body.body.find(
+            (member): member is TSESTree.PropertyDefinition =>
+              member.type === AST_NODE_TYPES.PropertyDefinition &&
+              member.key.type === AST_NODE_TYPES.Identifier &&
+              member.key.name === property.name,
+          );
+          if (classProp?.typeAnnotation) {
+            return hasCollectionReferenceType(
+              classProp.typeAnnotation.typeAnnotation,
             );
-            if (classProp?.typeAnnotation) {
-              return hasCollectionReferenceType(classProp.typeAnnotation.typeAnnotation);
-            }
           }
         }
       }
 
-      // Check if the node is an identifier that refers to a typed variable
-      if (node.type === AST_NODE_TYPES.Identifier) {
-        // Look for variable declaration with CollectionReference type
-        let current: TSESTree.Node | undefined = node;
-        while (current) {
-          if (current.type === AST_NODE_TYPES.Program) {
-            // Search in program body for variable declarations
-            const varDecl = current.body.find((stmt): stmt is TSESTree.VariableDeclaration =>
-              stmt.type === AST_NODE_TYPES.VariableDeclaration &&
-              stmt.declarations.some(
-                (decl): decl is TSESTree.VariableDeclarator =>
-                  decl.type === AST_NODE_TYPES.VariableDeclarator &&
-                  decl.id.type === AST_NODE_TYPES.Identifier &&
-                  decl.id.name === node.name &&
-                  decl.id.typeAnnotation !== undefined
-              )
-            );
-            if (varDecl) {
-              const declarator = varDecl.declarations.find(
-                (decl): decl is TSESTree.VariableDeclarator =>
-                  decl.type === AST_NODE_TYPES.VariableDeclarator &&
-                  decl.id.type === AST_NODE_TYPES.Identifier &&
-                  decl.id.name === node.name &&
-                  decl.id.typeAnnotation !== undefined
+      // Handle nested property access like this.collections.tasks
+      if (obj.type === AST_NODE_TYPES.MemberExpression) {
+        const parentType = getTypeOfMemberExpression(obj);
+        if (parentType && property.type === AST_NODE_TYPES.Identifier) {
+          // Check if the parent object has a property with CollectionReference type
+          return checkObjectPropertyForCollectionReference(
+            parentType,
+            property.name,
+          );
+        }
+      }
+
+      // Handle identifier.property access
+      if (
+        obj.type === AST_NODE_TYPES.Identifier &&
+        property.type === AST_NODE_TYPES.Identifier
+      ) {
+        const objType = getTypeOfIdentifier(obj);
+        if (objType) {
+          return checkObjectPropertyForCollectionReference(
+            objType,
+            property.name,
+          );
+        }
+      }
+
+      // Handle getter methods like this.collection where collection is a getter
+      if (
+        obj.type === AST_NODE_TYPES.ThisExpression &&
+        property.type === AST_NODE_TYPES.Identifier
+      ) {
+        const classNode = findParentClass(node);
+        if (classNode) {
+          const getter = classNode.body.body.find(
+            (member): member is TSESTree.MethodDefinition =>
+              member.type === AST_NODE_TYPES.MethodDefinition &&
+              member.kind === 'get' &&
+              member.key.type === AST_NODE_TYPES.Identifier &&
+              member.key.name === property.name,
+          );
+          if (getter) {
+            // Check explicit return type
+            if (getter.value.returnType) {
+              return hasCollectionReferenceType(
+                getter.value.returnType.typeAnnotation,
               );
-              if (declarator?.id.typeAnnotation) {
-                return hasCollectionReferenceType(declarator.id.typeAnnotation.typeAnnotation);
+            }
+            // Check return statement to infer type
+            if (
+              getter.value.body &&
+              getter.value.body.type === AST_NODE_TYPES.BlockStatement
+            ) {
+              const returnStmt = getter.value.body.body.find(
+                (stmt): stmt is TSESTree.ReturnStatement =>
+                  stmt.type === AST_NODE_TYPES.ReturnStatement,
+              );
+              if (
+                returnStmt?.argument?.type === AST_NODE_TYPES.MemberExpression
+              ) {
+                return checkMemberExpressionForCollectionReference(
+                  returnStmt.argument,
+                );
               }
             }
-            break;
           }
-          current = current.parent as TSESTree.Node;
         }
       }
 
       return false;
+    }
+
+    function checkIdentifierForCollectionReference(
+      node: TSESTree.Identifier,
+    ): boolean {
+      // Check function parameters
+      const functionParam = findFunctionParameter(node);
+      if (
+        functionParam &&
+        'typeAnnotation' in functionParam &&
+        functionParam.typeAnnotation
+      ) {
+        return hasCollectionReferenceType(
+          functionParam.typeAnnotation.typeAnnotation,
+        );
+      }
+
+      // Check variable declarations in current scope and parent scopes
+      if (findVariableDeclaration(node)) {
+        return true;
+      }
+
+      return false;
+    }
+
+    function checkCallExpressionForCollectionReference(
+      node: TSESTree.CallExpression,
+    ): boolean {
+      // Check if this is a method call that returns CollectionReference
+      if (node.callee.type === AST_NODE_TYPES.MemberExpression) {
+        const obj = node.callee.object;
+        const property = node.callee.property;
+
+        if (property.type === AST_NODE_TYPES.Identifier) {
+          // Check if this is a getter or method that returns CollectionReference
+          if (obj.type === AST_NODE_TYPES.ThisExpression) {
+            const classNode = findParentClass(node);
+            if (classNode) {
+              const method = classNode.body.body.find(
+                (member): member is TSESTree.MethodDefinition =>
+                  member.type === AST_NODE_TYPES.MethodDefinition &&
+                  member.key.type === AST_NODE_TYPES.Identifier &&
+                  member.key.name === property.name &&
+                  !!member.value.returnType,
+              );
+              if (method?.value.returnType) {
+                return hasCollectionReferenceType(
+                  method.value.returnType.typeAnnotation,
+                );
+              }
+            }
+          }
+        }
+      }
+
+      return false;
+    }
+
+    function getTypeOfMemberExpression(
+      node: TSESTree.MemberExpression,
+    ): TSESTree.TypeNode | null {
+      if (
+        node.object.type === AST_NODE_TYPES.ThisExpression &&
+        node.property.type === AST_NODE_TYPES.Identifier
+      ) {
+        const classNode = findParentClass(node);
+        if (classNode) {
+          const classProp = classNode.body.body.find(
+            (member): member is TSESTree.PropertyDefinition =>
+              member.type === AST_NODE_TYPES.PropertyDefinition &&
+              member.key.type === AST_NODE_TYPES.Identifier &&
+              'name' in node.property &&
+              member.key.name === node.property.name,
+          );
+          return classProp?.typeAnnotation?.typeAnnotation || null;
+        }
+      }
+      return null;
+    }
+
+    function getTypeOfIdentifier(
+      node: TSESTree.Identifier,
+    ): TSESTree.TypeNode | null {
+      const functionParam = findFunctionParameter(node);
+      if (
+        functionParam &&
+        'typeAnnotation' in functionParam &&
+        functionParam.typeAnnotation
+      ) {
+        return functionParam.typeAnnotation.typeAnnotation;
+      }
+
+      const varDecl = findVariableDeclarationNode(node);
+      if (varDecl?.typeAnnotation) {
+        return varDecl.typeAnnotation.typeAnnotation;
+      }
+
+      return null;
+    }
+
+    function checkObjectPropertyForCollectionReference(
+      objectType: TSESTree.TypeNode,
+      propertyName: string,
+    ): boolean {
+      if (objectType.type === AST_NODE_TYPES.TSTypeLiteral) {
+        const property = objectType.members.find(
+          (member): member is TSESTree.TSPropertySignature =>
+            member.type === AST_NODE_TYPES.TSPropertySignature &&
+            member.key.type === AST_NODE_TYPES.Identifier &&
+            member.key.name === propertyName &&
+            !!member.typeAnnotation,
+        );
+        if (property?.typeAnnotation) {
+          return hasCollectionReferenceType(
+            property.typeAnnotation.typeAnnotation,
+          );
+        }
+      }
+
+      // Handle Record<string, CollectionReference<T>> types
+      if (
+        objectType.type === AST_NODE_TYPES.TSTypeReference &&
+        objectType.typeName.type === AST_NODE_TYPES.Identifier &&
+        objectType.typeName.name === 'Record' &&
+        objectType.typeParameters &&
+        objectType.typeParameters.params.length === 2
+      ) {
+        const valueType = objectType.typeParameters.params[1];
+        return hasCollectionReferenceType(valueType);
+      }
+
+      // Handle array types like CollectionReference<T>[]
+      if (objectType.type === AST_NODE_TYPES.TSArrayType) {
+        return hasCollectionReferenceType(objectType.elementType);
+      }
+
+      return false;
+    }
+
+    function findFunctionParameter(
+      node: TSESTree.Identifier,
+    ): TSESTree.Parameter | null {
+      let current: TSESTree.Node | undefined = node;
+      while (current) {
+        if (
+          current.type === AST_NODE_TYPES.FunctionDeclaration ||
+          current.type === AST_NODE_TYPES.FunctionExpression ||
+          current.type === AST_NODE_TYPES.ArrowFunctionExpression
+        ) {
+          const param = current.params.find(
+            (p): p is TSESTree.Identifier =>
+              p.type === AST_NODE_TYPES.Identifier &&
+              p.name === node.name &&
+              'typeAnnotation' in p &&
+              p.typeAnnotation !== undefined,
+          );
+          if (param) {
+            return param;
+          }
+        }
+        current = current.parent as TSESTree.Node;
+      }
+
+      // Also check parent function scopes for closure variables
+      current = node;
+      while (current) {
+        if (
+          current.type === AST_NODE_TYPES.FunctionDeclaration ||
+          current.type === AST_NODE_TYPES.FunctionExpression ||
+          current.type === AST_NODE_TYPES.ArrowFunctionExpression
+        ) {
+          // Look in parent functions for the parameter
+          let parentFunc = current.parent as TSESTree.Node;
+          while (parentFunc) {
+            if (
+              parentFunc.type === AST_NODE_TYPES.FunctionDeclaration ||
+              parentFunc.type === AST_NODE_TYPES.FunctionExpression ||
+              parentFunc.type === AST_NODE_TYPES.ArrowFunctionExpression
+            ) {
+              const param = parentFunc.params.find(
+                (p): p is TSESTree.Identifier =>
+                  p.type === AST_NODE_TYPES.Identifier &&
+                  p.name === node.name &&
+                  'typeAnnotation' in p &&
+                  p.typeAnnotation !== undefined,
+              );
+              if (param) {
+                return param;
+              }
+            }
+            parentFunc = parentFunc.parent as TSESTree.Node;
+          }
+        }
+        current = current.parent as TSESTree.Node;
+      }
+
+      return null;
+    }
+
+    function findVariableDeclaration(node: TSESTree.Identifier): boolean {
+      let current: TSESTree.Node | undefined = node;
+      while (current) {
+        // Check in current scope
+        if (
+          current.type === AST_NODE_TYPES.Program ||
+          current.type === AST_NODE_TYPES.BlockStatement ||
+          current.type === AST_NODE_TYPES.FunctionDeclaration ||
+          current.type === AST_NODE_TYPES.FunctionExpression ||
+          current.type === AST_NODE_TYPES.ArrowFunctionExpression
+        ) {
+          const varDecl = findVariableInScope(current, node.name);
+          if (varDecl && varDecl.typeAnnotation) {
+            return hasCollectionReferenceType(
+              varDecl.typeAnnotation.typeAnnotation,
+            );
+          }
+        }
+        current = current.parent as TSESTree.Node;
+      }
+      return false;
+    }
+
+    function findVariableDeclarationNode(
+      node: TSESTree.Identifier,
+    ): TSESTree.Identifier | null {
+      let current: TSESTree.Node | undefined = node;
+      while (current) {
+        if (
+          current.type === AST_NODE_TYPES.Program ||
+          current.type === AST_NODE_TYPES.BlockStatement ||
+          current.type === AST_NODE_TYPES.FunctionDeclaration ||
+          current.type === AST_NODE_TYPES.FunctionExpression ||
+          current.type === AST_NODE_TYPES.ArrowFunctionExpression
+        ) {
+          const varDecl = findVariableInScope(current, node.name);
+          if (varDecl) {
+            return varDecl;
+          }
+        }
+        current = current.parent as TSESTree.Node;
+      }
+      return null;
+    }
+
+    function findVariableInScope(
+      scope: TSESTree.Node,
+      varName: string,
+    ): TSESTree.Identifier | null {
+      const body = getNodeBody(scope);
+      if (!body) return null;
+
+      for (const stmt of body) {
+        if (stmt.type === AST_NODE_TYPES.VariableDeclaration) {
+          for (const decl of stmt.declarations) {
+            if (
+              decl.type === AST_NODE_TYPES.VariableDeclarator &&
+              decl.id.type === AST_NODE_TYPES.Identifier &&
+              decl.id.name === varName &&
+              decl.id.typeAnnotation
+            ) {
+              return decl.id;
+            }
+          }
+        }
+      }
+      return null;
+    }
+
+    function getNodeBody(node: TSESTree.Node): TSESTree.Statement[] | null {
+      if (node.type === AST_NODE_TYPES.Program) {
+        return node.body;
+      }
+      if (node.type === AST_NODE_TYPES.BlockStatement) {
+        return node.body;
+      }
+      if (
+        node.type === AST_NODE_TYPES.FunctionDeclaration ||
+        node.type === AST_NODE_TYPES.FunctionExpression
+      ) {
+        return node.body?.body || null;
+      }
+      if (node.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+        return node.body.type === AST_NODE_TYPES.BlockStatement
+          ? node.body.body
+          : null;
+      }
+      return null;
     }
 
     function hasCollectionReferenceType(typeNode: TSESTree.TypeNode): boolean {
@@ -361,7 +704,9 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
           node.callee.property.name === 'doc'
         ) {
           const typeAnnotation = node.typeParameters;
-          const isOnTypedCollection = isTypedCollectionReference(node.callee.object);
+          const isOnTypedCollection = isTypedCollectionReference(
+            node.callee.object,
+          );
 
           // If this is a .doc() call on a typed CollectionReference,
           // only check for invalid generics, not missing generics
@@ -377,6 +722,26 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
           }
 
           // For standalone doc() calls or calls on untyped collections
+          if (!typeAnnotation) {
+            context.report({
+              node,
+              messageId: 'missingGeneric',
+              data: { type: 'DocumentReference' },
+            });
+          } else if (hasInvalidType(typeAnnotation.params[0])) {
+            context.report({
+              node,
+              messageId: 'invalidGeneric',
+              data: { type: 'DocumentReference' },
+            });
+          }
+        }
+        // Check for standalone doc() function calls
+        else if (
+          node.callee.type === AST_NODE_TYPES.Identifier &&
+          node.callee.name === 'doc'
+        ) {
+          const typeAnnotation = node.typeParameters;
           if (!typeAnnotation) {
             context.report({
               node,
