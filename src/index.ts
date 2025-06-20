@@ -101,6 +101,7 @@ import { default as preferUseCallbackOverUseMemoForFunctions } from './rules/pre
 import { noMarginProperties } from './rules/no-margin-properties';
 import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-prefixes';
 import { preferBlockCommentsForDeclarations } from './rules/prefer-block-comments-for-declarations';
+import { noUndefinedNullPassthrough } from './rules/no-undefined-null-passthrough';
 
 import { noExcessiveParentChain } from './rules/no-excessive-parent-chain';
 import { preferDocumentFlattening } from './rules/prefer-document-flattening';
@@ -356,6 +357,7 @@ module.exports = {
       preferUseCallbackOverUseMemoForFunctions,
     'no-margin-properties': noMarginProperties,
     'enforce-boolean-naming-prefixes': enforceBooleanNamingPrefixes,
+    'no-undefined-null-passthrough': noUndefinedNullPassthrough,
     'no-overridable-method-calls-in-constructor': noOverridableMethodCallsInConstructor,
     'use-latest-callback': useLatestCallback,
     'enforce-querykey-ts': enforceQueryKeyTs,
