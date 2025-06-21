@@ -102,8 +102,8 @@ import { noMarginProperties } from './rules/no-margin-properties';
 import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-prefixes';
 import { preferBlockCommentsForDeclarations } from './rules/prefer-block-comments-for-declarations';
 import { noUndefinedNullPassthrough } from './rules/no-undefined-null-passthrough';
+import { preferNullishCoalescingBooleanProps } from './rules/prefer-nullish-coalescing-boolean-props';
 import { noRestrictedPropertiesFix } from './rules/no-restricted-properties-fix';
-
 import { noExcessiveParentChain } from './rules/no-excessive-parent-chain';
 import { preferDocumentFlattening } from './rules/prefer-document-flattening';
 import { noOverridableMethodCallsInConstructor } from './rules/no-overridable-method-calls-in-constructor';
@@ -125,8 +125,6 @@ module.exports = {
     recommended: {
       plugins: ['@blumintinc/blumint'],
       rules: {
-        '@blumintinc/blumint/no-excessive-parent-chain': 'error',
-        '@blumintinc/blumint/prefer-document-flattening': 'error',
         '@blumintinc/blumint/prefer-block-comments-for-declarations': 'error',
         '@blumintinc/blumint/key-only-outermost-element': 'error',
         '@blumintinc/blumint/parallelize-async-operations': 'error',
@@ -238,7 +236,10 @@ module.exports = {
         '@blumintinc/blumint/no-margin-properties': 'error',
         '@blumintinc/blumint/enforce-boolean-naming-prefixes': 'error',
         '@blumintinc/blumint/no-undefined-null-passthrough': 'error',
+        '@blumintinc/blumint/prefer-nullish-coalescing-boolean-props': 'error',
         '@blumintinc/blumint/no-restricted-properties-fix': 'error',
+        '@blumintinc/blumint/no-excessive-parent-chain': 'error',
+        '@blumintinc/blumint/prefer-document-flattening': 'error',
         '@blumintinc/blumint/no-overridable-method-calls-in-constructor':
           'error',
         '@blumintinc/blumint/use-latest-callback': 'error',
@@ -362,6 +363,8 @@ module.exports = {
     'no-margin-properties': noMarginProperties,
     'enforce-boolean-naming-prefixes': enforceBooleanNamingPrefixes,
     'no-undefined-null-passthrough': noUndefinedNullPassthrough,
+    'prefer-nullish-coalescing-boolean-props':
+      preferNullishCoalescingBooleanProps,
     'no-overridable-method-calls-in-constructor':
       noOverridableMethodCallsInConstructor,
     'use-latest-callback': useLatestCallback,
