@@ -102,6 +102,7 @@ import { noMarginProperties } from './rules/no-margin-properties';
 import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-prefixes';
 import { preferBlockCommentsForDeclarations } from './rules/prefer-block-comments-for-declarations';
 import { noUndefinedNullPassthrough } from './rules/no-undefined-null-passthrough';
+import { preferNullishCoalescingOverride } from './rules/prefer-nullish-coalescing-override';
 import { preferNullishCoalescingBooleanProps } from './rules/prefer-nullish-coalescing-boolean-props';
 import { noRestrictedPropertiesFix } from './rules/no-restricted-properties-fix';
 import { noExcessiveParentChain } from './rules/no-excessive-parent-chain';
@@ -125,6 +126,9 @@ module.exports = {
     recommended: {
       plugins: ['@blumintinc/blumint'],
       rules: {
+        // Override the @typescript-eslint/prefer-nullish-coalescing rule
+        '@typescript-eslint/prefer-nullish-coalescing': 'off',
+        '@blumintinc/blumint/prefer-nullish-coalescing-override': 'error',
         '@blumintinc/blumint/prefer-block-comments-for-declarations': 'error',
         '@blumintinc/blumint/key-only-outermost-element': 'error',
         '@blumintinc/blumint/parallelize-async-operations': 'error',
@@ -253,6 +257,7 @@ module.exports = {
   },
 
   rules: {
+    'prefer-nullish-coalescing-override': preferNullishCoalescingOverride,
     'no-restricted-properties-fix': noRestrictedPropertiesFix,
     'no-excessive-parent-chain': noExcessiveParentChain,
     'prefer-document-flattening': preferDocumentFlattening,
