@@ -71,16 +71,16 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
     }
 
     // Check if a call expression is calling an assert-prefixed method
-    function isCallingAssertMethod(node: TSESTree.Node): boolean {
+    function isCallingAssertMethod(node: TSESTree.Node, functionBody?: TSESTree.BlockStatement | null): boolean {
       if (node.type === AST_NODE_TYPES.ReturnStatement && node.argument) {
-        return isCallingAssertMethodInExpression(node.argument);
+        return isCallingAssertMethodInExpression(node.argument, functionBody || undefined);
       } else if (node.type === AST_NODE_TYPES.ExpressionStatement) {
-        return isCallingAssertMethodInExpression(node.expression);
+        return isCallingAssertMethodInExpression(node.expression, functionBody || undefined);
       }
       return false;
     }
 
-    function isCallingAssertMethodInExpression(expression: TSESTree.Expression): boolean {
+    function isCallingAssertMethodInExpression(expression: TSESTree.Expression, functionBody?: TSESTree.BlockStatement): boolean {
       // Handle direct call: this.assertSomething()
       if (expression.type === AST_NODE_TYPES.CallExpression) {
         const callee = expression.callee;
@@ -90,7 +90,14 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
             return property.name.toLowerCase().startsWith('assert');
           }
         } else if (callee.type === AST_NODE_TYPES.Identifier) {
-          return callee.name.toLowerCase().startsWith('assert');
+          // Check if it's a direct assert function call
+          if (callee.name.toLowerCase().startsWith('assert')) {
+            return true;
+          }
+          // Check if it's a variable that was assigned an assert method
+          if (functionBody && isCallingVariableAssignedAssertMethod(expression, functionBody)) {
+            return true;
+          }
         }
 
         // Handle chained calls: this.assertA().then(() => this.assertB())
@@ -141,7 +148,19 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
 
       // Handle await expression: await this.assertSomething()
       if (expression.type === AST_NODE_TYPES.AwaitExpression) {
-        return isCallingAssertMethodInExpression(expression.argument);
+        return isCallingAssertMethodInExpression(expression.argument, functionBody);
+      }
+
+      // Handle ternary expressions: condition ? this.assertA() : this.assertB()
+      if (expression.type === AST_NODE_TYPES.ConditionalExpression) {
+        return isCallingAssertMethodInExpression(expression.consequent, functionBody) ||
+               isCallingAssertMethodInExpression(expression.alternate, functionBody);
+      }
+
+      // Handle logical expressions: this.assertA() || this.assertB()
+      if (expression.type === AST_NODE_TYPES.LogicalExpression) {
+        return isCallingAssertMethodInExpression(expression.left, functionBody) ||
+               isCallingAssertMethodInExpression(expression.right, functionBody);
       }
 
       return false;
@@ -221,10 +240,40 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
       return false;
     }
 
+    // Check if a variable is assigned an assert method
+    function isVariableAssignedAssertMethod(node: TSESTree.Node, variableName: string): boolean {
+      if (node.type === AST_NODE_TYPES.VariableDeclaration) {
+        for (const declarator of node.declarations) {
+          if (declarator.id.type === AST_NODE_TYPES.Identifier &&
+              declarator.id.name === variableName &&
+              declarator.init) {
+            if (declarator.init.type === AST_NODE_TYPES.MemberExpression &&
+                declarator.init.property.type === AST_NODE_TYPES.Identifier) {
+              return declarator.init.property.name.toLowerCase().startsWith('assert');
+            }
+          }
+        }
+      }
+      return false;
+    }
+
+    // Check if a call expression is calling a variable that was assigned an assert method
+    function isCallingVariableAssignedAssertMethod(expression: TSESTree.CallExpression, functionBody: TSESTree.BlockStatement): boolean {
+      if (expression.callee.type === AST_NODE_TYPES.Identifier) {
+        const variableName = expression.callee.name;
+        // Check if this variable was assigned an assert method in the function body
+        for (const stmt of functionBody.body) {
+          if (isVariableAssignedAssertMethod(stmt, variableName)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
     function hasThrowStatement(node: TSESTree.Node): boolean {
       let hasThrow = false;
-
-      // We no longer need this special case as we've implemented a more general solution
+      const functionBody = node.type === AST_NODE_TYPES.BlockStatement ? node : null;
 
       function walk(node: TSESTree.Node): void {
         if (node.type === AST_NODE_TYPES.ThrowStatement) {
@@ -247,7 +296,7 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
         }
 
         // Check for calls to other assert methods
-        if (isCallingAssertMethod(node)) {
+        if (isCallingAssertMethod(node, functionBody)) {
           hasThrow = true;
           return;
         }
@@ -269,7 +318,7 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
           }
         }
 
-        // Check catch blocks for process.exit(1)
+        // Handle catch blocks for process.exit(1)
         if (node.type === AST_NODE_TYPES.CatchClause) {
           walk(node.body);
           return;
