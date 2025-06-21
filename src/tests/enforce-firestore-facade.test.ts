@@ -190,6 +190,388 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
         }
       `,
     },
+    // Valid Set.prototype.delete() with no type parameter
+    {
+      code: `
+        const mySet = new Set();
+        mySet.add('item1');
+        mySet.delete('item1');
+      `,
+    },
+    // Valid Set.prototype.delete() with initial values
+    {
+      code: `
+        const mySet = new Set(['item1', 'item2', 'item3']);
+        mySet.delete('item1');
+      `,
+    },
+    // Valid Set.prototype.delete() with complex type
+    {
+      code: `
+        interface User {
+          id: string;
+          name: string;
+        }
+        const userSet = new Set<User>();
+        const user = { id: '123', name: 'John' };
+        userSet.add(user);
+        userSet.delete(user);
+      `,
+    },
+    // Valid Set.prototype.delete() in class context
+    {
+      code: `
+        class DataManager {
+          private items = new Set<string>();
+
+          addItem(item: string) {
+            this.items.add(item);
+          }
+
+          removeItem(item: string) {
+            this.items.delete(item);
+          }
+        }
+      `,
+    },
+    // Valid Set.prototype.delete() in callback context
+    {
+      code: `
+        const itemsToRemove = ['item1', 'item2'];
+        const mySet = new Set(['item1', 'item2', 'item3']);
+        itemsToRemove.forEach(item => mySet.delete(item));
+      `,
+    },
+    // Valid Set.prototype.delete() with variable reassignment
+    {
+      code: `
+        let mySet;
+        mySet = new Set<string>();
+        mySet.add('item1');
+        mySet.delete('item1');
+      `,
+    },
+    // Valid Map.prototype.delete() - should not trigger the rule
+    {
+      code: `
+        const myMap = new Map<string, any>();
+        myMap.set('key1', 'value1');
+        myMap.delete('key1');
+      `,
+    },
+    // Valid WeakSet.prototype.delete() - should not trigger the rule
+    {
+      code: `
+        const myWeakSet = new WeakSet();
+        const obj = {};
+        myWeakSet.add(obj);
+        myWeakSet.delete(obj);
+      `,
+    },
+    // Valid WeakMap.prototype.delete() - should not trigger the rule
+    {
+      code: `
+        const myWeakMap = new WeakMap();
+        const key = {};
+        myWeakMap.set(key, 'value');
+        myWeakMap.delete(key);
+      `,
+    },
+    // Valid Set.prototype.delete() with function parameter
+    {
+      code: `
+        function processSet(mySet: Set<string>, item: string) {
+          mySet.delete(item);
+        }
+
+        const dataSet = new Set<string>();
+        processSet(dataSet, 'item1');
+      `,
+    },
+    // Valid Set.prototype.delete() with function return
+    {
+      code: `
+        function createSet(): Set<string> {
+          return new Set<string>();
+        }
+
+        const mySet = createSet();
+        mySet.delete('item1');
+      `,
+    },
+    // Valid Set.prototype.delete() in conditional
+    {
+      code: `
+        const mySet = new Set<string>();
+        const condition = true;
+        if (condition) {
+          mySet.delete('item1');
+        }
+      `,
+    },
+    // Valid Set.prototype.delete() in try-catch
+    {
+      code: `
+        const mySet = new Set<string>();
+        try {
+          mySet.delete('item1');
+        } catch (error) {
+          console.error(error);
+        }
+      `,
+    },
+    // Valid Set.prototype.delete() with variable name containing 'doc'
+    {
+      code: `
+        const docSet = new Set<string>();
+        docSet.add('doc1');
+        docSet.delete('doc1');
+      `,
+    },
+    // Valid Set.prototype.delete() with variable name containing 'ref'
+    {
+      code: `
+        const refSet = new Set<string>();
+        refSet.add('ref1');
+        refSet.delete('ref1');
+      `,
+    },
+    // Valid Set.prototype.delete() with nested property access
+    {
+      code: `
+        const dataManager = {
+          items: new Set<string>()
+        };
+        dataManager.items.add('item1');
+        dataManager.items.delete('item1');
+      `,
+    },
+    // Valid Set.prototype.delete() with array destructuring
+    {
+      code: `
+        const sets = [new Set<string>(), new Set<number>()];
+        const [stringSet, numberSet] = sets;
+        stringSet.delete('item1');
+        numberSet.delete(123);
+      `,
+    },
+    // Valid Set.prototype.delete() with object destructuring
+    {
+      code: `
+        const container = {
+          stringSet: new Set<string>(),
+          numberSet: new Set<number>()
+        };
+        const { stringSet, numberSet } = container;
+        stringSet.delete('item1');
+        numberSet.delete(123);
+      `,
+    },
+    // Valid Set.prototype.delete() with method chaining
+    {
+      code: `
+        const mySet = new Set<string>();
+        mySet.add('item1').add('item2');
+        mySet.delete('item1');
+      `,
+    },
+    // Valid Set.prototype.delete() with generic constraints
+    {
+      code: `
+        function processGenericSet<T extends string>(mySet: Set<T>, item: T) {
+          mySet.delete(item);
+        }
+      `,
+    },
+    // Valid Set.prototype.delete() with union types
+    {
+      code: `
+        const mixedSet = new Set<string | number>();
+        mixedSet.add('item1');
+        mixedSet.add(123);
+        mixedSet.delete('item1');
+        mixedSet.delete(123);
+      `,
+    },
+    // Valid Set.prototype.delete() with async context
+    {
+      code: `
+        async function processItems() {
+          const mySet = new Set<string>();
+          mySet.add('item1');
+          await Promise.resolve();
+          mySet.delete('item1');
+        }
+      `,
+    },
+    // Valid Set.prototype.delete() with arrow function
+    {
+      code: `
+        const removeFromSet = (mySet: Set<string>, item: string) => {
+          mySet.delete(item);
+        };
+
+        const dataSet = new Set<string>();
+        removeFromSet(dataSet, 'item1');
+      `,
+    },
+    // Valid Set.prototype.delete() with spread operator
+    {
+      code: `
+        const originalSet = new Set(['item1', 'item2']);
+        const newSet = new Set([...originalSet, 'item3']);
+        newSet.delete('item1');
+      `,
+    },
+    // Valid Set.prototype.delete() with Set.from()
+    {
+      code: `
+        const arrayData = ['item1', 'item2', 'item3'];
+        const mySet = new Set(arrayData);
+        mySet.delete('item1');
+      `,
+    },
+    // Valid Set operations with multiple methods
+    {
+      code: `
+        const mySet = new Set<string>();
+        mySet.add('item1');
+        mySet.add('item2');
+        const hasItem = mySet.has('item1');
+        mySet.delete('item1');
+        const size = mySet.size;
+        mySet.clear();
+      `,
+    },
+    // Valid: Assignment after declaration (not tracked by current implementation but should not error)
+    {
+      code: `
+        let mySet;
+        function initSet() {
+          mySet = new Set<string>();
+        }
+        initSet();
+        mySet.delete('item1');
+      `,
+    },
+    // Valid: Complex nested property access with Set
+    {
+      code: `
+        const manager = {
+          data: {
+            items: new Set<string>()
+          }
+        };
+        manager.data.items.add('item1');
+        manager.data.items.delete('item1');
+      `,
+    },
+    // Valid: Set in array with destructuring
+    {
+      code: `
+        const collections = [new Set<string>(), new Map<string, any>()];
+        const [mySet, myMap] = collections;
+        mySet.delete('item1');
+        myMap.delete('key1');
+      `,
+    },
+    // Valid: Set with DocumentReference type (should not be confused with Firestore)
+    {
+      code: `
+        import { DocumentReference } from 'firebase-admin/firestore';
+        const docRefSet = new Set<DocumentReference>();
+        const docRef = {} as DocumentReference;
+        docRefSet.add(docRef);
+        docRefSet.delete(docRef);
+      `,
+    },
+    // Valid: Set methods other than delete
+    {
+      code: `
+        const mySet = new Set<string>();
+        mySet.add('item1');
+        mySet.has('item1');
+        mySet.clear();
+        const size = mySet.size;
+        for (const item of mySet) {
+          console.log(item);
+        }
+      `,
+    },
+    // Valid: Map methods including delete
+    {
+      code: `
+        const myMap = new Map<string, number>();
+        myMap.set('key1', 1);
+        myMap.get('key1');
+        myMap.has('key1');
+        myMap.delete('key1');
+        myMap.clear();
+      `,
+    },
+    // Valid: WeakSet and WeakMap with objects
+    {
+      code: `
+        const myWeakSet = new WeakSet<object>();
+        const myWeakMap = new WeakMap<object, string>();
+        const obj1 = {};
+        const obj2 = {};
+
+        myWeakSet.add(obj1);
+        myWeakMap.set(obj2, 'value');
+
+        myWeakSet.delete(obj1);
+        myWeakMap.delete(obj2);
+      `,
+    },
+    // Valid: Collection operations in loops
+    {
+      code: `
+        const mySet = new Set<string>(['item1', 'item2', 'item3']);
+        const itemsToRemove = ['item1', 'item3'];
+
+        for (const item of itemsToRemove) {
+          mySet.delete(item);
+        }
+
+        itemsToRemove.forEach(item => {
+          if (mySet.has(item)) {
+            mySet.delete(item);
+          }
+        });
+      `,
+    },
+    // Valid: Collection operations with error handling
+    {
+      code: `
+        const mySet = new Set<string>();
+        const myMap = new Map<string, any>();
+
+        try {
+          mySet.delete('nonexistent');
+          myMap.delete('nonexistent');
+        } catch (error) {
+          console.error('Error deleting items:', error);
+        }
+      `,
+    },
+    // Valid: Collection operations with async/await
+    {
+      code: `
+        async function processCollections() {
+          const mySet = new Set<string>();
+          const myMap = new Map<string, Promise<any>>();
+
+          mySet.add('item1');
+          myMap.set('key1', Promise.resolve('value1'));
+
+          await Promise.resolve();
+
+          mySet.delete('item1');
+          myMap.delete('key1');
+        }
+      `,
+    },
   ],
   invalid: [
     // Invalid direct get usage
@@ -363,6 +745,260 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
         };
       `,
       errors: [{ messageId: 'noDirectGet' }, { messageId: 'noDirectGet' }],
+    },
+    // Invalid: Firestore delete should still be caught even with Set variables present
+    {
+      code: `
+        const mySet = new Set<string>();
+        const docRef = db.collection('users').doc('user123');
+        mySet.delete('item1'); // This should be valid
+        await docRef.delete(); // This should be invalid
+      `,
+      errors: [{ messageId: 'noDirectDelete' }],
+    },
+    // Invalid: Variable named like Set but actually Firestore reference
+    {
+      code: `
+        const setRef = db.collection('users').doc('user123');
+        await setRef.delete();
+      `,
+      errors: [{ messageId: 'noDirectDelete' }],
+    },
+    // Invalid: Firestore operations in same scope as Set operations
+    {
+      code: `
+        const mySet = new Set<string>();
+        const docRef = db.collection('users').doc('user123');
+
+        mySet.add('item1');
+        await docRef.set({ name: 'John' });
+        mySet.delete('item1');
+        await docRef.update({ age: 30 });
+      `,
+      errors: [{ messageId: 'noDirectSet' }, { messageId: 'noDirectUpdate' }],
+    },
+    // Invalid: Batch operations should still be caught
+    {
+      code: `
+        const mySet = new Set<string>();
+        const batch = db.batch();
+
+        mySet.delete('item1');
+        batch.delete(docRef);
+        await batch.commit();
+      `,
+      errors: [{ messageId: 'noDirectDelete' }],
+    },
+    // Invalid: Transaction operations should still be caught
+    {
+      code: `
+        const mySet = new Set<string>();
+
+        await db.runTransaction(async (transaction) => {
+          mySet.delete('item1');
+          transaction.delete(docRef);
+        });
+      `,
+      errors: [{ messageId: 'noDirectDelete' }],
+    },
+    // Invalid: Firestore delete with type assertion should still be caught
+    {
+      code: `
+        import { DocumentReference } from 'firebase-admin/firestore';
+        const mySet = new Set<string>();
+
+        mySet.delete('item1');
+        await (db.doc('users/123') as DocumentReference).delete();
+      `,
+      errors: [{ messageId: 'noDirectDelete' }],
+    },
+    // Invalid: Nested Firestore operations should still be caught
+    {
+      code: `
+        const mySet = new Set<string>();
+
+        if (condition) {
+          mySet.delete('item1');
+          await db.collection('users').doc('user123').delete();
+        }
+      `,
+      errors: [{ messageId: 'noDirectDelete' }],
+    },
+    // Invalid: Mixed valid Set and invalid Firestore operations
+    {
+      code: `
+        class DataManager {
+          private items = new Set<string>();
+
+          async removeItem(item: string) {
+            this.items.delete(item); // Valid Set operation
+
+            const docRef = db.collection('items').doc(item);
+            await docRef.delete(); // Invalid Firestore operation
+          }
+        }
+      `,
+      errors: [{ messageId: 'noDirectDelete' }],
+    },
+    // Invalid: Firestore operations with similar variable names to Set
+    {
+      code: `
+        const itemSet = new Set<string>();
+        const docSet = db.collection('documents');
+
+        itemSet.delete('item1'); // Valid
+        await docSet.doc('doc1').delete(); // Invalid
+      `,
+      errors: [{ messageId: 'noDirectDelete' }],
+    },
+    // Invalid: Multiple Firestore methods with Set operations
+    {
+      code: `
+        const mySet = new Set<string>();
+        const userRef = db.collection('users').doc('user123');
+
+        mySet.add('item1');
+        const userData = await userRef.get(); // Invalid
+        mySet.delete('item1');
+        await userRef.set({ name: 'John' }); // Invalid
+        await userRef.update({ age: 30 }); // Invalid
+        await userRef.delete(); // Invalid
+      `,
+      errors: [
+        { messageId: 'noDirectGet' },
+        { messageId: 'noDirectSet' },
+        { messageId: 'noDirectUpdate' },
+        { messageId: 'noDirectDelete' },
+      ],
+    },
+    // Invalid: Variable named like collection but actually Firestore
+    {
+      code: `
+        const mapRef = db.collection('users').doc('user123');
+        await mapRef.delete();
+      `,
+      errors: [{ messageId: 'noDirectDelete' }],
+    },
+    // Invalid: Firestore operations should be caught even with collection variables in scope
+    {
+      code: `
+        const mySet = new Set<string>();
+        const myMap = new Map<string, any>();
+        const myWeakSet = new WeakSet();
+
+        const docRef = db.collection('users').doc('user123');
+
+        mySet.delete('item1'); // Valid
+        myMap.delete('key1'); // Valid
+        myWeakSet.delete({}); // Valid
+
+        await docRef.delete(); // Invalid - should still be caught
+      `,
+      errors: [{ messageId: 'noDirectDelete' }],
+    },
+    // Invalid: Firestore operations in complex control flow with collections
+    {
+      code: `
+        const collections = [new Set<string>(), new Map<string, any>()];
+        const [mySet, myMap] = collections;
+
+        if (Math.random() > 0.5) {
+          mySet.delete('item1'); // Valid
+          const docRef = db.collection('users').doc('user123');
+          await docRef.delete(); // Invalid
+        } else {
+          myMap.delete('key1'); // Valid
+        }
+      `,
+      errors: [{ messageId: 'noDirectDelete' }],
+    },
+    // Invalid: Firestore operations in async context with collections
+    {
+      code: `
+        async function processData() {
+          const mySet = new Set<string>();
+
+          await Promise.all([
+            Promise.resolve(mySet.delete('item1')), // Valid
+            db.collection('users').doc('user123').delete() // Invalid
+          ]);
+        }
+      `,
+      errors: [{ messageId: 'noDirectDelete' }],
+    },
+    // Invalid: Firestore operations with similar method names on collections
+    {
+      code: `
+        const mySet = new Set<string>();
+        const myMap = new Map<string, any>();
+
+        // Valid collection operations
+        mySet.add('item1');
+        myMap.set('key1', 'value1');
+        mySet.delete('item1');
+        myMap.delete('key1');
+
+        // Invalid Firestore operations
+        const docRef = db.collection('users').doc('user123');
+        await docRef.set({ name: 'John' }); // Invalid - should be caught
+        await docRef.get(); // Invalid - should be caught
+        await docRef.update({ age: 30 }); // Invalid - should be caught
+        await docRef.delete(); // Invalid - should be caught
+      `,
+      errors: [
+        { messageId: 'noDirectSet' },
+        { messageId: 'noDirectGet' },
+        { messageId: 'noDirectUpdate' },
+        { messageId: 'noDirectDelete' },
+      ],
+    },
+    // Invalid: Firestore operations in class with collection properties
+    {
+      code: `
+        class DataProcessor {
+          private cache = new Set<string>();
+          private lookup = new Map<string, any>();
+
+          async processItem(id: string) {
+            this.cache.delete(id); // Valid
+            this.lookup.delete(id); // Valid
+
+            const docRef = db.collection('items').doc(id);
+            await docRef.delete(); // Invalid
+          }
+        }
+      `,
+      errors: [{ messageId: 'noDirectDelete' }],
+    },
+    // Invalid: Firestore operations with collection variables having Firestore-like names
+    {
+      code: `
+        const docSet = new Set<string>(); // Valid Set
+        const refMap = new Map<string, any>(); // Valid Map
+        const actualDocRef = db.collection('users').doc('user123'); // Firestore ref
+
+        docSet.delete('doc1'); // Valid
+        refMap.delete('ref1'); // Valid
+        await actualDocRef.delete(); // Invalid
+      `,
+      errors: [{ messageId: 'noDirectDelete' }],
+    },
+    // Invalid: Nested Firestore operations with collections in different scopes
+    {
+      code: `
+        function setupCollections() {
+          const mySet = new Set<string>();
+          mySet.delete('item1'); // Valid
+
+          return {
+            processDoc: async (docId: string) => {
+              const docRef = db.collection('docs').doc(docId);
+              await docRef.delete(); // Invalid
+            }
+          };
+        }
+      `,
+      errors: [{ messageId: 'noDirectDelete' }],
     },
   ],
 });

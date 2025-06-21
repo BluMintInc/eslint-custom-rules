@@ -18,23 +18,25 @@ const isMemberExpression = (
 // Track variables that are assigned realtimeDb references
 const realtimeDbRefVariables = new Set<string>();
 const realtimeDbChildVariables = new Set<string>();
-// Track variables that are JavaScript Set objects
-const setObjectVariables = new Set<string>();
+// Track variables that are JavaScript collection objects (Set, Map, WeakSet, WeakMap)
+const collectionObjectVariables = new Set<string>();
 
-const isSetObjectAssignment = (node: TSESTree.Node): boolean => {
+const COLLECTION_CONSTRUCTORS = new Set(['Set', 'Map', 'WeakSet', 'WeakMap']);
+
+const isCollectionObjectAssignment = (node: TSESTree.Node): boolean => {
   if (node.type !== AST_NODE_TYPES.VariableDeclarator) return false;
 
   const init = node.init;
   if (!init) return false;
 
-  // Check for direct Set constructor calls
-  // e.g., const mySet = new Set<string>();
+  // Check for direct collection constructor calls
+  // e.g., const mySet = new Set<string>(); const myMap = new Map<string, any>();
   if (init.type === AST_NODE_TYPES.NewExpression &&
       isIdentifier(init.callee) &&
-      init.callee.name === 'Set') {
+      COLLECTION_CONSTRUCTORS.has(init.callee.name)) {
 
     if (isIdentifier(node.id)) {
-      setObjectVariables.add(node.id.name);
+      collectionObjectVariables.add(node.id.name);
       return true;
     }
   }
@@ -133,8 +135,8 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
     if (realtimeDbRefVariables.has(name) || realtimeDbChildVariables.has(name)) {
       return false;
     }
-    // Skip if it's a JavaScript Set object
-    if (setObjectVariables.has(name)) {
+    // Skip if it's a JavaScript collection object (Set, Map, WeakSet, WeakMap)
+    if (collectionObjectVariables.has(name)) {
       return false;
     }
     // Check for batch or transaction
@@ -235,13 +237,13 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
     // Clear the sets at the beginning of each file analysis
     realtimeDbRefVariables.clear();
     realtimeDbChildVariables.clear();
-    setObjectVariables.clear();
+    collectionObjectVariables.clear();
 
     return {
-      // Track variable declarations that are assigned realtimeDb references or Set objects
+      // Track variable declarations that are assigned realtimeDb references or collection objects
       VariableDeclarator(node) {
         isRealtimeDbRefAssignment(node);
-        isSetObjectAssignment(node);
+        isCollectionObjectAssignment(node);
       },
 
       CallExpression(node) {
