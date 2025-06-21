@@ -111,6 +111,7 @@ import { noStaleStateAcrossAwait } from './rules/no-stale-state-across-await';
 import { noSeparateLoadingState } from './rules/no-separate-loading-state';
 import { optimizeObjectBooleanConditions } from './rules/optimize-object-boolean-conditions';
 import { preferParamsOverParentId } from './rules/prefer-params-over-parent-id';
+import { noEmptyDependencyUseCallbacks } from './rules/no-empty-dependency-use-callbacks';
 
 module.exports = {
   meta: {
@@ -245,6 +246,7 @@ module.exports = {
         '@blumintinc/blumint/no-separate-loading-state': 'error',
         '@blumintinc/blumint/optimize-object-boolean-conditions': 'error',
         '@blumintinc/blumint/prefer-params-over-parent-id': 'error',
+        '@blumintinc/blumint/no-empty-dependency-use-callbacks': 'error',
       },
     },
   },
@@ -252,7 +254,8 @@ module.exports = {
   rules: {
     'no-excessive-parent-chain': noExcessiveParentChain,
     'prefer-document-flattening': preferDocumentFlattening,
-    'prefer-block-comments-for-declarations': preferBlockCommentsForDeclarations,
+    'prefer-block-comments-for-declarations':
+      preferBlockCommentsForDeclarations,
     'key-only-outermost-element': keyOnlyOutermostElement,
     'array-methods-this-context': arrayMethodsThisContext,
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
@@ -358,12 +361,14 @@ module.exports = {
     'no-margin-properties': noMarginProperties,
     'enforce-boolean-naming-prefixes': enforceBooleanNamingPrefixes,
     'no-undefined-null-passthrough': noUndefinedNullPassthrough,
-    'no-overridable-method-calls-in-constructor': noOverridableMethodCallsInConstructor,
+    'no-overridable-method-calls-in-constructor':
+      noOverridableMethodCallsInConstructor,
     'use-latest-callback': useLatestCallback,
     'enforce-querykey-ts': enforceQueryKeyTs,
     'no-stale-state-across-await': noStaleStateAcrossAwait,
     'no-separate-loading-state': noSeparateLoadingState,
     'optimize-object-boolean-conditions': optimizeObjectBooleanConditions,
     'prefer-params-over-parent-id': preferParamsOverParentId,
+    'no-empty-dependency-use-callbacks': noEmptyDependencyUseCallbacks,
   },
 };

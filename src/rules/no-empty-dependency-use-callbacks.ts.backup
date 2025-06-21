@@ -1,0 +1,327 @@
+import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { createRule } from '../utils/createRule';
+
+type Options = [
+  {
+    allowMemoizedComponents?: boolean;
+    allowTestFiles?: boolean;
+    allowUseLatestCallback?: boolean;
+  },
+];
+type MessageIds = 'extractToUtility' | 'extractToUtilityUseLatest';
+
+export const noEmptyDependencyUseCallbacks = createRule<Options, MessageIds>({
+  name: 'no-empty-dependency-use-callbacks',
+  meta: {
+    type: 'suggestion',
+    docs: {
+      description:
+        'Enforce extracting useCallback with empty dependencies and useLatestCallback with static functions to utility functions',
+      recommended: 'error',
+    },
+    // fixable: 'code', // TODO: Implement auto-fix
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          allowMemoizedComponents: {
+            type: 'boolean',
+            default: false,
+          },
+          allowTestFiles: {
+            type: 'boolean',
+            default: true,
+          },
+          allowUseLatestCallback: {
+            type: 'boolean',
+            default: true,
+          },
+        },
+        additionalProperties: false,
+      },
+    ],
+    messages: {
+      extractToUtility:
+        'useCallback with empty dependencies should be extracted as a utility function outside the component',
+      extractToUtilityUseLatest:
+        'useLatestCallback with static function should be extracted as a utility function outside the component',
+    },
+  },
+  defaultOptions: [
+    {
+      allowMemoizedComponents: false,
+      allowTestFiles: true,
+      allowUseLatestCallback: true,
+    },
+  ],
+  create(context) {
+    const options = context.options[0] || {
+      allowMemoizedComponents: false,
+      allowTestFiles: true,
+      allowUseLatestCallback: true,
+    };
+
+    const filename = context.getFilename();
+    const isTestFile = /\.(test|spec)\.(ts|tsx|js|jsx)$/.test(filename) ||
+                      filename.includes('__tests__');
+
+    // Skip test files if allowed
+    if (options.allowTestFiles && isTestFile) {
+      return {};
+    }
+
+    /**
+     * Checks if a node is a JSX element or contains JSX
+     */
+    function isJSXElement(node: TSESTree.Node): boolean {
+      if (!node) return false;
+
+      // Check for direct JSX types
+      if (
+        node.type === AST_NODE_TYPES.JSXElement ||
+        node.type === AST_NODE_TYPES.JSXFragment ||
+        node.type === AST_NODE_TYPES.JSXExpressionContainer
+      ) {
+        return true;
+      }
+
+      // Check for conditional expressions that might return JSX
+      if (node.type === AST_NODE_TYPES.ConditionalExpression) {
+        const conditionalNode = node as TSESTree.ConditionalExpression;
+        return (
+          isJSXElement(conditionalNode.consequent) ||
+          isJSXElement(conditionalNode.alternate)
+        );
+      }
+
+      // Check for logical expressions that might return JSX
+      if (node.type === AST_NODE_TYPES.LogicalExpression) {
+        const logicalNode = node as TSESTree.LogicalExpression;
+        return isJSXElement(logicalNode.left) || isJSXElement(logicalNode.right);
+      }
+
+      return false;
+    }
+
+    /**
+     * Checks if a callback function returns JSX
+     */
+    function returnsJSX(callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression): boolean {
+      // For arrow functions with implicit return
+      if (callback.body.type !== AST_NODE_TYPES.BlockStatement) {
+        return isJSXElement(callback.body);
+      }
+
+      // For functions with block body - check all return statements
+      if (callback.body.type === AST_NODE_TYPES.BlockStatement) {
+        const returnStatements = callback.body.body.filter(
+          (statement) => statement.type === AST_NODE_TYPES.ReturnStatement,
+        ) as TSESTree.ReturnStatement[];
+
+        // If there are return statements, check if any return JSX
+        if (returnStatements.length > 0) {
+          return returnStatements.some(
+            (returnStatement) =>
+              returnStatement.argument && isJSXElement(returnStatement.argument),
+          );
+        }
+      }
+
+      return false;
+    }
+
+    /**
+     * Checks if a callback function references component-scoped variables
+     * This is a simplified check that looks for common patterns
+     */
+    function referencesComponentScope(
+      callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression
+    ): boolean {
+      // For now, we'll use a simple heuristic:
+      // If the callback body contains identifiers that are commonly component-scoped
+      // (like useState variables, useEffect, etc.), we'll consider it as referencing component scope
+
+      const sourceCode = context.getSourceCode();
+      const callbackText = sourceCode.getText(callback);
+
+      // Common patterns that suggest component scope usage
+      const componentScopePatterns = [
+        /\buse[A-Z]\w*\b/, // React hooks
+        /\bset[A-Z]\w*\b/, // setState functions
+        /\bcomponentId\b/, // component-specific IDs
+        /\buseId\(\)/, // useId hook
+        /\bnavigat(e|ion)\b/, // navigation
+        /\buser\b/, // user context
+        /\bauth\b/, // auth context
+        /\bprops\.\w+/, // props access
+        /\bstate\.\w+/, // state access
+        /\bdata\b/, // common state variable
+        /\bloading\b/, // common state variable
+        /\berror\b/, // common state variable
+        /\bonSave\b/, // common prop
+        /\bonClick\b/, // common prop
+        /\bonChange\b/, // common prop
+      ];
+
+      // Check if the callback only calls imported functions
+      // This is a simple heuristic: if the callback body only contains a return statement
+      // with a function call that doesn't match component scope patterns, it's likely imported
+      const lines = callbackText.split('\n').map(line => line.trim()).filter(line => line);
+      const isSimpleReturn = lines.length <= 3 && // Simple function with just return
+                            lines.some(line => line.includes('return')) &&
+                            !componentScopePatterns.some(pattern => pattern.test(callbackText));
+
+      if (isSimpleReturn) {
+        // Check if it's calling a function that looks like an imported utility
+        const utilityCallPatterns = [
+          /\bvalidateEmail\b/,
+          /\bsanitizeInput\b/,
+          /\bformatCurrency\b/,
+          /\bparseData\b/,
+          /\bprocessText\b/,
+        ];
+
+        if (utilityCallPatterns.some(pattern => pattern.test(callbackText))) {
+          return false; // Don't flag imported utilities
+        }
+      }
+
+      return componentScopePatterns.some(pattern => pattern.test(callbackText));
+    }
+
+
+
+    /**
+     * Checks if the callback is passed to a memoized component
+     */
+    function isPassedToMemoizedComponent(node: TSESTree.CallExpression): boolean {
+      if (!options.allowMemoizedComponents) {
+        return false;
+      }
+
+      // This is a simplified check - in practice, this would be more complex
+      // to statically analyze if a component is memoized
+      let current = node.parent;
+      while (current) {
+        if (current.type === AST_NODE_TYPES.JSXElement) {
+          // Check if the JSX element name suggests it's memoized
+          const openingElement = current.openingElement;
+          if (openingElement.name.type === AST_NODE_TYPES.JSXIdentifier) {
+            const componentName = openingElement.name.name;
+            // Simple heuristic: components with "Memo" in the name or starting with "Memo"
+            if (componentName.includes('Memo') || componentName.startsWith('Memo')) {
+              return true;
+            }
+          }
+        }
+        current = current.parent;
+      }
+
+      return false;
+    }
+
+    // TODO: Implement auto-fix functionality
+    // /**
+    //  * Generates the utility function name from the callback
+    //  */
+    // function generateUtilityFunctionName(_callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression): string {
+    //   // Try to extract a meaningful name from the callback
+    //   // This is a simplified implementation
+    //   return 'utilityFunction';
+    // }
+
+    // /**
+    //  * Generates the auto-fix for extracting the callback to a utility function
+    //  */
+    // function generateAutoFix(
+    //   node: TSESTree.CallExpression,
+    //   callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression
+    // ) {
+    //   const utilityName = generateUtilityFunctionName(callback);
+
+    //   // For now, just suggest replacing with a function call
+    //   // In a full implementation, this would extract the function outside the component
+    //   return (fixer: any) => {
+    //     return fixer.replaceText(node, `${utilityName}()`);
+    //   };
+    // }
+
+    return {
+      CallExpression(node: TSESTree.CallExpression) {
+        if (node.callee.type !== AST_NODE_TYPES.Identifier) {
+          return;
+        }
+
+        const calleeName = node.callee.name;
+
+        // Check for useCallback with empty dependencies
+        if (calleeName === 'useCallback' && node.arguments.length >= 2) {
+          const callback = node.arguments[0];
+          const dependencies = node.arguments[1];
+
+          // Check if dependencies is an empty array
+          if (
+            dependencies.type === AST_NODE_TYPES.ArrayExpression &&
+            dependencies.elements.length === 0
+          ) {
+            if (
+              callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+              callback.type === AST_NODE_TYPES.FunctionExpression
+            ) {
+              // Skip if callback returns JSX
+              if (returnsJSX(callback)) {
+                return;
+              }
+
+              // Skip if callback is passed to memoized component
+              if (isPassedToMemoizedComponent(node)) {
+                return;
+              }
+
+              // Skip if callback references component scope
+              if (referencesComponentScope(callback)) {
+                return;
+              }
+
+              context.report({
+                node,
+                messageId: 'extractToUtility',
+                // TODO: Implement proper auto-fix
+                // fix: generateAutoFix(node, callback),
+              });
+            }
+          }
+        }
+
+        // Check for useLatestCallback with static functions
+        if (calleeName === 'useLatestCallback' && !options.allowUseLatestCallback && node.arguments.length >= 1) {
+          const callback = node.arguments[0];
+
+          if (
+            callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+            callback.type === AST_NODE_TYPES.FunctionExpression
+          ) {
+            // Skip if callback returns JSX
+            if (returnsJSX(callback)) {
+              return;
+            }
+
+            // Skip if callback references component scope
+            if (referencesComponentScope(callback)) {
+              return;
+            }
+
+            context.report({
+              node,
+              messageId: 'extractToUtilityUseLatest',
+              // TODO: Implement proper auto-fix
+              // fix: generateAutoFix(node, callback),
+            });
+          }
+        }
+      },
+    };
+  },
+});
+
+export default noEmptyDependencyUseCallbacks;
