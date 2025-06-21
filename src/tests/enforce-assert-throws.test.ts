@@ -107,6 +107,79 @@ ruleTesterTs.run('enforce-assert-throws', enforceAssertThrows, {
         }
       `,
     },
+    // Method that delegates to another assert method (issue case)
+    {
+      code: `
+        export class ChannelGroupDeleter {
+          private async assertDeletable() {
+            const groupFilter = await this.fetchGroupFilter();
+            if (!groupFilter) {
+              return 'already-deleted';
+            }
+            return await this.assertTournamentDeletable(groupFilter);
+          }
+
+          private async assertTournamentDeletable(groupFilter: any) {
+            const tournament = await ChannelGroupDeleter.fetchTournament(groupFilter);
+            if (!tournament) {
+              return;
+            }
+            throw new HttpsError('failed-precondition', 'ERROR_CANNOT_LEAVE_TOURNAMENT');
+          }
+        }
+      `,
+    },
+    // Method that calls another assert method without await
+    {
+      code: `
+        class Validator {
+          assertValidInput(input: any) {
+            this.assertNotNull(input);
+            this.assertCorrectType(input);
+          }
+
+          assertNotNull(value: any) {
+            if (value === null || value === undefined) {
+              throw new Error('Value cannot be null or undefined');
+            }
+          }
+
+          assertCorrectType(value: any) {
+            if (typeof value !== 'string') {
+              throw new Error('Value must be a string');
+            }
+          }
+        }
+      `,
+    },
+    // Method that returns result from assert method call
+    {
+      code: `
+        class TestClass {
+          assertSomething() {
+            return this.assertOtherThing();
+          }
+
+          assertOtherThing() {
+            throw new Error('This throws');
+          }
+        }
+      `,
+    },
+    // Function that returns await of assert method
+    {
+      code: `
+        class AsyncClass {
+          async assertAsync() {
+            return await this.assertAsyncHelper();
+          }
+
+          async assertAsyncHelper() {
+            throw new Error('Async error');
+          }
+        }
+      `,
+    },
   ],
   invalid: [
     // Function declaration without throw
@@ -157,6 +230,38 @@ ruleTesterTs.run('enforce-assert-throws', enforceAssertThrows, {
             fs.accessSync(filePath);
           } catch (err) {
             return false;
+          }
+        }
+      `,
+      errors: [{ messageId: 'assertShouldThrow' }],
+    },
+    // Method that calls non-assert method (should fail)
+    {
+      code: `
+        class TestClass {
+          assertSomething() {
+            return this.validateSomething();
+          }
+
+          validateSomething() {
+            return true;
+          }
+        }
+      `,
+      errors: [{ messageId: 'assertShouldThrow' }],
+    },
+    // Method that calls assert method but also has other logic without throw (edge case)
+    {
+      code: `
+        class TestClass {
+          assertComplexLogic() {
+            const result = this.assertHelper();
+            console.log('This should not prevent throwing');
+            return result;
+          }
+
+          assertHelper() {
+            throw new Error('Helper throws');
           }
         }
       `,
