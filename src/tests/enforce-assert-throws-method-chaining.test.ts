@@ -1,4 +1,3 @@
-
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceAssertThrows } from '../rules/enforce-assert-throws';
 

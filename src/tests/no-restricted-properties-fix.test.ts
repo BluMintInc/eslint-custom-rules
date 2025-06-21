@@ -10,12 +10,14 @@ ruleTesterTs.run('no-restricted-properties-fix', noRestrictedPropertiesFix, {
         const keyCount = Object.keys(myObject).length;
         console.log('Key count:', keyCount);
       `,
-      options: [[
-        {
-          property: 'length',
-          message: 'Using .length is restricted.',
-        }
-      ]],
+      options: [
+        [
+          {
+            property: 'length',
+            message: 'Using .length is restricted.',
+          },
+        ],
+      ],
     },
     {
       code: `
@@ -23,12 +25,14 @@ ruleTesterTs.run('no-restricted-properties-fix', noRestrictedPropertiesFix, {
         const valueCount = Object.values(myObject).length;
         console.log('Value count:', valueCount);
       `,
-      options: [[
-        {
-          property: 'length',
-          message: 'Using .length is restricted.',
-        }
-      ]],
+      options: [
+        [
+          {
+            property: 'length',
+            message: 'Using .length is restricted.',
+          },
+        ],
+      ],
     },
     {
       code: `
@@ -36,12 +40,14 @@ ruleTesterTs.run('no-restricted-properties-fix', noRestrictedPropertiesFix, {
         const sortedKeys = Object.keys(myObject).sort();
         console.log('Sorted keys:', sortedKeys);
       `,
-      options: [[
-        {
-          property: 'sort',
-          message: 'Using .sort is restricted.',
-        }
-      ]],
+      options: [
+        [
+          {
+            property: 'sort',
+            message: 'Using .sort is restricted.',
+          },
+        ],
+      ],
     },
     {
       code: `
@@ -49,12 +55,14 @@ ruleTesterTs.run('no-restricted-properties-fix', noRestrictedPropertiesFix, {
         const sortedValues = Object.values(myObject).sort((a, b) => a - b);
         console.log('Sorted values:', sortedValues);
       `,
-      options: [[
-        {
-          property: 'sort',
-          message: 'Using .sort is restricted.',
-        }
-      ]],
+      options: [
+        [
+          {
+            property: 'sort',
+            message: 'Using .sort is restricted.',
+          },
+        ],
+      ],
     },
     {
       code: `
@@ -62,12 +70,14 @@ ruleTesterTs.run('no-restricted-properties-fix', noRestrictedPropertiesFix, {
         const teamCount = Object.keys(exampleAggregation.teams ?? {}).length;
         console.log('Team count from example:', teamCount);
       `,
-      options: [[
-        {
-          property: 'length',
-          message: 'Using .length is restricted.',
-        }
-      ]],
+      options: [
+        [
+          {
+            property: 'length',
+            message: 'Using .length is restricted.',
+          },
+        ],
+      ],
     },
     // Test cases for allowObjects
     {
@@ -75,26 +85,30 @@ ruleTesterTs.run('no-restricted-properties-fix', noRestrictedPropertiesFix, {
         const router = { push: () => {} };
         router.push('/home');
       `,
-      options: [[
-        {
-          property: 'push',
-          allowObjects: ['router', 'history'],
-          message: 'Using .push is restricted except for router and history.',
-        }
-      ]],
+      options: [
+        [
+          {
+            property: 'push',
+            allowObjects: ['router', 'history'],
+            message: 'Using .push is restricted except for router and history.',
+          },
+        ],
+      ],
     },
     {
       code: `
         const history = { push: () => {} };
         history.push('/about');
       `,
-      options: [[
-        {
-          property: 'push',
-          allowObjects: ['router', 'history'],
-          message: 'Using .push is restricted except for router and history.',
-        }
-      ]],
+      options: [
+        [
+          {
+            property: 'push',
+            allowObjects: ['router', 'history'],
+            message: 'Using .push is restricted except for router and history.',
+          },
+        ],
+      ],
     },
   ],
   invalid: [
@@ -104,13 +118,15 @@ ruleTesterTs.run('no-restricted-properties-fix', noRestrictedPropertiesFix, {
         const disallowedObject = { disallowedProperty: 'value' };
         const value = disallowedObject.disallowedProperty;
       `,
-      options: [[
-        {
-          object: 'disallowedObject',
-          property: 'disallowedProperty',
-          message: 'This property is disallowed.',
-        }
-      ]],
+      options: [
+        [
+          {
+            object: 'disallowedObject',
+            property: 'disallowedProperty',
+            message: 'This property is disallowed.',
+          },
+        ],
+      ],
       errors: [
         {
           messageId: 'restrictedProperty',
@@ -128,12 +144,14 @@ ruleTesterTs.run('no-restricted-properties-fix', noRestrictedPropertiesFix, {
         const myArray = [1, 2, 3];
         myArray.push(4);
       `,
-      options: [[
-        {
-          property: 'push',
-          message: 'Use spread operator instead of push.',
-        }
-      ]],
+      options: [
+        [
+          {
+            property: 'push',
+            message: 'Use spread operator instead of push.',
+          },
+        ],
+      ],
       errors: [
         {
           messageId: 'restrictedProperty',
@@ -151,12 +169,14 @@ ruleTesterTs.run('no-restricted-properties-fix', noRestrictedPropertiesFix, {
         const require = { resolve: () => {} };
         require.resolve('path');
       `,
-      options: [[
-        {
-          object: 'require',
-          message: 'Use import instead.',
-        }
-      ]],
+      options: [
+        [
+          {
+            object: 'require',
+            message: 'Use import instead.',
+          },
+        ],
+      ],
       errors: [
         {
           messageId: 'restrictedProperty',

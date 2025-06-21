@@ -16,7 +16,7 @@ export const noRestrictedPropertiesFix = createRule<
       property?: string;
       message?: string;
       allowObjects?: string[];
-    }[]
+    }[],
   ],
   MessageIds
 >({
@@ -84,7 +84,8 @@ export const noRestrictedPropertiesFix = createRule<
       // Check if the property is 'keys' or 'values'
       if (
         node.callee.property.type !== AST_NODE_TYPES.Identifier ||
-        (node.callee.property.name !== 'keys' && node.callee.property.name !== 'values')
+        (node.callee.property.name !== 'keys' &&
+          node.callee.property.name !== 'values')
       ) {
         return false;
       }
@@ -97,7 +98,17 @@ export const noRestrictedPropertiesFix = createRule<
         // Skip if the object is a result of Object.keys() or Object.values()
         if (isObjectKeysOrValuesResult(node.object)) {
           // Allow common array methods and properties
-          const safeArrayProperties = ['length', 'sort', 'filter', 'map', 'reduce', 'forEach', 'join', 'slice', 'concat'];
+          const safeArrayProperties = [
+            'length',
+            'sort',
+            'filter',
+            'map',
+            'reduce',
+            'forEach',
+            'join',
+            'slice',
+            'concat',
+          ];
 
           if (
             node.property.type === AST_NODE_TYPES.Identifier &&
@@ -134,7 +145,9 @@ export const noRestrictedPropertiesFix = createRule<
               data: {
                 objectName: restrictedProp.object,
                 propertyName: restrictedProp.property,
-                message: restrictedProp.message ? `: ${restrictedProp.message}` : '',
+                message: restrictedProp.message
+                  ? `: ${restrictedProp.message}`
+                  : '',
               },
             });
           }
@@ -164,7 +177,9 @@ export const noRestrictedPropertiesFix = createRule<
               data: {
                 objectName,
                 propertyName: restrictedProp.property,
-                message: restrictedProp.message ? `: ${restrictedProp.message}` : '',
+                message: restrictedProp.message
+                  ? `: ${restrictedProp.message}`
+                  : '',
               },
             });
           }
@@ -187,7 +202,9 @@ export const noRestrictedPropertiesFix = createRule<
               data: {
                 objectName: restrictedProp.object,
                 propertyName,
-                message: restrictedProp.message ? `: ${restrictedProp.message}` : '',
+                message: restrictedProp.message
+                  ? `: ${restrictedProp.message}`
+                  : '',
               },
             });
           }

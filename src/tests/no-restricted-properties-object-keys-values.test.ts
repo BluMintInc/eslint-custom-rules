@@ -8,16 +8,17 @@ ruleTesterTs.run(
     meta: {
       type: 'suggestion',
       docs: {
-        description: 'Test rule for Object.keys() and Object.values() with no-restricted-properties',
+        description:
+          'Test rule for Object.keys() and Object.values() with no-restricted-properties',
         recommended: false,
       },
       schema: [],
       messages: {
-        dummy: 'Dummy message'
-      }
+        dummy: 'Dummy message',
+      },
     },
     defaultOptions: [],
-    create: () => ({})
+    create: () => ({}),
   }, // Dummy rule
   {
     valid: [
@@ -59,5 +60,5 @@ ruleTesterTs.run(
       },
     ],
     invalid: [],
-  }
+  },
 );

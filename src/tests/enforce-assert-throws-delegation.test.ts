@@ -71,7 +71,7 @@ ruleTesterTs.run('enforce-assert-throws-delegation', enforceAssertThrows, {
           }
         }
       `,
-    }
+    },
   ],
   invalid: [
     // This should be invalid: assertDeletable doesn't throw and doesn't call another assert method
@@ -97,6 +97,6 @@ ruleTesterTs.run('enforce-assert-throws-delegation', enforceAssertThrows, {
         }
       `,
       errors: [{ messageId: 'assertShouldThrow' }],
-    }
+    },
   ],
 });
