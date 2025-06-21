@@ -31,11 +31,10 @@ const isCollectionObjectAssignment = (node: TSESTree.Node): boolean => {
 
   // Check for direct collection constructor calls
   // e.g., const mySet = new Set<string>(); const myMap = new Map<string, any>();
-  if (
-    init.type === AST_NODE_TYPES.NewExpression &&
-    isIdentifier(init.callee) &&
-    COLLECTION_CONSTRUCTORS.has(init.callee.name)
-  ) {
+  if (init.type === AST_NODE_TYPES.NewExpression &&
+      isIdentifier(init.callee) &&
+      COLLECTION_CONSTRUCTORS.has(init.callee.name)) {
+
     if (isIdentifier(node.id)) {
       collectionObjectVariables.add(node.id.name);
       return true;

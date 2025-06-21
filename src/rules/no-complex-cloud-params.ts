@@ -137,16 +137,13 @@ export const noComplexCloudParams = createRule<[], MessageIds>({
         // (not SCREAMING_SNAKE_CASE constants)
         if (node.name[0] === node.name[0].toUpperCase()) {
           // Check if it's a constant (SCREAMING_SNAKE_CASE) - these are not class instances
-          if (
-            node.name.includes('_') &&
-            node.name === node.name.toUpperCase()
-          ) {
+          if (node.name.includes('_') && node.name === node.name.toUpperCase()) {
             return false;
           }
           // Check if it's PascalCase (potential class instance)
           // PascalCase: starts with capital, has lowercase letters, no underscores
-          const isPascalCase =
-            /^[A-Z][a-zA-Z0-9]*$/.test(node.name) && /[a-z]/.test(node.name);
+          const isPascalCase = /^[A-Z][a-zA-Z0-9]*$/.test(node.name) &&
+                              /[a-z]/.test(node.name);
           return isPascalCase;
         }
 

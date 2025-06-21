@@ -179,12 +179,10 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
 
         // Check for destructuring pattern: ({ params }) or ({ data, params })
         if (firstParam.type === AST_NODE_TYPES.ObjectPattern) {
-          return firstParam.properties.some((prop) => {
-            if (
-              prop.type === AST_NODE_TYPES.Property &&
-              prop.key.type === AST_NODE_TYPES.Identifier &&
-              prop.key.name === 'params'
-            ) {
+          return firstParam.properties.some(prop => {
+            if (prop.type === AST_NODE_TYPES.Property &&
+                prop.key.type === AST_NODE_TYPES.Identifier &&
+                prop.key.name === 'params') {
               return true;
             }
             return false;
@@ -192,30 +190,20 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
         }
 
         // Check for variable declarations inside the function that destructure params
-        if (
-          handlerNode.body &&
-          handlerNode.body.type === AST_NODE_TYPES.BlockStatement
-        ) {
+        if (handlerNode.body && handlerNode.body.type === AST_NODE_TYPES.BlockStatement) {
           for (const statement of handlerNode.body.body) {
             if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
               for (const declarator of statement.declarations) {
-                if (
-                  declarator.id.type === AST_NODE_TYPES.ObjectPattern &&
-                  declarator.init &&
-                  declarator.init.type === AST_NODE_TYPES.Identifier
-                ) {
+                if (declarator.id.type === AST_NODE_TYPES.ObjectPattern &&
+                    declarator.init &&
+                    declarator.init.type === AST_NODE_TYPES.Identifier) {
                   // Check if destructuring from event parameter
-                  const eventParamName =
-                    firstParam.type === AST_NODE_TYPES.Identifier
-                      ? firstParam.name
-                      : 'event';
+                  const eventParamName = firstParam.type === AST_NODE_TYPES.Identifier ? firstParam.name : 'event';
                   if (declarator.init.name === eventParamName) {
-                    return declarator.id.properties.some((prop) => {
-                      if (
-                        prop.type === AST_NODE_TYPES.Property &&
-                        prop.key.type === AST_NODE_TYPES.Identifier &&
-                        prop.key.name === 'params'
-                      ) {
+                    return declarator.id.properties.some(prop => {
+                      if (prop.type === AST_NODE_TYPES.Property &&
+                          prop.key.type === AST_NODE_TYPES.Identifier &&
+                          prop.key.name === 'params') {
                         return true;
                       }
                       return false;
@@ -262,14 +250,12 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
               data: {
                 paramName: paramSuggestion,
               },
-              fix: paramsInScope
-                ? (fixer) => {
-                    const replacement = hasOptional
-                      ? `params?.${paramSuggestion}`
-                      : `params.${paramSuggestion}`;
-                    return fixer.replaceText(node, replacement);
-                  }
-                : undefined,
+              fix: paramsInScope ? (fixer) => {
+                const replacement = hasOptional
+                  ? `params?.${paramSuggestion}`
+                  : `params.${paramSuggestion}`;
+                return fixer.replaceText(node, replacement);
+              } : undefined,
             });
           }
         }
