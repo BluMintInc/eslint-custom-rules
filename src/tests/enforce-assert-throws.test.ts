@@ -107,8 +107,67 @@ ruleTesterTs.run('enforce-assert-throws', enforceAssertThrows, {
         }
       `,
     },
+    // Function that calls assert- method and is correctly prefixed with assert-
+    {
+      code: `
+        function assertValidData() {
+          assertNotNull(data);
+        }
+      `,
+    },
+    // Method that calls assert- method and is correctly prefixed with assert-
+    {
+      code: `
+        class Validator {
+          assertComplexValidation() {
+            this.assertBasicValidation();
+          }
+        }
+      `,
+    },
   ],
   invalid: [
+    // Simple function that calls assert- method but is not prefixed with assert-
+    {
+      code: `
+        function isDeletable() {
+          assertTournamentDeletable();
+        }
+      `,
+      errors: [{ messageId: 'shouldBeAssertPrefixed' }],
+    },
+    // Arrow function that calls assert- method but is not prefixed with assert-
+    {
+      code: `
+        const validateData = () => {
+          assertNotEmpty(data);
+        };
+      `,
+      errors: [{ messageId: 'shouldBeAssertPrefixed' }],
+    },
+    // Method that calls assert- method but is not prefixed with assert-
+    {
+      code: `
+        class DataProcessor {
+          processData() {
+            this.assertValidInput();
+            return processedData;
+          }
+        }
+      `,
+      errors: [{ messageId: 'shouldBeAssertPrefixed' }],
+    },
+    // Function that calls assert- method in conditional
+    {
+      code: `
+        function validateInput(input) {
+          if (input) {
+            assertNotNull(input.value);
+          }
+        }
+      `,
+      errors: [{ messageId: 'shouldBeAssertPrefixed' }],
+    },
     // Function declaration without throw
     {
       code: `
@@ -157,6 +216,38 @@ ruleTesterTs.run('enforce-assert-throws', enforceAssertThrows, {
             fs.accessSync(filePath);
           } catch (err) {
             return false;
+          }
+        }
+      `,
+      errors: [{ messageId: 'assertShouldThrow' }],
+    },
+    // Method that calls non-assert method (should fail)
+    {
+      code: `
+        class TestClass {
+          assertSomething() {
+            return this.validateSomething();
+          }
+
+          validateSomething() {
+            return true;
+          }
+        }
+      `,
+      errors: [{ messageId: 'assertShouldThrow' }],
+    },
+    // Method that calls assert method but also has other logic without throw (edge case)
+    {
+      code: `
+        class TestClass {
+          assertComplexLogic() {
+            const result = this.assertHelper();
+            console.log('This should not prevent throwing');
+            return result;
+          }
+
+          assertHelper() {
+            throw new Error('Helper throws');
           }
         }
       `,

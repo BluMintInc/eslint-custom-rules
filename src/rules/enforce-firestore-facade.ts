@@ -18,6 +18,31 @@ const isMemberExpression = (
 // Track variables that are assigned realtimeDb references
 const realtimeDbRefVariables = new Set<string>();
 const realtimeDbChildVariables = new Set<string>();
+// Track variables that are JavaScript collection objects (Set, Map, WeakSet, WeakMap)
+const collectionObjectVariables = new Set<string>();
+
+const COLLECTION_CONSTRUCTORS = new Set(['Set', 'Map', 'WeakSet', 'WeakMap']);
+
+const isCollectionObjectAssignment = (node: TSESTree.Node): boolean => {
+  if (node.type !== AST_NODE_TYPES.VariableDeclarator) return false;
+
+  const init = node.init;
+  if (!init) return false;
+
+  // Check for direct collection constructor calls
+  // e.g., const mySet = new Set<string>(); const myMap = new Map<string, any>();
+  if (init.type === AST_NODE_TYPES.NewExpression &&
+      isIdentifier(init.callee) &&
+      COLLECTION_CONSTRUCTORS.has(init.callee.name)) {
+
+    if (isIdentifier(node.id)) {
+      collectionObjectVariables.add(node.id.name);
+      return true;
+    }
+  }
+
+  return false;
+};
 
 const isRealtimeDbRefAssignment = (node: TSESTree.Node): boolean => {
   if (node.type !== AST_NODE_TYPES.VariableDeclarator) return false;
@@ -27,13 +52,15 @@ const isRealtimeDbRefAssignment = (node: TSESTree.Node): boolean => {
 
   // Check for direct realtimeDb.ref() assignments
   // e.g., const ref = realtimeDb.ref(path);
-  if (init.type === AST_NODE_TYPES.CallExpression &&
-      isMemberExpression(init.callee) &&
-      isIdentifier(init.callee.property) &&
-      init.callee.property.name === 'ref' &&
-      isIdentifier(init.callee.object) &&
-      (init.callee.object.name === 'realtimeDb' || init.callee.object.name.includes('realtimeDb'))) {
-
+  if (
+    init.type === AST_NODE_TYPES.CallExpression &&
+    isMemberExpression(init.callee) &&
+    isIdentifier(init.callee.property) &&
+    init.callee.property.name === 'ref' &&
+    isIdentifier(init.callee.object) &&
+    (init.callee.object.name === 'realtimeDb' ||
+      init.callee.object.name.includes('realtimeDb'))
+  ) {
     if (isIdentifier(node.id)) {
       realtimeDbRefVariables.add(node.id.name);
       return true;
@@ -42,13 +69,14 @@ const isRealtimeDbRefAssignment = (node: TSESTree.Node): boolean => {
 
   // Check for child() method calls on realtimeDb refs
   // e.g., const childRef = parentRef.child('path');
-  if (init.type === AST_NODE_TYPES.CallExpression &&
-      isMemberExpression(init.callee) &&
-      isIdentifier(init.callee.property) &&
-      init.callee.property.name === 'child' &&
-      isIdentifier(init.callee.object) &&
-      realtimeDbRefVariables.has(init.callee.object.name)) {
-
+  if (
+    init.type === AST_NODE_TYPES.CallExpression &&
+    isMemberExpression(init.callee) &&
+    isIdentifier(init.callee.property) &&
+    init.callee.property.name === 'child' &&
+    isIdentifier(init.callee.object) &&
+    realtimeDbRefVariables.has(init.callee.object.name)
+  ) {
     if (isIdentifier(node.id)) {
       realtimeDbChildVariables.add(node.id.name);
       return true;
@@ -60,27 +88,36 @@ const isRealtimeDbRefAssignment = (node: TSESTree.Node): boolean => {
 
 const isRealtimeDbReference = (node: TSESTree.Node): boolean => {
   // Check if it's a direct realtimeDb.ref() call
-  if (node.type === AST_NODE_TYPES.CallExpression &&
-      isMemberExpression(node.callee) &&
-      isIdentifier(node.callee.property) &&
-      node.callee.property.name === 'ref' &&
-      isIdentifier(node.callee.object) &&
-      (node.callee.object.name === 'realtimeDb' || node.callee.object.name.includes('realtimeDb'))) {
+  if (
+    node.type === AST_NODE_TYPES.CallExpression &&
+    isMemberExpression(node.callee) &&
+    isIdentifier(node.callee.property) &&
+    node.callee.property.name === 'ref' &&
+    isIdentifier(node.callee.object) &&
+    (node.callee.object.name === 'realtimeDb' ||
+      node.callee.object.name.includes('realtimeDb'))
+  ) {
     return true;
   }
 
   // Check if it's a variable that holds a realtimeDb reference
   if (isIdentifier(node)) {
-    return realtimeDbRefVariables.has(node.name) || realtimeDbChildVariables.has(node.name);
+    return (
+      realtimeDbRefVariables.has(node.name) ||
+      realtimeDbChildVariables.has(node.name)
+    );
   }
 
   // Check if it's a child() call on a realtimeDb reference
-  if (node.type === AST_NODE_TYPES.CallExpression &&
-      isMemberExpression(node.callee) &&
-      isIdentifier(node.callee.property) &&
-      node.callee.property.name === 'child' &&
-      isIdentifier(node.callee.object) &&
-      (realtimeDbRefVariables.has(node.callee.object.name) || realtimeDbChildVariables.has(node.callee.object.name))) {
+  if (
+    node.type === AST_NODE_TYPES.CallExpression &&
+    isMemberExpression(node.callee) &&
+    isIdentifier(node.callee.property) &&
+    node.callee.property.name === 'child' &&
+    isIdentifier(node.callee.object) &&
+    (realtimeDbRefVariables.has(node.callee.object.name) ||
+      realtimeDbChildVariables.has(node.callee.object.name))
+  ) {
     return true;
   }
 
@@ -107,7 +144,14 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
       return false;
     }
     // Skip if it's a realtimeDb reference variable
-    if (realtimeDbRefVariables.has(name) || realtimeDbChildVariables.has(name)) {
+    if (
+      realtimeDbRefVariables.has(name) ||
+      realtimeDbChildVariables.has(name)
+    ) {
+      return false;
+    }
+    // Skip if it's a JavaScript collection object (Set, Map, WeakSet, WeakMap)
+    if (collectionObjectVariables.has(name)) {
       return false;
     }
     // Check for batch or transaction
@@ -160,7 +204,8 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
     // If the variable name contains 'doc' or 'ref', it's likely a Firestore reference
     // But exclude realtimeDb references
     if (
-      (name.toLowerCase().includes('doc') || name.toLowerCase().includes('ref')) &&
+      (name.toLowerCase().includes('doc') ||
+        name.toLowerCase().includes('ref')) &&
       !name.includes('realtimeDb') &&
       !realtimeDbRefVariables.has(name) &&
       !realtimeDbChildVariables.has(name)
@@ -208,11 +253,13 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
     // Clear the sets at the beginning of each file analysis
     realtimeDbRefVariables.clear();
     realtimeDbChildVariables.clear();
+    collectionObjectVariables.clear();
 
     return {
-      // Track variable declarations that are assigned realtimeDb references
+      // Track variable declarations that are assigned realtimeDb references or collection objects
       VariableDeclarator(node) {
         isRealtimeDbRefAssignment(node);
+        isCollectionObjectAssignment(node);
       },
 
       CallExpression(node) {
