@@ -102,6 +102,7 @@ import { noMarginProperties } from './rules/no-margin-properties';
 import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-prefixes';
 import { preferBlockCommentsForDeclarations } from './rules/prefer-block-comments-for-declarations';
 import { noUndefinedNullPassthrough } from './rules/no-undefined-null-passthrough';
+import { noEmptyDependencyUseCallbacks } from './rules/no-empty-dependency-use-callbacks';
 
 import { noExcessiveParentChain } from './rules/no-excessive-parent-chain';
 import { preferDocumentFlattening } from './rules/prefer-document-flattening';
@@ -237,6 +238,7 @@ module.exports = {
         '@blumintinc/blumint/no-margin-properties': 'error',
         '@blumintinc/blumint/enforce-boolean-naming-prefixes': 'error',
         '@blumintinc/blumint/no-undefined-null-passthrough': 'error',
+        '@blumintinc/blumint/no-empty-dependency-use-callbacks': 'error',
         '@blumintinc/blumint/no-overridable-method-calls-in-constructor':
           'error',
         '@blumintinc/blumint/use-latest-callback': 'error',
@@ -358,6 +360,7 @@ module.exports = {
     'no-margin-properties': noMarginProperties,
     'enforce-boolean-naming-prefixes': enforceBooleanNamingPrefixes,
     'no-undefined-null-passthrough': noUndefinedNullPassthrough,
+    'no-empty-dependency-use-callbacks': noEmptyDependencyUseCallbacks,
     'no-overridable-method-calls-in-constructor': noOverridableMethodCallsInConstructor,
     'use-latest-callback': useLatestCallback,
     'enforce-querykey-ts': enforceQueryKeyTs,
