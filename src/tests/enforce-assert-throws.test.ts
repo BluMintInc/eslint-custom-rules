@@ -107,81 +107,67 @@ ruleTesterTs.run('enforce-assert-throws', enforceAssertThrows, {
         }
       `,
     },
-    // Method that delegates to another assert method (issue case)
+    // Function that calls assert- method and is correctly prefixed with assert-
     {
       code: `
-        export class ChannelGroupDeleter {
-          private async assertDeletable() {
-            const groupFilter = await this.fetchGroupFilter();
-            if (!groupFilter) {
-              return 'already-deleted';
-            }
-            return await this.assertTournamentDeletable(groupFilter);
-          }
-
-          private async assertTournamentDeletable(groupFilter: any) {
-            const tournament = await ChannelGroupDeleter.fetchTournament(groupFilter);
-            if (!tournament) {
-              return;
-            }
-            throw new HttpsError('failed-precondition', 'ERROR_CANNOT_LEAVE_TOURNAMENT');
-          }
+        function assertValidData() {
+          assertNotNull(data);
         }
       `,
     },
-    // Method that calls another assert method without await
+    // Method that calls assert- method and is correctly prefixed with assert-
     {
       code: `
         class Validator {
-          assertValidInput(input: any) {
-            this.assertNotNull(input);
-            this.assertCorrectType(input);
-          }
-
-          assertNotNull(value: any) {
-            if (value === null || value === undefined) {
-              throw new Error('Value cannot be null or undefined');
-            }
-          }
-
-          assertCorrectType(value: any) {
-            if (typeof value !== 'string') {
-              throw new Error('Value must be a string');
-            }
-          }
-        }
-      `,
-    },
-    // Method that returns result from assert method call
-    {
-      code: `
-        class TestClass {
-          assertSomething() {
-            return this.assertOtherThing();
-          }
-
-          assertOtherThing() {
-            throw new Error('This throws');
-          }
-        }
-      `,
-    },
-    // Function that returns await of assert method
-    {
-      code: `
-        class AsyncClass {
-          async assertAsync() {
-            return await this.assertAsyncHelper();
-          }
-
-          async assertAsyncHelper() {
-            throw new Error('Async error');
+          assertComplexValidation() {
+            this.assertBasicValidation();
           }
         }
       `,
     },
   ],
   invalid: [
+    // Simple function that calls assert- method but is not prefixed with assert-
+    {
+      code: `
+        function isDeletable() {
+          assertTournamentDeletable();
+        }
+      `,
+      errors: [{ messageId: 'shouldBeAssertPrefixed' }],
+    },
+    // Arrow function that calls assert- method but is not prefixed with assert-
+    {
+      code: `
+        const validateData = () => {
+          assertNotEmpty(data);
+        };
+      `,
+      errors: [{ messageId: 'shouldBeAssertPrefixed' }],
+    },
+    // Method that calls assert- method but is not prefixed with assert-
+    {
+      code: `
+        class DataProcessor {
+          processData() {
+            this.assertValidInput();
+            return processedData;
+          }
+        }
+      `,
+      errors: [{ messageId: 'shouldBeAssertPrefixed' }],
+    },
+    // Function that calls assert- method in conditional
+    {
+      code: `
+        function validateInput(input) {
+          if (input) {
+            assertNotNull(input.value);
+          }
+        }
+      `,
+      errors: [{ messageId: 'shouldBeAssertPrefixed' }],
+    },
     // Function declaration without throw
     {
       code: `
