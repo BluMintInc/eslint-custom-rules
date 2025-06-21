@@ -308,6 +308,280 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
         }
       `,
     },
+    // Should handle object destructuring with immutable values
+    {
+      code: `
+        function Component() {
+          const { name, age } = { name: 'John', age: 30 };
+          return name + age;
+        }
+      `,
+    },
+    // Should handle array destructuring with immutable values
+    {
+      code: `
+        function Component() {
+          const [first, second] = ['hello', 'world'];
+          return first + second;
+        }
+      `,
+    },
+    // Should handle nested object destructuring
+    {
+      code: `
+        function Component() {
+          const { user: { name, profile: { age } } } = data;
+          return name + age;
+        }
+      `,
+    },
+    // Should handle nested array destructuring
+    {
+      code: `
+        function Component() {
+          const [[a, b], [c, d]] = [[1, 2], [3, 4]];
+          return a + b + c + d;
+        }
+      `,
+    },
+    // Should handle mixed destructuring patterns
+    {
+      code: `
+        function Component() {
+          const { items: [first, ...rest] } = { items: [1, 2, 3] };
+          return first + rest.length;
+        }
+      `,
+    },
+    // Should handle destructuring with defaults
+    {
+      code: `
+        function Component() {
+          const { name = 'default', count = 0 } = props;
+          return name + count;
+        }
+      `,
+    },
+    // Should handle array destructuring with defaults
+    {
+      code: `
+        function Component() {
+          const [x = 1, y = 2] = arr;
+          return x + y;
+        }
+      `,
+    },
+    // Should handle destructuring with rest elements
+    {
+      code: `
+        function Component() {
+          const { first, ...rest } = obj;
+          return first + Object.keys(rest).length;
+        }
+      `,
+    },
+    // Should handle array destructuring with rest elements
+    {
+      code: `
+        function Component() {
+          const [head, ...tail] = arr;
+          return head + tail.length;
+        }
+      `,
+    },
+    // Should handle empty object destructuring
+    {
+      code: `
+        function Component() {
+          const {} = obj;
+          return 'empty';
+        }
+      `,
+    },
+    // Should handle empty array destructuring
+    {
+      code: `
+        function Component() {
+          const [] = arr;
+          return 'empty';
+        }
+      `,
+    },
+    // Should handle destructuring with computed property names
+    {
+      code: `
+        function Component() {
+          const { [key]: value } = obj;
+          return value;
+        }
+      `,
+    },
+    // Should handle destructuring in arrow functions
+    {
+      code: `
+        const handler = ({ data, meta }) => {
+          return data + meta;
+        };
+      `,
+    },
+    // Should handle destructuring in function expressions
+    {
+      code: `
+        const handler = function({ data, meta }) {
+          return data + meta;
+        };
+      `,
+    },
+    // Should handle destructuring in method definitions
+    {
+      code: `
+        class Component {
+          process({ data, meta }) {
+            return data + meta;
+          }
+        }
+      `,
+    },
+    // Should handle destructuring in async functions
+    {
+      code: `
+        async function process({ data, meta }) {
+          const result = await fetch(data);
+          return result + meta;
+        }
+      `,
+    },
+    // Should handle destructuring in generator functions
+    {
+      code: `
+        function* generate({ start, end }) {
+          for (let i = start; i < end; i++) {
+            yield i;
+          }
+        }
+      `,
+    },
+    // Should handle destructuring with type annotations
+    {
+      code: `
+        function Component() {
+          const { name, age }: { name: string; age: number } = person;
+          return name + age;
+        }
+      `,
+    },
+    // Should handle destructuring in try-catch blocks
+    {
+      code: `
+        function Component() {
+          try {
+            const { data } = response;
+            return data;
+          } catch ({ message }) {
+            return message;
+          }
+        }
+      `,
+    },
+    // Should handle destructuring in for-of loops
+    {
+      code: `
+        function Component() {
+          for (const { name, value } of items) {
+            console.log(name, value);
+          }
+        }
+      `,
+    },
+    // Should handle destructuring in for-in loops
+    {
+      code: `
+        function Component() {
+          for (const [key, value] of Object.entries(obj)) {
+            console.log(key, value);
+          }
+        }
+      `,
+    },
+    // Should handle complex destructuring with multiple patterns
+    {
+      code: `
+        function Component() {
+          const {
+            user: { name, profile: { settings: [theme, lang] } },
+            meta: { timestamp }
+          } = complexData;
+          return name + theme + lang + timestamp;
+        }
+      `,
+    },
+    // Should handle destructuring with renamed variables
+    {
+      code: `
+        function Component() {
+          const { name: userName, age: userAge } = user;
+          return userName + userAge;
+        }
+      `,
+    },
+    // Should handle destructuring in block statements
+    {
+      code: `
+        function Component() {
+          {
+            const { data } = response;
+            console.log(data);
+          }
+          return 'done';
+        }
+      `,
+    },
+    // Should handle destructuring in if statements
+    {
+      code: `
+        function Component() {
+          if (condition) {
+            const { result } = computation;
+            return result;
+          }
+          return null;
+        }
+      `,
+    },
+    // Should handle destructuring in switch statements
+    {
+      code: `
+        function Component() {
+          switch (type) {
+            case 'user': {
+              const { name } = data;
+              return name;
+            }
+            default:
+              return null;
+          }
+        }
+      `,
+    },
+    // Should handle destructuring with mutable values (should not trigger rule)
+    {
+      code: `
+        function Component() {
+          const { items } = { items: [] };
+          items.push(1);
+          return items;
+        }
+      `,
+    },
+    // Should handle destructuring with function values (should not trigger rule)
+    {
+      code: `
+        function Component() {
+          const { handler } = { handler: () => {} };
+          return handler();
+        }
+      `,
+    },
   ],
   invalid: [
     // Should flag immutable string constants
@@ -529,6 +803,88 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
         {
           messageId: 'requireAsConst',
           data: { value: 3 },
+        },
+      ],
+    },
+    // Should still flag regular identifier constants (not destructuring)
+    {
+      code: `
+        function Component() {
+          const API_URL = 'https://api.example.com';
+          return fetch(API_URL);
+        }
+      `,
+      errors: [
+        {
+          messageId: 'extractGlobalConstants',
+          data: { declarationName: 'API_URL' },
+        },
+      ],
+    },
+    // Should flag multiple identifier constants in same function
+    {
+      code: `
+        function Component() {
+          const MAX_RETRIES = 3;
+          const TIMEOUT = 5000;
+          return { MAX_RETRIES, TIMEOUT };
+        }
+      `,
+      errors: [
+        {
+          messageId: 'extractGlobalConstants',
+          data: { declarationName: 'MAX_RETRIES' },
+        },
+        {
+          messageId: 'extractGlobalConstants',
+          data: { declarationName: 'TIMEOUT' },
+        },
+      ],
+    },
+    // Should flag identifier constants in nested blocks
+    {
+      code: `
+        function Component() {
+          if (condition) {
+            const ERROR_MESSAGE = 'Something went wrong';
+            return ERROR_MESSAGE;
+          }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'extractGlobalConstants',
+          data: { declarationName: 'ERROR_MESSAGE' },
+        },
+      ],
+    },
+    // Should flag identifier constants in arrow functions
+    {
+      code: `
+        const handler = () => {
+          const DEFAULT_VALUE = 42;
+          return DEFAULT_VALUE;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'extractGlobalConstants',
+          data: { declarationName: 'DEFAULT_VALUE' },
+        },
+      ],
+    },
+    // Should flag identifier constants in async functions
+    {
+      code: `
+        async function fetchData() {
+          const CACHE_KEY = 'user-data';
+          return await cache.get(CACHE_KEY);
+        }
+      `,
+      errors: [
+        {
+          messageId: 'extractGlobalConstants',
+          data: { declarationName: 'CACHE_KEY' },
         },
       ],
     },
