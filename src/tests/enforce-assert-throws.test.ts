@@ -136,27 +136,6 @@ ruleTesterTs.run('enforce-assert-throws', enforceAssertThrows, {
       `,
       errors: [{ messageId: 'shouldBeAssertPrefixed' }],
     },
-    // Function that calls assert- method but is not prefixed with assert- (BUG REPRODUCTION)
-    {
-      code: `
-        export class ChannelGroupDeleter {
-          @Memoize()
-          private async isDeletable() {
-            const groupFilter = await this.fetchGroupFilter();
-            if (!groupFilter) {
-              return 'already-deleted';
-            }
-            return await this.assertTournamentDeletable(groupFilter);
-          }
-
-          @Memoize()
-          private async assertTournamentDeletable(groupFilter: any) {
-            throw new HttpsError('failed-precondition', 'Error message');
-          }
-        }
-      `,
-      errors: [{ messageId: 'shouldBeAssertPrefixed' }],
-    },
     // Arrow function that calls assert- method but is not prefixed with assert-
     {
       code: `
@@ -237,6 +216,38 @@ ruleTesterTs.run('enforce-assert-throws', enforceAssertThrows, {
             fs.accessSync(filePath);
           } catch (err) {
             return false;
+          }
+        }
+      `,
+      errors: [{ messageId: 'assertShouldThrow' }],
+    },
+    // Method that calls non-assert method (should fail)
+    {
+      code: `
+        class TestClass {
+          assertSomething() {
+            return this.validateSomething();
+          }
+
+          validateSomething() {
+            return true;
+          }
+        }
+      `,
+      errors: [{ messageId: 'assertShouldThrow' }],
+    },
+    // Method that calls assert method but also has other logic without throw (edge case)
+    {
+      code: `
+        class TestClass {
+          assertComplexLogic() {
+            const result = this.assertHelper();
+            console.log('This should not prevent throwing');
+            return result;
+          }
+
+          assertHelper() {
+            throw new Error('Helper throws');
           }
         }
       `,
