@@ -128,6 +128,351 @@ function isInBooleanContext(node: TSESTree.Node): boolean {
       return true;
     }
 
+    // If we're in a function return statement with a boolean-like function name
+    if (current.parent.type === AST_NODE_TYPES.ReturnStatement) {
+      // Find the function that contains this return statement
+      let functionNode = current.parent.parent;
+      let functionName = '';
+
+      // Handle different function types
+      if (
+        functionNode &&
+        functionNode.type === AST_NODE_TYPES.FunctionDeclaration &&
+        functionNode.id
+      ) {
+        functionName = functionNode.id.name;
+      } else if (
+        functionNode &&
+        functionNode.type === AST_NODE_TYPES.FunctionExpression
+      ) {
+        // For function expressions, check the parent context
+        if (
+          functionNode.parent &&
+          functionNode.parent.type === AST_NODE_TYPES.VariableDeclarator &&
+          functionNode.parent.id.type === AST_NODE_TYPES.Identifier
+        ) {
+          functionName = functionNode.parent.id.name;
+        } else if (
+          functionNode.parent &&
+          functionNode.parent.type === AST_NODE_TYPES.Property &&
+          functionNode.parent.key.type === AST_NODE_TYPES.Identifier
+        ) {
+          functionName = functionNode.parent.key.name;
+        } else if (
+          functionNode.parent &&
+          functionNode.parent.type === AST_NODE_TYPES.MethodDefinition &&
+          functionNode.parent.key.type === AST_NODE_TYPES.Identifier
+        ) {
+          functionName = functionNode.parent.key.name;
+        }
+      } else if (
+        functionNode &&
+        functionNode.type === AST_NODE_TYPES.ArrowFunctionExpression
+      ) {
+        // For arrow functions, check the parent context
+        if (
+          functionNode.parent &&
+          functionNode.parent.type === AST_NODE_TYPES.VariableDeclarator &&
+          functionNode.parent.id.type === AST_NODE_TYPES.Identifier
+        ) {
+          functionName = functionNode.parent.id.name;
+        } else if (
+          functionNode.parent &&
+          functionNode.parent.type === AST_NODE_TYPES.Property &&
+          functionNode.parent.key.type === AST_NODE_TYPES.Identifier
+        ) {
+          functionName = functionNode.parent.key.name;
+        } else if (
+          functionNode.parent &&
+          functionNode.parent.type === AST_NODE_TYPES.MethodDefinition &&
+          functionNode.parent.key.type === AST_NODE_TYPES.Identifier
+        ) {
+          functionName = functionNode.parent.key.name;
+        }
+      } else if (
+        functionNode &&
+        functionNode.type === AST_NODE_TYPES.BlockStatement
+      ) {
+        // Handle case where return is in a block statement
+        functionNode = functionNode.parent;
+        if (
+          functionNode &&
+          functionNode.type === AST_NODE_TYPES.FunctionDeclaration &&
+          functionNode.id
+        ) {
+          functionName = functionNode.id.name;
+        } else if (
+          functionNode &&
+          functionNode.type === AST_NODE_TYPES.FunctionExpression
+        ) {
+          if (
+            functionNode.parent &&
+            functionNode.parent.type === AST_NODE_TYPES.VariableDeclarator &&
+            functionNode.parent.id.type === AST_NODE_TYPES.Identifier
+          ) {
+            functionName = functionNode.parent.id.name;
+          } else if (
+            functionNode.parent &&
+            functionNode.parent.type === AST_NODE_TYPES.Property &&
+            functionNode.parent.key.type === AST_NODE_TYPES.Identifier
+          ) {
+            functionName = functionNode.parent.key.name;
+          } else if (
+            functionNode.parent &&
+            functionNode.parent.type === AST_NODE_TYPES.MethodDefinition &&
+            functionNode.parent.key.type === AST_NODE_TYPES.Identifier
+          ) {
+            functionName = functionNode.parent.key.name;
+          }
+        } else if (
+          functionNode &&
+          functionNode.type === AST_NODE_TYPES.ArrowFunctionExpression
+        ) {
+          if (
+            functionNode.parent &&
+            functionNode.parent.type === AST_NODE_TYPES.VariableDeclarator &&
+            functionNode.parent.id.type === AST_NODE_TYPES.Identifier
+          ) {
+            functionName = functionNode.parent.id.name;
+          } else if (
+            functionNode.parent &&
+            functionNode.parent.type === AST_NODE_TYPES.Property &&
+            functionNode.parent.key.type === AST_NODE_TYPES.Identifier
+          ) {
+            functionName = functionNode.parent.key.name;
+          } else if (
+            functionNode.parent &&
+            functionNode.parent.type === AST_NODE_TYPES.MethodDefinition &&
+            functionNode.parent.key.type === AST_NODE_TYPES.Identifier
+          ) {
+            functionName = functionNode.parent.key.name;
+          }
+        }
+      }
+
+      if (
+        functionName &&
+        /^(is|has|should|can|will|do|does|did|was|were|check|validate)/.test(
+          functionName,
+        )
+      ) {
+        return true;
+      }
+    }
+
+    // If we're directly in an arrow function body (without explicit return) with boolean-like name
+    if (current.parent.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+      let functionName = '';
+      if (
+        current.parent.parent &&
+        current.parent.parent.type === AST_NODE_TYPES.VariableDeclarator &&
+        current.parent.parent.id.type === AST_NODE_TYPES.Identifier
+      ) {
+        functionName = current.parent.parent.id.name;
+      } else if (
+        current.parent.parent &&
+        current.parent.parent.type === AST_NODE_TYPES.Property &&
+        current.parent.parent.key.type === AST_NODE_TYPES.Identifier
+      ) {
+        functionName = current.parent.parent.key.name;
+      }
+
+      if (
+        functionName &&
+        /^(is|has|should|can|will|do|does|did|was|were|check|validate)/.test(
+          functionName,
+        )
+      ) {
+        return true;
+      }
+    }
+
+    // If we're in a conditional rendering context (JSX && operator)
+    if (
+      current.parent.type === AST_NODE_TYPES.LogicalExpression &&
+      current.parent.operator === '&&' &&
+      current.parent.parent &&
+      (current.parent.parent.type === AST_NODE_TYPES.JSXExpressionContainer ||
+        current.parent.parent.type === AST_NODE_TYPES.ReturnStatement)
+    ) {
+      return true;
+    }
+
+    // If we're the left side of a && operator that's used for conditional rendering
+    if (
+      current.parent.type === AST_NODE_TYPES.LogicalExpression &&
+      current.parent.operator === '&&' &&
+      current === current.parent.left &&
+      current.parent.parent &&
+      current.parent.parent.type === AST_NODE_TYPES.ReturnStatement
+    ) {
+      return true;
+    }
+
+    // If we're in a logical expression that will be used for conditional rendering
+    if (
+      current.parent.type === AST_NODE_TYPES.LogicalExpression &&
+      current.parent.operator === '&&' &&
+      current.parent.parent &&
+      current.parent.parent.type === AST_NODE_TYPES.ReturnStatement &&
+      current.parent.right &&
+      current.parent.right.type === AST_NODE_TYPES.JSXElement
+    ) {
+      return true;
+    }
+
+    // If we're inside parentheses that are the left side of a && operator for conditional rendering
+    if (
+      current.parent.type === AST_NODE_TYPES.LogicalExpression &&
+      current.parent.parent &&
+      current.parent.parent.type === AST_NODE_TYPES.LogicalExpression &&
+      current.parent.parent.operator === '&&' &&
+      current.parent.parent.parent &&
+      current.parent.parent.parent.type === AST_NODE_TYPES.ReturnStatement &&
+      current.parent.parent.right &&
+      current.parent.parent.right.type === AST_NODE_TYPES.JSXElement
+    ) {
+      return true;
+    }
+
+    // Check if we're in a logical expression that's eventually used for conditional rendering
+    let tempParent: TSESTree.Node | undefined = current.parent;
+    while (tempParent) {
+      if (
+        tempParent.type === AST_NODE_TYPES.LogicalExpression &&
+        tempParent.operator === '&&' &&
+        tempParent.right &&
+        tempParent.right.type === AST_NODE_TYPES.JSXElement
+      ) {
+        return true;
+      }
+      tempParent = tempParent.parent;
+    }
+
+    // If we're in a switch case
+    if (
+      current.parent.type === AST_NODE_TYPES.SwitchCase &&
+      current === current.parent.test
+    ) {
+      return true;
+    }
+
+    // If we're in array method callbacks that expect boolean returns
+    if (
+      current.parent.type === AST_NODE_TYPES.ReturnStatement &&
+      current.parent.parent &&
+      current.parent.parent.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+      current.parent.parent.parent &&
+      current.parent.parent.parent.type === AST_NODE_TYPES.CallExpression &&
+      current.parent.parent.parent.callee.type ===
+        AST_NODE_TYPES.MemberExpression &&
+      current.parent.parent.parent.callee.property.type ===
+        AST_NODE_TYPES.Identifier
+    ) {
+      const methodName = current.parent.parent.parent.callee.property.name;
+      if (
+        ['filter', 'some', 'every', 'find', 'findIndex'].includes(methodName)
+      ) {
+        return true;
+      }
+    }
+
+    // If we're directly in array method callbacks (arrow function body without return)
+    if (
+      current.parent.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+      current.parent.parent &&
+      current.parent.parent.type === AST_NODE_TYPES.CallExpression &&
+      current.parent.parent.callee.type === AST_NODE_TYPES.MemberExpression &&
+      current.parent.parent.callee.property.type === AST_NODE_TYPES.Identifier
+    ) {
+      const methodName = current.parent.parent.callee.property.name;
+      if (
+        ['filter', 'some', 'every', 'find', 'findIndex'].includes(methodName)
+      ) {
+        return true;
+      }
+    }
+
+    // If we're in an object property with a boolean-like name
+    if (
+      current.parent.type === AST_NODE_TYPES.Property &&
+      current.parent.key.type === AST_NODE_TYPES.Identifier
+    ) {
+      const propertyName = current.parent.key.name;
+      if (
+        /^(is|has|should|can|will|do|does|did|was|were|enable|disable|validate)/.test(
+          propertyName,
+        )
+      ) {
+        return true;
+      }
+    }
+
+    // If we're in destructuring assignment with boolean-like name
+    if (
+      current.parent.type === AST_NODE_TYPES.AssignmentPattern &&
+      current.parent.parent &&
+      current.parent.parent.type === AST_NODE_TYPES.Property &&
+      current.parent.parent.key.type === AST_NODE_TYPES.Identifier
+    ) {
+      const propertyName = current.parent.parent.key.name;
+      if (/^(is|has|should|can|will|do|does|did|was|were)/.test(propertyName)) {
+        return true;
+      }
+    }
+
+    // If we're in a function call argument for useState with boolean-like variable name
+    if (
+      current.parent.type === AST_NODE_TYPES.CallExpression &&
+      current.parent.callee.type === AST_NODE_TYPES.Identifier &&
+      current.parent.callee.name === 'useState' &&
+      current.parent.parent &&
+      current.parent.parent.type === AST_NODE_TYPES.VariableDeclarator &&
+      current.parent.parent.id.type === AST_NODE_TYPES.ArrayPattern &&
+      current.parent.parent.id.elements.length > 0 &&
+      current.parent.parent.id.elements[0] &&
+      current.parent.parent.id.elements[0].type === AST_NODE_TYPES.Identifier
+    ) {
+      const variableName = current.parent.parent.id.elements[0].name;
+      if (
+        /^(is|has|should|can|will|do|does|did|was|were|ready|valid|loading|error|complete|active|enabled|disabled|visible|hidden)/.test(
+          variableName,
+        )
+      ) {
+        return true;
+      }
+    }
+
+    // If we're in an event handler (arrow function in JSX prop)
+    if (
+      current.parent.type === AST_NODE_TYPES.LogicalExpression &&
+      current.parent.operator === '&&' &&
+      current.parent.parent &&
+      current.parent.parent.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+      current.parent.parent.parent &&
+      current.parent.parent.parent.type ===
+        AST_NODE_TYPES.JSXExpressionContainer &&
+      current.parent.parent.parent.parent &&
+      current.parent.parent.parent.parent.type === AST_NODE_TYPES.JSXAttribute
+    ) {
+      return true;
+    }
+
+    // If we're in a logical expression inside an arrow function that's in a JSX attribute
+    let tempCurrent: TSESTree.Node | undefined = current.parent;
+    while (tempCurrent) {
+      if (
+        tempCurrent.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+        tempCurrent.parent &&
+        tempCurrent.parent.type === AST_NODE_TYPES.JSXExpressionContainer &&
+        tempCurrent.parent.parent &&
+        tempCurrent.parent.parent.type === AST_NODE_TYPES.JSXAttribute
+      ) {
+        return true;
+      }
+      tempCurrent = tempCurrent.parent;
+    }
+
     current = current.parent;
   }
 
