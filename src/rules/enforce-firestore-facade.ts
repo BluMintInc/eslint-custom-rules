@@ -18,6 +18,32 @@ const isMemberExpression = (
 // Track variables that are assigned realtimeDb references
 const realtimeDbRefVariables = new Set<string>();
 const realtimeDbChildVariables = new Set<string>();
+// Track variables that are JavaScript collection objects (Set, Map, WeakSet, WeakMap)
+const collectionObjectVariables = new Set<string>();
+
+const COLLECTION_CONSTRUCTORS = new Set(['Set', 'Map', 'WeakSet', 'WeakMap']);
+
+const isCollectionObjectAssignment = (node: TSESTree.Node): boolean => {
+  if (node.type !== AST_NODE_TYPES.VariableDeclarator) return false;
+
+  const init = node.init;
+  if (!init) return false;
+
+  // Check for direct collection constructor calls
+  // e.g., const mySet = new Set<string>(); const myMap = new Map<string, any>();
+  if (
+    init.type === AST_NODE_TYPES.NewExpression &&
+    isIdentifier(init.callee) &&
+    COLLECTION_CONSTRUCTORS.has(init.callee.name)
+  ) {
+    if (isIdentifier(node.id)) {
+      collectionObjectVariables.add(node.id.name);
+      return true;
+    }
+  }
+
+  return false;
+};
 
 const isRealtimeDbRefAssignment = (node: TSESTree.Node): boolean => {
   if (node.type !== AST_NODE_TYPES.VariableDeclarator) return false;
@@ -125,6 +151,10 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
     ) {
       return false;
     }
+    // Skip if it's a JavaScript collection object (Set, Map, WeakSet, WeakMap)
+    if (collectionObjectVariables.has(name)) {
+      return false;
+    }
     // Check for batch or transaction
     if (/batch|transaction/i.test(name)) {
       return true;
@@ -224,11 +254,13 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
     // Clear the sets at the beginning of each file analysis
     realtimeDbRefVariables.clear();
     realtimeDbChildVariables.clear();
+    collectionObjectVariables.clear();
 
     return {
-      // Track variable declarations that are assigned realtimeDb references
+      // Track variable declarations that are assigned realtimeDb references or collection objects
       VariableDeclarator(node) {
         isRealtimeDbRefAssignment(node);
+        isCollectionObjectAssignment(node);
       },
 
       CallExpression(node) {
