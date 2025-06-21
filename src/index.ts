@@ -230,7 +230,8 @@ module.exports = {
   },
 
   rules: {
-    'prefer-block-comments-for-declarations': preferBlockCommentsForDeclarations,
+    'prefer-block-comments-for-declarations':
+      preferBlockCommentsForDeclarations,
     'key-only-outermost-element': keyOnlyOutermostElement,
     'array-methods-this-context': arrayMethodsThisContext,
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
@@ -335,6 +336,7 @@ module.exports = {
     'no-margin-properties': noMarginProperties,
     'enforce-boolean-naming-prefixes': enforceBooleanNamingPrefixes,
     'no-undefined-null-passthrough': noUndefinedNullPassthrough,
-    'prefer-nullish-coalescing-boolean-props': preferNullishCoalescingBooleanProps,
+    'prefer-nullish-coalescing-boolean-props':
+      preferNullishCoalescingBooleanProps,
   },
 };

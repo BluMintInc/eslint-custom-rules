@@ -6,11 +6,14 @@ import { preferNullishCoalescingBooleanProps } from '../rules/prefer-nullish-coa
  * The `@typescript-eslint/prefer-nullish-coalescing` rule incorrectly flags logical OR (`||`)
  * operators inside boolean props of React components.
  */
-ruleTesterTs.run('prefer-nullish-coalescing-boolean-props-bug', preferNullishCoalescingBooleanProps, {
-  valid: [
-    // The exact example from the bug report
-    {
-      code: `
+ruleTesterTs.run(
+  'prefer-nullish-coalescing-boolean-props-bug',
+  preferNullishCoalescingBooleanProps,
+  {
+    valid: [
+      // The exact example from the bug report
+      {
+        code: `
         function PhoneDialog() {
           return (
             <LoadingButton
@@ -32,8 +35,9 @@ ruleTesterTs.run('prefer-nullish-coalescing-boolean-props-bug', preferNullishCoa
           );
         }
       `,
-      parserOptions: { ecmaFeatures: { jsx: true } }
-    }
-  ],
-  invalid: []
-});
+        parserOptions: { ecmaFeatures: { jsx: true } },
+      },
+    ],
+    invalid: [],
+  },
+);

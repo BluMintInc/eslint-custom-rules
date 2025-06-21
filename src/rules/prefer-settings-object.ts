@@ -69,14 +69,18 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
         const typeNode = param.typeAnnotation.typeAnnotation;
         if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
           // Include type parameters in the type signature to differentiate generic types
-          const typeName = typeNode.typeName.type === AST_NODE_TYPES.Identifier
-            ? typeNode.typeName.name
-            : 'unknown';
+          const typeName =
+            typeNode.typeName.type === AST_NODE_TYPES.Identifier
+              ? typeNode.typeName.name
+              : 'unknown';
 
           // If there are type parameters, include them in the type signature
-          if (typeNode.typeParameters && typeNode.typeParameters.params.length > 0) {
+          if (
+            typeNode.typeParameters &&
+            typeNode.typeParameters.params.length > 0
+          ) {
             const typeParams = typeNode.typeParameters.params
-              .map(param => param.type)
+              .map((param) => param.type)
               .join('_');
             return `${typeName}<${typeParams}>`;
           }
@@ -89,14 +93,18 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
         const typeNode = param.typeAnnotation.typeAnnotation;
         if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
           // Include type parameters in the type signature to differentiate generic types
-          const typeName = typeNode.typeName.type === AST_NODE_TYPES.Identifier
-            ? typeNode.typeName.name
-            : 'unknown';
+          const typeName =
+            typeNode.typeName.type === AST_NODE_TYPES.Identifier
+              ? typeNode.typeName.name
+              : 'unknown';
 
           // If there are type parameters, include them in the type signature
-          if (typeNode.typeParameters && typeNode.typeParameters.params.length > 0) {
+          if (
+            typeNode.typeParameters &&
+            typeNode.typeParameters.params.length > 0
+          ) {
             const typeParams = typeNode.typeParameters.params
-              .map(param => param.type)
+              .map((param) => param.type)
               .join('_');
             return `${typeName}<${typeParams}>`;
           }
@@ -328,8 +336,8 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
       // This is a common pattern in Firebase/Firestore handlers
       if (
         (node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-         node.type === AST_NODE_TYPES.FunctionExpression ||
-         node.type === AST_NODE_TYPES.FunctionDeclaration) &&
+          node.type === AST_NODE_TYPES.FunctionExpression ||
+          node.type === AST_NODE_TYPES.FunctionDeclaration) &&
         node.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
         node.parent.id?.type === AST_NODE_TYPES.Identifier
       ) {
@@ -338,10 +346,16 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
         if (
           functionName.includes('Transaction') ||
           functionName.includes('WithTransaction') ||
-          (node.parent.id.typeAnnotation?.typeAnnotation.type === AST_NODE_TYPES.TSTypeReference &&
-           node.parent.id.typeAnnotation.typeAnnotation.typeName.type === AST_NODE_TYPES.Identifier &&
-           (node.parent.id.typeAnnotation.typeAnnotation.typeName.name.includes('Transaction') ||
-            node.parent.id.typeAnnotation.typeAnnotation.typeName.name.includes('WithTransaction')))
+          (node.parent.id.typeAnnotation?.typeAnnotation.type ===
+            AST_NODE_TYPES.TSTypeReference &&
+            node.parent.id.typeAnnotation.typeAnnotation.typeName.type ===
+              AST_NODE_TYPES.Identifier &&
+            (node.parent.id.typeAnnotation.typeAnnotation.typeName.name.includes(
+              'Transaction',
+            ) ||
+              node.parent.id.typeAnnotation.typeAnnotation.typeName.name.includes(
+                'WithTransaction',
+              )))
         ) {
           return true;
         }
