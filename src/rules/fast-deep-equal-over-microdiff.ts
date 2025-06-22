@@ -113,7 +113,9 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
           node.argument.object.type === AST_NODE_TYPES.Identifier &&
           microdiffVariables.has(node.argument.object.name)
         ) {
-          const microdiffVar = microdiffVariables.get(node.argument.object.name)!;
+          const microdiffVar = microdiffVariables.get(
+            node.argument.object.name,
+          )!;
           return {
             isEquality: true, // !variable.length is equivalent to variable.length === 0
             microdiffVariable: microdiffVar,
@@ -147,27 +149,56 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
 
         // Remove the variable declaration
         const declarationStatement = microdiffVariable.declarationNode.parent;
-        if (declarationStatement && declarationStatement.type === AST_NODE_TYPES.VariableDeclaration) {
-          // If this is the only declarator in the statement, remove the whole statement
+        if (
+          declarationStatement &&
+          declarationStatement.type === AST_NODE_TYPES.VariableDeclaration
+        ) {
+          // If this is the only declarator in the statement, remove the whole statement including newlines
           if (declarationStatement.declarations.length === 1) {
-            fixes.push(fixer.remove(declarationStatement));
+            // Find the start of the line (including any indentation)
+            const statementStart = declarationStatement.range![0];
+            const statementEnd = declarationStatement.range![1];
+            const sourceText = sourceCode.getText();
+
+            // Find the start of the line by going backwards to find the newline
+            let lineStart = statementStart;
+            while (lineStart > 0 && sourceText[lineStart - 1] !== '\n') {
+              lineStart--;
+            }
+
+            // Find the end of the line by going forwards to find the newline (including the newline)
+            let lineEnd = statementEnd;
+            while (
+              lineEnd < sourceText.length &&
+              sourceText[lineEnd] !== '\n'
+            ) {
+              lineEnd++;
+            }
+            if (lineEnd < sourceText.length && sourceText[lineEnd] === '\n') {
+              lineEnd++; // Include the newline character
+            }
+
+            fixes.push(fixer.removeRange([lineStart, lineEnd]));
           } else {
             // If there are multiple declarators, we need to handle commas properly
-            const declaratorIndex = declarationStatement.declarations.indexOf(microdiffVariable.declarationNode);
+            const declaratorIndex = declarationStatement.declarations.indexOf(
+              microdiffVariable.declarationNode,
+            );
             if (declaratorIndex === 0) {
               // First declarator: remove it and the following comma
               const nextDeclarator = declarationStatement.declarations[1];
               const range = [
                 microdiffVariable.declarationNode.range![0],
-                nextDeclarator.range![0]
+                nextDeclarator.range![0],
               ] as const;
               fixes.push(fixer.removeRange(range));
             } else {
               // Not first declarator: remove the preceding comma and the declarator
-              const prevDeclarator = declarationStatement.declarations[declaratorIndex - 1];
+              const prevDeclarator =
+                declarationStatement.declarations[declaratorIndex - 1];
               const range = [
                 prevDeclarator.range![1],
-                microdiffVariable.declarationNode.range![1]
+                microdiffVariable.declarationNode.range![1],
               ] as const;
               fixes.push(fixer.removeRange(range));
             }
@@ -182,7 +213,7 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
       }
 
       // Check if any arguments are spread elements (we can't handle those)
-      if (args.some(arg => arg.type === AST_NODE_TYPES.SpreadElement)) {
+      if (args.some((arg) => arg.type === AST_NODE_TYPES.SpreadElement)) {
         return null;
       }
 
@@ -213,8 +244,12 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
       const replaceFix = fixer.replaceText(
         node,
         isEquality
-          ? `${hasFastDeepEqualImport ? fastDeepEqualImportName : 'isEqual'}(${arg1}, ${arg2})`
-          : `!${hasFastDeepEqualImport ? fastDeepEqualImportName : 'isEqual'}(${arg1}, ${arg2})`,
+          ? `${
+              hasFastDeepEqualImport ? fastDeepEqualImportName : 'isEqual'
+            }(${arg1}, ${arg2})`
+          : `!${
+              hasFastDeepEqualImport ? fastDeepEqualImportName : 'isEqual'
+            }(${arg1}, ${arg2})`,
       );
 
       fixes.push(replaceFix);
@@ -235,7 +270,9 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
               specifier.imported.name === 'diff'
             ) {
               microdiffImportName = specifier.local.name;
-            } else if (specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
+            } else if (
+              specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier
+            ) {
               // Handle default import: import diff from 'microdiff'
               microdiffImportName = specifier.local.name;
             }
@@ -284,7 +321,10 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
         }
 
         const result = isMicrodiffEqualityCheck(node);
-        if (result.isEquality !== undefined && (result.diffCall || result.microdiffVariable)) {
+        if (
+          result.isEquality !== undefined &&
+          (result.diffCall || result.microdiffVariable)
+        ) {
           reportedNodes.add(node);
           context.report({
             node,
@@ -310,7 +350,10 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
         }
 
         const result = isMicrodiffEqualityCheck(node.test);
-        if (result.isEquality !== undefined && (result.diffCall || result.microdiffVariable)) {
+        if (
+          result.isEquality !== undefined &&
+          (result.diffCall || result.microdiffVariable)
+        ) {
           reportedNodes.add(node.test);
           context.report({
             node: node.test,
@@ -336,7 +379,10 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
         }
 
         const result = isMicrodiffEqualityCheck(node.argument);
-        if (result.isEquality !== undefined && (result.diffCall || result.microdiffVariable)) {
+        if (
+          result.isEquality !== undefined &&
+          (result.diffCall || result.microdiffVariable)
+        ) {
           reportedNodes.add(node.argument);
           context.report({
             node: node.argument,

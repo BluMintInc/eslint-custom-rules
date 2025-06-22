@@ -278,7 +278,6 @@ export const areHitsEqual = (hit1, hit2) => {
 import isEqual from 'fast-deep-equal';
 
 export const areHitsEqual = (hit1, hit2) => {
-
   return isEqual(hit1, hit2);
 };`,
     },
@@ -295,7 +294,6 @@ export const areObjectsEqual = (obj1, obj2) => {
 import isEqual from 'fast-deep-equal';
 
 export const areObjectsEqual = (obj1, obj2) => {
-
   return isEqual(obj1, obj2);
 };`,
     },
@@ -312,7 +310,6 @@ function checkEquality(obj1, obj2) {
 import isEqual from 'fast-deep-equal';
 
 function checkEquality(obj1, obj2) {
-
   return isEqual(obj1, obj2);
 }`,
     },
@@ -332,7 +329,6 @@ function updateIfNeeded(beforePreview, afterPreview) {
 import isEqual from 'fast-deep-equal';
 
 function updateIfNeeded(beforePreview, afterPreview) {
-
   if (isEqual(beforePreview, afterPreview)) {
     return;
   }
@@ -352,7 +348,6 @@ function hasChanges(obj1, obj2) {
 import isEqual from 'fast-deep-equal';
 
 function hasChanges(obj1, obj2) {
-
   return !isEqual(obj1, obj2);
 }`,
     },
@@ -369,7 +364,6 @@ function areEqual(obj1, obj2) {
 import isEqual from 'fast-deep-equal';
 
 function areEqual(obj1, obj2) {
-
   return isEqual(obj1, obj2);
 }`,
     },
@@ -387,7 +381,6 @@ function areObjectsEqual(obj1, obj2) {
 import isEqual from 'fast-deep-equal';
 
 function areObjectsEqual(obj1, obj2) {
-
   return isEqual(obj1, obj2);
 }`,
     },
@@ -404,7 +397,6 @@ function areEqual(obj1, obj2) {
 import isEqual from 'fast-deep-equal';
 
 function areEqual(obj1, obj2) {
-
   return isEqual(obj1, obj2);
 }`,
     },
@@ -421,7 +413,6 @@ export const areHitsEqual = (hit1: Hit, hit2: Hit) => {
 import isEqual from 'fast-deep-equal';
 
 export const areHitsEqual = (hit1: Hit, hit2: Hit) => {
-
   return isEqual(hit1, hit2);
 };`,
     },
@@ -455,7 +446,6 @@ export const areHitsEqual = (hit1: Hit, hit2: Hit) => {
 import isEqual from 'fast-deep-equal';
 
 export const areHitsEqual = (hit1: Hit, hit2: Hit) => {
-
   return isEqual(hit1, hit2);
 };`,
     },
@@ -475,7 +465,6 @@ function updateIfNeeded(beforePreview, afterPreview) {
 import isEqual from 'fast-deep-equal';
 
 function updateIfNeeded(beforePreview, afterPreview) {
-
   if (isEqual(beforePreview, afterPreview)) {
     return;
   }
@@ -495,7 +484,6 @@ function hasChanges(obj1, obj2) {
 import isEqual from 'fast-deep-equal';
 
 function hasChanges(obj1, obj2) {
-
   return !isEqual(obj1, obj2);
 }`,
     },
