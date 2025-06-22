@@ -69,7 +69,7 @@ export const noMarginProperties = createRule<Options, MessageIds>({
     },
   },
   defaultOptions: [{ autofix: false }],
-  create(context, [_options]) {
+  create(context) {
     const seenNodes = new WeakSet<TSESTree.Node>();
     // Note: autofix option is available but not currently implemented
     // Future implementation can use: const { autofix = false } = _options;
