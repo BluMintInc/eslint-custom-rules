@@ -2,11 +2,14 @@ import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceAssertThrows } from '../rules/enforce-assert-throws';
 
 // Test to reproduce and fix the bug described in the issue
-ruleTesterTs.run('enforce-assert-throws-loops-and-control-structures', enforceAssertThrows, {
-  valid: [
-    // Original issue case - throws in for...of loop
-    {
-      code: `
+ruleTesterTs.run(
+  'enforce-assert-throws-loops-and-control-structures',
+  enforceAssertThrows,
+  {
+    valid: [
+      // Original issue case - throws in for...of loop
+      {
+        code: `
         class SessionValidator {
           private assertSequentialSessions() {
             const indices = this.sessionIndicesSortedAscending;
@@ -23,10 +26,10 @@ ruleTesterTs.run('enforce-assert-throws-loops-and-control-structures', enforceAs
           }
         }
       `,
-    },
-    // Throws in for...in loop
-    {
-      code: `
+      },
+      // Throws in for...in loop
+      {
+        code: `
         function assertValidProperties(obj: any) {
           for (const key in obj) {
             if (key.startsWith('_')) {
@@ -35,10 +38,10 @@ ruleTesterTs.run('enforce-assert-throws-loops-and-control-structures', enforceAs
           }
         }
       `,
-    },
-    // Throws in traditional for loop
-    {
-      code: `
+      },
+      // Throws in traditional for loop
+      {
+        code: `
         function assertArrayBounds(arr: any[], maxSize: number) {
           for (let i = 0; i < arr.length; i++) {
             if (i >= maxSize) {
@@ -47,10 +50,10 @@ ruleTesterTs.run('enforce-assert-throws-loops-and-control-structures', enforceAs
           }
         }
       `,
-    },
-    // Throws in while loop
-    {
-      code: `
+      },
+      // Throws in while loop
+      {
+        code: `
         function assertNoInfiniteLoop() {
           let counter = 0;
           while (counter < 100) {
@@ -61,10 +64,10 @@ ruleTesterTs.run('enforce-assert-throws-loops-and-control-structures', enforceAs
           }
         }
       `,
-    },
-    // Throws in do-while loop
-    {
-      code: `
+      },
+      // Throws in do-while loop
+      {
+        code: `
         function assertProcessCompletes() {
           let attempts = 0;
           do {
@@ -75,10 +78,10 @@ ruleTesterTs.run('enforce-assert-throws-loops-and-control-structures', enforceAs
           } while (attempts < 5);
         }
       `,
-    },
-    // Throws in switch statement
-    {
-      code: `
+      },
+      // Throws in switch statement
+      {
+        code: `
         function assertValidStatus(status: string) {
           switch (status) {
             case 'invalid':
@@ -90,10 +93,10 @@ ruleTesterTs.run('enforce-assert-throws-loops-and-control-structures', enforceAs
           }
         }
       `,
-    },
-    // Throws in nested switch case
-    {
-      code: `
+      },
+      // Throws in nested switch case
+      {
+        code: `
         function assertComplexStatus(type: string, status: string) {
           switch (type) {
             case 'user':
@@ -112,10 +115,10 @@ ruleTesterTs.run('enforce-assert-throws-loops-and-control-structures', enforceAs
           }
         }
       `,
-    },
-    // Throws in nested loops
-    {
-      code: `
+      },
+      // Throws in nested loops
+      {
+        code: `
         function assertMatrixValid(matrix: number[][]) {
           for (let i = 0; i < matrix.length; i++) {
             for (let j = 0; j < matrix[i].length; j++) {
@@ -126,10 +129,10 @@ ruleTesterTs.run('enforce-assert-throws-loops-and-control-structures', enforceAs
           }
         }
       `,
-    },
-    // Throws in loop with complex conditions
-    {
-      code: `
+      },
+      // Throws in loop with complex conditions
+      {
+        code: `
         function assertDataIntegrity(data: any[]) {
           for (const item of data) {
             if (item.type === 'critical') {
@@ -142,10 +145,10 @@ ruleTesterTs.run('enforce-assert-throws-loops-and-control-structures', enforceAs
           }
         }
       `,
-    },
-    // Throws in nested if statements (should still work)
-    {
-      code: `
+      },
+      // Throws in nested if statements (should still work)
+      {
+        code: `
         function assertNestedConditions(data: any) {
           if (data) {
             if (data.type === 'invalid') {
@@ -156,12 +159,12 @@ ruleTesterTs.run('enforce-assert-throws-loops-and-control-structures', enforceAs
           }
         }
       `,
-    },
-  ],
-  invalid: [
-    // Assert function with loop but no throw
-    {
-      code: `
+      },
+    ],
+    invalid: [
+      // Assert function with loop but no throw
+      {
+        code: `
         function assertAllValid(items: any[]) {
           for (const item of items) {
             if (!item.isValid) {
@@ -170,11 +173,11 @@ ruleTesterTs.run('enforce-assert-throws-loops-and-control-structures', enforceAs
           }
         }
       `,
-      errors: [{ messageId: 'assertShouldThrow' }],
-    },
-    // Assert function with switch but no throw
-    {
-      code: `
+        errors: [{ messageId: 'assertShouldThrow' }],
+      },
+      // Assert function with switch but no throw
+      {
+        code: `
         function assertValidType(type: string) {
           switch (type) {
             case 'invalid':
@@ -185,11 +188,11 @@ ruleTesterTs.run('enforce-assert-throws-loops-and-control-structures', enforceAs
           }
         }
       `,
-      errors: [{ messageId: 'assertShouldThrow' }],
-    },
-    // Assert function with while loop but no throw
-    {
-      code: `
+        errors: [{ messageId: 'assertShouldThrow' }],
+      },
+      // Assert function with while loop but no throw
+      {
+        code: `
         function assertProcessing() {
           let counter = 0;
           while (counter < 10) {
@@ -198,7 +201,8 @@ ruleTesterTs.run('enforce-assert-throws-loops-and-control-structures', enforceAs
           }
         }
       `,
-      errors: [{ messageId: 'assertShouldThrow' }],
-    },
-  ],
-});
+        errors: [{ messageId: 'assertShouldThrow' }],
+      },
+    ],
+  },
+);

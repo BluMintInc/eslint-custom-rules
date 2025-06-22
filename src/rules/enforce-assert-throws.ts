@@ -44,11 +44,13 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
           if (
             grandParent &&
             (grandParent.type === AST_NODE_TYPES.ConditionalExpression ||
-             grandParent.type === AST_NODE_TYPES.LogicalExpression)
+              grandParent.type === AST_NODE_TYPES.LogicalExpression)
           ) {
             return true;
           }
-          return parent.arguments.includes(node as any) || parent.callee === node;
+          return (
+            parent.arguments.includes(node as any) || parent.callee === node
+          );
         }
 
         // Check if it's part of a ternary or logical expression
@@ -548,11 +550,13 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
           if (
             grandParent &&
             (grandParent.type === AST_NODE_TYPES.ConditionalExpression ||
-             grandParent.type === AST_NODE_TYPES.LogicalExpression)
+              grandParent.type === AST_NODE_TYPES.LogicalExpression)
           ) {
             return true;
           }
-          return parent.arguments.includes(node as any) || parent.callee === node;
+          return (
+            parent.arguments.includes(node as any) || parent.callee === node
+          );
         }
 
         // Check if it's part of a ternary or logical expression
@@ -732,7 +736,8 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
           default:
             // Handle other node types generically
             for (const key of Object.keys(node)) {
-              if (key === 'parent' || key === 'range' || key === 'loc') continue;
+              if (key === 'parent' || key === 'range' || key === 'loc')
+                continue;
               const value = node[key as keyof typeof node];
               if (Array.isArray(value)) {
                 value.forEach((item) => {

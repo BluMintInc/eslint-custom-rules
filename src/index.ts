@@ -6,6 +6,7 @@ import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
 import { enforceIdentifiableFirestoreType } from './rules/enforce-identifiable-firestore-type';
 import { default as enforceCallbackMemo } from './rules/enforce-callback-memo';
 import { enforceCallableTypes } from './rules/enforce-callable-types';
+import { enforceConsoleError } from './rules/enforce-console-error';
 import { enforceFirebaseImports } from './rules/enforce-dynamic-firebase-imports';
 import { enforceMuiRoundedIcons } from './rules/enforce-mui-rounded-icons';
 import { enforceQueryKeyTs } from './rules/enforce-querykey-ts';
@@ -143,6 +144,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-identifiable-firestore-type': 'error',
         '@blumintinc/blumint/enforce-callback-memo': 'error',
         '@blumintinc/blumint/enforce-callable-types': 'error',
+        '@blumintinc/blumint/enforce-console-error': 'error',
         '@blumintinc/blumint/enforce-dynamic-firebase-imports': 'error',
         '@blumintinc/blumint/enforce-react-type-naming': 'error',
         '@blumintinc/blumint/export-if-in-doubt': 'error',
@@ -273,6 +275,7 @@ module.exports = {
     'enforce-callback-memo': enforceCallbackMemo,
     'enforce-react-type-naming': enforceReactTypeNaming,
     'enforce-callable-types': enforceCallableTypes,
+    'enforce-console-error': enforceConsoleError,
     'enforce-dynamic-firebase-imports': enforceFirebaseImports,
     'enforce-mui-rounded-icons': enforceMuiRoundedIcons,
     'export-if-in-doubt': exportIfInDoubt,
