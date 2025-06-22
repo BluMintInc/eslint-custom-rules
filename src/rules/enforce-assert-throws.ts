@@ -25,6 +25,43 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
     function callsAssertMethod(node: TSESTree.Node): boolean {
       let hasAssertCall = false;
 
+      // Helper function to check if a function is a callback function or IIFE
+      function isCallbackFunction(node: TSESTree.Node): boolean {
+        if (
+          node.type !== AST_NODE_TYPES.FunctionExpression &&
+          node.type !== AST_NODE_TYPES.ArrowFunctionExpression
+        ) {
+          return false;
+        }
+
+        const parent = node.parent;
+        if (!parent) return false;
+
+        // Check if it's an argument to a function call or the callee (IIFE)
+        if (parent.type === AST_NODE_TYPES.CallExpression) {
+          // Check if the CallExpression itself is part of a ternary or logical expression
+          const grandParent = parent.parent;
+          if (
+            grandParent &&
+            (grandParent.type === AST_NODE_TYPES.ConditionalExpression ||
+             grandParent.type === AST_NODE_TYPES.LogicalExpression)
+          ) {
+            return true;
+          }
+          return parent.arguments.includes(node as any) || parent.callee === node;
+        }
+
+        // Check if it's part of a ternary or logical expression
+        if (
+          parent.type === AST_NODE_TYPES.ConditionalExpression ||
+          parent.type === AST_NODE_TYPES.LogicalExpression
+        ) {
+          return true;
+        }
+
+        return false;
+      }
+
       function walk(node: TSESTree.Node): void {
         if (hasAssertCall) return; // Early exit if we found an assert call
 
@@ -47,14 +84,17 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
           }
         }
 
-        // Don't check calls in nested functions
+        // Handle nested functions - only skip if it's a standalone function, not a callback
         if (
           node.type === AST_NODE_TYPES.FunctionDeclaration ||
           node.type === AST_NODE_TYPES.FunctionExpression ||
           node.type === AST_NODE_TYPES.ArrowFunctionExpression
         ) {
           if (node !== currentFunction) {
-            return;
+            // Allow traversing into callback functions
+            if (!isCallbackFunction(node)) {
+              return;
+            }
           }
         }
 
@@ -68,6 +108,14 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
             if (node.alternate) {
               walk(node.alternate);
             }
+            break;
+          case AST_NODE_TYPES.ConditionalExpression:
+            walk(node.consequent);
+            walk(node.alternate);
+            break;
+          case AST_NODE_TYPES.LogicalExpression:
+            walk(node.left);
+            walk(node.right);
             break;
           case AST_NODE_TYPES.ExpressionStatement:
             walk(node.expression);
@@ -87,6 +135,51 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
             if (node.init) {
               walk(node.init);
             }
+            break;
+          case AST_NODE_TYPES.CallExpression:
+            // Walk through arguments to find callback functions
+            node.arguments.forEach((arg) => walk(arg));
+            break;
+          case AST_NODE_TYPES.FunctionExpression:
+          case AST_NODE_TYPES.ArrowFunctionExpression:
+            // For callback functions, walk their body
+            if (isCallbackFunction(node)) {
+              if (node.body.type === AST_NODE_TYPES.BlockStatement) {
+                walk(node.body);
+              } else {
+                // Arrow function with expression body
+                walk(node.body);
+              }
+            }
+            break;
+          case AST_NODE_TYPES.ForStatement:
+          case AST_NODE_TYPES.ForInStatement:
+          case AST_NODE_TYPES.ForOfStatement:
+          case AST_NODE_TYPES.WhileStatement:
+          case AST_NODE_TYPES.DoWhileStatement:
+            walk(node.body);
+            break;
+          case AST_NODE_TYPES.SwitchStatement:
+            node.cases.forEach((caseNode) => walk(caseNode));
+            break;
+          case AST_NODE_TYPES.SwitchCase:
+            node.consequent.forEach((stmt) => walk(stmt));
+            break;
+          case AST_NODE_TYPES.LabeledStatement:
+          case AST_NODE_TYPES.WithStatement:
+            walk(node.body);
+            break;
+          case AST_NODE_TYPES.TryStatement:
+            walk(node.block);
+            if (node.handler) {
+              walk(node.handler);
+            }
+            if (node.finalizer) {
+              walk(node.finalizer);
+            }
+            break;
+          case AST_NODE_TYPES.CatchClause:
+            walk(node.body);
             break;
           default:
             // Handle other node types generically
@@ -436,7 +529,46 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
       const functionBody =
         node.type === AST_NODE_TYPES.BlockStatement ? node : null;
 
+      // Helper function to check if a function is a callback function or IIFE
+      function isCallbackFunction(node: TSESTree.Node): boolean {
+        if (
+          node.type !== AST_NODE_TYPES.FunctionExpression &&
+          node.type !== AST_NODE_TYPES.ArrowFunctionExpression
+        ) {
+          return false;
+        }
+
+        const parent = node.parent;
+        if (!parent) return false;
+
+        // Check if it's an argument to a function call or the callee (IIFE)
+        if (parent.type === AST_NODE_TYPES.CallExpression) {
+          // Check if the CallExpression itself is part of a ternary or logical expression
+          const grandParent = parent.parent;
+          if (
+            grandParent &&
+            (grandParent.type === AST_NODE_TYPES.ConditionalExpression ||
+             grandParent.type === AST_NODE_TYPES.LogicalExpression)
+          ) {
+            return true;
+          }
+          return parent.arguments.includes(node as any) || parent.callee === node;
+        }
+
+        // Check if it's part of a ternary or logical expression
+        if (
+          parent.type === AST_NODE_TYPES.ConditionalExpression ||
+          parent.type === AST_NODE_TYPES.LogicalExpression
+        ) {
+          return true;
+        }
+
+        return false;
+      }
+
       function walk(node: TSESTree.Node): void {
+        if (hasThrow) return; // Early exit if we already found a throw
+
         if (node.type === AST_NODE_TYPES.ThrowStatement) {
           hasThrow = true;
           return;
@@ -468,66 +600,154 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
           return;
         }
 
-        // Don't check throw statements in nested functions
+        // Handle nested functions - only skip if it's a standalone function, not a callback
         if (
           node.type === AST_NODE_TYPES.FunctionDeclaration ||
           node.type === AST_NODE_TYPES.FunctionExpression ||
           node.type === AST_NODE_TYPES.ArrowFunctionExpression
         ) {
           if (node !== currentFunction) {
+            // Allow traversing into callback functions
+            if (!isCallbackFunction(node)) {
+              return;
+            }
+          }
+        }
+
+        // Handle specific node types that need special traversal
+        switch (node.type) {
+          case AST_NODE_TYPES.CatchClause:
+            walk(node.body);
             return;
-          }
-        }
 
-        // Handle catch blocks for process.exit(1)
-        if (node.type === AST_NODE_TYPES.CatchClause) {
-          walk(node.body);
-          return;
-        }
+          case AST_NODE_TYPES.TryStatement:
+            walk(node.block);
+            if (node.handler) {
+              walk(node.handler);
+            }
+            if (node.finalizer) {
+              walk(node.finalizer);
+            }
+            return;
 
-        // Handle TryStatement specially
-        if (node.type === AST_NODE_TYPES.TryStatement) {
-          walk(node.block);
-          if (node.handler) {
-            walk(node.handler);
-          }
-          if (node.finalizer) {
-            walk(node.finalizer);
-          }
-          return;
-        }
+          case AST_NODE_TYPES.BlockStatement:
+            node.body.forEach((stmt) => walk(stmt));
+            return;
 
-        // Handle BlockStatement specially
-        if (node.type === AST_NODE_TYPES.BlockStatement) {
-          node.body.forEach((stmt) => walk(stmt));
-          return;
-        }
+          case AST_NODE_TYPES.IfStatement:
+            walk(node.consequent);
+            if (node.alternate) {
+              walk(node.alternate);
+            }
+            return;
 
-        // Handle IfStatement specially
-        if (node.type === AST_NODE_TYPES.IfStatement) {
-          walk(node.consequent);
-          if (node.alternate) {
+          case AST_NODE_TYPES.ConditionalExpression:
+            walk(node.consequent);
             walk(node.alternate);
-          }
-          return;
-        }
+            return;
 
-        // Handle other node types
-        for (const key of Object.keys(node)) {
-          const value = node[key as keyof typeof node];
-          if (Array.isArray(value)) {
-            value.forEach((item) => {
-              if (item && typeof item === 'object' && !('parent' in item)) {
-                walk(item as TSESTree.Node);
+          case AST_NODE_TYPES.LogicalExpression:
+            walk(node.left);
+            walk(node.right);
+            return;
+
+          case AST_NODE_TYPES.ForStatement:
+            walk(node.body);
+            return;
+
+          case AST_NODE_TYPES.ForInStatement:
+            walk(node.body);
+            return;
+
+          case AST_NODE_TYPES.ForOfStatement:
+            walk(node.body);
+            return;
+
+          case AST_NODE_TYPES.WhileStatement:
+            walk(node.body);
+            return;
+
+          case AST_NODE_TYPES.DoWhileStatement:
+            walk(node.body);
+            return;
+
+          case AST_NODE_TYPES.SwitchStatement:
+            node.cases.forEach((caseNode) => walk(caseNode));
+            return;
+
+          case AST_NODE_TYPES.SwitchCase:
+            node.consequent.forEach((stmt) => walk(stmt));
+            return;
+
+          case AST_NODE_TYPES.LabeledStatement:
+            walk(node.body);
+            return;
+
+          case AST_NODE_TYPES.WithStatement:
+            walk(node.body);
+            return;
+
+          case AST_NODE_TYPES.ExpressionStatement:
+            walk(node.expression);
+            return;
+
+          case AST_NODE_TYPES.ReturnStatement:
+            if (node.argument) {
+              walk(node.argument);
+            }
+            return;
+
+          case AST_NODE_TYPES.CallExpression:
+            // Walk through arguments to find callback functions
+            node.arguments.forEach((arg) => walk(arg));
+            return;
+
+          case AST_NODE_TYPES.FunctionExpression:
+          case AST_NODE_TYPES.ArrowFunctionExpression:
+            // For callback functions, walk their body
+            if (isCallbackFunction(node)) {
+              if (node.body.type === AST_NODE_TYPES.BlockStatement) {
+                walk(node.body);
+              } else {
+                // Arrow function with expression body
+                walk(node.body);
               }
-            });
-          } else if (
-            value &&
-            typeof value === 'object' &&
-            !('parent' in value)
-          ) {
-            walk(value as TSESTree.Node);
-          }
+            }
+            return;
+
+          case AST_NODE_TYPES.VariableDeclaration:
+            node.declarations.forEach((decl) => walk(decl));
+            return;
+
+          case AST_NODE_TYPES.VariableDeclarator:
+            if (node.init) {
+              walk(node.init);
+            }
+            return;
+
+          case AST_NODE_TYPES.AwaitExpression:
+            walk(node.argument);
+            return;
+
+          default:
+            // Handle other node types generically
+            for (const key of Object.keys(node)) {
+              if (key === 'parent' || key === 'range' || key === 'loc') continue;
+              const value = node[key as keyof typeof node];
+              if (Array.isArray(value)) {
+                value.forEach((item) => {
+                  if (item && typeof item === 'object' && 'type' in item) {
+                    walk(item as TSESTree.Node);
+                  }
+                });
+              } else if (
+                value &&
+                typeof value === 'object' &&
+                'type' in value
+              ) {
+                walk(value as TSESTree.Node);
+              }
+            }
         }
       }
 
