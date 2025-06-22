@@ -239,7 +239,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-dynamic-file-naming': 'error',
         '@blumintinc/blumint/prefer-usecallback-over-usememo-for-functions':
           'error',
-        '@blumintinc/blumint/no-margin-properties': 'error',
+        '@blumintinc/blumint/no-margin-properties': 'warn',
         '@blumintinc/blumint/enforce-boolean-naming-prefixes': 'error',
         '@blumintinc/blumint/no-undefined-null-passthrough': 'error',
         '@blumintinc/blumint/prefer-nullish-coalescing-boolean-props': 'error',
