@@ -166,6 +166,22 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         },
       },
     },
+    // Valid usage with autofix option (should not affect valid cases)
+    {
+      code: `
+        import Box from '@mui/material/Box';
+
+        function App() {
+          return <Box sx={{ paddingLeft: 4 }} />;
+        }
+      `,
+      options: [{ autofix: true }],
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
   ],
   invalid: [
     // Invalid MUI Box with marginLeft
@@ -532,6 +548,32 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         { messageId: 'noMarginProperties' },
         { messageId: 'noMarginProperties' },
       ],
+    },
+    // Test with autofix option set to false (should behave the same)
+    {
+      code: `
+        <Box sx={{ margin: 2 }} />;
+      `,
+      options: [{ autofix: false }],
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [{ messageId: 'noMarginProperties' }],
+    },
+    // Test with autofix option set to true (should behave the same since no autofix is implemented)
+    {
+      code: `
+        <Box sx={{ margin: 2 }} />;
+      `,
+      options: [{ autofix: true }],
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+      errors: [{ messageId: 'noMarginProperties' }],
     },
   ],
 });
