@@ -512,6 +512,48 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
           return;
         }
 
+        // Handle ForStatement specially
+        if (node.type === AST_NODE_TYPES.ForStatement) {
+          walk(node.body);
+          return;
+        }
+
+        // Handle ForInStatement specially
+        if (node.type === AST_NODE_TYPES.ForInStatement) {
+          walk(node.body);
+          return;
+        }
+
+        // Handle ForOfStatement specially
+        if (node.type === AST_NODE_TYPES.ForOfStatement) {
+          walk(node.body);
+          return;
+        }
+
+        // Handle WhileStatement specially
+        if (node.type === AST_NODE_TYPES.WhileStatement) {
+          walk(node.body);
+          return;
+        }
+
+        // Handle DoWhileStatement specially
+        if (node.type === AST_NODE_TYPES.DoWhileStatement) {
+          walk(node.body);
+          return;
+        }
+
+        // Handle SwitchStatement specially
+        if (node.type === AST_NODE_TYPES.SwitchStatement) {
+          node.cases.forEach((caseNode) => walk(caseNode));
+          return;
+        }
+
+        // Handle SwitchCase specially
+        if (node.type === AST_NODE_TYPES.SwitchCase) {
+          node.consequent.forEach((stmt) => walk(stmt));
+          return;
+        }
+
         // Handle other node types
         for (const key of Object.keys(node)) {
           const value = node[key as keyof typeof node];
