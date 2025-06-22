@@ -38,10 +38,15 @@ export const enforceConsoleError = createRule<[], MessageIds>({
     let hasUseAlertDialog = false;
     let currentFunctionScope: TSESTree.Node | null = null;
 
+    // Track renamed open functions from useAlertDialog destructuring
+    const openFunctionNames = new Set<string>();
+    // Track aliased useAlertDialog function names
+    const useAlertDialogNames = new Set<string>(['useAlertDialog']);
+
     function isUseAlertDialogCall(node: TSESTree.CallExpression): boolean {
       return (
         node.callee.type === AST_NODE_TYPES.Identifier &&
-        node.callee.name === 'useAlertDialog'
+        useAlertDialogNames.has(node.callee.name)
       );
     }
 
@@ -82,6 +87,23 @@ export const enforceConsoleError = createRule<[], MessageIds>({
 
 
     return {
+      ImportDeclaration(node: TSESTree.ImportDeclaration) {
+        // Track aliased imports of useAlertDialog
+        if (node.source.value === '../useAlertDialog' || node.source.value === './useAlertDialog') {
+          for (const specifier of node.specifiers) {
+            if (
+              specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+              specifier.imported.type === AST_NODE_TYPES.Identifier &&
+              specifier.imported.name === 'useAlertDialog'
+            ) {
+              if (specifier.local.type === AST_NODE_TYPES.Identifier) {
+                useAlertDialogNames.add(specifier.local.name);
+              }
+            }
+          }
+        }
+      },
+
       'Program:exit'() {
         // Only check if we have useAlertDialog in the file
         if (!hasUseAlertDialog) return;
@@ -165,6 +187,30 @@ export const enforceConsoleError = createRule<[], MessageIds>({
         currentFunctionScope = null;
       },
 
+      VariableDeclarator(node: TSESTree.VariableDeclarator) {
+        // Track destructuring of open functions from useAlertDialog
+        if (
+          node.init &&
+          node.init.type === AST_NODE_TYPES.CallExpression &&
+          isUseAlertDialogCall(node.init) &&
+          node.id.type === AST_NODE_TYPES.ObjectPattern
+        ) {
+          // Look for destructured open properties
+          for (const prop of node.id.properties) {
+            if (
+              prop.type === AST_NODE_TYPES.Property &&
+              prop.key.type === AST_NODE_TYPES.Identifier &&
+              prop.key.name === 'open'
+            ) {
+              if (prop.value.type === AST_NODE_TYPES.Identifier) {
+                // Track the renamed function name
+                openFunctionNames.add(prop.value.name);
+              }
+            }
+          }
+        }
+      },
+
       CallExpression(node: TSESTree.CallExpression) {
         // Track useAlertDialog calls
         if (isUseAlertDialogCall(node)) {
@@ -177,7 +223,7 @@ export const enforceConsoleError = createRule<[], MessageIds>({
            node.callee.property.type === AST_NODE_TYPES.Identifier &&
            node.callee.property.name === 'open') ||
           (node.callee.type === AST_NODE_TYPES.Identifier &&
-           node.callee.name === 'open')
+           (node.callee.name === 'open' || openFunctionNames.has(node.callee.name)))
         ) && node.arguments.length > 0;
 
         if (isOpenCall) {
