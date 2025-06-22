@@ -324,11 +324,23 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
       `,
       errors: [
         {
+          messageId: 'removeUnusedDependency',
+          data: {
+            objectName: 'isMine',
+          },
+        },
+        {
           messageId: 'avoidEntireObject',
           data: {
             objectName: 'theme',
             fields:
               'theme.palette.background.elevation[4], theme.palette.primary.dark, theme.palette.background.elevation[10]',
+          },
+        },
+        {
+          messageId: 'removeUnusedDependency',
+          data: {
+            objectName: 'type',
           },
         },
       ],
@@ -346,7 +358,68 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
               return theme.palette.primary.dark;
             }
             return theme.palette.background.elevation[10];
-          }, [isMine, theme.palette.background.elevation[4], theme.palette.primary.dark, theme.palette.background.elevation[10], type]);
+          }, [theme]);
+        };
+      `,
+    },
+    // Test case for the bug report - circular dependency where object is in deps but not used
+    {
+      code: `
+        const MyComponent = ({ channelGroupActive, channelGroupIdRouter, findByChannelGroupId }) => {
+          useEffect(() => {
+            const syncChannelGroup = async () => {
+              if (!channelGroupIdRouter) {
+                return setChannelGroupActive(undefined);
+              }
+
+              const foundChannelGroup = await findByChannelGroupId(
+                channelGroupIdRouter,
+              );
+
+              if (!foundChannelGroup) {
+                openChannelGroupNotFoundDialog();
+                return closeChannelGroup();
+              }
+
+              setChannelGroupActive(toActiveChannelGroup(foundChannelGroup));
+            };
+
+            syncChannelGroup();
+          }, [channelGroupIdRouter, findByChannelGroupId, channelGroupActive]);
+          return null;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'removeUnusedDependency',
+          data: {
+            objectName: 'channelGroupActive',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ channelGroupActive, channelGroupIdRouter, findByChannelGroupId }) => {
+          useEffect(() => {
+            const syncChannelGroup = async () => {
+              if (!channelGroupIdRouter) {
+                return setChannelGroupActive(undefined);
+              }
+
+              const foundChannelGroup = await findByChannelGroupId(
+                channelGroupIdRouter,
+              );
+
+              if (!foundChannelGroup) {
+                openChannelGroupNotFoundDialog();
+                return closeChannelGroup();
+              }
+
+              setChannelGroupActive(toActiveChannelGroup(foundChannelGroup));
+            };
+
+            syncChannelGroup();
+          }, [channelGroupIdRouter, findByChannelGroupId]);
+          return null;
         };
       `,
     },
