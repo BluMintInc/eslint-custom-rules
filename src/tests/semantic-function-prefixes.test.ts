@@ -20,6 +20,14 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
     // Boolean check functions with 'is' prefix are allowed
     'function isUserLoggedIn() {}',
     'function isValid() {}',
+    // Functions/methods with exact disallowed prefix names should be allowed (not prefixes)
+    'function get() {}',
+    'function update() {}',
+    'function check() {}',
+    'function manage() {}',
+    'function process() {}',
+    'const get = () => {}',
+    'const update = function() {}',
     // Class getters and setters are allowed
     `
       class User {
@@ -46,6 +54,44 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
         meadowFlowers() {}
       }
     `,
+    // Class methods with exact disallowed prefix names should be allowed (not prefixes)
+    `
+      class MessageProcessor {
+        process() {}
+        get() {}
+        update() {}
+        check() {}
+        manage() {}
+      }
+    `,
+    // Examples from the problem statement should be valid
+    `
+      export class NewMessageProcessor extends MessageProcessor {
+        constructor(event: Event) {
+          super(event);
+        }
+
+        public async process() {
+          // Implementation
+        }
+      }
+    `,
+    `
+      function someFunction() {
+        const get = fetchFromDatabase();
+        return get;
+      }
+    `,
+    // Variable declarations with exact disallowed prefix names should be allowed
+    'const process = require("process");',
+    'let update = true;',
+    'var check = false;',
+    // Single letter variations should be allowed
+    'function g() {}',
+    'function u() {}',
+    'function c() {}',
+    'function m() {}',
+    'function p() {}',
     // Anonymous functions are ignored
     '() => {}',
     '(function() {})',

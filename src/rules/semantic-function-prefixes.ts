@@ -70,8 +70,12 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
       }
 
       // Check for disallowed prefixes
+      // Only flag if the disallowed word is used as a prefix (not the entire name)
       for (const prefix of DISALLOWED_PREFIXES) {
-        if (firstWord.toLowerCase() === prefix.toLowerCase()) {
+        if (
+          firstWord.toLowerCase() === prefix.toLowerCase() &&
+          firstWord.length < methodName.length
+        ) {
           context.report({
             node: node.key,
             messageId: 'avoidGenericPrefix',
@@ -128,8 +132,12 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
       }
 
       // Check for disallowed prefixes
+      // Only flag if the disallowed word is used as a prefix (not the entire name)
       for (const prefix of DISALLOWED_PREFIXES) {
-        if (firstWord.toLowerCase() === prefix.toLowerCase()) {
+        if (
+          firstWord.toLowerCase() === prefix.toLowerCase() &&
+          firstWord.length < functionName.length
+        ) {
           context.report({
             node: node.id || node,
             messageId: 'avoidGenericPrefix',
