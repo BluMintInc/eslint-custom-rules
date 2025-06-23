@@ -1,7 +1,10 @@
 import { createRule } from '../utils/createRule';
 import { TSESTree, AST_NODE_TYPES } from '@typescript-eslint/utils';
 
-type MessageIds = 'missingConsoleError' | 'missingConsoleWarn' | 'missingConsoleBoth';
+type MessageIds =
+  | 'missingConsoleError'
+  | 'missingConsoleWarn'
+  | 'missingConsoleBoth';
 
 export const enforceConsoleError = createRule<[], MessageIds>({
   name: 'enforce-console-error',
@@ -50,7 +53,10 @@ export const enforceConsoleError = createRule<[], MessageIds>({
       );
     }
 
-    function isConsoleCall(node: TSESTree.CallExpression, method: 'error' | 'warn'): boolean {
+    function isConsoleCall(
+      node: TSESTree.CallExpression,
+      method: 'error' | 'warn',
+    ): boolean {
       return (
         node.callee.type === AST_NODE_TYPES.MemberExpression &&
         node.callee.object.type === AST_NODE_TYPES.Identifier &&
@@ -60,20 +66,33 @@ export const enforceConsoleError = createRule<[], MessageIds>({
       );
     }
 
-    function getSeverityFromObjectExpression(node: TSESTree.ObjectExpression): string | null {
+    function getSeverityFromObjectExpression(
+      node: TSESTree.ObjectExpression,
+    ): string | null {
       for (const prop of node.properties) {
         if (prop.type === AST_NODE_TYPES.Property) {
           // Handle both computed and non-computed properties
           let isSeverityProperty = false;
 
-          if (!prop.computed && prop.key.type === AST_NODE_TYPES.Identifier && prop.key.name === 'severity') {
+          if (
+            !prop.computed &&
+            prop.key.type === AST_NODE_TYPES.Identifier &&
+            prop.key.name === 'severity'
+          ) {
             isSeverityProperty = true;
-          } else if (prop.computed && prop.key.type === AST_NODE_TYPES.Literal && prop.key.value === 'severity') {
+          } else if (
+            prop.computed &&
+            prop.key.type === AST_NODE_TYPES.Literal &&
+            prop.key.value === 'severity'
+          ) {
             isSeverityProperty = true;
           }
 
           if (isSeverityProperty) {
-            if (prop.value.type === AST_NODE_TYPES.Literal && typeof prop.value.value === 'string') {
+            if (
+              prop.value.type === AST_NODE_TYPES.Literal &&
+              typeof prop.value.value === 'string'
+            ) {
               return prop.value.value;
             }
             // If severity is not a literal, treat as dynamic
@@ -84,12 +103,13 @@ export const enforceConsoleError = createRule<[], MessageIds>({
       return null;
     }
 
-
-
     return {
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
         // Track aliased imports of useAlertDialog
-        if (node.source.value === '../useAlertDialog' || node.source.value === './useAlertDialog') {
+        if (
+          node.source.value === '../useAlertDialog' ||
+          node.source.value === './useAlertDialog'
+        ) {
           for (const specifier of node.specifiers) {
             if (
               specifier.type === AST_NODE_TYPES.ImportSpecifier &&
@@ -109,15 +129,27 @@ export const enforceConsoleError = createRule<[], MessageIds>({
         if (!hasUseAlertDialog) return;
 
         // Group open calls by their containing function
-        const functionGroups = new Map<TSESTree.Node, {
-          openCalls: Array<{ node: TSESTree.CallExpression; severity: string }>;
-          consoleCalls: Array<{ node: TSESTree.CallExpression; method: 'error' | 'warn' }>;
-        }>();
+        const functionGroups = new Map<
+          TSESTree.Node,
+          {
+            openCalls: Array<{
+              node: TSESTree.CallExpression;
+              severity: string;
+            }>;
+            consoleCalls: Array<{
+              node: TSESTree.CallExpression;
+              method: 'error' | 'warn';
+            }>;
+          }
+        >();
 
         // Group open calls by function
         openCalls.forEach(({ node, severity, functionScope }) => {
           if (!functionGroups.has(functionScope)) {
-            functionGroups.set(functionScope, { openCalls: [], consoleCalls: [] });
+            functionGroups.set(functionScope, {
+              openCalls: [],
+              consoleCalls: [],
+            });
           }
           functionGroups.get(functionScope)!.openCalls.push({ node, severity });
         });
@@ -125,24 +157,41 @@ export const enforceConsoleError = createRule<[], MessageIds>({
         // Group console calls by function
         consoleCalls.forEach(({ node, method, functionScope }) => {
           if (!functionGroups.has(functionScope)) {
-            functionGroups.set(functionScope, { openCalls: [], consoleCalls: [] });
+            functionGroups.set(functionScope, {
+              openCalls: [],
+              consoleCalls: [],
+            });
           }
-          functionGroups.get(functionScope)!.consoleCalls.push({ node, method });
+          functionGroups
+            .get(functionScope)!
+            .consoleCalls.push({ node, method });
         });
 
         // Check each function for violations
         functionGroups.forEach((group) => {
-          const hasError = group.openCalls.some(call => call.severity === 'error');
-          const hasWarning = group.openCalls.some(call => call.severity === 'warning');
-          const hasDynamic = group.openCalls.some(call => call.severity === 'dynamic');
-          const hasConsoleError = group.consoleCalls.some(call => call.method === 'error');
-          const hasConsoleWarn = group.consoleCalls.some(call => call.method === 'warn');
+          const hasError = group.openCalls.some(
+            (call) => call.severity === 'error',
+          );
+          const hasWarning = group.openCalls.some(
+            (call) => call.severity === 'warning',
+          );
+          const hasDynamic = group.openCalls.some(
+            (call) => call.severity === 'dynamic',
+          );
+          const hasConsoleError = group.consoleCalls.some(
+            (call) => call.method === 'error',
+          );
+          const hasConsoleWarn = group.consoleCalls.some(
+            (call) => call.method === 'warn',
+          );
 
           const needsConsoleError = hasError || hasDynamic;
           const needsConsoleWarn = hasWarning || hasDynamic;
 
           if (hasDynamic && (!hasConsoleError || !hasConsoleWarn)) {
-            const dynamicCall = group.openCalls.find(call => call.severity === 'dynamic');
+            const dynamicCall = group.openCalls.find(
+              (call) => call.severity === 'dynamic',
+            );
             if (dynamicCall) {
               context.report({
                 node: dynamicCall.node,
@@ -151,7 +200,9 @@ export const enforceConsoleError = createRule<[], MessageIds>({
             }
           } else {
             if (needsConsoleError && !hasConsoleError) {
-              const errorCall = group.openCalls.find(call => call.severity === 'error');
+              const errorCall = group.openCalls.find(
+                (call) => call.severity === 'error',
+              );
               if (errorCall) {
                 context.report({
                   node: errorCall.node,
@@ -161,7 +212,9 @@ export const enforceConsoleError = createRule<[], MessageIds>({
             }
 
             if (needsConsoleWarn && !hasConsoleWarn) {
-              const warningCall = group.openCalls.find(call => call.severity === 'warning');
+              const warningCall = group.openCalls.find(
+                (call) => call.severity === 'warning',
+              );
               if (warningCall) {
                 context.report({
                   node: warningCall.node,
@@ -173,7 +226,12 @@ export const enforceConsoleError = createRule<[], MessageIds>({
         });
       },
 
-      'FunctionDeclaration, FunctionExpression, ArrowFunctionExpression'(node: TSESTree.FunctionDeclaration | TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression) {
+      'FunctionDeclaration, FunctionExpression, ArrowFunctionExpression'(
+        node:
+          | TSESTree.FunctionDeclaration
+          | TSESTree.FunctionExpression
+          | TSESTree.ArrowFunctionExpression,
+      ) {
         currentFunctionScope = node;
       },
 
@@ -218,13 +276,14 @@ export const enforceConsoleError = createRule<[], MessageIds>({
         }
 
         // Track open method calls (both member expressions and direct calls)
-        const isOpenCall = (
-          (node.callee.type === AST_NODE_TYPES.MemberExpression &&
-           node.callee.property.type === AST_NODE_TYPES.Identifier &&
-           node.callee.property.name === 'open') ||
-          (node.callee.type === AST_NODE_TYPES.Identifier &&
-           (node.callee.name === 'open' || openFunctionNames.has(node.callee.name)))
-        ) && node.arguments.length > 0;
+        const isOpenCall =
+          ((node.callee.type === AST_NODE_TYPES.MemberExpression &&
+            node.callee.property.type === AST_NODE_TYPES.Identifier &&
+            node.callee.property.name === 'open') ||
+            (node.callee.type === AST_NODE_TYPES.Identifier &&
+              (node.callee.name === 'open' ||
+                openFunctionNames.has(node.callee.name)))) &&
+          node.arguments.length > 0;
 
         if (isOpenCall) {
           const firstArg = node.arguments[0];

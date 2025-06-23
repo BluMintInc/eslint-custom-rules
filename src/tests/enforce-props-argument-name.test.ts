@@ -123,6 +123,456 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
       `,
       options: [{ ignoreExternalInterfaces: true }],
     },
+    // Built-in Web API types should be whitelisted
+    {
+      code: `
+        function parseQuery(params: URLSearchParams) {
+          return Object.fromEntries(params.entries());
+        }
+      `,
+    },
+    {
+      code: `
+        function initializeAudio(options: AudioContextOptions) {
+          return new AudioContext(options);
+        }
+      `,
+    },
+    {
+      code: `
+        function setupCanvas(settings: CanvasRenderingContext2DSettings) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function processPayment(options: PaymentRequestOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function setupPush(options: PushSubscriptionOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function recordMedia(options: MediaRecorderOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function createStore(params: IDBObjectStoreParameters) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function registerWorker(options: ServiceWorkerRegistrationOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function setupRTC(config: RTCConfiguration) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function observeResize(options: ResizeObserverOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function observeIntersection(options: IntersectionObserverOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function observeMutation(options: MutationObserverOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function getWebGLContext(attributes: WebGLContextAttributes) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function showNotification(options: NotificationOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function requestCredentials(options: CredentialRequestOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function getCurrentPosition(options: GeolocationPositionOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function queryCache(options: CacheQueryOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function addEventListener(options: EventListenerOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function addListener(options: AddEventListenerOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function observePerformance(options: PerformanceObserverOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function decodeText(options: TextDecoderOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function shareContent(options: ShareOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function scrollIntoView(options: ScrollIntoViewOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function scrollElement(options: ScrollOptions) {
+          // implementation
+        }
+      `,
+    },
+    // Node.js types should be whitelisted
+    {
+      code: `
+        function watchFile(options: FSWatchOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function readFile(options: ReadFileOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function writeFile(options: WriteFileOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function makeDirectory(options: MkdirOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function makeRequest(options: HttpRequestOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function createServer(options: HttpServerOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function spawnProcess(options: ChildProcessOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function createStream(options: StreamOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function compressData(options: ZlibOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function startServer(options: ServerOptions) {
+          // implementation
+        }
+      `,
+    },
+    // DOM types should be whitelisted
+    {
+      code: `
+        function parseDOM(options: DOMParserOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function createRect(options: DOMRectOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function createMatrix(options: DOMMatrixOptions) {
+          // implementation
+        }
+      `,
+    },
+    // Intl types should be whitelisted
+    {
+      code: `
+        function formatDate(options: DateTimeFormatOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function formatNumber(options: NumberFormatOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function createCollator(options: CollatorOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function createPluralRules(options: PluralRulesOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function formatRelativeTime(options: RelativeTimeFormatOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function formatList(options: ListFormatOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function getDisplayNames(options: DisplayNamesOptions) {
+          // implementation
+        }
+      `,
+    },
+    // Speech and Media types should be whitelisted
+    {
+      code: `
+        function setupRecognition(options: SpeechRecognitionOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function setupSynthesis(options: SpeechSynthesisOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function queryMedia(options: MediaQueryOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function createStream(options: MediaStreamOptions) {
+          // implementation
+        }
+      `,
+    },
+    // Security and Crypto types should be whitelisted
+    {
+      code: `
+        function createKey(options: CryptoKeyOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function setupCrypto(options: SubtleCryptoOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function encrypt(params: CryptoAlgorithmParameters) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function requestPermission(options: PermissionOptions) {
+          // implementation
+        }
+      `,
+    },
+    // WebRTC types should be whitelisted
+    {
+      code: `
+        function createConnection(options: RTCPeerConnectionOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function createChannel(options: RTCDataChannelOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function setEncoding(params: RTCRtpEncodingParameters) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function setSendParams(params: RTCRtpSendParameters) {
+          // implementation
+        }
+      `,
+    },
+    // Web Components and Animation types should be whitelisted
+    {
+      code: `
+        function attachShadow(options: ShadowRootOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function defineElement(options: CustomElementOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function animate(options: AnimationOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function createEffect(options: AnimationEffectOptions) {
+          // implementation
+        }
+      `,
+    },
+    // TypeScript Compiler types should be whitelisted
+    {
+      code: `
+        function compile(options: CompilerOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function loadConfig(options: TSConfigOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function transpile(options: TranspileOptions) {
+          // implementation
+        }
+      `,
+    },
   ],
   invalid: [
     // Class with incorrect type suffix
@@ -196,6 +646,79 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
           CatalogWrapper: RenderCatalogWrapper;
           configureOptions: Required<UseConfigureProps, 'filters'>;
         };
+      `,
+    },
+    // User-defined types should still be flagged (not built-in types)
+    {
+      code: `
+        type CustomOptions = {
+          theme: string;
+          size: number;
+        };
+        function setupCustom(options: CustomOptions) {
+          // ...
+        }
+      `,
+      errors: [
+        { messageId: 'usePropsForType', data: { typeSuffix: 'Options' } },
+        { messageId: 'usePropsForType', data: { typeSuffix: 'Options' } },
+      ],
+      output: `
+        type CustomProps = {
+          theme: string;
+          size: number;
+        };
+        function setupCustom(options: CustomProps) {
+          // ...
+        }
+      `,
+    },
+    {
+      code: `
+        type UserParams = {
+          name: string;
+          email: string;
+        };
+        function createUser(params: UserParams) {
+          // ...
+        }
+      `,
+      errors: [
+        { messageId: 'usePropsForType', data: { typeSuffix: 'Params' } },
+        { messageId: 'usePropsForType', data: { typeSuffix: 'Params' } },
+      ],
+      output: `
+        type UserProps = {
+          name: string;
+          email: string;
+        };
+        function createUser(params: UserProps) {
+          // ...
+        }
+      `,
+    },
+    {
+      code: `
+        type DatabaseConfig = {
+          host: string;
+          port: number;
+        };
+        function connectDatabase(config: DatabaseConfig) {
+          // ...
+        }
+      `,
+      errors: [
+        { messageId: 'usePropsForType', data: { typeSuffix: 'Config' } },
+        { messageId: 'usePropsForType', data: { typeSuffix: 'Config' } },
+      ],
+      output: `
+        type DatabaseProps = {
+          host: string;
+          port: number;
+        };
+        function connectDatabase(config: DatabaseProps) {
+          // ...
+        }
       `,
     },
   ],
