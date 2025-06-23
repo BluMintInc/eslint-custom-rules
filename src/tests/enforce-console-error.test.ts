@@ -1041,7 +1041,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
       `,
       errors: [
         { messageId: 'missingConsoleError' },
-        { messageId: 'missingConsoleError' }
+        { messageId: 'missingConsoleError' },
       ],
     },
 
@@ -1076,7 +1076,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
       `,
       errors: [
         { messageId: 'missingConsoleError' },
-        { messageId: 'missingConsoleWarn' }
+        { messageId: 'missingConsoleWarn' },
       ],
     },
 
@@ -1736,8 +1736,6 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
       errors: [{ messageId: 'missingConsoleError' }],
     },
 
-
-
     // Invalid: Multiple useAlertDialog instances with missing console
     {
       code: `
@@ -1769,7 +1767,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
       `,
       errors: [
         { messageId: 'missingConsoleError' },
-        { messageId: 'missingConsoleWarn' }
+        { messageId: 'missingConsoleWarn' },
       ],
     },
 
@@ -1806,7 +1804,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
       `,
       errors: [
         { messageId: 'missingConsoleError' },
-        { messageId: 'missingConsoleWarn' }
+        { messageId: 'missingConsoleWarn' },
       ],
     },
 
@@ -2252,7 +2250,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
       `,
       errors: [
         { messageId: 'missingConsoleError' },
-        { messageId: 'missingConsoleWarn' }
+        { messageId: 'missingConsoleWarn' },
       ],
     },
 
