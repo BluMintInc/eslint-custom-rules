@@ -425,6 +425,8 @@ const IN_EXCEPTIONS = [
   'interruptions',
   'interrupts',
   'intersect',
+  'intersected',
+  'intersecting',
   'intersection',
   'intersections',
   'interspersed',

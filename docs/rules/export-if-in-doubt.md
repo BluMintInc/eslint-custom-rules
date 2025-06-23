@@ -1,5 +1,7 @@
 # All top-level const definitions, type definitions, and functions should be exported (`@blumintinc/blumint/export-if-in-doubt`)
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
 <!-- end auto-generated rule header -->
 
 This rule enforces that all top-level const definitions, type definitions, and functions should always be exported. If not done, this rule will trigger a warning message suggesting to export the declaration.
