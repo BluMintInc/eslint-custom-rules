@@ -268,7 +268,7 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
 
   const object = node.callee.object;
 
-  // Skip if it's a facade instance (based on variable name patterns)
+  // Handle identifier checks first to avoid TypeScript control flow issues
   if (isIdentifier(object)) {
     const name = object.name;
 
@@ -308,9 +308,33 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
       return false;
     }
 
+    // Check if it's a BatchManager or other custom management class
+    if (name.includes('Manager') || name.includes('BatchManager')) {
+      return false;
+    }
+    
+    // Check for basic batch or transaction variables (like 'batch', 'transaction')
+    // but not BatchManager instances
+    if (/^(batch|transaction)$/i.test(name)) {
+      return true;
+    }
+
+    // If the variable name contains 'doc' or 'ref', it's likely a Firestore reference
+    // But exclude realtimeDb references
+    if (
+      (name.toLowerCase().includes('doc') ||
+        name.toLowerCase().includes('ref')) &&
+      !name.includes('realtimeDb') &&
+      !realtimeDbRefVariables.has(name) &&
+      !realtimeDbChildVariables.has(name)
+    ) {
+      return true;
+    }
+
     // If it's not tracked as a Firestore object, assume it's a custom wrapper/service
     // and allow it (return false to not flag it)
     // This handles BatchManager and other custom classes
+    return false;
   }
 
   // Check if the method is called on a realtimeDb reference
@@ -368,16 +392,7 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
     }
   }
 
-  // Check for direct db.batch() or transaction calls
-  if (isIdentifier(object)) {
-    const name = object.name;
-    // Check for batch or transaction variables that match common patterns
-    if (/^(batch|transaction)$/i.test(name)) {
-      return true;
-    }
-  }
-
-  // Check if it's a Firestore reference by traversing the AST
+  // Handle remaining cases by checking if it's a Firestore reference via AST traversal
   let current: TSESTree.Node = object;
   let foundDocOrCollection = false;
 
@@ -402,22 +417,6 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
       current = (current as TSESTree.TSAsExpression).expression;
     } else {
       break;
-    }
-  }
-
-  // If we haven't found a doc/collection call yet, check if the object is a variable
-  if (!foundDocOrCollection && isIdentifier(object)) {
-    const name = object.name;
-    // If the variable name contains 'doc' or 'ref', it's likely a Firestore reference
-    // But exclude realtimeDb references
-    if (
-      (name.toLowerCase().includes('doc') ||
-        name.toLowerCase().includes('ref')) &&
-      !name.includes('realtimeDb') &&
-      !realtimeDbRefVariables.has(name) &&
-      !realtimeDbChildVariables.has(name)
-    ) {
-      return true;
     }
   }
 
