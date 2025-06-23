@@ -19,6 +19,74 @@ const isMemberExpression = (
 const realtimeDbRefVariables = new Set<string>();
 const realtimeDbChildVariables = new Set<string>();
 
+// Track variables that are assigned to DocumentReferences or Firestore objects
+const firestoreDocRefVariables = new Set<string>();
+const firestoreBatchVariables = new Set<string>();
+const firestoreTransactionVariables = new Set<string>();
+
+const isFirestoreAssignment = (node: TSESTree.Node): boolean => {
+  if (node.type !== AST_NODE_TYPES.VariableDeclarator) return false;
+
+  const init = node.init;
+  if (!init || !isIdentifier(node.id)) return false;
+
+  const varName = node.id.name;
+
+  // Check for Firestore DocumentReference assignments
+  // e.g., const docRef = db.collection('users').doc('user123');
+  if (isFirestoreDocumentReference(init)) {
+    firestoreDocRefVariables.add(varName);
+    return true;
+  }
+
+  // Check for Firestore batch assignments
+  // e.g., const batch = db.batch();
+  if (init.type === AST_NODE_TYPES.CallExpression &&
+      isMemberExpression(init.callee) &&
+      isIdentifier(init.callee.property) &&
+      init.callee.property.name === 'batch' &&
+      isIdentifier(init.callee.object) &&
+      init.callee.object.name === 'db') {
+    firestoreBatchVariables.add(varName);
+    return true;
+  }
+
+  // Check for transaction parameter assignments
+  // This is harder to detect statically, but we can check for common patterns
+  if (init.type === AST_NODE_TYPES.Identifier &&
+      (init.name === 'transaction' || init.name.includes('transaction'))) {
+    firestoreTransactionVariables.add(varName);
+    return true;
+  }
+
+  return false;
+};
+
+const isFirestoreDocumentReference = (node: TSESTree.Node): boolean => {
+  // Check if it's a direct db.collection().doc() call
+  if (node.type === AST_NODE_TYPES.CallExpression &&
+      isMemberExpression(node.callee) &&
+      isIdentifier(node.callee.property) &&
+      node.callee.property.name === 'doc') {
+
+    // Check if the object is a collection call
+    const object = node.callee.object;
+    if (object.type === AST_NODE_TYPES.CallExpression &&
+        isMemberExpression(object.callee) &&
+        isIdentifier(object.callee.property) &&
+        object.callee.property.name === 'collection') {
+      return true;
+    }
+  }
+
+  // Check if it's a type assertion of a DocumentReference
+  if (node.type === AST_NODE_TYPES.TSAsExpression) {
+    return isFirestoreDocumentReference(node.expression);
+  }
+
+  return false;
+};
+
 const isRealtimeDbRefAssignment = (node: TSESTree.Node): boolean => {
   if (node.type !== AST_NODE_TYPES.VariableDeclarator) return false;
 
@@ -94,11 +162,11 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
     return false;
   }
 
-  // Check if the method is called on a facade instance
   const object = node.callee.object;
+
+  // Skip if it's a facade instance (based on variable name patterns)
   if (isIdentifier(object)) {
     const name = object.name;
-    // Skip if it's a facade instance
     if (
       name.includes('Fetcher') ||
       name.includes('Setter') ||
@@ -106,18 +174,22 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
     ) {
       return false;
     }
+
     // Skip if it's a realtimeDb reference variable
     if (realtimeDbRefVariables.has(name) || realtimeDbChildVariables.has(name)) {
       return false;
     }
-    // Skip if it's a BatchManager instance
-    if (name.includes('batchManager') || name.includes('BatchManager')) {
-      return false;
-    }
-    // Check for batch or transaction
-    if (/batch|transaction/i.test(name)) {
+
+    // Check if this variable is tracked as a Firestore object
+    if (firestoreDocRefVariables.has(name) ||
+        firestoreBatchVariables.has(name) ||
+        firestoreTransactionVariables.has(name)) {
       return true;
     }
+
+    // If it's not tracked as a Firestore object, assume it's a custom wrapper/service
+    // and allow it (return false to not flag it)
+    // This handles BatchManager and other custom classes
   }
 
   // Check if the method is called on a realtimeDb reference
@@ -125,12 +197,62 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
     return false;
   }
 
-  // Handle type assertions (as in the bug report)
-  if (object.type === AST_NODE_TYPES.TSAsExpression) {
+  // Check if it's a direct Firestore DocumentReference call
+  if (isFirestoreDocumentReference(object)) {
     return true;
   }
 
-  // Check if it's a Firestore reference
+  // Handle type assertions
+  if (object.type === AST_NODE_TYPES.TSAsExpression) {
+    return isFirestoreMethodCall({
+      ...node,
+      callee: {
+        ...node.callee,
+        object: object.expression
+      }
+    } as TSESTree.CallExpression);
+  }
+
+  // Handle member expressions (property access)
+  if (isMemberExpression(object)) {
+    // Check if the property access leads to a Firestore DocumentReference
+    // by traversing the member expression to find the root
+    let current: TSESTree.Node = object;
+    while (isMemberExpression(current)) {
+      if (isFirestoreDocumentReference(current)) {
+        return true;
+      }
+      current = current.object;
+    }
+    // Check the final object
+    if (isFirestoreDocumentReference(current)) {
+      return true;
+    }
+  }
+
+  // Handle array access
+  if (object.type === AST_NODE_TYPES.MemberExpression &&
+      object.computed &&
+      object.object.type === AST_NODE_TYPES.Identifier) {
+    // For array access like refs[0], we can't easily determine the type
+    // but we can check if it's likely a Firestore reference array
+    const arrayName = object.object.name;
+    if (arrayName.toLowerCase().includes('ref') ||
+        arrayName.toLowerCase().includes('doc')) {
+      return true;
+    }
+  }
+
+  // Check for direct db.batch() or transaction calls
+  if (isIdentifier(object)) {
+    const name = object.name;
+    // Check for batch or transaction variables that match common patterns
+    if (/^(batch|transaction)$/i.test(name)) {
+      return true;
+    }
+  }
+
+  // Check if it's a Firestore reference by traversing the AST
   let current: TSESTree.Node = object;
   let foundDocOrCollection = false;
 
@@ -155,21 +277,6 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
       current = (current as TSESTree.TSAsExpression).expression;
     } else {
       break;
-    }
-  }
-
-  // If we haven't found a doc/collection call yet, check if the object is a variable
-  if (!foundDocOrCollection && isIdentifier(object)) {
-    const name = object.name;
-    // If the variable name contains 'doc' or 'ref', it's likely a Firestore reference
-    // But exclude realtimeDb references
-    if (
-      (name.toLowerCase().includes('doc') || name.toLowerCase().includes('ref')) &&
-      !name.includes('realtimeDb') &&
-      !realtimeDbRefVariables.has(name) &&
-      !realtimeDbChildVariables.has(name)
-    ) {
-      return true;
     }
   }
 
@@ -212,11 +319,15 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
     // Clear the sets at the beginning of each file analysis
     realtimeDbRefVariables.clear();
     realtimeDbChildVariables.clear();
+    firestoreDocRefVariables.clear();
+    firestoreBatchVariables.clear();
+    firestoreTransactionVariables.clear();
 
     return {
-      // Track variable declarations that are assigned realtimeDb references
+      // Track variable declarations
       VariableDeclarator(node) {
         isRealtimeDbRefAssignment(node);
+        isFirestoreAssignment(node);
       },
 
       CallExpression(node) {
