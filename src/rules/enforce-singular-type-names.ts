@@ -22,7 +22,8 @@ export const enforceSingularTypeNames: TSESLint.RuleModule<
         name.endsWith('Params') ||
         name.endsWith('Options') ||
         name.endsWith('Settings') ||
-        name.endsWith('Data')
+        name.endsWith('Data') ||
+        name.toLowerCase().endsWith('data')
       )
         return false;
 
