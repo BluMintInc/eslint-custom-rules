@@ -122,10 +122,25 @@ export const noUnusedProps = createRule({
             } else if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
               if (typeNode.typeName.type === AST_NODE_TYPES.Identifier) {
                 // List of TypeScript utility types that transform other types
-                const utilityTypes = ['Pick', 'Omit', 'Partial', 'Required', 'Record', 'Exclude', 'Extract', 'NonNullable', 'ReturnType', 'InstanceType', 'ThisType'];
+                const utilityTypes = [
+                  'Pick',
+                  'Omit',
+                  'Partial',
+                  'Required',
+                  'Record',
+                  'Exclude',
+                  'Extract',
+                  'NonNullable',
+                  'ReturnType',
+                  'InstanceType',
+                  'ThisType',
+                ];
 
                 // Skip checking for utility type parameters (T, K, etc.) as they're not actual props
-                if (typeNode.typeName.name.length === 1 && /^[A-Z]$/.test(typeNode.typeName.name)) {
+                if (
+                  typeNode.typeName.name.length === 1 &&
+                  /^[A-Z]$/.test(typeNode.typeName.name)
+                ) {
                   // This is likely a generic type parameter (T, K, etc.), not a real type
                   // Skip it to avoid false positives
                   return;
@@ -305,7 +320,11 @@ export const noUnusedProps = createRule({
                 let shouldReport = true;
 
                 // Skip reporting for generic type parameters (T, K, etc.)
-                if (prop.startsWith('...') && prop.length === 4 && /^\.\.\.([A-Z])$/.test(prop)) {
+                if (
+                  prop.startsWith('...') &&
+                  prop.length === 4 &&
+                  /^\.\.\.([A-Z])$/.test(prop)
+                ) {
                   // This is a generic type parameter like ...T, ...K, etc.
                   shouldReport = false;
                 } else if (prop.startsWith('...') && hasRestSpread) {
