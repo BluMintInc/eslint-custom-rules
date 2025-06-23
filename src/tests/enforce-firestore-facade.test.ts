@@ -393,6 +393,61 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
         await lib.set({ config: 'value' });
       `,
     },
+    // Valid DocSetter usage with uppercase naming (bug report case)
+    {
+      code: `
+        const SMS_DOC_SETTER = new DocSetter<Sms>(
+          db.collection(toSmsCollection()) as CollectionReference<Sms>,
+        );
+
+        async function send() {
+          await Promise.all([
+            this.smsSendable && SMS_DOC_SETTER.set(this.smsSendable),
+            this.emailSendable && this.sendEmail(),
+            this.pushSendable && this.sendPush(),
+          ]);
+        }
+      `,
+    },
+    // Valid DocSetter usage with different naming patterns
+    {
+      code: `
+        const EMAIL_DOC_SETTER = new DocSetter<Email>(db.collection('emails'));
+        const PUSH_DOC_SETTER = new DocSetter<Push>(db.collection('pushes'));
+
+        async function sendNotifications() {
+          await EMAIL_DOC_SETTER.set({ id: '1', content: 'Hello' });
+          await PUSH_DOC_SETTER.update({ id: '2', status: 'sent' });
+        }
+      `,
+    },
+    // Valid DocSetterTransaction usage
+    {
+      code: `
+        const USER_DOC_SETTER_TX = new DocSetterTransaction<User>(
+          db.collection('users'),
+          { transaction }
+        );
+
+        async function updateUser() {
+          await USER_DOC_SETTER_TX.set({ id: 'user1', name: 'John' });
+          await USER_DOC_SETTER_TX.update({ id: 'user2', age: 30 });
+          await USER_DOC_SETTER_TX.delete('user3');
+        }
+      `,
+    },
+    // Valid mixed DocSetter and DocSetterTransaction usage
+    {
+      code: `
+        const docSetter = new DocSetter<User>(db.collection('users'));
+        const txSetter = new DocSetterTransaction<Order>(db.collection('orders'), { transaction });
+
+        async function processData() {
+          await docSetter.set({ id: '1', name: 'Alice' });
+          await txSetter.set({ id: '2', total: 100 });
+        }
+      `,
+    },
     // Valid conditional BatchManager usage
     {
       code: `
@@ -1301,6 +1356,22 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
         }
       `,
       errors: [{ messageId: 'noDirectDelete' }],
+    },
+    // Invalid: Variable that looks like DocSetter but isn't
+    {
+      code: `
+        const SMS_DOC_SETTER = db.collection('sms').doc('123'); // This is a DocumentReference, not DocSetter
+        await SMS_DOC_SETTER.set({ content: 'Hello' }); // Should be flagged
+      `,
+      errors: [{ messageId: 'noDirectSet' }],
+    },
+    // Invalid: Variable with Setter in name but not a DocSetter instance
+    {
+      code: `
+        const customSetter = db.collection('users').doc('user123');
+        await customSetter.set({ name: 'John' }); // Should be flagged even though name contains 'Setter'
+      `,
+      errors: [{ messageId: 'noDirectSet' }],
     },
   ],
 });

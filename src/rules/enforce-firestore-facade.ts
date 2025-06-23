@@ -49,6 +49,8 @@ const isCollectionObjectAssignment = (node: TSESTree.Node): boolean => {
 const firestoreDocRefVariables = new Set<string>();
 const firestoreBatchVariables = new Set<string>();
 const firestoreTransactionVariables = new Set<string>();
+// Track variables that are assigned to DocSetter or DocSetterTransaction instances
+const docSetterVariables = new Set<string>();
 
 const isFirestoreAssignment = (node: TSESTree.Node): boolean => {
   if (node.type !== AST_NODE_TYPES.VariableDeclarator) return false;
@@ -57,6 +59,18 @@ const isFirestoreAssignment = (node: TSESTree.Node): boolean => {
   if (!init || !isIdentifier(node.id)) return false;
 
   const varName = node.id.name;
+
+  // Check for DocSetter or DocSetterTransaction assignments
+  // e.g., const setter = new DocSetter<T>(...); const txSetter = new DocSetterTransaction<T>(...);
+  if (
+    init.type === AST_NODE_TYPES.NewExpression &&
+    isIdentifier(init.callee) &&
+    (init.callee.name === 'DocSetter' ||
+      init.callee.name === 'DocSetterTransaction')
+  ) {
+    docSetterVariables.add(varName);
+    return true;
+  }
 
   // Check for Firestore DocumentReference assignments
   // e.g., const docRef = db.collection('users').doc('user123');
@@ -212,11 +226,9 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
   // Skip if it's a facade instance (based on variable name patterns)
   if (isIdentifier(object)) {
     const name = object.name;
-    if (
-      name.includes('Fetcher') ||
-      name.includes('Setter') ||
-      name.includes('Tx')
-    ) {
+
+    // Skip if it's a tracked DocSetter instance
+    if (docSetterVariables.has(name)) {
       return false;
     }
 
@@ -239,6 +251,16 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
       firestoreTransactionVariables.has(name)
     ) {
       return true;
+    }
+
+    // Fall back to name pattern checking for variables that aren't explicitly tracked
+    // This handles cases where we can't detect the assignment (e.g., function parameters, imports)
+    if (
+      name.includes('Fetcher') ||
+      name.includes('Setter') ||
+      name.includes('Tx')
+    ) {
+      return false;
     }
 
     // If it's not tracked as a Firestore object, assume it's a custom wrapper/service
@@ -397,6 +419,7 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
     firestoreDocRefVariables.clear();
     firestoreBatchVariables.clear();
     firestoreTransactionVariables.clear();
+    docSetterVariables.clear();
 
     return {
       // Track variable declarations that are assigned realtimeDb references, collection objects, or Firestore references
