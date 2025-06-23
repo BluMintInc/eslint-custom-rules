@@ -47,7 +47,9 @@ function isSetterCall(call: TSESTree.CallExpression): boolean {
   return SETTER_METHODS.has(call.callee.property.name);
 }
 
-function getAllCallsFromExpression(expr: TSESTree.Expression): TSESTree.CallExpression[] {
+function getAllCallsFromExpression(
+  expr: TSESTree.Expression,
+): TSESTree.CallExpression[] {
   const calls: TSESTree.CallExpression[] = [];
 
   function traverse(node: TSESTree.Expression): void {
@@ -65,9 +67,11 @@ function getAllCallsFromExpression(expr: TSESTree.Expression): TSESTree.CallExpr
         traverse(node.alternate);
         break;
       case AST_NODE_TYPES.MemberExpression:
-        if (node.object.type !== AST_NODE_TYPES.Identifier &&
-            node.object.type !== AST_NODE_TYPES.ThisExpression &&
-            node.object.type !== AST_NODE_TYPES.Literal) {
+        if (
+          node.object.type !== AST_NODE_TYPES.Identifier &&
+          node.object.type !== AST_NODE_TYPES.ThisExpression &&
+          node.object.type !== AST_NODE_TYPES.Literal
+        ) {
           traverse(node.object);
         }
         break;
@@ -334,13 +338,13 @@ export const preferBatchOperations = createRule<[], MessageIds>({
         const existing = setterCalls.get(key);
 
         // Determine if this is a traditional loop
-        const isTraditionalLoop = !loopInfo.isArrayMethod && (
-          loopInfo.node.type === AST_NODE_TYPES.ForStatement ||
-          loopInfo.node.type === AST_NODE_TYPES.ForInStatement ||
-          loopInfo.node.type === AST_NODE_TYPES.ForOfStatement ||
-          loopInfo.node.type === AST_NODE_TYPES.WhileStatement ||
-          loopInfo.node.type === AST_NODE_TYPES.DoWhileStatement
-        );
+        const isTraditionalLoop =
+          !loopInfo.isArrayMethod &&
+          (loopInfo.node.type === AST_NODE_TYPES.ForStatement ||
+            loopInfo.node.type === AST_NODE_TYPES.ForInStatement ||
+            loopInfo.node.type === AST_NODE_TYPES.ForOfStatement ||
+            loopInfo.node.type === AST_NODE_TYPES.WhileStatement ||
+            loopInfo.node.type === AST_NODE_TYPES.DoWhileStatement);
 
         if (existing) {
           // If we see a different method on the same setter instance, don't report
@@ -348,7 +352,11 @@ export const preferBatchOperations = createRule<[], MessageIds>({
           existing.count++;
 
           // For Promise.all contexts, report only once per loop context, on the second occurrence
-          if (!isTraditionalLoop && existing.count === 2 && !reportedLoops.has(loopInfo.node)) {
+          if (
+            !isTraditionalLoop &&
+            existing.count === 2 &&
+            !reportedLoops.has(loopInfo.node)
+          ) {
             reportedLoops.add(loopInfo.node);
 
             const messageId =
@@ -387,7 +395,12 @@ export const preferBatchOperations = createRule<[], MessageIds>({
           }
 
           // For array methods, report on the first occurrence
-          else if (loopInfo.isArrayMethod && ['forEach', 'reduce', 'filter', 'map'].includes(loopInfo.isArrayMethod)) {
+          else if (
+            loopInfo.isArrayMethod &&
+            ['forEach', 'reduce', 'filter', 'map'].includes(
+              loopInfo.isArrayMethod,
+            )
+          ) {
             if (!reportedLoops.has(loopInfo.node)) {
               reportedLoops.add(loopInfo.node);
               const messageId =
