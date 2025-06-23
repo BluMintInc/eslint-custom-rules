@@ -28,6 +28,213 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
         }
       }
     `,
+    // Different operations with OR conditional operator
+    `
+      const setter = new DocSetter(collectionRef);
+      await Promise.all([
+        condition1 || setter.set(doc1),
+        condition2 || this.sendEmail(),
+        condition3 || this.sendPush(),
+      ]);
+    `,
+    // Mixed operations with ternary operators
+    `
+      const setter = new DocSetter(collectionRef);
+      await Promise.all([
+        shouldSendSms ? setter.set(smsDoc) : null,
+        shouldSendEmail ? this.sendEmail() : null,
+        shouldSendPush ? this.sendPush() : null,
+      ]);
+    `,
+    // Complex conditional expressions with different operation types
+    `
+      const setter = new DocSetter(collectionRef);
+      await Promise.all([
+        (condition1 && condition2) && setter.set(doc),
+        (condition3 || condition4) && this.processData(),
+        condition5 && this.validateInput(),
+      ]);
+    `,
+    // Nested conditional expressions with mixed operations
+    `
+      const setter = new DocSetter(collectionRef);
+      await Promise.all([
+        user.isActive && (user.hasPermission && setter.set(userDoc)),
+        email.isValid && (email.shouldSend && this.sendEmail()),
+        push.isEnabled && this.sendPush(),
+      ]);
+    `,
+    // Function calls that return different operation types
+    `
+      const setter = new DocSetter(collectionRef);
+      await Promise.all([
+        shouldUpdate && setter.set(doc),
+        shouldNotify && this.getNotificationService().send(),
+        shouldLog && this.getLogger().log(),
+      ]);
+    `,
+    // Mixed synchronous and asynchronous operations
+    `
+      const setter = new DocSetter(collectionRef);
+      await Promise.all([
+        condition1 && setter.set(doc),
+        condition2 && this.syncOperation(),
+        condition3 && this.asyncOperation(),
+      ]);
+    `,
+    // Different method names on the same object
+    `
+      const service = new NotificationService();
+      await Promise.all([
+        condition1 && service.sendSms(data),
+        condition2 && service.sendEmail(data),
+        condition3 && service.sendPush(data),
+      ]);
+    `,
+    // Operations on different properties of the same object
+    `
+      const services = {
+        sms: new DocSetter(smsRef),
+        email: new EmailService(),
+        push: new PushService(),
+      };
+      await Promise.all([
+        condition1 && services.sms.set(doc),
+        condition2 && services.email.send(),
+        condition3 && services.push.send(),
+      ]);
+    `,
+    // Chained method calls with different operation types
+    `
+      const factory = new ServiceFactory();
+      await Promise.all([
+        condition1 && factory.getSetter().set(doc),
+        condition2 && factory.getEmailService().send(),
+        condition3 && factory.getPushService().send(),
+      ]);
+    `,
+    // Array spread with mixed operations
+    `
+      const setter = new DocSetter(collectionRef);
+      const operations = [
+        condition1 && setter.set(doc),
+        condition2 && this.sendEmail(),
+      ];
+      await Promise.all([
+        ...operations,
+        condition3 && this.sendPush(),
+      ]);
+    `,
+    // Complex member expressions with different operation types
+    `
+      const context = {
+        services: {
+          firestore: new DocSetter(collectionRef),
+          email: new EmailService(),
+        }
+      };
+      await Promise.all([
+        condition1 && context.services.firestore.set(doc),
+        condition2 && context.services.email.send(),
+        condition3 && this.sendPush(),
+      ]);
+    `,
+    // Multiple setter instances with different operation types
+    `
+      const userSetter = new DocSetter(usersRef);
+      const orderSetter = new DocSetter(ordersRef);
+      await Promise.all([
+        condition1 && userSetter.set(userDoc),
+        condition2 && orderSetter.set(orderDoc),
+        condition3 && this.sendEmail(),
+        condition4 && this.sendPush(),
+      ]);
+    `,
+    // Conditional execution with if statements (not in Promise.all)
+    `
+      const setter = new DocSetter(collectionRef);
+      if (condition1) {
+        await setter.set(doc1);
+      }
+      if (condition2) {
+        await this.sendEmail();
+      }
+    `,
+    // Mixed operations without conditionals should not be flagged if they're different types
+    `
+      const setter = new DocSetter(collectionRef);
+      await Promise.all([
+        setter.set(doc),
+        this.sendEmail(),
+        this.sendPush(),
+      ]);
+    `,
+    // Single setter call with other operations
+    `
+      const setter = new DocSetter(collectionRef);
+      await Promise.all([
+        setter.set(doc),
+        this.processData(),
+        this.validateInput(),
+      ]);
+    `,
+    // Different setter methods on same instance with other operations
+    `
+      const setter = new DocSetter(collectionRef);
+      await Promise.all([
+        setter.set(doc1),
+        setter.validate(doc2),
+        this.sendEmail(),
+      ]);
+    `,
+    // Nested Promise.all with mixed operations
+    `
+      const setter = new DocSetter(collectionRef);
+      await Promise.all([
+        Promise.all([
+          condition1 && setter.set(doc1),
+          condition2 && this.sendEmail(),
+        ]),
+        condition3 && this.sendPush(),
+      ]);
+    `,
+    // Promise.all with only null values should not be flagged
+    `
+      const setter = new DocSetter(collectionRef);
+      await Promise.all([
+        condition1 ? null : setter.set(doc),
+        condition2 ? null : this.sendEmail(),
+      ]);
+    `,
+    // Promise.all with complex expressions and mixed operations
+    `
+      const setter = new DocSetter(collectionRef);
+      await Promise.all([
+        condition1 && condition2 && setter.set(doc),
+        condition3 || condition4 || this.sendEmail(),
+        this.sendPush(),
+      ]);
+    `,
+    // Promise.all with method chaining and mixed operations
+    `
+      const setter = new DocSetter(collectionRef);
+      await Promise.all([
+        condition1 && setter.set(doc),
+        condition2 && this.getService().sendEmail(),
+        condition3 && this.getService().sendPush(),
+      ]);
+    `,
+    // Promise.all with object method calls and mixed operations
+    `
+      const setter = new DocSetter(collectionRef);
+      const service = { send: () => {} };
+      await Promise.all([
+        condition1 && setter.set(doc),
+        condition2 && service.send(),
+        condition3 && this.processData(),
+      ]);
+    `,
+
     // Map.set() calls should not be flagged
     `
       const seen = new Map();
@@ -117,6 +324,85 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
     `,
   ],
   invalid: [
+    // Multiple setter calls of the same type in Promise.all should be flagged
+    {
+      code: `
+        const setter = new DocSetter(collectionRef);
+        await Promise.all([
+          setter.set(doc1),
+          setter.set(doc2),
+          setter.set(doc3),
+        ]);
+      `,
+      errors: [{ messageId: 'preferSetAll' }],
+    },
+    // Multiple conditional setter calls of the same type should be flagged
+    {
+      code: `
+        const setter = new DocSetter(collectionRef);
+        await Promise.all([
+          condition1 && setter.set(doc1),
+          condition2 && setter.set(doc2),
+          condition3 && setter.set(doc3),
+        ]);
+      `,
+      errors: [{ messageId: 'preferSetAll' }],
+    },
+    // Multiple overwrite calls should be flagged
+    {
+      code: `
+        const setter = new DocSetter(collectionRef);
+        await Promise.all([
+          setter.overwrite(doc1),
+          setter.overwrite(doc2),
+        ]);
+      `,
+      errors: [{ messageId: 'preferOverwriteAll' }],
+    },
+    // Multiple setter calls with ternary operators should be flagged
+    {
+      code: `
+        const setter = new DocSetter(collectionRef);
+        await Promise.all([
+          condition1 ? setter.set(doc1) : null,
+          condition2 ? setter.set(doc2) : null,
+        ]);
+      `,
+      errors: [{ messageId: 'preferSetAll' }],
+    },
+    // Multiple setter calls with complex conditionals should be flagged
+    {
+      code: `
+        const setter = new DocSetter(collectionRef);
+        await Promise.all([
+          (condition1 && condition2) && setter.set(doc1),
+          (condition3 && condition4) && setter.set(doc2),
+        ]);
+      `,
+      errors: [{ messageId: 'preferSetAll' }],
+    },
+    // Multiple setter calls with OR conditionals should be flagged
+    {
+      code: `
+        const setter = new DocSetter(collectionRef);
+        await Promise.all([
+          condition1 || setter.set(doc1),
+          condition2 || setter.set(doc2),
+        ]);
+      `,
+      errors: [{ messageId: 'preferSetAll' }],
+    },
+    // Multiple setter calls with nested ternary should be flagged
+    {
+      code: `
+        const setter = new DocSetter(collectionRef);
+        await Promise.all([
+          condition1 ? (condition2 ? setter.set(doc1) : null) : null,
+          condition3 ? setter.set(doc2) : null,
+        ]);
+      `,
+      errors: [{ messageId: 'preferSetAll' }],
+    },
     // Different setter instances in loop are not allowed
     {
       code: `
