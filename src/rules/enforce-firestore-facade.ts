@@ -106,6 +106,51 @@ const isFirestoreAssignment = (node: TSESTree.Node): boolean => {
   return false;
 };
 
+const handleAssignmentExpression = (node: TSESTree.AssignmentExpression): void => {
+  // Handle variable reassignments
+  if (isIdentifier(node.left)) {
+    const varName = node.left.name;
+    const right = node.right;
+
+    // Check if reassigning to DocSetter
+    if (
+      right.type === AST_NODE_TYPES.NewExpression &&
+      isIdentifier(right.callee) &&
+      (right.callee.name === 'DocSetter' ||
+        right.callee.name === 'DocSetterTransaction')
+    ) {
+      // Remove from other sets and add to docSetterVariables
+      firestoreDocRefVariables.delete(varName);
+      firestoreBatchVariables.delete(varName);
+      firestoreTransactionVariables.delete(varName);
+      docSetterVariables.add(varName);
+    }
+    // Check if reassigning to DocumentReference
+    else if (isFirestoreDocumentReference(right)) {
+      // Remove from other sets and add to firestoreDocRefVariables
+      docSetterVariables.delete(varName);
+      firestoreBatchVariables.delete(varName);
+      firestoreTransactionVariables.delete(varName);
+      firestoreDocRefVariables.add(varName);
+    }
+    // Check if reassigning to batch
+    else if (
+      right.type === AST_NODE_TYPES.CallExpression &&
+      isMemberExpression(right.callee) &&
+      isIdentifier(right.callee.property) &&
+      right.callee.property.name === 'batch' &&
+      isIdentifier(right.callee.object) &&
+      right.callee.object.name === 'db'
+    ) {
+      // Remove from other sets and add to firestoreBatchVariables
+      docSetterVariables.delete(varName);
+      firestoreDocRefVariables.delete(varName);
+      firestoreTransactionVariables.delete(varName);
+      firestoreBatchVariables.add(varName);
+    }
+  }
+};
+
 const isFirestoreDocumentReference = (node: TSESTree.Node): boolean => {
   // Check if it's a direct db.collection().doc() call
   if (
@@ -427,6 +472,11 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
         isRealtimeDbRefAssignment(node);
         isCollectionObjectAssignment(node);
         isFirestoreAssignment(node);
+      },
+
+      // Track variable reassignments
+      AssignmentExpression(node) {
+        handleAssignmentExpression(node);
       },
 
       CallExpression(node) {

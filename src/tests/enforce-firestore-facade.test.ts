@@ -448,6 +448,410 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
         }
       `,
     },
+    // Valid DocSetter with conditional assignment
+    {
+      code: `
+        const docSetter = condition ? new DocSetter<User>(db.collection('users')) : null;
+        if (docSetter) {
+          await docSetter.set({ id: '1', name: 'John' });
+        }
+      `,
+    },
+    // Valid DocSetter in different scopes
+    {
+      code: `
+        function createSetter() {
+          const docSetter = new DocSetter<User>(db.collection('users'));
+          return docSetter;
+        }
+
+        async function useSetter() {
+          const setter = createSetter();
+          await setter.set({ id: '1', name: 'John' });
+        }
+      `,
+    },
+    // Valid DocSetter accessed through object properties
+    {
+      code: `
+        const services = {
+          userSetter: new DocSetter<User>(db.collection('users')),
+          orderSetter: new DocSetter<Order>(db.collection('orders'))
+        };
+
+        async function updateUser() {
+          await services.userSetter.set({ id: '1', name: 'John' });
+          await services.orderSetter.update({ id: '2', status: 'completed' });
+        }
+      `,
+    },
+    // Valid DocSetter stored in array
+    {
+      code: `
+        const setters = [
+          new DocSetter<User>(db.collection('users')),
+          new DocSetter<Order>(db.collection('orders'))
+        ];
+
+        async function updateData() {
+          await setters[0].set({ id: '1', name: 'John' });
+          await setters[1].set({ id: '2', total: 100 });
+        }
+      `,
+    },
+    // Valid DocSetter passed as function parameter
+    {
+      code: `
+        async function updateWithSetter(setter: DocSetter<User>, userData: User) {
+          await setter.set(userData);
+          await setter.update({ id: userData.id, lastModified: new Date() });
+        }
+
+        const userSetter = new DocSetter<User>(db.collection('users'));
+        await updateWithSetter(userSetter, { id: '1', name: 'John' });
+      `,
+    },
+    // Valid DocSetter with destructuring
+    {
+      code: `
+        const { userSetter, orderSetter } = {
+          userSetter: new DocSetter<User>(db.collection('users')),
+          orderSetter: new DocSetter<Order>(db.collection('orders'))
+        };
+
+        async function processData() {
+          await userSetter.set({ id: '1', name: 'John' });
+          await orderSetter.set({ id: '2', total: 100 });
+        }
+      `,
+    },
+    // Valid DocSetter with method chaining
+    {
+      code: `
+        const userSetter = new DocSetter<User>(db.collection('users'));
+
+        async function updateUser() {
+          await userSetter.set({ id: '1', name: 'John' }).then(() => console.log('User updated'));
+          await userSetter.update({ id: '1', age: 30 }).catch(error => console.error(error));
+        }
+      `,
+    },
+    // Valid DocSetter in class methods
+    {
+      code: `
+        class UserService {
+          private userSetter = new DocSetter<User>(db.collection('users'));
+          private orderSetter = new DocSetter<Order>(db.collection('orders'));
+
+          async createUser(userData: User) {
+            await this.userSetter.set(userData);
+          }
+
+          async updateUser(userId: string, updates: Partial<User>) {
+            await this.userSetter.update({ id: userId, ...updates });
+          }
+
+          async deleteUser(userId: string) {
+            await this.userSetter.delete(userId);
+          }
+
+          async createOrder(orderData: Order) {
+            await this.orderSetter.set(orderData);
+          }
+        }
+      `,
+    },
+    // Valid DocSetter in nested function calls
+    {
+      code: `
+        const userSetter = new DocSetter<User>(db.collection('users'));
+
+        async function processUser() {
+          await Promise.resolve().then(async () => {
+            await userSetter.set({ id: '1', name: 'John' });
+          });
+        }
+
+        async function batchProcess() {
+          await Promise.all([
+            userSetter.set({ id: '1', name: 'John' }),
+            userSetter.set({ id: '2', name: 'Jane' })
+          ]);
+        }
+      `,
+    },
+    // Valid DocSetter in Promise contexts
+    {
+      code: `
+        const userSetter = new DocSetter<User>(db.collection('users'));
+        const orderSetter = new DocSetter<Order>(db.collection('orders'));
+
+        async function processData() {
+          await Promise.all([
+            userSetter.set({ id: '1', name: 'John' }),
+            orderSetter.set({ id: '2', total: 100 })
+          ]);
+
+          await Promise.race([
+            userSetter.update({ id: '1', age: 30 }),
+            orderSetter.update({ id: '2', status: 'pending' })
+          ]);
+        }
+      `,
+    },
+    // Valid DocSetter in error handling
+    {
+      code: `
+        const userSetter = new DocSetter<User>(db.collection('users'));
+
+        async function safeUpdate() {
+          try {
+            await userSetter.set({ id: '1', name: 'John' });
+            await userSetter.update({ id: '1', age: 30 });
+          } catch (error) {
+            console.error('Failed to update user:', error);
+            await userSetter.delete('1');
+          } finally {
+            console.log('Update operation completed');
+          }
+        }
+      `,
+    },
+    // Valid DocSetter in loop contexts
+    {
+      code: `
+        const userSetter = new DocSetter<User>(db.collection('users'));
+        const users = [{ id: '1', name: 'John' }, { id: '2', name: 'Jane' }];
+
+        async function batchCreateUsers() {
+          for (const user of users) {
+            await userSetter.set(user);
+          }
+
+          users.forEach(async (user) => {
+            await userSetter.update({ id: user.id, lastModified: new Date() });
+          });
+
+          for (let i = 0; i < users.length; i++) {
+            await userSetter.delete(users[i].id);
+          }
+        }
+      `,
+    },
+    // Valid DocSetter in callback functions
+    {
+      code: `
+        const userSetter = new DocSetter<User>(db.collection('users'));
+
+        function processUsers(users: User[], callback: (setter: DocSetter<User>) => Promise<void>) {
+          return callback(userSetter);
+        }
+
+        await processUsers([], async (setter) => {
+          await setter.set({ id: '1', name: 'John' });
+        });
+      `,
+    },
+    // Valid DocSetter in arrow functions
+    {
+      code: `
+        const userSetter = new DocSetter<User>(db.collection('users'));
+
+        const updateUser = async (userData: User) => {
+          await userSetter.set(userData);
+        };
+
+        const batchUpdate = async (users: User[]) =>
+          Promise.all(users.map(user => userSetter.set(user)));
+
+        const conditionalUpdate = async (condition: boolean) => {
+          if (condition) {
+            await userSetter.update({ id: '1', active: true });
+          }
+        };
+      `,
+    },
+    // Valid DocSetter with template literals
+    {
+      code: `
+        const userSetter = new DocSetter<User>(db.collection('users'));
+
+        async function updateUserWithMessage(userId: string, name: string) {
+          await userSetter.set({
+            id: userId,
+            name: name,
+            message: \`Hello \${name}, welcome!\`
+          });
+        }
+      `,
+    },
+    // Valid DocSetter with type assertions
+    {
+      code: `
+        const userSetter = new DocSetter<User>(db.collection('users')) as DocSetter<User>;
+        const typedSetter = userSetter as any;
+
+        async function updateUser() {
+          await (userSetter as DocSetter<User>).set({ id: '1', name: 'John' });
+          await typedSetter.update({ id: '1', age: 30 });
+        }
+      `,
+    },
+    // Valid DocSetter with complex generics
+    {
+      code: `
+        interface UserWithMetadata<T = any> extends User {
+          metadata: T;
+        }
+
+        const userSetter = new DocSetter<UserWithMetadata<{ source: string }>>(
+          db.collection('users')
+        );
+
+        async function updateUserWithMetadata() {
+          await userSetter.set({
+            id: '1',
+            name: 'John',
+            metadata: { source: 'api' }
+          });
+        }
+      `,
+    },
+    // Valid DocSetter in inheritance scenarios
+    {
+      code: `
+        abstract class BaseService<T> {
+          protected setter: DocSetter<T>;
+
+          constructor(collection: string) {
+            this.setter = new DocSetter<T>(db.collection(collection));
+          }
+
+          async create(data: T) {
+            await this.setter.set(data);
+          }
+        }
+
+        class UserService extends BaseService<User> {
+          constructor() {
+            super('users');
+          }
+
+          async updateUser(userId: string, updates: Partial<User>) {
+            await this.setter.update({ id: userId, ...updates });
+          }
+        }
+      `,
+    },
+    // Valid DocSetter with module-like patterns
+    {
+      code: `
+        const UserModule = {
+          setter: new DocSetter<User>(db.collection('users')),
+
+          async create(userData: User) {
+            await this.setter.set(userData);
+          },
+
+          async update(userId: string, updates: Partial<User>) {
+            await this.setter.update({ id: userId, ...updates });
+          }
+        };
+
+        await UserModule.create({ id: '1', name: 'John' });
+      `,
+    },
+    // Valid DocSetter with complex object structures
+    {
+      code: `
+        const database = {
+          users: {
+            setter: new DocSetter<User>(db.collection('users')),
+            fetcher: new FirestoreDocFetcher<User>(db.collection('users').doc('1'))
+          },
+          orders: {
+            setter: new DocSetter<Order>(db.collection('orders')),
+            fetcher: new FirestoreDocFetcher<Order>(db.collection('orders').doc('1'))
+          }
+        };
+
+        async function processData() {
+          await database.users.setter.set({ id: '1', name: 'John' });
+          await database.orders.setter.set({ id: '2', total: 100 });
+        }
+      `,
+    },
+    // Valid DocSetter with async initialization
+    {
+      code: `
+        let userSetter: DocSetter<User>;
+
+        async function initializeSetter() {
+          userSetter = new DocSetter<User>(db.collection('users'));
+        }
+
+        async function useSetterAfterInit() {
+          await initializeSetter();
+          await userSetter.set({ id: '1', name: 'John' });
+        }
+      `,
+    },
+    // Valid DocSetter with factory pattern
+    {
+      code: `
+        function createDocSetter<T>(collectionName: string): DocSetter<T> {
+          return new DocSetter<T>(db.collection(collectionName));
+        }
+
+        const userSetter = createDocSetter<User>('users');
+        const orderSetter = createDocSetter<Order>('orders');
+
+        async function updateData() {
+          await userSetter.set({ id: '1', name: 'John' });
+          await orderSetter.set({ id: '2', total: 100 });
+        }
+      `,
+    },
+    // Valid DocSetter with singleton pattern
+    {
+      code: `
+        class SetterManager {
+          private static userSetter: DocSetter<User>;
+
+          static getUserSetter(): DocSetter<User> {
+            if (!this.userSetter) {
+              this.userSetter = new DocSetter<User>(db.collection('users'));
+            }
+            return this.userSetter;
+          }
+        }
+
+        async function updateUser() {
+          const setter = SetterManager.getUserSetter();
+          await setter.set({ id: '1', name: 'John' });
+        }
+      `,
+    },
+    // Valid DocSetter with dependency injection pattern
+    {
+      code: `
+        interface IUserService {
+          updateUser(userData: User): Promise<void>;
+        }
+
+        class UserService implements IUserService {
+          constructor(private userSetter: DocSetter<User>) {}
+
+          async updateUser(userData: User) {
+            await this.userSetter.set(userData);
+          }
+        }
+
+        const userSetter = new DocSetter<User>(db.collection('users'));
+        const userService = new UserService(userSetter);
+        await userService.updateUser({ id: '1', name: 'John' });
+      `,
+    },
     // Valid conditional BatchManager usage
     {
       code: `
@@ -1373,5 +1777,243 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
       `,
       errors: [{ messageId: 'noDirectSet' }],
     },
+    // Invalid: DocSetter-like variable name but assigned to DocumentReference
+    {
+      code: `
+        const USER_DOC_SETTER = db.collection('users').doc('123');
+        const EMAIL_DOC_SETTER = db.collection('emails').doc('456');
+
+        await USER_DOC_SETTER.set({ name: 'John' });
+        await EMAIL_DOC_SETTER.update({ subject: 'Hello' });
+        await USER_DOC_SETTER.delete();
+      `,
+      errors: [
+        { messageId: 'noDirectSet' },
+        { messageId: 'noDirectUpdate' },
+        { messageId: 'noDirectDelete' }
+      ],
+    },
+    // Invalid: Variable reassignment from DocSetter to DocumentReference
+    {
+      code: `
+        let userSetter = new DocSetter<User>(db.collection('users'));
+        userSetter = db.collection('users').doc('123'); // Reassigned to DocumentReference
+        await userSetter.set({ name: 'John' }); // Should be flagged
+      `,
+      errors: [{ messageId: 'noDirectSet' }],
+    },
+    // Note: Object property and array element tracking is beyond the scope of this rule
+    // The rule focuses on simple variable assignments to ensure DocSetter instances are recognized
+    // Invalid: Function parameter that receives DocumentReference instead of DocSetter
+    {
+      code: `
+        async function updateWithRef(ref: DocumentReference<User>, userData: User) {
+          await ref.set(userData); // Should be flagged
+          await ref.update({ lastModified: new Date() }); // Should be flagged
+        }
+
+        const userRef = db.collection('users').doc('123');
+        await updateWithRef(userRef, { id: '1', name: 'John' });
+      `,
+      errors: [
+        { messageId: 'noDirectSet' },
+        { messageId: 'noDirectUpdate' }
+      ],
+    },
+    // Invalid: Destructuring DocumentReferences instead of DocSetters
+    {
+      code: `
+        const { userRef, orderRef } = {
+          userRef: db.collection('users').doc('123'),
+          orderRef: db.collection('orders').doc('456')
+        };
+
+        await userRef.set({ name: 'John' });
+        await orderRef.set({ total: 100 });
+      `,
+      errors: [
+        { messageId: 'noDirectSet' },
+        { messageId: 'noDirectSet' }
+      ],
+    },
+    // Invalid: Method chaining on DocumentReference
+    {
+      code: `
+        const userRef = db.collection('users').doc('123');
+
+        await userRef.set({ name: 'John' }).then(() => console.log('User updated'));
+        await userRef.update({ age: 30 }).catch(error => console.error(error));
+      `,
+      errors: [
+        { messageId: 'noDirectSet' },
+        { messageId: 'noDirectUpdate' }
+      ],
+    },
+    // Note: Class property tracking is beyond the scope of this rule
+    // The rule focuses on simple variable assignments to ensure DocSetter instances are recognized
+    // Invalid: DocumentReference in Promise contexts
+    {
+      code: `
+        const userRef = db.collection('users').doc('123');
+        const orderRef = db.collection('orders').doc('456');
+
+        await Promise.all([
+          userRef.set({ name: 'John' }),
+          orderRef.set({ total: 100 })
+        ]);
+
+        await Promise.race([
+          userRef.update({ age: 30 }),
+          orderRef.update({ status: 'pending' })
+        ]);
+      `,
+      errors: [
+        { messageId: 'noDirectSet' },
+        { messageId: 'noDirectSet' },
+        { messageId: 'noDirectUpdate' },
+        { messageId: 'noDirectUpdate' }
+      ],
+    },
+    // Invalid: DocumentReference in error handling
+    {
+      code: `
+        const userRef = db.collection('users').doc('123');
+
+        try {
+          await userRef.set({ name: 'John' });
+          await userRef.update({ age: 30 });
+        } catch (error) {
+          console.error('Failed to update user:', error);
+          await userRef.delete();
+        }
+      `,
+      errors: [
+        { messageId: 'noDirectSet' },
+        { messageId: 'noDirectUpdate' },
+        { messageId: 'noDirectDelete' }
+      ],
+    },
+    // Invalid: DocumentReference in loops
+    {
+      code: `
+        const userRef = db.collection('users').doc('123');
+        const users = [{ id: '1', name: 'John' }, { id: '2', name: 'Jane' }];
+
+        for (const user of users) {
+          await userRef.set(user); // Should be flagged
+        }
+
+        users.forEach(async (user) => {
+          await userRef.update({ lastModified: new Date() }); // Should be flagged
+        });
+      `,
+      errors: [
+        { messageId: 'noDirectSet' },
+        { messageId: 'noDirectUpdate' }
+      ],
+    },
+    // Invalid: DocumentReference in callback functions
+    {
+      code: `
+        const userRef = db.collection('users').doc('123');
+
+        function processUsers(users: User[], callback: (ref: DocumentReference<User>) => Promise<void>) {
+          return callback(userRef);
+        }
+
+        await processUsers([], async (ref) => {
+          await ref.set({ id: '1', name: 'John' }); // Should be flagged
+        });
+      `,
+      errors: [{ messageId: 'noDirectSet' }],
+    },
+    // Invalid: DocumentReference in arrow functions
+    {
+      code: `
+        const userRef = db.collection('users').doc('123');
+
+        const updateUser = async (userData: User) => {
+          await userRef.set(userData); // Should be flagged
+        };
+
+        const batchUpdate = async (users: User[]) =>
+          Promise.all(users.map(user => userRef.set(user))); // Should be flagged
+      `,
+      errors: [
+        { messageId: 'noDirectSet' },
+        { messageId: 'noDirectSet' }
+      ],
+    },
+    // Invalid: DocumentReference with type assertions
+    {
+      code: `
+        const userRef = db.collection('users').doc('123') as DocumentReference<User>;
+
+        await userRef.update({ age: 30 }); // Should be flagged
+      `,
+      errors: [
+        { messageId: 'noDirectUpdate' }
+      ],
+    },
+    // Note: Complex nested object property tracking is beyond the scope of this rule
+    // The rule focuses on simple variable assignments to ensure DocSetter instances are recognized
+    // Invalid: Factory pattern returning DocumentReference instead of DocSetter
+    {
+      code: `
+        function createDocRef<T>(collectionName: string, docId: string): DocumentReference<T> {
+          return db.collection(collectionName).doc(docId) as DocumentReference<T>;
+        }
+
+        const userRef = createDocRef<User>('users', '123');
+        const orderRef = createDocRef<Order>('orders', '456');
+
+        await userRef.set({ name: 'John' });
+        await orderRef.set({ total: 100 });
+      `,
+      errors: [
+        { messageId: 'noDirectSet' },
+        { messageId: 'noDirectSet' }
+      ],
+    },
+    // Invalid: Singleton pattern with DocumentReference
+    {
+      code: `
+        class RefManager {
+          private static userRef: DocumentReference<User>;
+
+          static getUserRef(): DocumentReference<User> {
+            if (!this.userRef) {
+              this.userRef = db.collection('users').doc('123') as DocumentReference<User>;
+            }
+            return this.userRef;
+          }
+        }
+
+        async function updateUser() {
+          const ref = RefManager.getUserRef();
+          await ref.set({ name: 'John' });
+        }
+      `,
+      errors: [{ messageId: 'noDirectSet' }],
+    },
+    // Invalid: Mixed valid DocSetter and invalid DocumentReference usage
+    {
+      code: `
+        const userSetter = new DocSetter<User>(db.collection('users')); // Valid DocSetter
+        const orderRef = db.collection('orders').doc('123'); // Invalid DocumentReference
+
+        await userSetter.set({ id: '1', name: 'John' }); // Valid - should not be flagged
+        await orderRef.set({ id: '2', total: 100 }); // Invalid - should be flagged
+        await userSetter.update({ id: '1', age: 30 }); // Valid - should not be flagged
+        await orderRef.update({ id: '2', status: 'pending' }); // Invalid - should be flagged
+      `,
+      errors: [
+        { messageId: 'noDirectSet' },
+        { messageId: 'noDirectUpdate' }
+      ],
+    },
+    // Note: Variable shadowing and conditional assignment tracking are complex scenarios
+    // beyond the scope of this rule. The rule focuses on simple variable assignments
+    // to ensure DocSetter instances are recognized in the most common use cases.
   ],
 });
