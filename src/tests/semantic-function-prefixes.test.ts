@@ -390,7 +390,6 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
       ],
     },
 
-
     // Arrow functions with disallowed prefixes
     {
       code: 'const getData = () => {}',
@@ -452,7 +451,6 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
         },
       ],
     },
-
 
     // Class methods with disallowed prefixes
     {
@@ -573,7 +571,6 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
         },
       ],
     },
-
 
     // EDGE CASES - Async functions with disallowed prefixes
     {
@@ -1158,7 +1155,6 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
       ],
     },
 
-
     // EDGE CASES - PascalCase variations with disallowed prefixes
     {
       code: 'function GetUserData() {}',
@@ -1220,6 +1216,5 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
         },
       ],
     },
-
   ],
 });

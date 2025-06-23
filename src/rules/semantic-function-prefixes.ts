@@ -75,14 +75,24 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
 
         // Case 1: lowercase followed by uppercase (camelCase boundary)
         // Example: getData -> break at 'D'
-        if (prevChar >= 'a' && prevChar <= 'z' && currentChar >= 'A' && currentChar <= 'Z') {
+        if (
+          prevChar >= 'a' &&
+          prevChar <= 'z' &&
+          currentChar >= 'A' &&
+          currentChar <= 'Z'
+        ) {
           firstWord = methodName.substring(0, i);
           break;
         }
 
         // Case 2: uppercase followed by lowercase (end of acronym)
         // Example: UPDATEUser -> break at 'U' in "User"
-        if (prevChar >= 'A' && prevChar <= 'Z' && currentChar >= 'a' && currentChar <= 'z') {
+        if (
+          prevChar >= 'A' &&
+          prevChar <= 'Z' &&
+          currentChar >= 'a' &&
+          currentChar <= 'z'
+        ) {
           // Check if we have at least 2 uppercase letters before this
           if (i > 1) {
             firstWord = methodName.substring(0, i - 1);
@@ -159,14 +169,24 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
 
         // Case 1: lowercase followed by uppercase (camelCase boundary)
         // Example: getData -> break at 'D'
-        if (prevChar >= 'a' && prevChar <= 'z' && currentChar >= 'A' && currentChar <= 'Z') {
+        if (
+          prevChar >= 'a' &&
+          prevChar <= 'z' &&
+          currentChar >= 'A' &&
+          currentChar <= 'Z'
+        ) {
           firstWord = functionName.substring(0, i);
           break;
         }
 
         // Case 2: uppercase followed by lowercase (end of acronym)
         // Example: UPDATEUser -> break at 'U' in "User"
-        if (prevChar >= 'A' && prevChar <= 'Z' && currentChar >= 'a' && currentChar <= 'z') {
+        if (
+          prevChar >= 'A' &&
+          prevChar <= 'Z' &&
+          currentChar >= 'a' &&
+          currentChar <= 'z'
+        ) {
           // Check if we have at least 2 uppercase letters before this
           if (i > 1) {
             firstWord = functionName.substring(0, i - 1);
