@@ -48,13 +48,13 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
     type: 'problem',
     docs: {
       description:
-        'Disallow arrays of objects in Firestore type definitions to optimize performance, enable querying, prevent destructive updates, and avoid concurrency issues. Use map structures with index fields instead.',
+        'Disallow arrays of objects in Firestore type definitions. Arrays of objects are not queryable in Firestore, require destructive updates (rewriting entire arrays), and cause concurrency issues with race conditions. Instead, use Record<string, T & { index: number }> map structures where the object id becomes the key and an index field preserves ordering. This enables efficient querying, individual item updates, safe concurrent access, and seamless conversion between arrays and maps using toMap()/toArr() utilities.',
       recommended: 'warn',
     },
     schema: [],
     messages: {
       noObjectArrays:
-        'Arrays of objects are not recommended in Firestore because they are not queryable, updates are destructive, and they can cause concurrency issues. Instead, use a map structure (Record<string, T>) with an index field to preserve ordering. This pattern enables individual item updates, efficient querying, and maintains order when converting back to arrays. See documentation for the Array-Map Conversion system.',
+        'Arrays of objects should not be used in Firestore types. Problem: Arrays of objects are not queryable, updates require rewriting the entire array (destructive), and concurrent updates cause race conditions and data loss. Solution: Use Record<string, T & { index: number }> instead, where the object\'s id becomes the key and an index field preserves order. This enables efficient querying, individual item updates, and safe concurrent access. Use toMap() to convert arrays to indexed maps and toArr() to convert back to ordered arrays. Example: Instead of "items: Item[]", use "items: Record<string, Item & { index: number }>". See Array-Map Conversion system documentation.',
     },
   },
   defaultOptions: [],
