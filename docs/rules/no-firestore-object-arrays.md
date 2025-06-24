@@ -1,6 +1,6 @@
 # Disallow arrays of objects in Firestore type definitions. Arrays of objects are not queryable in Firestore, require destructive updates (rewriting entire arrays), and cause concurrency issues with race conditions. Instead, use Record<string, T & { index: number }> map structures where the object id becomes the key and an index field preserves ordering. This enables efficient querying, individual item updates, safe concurrent access, and seamless conversion between arrays and maps using toMap()/toArr() utilities (`@blumintinc/blumint/no-firestore-object-arrays`)
 
-⚠️ This rule _warns_ in the ✅ `recommended` config.
+💼 This rule is enabled in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
 
