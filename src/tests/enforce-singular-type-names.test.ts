@@ -509,7 +509,10 @@ ruleTesterTs.run('enforce-singular-type-names', enforceSingularTypeNames, {
       errors: [
         {
           messageId: 'typeShouldBeSingular',
-          data: { name: 'VeryLongComplexUserAccountManagementRecords', suggestedName: 'VeryLongComplexUserAccountManagementRecord' },
+          data: {
+            name: 'VeryLongComplexUserAccountManagementRecords',
+            suggestedName: 'VeryLongComplexUserAccountManagementRecord',
+          },
         },
       ],
     },
@@ -735,7 +738,10 @@ ruleTesterTs.run('enforce-singular-type-names', enforceSingularTypeNames, {
       errors: [
         {
           messageId: 'typeShouldBeSingular',
-          data: { name: 'VeryLongComplexUserAccountManagementSystemRecords', suggestedName: 'VeryLongComplexUserAccountManagementSystemRecord' },
+          data: {
+            name: 'VeryLongComplexUserAccountManagementSystemRecords',
+            suggestedName: 'VeryLongComplexUserAccountManagementSystemRecord',
+          },
         },
       ],
     },
