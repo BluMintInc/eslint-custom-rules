@@ -59,14 +59,19 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
 
         // Check if method already has @Memoize decorator
         const hasDecorator = node.decorators?.some((decorator) => {
-          if (decorator.expression.type !== AST_NODE_TYPES.CallExpression) {
-            return false;
+          // Handle @Memoize() (with parentheses)
+          if (decorator.expression.type === AST_NODE_TYPES.CallExpression) {
+            const callee = decorator.expression.callee;
+            return (
+              callee.type === AST_NODE_TYPES.Identifier &&
+              callee.name === memoizeAlias
+            );
           }
-          const callee = decorator.expression.callee;
-          return (
-            callee.type === AST_NODE_TYPES.Identifier &&
-            callee.name === memoizeAlias
-          );
+          // Handle @Memoize (without parentheses)
+          if (decorator.expression.type === AST_NODE_TYPES.Identifier) {
+            return decorator.expression.name === memoizeAlias;
+          }
+          return false;
         });
 
         if (!hasDecorator) {
