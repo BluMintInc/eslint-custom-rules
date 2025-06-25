@@ -4637,6 +4637,11 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
         return true;
       }
 
+      // Check for arrow function implicit returns with parentheses: () => (<JSX>)
+      if (text.includes('=> (') && text.includes('<')) {
+        return true;
+      }
+
       // Check for JSX assigned to variables then returned
       if (
         text.includes('const ') &&
@@ -4644,6 +4649,16 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
         text.includes('return')
       ) {
         return true;
+      }
+
+      // Check for any JSX elements in the function body (broader check)
+      if (text.includes('<') && text.includes('>')) {
+        // Make sure it's not just a comparison operator or object literal
+        // Look for JSX patterns: <TagName or <tagname followed by space, >, or /
+        const jsxPattern = /<[A-Z][a-zA-Z0-9]*[\s>\/]|<[a-z]+[\s>\/]/;
+        if (jsxPattern.test(text)) {
+          return true;
+        }
       }
 
       return false;
