@@ -54,7 +54,10 @@ function isArrayOrPrimitive(
     }
 
     // Check if it's a string type with methods (like String object)
-    if (type.symbol?.name === 'String' || type.symbol?.escapedName === 'String') {
+    if (
+      type.symbol?.name === 'String' ||
+      type.symbol?.escapedName === 'String'
+    ) {
       return true;
     }
 
@@ -196,7 +199,8 @@ function getObjectUsagesInHook(
         // Check for array/string methods - these indicate usage of the entire array/string
         if (
           memberExpr.property.name &&
-          (ARRAY_METHODS.has(memberExpr.property.name) || STRING_METHODS.has(memberExpr.property.name))
+          (ARRAY_METHODS.has(memberExpr.property.name) ||
+            STRING_METHODS.has(memberExpr.property.name))
         ) {
           // Check if this is accessing our target object
           let current = memberExpr.object;
@@ -251,7 +255,10 @@ function getObjectUsagesInHook(
 
     if (node.type === AST_NODE_TYPES.CallExpression) {
       // Check if the object is being called as a function
-      if (node.callee.type === AST_NODE_TYPES.Identifier && node.callee.name === objectName) {
+      if (
+        node.callee.type === AST_NODE_TYPES.Identifier &&
+        node.callee.name === objectName
+      ) {
         needsEntireObject = true;
       }
 
@@ -429,7 +436,11 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
             // For testing without TypeScript services, we'll assume all identifiers are objects
 
             const result = getObjectUsagesInHook(
-              (callbackArg as TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression).body,
+              (
+                callbackArg as
+                  | TSESTree.ArrowFunctionExpression
+                  | TSESTree.FunctionExpression
+              ).body,
               objectName,
               context,
             );
@@ -457,7 +468,10 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
                   if (elementIndex === depsArg.elements.length - 1) {
                     const prevElement = depsArg.elements[elementIndex - 1];
                     if (prevElement) {
-                      const range: [number, number] = [prevElement.range![1], (element as TSESTree.Node).range![1]];
+                      const range: [number, number] = [
+                        prevElement.range![1],
+                        (element as TSESTree.Node).range![1],
+                      ];
                       return fixer.removeRange(range);
                     }
                   }
@@ -465,7 +479,10 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
                   // Otherwise, remove the element and the following comma
                   const nextElement = depsArg.elements[elementIndex + 1];
                   if (nextElement) {
-                    const range: [number, number] = [(element as TSESTree.Node).range![0], nextElement.range![0]];
+                    const range: [number, number] = [
+                      (element as TSESTree.Node).range![0],
+                      nextElement.range![0],
+                    ];
                     return fixer.removeRange(range);
                   }
 

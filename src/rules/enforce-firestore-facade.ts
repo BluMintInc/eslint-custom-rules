@@ -106,7 +106,9 @@ const isFirestoreAssignment = (node: TSESTree.Node): boolean => {
   return false;
 };
 
-const handleAssignmentExpression = (node: TSESTree.AssignmentExpression): void => {
+const handleAssignmentExpression = (
+  node: TSESTree.AssignmentExpression,
+): void => {
   // Handle variable reassignments
   if (isIdentifier(node.left)) {
     const varName = node.left.name;
@@ -312,7 +314,7 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
     if (name.includes('Manager') || name.includes('BatchManager')) {
       return false;
     }
-    
+
     // Check for basic batch or transaction variables (like 'batch', 'transaction')
     // but not BatchManager instances
     if (/^(batch|transaction)$/i.test(name)) {

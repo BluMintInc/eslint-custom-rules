@@ -1790,7 +1790,7 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
       errors: [
         { messageId: 'noDirectSet' },
         { messageId: 'noDirectUpdate' },
-        { messageId: 'noDirectDelete' }
+        { messageId: 'noDirectDelete' },
       ],
     },
     // Invalid: Variable reassignment from DocSetter to DocumentReference
@@ -1815,10 +1815,7 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
         const userRef = db.collection('users').doc('123');
         await updateWithRef(userRef, { id: '1', name: 'John' });
       `,
-      errors: [
-        { messageId: 'noDirectSet' },
-        { messageId: 'noDirectUpdate' }
-      ],
+      errors: [{ messageId: 'noDirectSet' }, { messageId: 'noDirectUpdate' }],
     },
     // Invalid: Destructuring DocumentReferences instead of DocSetters
     {
@@ -1831,10 +1828,7 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
         await userRef.set({ name: 'John' });
         await orderRef.set({ total: 100 });
       `,
-      errors: [
-        { messageId: 'noDirectSet' },
-        { messageId: 'noDirectSet' }
-      ],
+      errors: [{ messageId: 'noDirectSet' }, { messageId: 'noDirectSet' }],
     },
     // Invalid: Method chaining on DocumentReference
     {
@@ -1844,10 +1838,7 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
         await userRef.set({ name: 'John' }).then(() => console.log('User updated'));
         await userRef.update({ age: 30 }).catch(error => console.error(error));
       `,
-      errors: [
-        { messageId: 'noDirectSet' },
-        { messageId: 'noDirectUpdate' }
-      ],
+      errors: [{ messageId: 'noDirectSet' }, { messageId: 'noDirectUpdate' }],
     },
     // Note: Class property tracking is beyond the scope of this rule
     // The rule focuses on simple variable assignments to ensure DocSetter instances are recognized
@@ -1871,7 +1862,7 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
         { messageId: 'noDirectSet' },
         { messageId: 'noDirectSet' },
         { messageId: 'noDirectUpdate' },
-        { messageId: 'noDirectUpdate' }
+        { messageId: 'noDirectUpdate' },
       ],
     },
     // Invalid: DocumentReference in error handling
@@ -1890,7 +1881,7 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
       errors: [
         { messageId: 'noDirectSet' },
         { messageId: 'noDirectUpdate' },
-        { messageId: 'noDirectDelete' }
+        { messageId: 'noDirectDelete' },
       ],
     },
     // Invalid: DocumentReference in loops
@@ -1907,10 +1898,7 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
           await userRef.update({ lastModified: new Date() }); // Should be flagged
         });
       `,
-      errors: [
-        { messageId: 'noDirectSet' },
-        { messageId: 'noDirectUpdate' }
-      ],
+      errors: [{ messageId: 'noDirectSet' }, { messageId: 'noDirectUpdate' }],
     },
     // Invalid: DocumentReference in callback functions
     {
@@ -1939,10 +1927,7 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
         const batchUpdate = async (users: User[]) =>
           Promise.all(users.map(user => userRef.set(user))); // Should be flagged
       `,
-      errors: [
-        { messageId: 'noDirectSet' },
-        { messageId: 'noDirectSet' }
-      ],
+      errors: [{ messageId: 'noDirectSet' }, { messageId: 'noDirectSet' }],
     },
     // Invalid: DocumentReference with type assertions
     {
@@ -1951,9 +1936,7 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
 
         await userRef.update({ age: 30 }); // Should be flagged
       `,
-      errors: [
-        { messageId: 'noDirectUpdate' }
-      ],
+      errors: [{ messageId: 'noDirectUpdate' }],
     },
     // Note: Complex nested object property tracking is beyond the scope of this rule
     // The rule focuses on simple variable assignments to ensure DocSetter instances are recognized
@@ -1970,10 +1953,7 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
         await userRef.set({ name: 'John' });
         await orderRef.set({ total: 100 });
       `,
-      errors: [
-        { messageId: 'noDirectSet' },
-        { messageId: 'noDirectSet' }
-      ],
+      errors: [{ messageId: 'noDirectSet' }, { messageId: 'noDirectSet' }],
     },
     // Invalid: Singleton pattern with DocumentReference
     {
@@ -2007,10 +1987,7 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
         await userSetter.update({ id: '1', age: 30 }); // Valid - should not be flagged
         await orderRef.update({ id: '2', status: 'pending' }); // Invalid - should be flagged
       `,
-      errors: [
-        { messageId: 'noDirectSet' },
-        { messageId: 'noDirectUpdate' }
-      ],
+      errors: [{ messageId: 'noDirectSet' }, { messageId: 'noDirectUpdate' }],
     },
     // Note: Variable shadowing and conditional assignment tracking are complex scenarios
     // beyond the scope of this rule. The rule focuses on simple variable assignments
