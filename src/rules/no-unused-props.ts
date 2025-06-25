@@ -95,7 +95,8 @@ export const noUnusedProps = createRule({
                       type.typeParameters.params.length === 2
                     ) {
                       // Handle Omit utility type in intersection
-                      const [baseType, omittedProps] = type.typeParameters.params;
+                      const [baseType, omittedProps] =
+                        type.typeParameters.params;
                       if (
                         baseType.type === AST_NODE_TYPES.TSTypeReference &&
                         baseType.typeName.type === AST_NODE_TYPES.Identifier
@@ -110,11 +111,14 @@ export const noUnusedProps = createRule({
 
                         if (
                           variable &&
-                          variable.defs[0]?.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration
+                          variable.defs[0]?.node.type ===
+                            AST_NODE_TYPES.TSTypeAliasDeclaration
                         ) {
                           // Get the list of properties to omit
                           const omittedPropNames = new Set<string>();
-                          if (omittedProps.type === AST_NODE_TYPES.TSUnionType) {
+                          if (
+                            omittedProps.type === AST_NODE_TYPES.TSUnionType
+                          ) {
                             omittedProps.types.forEach((t) => {
                               if (
                                 t.type === AST_NODE_TYPES.TSLiteralType &&
@@ -125,20 +129,28 @@ export const noUnusedProps = createRule({
                               }
                             });
                           } else if (
-                            omittedProps.type === AST_NODE_TYPES.TSLiteralType &&
-                            omittedProps.literal.type === AST_NODE_TYPES.Literal &&
+                            omittedProps.type ===
+                              AST_NODE_TYPES.TSLiteralType &&
+                            omittedProps.literal.type ===
+                              AST_NODE_TYPES.Literal &&
                             typeof omittedProps.literal.value === 'string'
                           ) {
                             omittedPropNames.add(omittedProps.literal.value);
                           }
 
                           // Add all properties from base type except omitted ones
-                          function addBaseTypePropsInIntersection(typeNode: TSESTree.TypeNode) {
-                            if (typeNode.type === AST_NODE_TYPES.TSTypeLiteral) {
+                          function addBaseTypePropsInIntersection(
+                            typeNode: TSESTree.TypeNode,
+                          ) {
+                            if (
+                              typeNode.type === AST_NODE_TYPES.TSTypeLiteral
+                            ) {
                               typeNode.members.forEach((member) => {
                                 if (
-                                  member.type === AST_NODE_TYPES.TSPropertySignature &&
-                                  member.key.type === AST_NODE_TYPES.Identifier &&
+                                  member.type ===
+                                    AST_NODE_TYPES.TSPropertySignature &&
+                                  member.key.type ===
+                                    AST_NODE_TYPES.Identifier &&
                                   !omittedPropNames.has(member.key.name)
                                 ) {
                                   props[member.key.name] = member.key;
@@ -147,7 +159,9 @@ export const noUnusedProps = createRule({
                             }
                           }
 
-                          addBaseTypePropsInIntersection(variable.defs[0].node.typeAnnotation);
+                          addBaseTypePropsInIntersection(
+                            variable.defs[0].node.typeAnnotation,
+                          );
                         } else {
                           // If we can't find the base type definition, treat it as a spread type
                           props[`...${baseTypeName}`] = baseType.typeName;
@@ -189,10 +203,25 @@ export const noUnusedProps = createRule({
             } else if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
               if (typeNode.typeName.type === AST_NODE_TYPES.Identifier) {
                 // List of TypeScript utility types that transform other types
-                const utilityTypes = ['Pick', 'Partial', 'Required', 'Record', 'Exclude', 'Extract', 'NonNullable', 'ReturnType', 'InstanceType', 'ThisType'];
+                const utilityTypes = [
+                  'Pick',
+                  'Omit',
+                  'Partial',
+                  'Required',
+                  'Record',
+                  'Exclude',
+                  'Extract',
+                  'NonNullable',
+                  'ReturnType',
+                  'InstanceType',
+                  'ThisType',
+                ];
 
                 // Skip checking for utility type parameters (T, K, etc.) as they're not actual props
-                if (typeNode.typeName.name.length === 1 && /^[A-Z]$/.test(typeNode.typeName.name)) {
+                if (
+                  typeNode.typeName.name.length === 1 &&
+                  /^[A-Z]$/.test(typeNode.typeName.name)
+                ) {
                   // This is likely a generic type parameter (T, K, etc.), not a real type
                   // Skip it to avoid false positives
                   return;
@@ -249,7 +278,8 @@ export const noUnusedProps = createRule({
                   typeNode.typeParameters.params.length === 2
                 ) {
                   // Handle Omit<T, K> utility type
-                  const [baseType, omittedProps] = typeNode.typeParameters.params;
+                  const [baseType, omittedProps] =
+                    typeNode.typeParameters.params;
                   if (
                     baseType.type === AST_NODE_TYPES.TSTypeReference &&
                     baseType.typeName.type === AST_NODE_TYPES.Identifier
@@ -264,7 +294,8 @@ export const noUnusedProps = createRule({
 
                     if (
                       variable &&
-                      variable.defs[0]?.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration
+                      variable.defs[0]?.node.type ===
+                        AST_NODE_TYPES.TSTypeAliasDeclaration
                     ) {
                       // Extract properties from the base type
 
@@ -293,7 +324,8 @@ export const noUnusedProps = createRule({
                         if (typeNode.type === AST_NODE_TYPES.TSTypeLiteral) {
                           typeNode.members.forEach((member) => {
                             if (
-                              member.type === AST_NODE_TYPES.TSPropertySignature &&
+                              member.type ===
+                                AST_NODE_TYPES.TSPropertySignature &&
                               member.key.type === AST_NODE_TYPES.Identifier &&
                               !omittedPropNames.has(member.key.name)
                             ) {
@@ -333,14 +365,16 @@ export const noUnusedProps = createRule({
 
                     if (
                       variable &&
-                      variable.defs[0]?.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration
+                      variable.defs[0]?.node.type ===
+                        AST_NODE_TYPES.TSTypeAliasDeclaration
                     ) {
                       // For Partial<T>, Required<T>, etc., add all properties from the base type
                       function addBaseTypeProps(typeNode: TSESTree.TypeNode) {
                         if (typeNode.type === AST_NODE_TYPES.TSTypeLiteral) {
                           typeNode.members.forEach((member) => {
                             if (
-                              member.type === AST_NODE_TYPES.TSPropertySignature &&
+                              member.type ===
+                                AST_NODE_TYPES.TSPropertySignature &&
                               member.key.type === AST_NODE_TYPES.Identifier
                             ) {
                               props[member.key.name] = member.key;
@@ -467,10 +501,25 @@ export const noUnusedProps = createRule({
                 let shouldReport = true;
 
                 // List of TypeScript utility types that should not be reported
-                const utilityTypes = ['Pick', 'Partial', 'Required', 'Record', 'Exclude', 'Extract', 'NonNullable', 'ReturnType', 'InstanceType', 'ThisType'];
+                const utilityTypes = [
+                  'Pick',
+                  'Partial',
+                  'Required',
+                  'Record',
+                  'Exclude',
+                  'Extract',
+                  'NonNullable',
+                  'ReturnType',
+                  'InstanceType',
+                  'ThisType',
+                ];
 
                 // Skip reporting for generic type parameters (T, K, etc.)
-                if (prop.startsWith('...') && prop.length === 4 && /^\.\.\.([A-Z])$/.test(prop)) {
+                if (
+                  prop.startsWith('...') &&
+                  prop.length === 4 &&
+                  /^\.\.\.([A-Z])$/.test(prop)
+                ) {
                   // This is a generic type parameter like ...T, ...K, etc.
                   shouldReport = false;
                 } else if (prop.startsWith('...') && hasRestSpread) {
