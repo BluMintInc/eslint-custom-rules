@@ -15,11 +15,13 @@ export const preferBlockCommentsForDeclarations: TSESLint.RuleModule<
      */
     const isEslintDirectiveComment = (comment: TSESTree.Comment): boolean => {
       const commentText = comment.value.trim();
-      return commentText.startsWith('eslint-disable') ||
-             commentText.startsWith('eslint-enable') ||
-             commentText.startsWith('eslint-env') ||
-             commentText.startsWith('global ') ||
-             commentText.startsWith('globals ');
+      return (
+        commentText.startsWith('eslint-disable') ||
+        commentText.startsWith('eslint-enable') ||
+        commentText.startsWith('eslint-env') ||
+        commentText.startsWith('global ') ||
+        commentText.startsWith('globals ')
+      );
     };
 
     /**
@@ -31,12 +33,10 @@ export const preferBlockCommentsForDeclarations: TSESLint.RuleModule<
       while (parent) {
         if (
           parent.type === 'BlockStatement' &&
-          (
-            parent.parent?.type === 'FunctionDeclaration' ||
+          (parent.parent?.type === 'FunctionDeclaration' ||
             parent.parent?.type === 'FunctionExpression' ||
             parent.parent?.type === 'ArrowFunctionExpression' ||
-            parent.parent?.type === 'MethodDefinition'
-          )
+            parent.parent?.type === 'MethodDefinition')
         ) {
           return true;
         }
@@ -82,7 +82,10 @@ export const preferBlockCommentsForDeclarations: TSESLint.RuleModule<
             },
           });
         }
-      } else if (lastComment.type === 'Block' && !lastComment.value.startsWith('*')) {
+      } else if (
+        lastComment.type === 'Block' &&
+        !lastComment.value.startsWith('*')
+      ) {
         // Handle regular block comments (/* */) but not JSDoc comments (/** */)
         // Check if the comment is directly before the node
         const commentLine = lastComment.loc.end.line;
