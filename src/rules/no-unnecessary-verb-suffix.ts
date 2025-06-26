@@ -14,8 +14,6 @@ const COMMON_PREPOSITION_SUFFIXES = new Set([
   'Of',
 
   // Temporal prepositions
-  'After',
-  'Before',
   'During',
   'Until',
   'Till',

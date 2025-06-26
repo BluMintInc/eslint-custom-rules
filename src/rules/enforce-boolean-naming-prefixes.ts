@@ -63,8 +63,14 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
 
     /**
      * Check if a name starts with any of the approved prefixes
+     * or if it starts with an underscore (which indicates a private/internal property)
      */
     function hasApprovedPrefix(name: string): boolean {
+      // Skip checking properties that start with an underscore (private/internal properties)
+      if (name.startsWith('_')) {
+        return true;
+      }
+
       return approvedPrefixes.some((prefix) =>
         name.toLowerCase().startsWith(prefix.toLowerCase()),
       );
@@ -167,54 +173,64 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           const rightSide = node.init.right;
           if (rightSide.type === AST_NODE_TYPES.CallExpression) {
             // If the method name doesn't suggest it returns a boolean, don't flag it
-            if (rightSide.callee.type === AST_NODE_TYPES.MemberExpression &&
-                rightSide.callee.property.type === AST_NODE_TYPES.Identifier) {
+            if (
+              rightSide.callee.type === AST_NODE_TYPES.MemberExpression &&
+              rightSide.callee.property.type === AST_NODE_TYPES.Identifier
+            ) {
               const methodName = rightSide.callee.property.name;
 
               // Check if the method name suggests it returns a boolean
               const isBooleanMethod = approvedPrefixes.some((prefix) =>
-                methodName.toLowerCase().startsWith(prefix.toLowerCase())
+                methodName.toLowerCase().startsWith(prefix.toLowerCase()),
               );
 
               // If the method name suggests it returns a boolean (starts with a boolean prefix or contains 'boolean' or 'enabled'),
               // then the variable should be treated as a boolean
-              if (isBooleanMethod ||
-                  methodName.toLowerCase().includes('boolean') ||
-                  methodName.toLowerCase().includes('enabled') ||
-                  methodName.toLowerCase().includes('auth') ||
-                  methodName.toLowerCase().includes('valid') ||
-                  methodName.toLowerCase().includes('check')) {
+              if (
+                isBooleanMethod ||
+                methodName.toLowerCase().includes('boolean') ||
+                methodName.toLowerCase().includes('enabled') ||
+                methodName.toLowerCase().includes('auth') ||
+                methodName.toLowerCase().includes('valid') ||
+                methodName.toLowerCase().includes('check')
+              ) {
                 return true;
               }
 
               // For methods like getVolume(), getData(), etc., assume they return non-boolean values
-              if (methodName.toLowerCase().startsWith('get') ||
-                  methodName.toLowerCase().startsWith('fetch') ||
-                  methodName.toLowerCase().startsWith('retrieve') ||
-                  methodName.toLowerCase().startsWith('load') ||
-                  methodName.toLowerCase().startsWith('read')) {
+              if (
+                methodName.toLowerCase().startsWith('get') ||
+                methodName.toLowerCase().startsWith('fetch') ||
+                methodName.toLowerCase().startsWith('retrieve') ||
+                methodName.toLowerCase().startsWith('load') ||
+                methodName.toLowerCase().startsWith('read')
+              ) {
                 return false;
               }
             }
           }
 
           // Check if the right side is a property access that might return a non-boolean value
-          if (rightSide.type === AST_NODE_TYPES.MemberExpression &&
-              rightSide.property.type === AST_NODE_TYPES.Identifier) {
+          if (
+            rightSide.type === AST_NODE_TYPES.MemberExpression &&
+            rightSide.property.type === AST_NODE_TYPES.Identifier
+          ) {
             const propertyName = rightSide.property.name;
 
             // If the property name is 'parentElement', 'parentNode', etc., it's likely not a boolean
-            if (propertyName.toLowerCase().includes('parent') ||
-                propertyName.toLowerCase().includes('element') ||
-                propertyName.toLowerCase().includes('node') ||
-                propertyName.toLowerCase().includes('child') ||
-                propertyName.toLowerCase().includes('sibling')) {
+            if (
+              propertyName.toLowerCase().includes('parent') ||
+              propertyName.toLowerCase().includes('element') ||
+              propertyName.toLowerCase().includes('node') ||
+              propertyName.toLowerCase().includes('child') ||
+              propertyName.toLowerCase().includes('sibling')
+            ) {
               return false;
             }
 
             // For property access like user.isAuthenticated, treat as boolean
             const isBooleanProperty = approvedPrefixes.some((prefix) =>
-              propertyName.toLowerCase().startsWith(prefix.toLowerCase())
+              propertyName.toLowerCase().startsWith(prefix.toLowerCase()),
             );
             if (isBooleanProperty) {
               return true;
@@ -238,7 +254,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
             rightSide.type === AST_NODE_TYPES.ArrayExpression ||
             rightSide.type === AST_NODE_TYPES.ObjectExpression ||
             (rightSide.type === AST_NODE_TYPES.Literal &&
-             typeof rightSide.value !== 'boolean')
+              typeof rightSide.value !== 'boolean')
           ) {
             return false;
           }
@@ -256,9 +272,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           const leftSide = node.init.left;
           if (
             (leftSide.type === AST_NODE_TYPES.Literal &&
-             typeof leftSide.value === 'boolean') ||
+              typeof leftSide.value === 'boolean') ||
             (leftSide.type === AST_NODE_TYPES.UnaryExpression &&
-             leftSide.operator === '!')
+              leftSide.operator === '!')
           ) {
             return true;
           }
@@ -270,7 +286,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           ) {
             const calleeName = leftSide.callee.name;
             return approvedPrefixes.some((prefix) =>
-              calleeName.toLowerCase().startsWith(prefix.toLowerCase())
+              calleeName.toLowerCase().startsWith(prefix.toLowerCase()),
             );
           }
 
@@ -380,8 +396,6 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         node.name.toLowerCase().includes('ancestor') ||
         node.name.toLowerCase().includes('descendant');
 
-
-
       if (!isTraversalName) {
         return false;
       }
@@ -406,7 +420,8 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           init.right.type === AST_NODE_TYPES.MemberExpression &&
           init.right.property.type === AST_NODE_TYPES.Identifier
         ) {
-          const propertyName = (init.right.property as TSESTree.Identifier).name;
+          const propertyName = (init.right.property as TSESTree.Identifier)
+            .name;
 
           // DOM-specific properties - these are definitely DOM traversal
           const isDomProperty =
@@ -499,11 +514,17 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
 
       // Find the function or block scope containing this variable
       let currentScope = node.parent;
-      while (currentScope && currentScope.type !== AST_NODE_TYPES.BlockStatement) {
+      while (
+        currentScope &&
+        currentScope.type !== AST_NODE_TYPES.BlockStatement
+      ) {
         currentScope = currentScope.parent as TSESTree.Node;
       }
 
-      if (!currentScope || currentScope.type !== AST_NODE_TYPES.BlockStatement) {
+      if (
+        !currentScope ||
+        currentScope.type !== AST_NODE_TYPES.BlockStatement
+      ) {
         return false;
       }
 
@@ -550,7 +571,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
      * Check if a variable declarator has a tree traversal pattern
      * This looks for patterns like reassignment to .parent, .parentElement, etc.
      */
-    function hasTreeTraversalPattern(declarator: TSESTree.VariableDeclarator): boolean {
+    function hasTreeTraversalPattern(
+      declarator: TSESTree.VariableDeclarator,
+    ): boolean {
       if (declarator.id.type !== AST_NODE_TYPES.Identifier) {
         return false;
       }
@@ -559,11 +582,17 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
 
       // Find the function or block scope containing this variable
       let currentScope = declarator.parent;
-      while (currentScope && currentScope.type !== AST_NODE_TYPES.BlockStatement) {
+      while (
+        currentScope &&
+        currentScope.type !== AST_NODE_TYPES.BlockStatement
+      ) {
         currentScope = currentScope.parent as TSESTree.Node;
       }
 
-      if (!currentScope || currentScope.type !== AST_NODE_TYPES.BlockStatement) {
+      if (
+        !currentScope ||
+        currentScope.type !== AST_NODE_TYPES.BlockStatement
+      ) {
         return false;
       }
 
@@ -577,7 +606,8 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           node.right.type === AST_NODE_TYPES.MemberExpression &&
           node.right.property.type === AST_NODE_TYPES.Identifier
         ) {
-          const propertyName = (node.right.property as TSESTree.Identifier).name;
+          const propertyName = (node.right.property as TSESTree.Identifier)
+            .name;
 
           // Check for DOM traversal properties
           if (
@@ -660,7 +690,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           const propertyName = (init.property as TSESTree.Identifier).name;
           // If the property name suggests it's a boolean (starts with a boolean prefix)
           const isBooleanProperty = approvedPrefixes.some((prefix) =>
-            propertyName.toLowerCase().startsWith(prefix.toLowerCase())
+            propertyName.toLowerCase().startsWith(prefix.toLowerCase()),
           );
 
           if (isBooleanProperty) {

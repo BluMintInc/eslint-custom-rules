@@ -41,6 +41,15 @@ function isInsideReturnStatement(node: TSESTree.Node): boolean {
   let current: TSESTree.Node | undefined = node;
 
   while (current?.parent) {
+    // If we encounter a variable declaration before a return statement,
+    // then the node is not directly inside a return statement
+    if (
+      current.parent.type === AST_NODE_TYPES.VariableDeclarator ||
+      current.parent.type === AST_NODE_TYPES.VariableDeclaration
+    ) {
+      return false;
+    }
+
     if (current.parent.type === AST_NODE_TYPES.ReturnStatement) {
       return true;
     }
@@ -238,9 +247,7 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
       }
 
       // Allow type assertions as arguments to constructor calls
-      if (
-        node.parent?.type === AST_NODE_TYPES.CallExpression
-      ) {
+      if (node.parent?.type === AST_NODE_TYPES.CallExpression) {
         let current: TSESTree.Node | undefined = node.parent;
         while (current?.parent) {
           if (current.parent.type === AST_NODE_TYPES.NewExpression) {
