@@ -365,13 +365,13 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     }
 
     /**
-     * Check if a variable is used in a while loop condition and is likely a DOM element
+     * Check if a variable is used in a while loop condition and is likely a DOM element or tree node
      * This helps identify variables like 'parent', 'element', 'node', etc. that are used
-     * in while loops for DOM traversal and are not boolean values
+     * in while loops for DOM/tree traversal and are not boolean values
      */
     function isLikelyDomElementInWhileLoop(node: TSESTree.Identifier): boolean {
-      // Check if the variable name suggests it's a DOM element
-      const isDomElementName =
+      // Check if the variable name suggests it's a DOM element or tree node
+      const isTraversalName =
         node.name.toLowerCase().includes('element') ||
         node.name.toLowerCase().includes('node') ||
         node.name.toLowerCase().includes('parent') ||
@@ -380,11 +380,18 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         node.name.toLowerCase().includes('ancestor') ||
         node.name.toLowerCase().includes('descendant');
 
-      if (!isDomElementName) {
+
+
+      if (!isTraversalName) {
         return false;
       }
 
-      // Check if the variable is initialized with a DOM-related value
+      // Must be used in a while loop to be considered for this exception
+      if (!isUsedInWhileLoop(node)) {
+        return false;
+      }
+
+      // Check if the variable is initialized with a traversal-related value
       const variableDeclarator = node.parent;
       if (
         variableDeclarator?.type === AST_NODE_TYPES.VariableDeclarator &&
@@ -392,7 +399,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       ) {
         const init = variableDeclarator.init;
 
-        // Check for logical expressions with DOM-related properties on the right side
+        // Check for logical expressions with traversal-related properties on the right side
         if (
           init.type === AST_NODE_TYPES.LogicalExpression &&
           init.operator === '&&' &&
@@ -400,32 +407,228 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           init.right.property.type === AST_NODE_TYPES.Identifier
         ) {
           const propertyName = (init.right.property as TSESTree.Identifier).name;
-          if (
+
+          // DOM-specific properties - these are definitely DOM traversal
+          const isDomProperty =
             propertyName.toLowerCase().includes('element') ||
             propertyName.toLowerCase().includes('node') ||
-            propertyName.toLowerCase().includes('parent') ||
-            propertyName.toLowerCase().includes('child') ||
-            propertyName.toLowerCase().includes('sibling')
-          ) {
-            // Look for usage in while loop conditions
-            let current = node;
-            while (current.parent) {
-              // Check if this identifier is directly used as a while loop condition
-              if (
-                current.parent.type === AST_NODE_TYPES.WhileStatement &&
-                current.parent.test === current
-              ) {
-                return true;
-              }
+            propertyName === 'parentElement' ||
+            propertyName === 'parentNode' ||
+            propertyName === 'firstChild' ||
+            propertyName === 'lastChild' ||
+            propertyName === 'nextSibling' ||
+            propertyName === 'previousSibling' ||
+            propertyName === 'firstElementChild' ||
+            propertyName === 'lastElementChild' ||
+            propertyName === 'nextElementSibling' ||
+            propertyName === 'previousElementSibling';
 
-              // Move up the AST
-              current = current.parent as any;
-            }
+          if (isDomProperty) {
+            return true;
+          }
+
+          // Tree-like properties - need additional confirmation
+          const isTreeProperty =
+            propertyName === 'parent' ||
+            propertyName === 'child' ||
+            propertyName === 'root' ||
+            propertyName === 'left' ||
+            propertyName === 'right' ||
+            propertyName === 'next' ||
+            propertyName === 'prev' ||
+            propertyName === 'previous';
+
+          if (isTreeProperty) {
+            // For tree properties, check if there's a traversal pattern in the code
+            return hasTreeTraversalPattern(variableDeclarator);
+          }
+        }
+
+        // Check for direct member expressions (without logical operators)
+        if (
+          init.type === AST_NODE_TYPES.MemberExpression &&
+          init.property.type === AST_NODE_TYPES.Identifier
+        ) {
+          const propertyName = (init.property as TSESTree.Identifier).name;
+
+          // DOM-specific properties
+          const isDomProperty =
+            propertyName === 'parentElement' ||
+            propertyName === 'parentNode' ||
+            propertyName === 'firstChild' ||
+            propertyName === 'lastChild' ||
+            propertyName === 'nextSibling' ||
+            propertyName === 'previousSibling';
+
+          if (isDomProperty) {
+            return true;
+          }
+        }
+
+        // Check for call expressions that return DOM elements
+        if (
+          init.type === AST_NODE_TYPES.CallExpression &&
+          init.callee.type === AST_NODE_TYPES.MemberExpression &&
+          init.callee.property.type === AST_NODE_TYPES.Identifier
+        ) {
+          const methodName = (init.callee.property as TSESTree.Identifier).name;
+
+          // DOM query methods
+          const isDomMethod =
+            methodName === 'querySelector' ||
+            methodName === 'querySelectorAll' ||
+            methodName === 'getElementById' ||
+            methodName === 'getElementsByClassName' ||
+            methodName === 'getElementsByTagName';
+
+          if (isDomMethod) {
+            return true;
           }
         }
       }
 
       return false;
+    }
+
+    /**
+     * Check if a variable is used in a while loop condition
+     * This searches the scope for while loops that use the variable in their condition
+     */
+    function isUsedInWhileLoop(node: TSESTree.Identifier): boolean {
+      const variableName = node.name;
+
+      // Find the function or block scope containing this variable
+      let currentScope = node.parent;
+      while (currentScope && currentScope.type !== AST_NODE_TYPES.BlockStatement) {
+        currentScope = currentScope.parent as TSESTree.Node;
+      }
+
+      if (!currentScope || currentScope.type !== AST_NODE_TYPES.BlockStatement) {
+        return false;
+      }
+
+      // Recursively search for while loops that use this variable in their condition
+      function searchForWhileLoops(searchNode: TSESTree.Node): boolean {
+        // Check if this is a while loop with our variable in the condition
+        if (searchNode.type === AST_NODE_TYPES.WhileStatement) {
+          // Check if the condition uses our variable
+          if (
+            searchNode.test.type === AST_NODE_TYPES.Identifier &&
+            searchNode.test.name === variableName
+          ) {
+            return true;
+          }
+        }
+
+        // Recursively search child nodes
+        for (const key in searchNode) {
+          if (key === 'parent' || key === 'range' || key === 'loc') continue;
+
+          const value = (searchNode as any)[key];
+          if (Array.isArray(value)) {
+            for (const child of value) {
+              if (child && typeof child === 'object' && child.type) {
+                if (searchForWhileLoops(child)) {
+                  return true;
+                }
+              }
+            }
+          } else if (value && typeof value === 'object' && value.type) {
+            if (searchForWhileLoops(value)) {
+              return true;
+            }
+          }
+        }
+
+        return false;
+      }
+
+      return searchForWhileLoops(currentScope);
+    }
+
+    /**
+     * Check if a variable declarator has a tree traversal pattern
+     * This looks for patterns like reassignment to .parent, .parentElement, etc.
+     */
+    function hasTreeTraversalPattern(declarator: TSESTree.VariableDeclarator): boolean {
+      if (declarator.id.type !== AST_NODE_TYPES.Identifier) {
+        return false;
+      }
+
+      const variableName = declarator.id.name;
+
+      // Find the function or block scope containing this variable
+      let currentScope = declarator.parent;
+      while (currentScope && currentScope.type !== AST_NODE_TYPES.BlockStatement) {
+        currentScope = currentScope.parent as TSESTree.Node;
+      }
+
+      if (!currentScope || currentScope.type !== AST_NODE_TYPES.BlockStatement) {
+        return false;
+      }
+
+      // Recursively search for assignment patterns in the scope
+      function searchForAssignments(node: TSESTree.Node): boolean {
+        // Check if this is an assignment expression that reassigns our variable
+        if (
+          node.type === AST_NODE_TYPES.AssignmentExpression &&
+          node.left.type === AST_NODE_TYPES.Identifier &&
+          node.left.name === variableName &&
+          node.right.type === AST_NODE_TYPES.MemberExpression &&
+          node.right.property.type === AST_NODE_TYPES.Identifier
+        ) {
+          const propertyName = (node.right.property as TSESTree.Identifier).name;
+
+          // Check for DOM traversal properties
+          if (
+            propertyName === 'parentElement' ||
+            propertyName === 'parentNode' ||
+            propertyName === 'nextSibling' ||
+            propertyName === 'previousSibling' ||
+            propertyName === 'firstChild' ||
+            propertyName === 'lastChild'
+          ) {
+            return true;
+          }
+
+          // Check for generic tree traversal properties
+          if (
+            propertyName === 'parent' ||
+            propertyName === 'child' ||
+            propertyName === 'left' ||
+            propertyName === 'right' ||
+            propertyName === 'next' ||
+            propertyName === 'prev' ||
+            propertyName === 'previous'
+          ) {
+            return true;
+          }
+        }
+
+        // Recursively search child nodes
+        for (const key in node) {
+          if (key === 'parent' || key === 'range' || key === 'loc') continue;
+
+          const value = (node as any)[key];
+          if (Array.isArray(value)) {
+            for (const child of value) {
+              if (child && typeof child === 'object' && child.type) {
+                if (searchForAssignments(child)) {
+                  return true;
+                }
+              }
+            }
+          } else if (value && typeof value === 'object' && value.type) {
+            if (searchForAssignments(value)) {
+              return true;
+            }
+          }
+        }
+
+        return false;
+      }
+
+      return searchForAssignments(currentScope);
     }
 
     /**
