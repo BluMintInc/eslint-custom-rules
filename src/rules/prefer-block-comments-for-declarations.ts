@@ -15,7 +15,7 @@ export const preferBlockCommentsForDeclarations: TSESLint.RuleModule<
      */
     const isLineCommentBeforeDeclaration = (
       comment: TSESTree.Comment,
-      node: TSESTree.Node
+      node: TSESTree.Node,
     ): boolean => {
       // Only process line comments
       if (comment.type !== 'Line') {
@@ -38,12 +38,10 @@ export const preferBlockCommentsForDeclarations: TSESLint.RuleModule<
       while (parent) {
         if (
           parent.type === 'BlockStatement' &&
-          (
-            parent.parent?.type === 'FunctionDeclaration' ||
+          (parent.parent?.type === 'FunctionDeclaration' ||
             parent.parent?.type === 'FunctionExpression' ||
             parent.parent?.type === 'ArrowFunctionExpression' ||
-            parent.parent?.type === 'MethodDefinition'
-          )
+            parent.parent?.type === 'MethodDefinition')
         ) {
           return true;
         }

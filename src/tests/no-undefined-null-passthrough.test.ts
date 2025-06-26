@@ -45,6 +45,206 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
     `const processMultipleParams = (data, options) => {
       return data?.process(options);
     }`,
+
+    // Additional valid cases for comprehensive testing
+
+    // Functions with no parameters
+    `function getData() {
+      return null;
+    }`,
+
+    // Functions that return different values for null/undefined
+    `function processData(data) {
+      if (!data) return 'default';
+      return data.items;
+    }`,
+
+    // Functions that return empty arrays instead of null/undefined
+    `function processData(data) {
+      if (!data) return [];
+      return data.items;
+    }`,
+
+    // Functions that return empty objects
+    `function processData(data) {
+      if (!data) return {};
+      return data.items;
+    }`,
+
+    // Functions that return zero or false
+    `function processData(data) {
+      if (!data) return 0;
+      return data.count;
+    }`,
+
+    `function processData(data) {
+      if (!data) return false;
+      return data.isValid;
+    }`,
+
+    // Functions with transformations using external functions
+    `function processData(data) {
+      if (!data) return null;
+      return transformData(data);
+    }`,
+
+    `function processData(data) {
+      if (!data) return;
+      return processExternally(data);
+    }`,
+
+    // Functions with Object.* transformations
+    `function processData(data) {
+      if (!data) return;
+      return Object.keys(data);
+    }`,
+
+    `function processData(data) {
+      if (!data) return;
+      return Object.values(data);
+    }`,
+
+    // Functions that use optional chaining
+    `function processData(data) {
+      return data?.items?.length || 0;
+    }`,
+
+    // Functions that use nullish coalescing
+    `function processData(data) {
+      return data ?? 'default';
+    }`,
+
+    // Functions with try-catch blocks that do real work
+    `function processData(data) {
+      if (!data) return [];
+      try {
+        return data.process();
+      } catch (e) {
+        return [];
+      }
+    }`,
+
+    // Functions with complex logic that don't just pass through
+    `function processData(data) {
+      if (!data) return [];
+      const result = [];
+      for (const item of data) {
+        result.push(item.value);
+      }
+      return result;
+    }`,
+
+    // Functions with multiple early returns but different values
+    `function processData(data, type) {
+      if (!data) return 'no-data';
+      if (!type) return 'no-type';
+      return data.filter(item => item.type === type);
+    }`,
+
+    // Functions that check for specific properties
+    `function processData(data) {
+      if (!data || !data.items) return [];
+      return data.items;
+    }`,
+
+    // Functions with destructuring that don't return null/undefined
+    `function processUser({ id, name }) {
+      if (!id) return { error: 'No ID' };
+      return { id, name: name.toUpperCase() };
+    }`,
+
+    // Functions with default parameters that work correctly
+    `function processData(data = []) {
+      return data.filter(item => item.active);
+    }`,
+
+    // Functions that handle arrays properly
+    `function processData(data) {
+      if (!Array.isArray(data)) return [];
+      return data.map(item => item.value);
+    }`,
+
+    // Functions with early returns that don't check parameters
+    `function processData(data) {
+      if (Math.random() > 0.5) return 'random';
+      return data.items;
+    }`,
+
+    // Functions that check parameter properties instead of the parameter itself
+    `function processData(data) {
+      if (!data.items) return [];
+      return data.items;
+    }`,
+
+    // Functions with complex conditions not related to null/undefined
+    `function processData(data, threshold) {
+      if (data.length < threshold) return [];
+      return data.filter(item => item.value > threshold);
+    }`,
+
+    // Functions that use the parameter in the condition but not for null/undefined
+    `function processData(data) {
+      if (data.length === 0) return 'empty';
+      return data.items;
+    }`,
+
+    // Arrow functions with complex expressions
+    `const processData = (data) => data?.items?.map(item => item.value) || []`,
+
+    // Functions that throw errors instead of returning null/undefined
+    `function processData(data) {
+      if (!data) throw new Error('Data required');
+      return data.items;
+    }`,
+
+    // Functions with side effects
+    `function processData(data) {
+      if (!data) {
+        console.log('No data provided');
+        return [];
+      }
+      return data.items;
+    }`,
+
+    // Functions that modify the parameter
+    `function processData(data) {
+      if (!data) return [];
+      data.processed = true;
+      return data;
+    }`,
+
+    // Functions with async/await that don't just pass through
+    `async function processData(data) {
+      if (!data) return [];
+      const result = await fetchAdditionalData(data.id);
+      return { ...data, ...result };
+    }`,
+
+    // Generator functions that don't just pass through
+    `function* processData(data) {
+      if (!data) return;
+      for (const item of data) {
+        yield transformItem(item);
+      }
+    }`,
+
+    // Functions with multiple parameters where the check is more complex
+    `function processData(data, options, callback) {
+      if (!data || !callback) return null;
+      return callback(data, options);
+    }`,
+
+    // Functions that use rest parameters
+    `function processData(data, ...args) {
+      if (!data) return [];
+      return processWithArgs(data, ...args);
+    }`,
+
+    // Functions with spread operator
+    `function processData(data) {
+      if (!data) return {};
+      return { ...data, processed: true };
+    }`,
   ],
   invalid: [
     // Function declaration with early return for null/undefined
@@ -129,6 +329,176 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
       code: `const processItems = (items, filter) => {
         if (!items) return;
         return items.filter(filter);
+      }`,
+      errors: [{ messageId: 'unexpected' }],
+    },
+
+    // Additional edge cases for comprehensive testing
+
+    // Function with optional parameter (deriveRounds case)
+    {
+      code: `export const deriveRounds = (
+        type: CohortRoundVariant,
+        rounds?: Record<string, RoundCohort>,
+      ) => {
+        if (!rounds) {
+          return; // This implicitly returns undefined
+        }
+        return Object.entries(rounds)
+          .reduce<RoundCohort[]>((acc, [key, round]) => {
+            if (decideRoundVariant(key) === type) {
+              acc.push(round);
+            }
+            return acc;
+          }, [])
+          .sort((a, b) => {
+            return sortCohortRounds({
+              aIndex: a.roundIndex,
+              bIndex: b.roundIndex,
+            });
+          });
+      };`,
+      errors: [{ messageId: 'unexpected' }],
+    },
+
+    // Function with default parameter
+    {
+      code: `function processData(data = null) {
+        if (!data) return;
+        return data.value;
+      }`,
+      errors: [{ messageId: 'unexpected' }],
+    },
+
+    // Function with multiple null checks
+    {
+      code: `function processData(data, options) {
+        if (data === null) return;
+        if (options === undefined) return;
+        return data.process(options);
+      }`,
+      errors: [{ messageId: 'unexpected' }],
+    },
+
+    // Function with strict equality checks
+    {
+      code: `function processData(data) {
+        if (data === null) return null;
+        return data.items;
+      }`,
+      errors: [{ messageId: 'unexpected' }],
+    },
+
+    // Function with loose equality checks
+    {
+      code: `function processData(data) {
+        if (data == null) return;
+        return data.items;
+      }`,
+      errors: [{ messageId: 'unexpected' }],
+    },
+
+    // Arrow function with expression body returning parameter directly
+    {
+      code: `const getId = (user) => user && user.id`,
+      errors: [{ messageId: 'unexpected' }],
+    },
+
+    // Arrow function with ternary returning null
+    {
+      code: `const getName = (user) => user ? user.name : null`,
+      errors: [{ messageId: 'unexpected' }],
+    },
+
+    // Arrow function with ternary returning undefined
+    {
+      code: `const getName = (user) => user ? user.name : undefined`,
+      errors: [{ messageId: 'unexpected' }],
+    },
+
+    // Function with multiple parameters where second parameter is checked
+    {
+      code: `function processData(type, data) {
+        if (!data) return;
+        return data.filter(item => item.type === type);
+      }`,
+      errors: [{ messageId: 'unexpected' }],
+    },
+
+    // Function with three parameters
+    {
+      code: `function processData(a, b, c) {
+        if (!b) return;
+        return b.process(a, c);
+      }`,
+      errors: [{ messageId: 'unexpected' }],
+    },
+
+    // Function expression assigned to variable
+    {
+      code: `const processData = function(data) {
+        if (!data) return null;
+        return data.items;
+      }`,
+      errors: [{ messageId: 'unexpected' }],
+    },
+
+    // Method in object literal
+    {
+      code: `const obj = {
+        processData(data) {
+          if (!data) return;
+          return data.items;
+        }
+      }`,
+      errors: [{ messageId: 'unexpected' }],
+    },
+
+    // Method in class
+    {
+      code: `class DataProcessor {
+        processData(data) {
+          if (!data) return;
+          return data.items;
+        }
+      }`,
+      errors: [{ messageId: 'unexpected' }],
+    },
+
+    // Static method in class
+    {
+      code: `class DataProcessor {
+        static processData(data) {
+          if (!data) return;
+          return data.items;
+        }
+      }`,
+      errors: [{ messageId: 'unexpected' }],
+    },
+
+    // Async function
+    {
+      code: `async function processData(data) {
+        if (!data) return;
+        return await data.process();
+      }`,
+      errors: [{ messageId: 'unexpected' }],
+    },
+
+    // Generator function
+    {
+      code: `function* processData(data) {
+        if (!data) return;
+        yield data.value;
+      }`,
+      errors: [{ messageId: 'unexpected' }],
+    },
+
+    // Function with complex boolean logic
+    {
+      code: `function processData(data, options) {
+        if (!data || !options) return;
+        return data.process(options);
       }`,
       errors: [{ messageId: 'unexpected' }],
     },

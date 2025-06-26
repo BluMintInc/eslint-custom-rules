@@ -100,7 +100,7 @@ export const preferUseMemoOverUseEffectUseState = createRule({
     // Helper to check if this is a state synchronization pattern
     const isStateSynchronization = (
       initialValue: TSESTree.Node | null,
-      setterArgument: TSESTree.Node
+      setterArgument: TSESTree.Node,
     ): boolean => {
       // If the initial value is a reference to a prop/variable and the setter argument
       // is the same reference, this is likely state synchronization
@@ -108,7 +108,8 @@ export const preferUseMemoOverUseEffectUseState = createRule({
         initialValue &&
         isIdentifierReference(initialValue) &&
         isIdentifierReference(setterArgument) &&
-        (initialValue as TSESTree.Identifier).name === (setterArgument as TSESTree.Identifier).name
+        (initialValue as TSESTree.Identifier).name ===
+          (setterArgument as TSESTree.Identifier).name
       ) {
         return true;
       }
@@ -184,7 +185,9 @@ export const preferUseMemoOverUseEffectUseState = createRule({
                 const computation = statement.expression.arguments[0];
 
                 // Skip if this is a state synchronization pattern
-                if (isStateSynchronization(stateInfo.initialValue, computation)) {
+                if (
+                  isStateSynchronization(stateInfo.initialValue, computation)
+                ) {
                   return;
                 }
 

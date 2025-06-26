@@ -9,7 +9,13 @@ export const decideRoundVariant = (key: string): CohortRoundVariant => {
   return key.includes('bracket') ? 'BRACKET' : 'POOL';
 };
 
-export const sortCohortRounds = ({ aIndex, bIndex }: { aIndex: number; bIndex: number }) => {
+export const sortCohortRounds = ({
+  aIndex,
+  bIndex,
+}: {
+  aIndex: number;
+  bIndex: number;
+}) => {
   return aIndex - bIndex;
 };
 

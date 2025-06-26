@@ -1,12 +1,15 @@
 import { noUndefinedNullPassthrough } from '../rules/no-undefined-null-passthrough';
 import { ruleTesterTs } from '../utils/ruleTester';
 
-ruleTesterTs.run('no-undefined-null-passthrough-deriveRounds', noUndefinedNullPassthrough, {
-  valid: [],
-  invalid: [
-    // Test case for deriveRounds function with multiple parameters
-    {
-      code: `
+ruleTesterTs.run(
+  'no-undefined-null-passthrough-deriveRounds',
+  noUndefinedNullPassthrough,
+  {
+    valid: [],
+    invalid: [
+      // Test case for deriveRounds function with multiple parameters
+      {
+        code: `
 export const deriveRounds = (
   type: CohortRoundVariant,
   rounds?: Record<string, RoundCohort>,
@@ -30,7 +33,8 @@ export const deriveRounds = (
       });
     });
 };`,
-      errors: [{ messageId: 'unexpected' }],
-    },
-  ],
-});
+        errors: [{ messageId: 'unexpected' }],
+      },
+    ],
+  },
+);
