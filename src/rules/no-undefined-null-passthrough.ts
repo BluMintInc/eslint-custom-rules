@@ -8,8 +8,8 @@ export const noUndefinedNullPassthrough: TSESLint.RuleModule<
   create(context) {
     return {
       FunctionDeclaration(node) {
-        // Only apply to functions with exactly one parameter
-        if (node.params.length !== 1) {
+        // Skip functions with no parameters
+        if (node.params.length === 0) {
           return;
         }
 
@@ -22,11 +22,17 @@ export const noUndefinedNullPassthrough: TSESLint.RuleModule<
           return;
         }
 
-        checkFunctionBody(node.body, node.params[0], context);
+        // For functions with exactly one parameter, check if it's passing through null/undefined
+        if (node.params.length === 1) {
+          checkFunctionBody(node.body, node.params[0], context);
+        } else {
+          // For functions with multiple parameters, check for early returns without arguments
+          checkFunctionBodyForEarlyReturns(node.body, node.params, context);
+        }
       },
       ArrowFunctionExpression(node) {
-        // Only apply to arrow functions with exactly one parameter
-        if (node.params.length !== 1) {
+        // Skip functions with no parameters
+        if (node.params.length === 0) {
           return;
         }
 
@@ -43,15 +49,20 @@ export const noUndefinedNullPassthrough: TSESLint.RuleModule<
 
         // For arrow functions with block body
         if (node.body.type === 'BlockStatement') {
-          checkFunctionBody(node.body, node.params[0], context);
-        } else {
-          // For arrow functions with expression body (implicit return)
+          if (node.params.length === 1) {
+            checkFunctionBody(node.body, node.params[0], context);
+          } else {
+            // For functions with multiple parameters, check for early returns without arguments
+            checkFunctionBodyForEarlyReturns(node.body, node.params, context);
+          }
+        } else if (node.params.length === 1) {
+          // For arrow functions with expression body (implicit return) and one parameter
           checkImplicitReturn(node, context);
         }
       },
       FunctionExpression(node) {
-        // Only apply to functions with exactly one parameter
-        if (node.params.length !== 1) {
+        // Skip functions with no parameters
+        if (node.params.length === 0) {
           return;
         }
 
@@ -66,7 +77,13 @@ export const noUndefinedNullPassthrough: TSESLint.RuleModule<
           return;
         }
 
-        checkFunctionBody(node.body, node.params[0], context);
+        // For functions with exactly one parameter, check if it's passing through null/undefined
+        if (node.params.length === 1) {
+          checkFunctionBody(node.body, node.params[0], context);
+        } else {
+          // For functions with multiple parameters, check for early returns without arguments
+          checkFunctionBodyForEarlyReturns(node.body, node.params, context);
+        }
       },
     };
   },
@@ -168,21 +185,108 @@ function checkForTransformation(
 ): boolean {
   if (!paramName) return false;
 
-  // Look for return statements that call functions with the parameter
+  // Look for return statements or other statements that use the parameter in a transformation
   for (const statement of body.body) {
     if (statement.type === 'ReturnStatement' && statement.argument) {
-      // Check for return transformData(data) pattern
-      if (
-        statement.argument.type === 'CallExpression' &&
-        statement.argument.arguments.some(
-          (arg) => arg.type === 'Identifier' && arg.name === paramName,
-        )
-      ) {
+      // Check for various transformation patterns
+      if (containsParameterTransformation(statement.argument, paramName)) {
+        return true;
+      }
+    }
+    // Check for other statements that might contain transformations (like for loops with yield)
+    if (
+      statement.type === 'ForStatement' ||
+      statement.type === 'ForInStatement' ||
+      statement.type === 'ForOfStatement'
+    ) {
+      if (containsTransformationInStatement(statement, paramName)) {
         return true;
       }
     }
   }
 
+  return false;
+}
+
+/**
+ * Check if a statement contains a transformation of the parameter
+ */
+function containsTransformationInStatement(
+  statement: TSESTree.Statement,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _paramName: string,
+): boolean {
+  // For generator functions, check if there are yield expressions with external function calls
+  if (
+    statement.type === 'ForOfStatement' &&
+    statement.body.type === 'BlockStatement'
+  ) {
+    for (const stmt of statement.body.body) {
+      if (
+        stmt.type === 'ExpressionStatement' &&
+        stmt.expression.type === 'YieldExpression' &&
+        stmt.expression.argument &&
+        stmt.expression.argument.type === 'CallExpression' &&
+        stmt.expression.argument.callee.type === 'Identifier'
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Check if an expression contains a transformation of the parameter
+ * A transformation is considered to be calling external functions with the parameter,
+ * not just calling methods on the parameter itself.
+ */
+function containsParameterTransformation(
+  node: TSESTree.Expression,
+  paramName: string,
+): boolean {
+  // Check for direct function calls with the parameter: transformData(data)
+  // This is considered a transformation because it's calling an external function
+  if (
+    node.type === 'CallExpression' &&
+    node.callee.type === 'Identifier' && // External function call
+    node.arguments.some(
+      (arg) => arg.type === 'Identifier' && arg.name === paramName,
+    )
+  ) {
+    return true;
+  }
+
+  // Check for Object.* method calls: Object.keys(data), Object.values(data), Object.entries(data)
+  if (
+    node.type === 'CallExpression' &&
+    node.callee.type === 'MemberExpression' &&
+    node.callee.object.type === 'Identifier' &&
+    node.callee.object.name === 'Object' &&
+    node.arguments.some(
+      (arg) => arg.type === 'Identifier' && arg.name === paramName,
+    )
+  ) {
+    return true;
+  }
+
+  // Check for chained operations that start with external functions: Object.entries(rounds).reduce(...).sort(...)
+  if (
+    node.type === 'CallExpression' &&
+    node.callee.type === 'MemberExpression' &&
+    node.callee.object.type === 'CallExpression' &&
+    node.callee.object.callee.type === 'MemberExpression' &&
+    node.callee.object.callee.object.type === 'Identifier' &&
+    node.callee.object.callee.object.name === 'Object' &&
+    node.callee.object.arguments.some(
+      (arg) => arg.type === 'Identifier' && arg.name === paramName,
+    )
+  ) {
+    return true;
+  }
+
+  // Method calls on the parameter itself (like data.process(), items.filter())
+  // are NOT considered transformations for the purpose of this rule
   return false;
 }
 
@@ -322,3 +426,87 @@ function isParameterReference(
   if (!paramName) return false;
   return node.type === 'Identifier' && node.name === paramName;
 }
+
+/**
+ * Check function body for early returns without arguments (implicit undefined)
+ * based on parameter null/undefined checks
+ */
+function checkFunctionBodyForEarlyReturns(
+  body: TSESTree.BlockStatement,
+  params: TSESTree.Parameter[],
+  context: TSESLint.RuleContext<'unexpected', never[]>,
+): void {
+  // Get parameter names
+  const paramNames = params
+    .map((param) => {
+      if (param.type === 'Identifier') {
+        return param.name;
+      } else if (
+        param.type === 'AssignmentPattern' &&
+        param.left.type === 'Identifier'
+      ) {
+        return param.left.name;
+      }
+      return null;
+    })
+    .filter((name): name is string => name !== null);
+
+  if (paramNames.length === 0) return;
+
+  // Look for early returns without arguments based on parameter checks
+  for (const statement of body.body) {
+    if (statement.type === 'IfStatement') {
+      const test = statement.test;
+
+      // Check if the test is checking any parameter for null/undefined
+      const isParameterCheck = paramNames.some((paramName) =>
+        isNullUndefinedCheck(test, paramName),
+      );
+
+      if (isParameterCheck) {
+        // Check if the consequent is a block statement with a return
+        if (statement.consequent.type === 'BlockStatement') {
+          for (const consequentStmt of statement.consequent.body) {
+            if (
+              consequentStmt.type === 'ReturnStatement' &&
+              (!consequentStmt.argument ||
+                isNullOrUndefinedLiteral(consequentStmt.argument))
+            ) {
+              // Check if there's a transformation in the function
+              const hasTransformation = paramNames.some((paramName) =>
+                checkForTransformation(body, paramName),
+              );
+              if (!hasTransformation) {
+                context.report({
+                  node: statement,
+                  messageId: 'unexpected',
+                });
+              }
+              return;
+            }
+          }
+        }
+        // Check if the consequent is a direct return statement without an argument
+        else if (
+          statement.consequent.type === 'ReturnStatement' &&
+          (!statement.consequent.argument ||
+            isNullOrUndefinedLiteral(statement.consequent.argument))
+        ) {
+          // Check if there's a transformation in the function
+          const hasTransformation = paramNames.some((paramName) =>
+            checkForTransformation(body, paramName),
+          );
+          if (!hasTransformation) {
+            context.report({
+              node: statement,
+              messageId: 'unexpected',
+            });
+          }
+          return;
+        }
+      }
+    }
+  }
+}
+
+
