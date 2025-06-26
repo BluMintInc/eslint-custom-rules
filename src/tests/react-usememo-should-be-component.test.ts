@@ -6,6 +6,41 @@ ruleTesterJsx.run(
   reactUseMemoShouldBeComponent,
   {
     valid: [
+      // Test case for JSX returned from useMemo passed directly to another component via a prop
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ value, isTournamentAdmin }) => {
+          const infoPanel = useMemo(
+            () => (
+              <Stack alignItems="center" direction="row" spacing={2}>
+                <Typography sx={{ textTransform: 'uppercase' }} variant="h6">
+                  {value}
+                </Typography>
+
+                {isTournamentAdmin && (
+                  <GradientIcon
+                    IconComponent={ArrowDropDownIcon}
+                    sx={{ height: 26, width: 26 }}
+                  />
+                )}
+              </Stack>
+            ),
+            [value, isTournamentAdmin]
+          );
+
+          return (
+            <TournamentInfoPanel
+              IconComponent={phaseIcon}
+              iconGradientColor="primary.horizontalLight"
+              title={PHASE_PANEL_TITLE}
+              value={infoPanel}
+            />
+          );
+        };
+      `,
+      },
       // Test case for the specific bug: useMemo returning conditional JSX that can be false (with logical AND)
       {
         code: `
@@ -470,6 +505,470 @@ ruleTesterJsx.run(
                 <li key={item.id}>{item.name}</li>
               ))}
             </ul>
+          );
+        };
+      `,
+      },
+      // Edge case: useMemo JSX passed as prop with different variable name
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ title, subtitle }) => {
+          const headerContent = useMemo(() => (
+            <div>
+              <h1>{title}</h1>
+              <h2>{subtitle}</h2>
+            </div>
+          ), [title, subtitle]);
+
+          return (
+            <Card
+              header={headerContent}
+              body="Some content"
+            />
+          );
+        };
+      `,
+      },
+      // Edge case: useMemo JSX passed as prop in ternary expression
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ showHeader, title }) => {
+          const header = useMemo(() => (
+            <div className="header">
+              <h1>{title}</h1>
+            </div>
+          ), [title]);
+
+          return (
+            <Layout
+              header={showHeader ? header : null}
+              content="Main content"
+            />
+          );
+        };
+      `,
+      },
+      // Edge case: useMemo JSX passed as prop in logical AND expression
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ showSidebar, menuItems }) => {
+          const sidebar = useMemo(() => (
+            <nav>
+              {menuItems.map(item => (
+                <a key={item.id} href={item.url}>{item.label}</a>
+              ))}
+            </nav>
+          ), [menuItems]);
+
+          return (
+            <Layout
+              sidebar={showSidebar && sidebar}
+              content="Main content"
+            />
+          );
+        };
+      `,
+      },
+      // Edge case: useMemo JSX passed as prop within object
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ user }) => {
+          const avatar = useMemo(() => (
+            <img src={user.avatarUrl} alt={user.name} />
+          ), [user.avatarUrl, user.name]);
+
+          return (
+            <UserCard
+              config={{
+                avatar: avatar,
+                showBadge: true,
+                theme: 'dark'
+              }}
+            />
+          );
+        };
+      `,
+      },
+      // Edge case: useMemo JSX passed as prop within array
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ notifications }) => {
+          const notificationList = useMemo(() => (
+            <ul>
+              {notifications.map(n => (
+                <li key={n.id}>{n.message}</li>
+              ))}
+            </ul>
+          ), [notifications]);
+
+          return (
+            <Dashboard
+              widgets={[
+                <WeatherWidget key="weather" />,
+                notificationList,
+                <CalendarWidget key="calendar" />
+              ]}
+            />
+          );
+        };
+      `,
+      },
+      // Edge case: useMemo JSX passed as prop using spread operator
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ content, ...otherProps }) => {
+          const renderedContent = useMemo(() => (
+            <div className="content">
+              {content}
+            </div>
+          ), [content]);
+
+          const props = {
+            header: renderedContent,
+            ...otherProps
+          };
+
+          return <Card {...props} />;
+        };
+      `,
+      },
+      // Edge case: useMemo JSX passed as prop through destructuring
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ data }) => {
+          const chart = useMemo(() => (
+            <svg>
+              {data.map((point, i) => (
+                <circle key={i} cx={point.x} cy={point.y} r="3" />
+              ))}
+            </svg>
+          ), [data]);
+
+          const { header, footer } = {
+            header: chart,
+            footer: <div>Chart footer</div>
+          };
+
+          return (
+            <Panel
+              header={header}
+              footer={footer}
+            />
+          );
+        };
+      `,
+      },
+      // Edge case: useMemo JSX passed as prop to multiple components
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ message }) => {
+          const alert = useMemo(() => (
+            <div className="alert">
+              {message}
+            </div>
+          ), [message]);
+
+          return (
+            <div>
+              <Header alert={alert} />
+              <Main alert={alert} />
+              <Footer alert={alert} />
+            </div>
+          );
+        };
+      `,
+      },
+      // Edge case: useMemo JSX passed as prop with computed property name
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ type, content }) => {
+          const widget = useMemo(() => (
+            <div className="widget">
+              {content}
+            </div>
+          ), [content]);
+
+          const propName = \`\${type}Widget\`;
+
+          return (
+            <Dashboard
+              {...{ [propName]: widget }}
+            />
+          );
+        };
+      `,
+      },
+      // Edge case: useMemo JSX passed as prop in function call
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const list = useMemo(() => (
+            <ul>
+              {items.map(item => (
+                <li key={item.id}>{item.name}</li>
+              ))}
+            </ul>
+          ), [items]);
+
+          const renderWithList = (listComponent) => (
+            <Container list={listComponent} />
+          );
+
+          return renderWithList(list);
+        };
+      `,
+      },
+      // Edge case: useMemo JSX passed as prop in nested component
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ user }) => {
+          const profile = useMemo(() => (
+            <div>
+              <img src={user.avatar} alt={user.name} />
+              <span>{user.name}</span>
+            </div>
+          ), [user]);
+
+          return (
+            <Layout>
+              <Sidebar>
+                <UserSection profile={profile} />
+              </Sidebar>
+            </Layout>
+          );
+        };
+      `,
+      },
+      // Edge case: useMemo JSX passed as prop with template literal
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ status, message }) => {
+          const statusIcon = useMemo(() => (
+            <Icon name={status} color={status === 'success' ? 'green' : 'red'} />
+          ), [status]);
+
+          return (
+            <Notification
+              icon={statusIcon}
+              message={\`Status: \${message}\`}
+            />
+          );
+        };
+      `,
+      },
+      // Edge case: useMemo JSX passed as prop in callback
+      {
+        code: `
+        import React, { useMemo, useCallback } from 'react';
+
+        const Component = ({ data }) => {
+          const chart = useMemo(() => (
+            <svg>
+              {data.map(point => (
+                <circle key={point.id} cx={point.x} cy={point.y} />
+              ))}
+            </svg>
+          ), [data]);
+
+          const renderChart = useCallback(() => {
+            return <ChartContainer chart={chart} />;
+          }, [chart]);
+
+          return <div>{renderChart()}</div>;
+        };
+      `,
+      },
+      // Edge case: useMemo JSX passed as prop with conditional rendering
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ showAdvanced, settings }) => {
+          const advancedPanel = useMemo(() => (
+            <div className="advanced">
+              {settings.map(setting => (
+                <SettingItem key={setting.key} {...setting} />
+              ))}
+            </div>
+          ), [settings]);
+
+          if (!showAdvanced) {
+            return <BasicSettings />;
+          }
+
+          return (
+            <SettingsPanel
+              advanced={advancedPanel}
+              basic={<BasicSettings />}
+            />
+          );
+        };
+      `,
+      },
+      // Edge case: useMemo JSX passed as prop in switch statement
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ mode, data }) => {
+          const visualization = useMemo(() => (
+            <div className="viz">
+              {data.map(item => (
+                <DataPoint key={item.id} {...item} />
+              ))}
+            </div>
+          ), [data]);
+
+          switch (mode) {
+            case 'chart':
+              return <ChartView data={visualization} />;
+            case 'table':
+              return <TableView data={visualization} />;
+            default:
+              return <DefaultView data={visualization} />;
+          }
+        };
+      `,
+      },
+      // Edge case: useMemo JSX passed as prop in try-catch
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ riskyData }) => {
+          const content = useMemo(() => (
+            <div>
+              {riskyData.map(item => (
+                <RiskyComponent key={item.id} data={item} />
+              ))}
+            </div>
+          ), [riskyData]);
+
+          try {
+            return <SafeContainer content={content} />;
+          } catch (error) {
+            return <ErrorBoundary content={content} error={error} />;
+          }
+        };
+      `,
+      },
+      // Edge case: useMemo JSX passed as prop with complex nesting
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ sections }) => {
+          const sectionContent = useMemo(() => (
+            <div>
+              {sections.map(section => (
+                <Section key={section.id}>
+                  <h3>{section.title}</h3>
+                  <p>{section.content}</p>
+                </Section>
+              ))}
+            </div>
+          ), [sections]);
+
+          const config = {
+            layout: {
+              main: {
+                content: sectionContent,
+                sidebar: <Sidebar />
+              }
+            }
+          };
+
+          return <ComplexLayout config={config} />;
+        };
+      `,
+      },
+      // Edge case: useMemo JSX passed as prop in IIFE
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const itemList = useMemo(() => (
+            <ul>
+              {items.map(item => (
+                <li key={item.id}>{item.name}</li>
+              ))}
+            </ul>
+          ), [items]);
+
+          return (() => {
+            return <Container list={itemList} />;
+          })();
+        };
+      `,
+      },
+      // Edge case: useMemo JSX passed as prop with variable reassignment
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ content }) => {
+          const panel = useMemo(() => (
+            <div className="panel">
+              {content}
+            </div>
+          ), [content]);
+
+          let displayPanel = panel;
+
+          if (content.length > 100) {
+            displayPanel = <TruncatedPanel content={panel} />;
+          }
+
+          return <Layout main={displayPanel} />;
+        };
+      `,
+      },
+      // Edge case: useMemo JSX passed as prop in array destructuring
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ widgets }) => {
+          const widgetList = useMemo(() => (
+            <div>
+              {widgets.map(widget => (
+                <Widget key={widget.id} {...widget} />
+              ))}
+            </div>
+          ), [widgets]);
+
+          const [primary, secondary] = [widgetList, <Sidebar />];
+
+          return (
+            <Dashboard
+              primary={primary}
+              secondary={secondary}
+            />
           );
         };
       `,
