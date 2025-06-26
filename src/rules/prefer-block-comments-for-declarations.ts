@@ -66,8 +66,24 @@ export const preferBlockCommentsForDeclarations: TSESLint.RuleModule<
         return;
       }
 
-      // Only process line comments for conversion
+      // Process both line comments and regular block comments for conversion
       if (lastComment.type === 'Line') {
+        // Check if the comment is directly before the node
+        const commentLine = lastComment.loc.end.line;
+        const nodeLine = node.loc.start.line;
+
+        if (commentLine === nodeLine - 1) {
+          context.report({
+            loc: lastComment.loc,
+            messageId: 'preferBlockComment',
+            fix: (fixer) => {
+              const commentText = lastComment.value.trim();
+              return fixer.replaceText(lastComment, `/** ${commentText} */`);
+            },
+          });
+        }
+      } else if (lastComment.type === 'Block' && !lastComment.value.startsWith('*')) {
+        // Handle regular block comments (/* */) but not JSDoc comments (/** */)
         // Check if the comment is directly before the node
         const commentLine = lastComment.loc.end.line;
         const nodeLine = node.loc.start.line;
@@ -128,6 +144,34 @@ export const preferBlockCommentsForDeclarations: TSESLint.RuleModule<
 
       // Check enum declarations
       TSEnumDeclaration(node) {
+        checkNodeForLineComments(node);
+      },
+
+      // Check import declarations
+      ImportDeclaration(node) {
+        checkNodeForLineComments(node);
+      },
+
+      // Check export declarations
+      ExportNamedDeclaration(node) {
+        checkNodeForLineComments(node);
+      },
+
+      ExportDefaultDeclaration(node) {
+        checkNodeForLineComments(node);
+      },
+
+      ExportAllDeclaration(node) {
+        checkNodeForLineComments(node);
+      },
+
+      // Check namespace declarations
+      TSNamespaceDeclaration(node) {
+        checkNodeForLineComments(node);
+      },
+
+      // Check module declarations
+      TSModuleDeclaration(node) {
         checkNodeForLineComments(node);
       },
     };
