@@ -14,6 +14,8 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
     'function isCustomType<T extends object>(obj: unknown): obj is T { return obj instanceof Object; }',
     'const isLivestream = <TTime = Timestamp>(channelGroup: ChannelGroup<keyof GroupFilterMap, TTime>): channelGroup is ChannelGroup<Capitalize<LivestreamType>, TTime> => { return true; }',
     'function isLivestreamType(type: FilterType): type is FilterType { return true; }',
+    'class ChannelGroupUtils { private static isValidIdentifierKey(key: string): key is TemporaryChannelGroupKey { return key in CHANNEL_GROUP_CONFIGS; } }',
+    'class TypeGuardClass { isValidKey(key: string): key is TemporaryChannelGroupKey { return key in CHANNEL_GROUP_CONFIGS; } }',
 
     // Assertion functions with asserts keyword
     'function assertIsString(value: unknown): asserts value is string { if (typeof value !== "string") throw new Error("Not a string"); }',

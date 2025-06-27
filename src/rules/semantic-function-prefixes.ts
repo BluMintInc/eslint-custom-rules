@@ -62,16 +62,52 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
 
       // Extract first word from PascalCase/camelCase
       let firstWord = methodName;
+
+      // Handle different casing patterns:
+      // - camelCase: getData -> get
+      // - PascalCase: GetData -> Get
+      // - UPPERCASE: UPDATEUser -> UPDATE
+      // - Mixed: XMLHttpRequest -> XML
+
       for (let i = 1; i < methodName.length; i++) {
-        if (methodName[i] >= 'A' && methodName[i] <= 'Z') {
+        const currentChar = methodName[i];
+        const prevChar = methodName[i - 1];
+
+        // Case 1: lowercase followed by uppercase (camelCase boundary)
+        // Example: getData -> break at 'D'
+        if (
+          prevChar >= 'a' &&
+          prevChar <= 'z' &&
+          currentChar >= 'A' &&
+          currentChar <= 'Z'
+        ) {
           firstWord = methodName.substring(0, i);
           break;
+        }
+
+        // Case 2: uppercase followed by lowercase (end of acronym)
+        // Example: UPDATEUser -> break at 'U' in "User"
+        if (
+          prevChar >= 'A' &&
+          prevChar <= 'Z' &&
+          currentChar >= 'a' &&
+          currentChar <= 'z'
+        ) {
+          // Check if we have at least 2 uppercase letters before this
+          if (i > 1) {
+            firstWord = methodName.substring(0, i - 1);
+            break;
+          }
         }
       }
 
       // Check for disallowed prefixes
+      // Only flag if the disallowed word is used as a prefix (not the entire name)
       for (const prefix of DISALLOWED_PREFIXES) {
-        if (firstWord.toLowerCase() === prefix.toLowerCase()) {
+        if (
+          firstWord.toLowerCase() === prefix.toLowerCase() &&
+          firstWord.length < methodName.length
+        ) {
           context.report({
             node: node.key,
             messageId: 'avoidGenericPrefix',
@@ -120,16 +156,52 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
 
       // Extract first word from PascalCase/camelCase
       let firstWord = functionName;
+
+      // Handle different casing patterns:
+      // - camelCase: getData -> get
+      // - PascalCase: GetData -> Get
+      // - UPPERCASE: UPDATEUser -> UPDATE
+      // - Mixed: XMLHttpRequest -> XML
+
       for (let i = 1; i < functionName.length; i++) {
-        if (functionName[i] >= 'A' && functionName[i] <= 'Z') {
+        const currentChar = functionName[i];
+        const prevChar = functionName[i - 1];
+
+        // Case 1: lowercase followed by uppercase (camelCase boundary)
+        // Example: getData -> break at 'D'
+        if (
+          prevChar >= 'a' &&
+          prevChar <= 'z' &&
+          currentChar >= 'A' &&
+          currentChar <= 'Z'
+        ) {
           firstWord = functionName.substring(0, i);
           break;
+        }
+
+        // Case 2: uppercase followed by lowercase (end of acronym)
+        // Example: UPDATEUser -> break at 'U' in "User"
+        if (
+          prevChar >= 'A' &&
+          prevChar <= 'Z' &&
+          currentChar >= 'a' &&
+          currentChar <= 'z'
+        ) {
+          // Check if we have at least 2 uppercase letters before this
+          if (i > 1) {
+            firstWord = functionName.substring(0, i - 1);
+            break;
+          }
         }
       }
 
       // Check for disallowed prefixes
+      // Only flag if the disallowed word is used as a prefix (not the entire name)
       for (const prefix of DISALLOWED_PREFIXES) {
-        if (firstWord.toLowerCase() === prefix.toLowerCase()) {
+        if (
+          firstWord.toLowerCase() === prefix.toLowerCase() &&
+          firstWord.length < functionName.length
+        ) {
           context.report({
             node: node.id || node,
             messageId: 'avoidGenericPrefix',

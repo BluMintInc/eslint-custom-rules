@@ -87,6 +87,67 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
         };
       `,
     },
+    // Object with constant identifiers (reproduces the bug)
+    {
+      code: `
+        const PINNED_PERMANENCE = 'pinned';
+        const setChannelGroupPermanence = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const id = 'channel-123';
+          await exitChannelGroupExternal({
+            channelGroupId: id,
+            permanence: PINNED_PERMANENCE,
+          });
+        };
+      `,
+    },
+    // Object with uppercase constant identifiers
+    {
+      code: `
+        const MAX_RETRIES = 3;
+        const DEFAULT_TIMEOUT = 5000;
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const config = {
+            retries: MAX_RETRIES,
+            timeout: DEFAULT_TIMEOUT,
+            enabled: true
+          };
+          await exitChannelGroupExternal({ config });
+        };
+      `,
+    },
+    // Object with mixed case constants and variables
+    {
+      code: `
+        const API_BASE_URL = 'https://api.example.com';
+        const version = '1.0';
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const config = {
+            baseUrl: API_BASE_URL,
+            version: version,
+            debug: false
+          };
+          await exitChannelGroupExternal({ config });
+        };
+      `,
+    },
+    // Object with enum-like constants
+    {
+      code: `
+        const STATUS_ACTIVE = 'active';
+        const STATUS_INACTIVE = 'inactive';
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const filter = {
+            status: STATUS_ACTIVE,
+            fallback: STATUS_INACTIVE
+          };
+          await exitChannelGroupExternal({ filter });
+        };
+      `,
+    },
   ],
   invalid: [
     // Object with RegExp literal (invalid since it's not serializable)
@@ -356,6 +417,22 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
             callbacks: [() => true, function() { return false; }]
           };
           await exitChannelGroupExternal({ groupFilter });
+        };
+      `,
+      errors: [{ messageId: 'noComplexObjects' }],
+    },
+    // PascalCase identifier that could be a class instance (should still be flagged)
+    {
+      code: `
+        const MyClass = class {
+          constructor() {
+            this.value = 'test';
+          }
+        };
+        const remove = async () => {
+          const { exitChannelGroupExternal } = await import('src/firebaseCloud/messaging/exitChannelGroupExternal');
+          const instance = new MyClass();
+          await exitChannelGroupExternal({ instance });
         };
       `,
       errors: [{ messageId: 'noComplexObjects' }],
