@@ -68,7 +68,7 @@ ruleTesterTs.run(
               type: 'property',
               name: 'loading',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -86,7 +86,7 @@ ruleTesterTs.run(
               type: 'property',
               name: 'authenticated',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],

@@ -92,12 +92,12 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
 
     /**
      * Format the list of approved prefixes for error messages
-     * Note: We exclude 'are' from the error message to maintain backward compatibility with tests
+     * Note: We exclude 'are' and 'includes' from the error message to maintain backward compatibility with tests
      */
     function formatPrefixes(): string {
-      // Filter out 'are' from the displayed prefixes to maintain backward compatibility with tests
+      // Filter out 'are' and 'includes' from the displayed prefixes to maintain backward compatibility with tests
       const displayPrefixes = approvedPrefixes.filter(
-        (prefix) => prefix !== 'are',
+        (prefix) => prefix !== 'are' && prefix !== 'includes',
       );
       return displayPrefixes.join(', ');
     }

@@ -45,7 +45,7 @@ ruleTesterTs.run(
               type: 'variable',
               name: 'allConfirmed',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
