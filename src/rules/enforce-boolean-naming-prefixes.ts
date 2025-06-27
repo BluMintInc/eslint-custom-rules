@@ -570,24 +570,41 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
      * Check if an identifier is imported from an external module
      */
     function isImportedIdentifier(name: string): boolean {
-      const scope = context.getScope();
-      const variable = scope.variables.find((v) => v.name === name);
+      // Try to find the variable in all scopes, starting from current and going up
+      let currentScope: any = context.getScope();
+      let variable: any = undefined;
+
+      while (currentScope && !variable) {
+        variable = currentScope.variables.find((v: any) => v.name === name);
+        if (!variable) {
+          currentScope = currentScope.upper;
+        }
+      }
 
       if (!variable) return false;
 
       // Check if it's an import binding
-      return variable.defs.some((def) => def.type === 'ImportBinding');
+      return variable.defs.some((def: any) => def.type === 'ImportBinding');
     }
 
     /**
      * Check if a variable is used with an external API
      */
     function isVariableUsedWithExternalApi(variableName: string): boolean {
-      const scope = context.getScope();
-      const variable = scope.variables.find(v => v.name === variableName);
+      // Try to find the variable in all scopes, starting from current and going up
+      let currentScope: any = context.getScope();
+      let variable: any = undefined;
 
-      if (!variable) return false;
+      while (currentScope && !variable) {
+        variable = currentScope.variables.find((v: any) => v.name === variableName);
+        if (!variable) {
+          currentScope = currentScope.upper;
+        }
+      }
 
+      if (!variable) {
+        return false;
+      }
 
       // Check all references to this variable
       for (const reference of variable.references) {
@@ -625,6 +642,21 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           const calleeName = id.parent.callee.name;
           if (isImportedIdentifier(calleeName)) {
             return true;
+          }
+        }
+
+        // Check if the variable is used in JSX attributes
+        if (
+          id.parent?.type === AST_NODE_TYPES.JSXExpressionContainer &&
+          id.parent.parent?.type === AST_NODE_TYPES.JSXAttribute &&
+          id.parent.parent.parent?.type === AST_NODE_TYPES.JSXOpeningElement
+        ) {
+          const jsxOpeningElement = id.parent.parent.parent;
+          if (jsxOpeningElement.name.type === AST_NODE_TYPES.JSXIdentifier) {
+            const componentName = jsxOpeningElement.name.name;
+            if (isImportedIdentifier(componentName)) {
+              return true;
+            }
           }
         }
       }
