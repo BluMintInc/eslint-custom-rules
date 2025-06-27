@@ -635,13 +635,24 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         }
 
         // Check if the variable is directly passed to a function call
-        if (
-          id.parent?.type === AST_NODE_TYPES.CallExpression &&
-          id.parent.callee.type === AST_NODE_TYPES.Identifier
-        ) {
-          const calleeName = id.parent.callee.name;
-          if (isImportedIdentifier(calleeName)) {
-            return true;
+        if (id.parent?.type === AST_NODE_TYPES.CallExpression) {
+          // Handle direct function calls like ExternalLib(config)
+          if (id.parent.callee.type === AST_NODE_TYPES.Identifier) {
+            const calleeName = id.parent.callee.name;
+            if (isImportedIdentifier(calleeName)) {
+              return true;
+            }
+          }
+
+          // Handle member expression calls like ExternalLib.create(config)
+          if (id.parent.callee.type === AST_NODE_TYPES.MemberExpression) {
+            const objectNode = id.parent.callee.object;
+            if (objectNode.type === AST_NODE_TYPES.Identifier) {
+              const objectName = objectNode.name;
+              if (isImportedIdentifier(objectName)) {
+                return true;
+              }
+            }
           }
         }
 
@@ -652,6 +663,20 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           id.parent.parent.parent?.type === AST_NODE_TYPES.JSXOpeningElement
         ) {
           const jsxOpeningElement = id.parent.parent.parent;
+          if (jsxOpeningElement.name.type === AST_NODE_TYPES.JSXIdentifier) {
+            const componentName = jsxOpeningElement.name.name;
+            if (isImportedIdentifier(componentName)) {
+              return true;
+            }
+          }
+        }
+
+        // Check if the variable is used in JSX spread attributes
+        if (
+          id.parent?.type === AST_NODE_TYPES.JSXSpreadAttribute &&
+          id.parent.parent?.type === AST_NODE_TYPES.JSXOpeningElement
+        ) {
+          const jsxOpeningElement = id.parent.parent;
           if (jsxOpeningElement.name.type === AST_NODE_TYPES.JSXIdentifier) {
             const componentName = jsxOpeningElement.name.name;
             if (isImportedIdentifier(componentName)) {
@@ -748,21 +773,59 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           }
         }
 
-        // Special case for useMemo
-        // This handles cases like const messageInputProps = useMemo(() => ({ grow: true }), [])
-        if (
-          node.parent?.type === AST_NODE_TYPES.ObjectExpression &&
-          node.parent.parent?.type === AST_NODE_TYPES.ReturnStatement &&
-          node.parent.parent.parent?.type === AST_NODE_TYPES.BlockStatement &&
-          node.parent.parent.parent.parent?.type === AST_NODE_TYPES.ArrowFunctionExpression &&
-          node.parent.parent.parent.parent.parent?.type === AST_NODE_TYPES.CallExpression &&
-          node.parent.parent.parent.parent.parent.callee.type === AST_NODE_TYPES.Identifier &&
-          node.parent.parent.parent.parent.parent.callee.name === 'useMemo' &&
-          node.parent.parent.parent.parent.parent.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
-          node.parent.parent.parent.parent.parent.parent.id.type === AST_NODE_TYPES.Identifier
-        ) {
-          const variableName = node.parent.parent.parent.parent.parent.parent.id.name;
-          if (isVariableUsedWithExternalApi(variableName)) {
+        // Special case for useMemo and other React hooks
+        // This handles cases like:
+        // 1. const messageInputProps = useMemo(() => ({ grow: true }), [])
+        // 2. const messageInputProps = useMemo(() => { return { grow: true }; }, [])
+        if (node.parent?.type === AST_NODE_TYPES.ObjectExpression) {
+          let currentNode: TSESTree.Node | undefined = node.parent;
+          let variableName: string | undefined;
+
+          // Handle TypeScript 'as const' expressions
+          let parentNode = currentNode.parent;
+          if (parentNode?.type === AST_NODE_TYPES.TSAsExpression) {
+            parentNode = parentNode.parent;
+          }
+
+          // Case 1: Arrow function with expression body - useMemo(() => ({ ... }), [])
+          if (
+            parentNode?.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+            parentNode.parent?.type === AST_NODE_TYPES.CallExpression &&
+            parentNode.parent.callee.type === AST_NODE_TYPES.Identifier &&
+            (parentNode.parent.callee.name === 'useMemo' ||
+             parentNode.parent.callee.name === 'useCallback' ||
+             parentNode.parent.callee.name === 'useState') &&
+            parentNode.parent.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+            parentNode.parent.parent.id.type === AST_NODE_TYPES.Identifier
+          ) {
+            variableName = parentNode.parent.parent.id.name;
+          }
+
+          // Case 2: Arrow function with block body - useMemo(() => { return { ... }; }, [])
+          else {
+            // Handle TypeScript 'as const' expressions for return statements
+            let returnParent = currentNode.parent;
+            if (returnParent?.type === AST_NODE_TYPES.TSAsExpression) {
+              returnParent = returnParent.parent;
+            }
+
+            if (
+              returnParent?.type === AST_NODE_TYPES.ReturnStatement &&
+              returnParent.parent?.type === AST_NODE_TYPES.BlockStatement &&
+              returnParent.parent.parent?.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+              returnParent.parent.parent.parent?.type === AST_NODE_TYPES.CallExpression &&
+              returnParent.parent.parent.parent.callee.type === AST_NODE_TYPES.Identifier &&
+              (returnParent.parent.parent.parent.callee.name === 'useMemo' ||
+               returnParent.parent.parent.parent.callee.name === 'useCallback' ||
+               returnParent.parent.parent.parent.callee.name === 'useState') &&
+              returnParent.parent.parent.parent.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+              returnParent.parent.parent.parent.parent.id.type === AST_NODE_TYPES.Identifier
+            ) {
+              variableName = returnParent.parent.parent.parent.parent.id.name;
+            }
+          }
+
+          if (variableName && isVariableUsedWithExternalApi(variableName)) {
             isExternalApiCall = true;
           }
         }
@@ -777,6 +840,23 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           const calleeName = node.parent.parent.callee.name;
           if (isImportedIdentifier(calleeName)) {
             isExternalApiCall = true;
+          }
+        }
+
+        // Check if this property is in an object literal that's directly passed as a JSX attribute
+        // This handles cases like <ExternalComponent config={{ active: true }} />
+        if (
+          node.parent?.type === AST_NODE_TYPES.ObjectExpression &&
+          node.parent.parent?.type === AST_NODE_TYPES.JSXExpressionContainer &&
+          node.parent.parent.parent?.type === AST_NODE_TYPES.JSXAttribute &&
+          node.parent.parent.parent.parent?.type === AST_NODE_TYPES.JSXOpeningElement
+        ) {
+          const jsxOpeningElement = node.parent.parent.parent.parent;
+          if (jsxOpeningElement.name.type === AST_NODE_TYPES.JSXIdentifier) {
+            const componentName = jsxOpeningElement.name.name;
+            if (isImportedIdentifier(componentName)) {
+              isExternalApiCall = true;
+            }
           }
         }
 
