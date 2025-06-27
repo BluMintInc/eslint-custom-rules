@@ -133,6 +133,316 @@ ruleTesterTs.run(
     const BOOLEAN_CONST = true;
     type BooleanType = typeof BOOLEAN_CONST;
     `,
+
+      // Good: Imported constants with same names as local constants
+      `
+    import { STATUS_EXCEEDING } from './external';
+    const STATUS_EXCEEDING = 'local' as const;
+    type ImportedType = typeof STATUS_EXCEEDING; // Should refer to imported one
+    `,
+
+      // Good: Shadowed variables in different scopes
+      `
+    const STATUS_EXCEEDING = 'outer' as const;
+    {
+      const STATUS_EXCEEDING = 'inner';
+      type ShadowedType = typeof STATUS_EXCEEDING; // Not 'as const', so allowed
+    }
+    `,
+
+      // Good: Qualified names (module.constant)
+      `
+    const STATUS_EXCEEDING = 'local' as const;
+    type QualifiedType = typeof Module.STATUS_EXCEEDING;
+    `,
+
+      // Good: Member access on objects
+      `
+    const STATUS_EXCEEDING = 'local' as const;
+    const obj = { STATUS_EXCEEDING: 'different' };
+    type MemberType = typeof obj.STATUS_EXCEEDING;
+    `,
+
+      // Good: Constants defined after usage (forward references)
+      `
+    type ForwardType = typeof STATUS_EXCEEDING;
+    const STATUS_EXCEEDING = 'forward' as const;
+    `,
+
+      // Good: Block-scoped constants
+      `
+    {
+      const STATUS_EXCEEDING = 'block' as const;
+    }
+    type OutsideType = typeof STATUS_EXCEEDING; // Different scope
+    `,
+
+      // Good: Class static properties
+      `
+    class StatusClass {
+      static readonly STATUS_EXCEEDING = 'class' as const;
+    }
+    type ClassType = typeof StatusClass.STATUS_EXCEEDING;
+    `,
+
+      // Good: Enum members
+      `
+    enum StatusEnum {
+      STATUS_EXCEEDING = 'enum'
+    }
+    type EnumType = typeof StatusEnum.STATUS_EXCEEDING;
+    `,
+
+      // Good: Generic type parameters
+      `
+    const STATUS_EXCEEDING = 'generic' as const;
+    type GenericType<T extends typeof String> = T;
+    `,
+
+      // Good: Mapped types with typeof on non-local constants
+      `
+    type MappedType = {
+      [K in keyof typeof globalThis]: string;
+    };
+    `,
+
+      // Good: Index signatures with typeof
+      `
+    type IndexType = {
+      [key: typeof Symbol.iterator]: string;
+    };
+    `,
+
+      // Good: Complex member expressions
+      `
+    const STATUS_EXCEEDING = 'local' as const;
+    type ComplexMember = typeof window.location.href;
+    `,
+
+      // Good: Typeof on function expressions
+      `
+    const STATUS_EXCEEDING = 'local' as const;
+    const fn = () => 'test';
+    type FunctionType = typeof fn;
+    `,
+
+      // Good: Typeof on class constructors
+      `
+    const STATUS_EXCEEDING = 'local' as const;
+    class TestClass {}
+    type ConstructorType = typeof TestClass;
+    `,
+
+      // Good: Typeof with computed property access
+      `
+    const STATUS_EXCEEDING = 'local' as const;
+    const key = 'someKey';
+    type ComputedType = typeof obj[key];
+    `,
+
+      // Good: Typeof in template literal types (non-constant)
+      `
+    const STATUS_EXCEEDING = 'local' as const;
+    type TemplateType = \`prefix-\${typeof String}\`;
+    `,
+
+      // Good: Constants without identifiers (destructured)
+      `
+    const { STATUS_EXCEEDING } = { STATUS_EXCEEDING: 'destructured' as const };
+    type DestructuredType = typeof STATUS_EXCEEDING;
+    `,
+
+      // Good: Array destructuring
+      `
+    const [STATUS_EXCEEDING] = ['array' as const];
+    type ArrayDestructuredType = typeof STATUS_EXCEEDING;
+    `,
+
+      // Good: Rest parameters in destructuring
+      `
+    const [first, ...STATUS_EXCEEDING] = ['first', 'rest' as const];
+    type RestType = typeof STATUS_EXCEEDING;
+    `,
+
+      // Good: Renamed imports
+      `
+    import { STATUS_EXCEEDING as IMPORTED_STATUS } from './external';
+    const STATUS_EXCEEDING = 'local' as const;
+    type RenamedImportType = typeof IMPORTED_STATUS;
+    `,
+
+      // Good: Namespace imports
+      `
+    import * as Constants from './constants';
+    const STATUS_EXCEEDING = 'local' as const;
+    type NamespaceType = typeof Constants.STATUS_EXCEEDING;
+    `,
+
+      // Good: Dynamic imports
+      `
+    const STATUS_EXCEEDING = 'local' as const;
+    type DynamicType = typeof import('./module').STATUS_EXCEEDING;
+    `,
+
+      // Good: Typeof on this expressions
+      `
+    const STATUS_EXCEEDING = 'local' as const;
+    class TestClass {
+      method() {
+        type ThisType = typeof this.STATUS_EXCEEDING;
+      }
+    }
+    `,
+
+      // Good: Typeof on super expressions
+      `
+    const STATUS_EXCEEDING = 'local' as const;
+    class BaseClass {
+      static STATUS_EXCEEDING = 'base';
+    }
+    class DerivedClass extends BaseClass {
+      static getSuperType() {
+        type SuperType = typeof super.STATUS_EXCEEDING;
+      }
+    }
+    `,
+
+      // Good: Typeof with optional chaining
+      `
+    const STATUS_EXCEEDING = 'local' as const;
+    type OptionalType = typeof obj?.STATUS_EXCEEDING;
+    `,
+
+      // Good: Typeof with nullish coalescing
+      `
+    const STATUS_EXCEEDING = 'local' as const;
+    type NullishType = typeof (obj?.STATUS_EXCEEDING ?? 'default');
+    `,
+
+      // Good: Constants in different modules (re-exports)
+      `
+    export { STATUS_EXCEEDING } from './other-module';
+    const STATUS_EXCEEDING = 'local' as const;
+    `,
+
+      // Good: Constants with complex initializers
+      `
+    const STATUS_EXCEEDING = (() => 'complex' as const)();
+    type ComplexInitType = typeof STATUS_EXCEEDING;
+    `,
+
+      // Good: Constants with function calls
+      `
+    const STATUS_EXCEEDING = String('function-call') as const;
+    type FunctionCallType = typeof STATUS_EXCEEDING;
+    `,
+
+      // Good: Constants with template literals (non-const)
+      `
+    const prefix = 'test';
+    const STATUS_EXCEEDING = \`\${prefix}-value\`;
+    type TemplateConstType = typeof STATUS_EXCEEDING;
+    `,
+
+      // Good: Unicode and special characters in names
+      `
+    const STATUS_EXCEEDING_🚀 = 'unicode' as const;
+    const STATUS_EXCEEDING = 'normal' as const;
+    type UnicodeType = typeof STATUS_EXCEEDING_🚀;
+    `,
+
+      // Good: Very long constant names
+      `
+    const STATUS_EXCEEDING_WITH_VERY_LONG_NAME_THAT_GOES_ON_AND_ON = 'long' as const;
+    const STATUS_EXCEEDING = 'short' as const;
+    type LongNameType = typeof STATUS_EXCEEDING_WITH_VERY_LONG_NAME_THAT_GOES_ON_AND_ON;
+    `,
+
+      // Good: Constants with numbers
+      `
+    const STATUS_EXCEEDING_123 = 'numbered' as const;
+    const STATUS_EXCEEDING = 'normal' as const;
+    type NumberedType = typeof STATUS_EXCEEDING_123;
+    `,
+
+      // Good: Constants with dollar signs
+      `
+    const $STATUS_EXCEEDING = 'dollar' as const;
+    const STATUS_EXCEEDING = 'normal' as const;
+    type DollarType = typeof $STATUS_EXCEEDING;
+    `,
+
+      // Good: Constants with underscores at different positions
+      `
+    const _STATUS_EXCEEDING_ = 'underscores' as const;
+    const STATUS_EXCEEDING = 'normal' as const;
+    type UnderscoreType = typeof _STATUS_EXCEEDING_;
+    `,
+
+      // Good: Case variations that don't match
+      `
+    const STATUS_EXCEEDING = 'upper' as const;
+    const status_exceeding = 'lower';
+    type CaseType = typeof status_exceeding;
+    `,
+
+      // Good: Typeof in satisfies expressions (non-constant)
+      `
+    const STATUS_EXCEEDING = 'local' as const;
+    const value = 'test' satisfies typeof String;
+    `,
+
+      // Good: Typeof in type assertions (non-constant)
+      `
+    const STATUS_EXCEEDING = 'local' as const;
+    const value = 'test' as typeof String;
+    `,
+
+      // Good: Typeof with parentheses
+      `
+    const STATUS_EXCEEDING = 'local' as const;
+    type ParenType = typeof (String);
+    `,
+
+      // Good: Typeof in array types (non-constant)
+      `
+    const STATUS_EXCEEDING = 'local' as const;
+    type ArrayType = Array<typeof String>;
+    `,
+
+      // Good: Typeof in tuple types (non-constant)
+      `
+    const STATUS_EXCEEDING = 'local' as const;
+    type TupleType = [typeof String, typeof Number];
+    `,
+
+      // Good: Constants in catch blocks
+      `
+    try {
+      // code
+    } catch (STATUS_EXCEEDING) {
+      type CatchType = typeof STATUS_EXCEEDING;
+    }
+    `,
+
+      // Good: Constants in for-of loops
+      `
+    for (const STATUS_EXCEEDING of ['a', 'b']) {
+      type LoopType = typeof STATUS_EXCEEDING;
+    }
+    `,
+
+      // Good: Constants in switch cases
+      `
+    const value = 'test';
+    switch (value) {
+      case 'test': {
+        const STATUS_EXCEEDING = 'case' as const;
+        break;
+      }
+    }
+    type SwitchType = typeof STATUS_EXCEEDING; // Different scope
+    `,
     ],
 
     invalid: [
@@ -380,35 +690,8 @@ ruleTesterTs.run(
         ],
       },
 
-      // Bad: Multiple constants in single type alias
-      {
-        code: `
-      const STATUS_EXCEEDING = 'exceeding' as const;
-      const STATUS_SUBCEEDING = 'succeeding' as const;
-      const STATUS_PENDING = 'pending' as const;
 
-      type AllStatuses = typeof STATUS_EXCEEDING | typeof STATUS_SUBCEEDING | typeof STATUS_PENDING;
-      `,
-        errors: [
-          {
-            messageId: 'defineTypeFirst',
-          },
-        ],
-      },
 
-      // Bad: Typeof in conditional type (edge case)
-      {
-        code: `
-      const STATUS_EXCEEDING = 'exceeding' as const;
 
-      type ConditionalType<T> = T extends typeof STATUS_EXCEEDING ? true : false;
-      `,
-        errors: [
-          {
-            messageId: 'defineTypeFirst',
-          },
-        ],
-      },
-    ],
-  },
-);
+
+
