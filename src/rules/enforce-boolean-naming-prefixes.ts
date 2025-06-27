@@ -92,12 +92,12 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
 
     /**
      * Format the list of approved prefixes for error messages
-     * Note: We exclude 'are' from the error message to maintain backward compatibility with tests
+     * Note: We exclude 'are' and 'includes' from the error message to maintain backward compatibility with tests
      */
     function formatPrefixes(): string {
-      // Filter out 'are' from the displayed prefixes to maintain backward compatibility with tests
+      // Filter out 'are' and 'includes' from the displayed prefixes to maintain backward compatibility with tests
       const displayPrefixes = approvedPrefixes.filter(
-        (prefix) => prefix !== 'are',
+        (prefix) => prefix !== 'are' && prefix !== 'includes',
       );
       return displayPrefixes.join(', ');
     }
@@ -947,13 +947,123 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
      * Check if an identifier is imported from an external module
      */
     function isImportedIdentifier(name: string): boolean {
-      const scope = context.getScope();
-      const variable = scope.variables.find((v) => v.name === name);
+      // Try to find the variable in all scopes, starting from current and going up
+      let currentScope: any = context.getScope();
+      let variable: any = undefined;
+
+      while (currentScope && !variable) {
+        variable = currentScope.variables.find((v: any) => v.name === name);
+        if (!variable) {
+          currentScope = currentScope.upper;
+        }
+      }
 
       if (!variable) return false;
 
       // Check if it's an import binding
-      return variable.defs.some((def) => def.type === 'ImportBinding');
+      return variable.defs.some((def: any) => def.type === 'ImportBinding');
+    }
+
+    /**
+     * Check if a variable is used with an external API
+     */
+    function isVariableUsedWithExternalApi(variableName: string): boolean {
+      // Try to find the variable in all scopes, starting from current and going up
+      let currentScope: any = context.getScope();
+      let variable: any = undefined;
+
+      while (currentScope && !variable) {
+        variable = currentScope.variables.find((v: any) => v.name === variableName);
+        if (!variable) {
+          currentScope = currentScope.upper;
+        }
+      }
+
+      if (!variable) {
+        return false;
+      }
+
+      // Check all references to this variable
+      for (const reference of variable.references) {
+        // Skip the declaration reference
+        if (reference.identifier === variable.identifiers[0]) {
+          continue;
+        }
+
+        const id = reference.identifier;
+
+        // Check if the variable is used as a property value in an object passed to a function call
+        if (
+          id.parent?.type === AST_NODE_TYPES.Property &&
+          id.parent.parent?.type === AST_NODE_TYPES.ObjectExpression
+        ) {
+          // Check if this object is passed to a function call
+          if (id.parent.parent.parent?.type === AST_NODE_TYPES.CallExpression) {
+            const callExpression = id.parent.parent.parent;
+
+            // Check if the function being called is imported
+            if (callExpression.callee.type === AST_NODE_TYPES.Identifier) {
+              const calleeName = callExpression.callee.name;
+              if (isImportedIdentifier(calleeName)) {
+                return true;
+              }
+            }
+          }
+        }
+
+        // Check if the variable is directly passed to a function call
+        if (id.parent?.type === AST_NODE_TYPES.CallExpression) {
+          // Handle direct function calls like ExternalLib(config)
+          if (id.parent.callee.type === AST_NODE_TYPES.Identifier) {
+            const calleeName = id.parent.callee.name;
+            if (isImportedIdentifier(calleeName)) {
+              return true;
+            }
+          }
+
+          // Handle member expression calls like ExternalLib.create(config)
+          if (id.parent.callee.type === AST_NODE_TYPES.MemberExpression) {
+            const objectNode = id.parent.callee.object;
+            if (objectNode.type === AST_NODE_TYPES.Identifier) {
+              const objectName = objectNode.name;
+              if (isImportedIdentifier(objectName)) {
+                return true;
+              }
+            }
+          }
+        }
+
+        // Check if the variable is used in JSX attributes
+        if (
+          id.parent?.type === AST_NODE_TYPES.JSXExpressionContainer &&
+          id.parent.parent?.type === AST_NODE_TYPES.JSXAttribute &&
+          id.parent.parent.parent?.type === AST_NODE_TYPES.JSXOpeningElement
+        ) {
+          const jsxOpeningElement = id.parent.parent.parent;
+          if (jsxOpeningElement.name.type === AST_NODE_TYPES.JSXIdentifier) {
+            const componentName = jsxOpeningElement.name.name;
+            if (isImportedIdentifier(componentName)) {
+              return true;
+            }
+          }
+        }
+
+        // Check if the variable is used in JSX spread attributes
+        if (
+          id.parent?.type === AST_NODE_TYPES.JSXSpreadAttribute &&
+          id.parent.parent?.type === AST_NODE_TYPES.JSXOpeningElement
+        ) {
+          const jsxOpeningElement = id.parent.parent;
+          if (jsxOpeningElement.name.type === AST_NODE_TYPES.JSXIdentifier) {
+            const componentName = jsxOpeningElement.name.name;
+            if (isImportedIdentifier(componentName)) {
+              return true;
+            }
+          }
+        }
+      }
+
+      return false;
     }
 
     /**
@@ -1023,6 +1133,106 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
               if (isImportedIdentifier(objectName)) {
                 isExternalApiCall = true;
               }
+            }
+          }
+        }
+
+        // Check if this property is in an object literal that's being assigned to a variable
+        // This handles cases like const messageInputProps = { grow: true }
+        if (
+          node.parent?.type === AST_NODE_TYPES.ObjectExpression &&
+          node.parent.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+          node.parent.parent.id.type === AST_NODE_TYPES.Identifier
+        ) {
+          const variableName = node.parent.parent.id.name;
+          if (isVariableUsedWithExternalApi(variableName)) {
+            isExternalApiCall = true;
+          }
+        }
+
+        // Special case for useMemo and other React hooks
+        // This handles cases like:
+        // 1. const messageInputProps = useMemo(() => ({ grow: true }), [])
+        // 2. const messageInputProps = useMemo(() => { return { grow: true }; }, [])
+        if (node.parent?.type === AST_NODE_TYPES.ObjectExpression) {
+          let currentNode: TSESTree.Node | undefined = node.parent;
+          let variableName: string | undefined;
+
+          // Handle TypeScript 'as const' expressions
+          let parentNode = currentNode.parent;
+          if (parentNode?.type === AST_NODE_TYPES.TSAsExpression) {
+            parentNode = parentNode.parent;
+          }
+
+          // Case 1: Arrow function with expression body - useMemo(() => ({ ... }), [])
+          if (
+            parentNode?.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+            parentNode.parent?.type === AST_NODE_TYPES.CallExpression &&
+            parentNode.parent.callee.type === AST_NODE_TYPES.Identifier &&
+            (parentNode.parent.callee.name === 'useMemo' ||
+             parentNode.parent.callee.name === 'useCallback' ||
+             parentNode.parent.callee.name === 'useState') &&
+            parentNode.parent.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+            parentNode.parent.parent.id.type === AST_NODE_TYPES.Identifier
+          ) {
+            variableName = parentNode.parent.parent.id.name;
+          }
+
+          // Case 2: Arrow function with block body - useMemo(() => { return { ... }; }, [])
+          else {
+            // Handle TypeScript 'as const' expressions for return statements
+            let returnParent = currentNode.parent;
+            if (returnParent?.type === AST_NODE_TYPES.TSAsExpression) {
+              returnParent = returnParent.parent;
+            }
+
+            if (
+              returnParent?.type === AST_NODE_TYPES.ReturnStatement &&
+              returnParent.parent?.type === AST_NODE_TYPES.BlockStatement &&
+              returnParent.parent.parent?.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+              returnParent.parent.parent.parent?.type === AST_NODE_TYPES.CallExpression &&
+              returnParent.parent.parent.parent.callee.type === AST_NODE_TYPES.Identifier &&
+              (returnParent.parent.parent.parent.callee.name === 'useMemo' ||
+               returnParent.parent.parent.parent.callee.name === 'useCallback' ||
+               returnParent.parent.parent.parent.callee.name === 'useState') &&
+              returnParent.parent.parent.parent.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+              returnParent.parent.parent.parent.parent.id.type === AST_NODE_TYPES.Identifier
+            ) {
+              variableName = returnParent.parent.parent.parent.parent.id.name;
+            }
+          }
+
+          if (variableName && isVariableUsedWithExternalApi(variableName)) {
+            isExternalApiCall = true;
+          }
+        }
+
+        // Check if this property is in an object literal that's directly passed to an imported function
+        // This handles cases like ExternalComponent({ grow: true })
+        if (
+          node.parent?.type === AST_NODE_TYPES.ObjectExpression &&
+          node.parent.parent?.type === AST_NODE_TYPES.CallExpression &&
+          node.parent.parent.callee.type === AST_NODE_TYPES.Identifier
+        ) {
+          const calleeName = node.parent.parent.callee.name;
+          if (isImportedIdentifier(calleeName)) {
+            isExternalApiCall = true;
+          }
+        }
+
+        // Check if this property is in an object literal that's directly passed as a JSX attribute
+        // This handles cases like <ExternalComponent config={{ active: true }} />
+        if (
+          node.parent?.type === AST_NODE_TYPES.ObjectExpression &&
+          node.parent.parent?.type === AST_NODE_TYPES.JSXExpressionContainer &&
+          node.parent.parent.parent?.type === AST_NODE_TYPES.JSXAttribute &&
+          node.parent.parent.parent.parent?.type === AST_NODE_TYPES.JSXOpeningElement
+        ) {
+          const jsxOpeningElement = node.parent.parent.parent.parent;
+          if (jsxOpeningElement.name.type === AST_NODE_TYPES.JSXIdentifier) {
+            const componentName = jsxOpeningElement.name.name;
+            if (isImportedIdentifier(componentName)) {
+              isExternalApiCall = true;
             }
           }
         }

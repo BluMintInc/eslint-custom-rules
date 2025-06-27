@@ -6,7 +6,75 @@ ruleTesterTs.run(
   enforceBooleanNamingPrefixes,
   {
     valid: [
-      // ===== PLURAL FORMS TESTING =====
+      // ===== EXTERNAL API FOCUSED TESTS (from HEAD - issue #628 fix) =====
+
+      // Core case: useMemo with external API (the main bug report case)
+      `
+      import { Thread } from 'stream-chat-react';
+      import { useMemo } from 'react';
+
+      function ChatComponent() {
+        const messageInputProps = useMemo(() => ({
+          grow: true,  // Should be allowed - external API
+          additionalTextareaProps: {},
+        }), []);
+
+        return Thread({ additionalMessageInputProps: messageInputProps });
+      }
+      `,
+
+      // Core case: Direct object literal passed to external function
+      `
+      import { ExternalLib } from 'external-lib';
+
+      function Component() {
+        return ExternalLib({
+          active: true,  // Should be allowed - external API
+          visible: false,
+        });
+      }
+      `,
+
+      // Core case: Variable assigned and used with external API
+      `
+      import { ExternalLib } from 'external-lib';
+
+      function Component() {
+        const config = {
+          enabled: true,  // Should be allowed - external API
+          disabled: false,
+        };
+
+        return ExternalLib(config);
+      }
+      `,
+
+      // Edge case: Multiple external libraries
+      `
+      import { LibA, LibB } from 'external-lib';
+
+      function Component() {
+        const configA = { active: true };
+        const configB = { visible: false };
+
+        return {
+          a: LibA(configA),
+          b: LibB(configB),
+        };
+      }
+      `,
+
+      // Edge case: Member expression external API calls
+      `
+      import * as ExternalLib from 'external-lib';
+
+      function Component() {
+        const config = { enabled: true };
+        return ExternalLib.create(config);
+      }
+      `,
+
+      // ===== PLURAL FORMS TESTING (from origin) =====
 
       // "are" prefix (plural of "is") - the main bug case
       `
@@ -254,6 +322,118 @@ ruleTesterTs.run(
       `const wereURLsValidated: boolean = true;`,
     ],
     invalid: [
+      // ===== EXTERNAL API FOCUSED TESTS (from HEAD - should be invalid) =====
+
+      // Should be invalid: Local usage without external API
+      {
+        code: `
+        function Component() {
+          const localConfig = {
+            active: true,
+            visible: false,
+          };
+
+          console.log(localConfig.active);
+          return null;
+        }
+        `,
+        errors: [
+          {
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'property',
+              name: 'active',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+            },
+          },
+          {
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'property',
+              name: 'visible',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+            },
+          },
+        ],
+      },
+
+      // Should be invalid: useMemo not used with external API
+      {
+        code: `
+        import { useMemo } from 'react';
+
+        function Component() {
+          const config = useMemo(() => ({
+            active: true,
+            visible: false,
+          }), []);
+
+          console.log(config.active);
+          return null;
+        }
+        `,
+        errors: [
+          {
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'property',
+              name: 'active',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+            },
+          },
+          {
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'property',
+              name: 'visible',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+            },
+          },
+        ],
+      },
+
+      // Should be invalid: Object passed to local function
+      {
+        code: `
+        function localFunction(config: any) {
+          return config;
+        }
+
+        function Component() {
+          const config = {
+            active: true,
+            visible: false,
+          };
+
+          return localFunction(config);
+        }
+        `,
+        errors: [
+          {
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'property',
+              name: 'active',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+            },
+          },
+          {
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'property',
+              name: 'visible',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+            },
+          },
+        ],
+      },
+
       // ===== ENSURE NON-PREFIXED BOOLEANS ARE STILL FLAGGED =====
 
       // Variables without proper prefixes (should still be caught)
@@ -265,7 +445,8 @@ ruleTesterTs.run(
             data: {
               type: 'variable',
               name: 'allConfirmed',
-              prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -278,7 +459,8 @@ ruleTesterTs.run(
             data: {
               type: 'variable',
               name: 'usersOnline',
-              prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -293,7 +475,8 @@ ruleTesterTs.run(
             data: {
               type: 'function',
               name: 'allReady',
-              prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -313,7 +496,8 @@ ruleTesterTs.run(
             data: {
               type: 'property',
               name: 'allConfirmed',
-              prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
           {
@@ -321,7 +505,8 @@ ruleTesterTs.run(
             data: {
               type: 'property',
               name: 'usersReady',
-              prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -341,7 +526,8 @@ ruleTesterTs.run(
             data: {
               type: 'property',
               name: 'allValid',
-              prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
           {
@@ -349,7 +535,8 @@ ruleTesterTs.run(
             data: {
               type: 'property',
               name: 'usersReady',
-              prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -364,7 +551,8 @@ ruleTesterTs.run(
             data: {
               type: 'parameter',
               name: 'allValid',
-              prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
           {
@@ -372,7 +560,8 @@ ruleTesterTs.run(
             data: {
               type: 'parameter',
               name: 'usersReady',
-              prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -389,7 +578,8 @@ ruleTesterTs.run(
             data: {
               type: 'variable',
               name: 'ready',
-              prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -402,7 +592,8 @@ ruleTesterTs.run(
             data: {
               type: 'variable',
               name: 'valid',
-              prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -453,7 +644,8 @@ ruleTesterTs.run(
             data: {
               type: 'variable',
               name: 'allItemsInSystemValidAndReady',
-              prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -468,7 +660,8 @@ ruleTesterTs.run(
             data: {
               type: 'variable',
               name: 'valid2Process',
-              prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -483,7 +676,8 @@ ruleTesterTs.run(
             data: {
               type: 'function',
               name: 'checkReady',
-              prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -503,7 +697,8 @@ ruleTesterTs.run(
             data: {
               type: 'property',
               name: 'ready',
-              prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
           {
@@ -511,7 +706,8 @@ ruleTesterTs.run(
             data: {
               type: 'property',
               name: 'valid',
-              prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
