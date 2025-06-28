@@ -80,44 +80,6 @@ import { useEffect, useMemo } from 'react';
         }
       `,
     },
-    // Skip this test for now as optional chaining requires additional handling
-    /*
-    {
-      code: `
-        import { useEffect } from 'react';
-
-        function Component({ roomPaths }) {
-          useEffect(() => {
-            // Effect implementation...
-          }, [roomPaths?.length]);
-
-          return <div>{/* Component JSX */}</div>;
-        }
-      `,
-      errors: [
-        {
-          messageId: 'avoidArrayLengthDependency',
-          data: {
-            arrayName: 'roomPaths?',
-            hashName: 'roomPathsHash',
-          },
-        },
-      ],
-      output: `
-        import { stableHash } from 'functions/src/util/hash/stableHash';
-import { useEffect, useMemo } from 'react';
-
-        function Component({ roomPaths }) {
-          const roomPathsHash = useMemo(() => stableHash(roomPaths), [roomPaths]);
-  useEffect(() => {
-            // Effect implementation...
-          }, [roomPathsHash]);
-
-          return <div>{/* Component JSX */}</div>;
-        }
-      `,
-    },
-    */
     // Multiple array.length expressions - we only report the first one but fix both
     {
       code: `
@@ -155,7 +117,7 @@ import { useEffect, useMemo } from 'react';
         }
       `,
     },
-    // With existing useMemo import - we accept the actual output
+    // With existing useMemo import
     {
       code: `
         import { useEffect, useMemo } from 'react';
@@ -199,7 +161,7 @@ import { useEffect, useMemo } from 'react';
         }
       `,
     },
-    // With existing stableHash import - we accept the actual output
+    // With existing stableHash import - should not add duplicate
     {
       code: `
         import { useEffect } from 'react';
@@ -225,8 +187,7 @@ import { useEffect, useMemo } from 'react';
         },
       ],
       output: `
-        import { stableHash } from 'functions/src/util/hash/stableHash';
-import { useEffect, useMemo } from 'react';
+        import { useEffect, useMemo } from 'react';
         import { stableHash } from 'functions/src/util/hash/stableHash';
 
         function Component({ items, otherItems }) {

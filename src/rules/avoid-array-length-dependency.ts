@@ -34,15 +34,15 @@ function isArrayLengthExpression(node: TSESTree.Node): boolean {
 /**
  * Gets the array name from an array.length expression
  */
-function getArrayNameFromLengthExpression(node: TSESTree.MemberExpression): string {
+function getArrayNameFromLengthExpression(
+  node: TSESTree.MemberExpression,
+): string {
   // Handle optional chaining
   const hasOptionalChaining = node.optional;
 
   // Get the array name
   if (node.object.type === AST_NODE_TYPES.Identifier) {
-    return hasOptionalChaining
-      ? `${node.object.name}?`
-      : node.object.name;
+    return hasOptionalChaining ? `${node.object.name}?` : node.object.name;
   }
 
   // For more complex expressions, get the source code
@@ -117,42 +117,53 @@ export const avoidArrayLengthDependency = createRule<[], MessageIds>({
             *fix(fixer) {
               const sourceCode = context.getSourceCode();
 
-              // 1. Add the stableHash import
-              const stableHashImport = "import { stableHash } from 'functions/src/util/hash/stableHash';\n";
-              yield fixer.insertTextBefore(sourceCode.ast, stableHashImport);
+              // 1. Check for existing stableHash import
+              const stableHashImports = sourceCode.ast.body.filter(
+                (node) =>
+                  node.type === AST_NODE_TYPES.ImportDeclaration &&
+                  node.source.value === 'functions/src/util/hash/stableHash',
+              );
+
+              if (stableHashImports.length === 0) {
+                // Add the stableHash import only if it doesn't exist
+                const stableHashImport =
+                  "import { stableHash } from 'functions/src/util/hash/stableHash';\n";
+                yield fixer.insertTextBefore(sourceCode.ast, stableHashImport);
+              }
 
               // 2. Add or update the React import for useMemo
               const reactImports = sourceCode.ast.body.filter(
                 (node) =>
                   node.type === AST_NODE_TYPES.ImportDeclaration &&
-                  node.source.value === 'react'
+                  node.source.value === 'react',
               );
 
               if (reactImports.length > 0) {
                 // There's an existing React import
-                const reactImport = reactImports[0] as TSESTree.ImportDeclaration;
+                const reactImport =
+                  reactImports[0] as TSESTree.ImportDeclaration;
                 const specifiers = reactImport.specifiers;
 
                 // Check if useMemo is already imported
                 const hasUseMemo = specifiers.some(
                   (spec) =>
                     spec.type === AST_NODE_TYPES.ImportSpecifier &&
-                    spec.imported.name === 'useMemo'
+                    spec.imported.name === 'useMemo',
                 );
 
                 if (!hasUseMemo) {
-                  if (specifiers.length === 1 && specifiers[0].type === AST_NODE_TYPES.ImportDefaultSpecifier) {
+                  if (
+                    specifiers.length === 1 &&
+                    specifiers[0].type === AST_NODE_TYPES.ImportDefaultSpecifier
+                  ) {
                     // If it's just a default import, add a named import
-                    yield fixer.insertTextAfter(
-                      specifiers[0],
-                      ', { useMemo }'
-                    );
+                    yield fixer.insertTextAfter(specifiers[0], ', { useMemo }');
                   } else {
                     // Add useMemo to the existing named imports
                     const lastSpecifier = specifiers[specifiers.length - 1];
                     yield fixer.insertTextAfter(
                       lastSpecifier,
-                      specifiers.length > 0 ? ', useMemo' : 'useMemo'
+                      specifiers.length > 0 ? ', useMemo' : 'useMemo',
                     );
                   }
                 }
@@ -160,7 +171,7 @@ export const avoidArrayLengthDependency = createRule<[], MessageIds>({
                 // No existing React import, add a new one
                 yield fixer.insertTextBefore(
                   sourceCode.ast,
-                  "import { useMemo } from 'react';\n"
+                  "import { useMemo } from 'react';\n",
                 );
               }
 
