@@ -1,29 +1,33 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'avoidArrayLengthDependency';
 
-const HOOK_NAMES = new Set(['useEffect', 'useCallback', 'useMemo']);
+const HOOK_NAMES = new Set([
+  'useEffect',
+  'useCallback',
+  'useMemo',
+  'useLayoutEffect',
+]);
 
 function isHookCall(node: TSESTree.CallExpression): boolean {
   const callee = node.callee;
-  return (
-    callee.type === AST_NODE_TYPES.Identifier && HOOK_NAMES.has(callee.name)
-  );
-}
 
-/**
- * Checks if a node is an array.length expression
- */
-function isArrayLengthExpression(node: TSESTree.Node): boolean {
-  if (node.type !== AST_NODE_TYPES.MemberExpression) {
-    return false;
+  // Handle direct hook calls (useEffect, useCallback, etc.)
+  if (
+    callee.type === AST_NODE_TYPES.Identifier &&
+    HOOK_NAMES.has(callee.name)
+  ) {
+    return true;
   }
 
-  // Check if it's a property access with 'length'
+  // Handle React.useEffect, React.useCallback, etc.
   if (
-    node.property.type === AST_NODE_TYPES.Identifier &&
-    node.property.name === 'length'
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    callee.object.type === AST_NODE_TYPES.Identifier &&
+    callee.object.name === 'React' &&
+    callee.property.type === AST_NODE_TYPES.Identifier &&
+    HOOK_NAMES.has(callee.property.name)
   ) {
     return true;
   }
@@ -32,21 +36,114 @@ function isArrayLengthExpression(node: TSESTree.Node): boolean {
 }
 
 /**
+ * Checks if a variable name suggests it's likely an array
+ */
+function isLikelyArrayVariable(name: string): boolean {
+  // Common array naming patterns
+  const arrayPatterns = [
+    /items?\d*$/i, // items, item, items1, items2
+    /list\d*$/i, // list, userList, list1
+    /array\d*$/i, // array, dataArray, array1
+    /collection\d*$/i, // collection, collection1
+    /s\d*$/, // plural words (users, todos, etc.) with optional numbers
+    /data\d*$/i, // data (often arrays), data1
+    /results?\d*$/i, // result, results, results1
+    /entries\d*$/i, // entries, entries1
+    /values\d*$/i, // values, values1
+    /elements?\d*$/i, // element, elements, elements1
+    /nodes?\d*$/i, // node, nodes, nodes1
+    /children\d*$/i, // children, children1
+    /rows?\d*$/i, // row, rows, rows1
+    /columns?\d*$/i, // column, columns, columns1
+  ];
+
+  return arrayPatterns.some((pattern) => pattern.test(name));
+}
+
+/**
+ * Checks if a node is an array.length expression
+ */
+function isArrayLengthExpression(node: TSESTree.Node): boolean {
+  let memberExpr: TSESTree.MemberExpression;
+
+  // Handle optional chaining (ChainExpression wrapping MemberExpression)
+  if (node.type === AST_NODE_TYPES.ChainExpression) {
+    if (node.expression.type !== AST_NODE_TYPES.MemberExpression) {
+      return false;
+    }
+    memberExpr = node.expression;
+  } else if (node.type === AST_NODE_TYPES.MemberExpression) {
+    memberExpr = node;
+  } else {
+    return false;
+  }
+
+  // Check if it's a property access with 'length'
+  // Handle both dot notation (obj.length) and bracket notation (obj['length'])
+  const isLengthProperty =
+    (memberExpr.property.type === AST_NODE_TYPES.Identifier &&
+      memberExpr.property.name === 'length') ||
+    (memberExpr.property.type === AST_NODE_TYPES.Literal &&
+      memberExpr.property.value === 'length');
+
+  if (!isLengthProperty) {
+    return false;
+  }
+
+  // Try to determine if this is likely an array based on variable naming
+  if (memberExpr.object.type === AST_NODE_TYPES.Identifier) {
+    const varName = memberExpr.object.name;
+
+    // Skip common non-array variables
+    if (
+      [
+        'text',
+        'string',
+        'str',
+        'message',
+        'content',
+        'title',
+        'name',
+        'description',
+        'customObj',
+      ].includes(varName.toLowerCase())
+    ) {
+      return false;
+    }
+
+    // Check if it looks like an array variable
+    return isLikelyArrayVariable(varName);
+  }
+
+  // For complex expressions (like data.items), assume it could be an array
+  // This is a conservative approach - better to have some false positives than miss real issues
+  return true;
+}
+
+/**
  * Gets the array name from an array.length expression
  */
 function getArrayNameFromLengthExpression(
-  node: TSESTree.MemberExpression,
+  node: TSESTree.Node,
+  sourceCode: TSESLint.SourceCode,
 ): string {
-  // Handle optional chaining
-  const hasOptionalChaining = node.optional;
+  let memberExpr: TSESTree.MemberExpression;
 
-  // Get the array name
-  if (node.object.type === AST_NODE_TYPES.Identifier) {
-    return hasOptionalChaining ? `${node.object.name}?` : node.object.name;
+  // Handle optional chaining (ChainExpression wrapping MemberExpression)
+  if (node.type === AST_NODE_TYPES.ChainExpression) {
+    memberExpr = node.expression as TSESTree.MemberExpression;
+  } else {
+    memberExpr = node as TSESTree.MemberExpression;
+  }
+
+  // Get the array name (without the optional chaining syntax for the useMemo)
+  if (memberExpr.object.type === AST_NODE_TYPES.Identifier) {
+    return memberExpr.object.name;
   }
 
   // For more complex expressions, get the source code
-  return 'array'; // Fallback
+  const objectText = sourceCode.getText(memberExpr.object);
+  return objectText;
 }
 
 export const avoidArrayLengthDependency = createRule<[], MessageIds>({
@@ -81,7 +178,7 @@ export const avoidArrayLengthDependency = createRule<[], MessageIds>({
 
         // Find all array.length expressions in the dependency array
         const lengthExpressions: Array<{
-          element: TSESTree.MemberExpression;
+          element: TSESTree.Node;
           arrayName: string;
           hashName: string;
         }> = [];
@@ -90,12 +187,15 @@ export const avoidArrayLengthDependency = createRule<[], MessageIds>({
           if (!element) return; // Skip null elements (holes in the array)
 
           if (isArrayLengthExpression(element)) {
-            const memberExpr = element as TSESTree.MemberExpression;
-            const arrayName = getArrayNameFromLengthExpression(memberExpr);
+            const sourceCode = context.getSourceCode();
+            const arrayName = getArrayNameFromLengthExpression(
+              element,
+              sourceCode,
+            );
             const hashName = `${arrayName.replace(/[?\.]/g, '')}Hash`;
 
             lengthExpressions.push({
-              element: memberExpr,
+              element: element,
               arrayName,
               hashName,
             });
@@ -176,13 +276,23 @@ export const avoidArrayLengthDependency = createRule<[], MessageIds>({
               }
 
               // 3. Create all the memoized hash variables
-              let useMemoStatements = '';
-              for (const expr of lengthExpressions) {
-                useMemoStatements += `const ${expr.hashName} = useMemo(() => stableHash(${expr.arrayName}), [${expr.arrayName}]);\n  `;
+              // Find the statement that contains the hook call
+              let currentNode: TSESTree.Node = node;
+              while (currentNode.parent) {
+                const parent = currentNode.parent;
+                if (
+                  parent.type === AST_NODE_TYPES.ExpressionStatement ||
+                  parent.type === AST_NODE_TYPES.VariableDeclaration
+                ) {
+                  // Insert before this statement
+                  for (const expr of lengthExpressions) {
+                    const useMemoStatement = `const ${expr.hashName} = useMemo(() => stableHash(${expr.arrayName}), [${expr.arrayName}]);\n  `;
+                    yield fixer.insertTextBefore(parent, useMemoStatement);
+                  }
+                  break;
+                }
+                currentNode = parent;
               }
-
-              // Insert all useMemo statements before the hook call
-              yield fixer.insertTextBefore(node, useMemoStatements);
 
               // 4. Replace all array.length expressions with their hash variables
               for (const expr of lengthExpressions) {
