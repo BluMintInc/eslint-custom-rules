@@ -39,7 +39,10 @@ export default createRule<Options, 'useNextjsDynamic'>({
               useDynamicImports.set(specifier.local.name, 'useDynamic');
             } else if (specifier.type === AST_NODE_TYPES.ImportSpecifier) {
               const importedName = specifier.imported.name;
-              useDynamicImports.set(specifier.local.name, importedName);
+              // Only track if the imported name is exactly 'useDynamic'
+              if (importedName === 'useDynamic') {
+                useDynamicImports.set(specifier.local.name, importedName);
+              }
             }
           }
         }
@@ -48,13 +51,15 @@ export default createRule<Options, 'useNextjsDynamic'>({
       // Look for variable declarations using useDynamic
       VariableDeclarator(node) {
         // Check if the initializer is a call expression with exactly one argument that is an import() call
+        // Exclude calls with type parameters (generics)
         if (
           node.init &&
           node.init.type === AST_NODE_TYPES.CallExpression &&
           node.init.callee.type === AST_NODE_TYPES.Identifier &&
           useDynamicImports.has(node.init.callee.name) &&
           node.init.arguments.length === 1 &&
-          node.init.arguments[0].type === AST_NODE_TYPES.ImportExpression
+          node.init.arguments[0].type === AST_NODE_TYPES.ImportExpression &&
+          !node.init.typeParameters // Exclude generic calls like useDynamic<Type>(...)
         ) {
           // Check if 'dynamic' is already imported from 'next/dynamic'
           let dynamicImported = false;
@@ -81,7 +86,7 @@ export default createRule<Options, 'useNextjsDynamic'>({
           const variableName = node.id.type === AST_NODE_TYPES.Identifier ? node.id.name : '';
 
           // Check if it's a destructuring pattern
-          const isDestructuring = node.id.type === AST_NODE_TYPES.ObjectPattern;
+          const isDestructuring = node.id.type === AST_NODE_TYPES.ObjectPattern || node.id.type === AST_NODE_TYPES.ArrayPattern;
 
           // Get the import argument
           const importArg = node.init.arguments[0];
@@ -110,7 +115,13 @@ export default createRule<Options, 'useNextjsDynamic'>({
               // Add import for dynamic if it's not already imported
               if (!dynamicImported) {
                 const importStatement = 'import dynamic from \'next/dynamic\';\n';
-                fixes.push(fixer.insertTextBefore(sourceCode.ast.body[0], importStatement));
+                // Find the position to insert the import - after the useDynamic import
+                const useDynamicImportDecl = useDynamicImportDecls[0];
+                if (useDynamicImportDecl) {
+                  fixes.push(fixer.insertTextAfter(useDynamicImportDecl, '\n' + importStatement.trim()));
+                } else {
+                  fixes.push(fixer.insertTextBefore(sourceCode.ast.body[0], importStatement));
+                }
               }
 
               // Get the import path as a string
@@ -122,7 +133,8 @@ export default createRule<Options, 'useNextjsDynamic'>({
                 const namedExports = properties.map((prop) => {
                   if (prop.type === AST_NODE_TYPES.Property &&
                       prop.key.type === AST_NODE_TYPES.Identifier &&
-                      prop.value.type === AST_NODE_TYPES.Identifier) {
+                      prop.value.type === AST_NODE_TYPES.Identifier &&
+                      !prop.computed) {
                     const keyName = prop.key.name;
                     const valueName = prop.value.name;
 
@@ -134,8 +146,14 @@ export default createRule<Options, 'useNextjsDynamic'>({
                   return null;
                 }).filter(Boolean);
 
-                // Only proceed if we can handle all properties
-                if (namedExports.length === properties.length) {
+                // Only proceed if we can handle all properties (simple object patterns only)
+                if (namedExports.length === properties.length &&
+                    properties.every(prop =>
+                      prop.type === AST_NODE_TYPES.Property &&
+                      !prop.computed &&
+                      prop.key.type === AST_NODE_TYPES.Identifier &&
+                      prop.value.type === AST_NODE_TYPES.Identifier
+                    )) {
                   // Create separate dynamic imports for each named export
                   const dynamicImports = namedExports.map((exportInfo) => {
                     if (!exportInfo) return '';
@@ -153,23 +171,12 @@ export default createRule<Options, 'useNextjsDynamic'>({
                     fixes.push(fixer.replaceText(node.parent, dynamicImports));
                   }
                 } else {
-                  // Fallback: replace with original destructuring pattern
-                  const originalText = sourceCode.getText(node.parent || node);
-                  const replacement = originalText.replace(
-                    /useDynamic\s*\(\s*import\s*\([^)]+\)\s*\)/,
-                    `dynamic(
-  async () => {
-    const mod = await ${importPathText};
-    return mod.default;
-  },
-  { ssr: false }
-)`
-                  );
-
-                  if (node.parent) {
-                    fixes.push(fixer.replaceText(node.parent, replacement));
-                  }
+                  // For complex destructuring patterns, don't provide auto-fix
+                  return null;
                 }
+              } else if (isDestructuring && node.id.type === AST_NODE_TYPES.ArrayPattern) {
+                // For array destructuring patterns, don't provide auto-fix
+                return null;
               } else {
                 // Handle regular variable declaration
                 const declarationKeyword = node.parent?.type === AST_NODE_TYPES.VariableDeclaration
