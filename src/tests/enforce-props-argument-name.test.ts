@@ -4,7 +4,7 @@ import { enforcePropsArgumentName } from '../rules/enforce-props-argument-name';
 // Run non-JSX tests
 ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
   valid: [
-    // Function with correct props naming
+    // Basic valid cases - correct props naming
     {
       code: `
         type UserProps = {
@@ -16,7 +16,6 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
         }
       `,
     },
-    // Arrow function with correct props naming
     {
       code: `
         type ButtonProps = {
@@ -28,7 +27,6 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
         };
       `,
     },
-    // Class with correct props naming
     {
       code: `
         type PendingStrategyProps = {
@@ -42,20 +40,45 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
         }
       `,
     },
-    // Function with correct props naming and destructuring
+
+    // Destructured parameters should be ignored
     {
       code: `
         type UserProps = {
           name: string;
           age: number;
         };
-        function User(props: UserProps) {
-          const { name, age } = props;
+        function User({ name, age }: UserProps) {
           return name;
         }
       `,
     },
-    // Function with primitive parameter (should be ignored)
+    {
+      code: `
+        type ButtonProps = {
+          label: string;
+          onClick: () => void;
+        };
+        const Button = ({ label, onClick }: ButtonProps) => {
+          return label;
+        };
+      `,
+    },
+    {
+      code: `
+        type ConfigProps = {
+          setting1: string;
+          setting2: number;
+        };
+        class MyClass {
+          constructor({ setting1, setting2 }: ConfigProps) {
+            // ...
+          }
+        }
+      `,
+    },
+
+    // Non-Props types should be ignored
     {
       code: `
         function getId(id: string) {
@@ -63,7 +86,29 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
         }
       `,
     },
-    // Function with multiple parameters (should be ignored)
+    {
+      code: `
+        type UserConfig = {
+          name: string;
+        };
+        function configure(config: UserConfig) {
+          return config.name;
+        }
+      `,
+    },
+    {
+      code: `
+        interface DatabaseConnection {
+          host: string;
+          port: number;
+        }
+        function connect(connection: DatabaseConnection) {
+          // ...
+        }
+      `,
+    },
+
+    // Multiple parameters with non-Props types
     {
       code: `
         function createUser(name: string, age: number) {
@@ -71,7 +116,105 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
         }
       `,
     },
-    // Function with any parameter name is now allowed
+    {
+      code: `
+        type UserConfig = { name: string };
+        function processUser(id: string, config: UserConfig) {
+          // ...
+        }
+      `,
+    },
+
+    // Functions without type annotations
+    {
+      code: `
+        function process(data) {
+          return data;
+        }
+      `,
+    },
+    {
+      code: `
+        const handler = (event) => {
+          // ...
+        };
+      `,
+    },
+
+    // Generic Props types
+    {
+      code: `
+        function process<T extends ComponentProps>(props: T) {
+          return props;
+        }
+      `,
+    },
+
+    // Array destructuring
+    {
+      code: `
+        type ArrayProps = [string, number];
+        function process([first, second]: ArrayProps) {
+          return first;
+        }
+      `,
+    },
+
+    // Rest parameters
+    {
+      code: `
+        type ItemProps = { id: string };
+        function process(...items: ItemProps[]) {
+          return items;
+        }
+      `,
+    },
+
+    // Method signatures in interfaces
+    {
+      code: `
+        interface Service {
+          process(props: ServiceProps): void;
+        }
+      `,
+    },
+
+    // Private constructor parameters
+    {
+      code: `
+        type ManagerProps = {
+          config: Config;
+        };
+        class Manager {
+          constructor(private readonly props: ManagerProps) {}
+        }
+      `,
+    },
+
+    // Multiple parameters where only one has Props type
+    {
+      code: `
+        type UserProps = { name: string };
+        function createUser(id: string, props: UserProps) {
+          return { id, ...props };
+        }
+      `,
+    },
+
+    // Multiple Props parameters with correct naming
+    {
+      code: `
+        type UIProps = { theme: string };
+        type DataProps = { source: string };
+        function mergeConfigs(uIProps: UIProps, dataProps: DataProps) {
+          return { ...uIProps, ...dataProps };
+        }
+      `,
+    },
+  ],
+
+  invalid: [
+    // Basic invalid cases - wrong parameter names for Props types
     {
       code: `
         type UserProps = {
@@ -82,8 +225,48 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
           return config.name;
         }
       `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'UserProps' },
+        },
+      ],
+      output: `
+        type UserProps = {
+          name: string;
+          age: number;
+        };
+        function User(props: UserProps) {
+          return config.name;
+        }
+      `,
     },
-    // Class with any parameter name is now allowed
+    {
+      code: `
+        type ButtonProps = {
+          label: string;
+          onClick: () => void;
+        };
+        const Button = (settings: ButtonProps) => {
+          return settings.label;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'ButtonProps' },
+        },
+      ],
+      output: `
+        type ButtonProps = {
+          label: string;
+          onClick: () => void;
+        };
+        const Button = (props: ButtonProps) => {
+          return settings.label;
+        };
+      `,
+    },
     {
       code: `
         type PendingStrategyProps = {
@@ -91,57 +274,16 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
           match: MatchAggregated;
         };
         class PendingStrategy {
-          constructor(settings: PendingStrategyProps) {
-            // ...
-          }
-        }
-      `,
-    },
-    // Function with any parameter name is now allowed
-    {
-      code: `
-        type AreQueuesEmptyProps = {
-          videoPlatforms?: VideoPlatform[];
-          projectId?: string;
-        };
-        function areQueuesEmpty(params: AreQueuesEmptyProps) {
-          // ...
-        }
-      `,
-    },
-    // External interface implementation (should be ignored)
-    {
-      code: `
-        interface ExternalInterface {
-          configure(props: ConfigType): void;
-        }
-        class OurClass implements ExternalInterface {
-          configure(props: ConfigType) {
-            // ...
-          }
-        }
-      `,
-      options: [{ ignoreExternalInterfaces: true }],
-    },
-  ],
-  invalid: [
-    // Class with incorrect type suffix
-    {
-      code: `
-        type PendingStrategySettings = {
-          tournament: Tournament;
-          match: MatchAggregated;
-        };
-        class PendingStrategy {
-          constructor(settings: PendingStrategySettings) {
+          constructor(options: PendingStrategyProps) {
             // ...
           }
         }
       `,
       errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Settings' } },
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Settings' } },
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Settings' } },
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'PendingStrategyProps' },
+        },
       ],
       output: `
         type PendingStrategyProps = {
@@ -149,59 +291,288 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
           match: MatchAggregated;
         };
         class PendingStrategy {
-          constructor(settings: PendingStrategyProps) {
+          constructor(props: PendingStrategyProps) {
             // ...
           }
         }
       `,
     },
-    // Function with incorrect type suffix
+
+    // Arrow functions
     {
       code: `
-        type AreQueuesEmptyParams = {
-          videoPlatforms?: VideoPlatform[];
-          projectId?: string;
+        type GameProps = { id: string };
+        const createGame = (gameConfig: GameProps) => {
+          return gameConfig.id;
         };
-        function areQueuesEmpty(params: AreQueuesEmptyParams) {
-          // ...
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'GameProps' },
+        },
+      ],
+      output: `
+        type GameProps = { id: string };
+        const createGame = (props: GameProps) => {
+          return gameConfig.id;
+        };
+      `,
+    },
+
+    // Function expressions
+    {
+      code: `
+        type HandlerProps = { event: Event };
+        const handler = function(eventData: HandlerProps) {
+          return eventData.event;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'HandlerProps' },
+        },
+      ],
+      output: `
+        type HandlerProps = { event: Event };
+        const handler = function(props: HandlerProps) {
+          return eventData.event;
+        };
+      `,
+    },
+
+    // Multiple parameters with Props types
+    {
+      code: `
+        type UIProps = { theme: string };
+        type DataProps = { source: string };
+        function mergeConfigs(uiSettings: UIProps, dataSettings: DataProps) {
+          return { ...uiSettings, ...dataSettings };
         }
       `,
       errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Params' } },
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Params' } },
+        {
+          messageId: 'usePropsParameterNameWithPrefix',
+          data: { typeName: 'UIProps', suggestedName: 'uIProps' },
+        },
+        {
+          messageId: 'usePropsParameterNameWithPrefix',
+          data: { typeName: 'DataProps', suggestedName: 'dataProps' },
+        },
       ],
       output: `
-        type AreQueuesEmptyProps = {
-          videoPlatforms?: VideoPlatform[];
-          projectId?: string;
-        };
-        function areQueuesEmpty(params: AreQueuesEmptyProps) {
-          // ...
+        type UIProps = { theme: string };
+        type DataProps = { source: string };
+        function mergeConfigs(uIProps: UIProps, dataProps: DataProps) {
+          return { ...uiSettings, ...dataSettings };
         }
       `,
     },
-    // Type with incorrect suffix
+
+    // Class with multiple constructor parameters
     {
       code: `
-        type AlgoliaLayoutConfig = {
-          CatalogWrapper: RenderCatalogWrapper;
-          configureOptions: Required<UseConfigureProps, 'filters'>;
-        };
+        type ManagerProps = { config: Config };
+        class DataManager {
+          constructor(
+            dataSource: DataSource,
+            settings: ManagerProps,
+          ) {}
+        }
       `,
       errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Config' } },
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'ManagerProps' },
+        },
       ],
       output: `
-        type AlgoliaLayoutProps = {
-          CatalogWrapper: RenderCatalogWrapper;
-          configureOptions: Required<UseConfigureProps, 'filters'>;
-        };
+        type ManagerProps = { config: Config };
+        class DataManager {
+          constructor(
+            dataSource: DataSource,
+            props: ManagerProps,
+          ) {}
+        }
+      `,
+    },
+
+    // Generic Props types - only if the generic type itself ends with Props
+    {
+      code: `
+        function process<TProps extends ComponentProps>(data: TProps) {
+          return data;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'TProps' },
+        },
+      ],
+      output: `
+        function process<TProps extends ComponentProps>(props: TProps) {
+          return data;
+        }
+      `,
+    },
+
+    // Method signatures
+    {
+      code: `
+        interface Service {
+          process(data: ServiceProps): void;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'ServiceProps' },
+        },
+      ],
+      output: `
+        interface Service {
+          process(props: ServiceProps): void;
+        }
+      `,
+    },
+
+    // Edge case: Props type with different casing
+    {
+      code: `
+        type userProps = { name: string };
+        function createUser(userData: userProps) {
+          return userData.name;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'userProps' },
+        },
+      ],
+      output: `
+        type userProps = { name: string };
+        function createUser(props: userProps) {
+          return userData.name;
+        }
+      `,
+    },
+
+    // Edge case: Just "Props" type
+    {
+      code: `
+        type Props = { value: string };
+        function render(data: Props) {
+          return data.value;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'Props' },
+        },
+      ],
+      output: `
+        type Props = { value: string };
+        function render(props: Props) {
+          return data.value;
+        }
+      `,
+    },
+
+    // Complex type names
+    {
+      code: `
+        type VeryLongComponentNameProps = { id: string };
+        function process(componentData: VeryLongComponentNameProps) {
+          return componentData.id;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'VeryLongComponentNameProps' },
+        },
+      ],
+      output: `
+        type VeryLongComponentNameProps = { id: string };
+        function process(props: VeryLongComponentNameProps) {
+          return componentData.id;
+        }
+      `,
+    },
+
+    // Nested class methods
+    {
+      code: `
+        type ConfigProps = { setting: string };
+        class OuterClass {
+          method(config: ConfigProps) {}
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'ConfigProps' },
+        },
+      ],
+      output: `
+        type ConfigProps = { setting: string };
+        class OuterClass {
+          method(props: ConfigProps) {}
+        }
+      `,
+    },
+
+    // Optional parameters
+    {
+      code: `
+        type OptionalProps = { value?: string };
+        function process(data?: OptionalProps) {
+          return data?.value;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'OptionalProps' },
+        },
+      ],
+      output: `
+        type OptionalProps = { value?: string };
+        function process(props?: OptionalProps) {
+          return data?.value;
+        }
+      `,
+    },
+
+    // Mixed valid and invalid parameters
+    {
+      code: `
+        type UserProps = { name: string };
+        function createUser(id: string, userData: UserProps, callback: Function) {
+          return callback({ id, ...userData });
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'UserProps' },
+        },
+      ],
+      output: `
+        type UserProps = { name: string };
+        function createUser(id: string, props: UserProps, callback: Function) {
+          return callback({ id, ...userData });
+        }
       `,
     },
   ],
 });
 
-// Run JSX tests - combined with the previous ruleTesterTs tests
+// Run JSX tests
 ruleTesterJsx.run('enforce-props-argument-name', enforcePropsArgumentName, {
   valid: [
     // React component with correct props naming
@@ -216,20 +587,21 @@ ruleTesterJsx.run('enforce-props-argument-name', enforcePropsArgumentName, {
         };
       `,
     },
-    // React component with correct props naming and destructuring
+
+    // React component with destructuring (should be ignored)
     {
       code: `
         type ButtonProps = {
           label: string;
           onClick: () => void;
         };
-        const Button = (props: ButtonProps) => {
-          const { label, onClick } = props;
+        const Button = ({ label, onClick }: ButtonProps) => {
           return <button onClick={onClick}>{label}</button>;
         };
       `,
     },
-    // React class component with correct props naming
+
+    // React class component (doesn't apply to class components)
     {
       code: `
         type MyComponentProps = {
@@ -242,41 +614,172 @@ ruleTesterJsx.run('enforce-props-argument-name', enforcePropsArgumentName, {
         }
       `,
     },
-    // React component with any parameter name is now allowed
+
+    // React component with correct props naming in function declaration
     {
       code: `
-        type AlgoliaLayoutProps = {
-          CatalogWrapper: RenderCatalogWrapper;
-          configureOptions: Required<UseConfigureProps, 'filters'>;
+        type UserCardProps = {
+          name: string;
+          avatar: string;
         };
-        const AlgoliaLayout = ({ CatalogWrapper, configureOptions }: AlgoliaLayoutProps) => {
-          // ...
+        function UserCard(props: UserCardProps) {
+          return <div>{props.name}</div>;
+        }
+      `,
+    },
+
+    // React component with multiple parameters where one is Props
+    {
+      code: `
+        type ComponentProps = { data: string };
+        function Component(key: string, props: ComponentProps) {
+          return <div key={key}>{props.data}</div>;
+        }
+      `,
+    },
+
+    // React component with non-Props types
+    {
+      code: `
+        type ComponentConfig = { theme: string };
+        const Component = (config: ComponentConfig) => {
+          return <div className={config.theme}>Content</div>;
         };
       `,
     },
   ],
+
   invalid: [
-    // React component with incorrect type suffix
+    // React component with wrong parameter name
     {
       code: `
-        type AlgoliaLayoutConfig = {
-          CatalogWrapper: RenderCatalogWrapper;
-          configureOptions: Required<UseConfigureProps, 'filters'>;
+        type ButtonProps = {
+          label: string;
+          onClick: () => void;
         };
-        const AlgoliaLayout = ({ CatalogWrapper, configureOptions }: AlgoliaLayoutConfig) => {
-          // ...
+        const Button = (buttonConfig: ButtonProps) => {
+          return <button onClick={buttonConfig.onClick}>{buttonConfig.label}</button>;
         };
       `,
       errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Config' } },
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'ButtonProps' },
+        },
       ],
       output: `
-        type AlgoliaLayoutProps = {
-          CatalogWrapper: RenderCatalogWrapper;
-          configureOptions: Required<UseConfigureProps, 'filters'>;
+        type ButtonProps = {
+          label: string;
+          onClick: () => void;
         };
-        const AlgoliaLayout = ({ CatalogWrapper, configureOptions }: AlgoliaLayoutConfig) => {
-          // ...
+        const Button = (props: ButtonProps) => {
+          return <button onClick={buttonConfig.onClick}>{buttonConfig.label}</button>;
+        };
+      `,
+    },
+
+    // React function component with wrong parameter name
+    {
+      code: `
+        type UserCardProps = {
+          name: string;
+          avatar: string;
+        };
+        function UserCard(userInfo: UserCardProps) {
+          return <div>{userInfo.name}</div>;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'UserCardProps' },
+        },
+      ],
+      output: `
+        type UserCardProps = {
+          name: string;
+          avatar: string;
+        };
+        function UserCard(props: UserCardProps) {
+          return <div>{userInfo.name}</div>;
+        }
+      `,
+    },
+
+    // React component with multiple Props parameters
+    {
+      code: `
+        type UIProps = { theme: string };
+        type DataProps = { items: Item[] };
+        const Component = (uiConfig: UIProps, dataConfig: DataProps) => {
+          return <div className={uiConfig.theme}>{dataConfig.items.length}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterNameWithPrefix',
+          data: { typeName: 'UIProps', suggestedName: 'uIProps' },
+        },
+        {
+          messageId: 'usePropsParameterNameWithPrefix',
+          data: { typeName: 'DataProps', suggestedName: 'dataProps' },
+        },
+      ],
+      output: `
+        type UIProps = { theme: string };
+        type DataProps = { items: Item[] };
+        const Component = (uIProps: UIProps, dataProps: DataProps) => {
+          return <div className={uiConfig.theme}>{dataConfig.items.length}</div>;
+        };
+      `,
+    },
+
+    // React component with generic Props
+    {
+      code: `
+        function GenericComponent<TProps extends ComponentProps>(data: TProps) {
+          return <div>{JSON.stringify(data)}</div>;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'TProps' },
+        },
+      ],
+      output: `
+        function GenericComponent<TProps extends ComponentProps>(props: TProps) {
+          return <div>{JSON.stringify(data)}</div>;
+        }
+      `,
+    },
+
+    // React component with complex Props type
+    {
+      code: `
+        type VeryComplexComponentProps = {
+          data: ComplexData;
+          handlers: EventHandlers;
+          config: Configuration;
+        };
+        const VeryComplexComponent = (componentData: VeryComplexComponentProps) => {
+          return <div>Complex component</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'VeryComplexComponentProps' },
+        },
+      ],
+      output: `
+        type VeryComplexComponentProps = {
+          data: ComplexData;
+          handlers: EventHandlers;
+          config: Configuration;
+        };
+        const VeryComplexComponent = (props: VeryComplexComponentProps) => {
+          return <div>Complex component</div>;
         };
       `,
     },
