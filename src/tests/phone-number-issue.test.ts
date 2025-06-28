@@ -20,7 +20,7 @@ ruleTesterTs.run('no-hungarian-phone-number-test', noHungarian, {
       validate(phoneNumber: string): boolean {
         return phoneNumber.length > 0;
       }
-    }`
+    }`,
   ],
   invalid: [
     // These should be invalid and trigger the rule (actual Hungarian notation)

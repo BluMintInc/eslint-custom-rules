@@ -3,7 +3,7 @@ import { createRule } from '../utils/createRule';
 import { TypeFlags, isArrayTypeNode, isTupleTypeNode } from 'typescript';
 import type { TypeChecker, Node } from 'typescript';
 
-type MessageIds = 'avoidEntireObject';
+type MessageIds = 'avoidEntireObject' | 'removeUnusedDependency';
 
 const HOOK_NAMES = new Set(['useEffect', 'useCallback', 'useMemo']);
 
@@ -19,48 +19,60 @@ function isArrayOrPrimitive(
   esTreeNode: TSESTree.Node,
   nodeMap: { get(node: TSESTree.Node): Node | undefined },
 ): boolean {
-  const tsNode = nodeMap.get(esTreeNode);
-  if (!tsNode) return false;
+  try {
+    const tsNode = nodeMap.get(esTreeNode);
+    if (!tsNode) return false;
 
-  const type = checker.getTypeAtLocation(tsNode);
+    const type = checker.getTypeAtLocation(tsNode);
 
-  // Check if it's a primitive type
-  if (
-    type.flags &
-    (TypeFlags.String |
-      TypeFlags.StringLike |
-      TypeFlags.StringLiteral |
-      TypeFlags.Number |
-      TypeFlags.Boolean |
-      TypeFlags.Null |
-      TypeFlags.Undefined |
-      TypeFlags.Void |
-      TypeFlags.Never |
-      TypeFlags.Any |
-      TypeFlags.Unknown |
-      TypeFlags.BigInt |
-      TypeFlags.ESSymbol)
-  ) {
-    return true;
+    // Check if it's a primitive type
+    if (
+      type.flags &
+      (TypeFlags.String |
+        TypeFlags.StringLike |
+        TypeFlags.StringLiteral |
+        TypeFlags.Number |
+        TypeFlags.Boolean |
+        TypeFlags.Null |
+        TypeFlags.Undefined |
+        TypeFlags.Void |
+        TypeFlags.Never |
+        TypeFlags.BigInt |
+        TypeFlags.ESSymbol)
+    ) {
+      return true;
+    }
+
+    // Check if it's an array type
+    const typeNode = checker.typeToTypeNode(type, undefined, undefined);
+    if (
+      type.symbol?.name === 'Array' ||
+      type.symbol?.escapedName === 'Array' ||
+      (typeNode && (isArrayTypeNode(typeNode) || isTupleTypeNode(typeNode)))
+    ) {
+      return true;
+    }
+
+    // Check if it's a string type with methods (like String object)
+    if (
+      type.symbol?.name === 'String' ||
+      type.symbol?.escapedName === 'String'
+    ) {
+      return true;
+    }
+
+    // Be more conservative - if we can't determine the type clearly, assume it's an object
+    // This prevents false positives where complex objects are incorrectly identified as primitives
+    if (type.flags & (TypeFlags.Any | TypeFlags.Unknown)) {
+      return false; // Treat Any/Unknown as potential objects
+    }
+
+    // If it's not a primitive or array, and has properties, it's an object
+    return false;
+  } catch (error) {
+    // If there's any error in type checking, assume it's an object to be safe
+    return false;
   }
-
-  // Check if it's an array type
-  const typeNode = checker.typeToTypeNode(type, undefined, undefined);
-  if (
-    type.symbol?.name === 'Array' ||
-    type.symbol?.escapedName === 'Array' ||
-    (typeNode && (isArrayTypeNode(typeNode) || isTupleTypeNode(typeNode)))
-  ) {
-    return true;
-  }
-
-  // Check if it's a string type with methods (like String object)
-  if (type.symbol?.name === 'String' || type.symbol?.escapedName === 'String') {
-    return true;
-  }
-
-  // If it's not a primitive or array, and has properties, it's an object
-  return false;
 }
 
 function getObjectUsagesInHook(
@@ -68,12 +80,12 @@ function getObjectUsagesInHook(
   objectName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   context: any,
-): Set<string> {
-  const usages = new Set<string>();
+): { usages: Set<string>; needsEntireObject: boolean; notUsed: boolean } {
+  const usages = new Map<string, number>(); // Track usage and its position
   const visited = new Set<TSESTree.Node>();
   let needsEntireObject = false;
 
-  // Built-in array methods that should not be considered as object properties
+  // Built-in array methods that indicate usage of the entire array
   const ARRAY_METHODS = new Set([
     'map',
     'filter',
@@ -99,6 +111,34 @@ function getObjectUsagesInHook(
     'flatMap',
   ]);
 
+  // Built-in string methods that indicate usage of the entire string
+  const STRING_METHODS = new Set([
+    'charAt',
+    'charCodeAt',
+    'concat',
+    'indexOf',
+    'lastIndexOf',
+    'localeCompare',
+    'match',
+    'replace',
+    'search',
+    'slice',
+    'split',
+    'substr',
+    'substring',
+    'toLowerCase',
+    'toUpperCase',
+    'trim',
+    'trimStart',
+    'trimEnd',
+    'padStart',
+    'padEnd',
+    'repeat',
+    'startsWith',
+    'endsWith',
+    'includes',
+  ]);
+
   function buildAccessPath(node: TSESTree.MemberExpression): string | null {
     const parts: string[] = [];
     let current: TSESTree.Node = node;
@@ -110,6 +150,23 @@ function getObjectUsagesInHook(
 
       // Handle computed properties (like array indices)
       if (memberExpr.computed) {
+        // For computed properties with variables (like user[key]), we need the entire object
+        if (memberExpr.property.type === AST_NODE_TYPES.Identifier) {
+          // Check if this is accessing our target object
+          let current = memberExpr.object;
+          while (current.type === AST_NODE_TYPES.MemberExpression) {
+            current = current.object;
+          }
+          if (
+            current.type === AST_NODE_TYPES.Identifier &&
+            current.name === objectName
+          ) {
+            // This is a computed property access on our target object, so we need the entire object
+            needsEntireObject = true;
+          }
+          return null;
+        }
+
         // For computed properties with literals
         if (memberExpr.property.type === AST_NODE_TYPES.Literal) {
           const literalProp = memberExpr.property as TSESTree.Literal;
@@ -139,11 +196,43 @@ function getObjectUsagesInHook(
           return null;
         }
 
-        // Skip array methods
+        // Check for array/string methods - these indicate usage of the entire array/string
         if (
           memberExpr.property.name &&
-          ARRAY_METHODS.has(memberExpr.property.name)
+          (ARRAY_METHODS.has(memberExpr.property.name) ||
+            STRING_METHODS.has(memberExpr.property.name))
         ) {
+          // Check if this is accessing our target object or a property of it
+          let current = memberExpr.object;
+          let pathParts: string[] = [];
+          let hasOptionalChaining = false;
+
+          // Build the path to the array/string being accessed
+          while (current.type === AST_NODE_TYPES.MemberExpression) {
+            const currentMember = current as TSESTree.MemberExpression;
+            if (currentMember.property.type === AST_NODE_TYPES.Identifier) {
+              pathParts.unshift(currentMember.property.name);
+            }
+            if (currentMember.optional) {
+              hasOptionalChaining = true;
+            }
+            current = currentMember.object;
+          }
+
+          if (
+            current.type === AST_NODE_TYPES.Identifier &&
+            current.name === objectName
+          ) {
+            if (pathParts.length === 0) {
+              // Direct method call on the object (e.g., userData.map(...))
+              needsEntireObject = true;
+            } else {
+              // Method call on a property (e.g., userData.items.map(...) or userData?.items?.map(...))
+              let path = objectName + (hasOptionalChaining ? '?' : '');
+              path += '.' + pathParts.join('.');
+              usages.set(path, memberExpr.range?.[0] || 0);
+            }
+          }
           return null;
         }
 
@@ -184,6 +273,14 @@ function getObjectUsagesInHook(
     visited.add(node);
 
     if (node.type === AST_NODE_TYPES.CallExpression) {
+      // Check if the object is being called as a function
+      if (
+        node.callee.type === AST_NODE_TYPES.Identifier &&
+        node.callee.name === objectName
+      ) {
+        needsEntireObject = true;
+      }
+
       // Check if the object is directly passed as an argument
       node.arguments.forEach((arg) => {
         if (arg.type === AST_NODE_TYPES.Identifier && arg.name === objectName) {
@@ -217,10 +314,87 @@ function getObjectUsagesInHook(
       }
     } else if (node.type === AST_NODE_TYPES.MemberExpression) {
       // Check if this is accessing a property of our target object
-      const path = buildAccessPath(node);
-      if (path) {
-        usages.add(path);
+      const memberExpr = node as TSESTree.MemberExpression;
+
+      // Only process if this is the outermost member expression in a chain
+      // (i.e., its parent is not also a member expression)
+      const parent = memberExpr.parent;
+      if (parent && parent.type === AST_NODE_TYPES.MemberExpression) {
+        // This is an intermediate member expression, skip it
+        return;
       }
+
+      // Check if this member expression involves our target object
+      let current: TSESTree.Node = memberExpr;
+      let foundTargetObject = false;
+      let hasDynamicComputed = false;
+
+      // Walk up the member expression chain to see if it involves our target object
+      while (current.type === AST_NODE_TYPES.MemberExpression) {
+        const currentMember = current as TSESTree.MemberExpression;
+
+        // Check if this level uses dynamic computed property access
+        if (
+          currentMember.computed &&
+          currentMember.property.type === AST_NODE_TYPES.Identifier
+        ) {
+          hasDynamicComputed = true;
+        }
+
+        current = currentMember.object;
+      }
+
+      // Check if we reached our target object
+      if (
+        current.type === AST_NODE_TYPES.Identifier &&
+        current.name === objectName
+      ) {
+        foundTargetObject = true;
+      }
+
+      if (foundTargetObject) {
+        if (hasDynamicComputed) {
+          // Dynamic computed property access means we need the entire object
+          needsEntireObject = true;
+          return;
+        } else {
+          // Static property access - add to usages
+          const path = buildAccessPath(memberExpr);
+          if (path) {
+            usages.set(path, memberExpr.range?.[0] || 0);
+          }
+        }
+      }
+    } else if (node.type === AST_NODE_TYPES.ChainExpression) {
+      // Handle optional chaining expressions
+      if (node.expression.type === AST_NODE_TYPES.MemberExpression) {
+        const path = buildAccessPath(node.expression);
+        if (path) {
+          usages.set(path, node.range?.[0] || 0);
+        }
+      }
+    } else if (
+      node.type === AST_NODE_TYPES.BinaryExpression ||
+      node.type === AST_NODE_TYPES.LogicalExpression
+    ) {
+      // Handle binary expressions like `userId || userData?.id`
+      visit(node.left);
+      visit(node.right);
+    } else if (node.type === AST_NODE_TYPES.ConditionalExpression) {
+      // Handle ternary expressions
+      visit(node.test);
+      visit(node.consequent);
+      visit(node.alternate);
+    } else if (node.type === AST_NODE_TYPES.VariableDeclaration) {
+      // Handle variable declarations
+      node.declarations.forEach((declaration) => {
+        if (declaration.init) {
+          visit(declaration.init);
+        }
+      });
+    } else if (node.type === AST_NODE_TYPES.AssignmentExpression) {
+      // Handle assignments
+      visit(node.right);
     }
 
     // Visit all child nodes
@@ -245,24 +419,53 @@ function getObjectUsagesInHook(
 
   visit(hookBody);
 
-  // If the entire object is needed, return an empty set to indicate valid usage
-  if (needsEntireObject) {
-    return new Set();
-  }
+  // Process paths and determine which ones to include
+  const paths = Array.from(usages.keys());
+  const finalPaths = new Set<string>();
 
-  // Filter out intermediate paths
-  const paths = Array.from(usages);
+  paths.forEach((path) => {
+    // Always include the main path
+    finalPaths.add(path);
+
+    // For optional chaining, include the FIRST optional chaining point as intermediate
+    if (path.includes('?.')) {
+      // Find the first optional chaining point
+      // For userData?.profile.settings.theme.primary, we want to include userData?.profile
+      const firstOptionalIndex = path.indexOf('?.');
+      if (firstOptionalIndex !== -1) {
+        // Find the end of the first property after the optional chaining
+        const afterOptional = path.substring(firstOptionalIndex + 2);
+        const nextDotIndex = afterOptional.indexOf('.');
+
+        if (nextDotIndex !== -1) {
+          // There are more properties after the first optional property
+          const firstOptionalPath = path.substring(
+            0,
+            firstOptionalIndex + 2 + nextDotIndex,
+          );
+          finalPaths.add(firstOptionalPath);
+        }
+      }
+    }
+
+    // For array access, include the array property itself
+    if (path.includes('[') && path.includes(']')) {
+      const bracketIndex = path.indexOf('[');
+      if (bracketIndex > 0) {
+        const arrayPath = path.substring(0, bracketIndex);
+        finalPaths.add(arrayPath);
+      }
+    }
+  });
+
+  // Convert to array for sorting
+  const pathsArray = Array.from(finalPaths);
 
   // Filter out array paths when we're already accessing specific indices
-  // For example, don't include 'obj.arr' if we have 'obj.arr[0]'
-  const filteredPaths = paths.filter((path) => {
-    // Skip intermediate paths (if path is prefix of another path)
-    const isIntermediatePath = paths.some(
-      (otherPath) => otherPath !== path && otherPath.startsWith(path + '.'),
-    );
-
-    // Skip array paths if we're accessing specific indices
-    const isArrayWithSpecificIndices = paths.some(
+  // Exception: keep array paths with optional chaining as they represent different dependencies
+  const filteredPaths = pathsArray.filter((path) => {
+    // Skip array paths if we're accessing specific indices, unless it's optional chaining
+    const isArrayWithSpecificIndices = pathsArray.some(
       (otherPath) =>
         otherPath !== path &&
         (otherPath.startsWith(path + '[') ||
@@ -273,10 +476,50 @@ function getObjectUsagesInHook(
           )),
     );
 
-    return !isIntermediatePath && !isArrayWithSpecificIndices;
+    // Keep array paths with optional chaining even if specific indices are accessed
+    if (isArrayWithSpecificIndices && path.includes('?.')) {
+      return true;
+    }
+
+    return !isArrayWithSpecificIndices;
   });
 
-  return new Set(filteredPaths);
+  // Sort paths: longer/more specific paths first, then by optional chaining preference
+  const sortedPaths = filteredPaths.sort((a, b) => {
+    const posA = usages.get(a) || 0;
+    const posB = usages.get(b) || 0;
+
+    // For paths with the same base, put longer ones first
+    const aDepth = a.split('.').length + (a.includes('[') ? 1 : 0);
+    const bDepth = b.split('.').length + (b.includes('[') ? 1 : 0);
+
+    if (aDepth !== bDepth) {
+      return bDepth - aDepth; // Longer paths first
+    }
+
+    // If same depth, prefer optional chaining paths first
+    const aHasOptional = a.includes('?');
+    const bHasOptional = b.includes('?');
+
+    if (aHasOptional && !bHasOptional) {
+      return -1; // a comes first
+    }
+    if (!aHasOptional && bHasOptional) {
+      return 1; // b comes first
+    }
+
+    // If same depth and same optional chaining status, sort by source position
+    return posA - posB;
+  });
+
+  const filteredUsages = new Set(sortedPaths);
+  const notUsed = !needsEntireObject && filteredUsages.size === 0;
+
+  return {
+    usages: filteredUsages,
+    needsEntireObject,
+    notUsed,
+  };
 }
 
 export const noEntireObjectHookDeps = createRule<[], MessageIds>({
@@ -294,6 +537,8 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
     messages: {
       avoidEntireObject:
         'Avoid using entire object "{{objectName}}" in dependency array. Use specific fields: {{fields}}',
+      removeUnusedDependency:
+        'Remove unused dependency "{{objectName}}" from dependency array (not used in effect)',
     },
   },
   defaultOptions: [],
@@ -301,7 +546,9 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
     // For testing purposes, we'll make the rule work without TypeScript services
     const parserServices = context.parserServices;
     const hasFullTypeChecking =
-      parserServices?.program && parserServices?.esTreeNodeToTSNodeMap;
+      parserServices?.program &&
+      parserServices?.esTreeNodeToTSNodeMap &&
+      typeof parserServices.program.getTypeChecker === 'function';
 
     // Skip type checking if we don't have TypeScript services
     if (hasFullTypeChecking) {
@@ -340,7 +587,7 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
             const objectName = element.name;
 
             // Skip type checking if we don't have TypeScript services
-            if (hasFullTypeChecking) {
+            if (hasFullTypeChecking && parserServices) {
               const checker = parserServices.program.getTypeChecker();
               const nodeMap = parserServices.esTreeNodeToTSNodeMap;
 
@@ -349,33 +596,80 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
                 return;
               }
             }
+            // For testing without TypeScript services, we'll assume all identifiers are objects
 
-            const usages = getObjectUsagesInHook(
-              callbackArg.body,
+            const result = getObjectUsagesInHook(
+              (
+                callbackArg as
+                  | TSESTree.ArrowFunctionExpression
+                  | TSESTree.FunctionExpression
+              ).body,
               objectName,
               context,
             );
 
-            // If we found specific field usages and the entire object is in deps
-            // Skip reporting if usages is empty (indicates spread operator usage)
-            if (usages.size > 0) {
-              const fields = Array.from(usages).join(', ');
+            // If the object is not used at all, suggest removing it
+            if (result.notUsed) {
               context.report({
-                node: element,
+                node: element as TSESTree.Node,
+                messageId: 'removeUnusedDependency',
+                data: {
+                  objectName,
+                },
+                fix(fixer) {
+                  // Remove the element and handle commas properly
+                  const elementIndex = depsArg.elements.indexOf(element);
+
+                  if (elementIndex === -1) return null;
+
+                  // If this is the only element, just remove it
+                  if (depsArg.elements.length === 1) {
+                    return fixer.remove(element as TSESTree.Node);
+                  }
+
+                  // If this is the last element, remove the preceding comma
+                  if (elementIndex === depsArg.elements.length - 1) {
+                    const prevElement = depsArg.elements[elementIndex - 1];
+                    if (prevElement) {
+                      const range: [number, number] = [
+                        prevElement.range![1],
+                        (element as TSESTree.Node).range![1],
+                      ];
+                      return fixer.removeRange(range);
+                    }
+                  }
+
+                  // Otherwise, remove the element and the following comma
+                  const nextElement = depsArg.elements[elementIndex + 1];
+                  if (nextElement) {
+                    const range: [number, number] = [
+                      (element as TSESTree.Node).range![0],
+                      nextElement.range![0],
+                    ];
+                    return fixer.removeRange(range);
+                  }
+
+                  // Fallback to just removing the element
+                  return fixer.remove(element as TSESTree.Node);
+                },
+              });
+            }
+            // If we found specific field usages and the entire object is in deps
+            // Skip reporting if needsEntireObject is true (indicates spread operator usage)
+            else if (result.usages.size > 0 && !result.needsEntireObject) {
+              const fields = Array.from(result.usages).join(', ');
+              context.report({
+                node: element as TSESTree.Node,
                 messageId: 'avoidEntireObject',
                 data: {
                   objectName,
                   fields,
                 },
                 fix(fixer) {
-                  // Only provide fix if we have specific fields to suggest
-                  if (usages.size > 0) {
-                    return fixer.replaceText(
-                      element,
-                      Array.from(usages).join(', '),
-                    );
-                  }
-                  return null;
+                  return fixer.replaceText(
+                    element as TSESTree.Node,
+                    Array.from(result.usages).join(', '),
+                  );
                 },
               });
             }
