@@ -81,7 +81,7 @@ function getObjectUsagesInHook(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   context: any,
 ): { usages: Set<string>; needsEntireObject: boolean; notUsed: boolean } {
-  const usages = new Set<string>();
+  const usages = new Map<string, number>(); // Track usage and its position
   const visited = new Set<TSESTree.Node>();
   let needsEntireObject = false;
 
@@ -202,17 +202,36 @@ function getObjectUsagesInHook(
           (ARRAY_METHODS.has(memberExpr.property.name) ||
             STRING_METHODS.has(memberExpr.property.name))
         ) {
-          // Check if this is accessing our target object
+          // Check if this is accessing our target object or a property of it
           let current = memberExpr.object;
+          let pathParts: string[] = [];
+          let hasOptionalChaining = false;
+
+          // Build the path to the array/string being accessed
           while (current.type === AST_NODE_TYPES.MemberExpression) {
-            current = current.object;
+            const currentMember = current as TSESTree.MemberExpression;
+            if (currentMember.property.type === AST_NODE_TYPES.Identifier) {
+              pathParts.unshift(currentMember.property.name);
+            }
+            if (currentMember.optional) {
+              hasOptionalChaining = true;
+            }
+            current = currentMember.object;
           }
+
           if (
             current.type === AST_NODE_TYPES.Identifier &&
             current.name === objectName
           ) {
-            // This is an array/string method on our target object, so we need the entire object
-            needsEntireObject = true;
+            if (pathParts.length === 0) {
+              // Direct method call on the object (e.g., userData.map(...))
+              needsEntireObject = true;
+            } else {
+              // Method call on a property (e.g., userData.items.map(...) or userData?.items?.map(...))
+              let path = objectName + (hasOptionalChaining ? '?' : '');
+              path += '.' + pathParts.join('.');
+              usages.set(path, memberExpr.range?.[0] || 0);
+            }
           }
           return null;
         }
@@ -295,10 +314,79 @@ function getObjectUsagesInHook(
       }
     } else if (node.type === AST_NODE_TYPES.MemberExpression) {
       // Check if this is accessing a property of our target object
-      const path = buildAccessPath(node);
-      if (path) {
-        usages.add(path);
+      const memberExpr = node as TSESTree.MemberExpression;
+
+      // Only process if this is the outermost member expression in a chain
+      // (i.e., its parent is not also a member expression)
+      const parent = memberExpr.parent;
+      if (parent && parent.type === AST_NODE_TYPES.MemberExpression) {
+        // This is an intermediate member expression, skip it
+        return;
       }
+
+      // Check if this member expression involves our target object
+      let current: TSESTree.Node = memberExpr;
+      let foundTargetObject = false;
+      let hasDynamicComputed = false;
+
+      // Walk up the member expression chain to see if it involves our target object
+      while (current.type === AST_NODE_TYPES.MemberExpression) {
+        const currentMember = current as TSESTree.MemberExpression;
+
+        // Check if this level uses dynamic computed property access
+        if (currentMember.computed &&
+            currentMember.property.type === AST_NODE_TYPES.Identifier) {
+          hasDynamicComputed = true;
+        }
+
+        current = currentMember.object;
+      }
+
+      // Check if we reached our target object
+      if (current.type === AST_NODE_TYPES.Identifier && current.name === objectName) {
+        foundTargetObject = true;
+      }
+
+      if (foundTargetObject) {
+        if (hasDynamicComputed) {
+          // Dynamic computed property access means we need the entire object
+          needsEntireObject = true;
+          return;
+        } else {
+          // Static property access - add to usages
+          const path = buildAccessPath(memberExpr);
+          if (path) {
+            usages.set(path, memberExpr.range?.[0] || 0);
+          }
+        }
+      }
+    } else if (node.type === AST_NODE_TYPES.ChainExpression) {
+      // Handle optional chaining expressions
+      if (node.expression.type === AST_NODE_TYPES.MemberExpression) {
+        const path = buildAccessPath(node.expression);
+        if (path) {
+          usages.set(path, node.range?.[0] || 0);
+        }
+      }
+    } else if (node.type === AST_NODE_TYPES.BinaryExpression || node.type === AST_NODE_TYPES.LogicalExpression) {
+      // Handle binary expressions like `userId || userData?.id`
+      visit(node.left);
+      visit(node.right);
+    } else if (node.type === AST_NODE_TYPES.ConditionalExpression) {
+      // Handle ternary expressions
+      visit(node.test);
+      visit(node.consequent);
+      visit(node.alternate);
+    } else if (node.type === AST_NODE_TYPES.VariableDeclaration) {
+      // Handle variable declarations
+      node.declarations.forEach((declaration) => {
+        if (declaration.init) {
+          visit(declaration.init);
+        }
+      });
+    } else if (node.type === AST_NODE_TYPES.AssignmentExpression) {
+      // Handle assignments
+      visit(node.right);
     }
 
     // Visit all child nodes
@@ -323,19 +411,50 @@ function getObjectUsagesInHook(
 
   visit(hookBody);
 
-  // Filter out intermediate paths
-  const paths = Array.from(usages);
+  // Process paths and determine which ones to include
+  const paths = Array.from(usages.keys());
+  const finalPaths = new Set<string>();
+
+  paths.forEach((path) => {
+    // Always include the main path
+    finalPaths.add(path);
+
+    // For optional chaining, include the FIRST optional chaining point as intermediate
+    if (path.includes('?.')) {
+      // Find the first optional chaining point
+      // For userData?.profile.settings.theme.primary, we want to include userData?.profile
+      const firstOptionalIndex = path.indexOf('?.');
+      if (firstOptionalIndex !== -1) {
+        // Find the end of the first property after the optional chaining
+        const afterOptional = path.substring(firstOptionalIndex + 2);
+        const nextDotIndex = afterOptional.indexOf('.');
+
+        if (nextDotIndex !== -1) {
+          // There are more properties after the first optional property
+          const firstOptionalPath = path.substring(0, firstOptionalIndex + 2 + nextDotIndex);
+          finalPaths.add(firstOptionalPath);
+        }
+      }
+    }
+
+    // For array access, include the array property itself
+    if (path.includes('[') && path.includes(']')) {
+      const bracketIndex = path.indexOf('[');
+      if (bracketIndex > 0) {
+        const arrayPath = path.substring(0, bracketIndex);
+        finalPaths.add(arrayPath);
+      }
+    }
+  });
+
+  // Convert to array for sorting
+  const pathsArray = Array.from(finalPaths);
 
   // Filter out array paths when we're already accessing specific indices
-  // For example, don't include 'obj.arr' if we have 'obj.arr[0]'
-  const filteredPaths = paths.filter((path) => {
-    // Skip intermediate paths (if path is prefix of another path)
-    const isIntermediatePath = paths.some(
-      (otherPath) => otherPath !== path && otherPath.startsWith(path + '.'),
-    );
-
-    // Skip array paths if we're accessing specific indices
-    const isArrayWithSpecificIndices = paths.some(
+  // Exception: keep array paths with optional chaining as they represent different dependencies
+  const filteredPaths = pathsArray.filter((path) => {
+    // Skip array paths if we're accessing specific indices, unless it's optional chaining
+    const isArrayWithSpecificIndices = pathsArray.some(
       (otherPath) =>
         otherPath !== path &&
         (otherPath.startsWith(path + '[') ||
@@ -346,10 +465,43 @@ function getObjectUsagesInHook(
           )),
     );
 
-    return !isIntermediatePath && !isArrayWithSpecificIndices;
+    // Keep array paths with optional chaining even if specific indices are accessed
+    if (isArrayWithSpecificIndices && path.includes('?.')) {
+      return true;
+    }
+
+    return !isArrayWithSpecificIndices;
   });
 
-  const filteredUsages = new Set(filteredPaths);
+  // Sort paths: longer/more specific paths first, then by optional chaining preference
+  const sortedPaths = filteredPaths.sort((a, b) => {
+    const posA = usages.get(a) || 0;
+    const posB = usages.get(b) || 0;
+
+    // For paths with the same base, put longer ones first
+    const aDepth = a.split('.').length + (a.includes('[') ? 1 : 0);
+    const bDepth = b.split('.').length + (b.includes('[') ? 1 : 0);
+
+    if (aDepth !== bDepth) {
+      return bDepth - aDepth; // Longer paths first
+    }
+
+    // If same depth, prefer optional chaining paths first
+    const aHasOptional = a.includes('?');
+    const bHasOptional = b.includes('?');
+
+    if (aHasOptional && !bHasOptional) {
+      return -1; // a comes first
+    }
+    if (!aHasOptional && bHasOptional) {
+      return 1; // b comes first
+    }
+
+    // If same depth and same optional chaining status, sort by source position
+    return posA - posB;
+  });
+
+  const filteredUsages = new Set(sortedPaths);
   const notUsed = !needsEntireObject && filteredUsages.size === 0;
 
   return {
