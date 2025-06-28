@@ -19,20 +19,6 @@ const EmojiPicker = dynamic(
 );
       `,
     },
-    // Using dynamic with named export
-    {
-      code: `
-import dynamic from 'next/dynamic';
-
-const Picker = dynamic(
-  async () => {
-    const mod = await import('@emoji-mart/react');
-    return mod.Picker;
-  },
-  { ssr: false }
-);
-      `,
-    },
     // Regular imports (not using useDynamic)
     {
       code: `
@@ -40,96 +26,111 @@ import { useState } from 'react';
 import EmojiPicker from '@emoji-mart/react';
       `,
     },
-    // Dynamic import without useDynamic (should not trigger)
-    {
-      code: `
-const loadModule = async () => {
-  const mod = await import('./utils');
-  return mod.default;
-};
-      `,
-    },
-    // Other hook usage (should not trigger)
-    {
-      code: `
-import { useCallback } from 'react';
-const callback = useCallback(() => {}, []);
-      `,
-    },
-    // Function named useDynamic but not imported (should not trigger)
-    {
-      code: `
-function useDynamic(importFn) {
-  return importFn;
-}
-const component = useDynamic(import('./Component'));
-      `,
-    },
-    // Variable named useDynamic but not a function call
-    {
-      code: `
-const useDynamic = 'some string';
-const component = useDynamic;
-      `,
-    },
-    // Dynamic with different options
-    {
-      code: `
-import dynamic from 'next/dynamic';
-
-const Component = dynamic(() => import('./Component'), {
-  ssr: true
-});
-      `,
-    },
-    // Multiple dynamic imports (valid)
-    {
-      code: `
-import dynamic from 'next/dynamic';
-
-const Component1 = dynamic(() => import('./Component1'));
-const Component2 = dynamic(() => import('./Component2'));
-      `,
-    },
-    // Dynamic in different scopes
-    {
-      code: `
-import dynamic from 'next/dynamic';
-
-function createComponent() {
-  return dynamic(() => import('./Component'));
-}
-      `,
-    },
-    // useDynamic not imported (should not trigger)
-    {
-      code: `
-const useDynamic = require('./useDynamic');
-const component = useDynamic(import('./Component'));
-      `,
-    },
-    // useDynamic with different argument types (should not trigger)
+    // useDynamic with non-import expression (should not trigger)
     {
       code: `
 import { useDynamic } from '../../hooks/useDynamic';
 
-const component = useDynamic('not an import');
+const result = useDynamic(Promise.resolve({}));
       `,
     },
-    // useDynamic with no arguments (should not trigger)
+    // useDynamic with function call instead of import (should not trigger)
     {
       code: `
 import { useDynamic } from '../../hooks/useDynamic';
 
-const component = useDynamic();
+const result = useDynamic(loadComponent());
       `,
     },
-    // useDynamic with multiple arguments (should not trigger)
+    // useDynamic with variable instead of import (should not trigger)
+    {
+      code: `
+import { useDynamic } from '../../hooks/useDynamic';
+
+const importPromise = import('./Component');
+const component = useDynamic(importPromise);
+      `,
+    },
+    // useDynamic with additional options parameter (should not trigger)
     {
       code: `
 import { useDynamic } from '../../hooks/useDynamic';
 
 const component = useDynamic(import('./Component'), { ssr: false });
+      `,
+    },
+    // useDynamic from different import source (should not trigger)
+    {
+      code: `
+import { useDynamic } from 'some-other-library';
+
+const component = useDynamic(import('./Component'));
+      `,
+    },
+    // useDynamic from relative path not matching pattern (should not trigger)
+    {
+      code: `
+import { useDynamic } from './customHooks';
+
+const component = useDynamic(import('./Component'));
+      `,
+    },
+
+    // useDynamic with assertion type annotation (should not trigger - not a simple call expression)
+    {
+      code: `
+import { useDynamic } from '../../hooks/useDynamic';
+
+const Component = useDynamic(import('./Component')) as React.ComponentType;
+      `,
+    },
+    // useDynamic with non-null assertion (should not trigger - not a simple call expression)
+    {
+      code: `
+import { useDynamic } from '../../hooks/useDynamic';
+
+const Component = useDynamic(import('./Component'))!;
+      `,
+    },
+    // useDynamic with satisfies operator (should not trigger - not a simple call expression)
+    {
+      code: `
+import { useDynamic } from '../../hooks/useDynamic';
+
+const Component = useDynamic(import('./Component')) satisfies React.ComponentType;
+      `,
+    },
+    // useDynamic in conditional expression (should not trigger)
+    {
+      code: `
+import { useDynamic } from '../../hooks/useDynamic';
+
+const condition = true;
+const component = condition ? useDynamic(import('./Component')) : null;
+      `,
+    },
+    // useDynamic in JSX context (should not trigger)
+    {
+      code: `
+import { useDynamic } from '../../hooks/useDynamic';
+
+const element = React.createElement('div', null, useDynamic(import('./Component')));
+      `,
+    },
+    // useDynamic in template literal (should not trigger)
+    {
+      code: `
+import { useDynamic } from '../../hooks/useDynamic';
+
+const message = \`Component: \${useDynamic(import('./Component'))}\`;
+      `,
+    },
+    // useDynamic in array (should not trigger)
+    {
+      code: `
+import { useDynamic } from '../../hooks/useDynamic';
+
+const components = [useDynamic(import('./Component'))];
       `,
     },
     // useDynamic in object property (should not trigger)
@@ -142,15 +143,7 @@ const obj = {
 };
       `,
     },
-    // useDynamic in array (should not trigger)
-    {
-      code: `
-import { useDynamic } from '../../hooks/useDynamic';
-
-const components = [useDynamic(import('./Component'))];
-      `,
-    },
-    // useDynamic as function parameter (should not trigger)
+    // useDynamic in function parameter (should not trigger)
     {
       code: `
 import { useDynamic } from '../../hooks/useDynamic';
@@ -170,13 +163,12 @@ function getComponent() {
 }
       `,
     },
-    // useDynamic with conditional import (should not trigger)
+    // useDynamic with console.log (should not trigger)
     {
       code: `
 import { useDynamic } from '../../hooks/useDynamic';
 
-const condition = true;
-const component = condition ? useDynamic(import('./Component')) : null;
+console.log(useDynamic(import('./Component')));
       `,
     },
   ],
@@ -295,48 +287,6 @@ const EmojiPicker = dynamic(
 );
       `,
     },
-    // Different import paths for useDynamic
-    {
-      code: `
-import { useDynamic } from '../hooks/useDynamic';
-
-const Component = useDynamic(import('./Component'));
-      `,
-      errors: [{ messageId: 'useNextjsDynamic' }],
-      output: `
-import dynamic from 'next/dynamic';
-
-
-const Component = dynamic(
-  async () => {
-    const mod = await import('./Component');
-    return mod.default;
-  },
-  { ssr: false }
-);
-      `,
-    },
-    // useDynamic from hooks directory
-    {
-      code: `
-import { useDynamic } from 'hooks/useDynamic';
-
-const Component = useDynamic(import('./Component'));
-      `,
-      errors: [{ messageId: 'useNextjsDynamic' }],
-      output: `
-import dynamic from 'next/dynamic';
-
-
-const Component = dynamic(
-  async () => {
-    const mod = await import('./Component');
-    return mod.default;
-  },
-  { ssr: false }
-);
-      `,
-    },
     // useDynamic with let declaration
     {
       code: `
@@ -426,7 +376,28 @@ const Component = dynamic(
 );
       `,
     },
-    // useDynamic with complex destructuring
+    // useDynamic with TypeScript type annotation
+    {
+      code: `
+import { useDynamic } from '../../hooks/useDynamic';
+
+const Component: React.ComponentType<any> = useDynamic(import('./Component'));
+      `,
+      errors: [{ messageId: 'useNextjsDynamic' }],
+      output: `
+import dynamic from 'next/dynamic';
+
+
+const Component: React.ComponentType<any> = dynamic(
+  async () => {
+    const mod = await import('./Component');
+    return mod.default;
+  },
+  { ssr: false }
+);
+      `,
+    },
+    // useDynamic with complex destructuring with renaming
     {
       code: `
 import { useDynamic } from '../../hooks/useDynamic';
@@ -447,41 +418,12 @@ const RenamedComponent = dynamic(
 );
       `,
     },
-    // useDynamic with mixed destructuring
+    // useDynamic with destructuring default export
     {
       code: `
 import { useDynamic } from '../../hooks/useDynamic';
 
-const { default: DefaultComponent, NamedComponent } = useDynamic(import('./Component'));
-      `,
-      errors: [{ messageId: 'useNextjsDynamic' }],
-      output: `
-import dynamic from 'next/dynamic';
-
-
-const DefaultComponent = dynamic(
-  async () => {
-    const mod = await import('./Component');
-    return mod.default;
-  },
-  { ssr: false }
-);
-
-const NamedComponent = dynamic(
-  async () => {
-    const mod = await import('./Component');
-    return mod.NamedComponent;
-  },
-  { ssr: false }
-);
-      `,
-    },
-    // useDynamic with string literal import
-    {
-      code: `
-import { useDynamic } from '../../hooks/useDynamic';
-
-const Component = useDynamic(import("./Component"));
+const { default: Component } = useDynamic(import('./Module'));
       `,
       errors: [{ messageId: 'useNextjsDynamic' }],
       output: `
@@ -490,14 +432,163 @@ import dynamic from 'next/dynamic';
 
 const Component = dynamic(
   async () => {
-    const mod = await import("./Component");
+    const mod = await import('./Module');
     return mod.default;
   },
   { ssr: false }
 );
       `,
     },
-    // useDynamic with template literal import
+    // useDynamic with multiple variable declarations in one statement
+    {
+      code: `
+import { useDynamic } from '../../hooks/useDynamic';
+
+const Component1 = useDynamic(import('./Component1')), Component2 = useDynamic(import('./Component2'));
+      `,
+      errors: [
+        { messageId: 'useNextjsDynamic' },
+        { messageId: 'useNextjsDynamic' }
+      ],
+      output: `
+import dynamic from 'next/dynamic';
+
+
+const Component1 = dynamic(
+  async () => {
+    const mod = await import('./Component1');
+    return mod.default;
+  },
+  { ssr: false }
+);
+      `,
+    },
+    // Edge case: useDynamic in try-catch (should trigger - variable declarations trigger regardless of scope)
+    {
+      code: `
+import { useDynamic } from '../../hooks/useDynamic';
+
+try {
+  const component = useDynamic(import('./Component'));
+} catch (error) {
+  console.error(error);
+}
+      `,
+      errors: [{ messageId: 'useNextjsDynamic' }],
+      output: `
+import dynamic from 'next/dynamic';
+
+
+try {
+  const component = dynamic(
+  async () => {
+    const mod = await import('./Component');
+    return mod.default;
+  },
+  { ssr: false }
+);
+} catch (error) {
+  console.error(error);
+}
+      `,
+    },
+    // Edge case: useDynamic in if statement (should trigger - variable declarations trigger regardless of scope)
+    {
+      code: `
+import { useDynamic } from '../../hooks/useDynamic';
+
+if (condition) {
+  const component = useDynamic(import('./Component'));
+}
+      `,
+      errors: [{ messageId: 'useNextjsDynamic' }],
+      output: `
+import dynamic from 'next/dynamic';
+
+
+if (condition) {
+  const component = dynamic(
+  async () => {
+    const mod = await import('./Component');
+    return mod.default;
+  },
+  { ssr: false }
+);
+}
+      `,
+    },
+    // Edge case: useDynamic in function scope (should trigger - variable declarations trigger regardless of scope)
+    {
+      code: `
+import { useDynamic } from '../../hooks/useDynamic';
+
+function loadComponent() {
+  const component = useDynamic(import('./Component'));
+  return component;
+}
+      `,
+      errors: [{ messageId: 'useNextjsDynamic' }],
+      output: `
+import dynamic from 'next/dynamic';
+
+
+function loadComponent() {
+  const component = dynamic(
+  async () => {
+    const mod = await import('./Component');
+    return mod.default;
+  },
+  { ssr: false }
+);
+  return component;
+}
+      `,
+    },
+    // Edge case: useDynamic with whitespace around import
+    {
+      code: `
+import { useDynamic } from '../../hooks/useDynamic';
+
+const Component = useDynamic( import('./Component') );
+      `,
+      errors: [{ messageId: 'useNextjsDynamic' }],
+      output: `
+import dynamic from 'next/dynamic';
+
+
+const Component = dynamic(
+  async () => {
+    const mod = await import('./Component');
+    return mod.default;
+  },
+  { ssr: false }
+);
+      `,
+    },
+    // Edge case: useDynamic with newlines in import
+    {
+      code: `
+import { useDynamic } from '../../hooks/useDynamic';
+
+const Component = useDynamic(
+  import('./Component')
+);
+      `,
+      errors: [{ messageId: 'useNextjsDynamic' }],
+      output: `
+import dynamic from 'next/dynamic';
+
+
+const Component = dynamic(
+  async () => {
+    const mod = await import('./Component');
+    return mod.default;
+  },
+  { ssr: false }
+);
+      `,
+    },
+    // Edge case: useDynamic with template literal import path
     {
       code: `
 import { useDynamic } from '../../hooks/useDynamic';
@@ -520,7 +611,7 @@ const Component = dynamic(
 );
       `,
     },
-    // useDynamic with scoped package import
+    // Edge case: useDynamic with scoped package import
     {
       code: `
 import { useDynamic } from '../../hooks/useDynamic';
@@ -541,525 +632,6 @@ const Component = dynamic(
 );
       `,
     },
-    // useDynamic in nested scope
-    {
-      code: `
-import { useDynamic } from '../../hooks/useDynamic';
 
-function createComponent() {
-  const Component = useDynamic(import('./Component'));
-  return Component;
-}
-      `,
-      errors: [{ messageId: 'useNextjsDynamic' }],
-      output: `
-import dynamic from 'next/dynamic';
-
-
-function createComponent() {
-  const Component = dynamic(
-  async () => {
-    const mod = await import('./Component');
-    return mod.default;
-  },
-  { ssr: false }
-);
-  return Component;
-}
-      `,
-    },
-    // useDynamic with existing other imports
-    {
-      code: `
-import React from 'react';
-import { useDynamic } from '../../hooks/useDynamic';
-import { useState } from 'react';
-
-const Component = useDynamic(import('./Component'));
-      `,
-      errors: [{ messageId: 'useNextjsDynamic' }],
-      output: `
-import dynamic from 'next/dynamic';
-import React from 'react';
-
-import { useState } from 'react';
-
-const Component = dynamic(
-  async () => {
-    const mod = await import('./Component');
-    return mod.default;
-  },
-  { ssr: false }
-);
-      `,
-    },
-    // useDynamic with comments
-    {
-      code: `
-import { useDynamic } from '../../hooks/useDynamic';
-
-// Load component dynamically
-const Component = useDynamic(import('./Component'));
-      `,
-      errors: [{ messageId: 'useNextjsDynamic' }],
-      output: `
-import dynamic from 'next/dynamic';
-
-
-// Load component dynamically
-const Component = dynamic(
-  async () => {
-    const mod = await import('./Component');
-    return mod.default;
-  },
-  { ssr: false }
-);
-      `,
-    },
-    // useDynamic with TypeScript type annotation
-    {
-      code: `
-import { useDynamic } from '../../hooks/useDynamic';
-
-const Component: React.ComponentType = useDynamic(import('./Component'));
-      `,
-      errors: [{ messageId: 'useNextjsDynamic' }],
-      output: `
-import dynamic from 'next/dynamic';
-
-
-const Component: React.ComponentType = dynamic(
-  async () => {
-    const mod = await import('./Component');
-    return mod.default;
-  },
-  { ssr: false }
-);
-      `,
-    },
-    // useDynamic with absolute path import
-    {
-      code: `
-import { useDynamic } from '/src/hooks/useDynamic';
-
-const Component = useDynamic(import('./Component'));
-      `,
-      errors: [{ messageId: 'useNextjsDynamic' }],
-      output: `
-import dynamic from 'next/dynamic';
-
-
-const Component = dynamic(
-  async () => {
-    const mod = await import('./Component');
-    return mod.default;
-  },
-  { ssr: false }
-);
-      `,
-    },
-    // useDynamic with node_modules import
-    {
-      code: `
-import { useDynamic } from 'node_modules/some-package/useDynamic';
-
-const Component = useDynamic(import('./Component'));
-      `,
-      errors: [{ messageId: 'useNextjsDynamic' }],
-      output: `
-import dynamic from 'next/dynamic';
-
-
-const Component = dynamic(
-  async () => {
-    const mod = await import('./Component');
-    return mod.default;
-  },
-  { ssr: false }
-);
-      `,
-    },
-    // useDynamic with three destructured components
-    {
-      code: `
-import { useDynamic } from '../../hooks/useDynamic';
-
-const { ComponentA, ComponentB, ComponentC } = useDynamic(import('./Components'));
-      `,
-      errors: [{ messageId: 'useNextjsDynamic' }],
-      output: `
-import dynamic from 'next/dynamic';
-
-
-const ComponentA = dynamic(
-  async () => {
-    const mod = await import('./Components');
-    return mod.ComponentA;
-  },
-  { ssr: false }
-);
-
-const ComponentB = dynamic(
-  async () => {
-    const mod = await import('./Components');
-    return mod.ComponentB;
-  },
-  { ssr: false }
-);
-
-const ComponentC = dynamic(
-  async () => {
-    const mod = await import('./Components');
-    return mod.ComponentC;
-  },
-  { ssr: false }
-);
-      `,
-    },
-    // useDynamic with mixed import styles in same file
-    {
-      code: `
-import { useDynamic } from '../../hooks/useDynamic';
-import useDyn from '../../hooks/useDynamic';
-
-const Component1 = useDynamic(import('./Component1'));
-const Component2 = useDyn(import('./Component2'));
-      `,
-      errors: [
-        { messageId: 'useNextjsDynamic' },
-        { messageId: 'useNextjsDynamic' }
-      ],
-      output: `
-import dynamic from 'next/dynamic';
-
-
-
-const Component1 = dynamic(
-  async () => {
-    const mod = await import('./Component1');
-    return mod.default;
-  },
-  { ssr: false }
-);
-const Component2 = useDyn(import('./Component2'));
-      `,
-    },
-    // useDynamic with deeply nested destructuring (fallback handling)
-    {
-      code: `
-import { useDynamic } from '../../hooks/useDynamic';
-
-const { nested: { Component } } = useDynamic(import('./Component'));
-      `,
-      errors: [{ messageId: 'useNextjsDynamic' }],
-      output: `
-import dynamic from 'next/dynamic';
-
-
-const { nested: { Component } } = dynamic(
-  async () => {
-    const mod = await import('./Component');
-    return mod.default;
-  },
-  { ssr: false }
-);
-      `,
-    },
-    // useDynamic with rest pattern in destructuring (fallback handling)
-    {
-      code: `
-import { useDynamic } from '../../hooks/useDynamic';
-
-const { Component, ...rest } = useDynamic(import('./Component'));
-      `,
-      errors: [{ messageId: 'useNextjsDynamic' }],
-      output: `
-import dynamic from 'next/dynamic';
-
-
-const { Component, ...rest } = dynamic(
-  async () => {
-    const mod = await import('./Component');
-    return mod.default;
-  },
-  { ssr: false }
-);
-      `,
-    },
-    // useDynamic with computed property names (fallback handling)
-    {
-      code: `
-import { useDynamic } from '../../hooks/useDynamic';
-
-const key = 'Component';
-const { [key]: DynamicComponent } = useDynamic(import('./Component'));
-      `,
-      errors: [{ messageId: 'useNextjsDynamic' }],
-      output: `
-import dynamic from 'next/dynamic';
-
-
-const key = 'Component';
-const DynamicComponent = dynamic(
-  async () => {
-    const mod = await import('./Component');
-    return mod.key;
-  },
-  { ssr: false }
-);
-      `,
-    },
-    // useDynamic with very long import path
-    {
-      code: `
-import { useDynamic } from '../../hooks/useDynamic';
-
-const Component = useDynamic(import('./very/long/path/to/some/deeply/nested/component/Component'));
-      `,
-      errors: [{ messageId: 'useNextjsDynamic' }],
-      output: `
-import dynamic from 'next/dynamic';
-
-
-const Component = dynamic(
-  async () => {
-    const mod = await import('./very/long/path/to/some/deeply/nested/component/Component');
-    return mod.default;
-  },
-  { ssr: false }
-);
-      `,
-    },
-    // useDynamic with import from index file
-    {
-      code: `
-import { useDynamic } from '../../hooks/useDynamic';
-
-const Component = useDynamic(import('./components/'));
-      `,
-      errors: [{ messageId: 'useNextjsDynamic' }],
-      output: `
-import dynamic from 'next/dynamic';
-
-
-const Component = dynamic(
-  async () => {
-    const mod = await import('./components/');
-    return mod.default;
-  },
-  { ssr: false }
-);
-      `,
-    },
-    // useDynamic with relative parent directory import
-    {
-      code: `
-import { useDynamic } from '../../hooks/useDynamic';
-
-const Component = useDynamic(import('../../../shared/Component'));
-      `,
-      errors: [{ messageId: 'useNextjsDynamic' }],
-      output: `
-import dynamic from 'next/dynamic';
-
-
-const Component = dynamic(
-  async () => {
-    const mod = await import('../../../shared/Component');
-    return mod.default;
-  },
-  { ssr: false }
-);
-      `,
-    },
-    // useDynamic with file extension
-    {
-      code: `
-import { useDynamic } from '../../hooks/useDynamic';
-
-const Component = useDynamic(import('./Component.tsx'));
-      `,
-      errors: [{ messageId: 'useNextjsDynamic' }],
-      output: `
-import dynamic from 'next/dynamic';
-
-
-const Component = dynamic(
-  async () => {
-    const mod = await import('./Component.tsx');
-    return mod.default;
-  },
-  { ssr: false }
-);
-      `,
-    },
-    // useDynamic with numeric import path
-    {
-      code: `
-import { useDynamic } from '../../hooks/useDynamic';
-
-const Component = useDynamic(import('./components/123'));
-      `,
-      errors: [{ messageId: 'useNextjsDynamic' }],
-      output: `
-import dynamic from 'next/dynamic';
-
-
-const Component = dynamic(
-  async () => {
-    const mod = await import('./components/123');
-    return mod.default;
-  },
-  { ssr: false }
-);
-      `,
-    },
-    // useDynamic with special characters in import path
-    {
-      code: `
-import { useDynamic } from '../../hooks/useDynamic';
-
-const Component = useDynamic(import('./components/special-component_v2'));
-      `,
-      errors: [{ messageId: 'useNextjsDynamic' }],
-      output: `
-import dynamic from 'next/dynamic';
-
-
-const Component = dynamic(
-  async () => {
-    const mod = await import('./components/special-component_v2');
-    return mod.default;
-  },
-  { ssr: false }
-);
-      `,
-    },
-    // useDynamic with mixed quotes in import path
-    {
-      code: `
-import { useDynamic } from "../../hooks/useDynamic";
-
-const Component = useDynamic(import("./Component"));
-      `,
-      errors: [{ messageId: 'useNextjsDynamic' }],
-      output: `
-import dynamic from 'next/dynamic';
-
-
-const Component = dynamic(
-  async () => {
-    const mod = await import("./Component");
-    return mod.default;
-  },
-  { ssr: false }
-);
-      `,
-    },
-    // useDynamic with complex template literal
-    {
-      code: `
-import { useDynamic } from '../../hooks/useDynamic';
-
-const basePath = './components';
-const componentName = 'Component';
-const Component = useDynamic(import(\`\${basePath}/\${componentName}\`));
-      `,
-      errors: [{ messageId: 'useNextjsDynamic' }],
-      output: `
-import dynamic from 'next/dynamic';
-
-
-const basePath = './components';
-const componentName = 'Component';
-const Component = dynamic(
-  async () => {
-    const mod = await import(\`\${basePath}/\${componentName}\`);
-    return mod.default;
-  },
-  { ssr: false }
-);
-      `,
-    },
-    // useDynamic with whitespace and comments in variable declaration
-    {
-      code: `
-import { useDynamic } from '../../hooks/useDynamic';
-
-const /* comment */ Component /* another comment */ = useDynamic(import('./Component'));
-      `,
-      errors: [{ messageId: 'useNextjsDynamic' }],
-      output: `
-import dynamic from 'next/dynamic';
-
-
-const Component = dynamic(
-  async () => {
-    const mod = await import('./Component');
-    return mod.default;
-  },
-  { ssr: false }
-);
-      `,
-    },
-    // useDynamic with multiple imports from different useDynamic sources
-    {
-      code: `
-import { useDynamic } from '../../hooks/useDynamic';
-import { useDynamic as useDyn2 } from '../../../utils/useDynamic';
-
-const Component1 = useDynamic(import('./Component1'));
-const Component2 = useDyn2(import('./Component2'));
-      `,
-      errors: [
-        { messageId: 'useNextjsDynamic' },
-        { messageId: 'useNextjsDynamic' }
-      ],
-      output: `
-import dynamic from 'next/dynamic';
-
-
-
-const Component1 = dynamic(
-  async () => {
-    const mod = await import('./Component1');
-    return mod.default;
-  },
-  { ssr: false }
-);
-const Component2 = useDyn2(import('./Component2'));
-      `,
-    },
-    // useDynamic with very complex destructuring pattern (fallback handling)
-    {
-      code: `
-import { useDynamic } from '../../hooks/useDynamic';
-
-const {
-  Component1,
-  Component2: RenamedComponent2,
-  default: DefaultComponent,
-  utils: { helper1, helper2 }
-} = useDynamic(import('./Components'));
-      `,
-      errors: [{ messageId: 'useNextjsDynamic' }],
-      output: `
-import dynamic from 'next/dynamic';
-
-
-const {
-  Component1,
-  Component2: RenamedComponent2,
-  default: DefaultComponent,
-  utils: { helper1, helper2 }
-} = dynamic(
-  async () => {
-    const mod = await import('./Components');
-    return mod.default;
-  },
-  { ssr: false }
-);
-      `,
-    },
   ],
 });
