@@ -68,18 +68,48 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
         // For destructured parameters, use the type annotation name
         const typeNode = param.typeAnnotation.typeAnnotation;
         if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
-          return typeNode.typeName.type === AST_NODE_TYPES.Identifier
-            ? typeNode.typeName.name
-            : 'unknown';
+          // Include type parameters in the type signature to differentiate generic types
+          const typeName =
+            typeNode.typeName.type === AST_NODE_TYPES.Identifier
+              ? typeNode.typeName.name
+              : 'unknown';
+
+          // If there are type parameters, include them in the type signature
+          if (
+            typeNode.typeParameters &&
+            typeNode.typeParameters.params.length > 0
+          ) {
+            const typeParams = typeNode.typeParameters.params
+              .map((param) => param.type)
+              .join('_');
+            return `${typeName}<${typeParams}>`;
+          }
+
+          return typeName;
         }
         return typeNode.type;
       }
       if (param.type === AST_NODE_TYPES.Identifier && param.typeAnnotation) {
         const typeNode = param.typeAnnotation.typeAnnotation;
         if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
-          return typeNode.typeName.type === AST_NODE_TYPES.Identifier
-            ? typeNode.typeName.name
-            : 'unknown';
+          // Include type parameters in the type signature to differentiate generic types
+          const typeName =
+            typeNode.typeName.type === AST_NODE_TYPES.Identifier
+              ? typeNode.typeName.name
+              : 'unknown';
+
+          // If there are type parameters, include them in the type signature
+          if (
+            typeNode.typeParameters &&
+            typeNode.typeParameters.params.length > 0
+          ) {
+            const typeParams = typeNode.typeParameters.params
+              .map((param) => param.type)
+              .join('_');
+            return `${typeName}<${typeParams}>`;
+          }
+
+          return typeName;
         }
         if (typeNode.type === AST_NODE_TYPES.TSStringKeyword) return 'string';
         if (typeNode.type === AST_NODE_TYPES.TSNumberKeyword) return 'number';
@@ -300,6 +330,35 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
         Array.isArray(node.params)
       ) {
         if (hasABPattern(node.params)) return true;
+      }
+
+      // Check if the function is a handler with transaction parameter
+      // This is a common pattern in Firebase/Firestore handlers
+      if (
+        (node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+          node.type === AST_NODE_TYPES.FunctionExpression ||
+          node.type === AST_NODE_TYPES.FunctionDeclaration) &&
+        node.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+        node.parent.id?.type === AST_NODE_TYPES.Identifier
+      ) {
+        const functionName = node.parent.id.name;
+        // Check if the function name or its type annotation suggests it's a handler with transaction
+        if (
+          functionName.includes('Transaction') ||
+          functionName.includes('WithTransaction') ||
+          (node.parent.id.typeAnnotation?.typeAnnotation.type ===
+            AST_NODE_TYPES.TSTypeReference &&
+            node.parent.id.typeAnnotation.typeAnnotation.typeName.type ===
+              AST_NODE_TYPES.Identifier &&
+            (node.parent.id.typeAnnotation.typeAnnotation.typeName.name.includes(
+              'Transaction',
+            ) ||
+              node.parent.id.typeAnnotation.typeAnnotation.typeName.name.includes(
+                'WithTransaction',
+              )))
+        ) {
+          return true;
+        }
       }
 
       return false;

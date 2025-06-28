@@ -41,6 +41,15 @@ function isInsideReturnStatement(node: TSESTree.Node): boolean {
   let current: TSESTree.Node | undefined = node;
 
   while (current?.parent) {
+    // If we encounter a variable declaration before a return statement,
+    // then the node is not directly inside a return statement
+    if (
+      current.parent.type === AST_NODE_TYPES.VariableDeclarator ||
+      current.parent.type === AST_NODE_TYPES.VariableDeclaration
+    ) {
+      return false;
+    }
+
     if (current.parent.type === AST_NODE_TYPES.ReturnStatement) {
       return true;
     }
@@ -238,9 +247,7 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
       }
 
       // Allow type assertions as arguments to constructor calls
-      if (
-        node.parent?.type === AST_NODE_TYPES.CallExpression
-      ) {
+      if (node.parent?.type === AST_NODE_TYPES.CallExpression) {
         let current: TSESTree.Node | undefined = node.parent;
         while (current?.parent) {
           if (current.parent.type === AST_NODE_TYPES.NewExpression) {
@@ -264,6 +271,14 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
     }
 
     /**
+     * Check if the current file is a .f.ts file
+     */
+    function isFunctionFile(context: any): boolean {
+      const filename = context.getFilename();
+      return filename.endsWith('.f.ts');
+    }
+
+    /**
      * Common function to check function return types
      */
     function checkFunctionReturnType(
@@ -273,6 +288,11 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
         | TSESTree.ArrowFunctionExpression,
     ) {
       if (!node.returnType) return;
+
+      // Skip checking return types in .f.ts files
+      if (isFunctionFile(context)) {
+        return;
+      }
 
       // Allow type predicates if configured
       if (
@@ -376,6 +396,11 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
         if (node.body.type !== AST_NODE_TYPES.BlockStatement) {
           // Check for explicit return type
           if (node.returnType) {
+            // Skip checking return types in .f.ts files
+            if (isFunctionFile(context)) {
+              return;
+            }
+
             // Allow type predicates if configured
             if (
               mergedOptions.allowTypePredicates &&

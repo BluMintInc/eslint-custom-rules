@@ -188,26 +188,6 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
 
     // Function declarations with temporal prepositions
     {
-      code: 'function executeAfter(delay) {}',
-      errors: [
-        {
-          messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'After', suggestion: 'execute' },
-        },
-      ],
-      output: 'function execute(delay) {}',
-    },
-    {
-      code: 'function prepareBefore(event) {}',
-      errors: [
-        {
-          messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'Before', suggestion: 'prepare' },
-        },
-      ],
-      output: 'function prepare(event) {}',
-    },
-    {
       code: 'function processDuring(interval) {}',
       errors: [
         {

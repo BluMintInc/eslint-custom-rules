@@ -92,6 +92,43 @@ export const preferUseMemoOverUseEffectUseState = createRule({
       return true;
     };
 
+    // Helper to check if a node is a reference to a prop or variable
+    const isIdentifierReference = (node: TSESTree.Node): boolean => {
+      return node.type === 'Identifier';
+    };
+
+    // Helper to check if this is a state synchronization pattern
+    const isStateSynchronization = (
+      initialValue: TSESTree.Node | null,
+      setterArgument: TSESTree.Node,
+    ): boolean => {
+      // If the initial value is a reference to a prop/variable and the setter argument
+      // is the same reference, this is likely state synchronization
+      if (
+        initialValue &&
+        isIdentifierReference(initialValue) &&
+        isIdentifierReference(setterArgument) &&
+        (initialValue as TSESTree.Identifier).name ===
+          (setterArgument as TSESTree.Identifier).name
+      ) {
+        return true;
+      }
+
+      // If the initial value is a function that references a prop and the setter argument
+      // is that same prop, this is likely state synchronization
+      if (
+        initialValue &&
+        initialValue.type === 'ArrowFunctionExpression' &&
+        initialValue.body.type === 'Identifier' &&
+        isIdentifierReference(setterArgument) &&
+        initialValue.body.name === (setterArgument as TSESTree.Identifier).name
+      ) {
+        return true;
+      }
+
+      return false;
+    };
+
     return {
       // Track useState declarations
       VariableDeclarator(node) {
@@ -146,6 +183,13 @@ export const preferUseMemoOverUseEffectUseState = createRule({
 
               if (stateInfo && statement.expression.arguments.length === 1) {
                 const computation = statement.expression.arguments[0];
+
+                // Skip if this is a state synchronization pattern
+                if (
+                  isStateSynchronization(stateInfo.initialValue, computation)
+                ) {
+                  return;
+                }
 
                 // Check if the computation is pure
                 if (isPureComputation(computation)) {

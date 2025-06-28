@@ -1,4 +1,10 @@
-# enforce-boolean-naming-prefixes
+# Enforce consistent naming conventions for boolean values by requiring approved prefixes (`@blumintinc/blumint/enforce-boolean-naming-prefixes`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
 
 Enforce consistent naming conventions for boolean values by requiring approved prefixes.
 
@@ -110,6 +116,8 @@ function canPerformAction(): boolean { return true; }
 
 ### Special Cases
 
+#### Type Predicates
+
 Type predicates are not checked by this rule, as they have their own naming conventions:
 
 ```ts
@@ -117,6 +125,32 @@ Type predicates are not checked by this rule, as they have their own naming conv
 function isString(value: any): value is string { return typeof value === "string"; }
 function isUser(obj: any): obj is User { return obj && obj.id && obj.name; }
 const isNumber = (val: any): val is number => typeof val === "number";
+```
+
+#### Private/Internal Properties with Underscore Prefix
+
+Properties that start with an underscore (`_`) are considered private or internal implementation details and are exempt from this rule:
+
+```ts
+// These are valid even though they don't have an approved boolean prefix after the underscore
+interface UserState {
+  _loading: boolean;  // Valid - underscore prefix indicates internal state
+  _fetched: boolean;  // Valid - underscore prefix indicates internal state
+  name: string;
+}
+
+class UserService {
+  _authenticated: boolean = false;  // Valid - underscore prefix indicates private property
+
+  login() {
+    this._authenticated = true;
+  }
+}
+
+// In a React component
+const [userInternal, setUserInternal] = useState<
+  Loadable<FirebaseUserLocal & { _isFetchedFromRemote?: boolean }>
+>(findItem(FIREBASE_USER_LOCAL_KEY_REGEX) || undefined);
 ```
 
 ## Options
