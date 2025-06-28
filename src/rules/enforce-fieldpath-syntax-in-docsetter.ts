@@ -58,7 +58,17 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
     // Helper function to check if an object has nested objects (excluding arrays)
     function hasNestedObjects(node: TSESTree.ObjectExpression): boolean {
       for (const property of node.properties) {
+        // Skip spread elements
+        if (property.type === AST_NODE_TYPES.SpreadElement) {
+          continue;
+        }
+
         if (property.type !== AST_NODE_TYPES.Property) {
+          continue;
+        }
+
+        // Skip computed properties (dynamic keys)
+        if (property.computed) {
           continue;
         }
 
@@ -75,7 +85,14 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
 
         // Check if the value is an object (but not an array)
         if (value.type === AST_NODE_TYPES.ObjectExpression) {
-          return true;
+          // Skip nested objects that contain spread elements or computed properties
+          const hasSpreadOrComputed = value.properties.some(prop =>
+            prop.type === AST_NODE_TYPES.SpreadElement ||
+            (prop.type === AST_NODE_TYPES.Property && prop.computed)
+          );
+          if (!hasSpreadOrComputed) {
+            return true;
+          }
         }
       }
       return false;
@@ -90,20 +107,35 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       const result: { [key: string]: string } = {};
 
       for (const property of obj.properties) {
+        // Skip spread elements
+        if (property.type === AST_NODE_TYPES.SpreadElement) {
+          continue;
+        }
+
         if (property.type !== AST_NODE_TYPES.Property) {
+          continue;
+        }
+
+        // Skip computed properties (dynamic keys)
+        if (property.computed) {
           continue;
         }
 
         let key: string;
         if (property.key.type === AST_NODE_TYPES.Identifier) {
           key = property.key.name;
-        } else if (
-          property.key.type === AST_NODE_TYPES.Literal &&
-          typeof property.key.value === 'string'
-        ) {
-          key = property.key.value;
+        } else if (property.key.type === AST_NODE_TYPES.Literal) {
+          // Handle both string and numeric literal keys
+          if (typeof property.key.value === 'string') {
+            key = property.key.value;
+          } else if (typeof property.key.value === 'number') {
+            key = String(property.key.value);
+          } else {
+            // Skip other literal types
+            continue;
+          }
         } else {
-          // Skip computed properties or other complex keys
+          // Skip other key types
           continue;
         }
 
