@@ -230,7 +230,8 @@ module.exports = {
   },
 
   rules: {
-    'prefer-block-comments-for-declarations': preferBlockCommentsForDeclarations,
+    'prefer-block-comments-for-declarations':
+      preferBlockCommentsForDeclarations,
     'key-only-outermost-element': keyOnlyOutermostElement,
     'array-methods-this-context': arrayMethodsThisContext,
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,

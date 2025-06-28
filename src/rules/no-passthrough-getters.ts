@@ -22,8 +22,12 @@ export const noPassthroughGetters = createRule({
         }
 
         // Check if the getter body is a simple return statement
-        if (methodBody.body.length === 1 && methodBody.body[0].type === 'ReturnStatement') {
-          const returnStatement = methodBody.body[0] as TSESTree.ReturnStatement;
+        if (
+          methodBody.body.length === 1 &&
+          methodBody.body[0].type === 'ReturnStatement'
+        ) {
+          const returnStatement = methodBody
+            .body[0] as TSESTree.ReturnStatement;
 
           // Skip if there's no return argument
           if (!returnStatement.argument) {
@@ -53,7 +57,7 @@ export const noPassthroughGetters = createRule({
             });
           }
         }
-      }
+      },
     };
 
     /**
@@ -133,12 +137,14 @@ export const noPassthroughGetters = createRule({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Avoid unnecessary getter methods that simply return properties from constructor parameters',
+      description:
+        'Avoid unnecessary getter methods that simply return properties from constructor parameters',
       recommended: 'error',
     },
     schema: [],
     messages: {
-      noPassthroughGetter: 'Avoid unnecessary getter methods that simply return properties from constructor parameters. Access the property directly instead.',
+      noPassthroughGetter:
+        'Avoid unnecessary getter methods that simply return properties from constructor parameters. Access the property directly instead.',
     },
   },
   defaultOptions: [],
