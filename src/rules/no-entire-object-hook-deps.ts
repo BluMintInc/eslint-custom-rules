@@ -25,6 +25,7 @@ function isArrayOrPrimitive(
   const type = checker.getTypeAtLocation(tsNode);
 
   // Check if it's a primitive type
+  // Note: We exclude Any and Unknown because we can't be sure they're primitives
   if (
     type.flags &
     (TypeFlags.String |
@@ -36,12 +37,16 @@ function isArrayOrPrimitive(
       TypeFlags.Undefined |
       TypeFlags.Void |
       TypeFlags.Never |
-      TypeFlags.Any |
-      TypeFlags.Unknown |
       TypeFlags.BigInt |
       TypeFlags.ESSymbol)
   ) {
     return true;
+  }
+
+  // If the type is Any or Unknown, we can't be sure it's a primitive,
+  // so we should let the AST analysis handle it
+  if (type.flags & (TypeFlags.Any | TypeFlags.Unknown)) {
+    return false;
   }
 
   // Check if it's an array type
@@ -85,8 +90,9 @@ function getObjectUsagesInHook(
     }
   }
 
-  // Built-in array methods that should not be considered as object properties
-  const ARRAY_METHODS = new Set([
+  // Built-in methods that should not be considered as object properties
+  const BUILT_IN_METHODS = new Set([
+    // Array methods
     'map',
     'filter',
     'reduce',
@@ -109,6 +115,35 @@ function getObjectUsagesInHook(
     'reverse',
     'flat',
     'flatMap',
+    // String methods
+    'charAt',
+    'charCodeAt',
+    'concat',
+    'endsWith',
+    'includes',
+    'indexOf',
+    'lastIndexOf',
+    'localeCompare',
+    'match',
+    'normalize',
+    'padEnd',
+    'padStart',
+    'repeat',
+    'replace',
+    'replaceAll',
+    'search',
+    'slice',
+    'split',
+    'startsWith',
+    'substring',
+    'toLowerCase',
+    'toLocaleLowerCase',
+    'toUpperCase',
+    'toLocaleUpperCase',
+    'trim',
+    'trimEnd',
+    'trimStart',
+    'valueOf',
   ]);
 
   function buildAccessPath(node: TSESTree.MemberExpression): string | null {
@@ -151,10 +186,10 @@ function getObjectUsagesInHook(
           return null;
         }
 
-        // Skip array methods
+        // Skip built-in methods (array and string methods)
         if (
           memberExpr.property.name &&
-          ARRAY_METHODS.has(memberExpr.property.name)
+          BUILT_IN_METHODS.has(memberExpr.property.name)
         ) {
           return null;
         }
@@ -229,9 +264,43 @@ function getObjectUsagesInHook(
       }
     } else if (node.type === AST_NODE_TYPES.MemberExpression) {
       // Check if this is accessing a property of our target object
-      const path = buildAccessPath(node);
-      if (path) {
-        usages.add(path);
+      const memberExpr = node as TSESTree.MemberExpression;
+
+      // Check if this member expression involves our target object
+      let current: TSESTree.Node = memberExpr;
+      let foundTargetObject = false;
+      let hasDynamicComputed = false;
+
+      // Walk up the member expression chain to see if it involves our target object
+      while (current.type === AST_NODE_TYPES.MemberExpression) {
+        const currentMember = current as TSESTree.MemberExpression;
+
+        // Check if this level uses dynamic computed property access
+        if (currentMember.computed &&
+            currentMember.property.type === AST_NODE_TYPES.Identifier) {
+          hasDynamicComputed = true;
+        }
+
+        current = currentMember.object;
+      }
+
+      // Check if we reached our target object
+      if (current.type === AST_NODE_TYPES.Identifier && current.name === objectName) {
+        foundTargetObject = true;
+      }
+
+      if (foundTargetObject) {
+        if (hasDynamicComputed) {
+          // Dynamic computed property access means we need the entire object
+          needsEntireObject = true;
+          return;
+        } else {
+          // Static property access - add to usages
+          const path = buildAccessPath(memberExpr);
+          if (path) {
+            usages.add(path);
+          }
+        }
       }
     } else if (node.type === AST_NODE_TYPES.ChainExpression) {
       // Handle optional chaining expressions
@@ -393,40 +462,35 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
               }
             }
 
-            // Check for optional chaining pattern directly in the source code
-            const optionalChainingPattern = new RegExp(`${objectName}\\?\\.(\\w+)`, 'g');
-            const optionalChainingMatches = callbackBodyText.match(optionalChainingPattern);
-
-            if (optionalChainingMatches && optionalChainingMatches.length > 0) {
-              // We found optional chaining usage, report it
-              context.report({
-                node: element,
-                messageId: 'avoidEntireObject',
-                data: {
-                  objectName,
-                  fields: optionalChainingMatches.join(', '),
-                },
-                fix(fixer) {
-                  return fixer.replaceText(
-                    element,
-                    optionalChainingMatches.join(', ')
-                  );
-                },
-              });
-              return;
-            }
-
-            // Continue with the regular AST-based analysis
+            // First, run the comprehensive AST-based analysis
             const usages = getObjectUsagesInHook(
               callbackArg.body,
               objectName,
               context,
             );
 
-            // If we found specific field usages and the entire object is in deps
-            // Skip reporting if usages is empty (indicates spread operator usage)
-            if (usages.size > 0) {
-              const fields = Array.from(usages).join(', ');
+            // If usages is empty, it means the entire object is legitimately needed
+            // (e.g., spread operator, function calls, etc.), so don't report an error
+            if (usages.size === 0) {
+              return;
+            }
+
+            // If we found specific field usages, check if we can suggest them
+            let fieldsToSuggest = Array.from(usages);
+
+            // Also check for optional chaining patterns that might not be caught by AST analysis
+            const optionalChainingPattern = new RegExp(`${objectName}\\?\\.(\\w+)`, 'g');
+            const optionalChainingMatches = callbackBodyText.match(optionalChainingPattern);
+
+            if (optionalChainingMatches && optionalChainingMatches.length > 0) {
+              // Merge optional chaining matches with AST-found usages
+              const optionalChainingSet = new Set(optionalChainingMatches);
+              fieldsToSuggest = [...new Set([...fieldsToSuggest, ...optionalChainingSet])];
+            }
+
+            // Report the error with all found field usages
+            if (fieldsToSuggest.length > 0) {
+              const fields = fieldsToSuggest.join(', ');
               context.report({
                 node: element,
                 messageId: 'avoidEntireObject',
@@ -435,14 +499,7 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
                   fields,
                 },
                 fix(fixer) {
-                  // Only provide fix if we have specific fields to suggest
-                  if (usages.size > 0) {
-                    return fixer.replaceText(
-                      element,
-                      Array.from(usages).join(', '),
-                    );
-                  }
-                  return null;
+                  return fixer.replaceText(element, fields);
                 },
               });
             }
