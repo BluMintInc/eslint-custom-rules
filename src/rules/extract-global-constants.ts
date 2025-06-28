@@ -174,7 +174,10 @@ export const extractGlobalConstants: TSESLint.RuleModule<
           !hasDependencies &&
           !hasAsConstAssertion &&
           (scope.type === 'function' || scope.type === 'block') &&
-          isInsideFunction(node)
+          isInsideFunction(node) &&
+          node.declarations.length > 0 &&
+          node.declarations[0].id &&
+          node.declarations[0].id.type === 'Identifier'
         ) {
           const constName = (node.declarations[0].id as TSESTree.Identifier)
             .name;
