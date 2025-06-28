@@ -1681,7 +1681,8 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           messageId: 'avoidEntireObject',
           data: {
             objectName: 'userData',
-            fields: 'userData?.profile.settings.theme.primary, userData?.profile',
+            fields:
+              'userData?.profile.settings.theme.primary, userData?.profile',
           },
         },
       ],

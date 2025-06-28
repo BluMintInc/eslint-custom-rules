@@ -144,7 +144,8 @@ ruleTesterTs.run(
             data: {
               type: 'variable',
               name: 'active',
-              prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -159,7 +160,8 @@ ruleTesterTs.run(
             data: {
               type: 'variable',
               name: 'ready',
-              prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -174,7 +176,8 @@ ruleTesterTs.run(
             data: {
               type: 'variable',
               name: 'x',
-              prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -189,7 +192,8 @@ ruleTesterTs.run(
             data: {
               type: 'property',
               name: 'active',
-              prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
           {
@@ -197,11 +201,12 @@ ruleTesterTs.run(
             data: {
               type: 'property',
               name: 'ready',
-              prefixes: 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
-      }
+      },
     ],
   },
 );

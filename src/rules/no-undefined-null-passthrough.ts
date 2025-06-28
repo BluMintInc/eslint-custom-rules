@@ -508,5 +508,3 @@ function checkFunctionBodyForEarlyReturns(
     }
   }
 }
-
-

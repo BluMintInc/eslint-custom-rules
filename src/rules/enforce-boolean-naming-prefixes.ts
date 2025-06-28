@@ -973,7 +973,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       let variable: any = undefined;
 
       while (currentScope && !variable) {
-        variable = currentScope.variables.find((v: any) => v.name === variableName);
+        variable = currentScope.variables.find(
+          (v: any) => v.name === variableName,
+        );
         if (!variable) {
           currentScope = currentScope.upper;
         }
@@ -1155,7 +1157,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         // 1. const messageInputProps = useMemo(() => ({ grow: true }), [])
         // 2. const messageInputProps = useMemo(() => { return { grow: true }; }, [])
         if (node.parent?.type === AST_NODE_TYPES.ObjectExpression) {
-          let currentNode: TSESTree.Node | undefined = node.parent;
+          const currentNode: TSESTree.Node | undefined = node.parent;
           let variableName: string | undefined;
 
           // Handle TypeScript 'as const' expressions
@@ -1170,9 +1172,10 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
             parentNode.parent?.type === AST_NODE_TYPES.CallExpression &&
             parentNode.parent.callee.type === AST_NODE_TYPES.Identifier &&
             (parentNode.parent.callee.name === 'useMemo' ||
-             parentNode.parent.callee.name === 'useCallback' ||
-             parentNode.parent.callee.name === 'useState') &&
-            parentNode.parent.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+              parentNode.parent.callee.name === 'useCallback' ||
+              parentNode.parent.callee.name === 'useState') &&
+            parentNode.parent.parent?.type ===
+              AST_NODE_TYPES.VariableDeclarator &&
             parentNode.parent.parent.id.type === AST_NODE_TYPES.Identifier
           ) {
             variableName = parentNode.parent.parent.id.name;
@@ -1189,14 +1192,20 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
             if (
               returnParent?.type === AST_NODE_TYPES.ReturnStatement &&
               returnParent.parent?.type === AST_NODE_TYPES.BlockStatement &&
-              returnParent.parent.parent?.type === AST_NODE_TYPES.ArrowFunctionExpression &&
-              returnParent.parent.parent.parent?.type === AST_NODE_TYPES.CallExpression &&
-              returnParent.parent.parent.parent.callee.type === AST_NODE_TYPES.Identifier &&
+              returnParent.parent.parent?.type ===
+                AST_NODE_TYPES.ArrowFunctionExpression &&
+              returnParent.parent.parent.parent?.type ===
+                AST_NODE_TYPES.CallExpression &&
+              returnParent.parent.parent.parent.callee.type ===
+                AST_NODE_TYPES.Identifier &&
               (returnParent.parent.parent.parent.callee.name === 'useMemo' ||
-               returnParent.parent.parent.parent.callee.name === 'useCallback' ||
-               returnParent.parent.parent.parent.callee.name === 'useState') &&
-              returnParent.parent.parent.parent.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
-              returnParent.parent.parent.parent.parent.id.type === AST_NODE_TYPES.Identifier
+                returnParent.parent.parent.parent.callee.name ===
+                  'useCallback' ||
+                returnParent.parent.parent.parent.callee.name === 'useState') &&
+              returnParent.parent.parent.parent.parent?.type ===
+                AST_NODE_TYPES.VariableDeclarator &&
+              returnParent.parent.parent.parent.parent.id.type ===
+                AST_NODE_TYPES.Identifier
             ) {
               variableName = returnParent.parent.parent.parent.parent.id.name;
             }
@@ -1226,7 +1235,8 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           node.parent?.type === AST_NODE_TYPES.ObjectExpression &&
           node.parent.parent?.type === AST_NODE_TYPES.JSXExpressionContainer &&
           node.parent.parent.parent?.type === AST_NODE_TYPES.JSXAttribute &&
-          node.parent.parent.parent.parent?.type === AST_NODE_TYPES.JSXOpeningElement
+          node.parent.parent.parent.parent?.type ===
+            AST_NODE_TYPES.JSXOpeningElement
         ) {
           const jsxOpeningElement = node.parent.parent.parent.parent;
           if (jsxOpeningElement.name.type === AST_NODE_TYPES.JSXIdentifier) {

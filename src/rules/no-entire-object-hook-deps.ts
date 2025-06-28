@@ -334,8 +334,10 @@ function getObjectUsagesInHook(
         const currentMember = current as TSESTree.MemberExpression;
 
         // Check if this level uses dynamic computed property access
-        if (currentMember.computed &&
-            currentMember.property.type === AST_NODE_TYPES.Identifier) {
+        if (
+          currentMember.computed &&
+          currentMember.property.type === AST_NODE_TYPES.Identifier
+        ) {
           hasDynamicComputed = true;
         }
 
@@ -343,7 +345,10 @@ function getObjectUsagesInHook(
       }
 
       // Check if we reached our target object
-      if (current.type === AST_NODE_TYPES.Identifier && current.name === objectName) {
+      if (
+        current.type === AST_NODE_TYPES.Identifier &&
+        current.name === objectName
+      ) {
         foundTargetObject = true;
       }
 
@@ -368,7 +373,10 @@ function getObjectUsagesInHook(
           usages.set(path, node.range?.[0] || 0);
         }
       }
-    } else if (node.type === AST_NODE_TYPES.BinaryExpression || node.type === AST_NODE_TYPES.LogicalExpression) {
+    } else if (
+      node.type === AST_NODE_TYPES.BinaryExpression ||
+      node.type === AST_NODE_TYPES.LogicalExpression
+    ) {
       // Handle binary expressions like `userId || userData?.id`
       visit(node.left);
       visit(node.right);
@@ -431,7 +439,10 @@ function getObjectUsagesInHook(
 
         if (nextDotIndex !== -1) {
           // There are more properties after the first optional property
-          const firstOptionalPath = path.substring(0, firstOptionalIndex + 2 + nextDotIndex);
+          const firstOptionalPath = path.substring(
+            0,
+            firstOptionalIndex + 2 + nextDotIndex,
+          );
           finalPaths.add(firstOptionalPath);
         }
       }
