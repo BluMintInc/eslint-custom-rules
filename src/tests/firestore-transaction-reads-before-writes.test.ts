@@ -1057,5 +1057,5 @@ ruleTesterTs.run(
         errors: [{ messageId: 'readsAfterWrites' }],
       },
     ],
-  }
+  },
 );
