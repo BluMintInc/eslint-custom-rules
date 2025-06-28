@@ -1,9 +1,11 @@
-import { useEffect } from 'react';
+import { stableHash } from 'functions/src/util/hash/stableHash';
+import { useEffect, useMemo } from 'react';
 
 function Component({ items }) {
+  const itemsHash = useMemo(() => stableHash(items), [items]);
   useEffect(() => {
     console.log('Items changed!', items);
-  }, [items.length]);
+  }, [itemsHash]);
 
   return <div>{/* Component JSX */}</div>;
 }

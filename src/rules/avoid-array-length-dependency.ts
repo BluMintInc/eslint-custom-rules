@@ -250,8 +250,12 @@ export const avoidArrayLengthDependency = createRule<[], MessageIds>({
             },
             // Only apply fix on the first violation to avoid conflicts
             ...(index === 0 && {
-              *fix(fixer) {
+              fix(fixer) {
                 const sourceCode = context.getSourceCode();
+                const text = sourceCode.getText();
+
+                // Build the complete fixed code
+                let fixedCode = text;
 
                 // 1. Check for existing stableHash import
                 const stableHashImports = sourceCode.ast.body.filter(
@@ -260,24 +264,20 @@ export const avoidArrayLengthDependency = createRule<[], MessageIds>({
                     node.source.value === 'functions/src/util/hash/stableHash',
                 );
 
-                if (stableHashImports.length === 0) {
-                  // Add the stableHash import only if it doesn't exist
-                  const stableHashImport =
-                    "import { stableHash } from 'functions/src/util/hash/stableHash';\n";
-                  yield fixer.insertTextBefore(sourceCode.ast, stableHashImport);
-                }
+                let needsStableHashImport = stableHashImports.length === 0;
 
-                // 2. Add or update the React import for useMemo
+                // 2. Check for existing React import and useMemo
                 const reactImports = sourceCode.ast.body.filter(
                   (node) =>
                     node.type === AST_NODE_TYPES.ImportDeclaration &&
                     node.source.value === 'react',
                 );
 
+                let needsUseMemoImport = false;
+                let reactImportToUpdate: TSESTree.ImportDeclaration | null = null;
+
                 if (reactImports.length > 0) {
-                  // There's an existing React import
-                  const reactImport =
-                    reactImports[0] as TSESTree.ImportDeclaration;
+                  const reactImport = reactImports[0] as TSESTree.ImportDeclaration;
                   const specifiers = reactImport.specifiers;
 
                   // Check if useMemo is already imported
@@ -288,31 +288,14 @@ export const avoidArrayLengthDependency = createRule<[], MessageIds>({
                   );
 
                   if (!hasUseMemo) {
-                    if (
-                      specifiers.length === 1 &&
-                      specifiers[0].type === AST_NODE_TYPES.ImportDefaultSpecifier
-                    ) {
-                      // If it's just a default import, add a named import
-                      yield fixer.insertTextAfter(specifiers[0], ', { useMemo }');
-                    } else {
-                      // Add useMemo to the existing named imports
-                      const lastSpecifier = specifiers[specifiers.length - 1];
-                      yield fixer.insertTextAfter(
-                        lastSpecifier,
-                        specifiers.length > 0 ? ', useMemo' : 'useMemo',
-                      );
-                    }
+                    needsUseMemoImport = true;
+                    reactImportToUpdate = reactImport;
                   }
                 } else {
-                  // No existing React import, add a new one
-                  yield fixer.insertTextBefore(
-                    sourceCode.ast,
-                    "import { useMemo } from 'react';\n",
-                  );
+                  needsUseMemoImport = true;
                 }
 
-                // 3. Create all the memoized hash variables
-                // Find the first function/component body to insert the useMemo statements
+                // 3. Find insertion point for useMemo statements
                 let insertionPoint: TSESTree.Node | null = null;
                 for (const expr of uniqueExpressions.values()) {
                   let currentNode: TSESTree.Node = expr.hookNode;
@@ -330,18 +313,77 @@ export const avoidArrayLengthDependency = createRule<[], MessageIds>({
                   if (insertionPoint) break;
                 }
 
+                // Apply fixes in reverse order to maintain correct positions
+                const sortedExpressions = [...allLengthExpressions].sort((a, b) =>
+                  sourceCode.getIndexFromLoc(b.element.loc!.start) - sourceCode.getIndexFromLoc(a.element.loc!.start)
+                );
+
+                // Replace array.length expressions with hash variables
+                for (const expr of sortedExpressions) {
+                  const start = sourceCode.getIndexFromLoc(expr.element.loc!.start);
+                  const end = sourceCode.getIndexFromLoc(expr.element.loc!.end);
+                  fixedCode = fixedCode.slice(0, start) + expr.hashName + fixedCode.slice(end);
+                }
+
+                // Insert useMemo statements
                 if (insertionPoint) {
-                  // Insert all useMemo statements before the first hook
+                  const insertPos = sourceCode.getIndexFromLoc(insertionPoint.loc!.start);
+
+                  // Get the indentation by looking at the current line's indentation
+                  const lines = fixedCode.slice(0, insertPos).split('\n');
+                  const currentLine = lines[lines.length - 1];
+                  const baseIndentation = currentLine.match(/^(\s*)/)?.[1] || '';
+
+                  let useMemoStatements = '';
                   for (const expr of uniqueExpressions.values()) {
-                    const useMemoStatement = `const ${expr.hashName} = useMemo(() => stableHash(${expr.arrayName}), [${expr.arrayName}]);\n  `;
-                    yield fixer.insertTextBefore(insertionPoint, useMemoStatement);
+                    useMemoStatements += `${baseIndentation}const ${expr.hashName} = useMemo(() => stableHash(${expr.arrayName}), [${expr.arrayName}]);\n`;
+                  }
+                  // Add the useMemo statements with a prefix of 2 spaces for the useEffect line
+                  useMemoStatements += '  ';
+                  fixedCode = fixedCode.slice(0, insertPos) + useMemoStatements + fixedCode.slice(insertPos);
+                }
+
+                // Update React import
+                if (needsUseMemoImport && reactImportToUpdate) {
+                  const importStart = sourceCode.getIndexFromLoc(reactImportToUpdate.loc!.start);
+                  const importEnd = sourceCode.getIndexFromLoc(reactImportToUpdate.loc!.end);
+                  const currentImport = fixedCode.slice(importStart, importEnd);
+
+                  let newImport: string;
+                  const specifiers = reactImportToUpdate.specifiers;
+
+                  if (specifiers.length === 1 && specifiers[0].type === AST_NODE_TYPES.ImportDefaultSpecifier) {
+                    // Default import only, add named import
+                    newImport = currentImport.replace('from \'react\'', ', { useMemo } from \'react\'');
+                  } else {
+                    // Add to existing named imports - handle spacing correctly
+                    if (currentImport.includes(' }')) {
+                      newImport = currentImport.replace(' }', ', useMemo }');
+                    } else {
+                      newImport = currentImport.replace('}', ', useMemo }');
+                    }
+                  }
+
+                  fixedCode = fixedCode.slice(0, importStart) + newImport + fixedCode.slice(importEnd);
+                } else if (needsUseMemoImport && !reactImportToUpdate) {
+                  // Add new React import
+                  const firstImportOrStatement = sourceCode.ast.body[0];
+                  if (firstImportOrStatement) {
+                    const insertPos = sourceCode.getIndexFromLoc(firstImportOrStatement.loc!.start);
+                    fixedCode = fixedCode.slice(0, insertPos) + "import { useMemo } from 'react';\n" + fixedCode.slice(insertPos);
                   }
                 }
 
-                // 4. Replace all array.length expressions with their hash variables
-                for (const expr of allLengthExpressions) {
-                  yield fixer.replaceText(expr.element, expr.hashName);
+                // Add stableHash import
+                if (needsStableHashImport) {
+                  const firstImportOrStatement = sourceCode.ast.body[0];
+                  if (firstImportOrStatement) {
+                    const insertPos = sourceCode.getIndexFromLoc(firstImportOrStatement.loc!.start);
+                    fixedCode = fixedCode.slice(0, insertPos) + "import { stableHash } from 'functions/src/util/hash/stableHash';\n" + fixedCode.slice(insertPos);
+                  }
                 }
+
+                return fixer.replaceTextRange([0, text.length], fixedCode);
               },
             }),
           });
