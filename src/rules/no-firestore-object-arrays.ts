@@ -48,13 +48,13 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
     type: 'problem',
     docs: {
       description:
-        'Disallow arrays of objects in Firestore type definitions. Arrays of objects are not queryable in Firestore, require destructive updates (rewriting entire arrays), and cause concurrency issues with race conditions. Instead, use Record<string, T & { index: number }> map structures where the object id becomes the key and an index field preserves ordering. This enables efficient querying, individual item updates, safe concurrent access, and seamless conversion between arrays and maps using toMap()/toArr() utilities.',
+        'Disallow arrays of objects in Firestore type definitions. Arrays of objects are not queryable in Firestore, require destructive updates (rewriting entire arrays), and cause concurrency issues with race conditions. Instead, use the Array-Map Conversion system with Record<string, T & Indexed> map structures where the object id becomes the key and an index field preserves ordering. This enables efficient querying, individual item updates, safe concurrent access, and seamless conversion between arrays and maps using the toMap()/toArr() utility functions.',
       recommended: 'warn',
     },
     schema: [],
     messages: {
       noObjectArrays:
-        'Arrays of objects should not be used in Firestore types. Problem: Arrays of objects are not queryable, updates require rewriting the entire array (destructive), and concurrent updates cause race conditions and data loss. Solution: Use Record<string, T & { index: number }> instead, where the object\'s id becomes the key and an index field preserves order. This enables efficient querying, individual item updates, and safe concurrent access. Use toMap() to convert arrays to indexed maps and toArr() to convert back to ordered arrays. Example: Instead of "items: Item[]", use "items: Record<string, Item & { index: number }>". See Array-Map Conversion system documentation.',
+        'Arrays of objects should not be used in Firestore types. Problem: Arrays of objects are not queryable in Firestore, updates require rewriting the entire array (destructive), and concurrent updates cause race conditions and data loss. Solution: Use the Array-Map Conversion system with Record<string, T & Indexed> where T extends Identifiable. The object\'s id becomes the key and an index field preserves order. This enables efficient querying, individual item updates, and safe concurrent access. Use functions/src/util/toMap.ts to convert arrays to indexed maps and functions/src/util/toArr.ts to convert back to ordered arrays. Types: Identifiable (has id: string), Indexed (has index: number). Example: Instead of "matches: Match[]", use "matches: Record<string, Match & Indexed>". Real-world use case: Tournament matches that need ordering but individual queryability.',
     },
   },
   defaultOptions: [],

@@ -106,7 +106,9 @@ const isFirestoreAssignment = (node: TSESTree.Node): boolean => {
   return false;
 };
 
-const handleAssignmentExpression = (node: TSESTree.AssignmentExpression): void => {
+const handleAssignmentExpression = (
+  node: TSESTree.AssignmentExpression,
+): void => {
   // Handle variable reassignments
   if (isIdentifier(node.left)) {
     const varName = node.left.name;
@@ -320,7 +322,7 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
     if (name.includes('Manager') || name.includes('BatchManager')) {
       return false;
     }
-    
+
     // Check for basic batch or transaction variables (like 'batch', 'transaction')
     // but not BatchManager instances
     if (/^(batch|transaction)$/i.test(name)) {
@@ -430,7 +432,7 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
 
   // If we haven't found a doc/collection call yet, check if the object is a variable
   if (!foundDocOrCollection && isIdentifier(object)) {
-    const name = object.name;
+    const name = (object as TSESTree.Identifier).name;
     // If the variable name contains 'doc' or 'ref', it's likely a Firestore reference
     // But exclude realtimeDb references
     if (
