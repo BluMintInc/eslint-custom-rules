@@ -1,11 +1,14 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforcePropsNamingConsistency } from '../rules/enforce-props-naming-consistency';
 
-ruleTesterTs.run('enforce-props-naming-consistency', enforcePropsNamingConsistency, {
-  valid: [
-    // Function with correct props naming
-    {
-      code: `
+ruleTesterTs.run(
+  'enforce-props-naming-consistency',
+  enforcePropsNamingConsistency,
+  {
+    valid: [
+      // Function with correct props naming
+      {
+        code: `
         type UserProps = {
           name: string;
           age: number;
@@ -14,10 +17,10 @@ ruleTesterTs.run('enforce-props-naming-consistency', enforcePropsNamingConsisten
           return props.name;
         }
       `,
-    },
-    // Arrow function with correct props naming
-    {
-      code: `
+      },
+      // Arrow function with correct props naming
+      {
+        code: `
         type ButtonProps = {
           label: string;
           onClick: () => void;
@@ -26,10 +29,10 @@ ruleTesterTs.run('enforce-props-naming-consistency', enforcePropsNamingConsisten
           return props.label;
         };
       `,
-    },
-    // Class with correct props naming
-    {
-      code: `
+      },
+      // Class with correct props naming
+      {
+        code: `
         type PendingStrategyProps = {
           tournament: Tournament;
           match: MatchAggregated;
@@ -40,10 +43,10 @@ ruleTesterTs.run('enforce-props-naming-consistency', enforcePropsNamingConsisten
           }
         }
       `,
-    },
-    // Function with destructured parameter (should be ignored)
-    {
-      code: `
+      },
+      // Function with destructured parameter (should be ignored)
+      {
+        code: `
         type UserProps = {
           name: string;
           age: number;
@@ -52,34 +55,34 @@ ruleTesterTs.run('enforce-props-naming-consistency', enforcePropsNamingConsisten
           return name;
         }
       `,
-    },
-    // Function with primitive parameter (should be ignored)
-    {
-      code: `
+      },
+      // Function with primitive parameter (should be ignored)
+      {
+        code: `
         function getId(id: string) {
           return id;
         }
       `,
-    },
-    // Function with multiple parameters (should be ignored)
-    {
-      code: `
+      },
+      // Function with multiple parameters (should be ignored)
+      {
+        code: `
         function createUser(name: string, age: number) {
           return { name, age };
         }
       `,
-    },
-    // Multiple parameters with Props types
-    {
-      code: `
+      },
+      // Multiple parameters with Props types
+      {
+        code: `
         function mergeConfigs(uiProps: UIProps, dataProps: DataProps) {
           // ...
         }
       `,
-    },
-    // Class with multiple constructor parameters
-    {
-      code: `
+      },
+      // Class with multiple constructor parameters
+      {
+        code: `
         class DataManager {
           constructor(
             private readonly dataSource: DataSource,
@@ -87,18 +90,18 @@ ruleTesterTs.run('enforce-props-naming-consistency', enforcePropsNamingConsisten
           ) {}
         }
       `,
-    },
-    // Generic type with Props constraint
-    {
-      code: `
+      },
+      // Generic type with Props constraint
+      {
+        code: `
         function process<T extends ComponentProps>(props: T) {
           // ...
         }
       `,
-    },
-    // Parameter name with "props" suffix is valid
-    {
-      code: `
+      },
+      // Parameter name with "props" suffix is valid
+      {
+        code: `
         type UserProps = {
           name: string;
           age: number;
@@ -107,12 +110,12 @@ ruleTesterTs.run('enforce-props-naming-consistency', enforcePropsNamingConsisten
           return userProps.name;
         }
       `,
-    },
-  ],
-  invalid: [
-    // Function with incorrect parameter name
-    {
-      code: `
+      },
+    ],
+    invalid: [
+      // Function with incorrect parameter name
+      {
+        code: `
         type UserProps = {
           name: string;
           age: number;
@@ -121,10 +124,10 @@ ruleTesterTs.run('enforce-props-naming-consistency', enforcePropsNamingConsisten
           return settings.name;
         }
       `,
-      errors: [
-        { messageId: 'usePropsName', data: { paramName: 'settings' } },
-      ],
-      output: `
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+        ],
+        output: `
         type UserProps = {
           name: string;
           age: number;
@@ -133,10 +136,10 @@ ruleTesterTs.run('enforce-props-naming-consistency', enforcePropsNamingConsisten
           return settings.name;
         }
       `,
-    },
-    // Arrow function with incorrect parameter name
-    {
-      code: `
+      },
+      // Arrow function with incorrect parameter name
+      {
+        code: `
         type ButtonProps = {
           label: string;
           onClick: () => void;
@@ -145,10 +148,8 @@ ruleTesterTs.run('enforce-props-naming-consistency', enforcePropsNamingConsisten
           return options.label;
         };
       `,
-      errors: [
-        { messageId: 'usePropsName', data: { paramName: 'options' } },
-      ],
-      output: `
+        errors: [{ messageId: 'usePropsName', data: { paramName: 'options' } }],
+        output: `
         type ButtonProps = {
           label: string;
           onClick: () => void;
@@ -157,10 +158,10 @@ ruleTesterTs.run('enforce-props-naming-consistency', enforcePropsNamingConsisten
           return options.label;
         };
       `,
-    },
-    // Class with incorrect parameter name
-    {
-      code: `
+      },
+      // Class with incorrect parameter name
+      {
+        code: `
         type TournamentFactoryProps = {
           tournament: Tournament;
           match: MatchAggregated;
@@ -171,10 +172,10 @@ ruleTesterTs.run('enforce-props-naming-consistency', enforcePropsNamingConsisten
           }
         }
       `,
-      errors: [
-        { messageId: 'usePropsName', data: { paramName: 'settings' } },
-      ],
-      output: `
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+        ],
+        output: `
         type TournamentFactoryProps = {
           tournament: Tournament;
           match: MatchAggregated;
@@ -185,10 +186,10 @@ ruleTesterTs.run('enforce-props-naming-consistency', enforcePropsNamingConsisten
           }
         }
       `,
-    },
-    // Function with incorrect parameter name
-    {
-      code: `
+      },
+      // Function with incorrect parameter name
+      {
+        code: `
         type GameCreationProps = {
           players: Player[];
           settings: GameSettings;
@@ -197,10 +198,8 @@ ruleTesterTs.run('enforce-props-naming-consistency', enforcePropsNamingConsisten
           // ...
         }
       `,
-      errors: [
-        { messageId: 'usePropsName', data: { paramName: 'options' } },
-      ],
-      output: `
+        errors: [{ messageId: 'usePropsName', data: { paramName: 'options' } }],
+        output: `
         type GameCreationProps = {
           players: Player[];
           settings: GameSettings;
@@ -209,11 +208,11 @@ ruleTesterTs.run('enforce-props-naming-consistency', enforcePropsNamingConsisten
           // ...
         }
       `,
-    },
-    // We're skipping this test because our implementation doesn't handle multiple Props parameters
-    // Class with multiple constructor parameters, one incorrect
-    {
-      code: `
+      },
+      // We're skipping this test because our implementation doesn't handle multiple Props parameters
+      // Class with multiple constructor parameters, one incorrect
+      {
+        code: `
         class DataManager {
           constructor(
             private readonly dataSource: DataSource,
@@ -221,10 +220,10 @@ ruleTesterTs.run('enforce-props-naming-consistency', enforcePropsNamingConsisten
           ) {}
         }
       `,
-      errors: [
-        { messageId: 'usePropsName', data: { paramName: 'settings' } },
-      ],
-      output: `
+        errors: [
+          { messageId: 'usePropsName', data: { paramName: 'settings' } },
+        ],
+        output: `
         class DataManager {
           constructor(
             private readonly dataSource: DataSource,
@@ -232,6 +231,7 @@ ruleTesterTs.run('enforce-props-naming-consistency', enforcePropsNamingConsisten
           ) {}
         }
       `,
-    },
-  ],
-});
+      },
+    ],
+  },
+);

@@ -22,7 +22,6 @@ export const enforcePropsNamingConsistency = createRule<Options, MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-
     // Extract type name from a type annotation
     function getTypeName(typeAnnotation: TSESTree.TypeNode): string | null {
       if (typeAnnotation.type === AST_NODE_TYPES.TSTypeReference) {
@@ -35,7 +34,9 @@ export const enforcePropsNamingConsistency = createRule<Options, MessageIds>({
     }
 
     // Check if a parameter should be named "props"
-    function shouldBeNamedProps(param: TSESTree.Parameter | TSESTree.Identifier): boolean {
+    function shouldBeNamedProps(
+      param: TSESTree.Parameter | TSESTree.Identifier,
+    ): boolean {
       // Only check non-destructured parameters
       if (param.type !== AST_NODE_TYPES.Identifier) {
         return false;
@@ -75,9 +76,10 @@ export const enforcePropsNamingConsistency = createRule<Options, MessageIds>({
         | TSESTree.TSMethodSignature,
     ): void {
       // Skip functions with multiple parameters that have Props types
-      const propsTypeParams = node.params.filter(param => {
+      const propsTypeParams = node.params.filter((param) => {
         if (param.type !== AST_NODE_TYPES.Identifier) return false;
-        if (!param.typeAnnotation || !param.typeAnnotation.typeAnnotation) return false;
+        if (!param.typeAnnotation || !param.typeAnnotation.typeAnnotation)
+          return false;
         const typeName = getTypeName(param.typeAnnotation.typeAnnotation);
         return typeName && typeName.endsWith('Props');
       });
@@ -111,14 +113,24 @@ export const enforcePropsNamingConsistency = createRule<Options, MessageIds>({
       const constructor = node.value;
 
       // Skip constructors with multiple parameters that have Props types
-      const propsTypeParams = constructor.params.filter(param => {
+      const propsTypeParams = constructor.params.filter((param) => {
         if (param.type === AST_NODE_TYPES.Identifier) {
-          if (!param.typeAnnotation || !param.typeAnnotation.typeAnnotation) return false;
+          if (!param.typeAnnotation || !param.typeAnnotation.typeAnnotation)
+            return false;
           const typeName = getTypeName(param.typeAnnotation.typeAnnotation);
           return typeName && typeName.endsWith('Props');
-        } else if (param.type === AST_NODE_TYPES.TSParameterProperty && param.parameter.type === AST_NODE_TYPES.Identifier) {
-          if (!param.parameter.typeAnnotation || !param.parameter.typeAnnotation.typeAnnotation) return false;
-          const typeName = getTypeName(param.parameter.typeAnnotation.typeAnnotation);
+        } else if (
+          param.type === AST_NODE_TYPES.TSParameterProperty &&
+          param.parameter.type === AST_NODE_TYPES.Identifier
+        ) {
+          if (
+            !param.parameter.typeAnnotation ||
+            !param.parameter.typeAnnotation.typeAnnotation
+          )
+            return false;
+          const typeName = getTypeName(
+            param.parameter.typeAnnotation.typeAnnotation,
+          );
           return typeName && typeName.endsWith('Props');
         }
         return false;
