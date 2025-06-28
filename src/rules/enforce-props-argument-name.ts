@@ -92,6 +92,16 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
         | TSESTree.ArrowFunctionExpression
         | TSESTree.TSMethodSignature,
     ): void {
+      // Skip function expressions that are part of method definitions
+      // to avoid duplicate processing
+      if (
+        node.type === AST_NODE_TYPES.FunctionExpression &&
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.MethodDefinition
+      ) {
+        return;
+      }
+
       node.params.forEach((param) => {
         // Skip destructured parameters
         if (isDestructuredParameter(param)) {
@@ -140,61 +150,7 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
       });
     }
 
-    // Check class constructor parameters
-    function checkClassConstructor(node: TSESTree.MethodDefinition): void {
-      if (node.kind !== 'constructor') {
-        return;
-      }
 
-      const constructor = node.value;
-
-      constructor.params.forEach((param) => {
-        // Skip destructured parameters
-        if (isDestructuredParameter(param)) {
-          return;
-        }
-
-        // Only check identifier parameters with type annotations
-        if (
-          param.type === AST_NODE_TYPES.Identifier &&
-          param.typeAnnotation &&
-          param.typeAnnotation.typeAnnotation
-        ) {
-          const typeName = getTypeName(param.typeAnnotation.typeAnnotation);
-
-          if (typeName && endsWithProps(typeName)) {
-            const suggestedName = getSuggestedParameterName(
-              typeName,
-              constructor.params,
-            );
-
-            if (param.name !== suggestedName) {
-              const messageId =
-                suggestedName === 'props'
-                  ? 'usePropsParameterName'
-                  : 'usePropsParameterNameWithPrefix';
-
-              context.report({
-                node: param,
-                messageId,
-                data: {
-                  typeName,
-                  suggestedName,
-                },
-                fix: (fixer) => {
-                  const typeText = param.typeAnnotation
-                    ? context.getSourceCode().getText(param.typeAnnotation)
-                    : '';
-                  const optional = param.optional ? '?' : '';
-
-                  return fixer.replaceText(param, `${suggestedName}${optional}${typeText}`);
-                },
-              });
-            }
-          }
-        }
-      });
-    }
 
     // Check class method parameters (including constructors)
     function checkClassMethod(node: TSESTree.MethodDefinition): void {
