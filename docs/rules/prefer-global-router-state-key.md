@@ -1,6 +1,8 @@
-# Enforce using global constants or type-safe functions for useRouterState key parameter (`@blumintinc/blumint/prefer-global-router-state-key`)
+# Enforce using centralized router state key constants from queryKeys.ts for useRouterState key parameter (`@blumintinc/blumint/prefer-global-router-state-key`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
 
 <!-- end auto-generated rule header -->
 

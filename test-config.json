@@ -1,0 +1,7 @@
+{
+  "parser": "@typescript-eslint/parser",
+  "plugins": ["./lib/index.js"],
+  "rules": {
+    "@blumintinc/blumint/enforce-firestore-facade": "error"
+  }
+}

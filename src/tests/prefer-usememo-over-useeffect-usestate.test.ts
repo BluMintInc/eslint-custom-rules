@@ -90,6 +90,34 @@ ruleTesterJsx.run(
         }
       `,
       },
+      // Valid case: State synchronization with prop (direct reference)
+      {
+        code: `
+        function Component({ isEditingProp }) {
+          const [isEditingInternal, setIsEditingInternal] = useState(isEditingProp);
+
+          useEffect(() => {
+            setIsEditingInternal(isEditingProp);
+          }, [isEditingProp]);
+
+          return <div>{isEditingInternal ? 'Editing' : 'Viewing'}</div>;
+        }
+      `,
+      },
+      // Valid case: State synchronization with prop (using arrow function initializer)
+      {
+        code: `
+        function Component({ isEditingProp }) {
+          const [isEditingInternal, setIsEditingInternal] = useState(() => isEditingProp);
+
+          useEffect(() => {
+            setIsEditingInternal(isEditingProp);
+          }, [isEditingProp]);
+
+          return <div>{isEditingInternal ? 'Editing' : 'Viewing'}</div>;
+        }
+      `,
+      },
     ],
     invalid: [
       // Invalid case: simple computation in useEffect

@@ -187,6 +187,252 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    // Using Object.keys() should be valid
+    {
+      code: `
+        const MyComponent = ({ data }) => {
+          const keys = useMemo(() => {
+            return Object.keys(data);
+          }, [data]);
+          return <div>{keys.join(', ')}</div>;
+        };
+      `,
+    },
+    // Using Object.values() should be valid
+    {
+      code: `
+        const MyComponent = ({ data }) => {
+          const values = useMemo(() => {
+            return Object.values(data);
+          }, [data]);
+          return <div>{values.join(', ')}</div>;
+        };
+      `,
+    },
+    // Using Object.entries() should be valid
+    {
+      code: `
+        const MyComponent = ({ data }) => {
+          const entries = useMemo(() => {
+            return Object.entries(data);
+          }, [data]);
+          return <div>{entries.length}</div>;
+        };
+      `,
+    },
+    // Using JSON.stringify() should be valid
+    {
+      code: `
+        const MyComponent = ({ data }) => {
+          const serialized = useMemo(() => {
+            return JSON.stringify(data);
+          }, [data]);
+          return <div>{serialized}</div>;
+        };
+      `,
+    },
+    // Using object in template literal with specific property should be valid
+    {
+      code: `
+        const MyComponent = ({ user }) => {
+          const greeting = useMemo(() => {
+            return \`Hello, \${user.name}!\`;
+          }, [user.name]);
+          return <div>{greeting}</div>;
+        };
+      `,
+    },
+    // Using object in array destructuring should be valid
+    {
+      code: `
+        const MyComponent = ({ coordinates }) => {
+          const position = useMemo(() => {
+            const [x, y] = coordinates.position;
+            return { x, y };
+          }, [coordinates.position]);
+          return <div>{position.x}, {position.y}</div>;
+        };
+      `,
+    },
+    // Using object in object destructuring should be valid
+    {
+      code: `
+        const MyComponent = ({ user }) => {
+          const displayName = useMemo(() => {
+            const { firstName, lastName } = user.name;
+            return \`\${firstName} \${lastName}\`;
+          }, [user.name]);
+          return <div>{displayName}</div>;
+        };
+      `,
+    },
+    // Using object in switch statement with specific property should be valid
+    {
+      code: `
+        const MyComponent = ({ config }) => {
+          const value = useMemo(() => {
+            switch (config.type) {
+              case 'A':
+                return 'Type A';
+              case 'B':
+                return 'Type B';
+              default:
+                return 'Unknown';
+            }
+          }, [config.type]);
+          return <div>{value}</div>;
+        };
+      `,
+    },
+    // Using object in array includes should be valid
+    {
+      code: `
+        const MyComponent = ({ item, list }) => {
+          const isIncluded = useMemo(() => {
+            return list.includes(item);
+          }, [item, list]);
+          return <div>{isIncluded ? 'Included' : 'Not included'}</div>;
+        };
+      `,
+    },
+    // Using object in Promise.resolve should be valid
+    {
+      code: `
+        const MyComponent = ({ data }) => {
+          useEffect(() => {
+            Promise.resolve(data).then(console.log);
+          }, [data]);
+          return null;
+        };
+      `,
+    },
+    // Using object as function parameter should be valid
+    {
+      code: `
+        const MyComponent = ({ transform }) => {
+          const transformer = useMemo(() => {
+            return (value) => transform(value);
+          }, [transform]);
+          return <div>{transformer('test')}</div>;
+        };
+      `,
+    },
+    // Using object in closure with specific property should be valid
+    {
+      code: `
+        const MyComponent = ({ multiplier }) => {
+          const createMultiplier = useMemo(() => {
+            return (value) => {
+              return value * multiplier.factor;
+            };
+          }, [multiplier.factor]);
+          return <div>{createMultiplier(5)}</div>;
+        };
+      `,
+    },
+    // Using object in recursive function with specific property should be valid
+    {
+      code: `
+        const MyComponent = ({ tree }) => {
+          const traverse = useMemo(() => {
+            function walk(node) {
+              if (!node) return 0;
+              return 1 + walk(node.left) + walk(node.right);
+            }
+            return walk(tree.root);
+          }, [tree.root]);
+          return <div>{traverse}</div>;
+        };
+      `,
+    },
+    // Using object in method call chain should be valid
+    {
+      code: `
+        const MyComponent = ({ data }) => {
+          const result = useMemo(() => {
+            return data.filter(x => x.active).map(x => x.name).join(', ');
+          }, [data]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // Using object in complex expression with specific properties should be valid
+    {
+      code: `
+        const MyComponent = ({ a, b, c }) => {
+          const result = useMemo(() => {
+            return (a.value + b.value) * c.multiplier;
+          }, [a.value, b.value, c.multiplier]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // Using object in array find should be valid
+    {
+      code: `
+        const MyComponent = ({ items, predicate }) => {
+          const found = useMemo(() => {
+            return items.find(predicate);
+          }, [items, predicate]);
+          return <div>{found?.name}</div>;
+        };
+      `,
+    },
+    // Using object in array reduce should be valid
+    {
+      code: `
+        const MyComponent = ({ numbers, reducer }) => {
+          const sum = useMemo(() => {
+            return numbers.reduce(reducer, 0);
+          }, [numbers, reducer]);
+          return <div>{sum}</div>;
+        };
+      `,
+    },
+    // Using object in array sort should be valid
+    {
+      code: `
+        const MyComponent = ({ items, compareFn }) => {
+          const sorted = useMemo(() => {
+            return [...items].sort(compareFn);
+          }, [items, compareFn]);
+          return <div>{sorted.length}</div>;
+        };
+      `,
+    },
+    // Using object in string replace should be valid
+    {
+      code: `
+        const MyComponent = ({ text, replacer }) => {
+          const replaced = useMemo(() => {
+            return text.replace(/placeholder/g, replacer);
+          }, [text, replacer]);
+          return <div>{replaced}</div>;
+        };
+      `,
+    },
+    // Using object in parseInt should be valid
+    {
+      code: `
+        const MyComponent = ({ value, radix }) => {
+          const parsed = useMemo(() => {
+            return parseInt(value, radix);
+          }, [value, radix]);
+          return <div>{parsed}</div>;
+        };
+      `,
+    },
+    // Using object in Math functions should be valid
+    {
+      code: `
+        const MyComponent = ({ numbers }) => {
+          const max = useMemo(() => {
+            return Math.max(...numbers);
+          }, [numbers]);
+          return <div>{max}</div>;
+        };
+      `,
+    },
   ],
   invalid: [
     // Optional chaining case
@@ -303,23 +549,131 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    // Test case for the bug report - circular dependency where object is in deps but not used
     {
-      // Test case for the bug report example
       code: `
-        import { useTheme } from '@mui/material/styles';
+        const MyComponent = ({ channelGroupActive, channelGroupIdRouter, findByChannelGroupId }) => {
+          useEffect(() => {
+            const syncChannelGroup = async () => {
+              if (!channelGroupIdRouter) {
+                return setChannelGroupActive(undefined);
+              }
 
-        const MyComponent = ({ user }: { user: { address: { city: string } } }) => {
-          const theme: { palette: { background: { elevation: string[] } } } = useTheme();
+              const foundChannelGroup = await findByChannelGroupId(
+                channelGroupIdRouter,
+              );
 
-          const backgroundColor = useMemo(() => {
-            if (type === 'deleted') {
-              return theme.palette.background.elevation[4];
-            }
-            if (isMine) {
-              return theme.palette.primary.dark;
-            }
-            return theme.palette.background.elevation[10];
-          }, [isMine, theme, type]);
+              if (!foundChannelGroup) {
+                openChannelGroupNotFoundDialog();
+                return closeChannelGroup();
+              }
+
+              setChannelGroupActive(toActiveChannelGroup(foundChannelGroup));
+            };
+
+            syncChannelGroup();
+          }, [channelGroupIdRouter, findByChannelGroupId, channelGroupActive]);
+          return null;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'removeUnusedDependency',
+          data: {
+            objectName: 'channelGroupActive',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ channelGroupActive, channelGroupIdRouter, findByChannelGroupId }) => {
+          useEffect(() => {
+            const syncChannelGroup = async () => {
+              if (!channelGroupIdRouter) {
+                return setChannelGroupActive(undefined);
+              }
+
+              const foundChannelGroup = await findByChannelGroupId(
+                channelGroupIdRouter,
+              );
+
+              if (!foundChannelGroup) {
+                openChannelGroupNotFoundDialog();
+                return closeChannelGroup();
+              }
+
+              setChannelGroupActive(toActiveChannelGroup(foundChannelGroup));
+            };
+
+            syncChannelGroup();
+          }, [channelGroupIdRouter, findByChannelGroupId]);
+          return null;
+        };
+      `,
+    },
+    // Object used in conditional but only specific property needed
+    {
+      code: `
+        const MyComponent = ({ config }: { config: { value: string } }) => {
+          const value = useMemo(() => {
+            return config ? config.value : null;
+          }, [config]);
+          return <div>{value}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'config',
+            fields: 'config.value',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ config }: { config: { value: string } }) => {
+          const value = useMemo(() => {
+            return config ? config.value : null;
+          }, [config.value]);
+          return <div>{value}</div>;
+        };
+      `,
+    },
+    // Object used in logical AND but only specific property needed
+    {
+      code: `
+        const MyComponent = ({ settings }: { settings: { enabled: boolean } }) => {
+          const isEnabled = useMemo(() => {
+            return settings && settings.enabled;
+          }, [settings]);
+          return <div>{isEnabled}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'settings',
+            fields: 'settings.enabled',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ settings }: { settings: { enabled: boolean } }) => {
+          const isEnabled = useMemo(() => {
+            return settings && settings.enabled;
+          }, [settings.enabled]);
+          return <div>{isEnabled}</div>;
+        };
+      `,
+    },
+    // Object used in nullish coalescing but only specific property needed
+    {
+      code: `
+        const MyComponent = ({ theme }: { theme: { color?: string } }) => {
+          const color = useMemo(() => {
+            return theme?.color ?? 'default';
+          }, [theme]);
+          return <div style={{ color }}></div>;
         };
       `,
       errors: [
@@ -327,26 +681,1017 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           messageId: 'avoidEntireObject',
           data: {
             objectName: 'theme',
-            fields:
-              'theme.palette.background.elevation[4], theme.palette.primary.dark, theme.palette.background.elevation[10]',
+            fields: 'theme?.color',
           },
         },
       ],
       output: `
-        import { useTheme } from '@mui/material/styles';
+        const MyComponent = ({ theme }: { theme: { color?: string } }) => {
+          const color = useMemo(() => {
+            return theme?.color ?? 'default';
+          }, [theme?.color]);
+          return <div style={{ color }}></div>;
+        };
+      `,
+    },
+    // Complex nested object access
+    {
+      code: `
+        const MyComponent = ({ config }: { config: { api: { endpoints: { users: string } } } }) => {
+          const endpoint = useMemo(() => {
+            return config.api.endpoints.users;
+          }, [config]);
+          return <div>{endpoint}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'config',
+            fields: 'config.api.endpoints.users',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ config }: { config: { api: { endpoints: { users: string } } } }) => {
+          const endpoint = useMemo(() => {
+            return config.api.endpoints.users;
+          }, [config.api.endpoints.users]);
+          return <div>{endpoint}</div>;
+        };
+      `,
+    },
+    // Object with array access
+    {
+      code: `
+        const MyComponent = ({ data }: { data: { items: string[] } }) => {
+          const firstItem = useMemo(() => {
+            return data.items[0];
+          }, [data]);
+          return <div>{firstItem}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'data',
+            fields: 'data.items[0]',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ data }: { data: { items: string[] } }) => {
+          const firstItem = useMemo(() => {
+            return data.items[0];
+          }, [data.items[0]]);
+          return <div>{firstItem}</div>;
+        };
+      `,
+    },
+    // Object with multiple array accesses
+    {
+      code: `
+        const MyComponent = ({ matrix }: { matrix: { rows: number[][] } }) => {
+          const value = useMemo(() => {
+            return matrix.rows[0][1] + matrix.rows[1][0];
+          }, [matrix]);
+          return <div>{value}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'matrix',
+            fields: 'matrix.rows[0][1], matrix.rows[1][0]',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ matrix }: { matrix: { rows: number[][] } }) => {
+          const value = useMemo(() => {
+            return matrix.rows[0][1] + matrix.rows[1][0];
+          }, [matrix.rows[0][1], matrix.rows[1][0]]);
+          return <div>{value}</div>;
+        };
+      `,
+    },
+    // Object with string literal property access
+    {
+      code: `
+        const MyComponent = ({ data }: { data: { [key: string]: any } }) => {
+          const value = useMemo(() => {
+            return data['special-key'];
+          }, [data]);
+          return <div>{value}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'data',
+            fields: 'data["special-key"]',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ data }: { data: { [key: string]: any } }) => {
+          const value = useMemo(() => {
+            return data['special-key'];
+          }, [data["special-key"]]);
+          return <div>{value}</div>;
+        };
+      `,
+    },
+    // Object not used at all - should be removed
+    {
+      code: `
+        const MyComponent = ({ unusedObject, usedValue }) => {
+          const result = useMemo(() => {
+            return usedValue * 2;
+          }, [unusedObject, usedValue]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'removeUnusedDependency',
+          data: {
+            objectName: 'unusedObject',
+          },
+        },
+        {
+          messageId: 'removeUnusedDependency',
+          data: {
+            objectName: 'usedValue',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ unusedObject, usedValue }) => {
+          const result = useMemo(() => {
+            return usedValue * 2;
+          }, [usedValue]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // Multiple unused objects
+    {
+      code: `
+        const MyComponent = ({ unused1, unused2, used }) => {
+          const result = useMemo(() => {
+            return used.value;
+          }, [unused1, unused2, used]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'removeUnusedDependency',
+          data: {
+            objectName: 'unused1',
+          },
+        },
+        {
+          messageId: 'removeUnusedDependency',
+          data: {
+            objectName: 'unused2',
+          },
+        },
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'used',
+            fields: 'used.value',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ unused1, unused2, used }) => {
+          const result = useMemo(() => {
+            return used.value;
+          }, [unused2, used.value]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // Bug report test case - userData with optional chaining
+    {
+      code: `
+        import { useEffect, useState } from 'react';
+        import { useAuth } from '../../contexts/AuthContext';
+        import { CallerStatus } from '../../../functions/src/types/realtimeDb/Room/Caller';
 
-        const MyComponent = ({ user }: { user: { address: { city: string } } }) => {
-          const theme: { palette: { background: { elevation: string[] } } } = useTheme();
+        export type UseCallerStatusProps = {
+          roomPath?: string;
+          userId?: string;
+        };
 
-          const backgroundColor = useMemo(() => {
-            if (type === 'deleted') {
-              return theme.palette.background.elevation[4];
+        export const useCallerStatus = ({
+          roomPath,
+          userId,
+        }: UseCallerStatusProps = {}) => {
+          const { userData } = useAuth();
+          const [status, setStatus] = useState<CallerStatus | null>(null);
+
+          useEffect(() => {
+            let unsubscribe: (() => void) | undefined;
+
+            const subscribeToCallerStatus = async () => {
+              const id = userId || userData?.id;
+
+              if (!roomPath || !id) {
+                return;
+              }
+              const { onValue, child, ref } = await import('firebase/database');
+              const { database } = await import(
+                '../../config/firebase-client/database'
+              );
+
+              const roomRef = ref(database, roomPath);
+              const callerRef = child(roomRef, \`callers/\${id}\`);
+
+              unsubscribe = onValue(callerRef, (snapshot) => {
+                const caller = snapshot.val() || {};
+                setStatus(caller.status);
+              });
+            };
+
+            subscribeToCallerStatus();
+
+            return () => {
+              unsubscribe?.();
+            };
+          }, [userData, roomPath, userId]);
+
+          return { status } as const;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields: 'userData?.id',
+          },
+        },
+      ],
+      output: `
+        import { useEffect, useState } from 'react';
+        import { useAuth } from '../../contexts/AuthContext';
+        import { CallerStatus } from '../../../functions/src/types/realtimeDb/Room/Caller';
+
+        export type UseCallerStatusProps = {
+          roomPath?: string;
+          userId?: string;
+        };
+
+        export const useCallerStatus = ({
+          roomPath,
+          userId,
+        }: UseCallerStatusProps = {}) => {
+          const { userData } = useAuth();
+          const [status, setStatus] = useState<CallerStatus | null>(null);
+
+          useEffect(() => {
+            let unsubscribe: (() => void) | undefined;
+
+            const subscribeToCallerStatus = async () => {
+              const id = userId || userData?.id;
+
+              if (!roomPath || !id) {
+                return;
+              }
+              const { onValue, child, ref } = await import('firebase/database');
+              const { database } = await import(
+                '../../config/firebase-client/database'
+              );
+
+              const roomRef = ref(database, roomPath);
+              const callerRef = child(roomRef, \`callers/\${id}\`);
+
+              unsubscribe = onValue(callerRef, (snapshot) => {
+                const caller = snapshot.val() || {};
+                setStatus(caller.status);
+              });
+            };
+
+            subscribeToCallerStatus();
+
+            return () => {
+              unsubscribe?.();
+            };
+          }, [userData?.id, roomPath, userId]);
+
+          return { status } as const;
+        };
+      `,
+    },
+    // Edge case: Multiple optional chaining patterns
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { id?: string; name?: string } }) => {
+          const userInfo = useMemo(() => {
+            return \`\${userData?.id}: \${userData?.name}\`;
+          }, [userData]);
+          return <div>{userInfo}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields: 'userData?.id, userData?.name',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userData }: { userData: { id?: string; name?: string } }) => {
+          const userInfo = useMemo(() => {
+            return \`\${userData?.id}: \${userData?.name}\`;
+          }, [userData?.id, userData?.name]);
+          return <div>{userInfo}</div>;
+        };
+      `,
+    },
+    // Edge case: Nested optional chaining
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { profile?: { address?: { city?: string } } } }) => {
+          const city = useMemo(() => {
+            return userData?.profile?.address?.city;
+          }, [userData]);
+          return <div>{city}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields: 'userData?.profile.address.city, userData?.profile',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userData }: { userData: { profile?: { address?: { city?: string } } } }) => {
+          const city = useMemo(() => {
+            return userData?.profile?.address?.city;
+          }, [userData?.profile.address.city, userData?.profile]);
+          return <div>{city}</div>;
+        };
+      `,
+    },
+    // Edge case: Mixed access patterns (both optional and non-optional)
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { id: string; name?: string } }) => {
+          const userInfo = useCallback(() => {
+            console.log(userData.id, userData?.name);
+          }, [userData]);
+          return <button onClick={userInfo}>Show Info</button>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields: 'userData?.name, userData.id',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userData }: { userData: { id: string; name?: string } }) => {
+          const userInfo = useCallback(() => {
+            console.log(userData.id, userData?.name);
+          }, [userData?.name, userData.id]);
+          return <button onClick={userInfo}>Show Info</button>;
+        };
+      `,
+    },
+    // Edge case: Optional chaining with nullish coalescing
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { id?: string } }) => {
+          const userId = useMemo(() => {
+            return userData?.id ?? 'default';
+          }, [userData]);
+          return <div>{userId}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields: 'userData?.id',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userData }: { userData: { id?: string } }) => {
+          const userId = useMemo(() => {
+            return userData?.id ?? 'default';
+          }, [userData?.id]);
+          return <div>{userId}</div>;
+        };
+      `,
+    },
+    // Edge case: Optional chaining in template literals
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { name?: string } }) => {
+          const greeting = useMemo(() => {
+            return \`Hello, \${userData?.name}!\`;
+          }, [userData]);
+          return <div>{greeting}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields: 'userData?.name',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userData }: { userData: { name?: string } }) => {
+          const greeting = useMemo(() => {
+            return \`Hello, \${userData?.name}!\`;
+          }, [userData?.name]);
+          return <div>{greeting}</div>;
+        };
+      `,
+    },
+    // Edge case: Optional chaining in JSX
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { name?: string } }) => {
+          const content = useMemo(() => {
+            return <div>{userData?.name}</div>;
+          }, [userData]);
+          return content;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields: 'userData?.name',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userData }: { userData: { name?: string } }) => {
+          const content = useMemo(() => {
+            return <div>{userData?.name}</div>;
+          }, [userData?.name]);
+          return content;
+        };
+      `,
+    },
+    // Edge case: Optional chaining with method calls
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { getName?: () => string } }) => {
+          const name = useMemo(() => {
+            return userData?.getName?.();
+          }, [userData]);
+          return <div>{name}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields: 'userData?.getName',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userData }: { userData: { getName?: () => string } }) => {
+          const name = useMemo(() => {
+            return userData?.getName?.();
+          }, [userData?.getName]);
+          return <div>{name}</div>;
+        };
+      `,
+    },
+    // Edge case: Optional chaining with array access
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { items?: string[] } }) => {
+          const firstItem = useMemo(() => {
+            return userData?.items?.[0];
+          }, [userData]);
+          return <div>{firstItem}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields: 'userData?.items[0], userData?.items',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userData }: { userData: { items?: string[] } }) => {
+          const firstItem = useMemo(() => {
+            return userData?.items?.[0];
+          }, [userData?.items[0], userData?.items]);
+          return <div>{firstItem}</div>;
+        };
+      `,
+    },
+    // Edge case: Optional chaining in function parameters
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { id?: string } }) => {
+          const result = useMemo(() => {
+            return someFunction(userData?.id);
+          }, [userData]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields: 'userData?.id',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userData }: { userData: { id?: string } }) => {
+          const result = useMemo(() => {
+            return someFunction(userData?.id);
+          }, [userData?.id]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // Edge case: Optional chaining in object literals
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { id?: string; name?: string } }) => {
+          const userInfo = useMemo(() => {
+            return { userId: userData?.id, userName: userData?.name };
+          }, [userData]);
+          return <div>{userInfo.userId}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields: 'userData?.id, userData?.name',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userData }: { userData: { id?: string; name?: string } }) => {
+          const userInfo = useMemo(() => {
+            return { userId: userData?.id, userName: userData?.name };
+          }, [userData?.id, userData?.name]);
+          return <div>{userInfo.userId}</div>;
+        };
+      `,
+    },
+    // Edge case: Optional chaining in array literals
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { id?: string; name?: string } }) => {
+          const userArray = useMemo(() => {
+            return [userData?.id, userData?.name];
+          }, [userData]);
+          return <div>{userArray[0]}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields: 'userData?.id, userData?.name',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userData }: { userData: { id?: string; name?: string } }) => {
+          const userArray = useMemo(() => {
+            return [userData?.id, userData?.name];
+          }, [userData?.id, userData?.name]);
+          return <div>{userArray[0]}</div>;
+        };
+      `,
+    },
+    // Edge case: Optional chaining in conditional expressions
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { name?: string } }) => {
+          const displayName = useMemo(() => {
+            return userData?.name ? userData?.name : 'Anonymous';
+          }, [userData]);
+          return <div>{displayName}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields: 'userData?.name',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userData }: { userData: { name?: string } }) => {
+          const displayName = useMemo(() => {
+            return userData?.name ? userData?.name : 'Anonymous';
+          }, [userData?.name]);
+          return <div>{displayName}</div>;
+        };
+      `,
+    },
+    // Edge case: Optional chaining in logical expressions
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { id?: string; name?: string } }) => {
+          const isValid = useMemo(() => {
+            return userData?.id && userData?.name;
+          }, [userData]);
+          return <div>{isValid ? 'Valid' : 'Invalid'}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields: 'userData?.id, userData?.name',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userData }: { userData: { id?: string; name?: string } }) => {
+          const isValid = useMemo(() => {
+            return userData?.id && userData?.name;
+          }, [userData?.id, userData?.name]);
+          return <div>{isValid ? 'Valid' : 'Invalid'}</div>;
+        };
+      `,
+    },
+    // Edge case: Multiple objects with optional chaining
+    {
+      code: `
+        const MyComponent = ({ userData, userSettings }: { userData: { id?: string }; userSettings: { theme?: string } }) => {
+          const userInfo = useMemo(() => {
+            return \`\${userData?.id} - \${userSettings?.theme}\`;
+          }, [userData, userSettings]);
+          return <div>{userInfo}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields: 'userData?.id',
+          },
+        },
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userSettings',
+            fields: 'userSettings?.theme',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userData, userSettings }: { userData: { id?: string }; userSettings: { theme?: string } }) => {
+          const userInfo = useMemo(() => {
+            return \`\${userData?.id} - \${userSettings?.theme}\`;
+          }, [userData?.id, userSettings?.theme]);
+          return <div>{userInfo}</div>;
+        };
+      `,
+    },
+    // Edge case: Optional chaining in useEffect
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { id?: string } }) => {
+          useEffect(() => {
+            console.log('User ID:', userData?.id);
+          }, [userData]);
+          return null;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields: 'userData?.id',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userData }: { userData: { id?: string } }) => {
+          useEffect(() => {
+            console.log('User ID:', userData?.id);
+          }, [userData?.id]);
+          return null;
+        };
+      `,
+    },
+    // Edge case: Optional chaining in useCallback
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { id?: string } }) => {
+          const handleClick = useCallback(() => {
+            alert(userData?.id);
+          }, [userData]);
+          return <button onClick={handleClick}>Click</button>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields: 'userData?.id',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userData }: { userData: { id?: string } }) => {
+          const handleClick = useCallback(() => {
+            alert(userData?.id);
+          }, [userData?.id]);
+          return <button onClick={handleClick}>Click</button>;
+        };
+      `,
+    },
+    // Edge case: Complex expression with optional chaining
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { id?: string; status?: string } }) => {
+          const isActiveUser = useMemo(() => {
+            return userData?.id && userData?.status === 'active';
+          }, [userData]);
+          return <div>{isActiveUser ? 'Active' : 'Inactive'}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields: 'userData?.id, userData?.status',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userData }: { userData: { id?: string; status?: string } }) => {
+          const isActiveUser = useMemo(() => {
+            return userData?.id && userData?.status === 'active';
+          }, [userData?.id, userData?.status]);
+          return <div>{isActiveUser ? 'Active' : 'Inactive'}</div>;
+        };
+      `,
+    },
+    // Edge case: Optional chaining with assignment
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { id?: string } }) => {
+          const result = useMemo(() => {
+            let id = userData?.id;
+            return id || 'default';
+          }, [userData]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields: 'userData?.id',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userData }: { userData: { id?: string } }) => {
+          const result = useMemo(() => {
+            let id = userData?.id;
+            return id || 'default';
+          }, [userData?.id]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // Edge case: Optional chaining in switch statement
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { status?: string } }) => {
+          const result = useMemo(() => {
+            switch (userData?.status) {
+              case 'active':
+                return 'User is active';
+              case 'inactive':
+                return 'User is inactive';
+              default:
+                return 'Unknown status';
             }
-            if (isMine) {
-              return theme.palette.primary.dark;
+          }, [userData]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields: 'userData?.status',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userData }: { userData: { status?: string } }) => {
+          const result = useMemo(() => {
+            switch (userData?.status) {
+              case 'active':
+                return 'User is active';
+              case 'inactive':
+                return 'User is inactive';
+              default:
+                return 'Unknown status';
             }
-            return theme.palette.background.elevation[10];
-          }, [isMine, theme.palette.background.elevation[4], theme.palette.primary.dark, theme.palette.background.elevation[10], type]);
+          }, [userData?.status]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // Edge case: Optional chaining in try-catch
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { getData?: () => string } }) => {
+          const result = useMemo(() => {
+            try {
+              return userData?.getData?.() || 'No data';
+            } catch (error) {
+              return 'Error occurred';
+            }
+          }, [userData]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields: 'userData?.getData',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userData }: { userData: { getData?: () => string } }) => {
+          const result = useMemo(() => {
+            try {
+              return userData?.getData?.() || 'No data';
+            } catch (error) {
+              return 'Error occurred';
+            }
+          }, [userData?.getData]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // Edge case: Optional chaining with typeof check
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { id?: string } }) => {
+          const result = useMemo(() => {
+            return typeof userData?.id === 'string' ? userData?.id : 'No ID';
+          }, [userData]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields: 'userData?.id',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userData }: { userData: { id?: string } }) => {
+          const result = useMemo(() => {
+            return typeof userData?.id === 'string' ? userData?.id : 'No ID';
+          }, [userData?.id]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // Edge case: Optional chaining with instanceof check
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { date?: Date } }) => {
+          const result = useMemo(() => {
+            return userData?.date instanceof Date ? userData?.date.toISOString() : 'No date';
+          }, [userData]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields: 'userData?.date.toISOString, userData?.date',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userData }: { userData: { date?: Date } }) => {
+          const result = useMemo(() => {
+            return userData?.date instanceof Date ? userData?.date.toISOString() : 'No date';
+          }, [userData?.date.toISOString, userData?.date]);
+          return <div>{result}</div>;
+        };
+      `,
+    },
+    // Edge case: Optional chaining in array methods
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { items?: { id: string }[] } }) => {
+          const result = useMemo(() => {
+            return userData?.items?.map(item => item.id) || [];
+          }, [userData]);
+          return <div>{result.join(', ')}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields: 'userData?.items',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userData }: { userData: { items?: { id: string }[] } }) => {
+          const result = useMemo(() => {
+            return userData?.items?.map(item => item.id) || [];
+          }, [userData?.items]);
+          return <div>{result.join(', ')}</div>;
+        };
+      `,
+    },
+    // Edge case: Optional chaining with complex nested access
+    {
+      code: `
+        const MyComponent = ({ userData }: { userData: { profile?: { settings?: { theme?: { primary?: string } } } } }) => {
+          const result = useMemo(() => {
+            return userData?.profile?.settings?.theme?.primary || 'default';
+          }, [userData]);
+          return <div>{result}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'avoidEntireObject',
+          data: {
+            objectName: 'userData',
+            fields:
+              'userData?.profile.settings.theme.primary, userData?.profile',
+          },
+        },
+      ],
+      output: `
+        const MyComponent = ({ userData }: { userData: { profile?: { settings?: { theme?: { primary?: string } } } } }) => {
+          const result = useMemo(() => {
+            return userData?.profile?.settings?.theme?.primary || 'default';
+          }, [userData?.profile.settings.theme.primary, userData?.profile]);
+          return <div>{result}</div>;
         };
       `,
     },
