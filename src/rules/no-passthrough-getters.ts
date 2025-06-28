@@ -69,7 +69,9 @@ export const noPassthroughGetters = createRule({
      * Check if the node is a simple property access from a constructor parameter
      * like this.settings.property or this.settings['property'] or this.settings.nested.deep.property
      */
-    function isConstructorParameterPropertyAccess(node: TSESTree.Expression): boolean {
+    function isConstructorParameterPropertyAccess(
+      node: TSESTree.Expression,
+    ): boolean {
       // Check for member expressions like this.settings.property
       if (node.type === 'MemberExpression') {
         return isConstructorParameterAccess(node);
@@ -83,7 +85,9 @@ export const noPassthroughGetters = createRule({
      * Patterns to match: this.constructorParam.property, this.constructorParam['property'], this.constructorParam.nested.deep.property
      * Patterns to NOT match: this.property, SomeClass.property, this.methodCall()
      */
-    function isConstructorParameterAccess(node: TSESTree.MemberExpression): boolean {
+    function isConstructorParameterAccess(
+      node: TSESTree.MemberExpression,
+    ): boolean {
       // We need at least two levels: this.param.property
       // The base case should be this.constructorParameter
       if (node.object.type === 'ThisExpression') {
@@ -167,7 +171,9 @@ export const noPassthroughGetters = createRule({
     /**
      * Check if the node includes computed property access or function calls
      */
-    function hasComputedPropertyOrFunctionCall(node: TSESTree.Expression): boolean {
+    function hasComputedPropertyOrFunctionCall(
+      node: TSESTree.Expression,
+    ): boolean {
       // Check for call expressions like this.settings.getValue() or this.getPropertyName()
       if (node.type === 'CallExpression') {
         return true;

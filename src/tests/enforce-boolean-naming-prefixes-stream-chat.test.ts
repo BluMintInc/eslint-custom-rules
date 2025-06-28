@@ -80,7 +80,6 @@ ruleTesterJsx.run(
         return <Thread additionalMessageInputProps={messageInputProps} />;
       }
       `,
-
     ],
     invalid: [
       // This should be invalid because localProps is not passed to an external component

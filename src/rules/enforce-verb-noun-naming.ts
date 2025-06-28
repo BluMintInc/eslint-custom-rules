@@ -4730,11 +4730,7 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
       ];
 
       // If the function has a PascalCase name AND returns JSX, it's definitely a React component
-      if (
-        functionName &&
-        isPascalCase(functionName) &&
-        hasJsxReturn(node)
-      ) {
+      if (functionName && isPascalCase(functionName) && hasJsxReturn(node)) {
         return true;
       }
 
