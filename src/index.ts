@@ -103,6 +103,7 @@ import { noMarginProperties } from './rules/no-margin-properties';
 import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-prefixes';
 import { preferBlockCommentsForDeclarations } from './rules/prefer-block-comments-for-declarations';
 import { noUndefinedNullPassthrough } from './rules/no-undefined-null-passthrough';
+import { firestoreTransactionReadsBeforeWrites } from './rules/firestore-transaction-reads-before-writes';
 import { preferNullishCoalescingOverride } from './rules/prefer-nullish-coalescing-override';
 import { preferNullishCoalescingBooleanProps } from './rules/prefer-nullish-coalescing-boolean-props';
 import { noRestrictedPropertiesFix } from './rules/no-restricted-properties-fix';
@@ -127,6 +128,8 @@ module.exports = {
     recommended: {
       plugins: ['@blumintinc/blumint'],
       rules: {
+        '@blumintinc/blumint/firestore-transaction-reads-before-writes':
+          'error',
         // Override the @typescript-eslint/prefer-nullish-coalescing rule
         '@typescript-eslint/prefer-nullish-coalescing': 'off',
         '@blumintinc/blumint/prefer-nullish-coalescing-override': 'error',
@@ -259,6 +262,8 @@ module.exports = {
   },
 
   rules: {
+    'firestore-transaction-reads-before-writes':
+      firestoreTransactionReadsBeforeWrites,
     'prefer-nullish-coalescing-override': preferNullishCoalescingOverride,
     'no-restricted-properties-fix': noRestrictedPropertiesFix,
     'no-excessive-parent-chain': noExcessiveParentChain,
