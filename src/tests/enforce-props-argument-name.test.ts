@@ -4,7 +4,7 @@ import { enforcePropsArgumentName } from '../rules/enforce-props-argument-name';
 // Run non-JSX tests
 ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
   valid: [
-    // Function with correct props naming
+    // Basic valid cases - correct props naming
     {
       code: `
         type UserProps = {
@@ -16,7 +16,6 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
         }
       `,
     },
-    // Arrow function with correct props naming
     {
       code: `
         type ButtonProps = {
@@ -28,7 +27,6 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
         };
       `,
     },
-    // Class with correct props naming
     {
       code: `
         type PendingStrategyProps = {
@@ -42,20 +40,45 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
         }
       `,
     },
-    // Function with correct props naming and destructuring
+
+    // Destructured parameters should be ignored
     {
       code: `
         type UserProps = {
           name: string;
           age: number;
         };
-        function User(props: UserProps) {
-          const { name, age } = props;
+        function User({ name, age }: UserProps) {
           return name;
         }
       `,
     },
-    // Function with primitive parameter (should be ignored)
+    {
+      code: `
+        type ButtonProps = {
+          label: string;
+          onClick: () => void;
+        };
+        const Button = ({ label, onClick }: ButtonProps) => {
+          return label;
+        };
+      `,
+    },
+    {
+      code: `
+        type ConfigProps = {
+          setting1: string;
+          setting2: number;
+        };
+        class MyClass {
+          constructor({ setting1, setting2 }: ConfigProps) {
+            // ...
+          }
+        }
+      `,
+    },
+
+    // Non-Props types should be ignored
     {
       code: `
         function getId(id: string) {
@@ -63,7 +86,29 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
         }
       `,
     },
-    // Function with multiple parameters (should be ignored)
+    {
+      code: `
+        type UserConfig = {
+          name: string;
+        };
+        function configure(config: UserConfig) {
+          return config.name;
+        }
+      `,
+    },
+    {
+      code: `
+        interface DatabaseConnection {
+          host: string;
+          port: number;
+        }
+        function connect(connection: DatabaseConnection) {
+          // ...
+        }
+      `,
+    },
+
+    // Multiple parameters with non-Props types
     {
       code: `
         function createUser(name: string, age: number) {
@@ -71,58 +116,102 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
         }
       `,
     },
-    // Function with any parameter name is now allowed
     {
       code: `
-        type UserProps = {
-          name: string;
-          age: number;
-        };
-        function User(config: UserProps) {
-          return config.name;
-        }
-      `,
-    },
-    // Class with any parameter name is now allowed
-    {
-      code: `
-        type PendingStrategyProps = {
-          tournament: Tournament;
-          match: MatchAggregated;
-        };
-        class PendingStrategy {
-          constructor(settings: PendingStrategyProps) {
-            // ...
-          }
-        }
-      `,
-    },
-    // Function with any parameter name is now allowed
-    {
-      code: `
-        type AreQueuesEmptyProps = {
-          videoPlatforms?: VideoPlatform[];
-          projectId?: string;
-        };
-        function areQueuesEmpty(params: AreQueuesEmptyProps) {
+        type UserConfig = { name: string };
+        function processUser(id: string, config: UserConfig) {
           // ...
         }
       `,
     },
-    // External interface implementation (should be ignored)
+
+    // Functions without type annotations
     {
       code: `
-        interface ExternalInterface {
-          configure(props: ConfigType): void;
-        }
-        class OurClass implements ExternalInterface {
-          configure(props: ConfigType) {
-            // ...
-          }
+        function process(data) {
+          return data;
         }
       `,
-      options: [{ ignoreExternalInterfaces: true }],
     },
+    {
+      code: `
+        const handler = (event) => {
+          // ...
+        };
+      `,
+    },
+
+    // Generic Props types
+    {
+      code: `
+        function process<T extends ComponentProps>(props: T) {
+          return props;
+        }
+      `,
+    },
+
+    // Array destructuring
+    {
+      code: `
+        type ArrayProps = [string, number];
+        function process([first, second]: ArrayProps) {
+          return first;
+        }
+      `,
+    },
+
+    // Rest parameters
+    {
+      code: `
+        type ItemProps = { id: string };
+        function process(...items: ItemProps[]) {
+          return items;
+        }
+      `,
+    },
+
+    // Method signatures in interfaces
+    {
+      code: `
+        interface Service {
+          process(props: ServiceProps): void;
+        }
+      `,
+    },
+
+    // Private constructor parameters
+    {
+      code: `
+        type ManagerProps = {
+          config: Config;
+        };
+        class Manager {
+          constructor(private readonly props: ManagerProps) {}
+        }
+      `,
+    },
+
+    // Multiple parameters where only one has Props type
+    {
+      code: `
+        type UserProps = { name: string };
+        function createUser(id: string, props: UserProps) {
+          return { id, ...props };
+        }
+      `,
+    },
+
+    // Multiple Props parameters with correct naming
+    {
+      code: `
+        type UIProps = { theme: string };
+        type DataProps = { source: string };
+        function mergeConfigs(uIProps: UIProps, dataProps: DataProps) {
+          return { ...uIProps, ...dataProps };
+        }
+      `,
+    },
+
     // Built-in Web API types should be whitelisted
     {
       code: `
@@ -152,154 +241,7 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
         }
       `,
     },
-    {
-      code: `
-        function setupPush(options: PushSubscriptionOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function recordMedia(options: MediaRecorderOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function createStore(params: IDBObjectStoreParameters) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function registerWorker(options: ServiceWorkerRegistrationOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function setupRTC(config: RTCConfiguration) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function observeResize(options: ResizeObserverOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function observeIntersection(options: IntersectionObserverOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function observeMutation(options: MutationObserverOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function getWebGLContext(attributes: WebGLContextAttributes) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function showNotification(options: NotificationOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function requestCredentials(options: CredentialRequestOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function getCurrentPosition(options: GeolocationPositionOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function queryCache(options: CacheQueryOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function addEventListener(options: EventListenerOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function addListener(options: AddEventListenerOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function observePerformance(options: PerformanceObserverOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function decodeText(options: TextDecoderOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function shareContent(options: ShareOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function scrollIntoView(options: ScrollIntoViewOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function scrollElement(options: ScrollOptions) {
-          // implementation
-        }
-      `,
-    },
     // Node.js types should be whitelisted
-    {
-      code: `
-        function watchFile(options: FSWatchOptions) {
-          // implementation
-        }
-      `,
-    },
     {
       code: `
         function readFile(options: ReadFileOptions) {
@@ -314,239 +256,10 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
         }
       `,
     },
-    {
-      code: `
-        function makeDirectory(options: MkdirOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function makeRequest(options: HttpRequestOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function createServer(options: HttpServerOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function spawnProcess(options: ChildProcessOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function createStream(options: StreamOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function compressData(options: ZlibOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function startServer(options: ServerOptions) {
-          // implementation
-        }
-      `,
-    },
     // DOM types should be whitelisted
     {
       code: `
         function parseDOM(options: DOMParserOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function createRect(options: DOMRectOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function createMatrix(options: DOMMatrixOptions) {
-          // implementation
-        }
-      `,
-    },
-    // Intl types should be whitelisted
-    {
-      code: `
-        function formatDate(options: DateTimeFormatOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function formatNumber(options: NumberFormatOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function createCollator(options: CollatorOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function createPluralRules(options: PluralRulesOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function formatRelativeTime(options: RelativeTimeFormatOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function formatList(options: ListFormatOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function getDisplayNames(options: DisplayNamesOptions) {
-          // implementation
-        }
-      `,
-    },
-    // Speech and Media types should be whitelisted
-    {
-      code: `
-        function setupRecognition(options: SpeechRecognitionOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function setupSynthesis(options: SpeechSynthesisOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function queryMedia(options: MediaQueryOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function createStream(options: MediaStreamOptions) {
-          // implementation
-        }
-      `,
-    },
-    // Security and Crypto types should be whitelisted
-    {
-      code: `
-        function createKey(options: CryptoKeyOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function setupCrypto(options: SubtleCryptoOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function encrypt(params: CryptoAlgorithmParameters) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function requestPermission(options: PermissionOptions) {
-          // implementation
-        }
-      `,
-    },
-    // WebRTC types should be whitelisted
-    {
-      code: `
-        function createConnection(options: RTCPeerConnectionOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function createChannel(options: RTCDataChannelOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function setEncoding(params: RTCRtpEncodingParameters) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function setSendParams(params: RTCRtpSendParameters) {
-          // implementation
-        }
-      `,
-    },
-    // Web Components and Animation types should be whitelisted
-    {
-      code: `
-        function attachShadow(options: ShadowRootOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function defineElement(options: CustomElementOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function animate(options: AnimationOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function createEffect(options: AnimationEffectOptions) {
           // implementation
         }
       `,
@@ -559,480 +272,64 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
         }
       `,
     },
-    {
-      code: `
-        function loadConfig(options: TSConfigOptions) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function transpile(options: TranspileOptions) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Generic types with built-in types
-    {
-      code: `
-        function processPromise(params: Promise<URLSearchParams>) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function processArray(options: Array<AudioContextOptions>) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Union types with built-in types
-    {
-      code: `
-        function handleUnion(params: URLSearchParams | string) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Intersection types with built-in types
-    {
-      code: `
-        function handleIntersection(options: AudioContextOptions & { custom: string }) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Array types with built-in types
-    {
-      code: `
-        function processArray(params: URLSearchParams[]) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Tuple types with built-in types
-    {
-      code: `
-        function processTuple(params: [URLSearchParams, string]) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Utility types with built-in types
-    {
-      code: `
-        function processPartial(options: Partial<AudioContextOptions>) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function processRequired(options: Required<NotificationOptions>) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function processPick(options: Pick<GeolocationPositionOptions, 'timeout'>) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function processOmit(options: Omit<CacheQueryOptions, 'ignoreSearch'>) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Multiple parameters with built-in types
-    {
-      code: `
-        function processMultiple(params: URLSearchParams, options: AudioContextOptions) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Optional parameters with built-in types
-    {
-      code: `
-        function processOptional(params?: URLSearchParams) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Rest parameters with built-in types
-    {
-      code: `
-        function processRest(...params: URLSearchParams[]) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Default parameters with built-in types
-    {
-      code: `
-        function processDefault(params: URLSearchParams = new URLSearchParams()) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Destructured parameters with built-in types
-    {
-      code: `
-        function processDestructured({ params }: { params: URLSearchParams }) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Async functions with built-in types
-    {
-      code: `
-        async function processAsync(params: URLSearchParams) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Arrow functions with built-in types
-    {
-      code: `
-        const processArrow = (params: URLSearchParams) => {
-          // implementation
-        };
-      `,
-    },
-    // Edge case: Function expressions with built-in types
-    {
-      code: `
-        const processFunction = function(params: URLSearchParams) {
-          // implementation
-        };
-      `,
-    },
-    // Edge case: Method signatures with built-in types
-    {
-      code: `
-        interface MyInterface {
-          process(params: URLSearchParams): void;
-        }
-      `,
-    },
-    // Edge case: Class methods with built-in types
-    {
-      code: `
-        class MyClass {
-          process(params: URLSearchParams) {
-            // implementation
-          }
-        }
-      `,
-    },
-    // Edge case: Static methods with built-in types
-    {
-      code: `
-        class MyClass {
-          static process(params: URLSearchParams) {
-            // implementation
-          }
-        }
-      `,
-    },
-    // Edge case: Getters with built-in types
-    {
-      code: `
-        class MyClass {
-          get params(): URLSearchParams {
-            return new URLSearchParams();
-          }
-        }
-      `,
-    },
-    // Edge case: Setters with built-in types
-    {
-      code: `
-        class MyClass {
-          set params(value: URLSearchParams) {
-            // implementation
-          }
-        }
-      `,
-    },
-    // Edge case: Constructor with built-in types
-    {
-      code: `
-        class MyClass {
-          constructor(params: URLSearchParams) {
-            // implementation
-          }
-        }
-      `,
-    },
-    // Edge case: Abstract methods with built-in types
-    {
-      code: `
-        abstract class MyClass {
-          abstract process(params: URLSearchParams): void;
-        }
-      `,
-    },
-    // Edge case: Function overloads with built-in types
-    {
-      code: `
-        function process(params: URLSearchParams): void;
-        function process(params: string): void;
-        function process(params: URLSearchParams | string): void {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Call signatures with built-in types
-    {
-      code: `
-        interface MyInterface {
-          (params: URLSearchParams): void;
-        }
-      `,
-    },
-    // Edge case: Construct signatures with built-in types
-    {
-      code: `
-        interface MyInterface {
-          new (params: URLSearchParams): MyClass;
-        }
-      `,
-    },
-    // Edge case: Index signatures with built-in types
-    {
-      code: `
-        interface MyInterface {
-          [key: string]: URLSearchParams;
-        }
-      `,
-    },
-    // Edge case: Conditional types with built-in types
-    {
-      code: `
-        type ConditionalType<T> = T extends URLSearchParams ? T : never;
-        function process(params: ConditionalType<URLSearchParams>) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Mapped types with built-in types
-    {
-      code: `
-        type MappedType = {
-          [K in keyof URLSearchParams]: URLSearchParams[K];
-        };
-        function process(params: MappedType) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Template literal types
-    {
-      code: `
-        type TemplateType = \`prefix-\${string}\`;
-        function process(params: TemplateType) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Readonly types with built-in types
-    {
-      code: `
-        function process(params: Readonly<URLSearchParams>) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Record types with built-in types
-    {
-      code: `
-        function process(params: Record<string, URLSearchParams>) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Exclude/Extract utility types
-    {
-      code: `
-        function process(params: Exclude<URLSearchParams | string, string>) {
-          // implementation
-        }
-      `,
-    },
-    {
-      code: `
-        function process(params: Extract<URLSearchParams | string, URLSearchParams>) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: NonNullable with built-in types
-    {
-      code: `
-        function process(params: NonNullable<URLSearchParams | null>) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: ReturnType with built-in types
-    {
-      code: `
-        function getParams(): URLSearchParams {
-          return new URLSearchParams();
-        }
-        function process(params: ReturnType<typeof getParams>) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Parameters utility type
-    {
-      code: `
-        function originalFunction(params: URLSearchParams): void {}
-        function process(params: Parameters<typeof originalFunction>[0]) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: InstanceType with built-in types
-    {
-      code: `
-        function process(params: InstanceType<typeof URLSearchParams>) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Nested generic types
-    {
-      code: `
-        function process(params: Promise<Array<URLSearchParams>>) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Complex union with built-in types
-    {
-      code: `
-        function process(params: URLSearchParams | AudioContextOptions | string) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Complex intersection with built-in types
-    {
-      code: `
-        function process(params: URLSearchParams & AudioContextOptions & { custom: string }) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Keyof with built-in types
-    {
-      code: `
-        function process(params: keyof URLSearchParams) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Typeof with built-in types
-    {
-      code: `
-        const instance = new URLSearchParams();
-        function process(params: typeof instance) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Infer types
-    {
-      code: `
-        type InferType<T> = T extends (params: infer P) => any ? P : never;
-        function originalFunction(params: URLSearchParams): void {}
-        function process(params: InferType<typeof originalFunction>) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Built-in types in object literal types
-    {
-      code: `
-        function process(params: { search: URLSearchParams; options: AudioContextOptions }) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Built-in types in function types
-    {
-      code: `
-        function process(params: (search: URLSearchParams) => void) {
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Built-in types with type assertions
-    {
-      code: `
-        function process(params: URLSearchParams) {
-          const typed = params as URLSearchParams;
-          // implementation
-        }
-      `,
-    },
-    // Edge case: Built-in types in type guards
-    {
-      code: `
-        function isURLSearchParams(params: any): params is URLSearchParams {
-          return params instanceof URLSearchParams;
-        }
-      `,
-    },
-    // Edge case: Built-in types in satisfies expressions
-    {
-      code: `
-        const config = {
-          search: new URLSearchParams()
-        } satisfies { search: URLSearchParams };
-      `,
-    },
-    // Edge case: Case sensitivity - lowercase suffixes should not be flagged
-    {
-      code: `
-        type urlsearchparams = {
-          custom: string;
-        };
-        function processLowercase(params: urlsearchparams) {
-          // ...
-        }
-      `,
-    },
   ],
+
   invalid: [
-    // Class with incorrect type suffix
+    // Basic invalid cases - wrong parameter names for Props types
     {
       code: `
-        type PendingStrategySettings = {
-          tournament: Tournament;
-          match: MatchAggregated;
+        type UserProps = {
+          name: string;
+          age: number;
         };
-        class PendingStrategy {
-          constructor(settings: PendingStrategySettings) {
-            // ...
-          }
+        function User(config: UserProps) {
+          return config.name;
         }
       `,
       errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Settings' } },
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Settings' } },
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Settings' } },
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'UserProps' },
+        },
       ],
       output: `
+        type UserProps = {
+          name: string;
+          age: number;
+        };
+        function User(props: UserProps) {
+          return config.name;
+        }
+      `,
+    },
+    {
+      code: `
+        type ButtonProps = {
+          label: string;
+          onClick: () => void;
+        };
+        const Button = (settings: ButtonProps) => {
+          return settings.label;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'ButtonProps' },
+        },
+      ],
+      output: `
+        type ButtonProps = {
+          label: string;
+          onClick: () => void;
+        };
+        const Button = (props: ButtonProps) => {
+          return settings.label;
+        };
+      `,
+    },
+    {
+      code: `
         type PendingStrategyProps = {
           tournament: Tournament;
           match: MatchAggregated;
@@ -1043,581 +340,300 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
           }
         }
       `,
-    },
-    // Function with incorrect type suffix
-    {
-      code: `
-        type AreQueuesEmptyParams = {
-          videoPlatforms?: VideoPlatform[];
-          projectId?: string;
-        };
-        function areQueuesEmpty(params: AreQueuesEmptyParams) {
-          // ...
-        }
-      `,
       errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Params' } },
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Params' } },
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'PendingStrategyProps' },
+        },
       ],
       output: `
-        type AreQueuesEmptyProps = {
-          videoPlatforms?: VideoPlatform[];
-          projectId?: string;
+        type PendingStrategyProps = {
+          tournament: Tournament;
+          match: MatchAggregated;
         };
-        function areQueuesEmpty(params: AreQueuesEmptyProps) {
-          // ...
-        }
-      `,
-    },
-    // Type with incorrect suffix
-    {
-      code: `
-        type AlgoliaLayoutConfig = {
-          CatalogWrapper: RenderCatalogWrapper;
-          configureOptions: Required<UseConfigureProps, 'filters'>;
-        };
-      `,
-      errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Config' } },
-      ],
-      output: `
-        type AlgoliaLayoutProps = {
-          CatalogWrapper: RenderCatalogWrapper;
-          configureOptions: Required<UseConfigureProps, 'filters'>;
-        };
-      `,
-    },
-    // User-defined types should still be flagged (not built-in types)
-    {
-      code: `
-        type CustomOptions = {
-          theme: string;
-          size: number;
-        };
-        function setupCustom(options: CustomOptions) {
-          // ...
-        }
-      `,
-      errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Options' } },
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Options' } },
-      ],
-      output: `
-        type CustomProps = {
-          theme: string;
-          size: number;
-        };
-        function setupCustom(options: CustomProps) {
-          // ...
-        }
-      `,
-    },
-    {
-      code: `
-        type UserParams = {
-          name: string;
-          email: string;
-        };
-        function createUser(params: UserParams) {
-          // ...
-        }
-      `,
-      errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Params' } },
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Params' } },
-      ],
-      output: `
-        type UserProps = {
-          name: string;
-          email: string;
-        };
-        function createUser(params: UserProps) {
-          // ...
-        }
-      `,
-    },
-    {
-      code: `
-        type DatabaseConfig = {
-          host: string;
-          port: number;
-        };
-        function connectDatabase(config: DatabaseConfig) {
-          // ...
-        }
-      `,
-      errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Config' } },
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Config' } },
-      ],
-      output: `
-        type DatabaseProps = {
-          host: string;
-          port: number;
-        };
-        function connectDatabase(config: DatabaseProps) {
-          // ...
-        }
-      `,
-    },
-    // Edge case: User-defined types with complex structures should still be flagged
-    {
-      code: `
-        type ComplexUserOptions = {
-          theme: string;
-          size: number;
-          callbacks: {
-            onSuccess: () => void;
-            onError: (error: Error) => void;
-          };
-        };
-        function setupComplex(options: ComplexUserOptions) {
-          // ...
-        }
-      `,
-      errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Options' } },
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Options' } },
-      ],
-      output: `
-        type ComplexUserProps = {
-          theme: string;
-          size: number;
-          callbacks: {
-            onSuccess: () => void;
-            onError: (error: Error) => void;
-          };
-        };
-        function setupComplex(options: ComplexUserProps) {
-          // ...
-        }
-      `,
-    },
-    // Edge case: User-defined types with generic parameters should still be flagged
-    {
-      code: `
-        type GenericUserConfig<T> = {
-          data: T;
-          options: string[];
-        };
-        function processGeneric<T>(config: GenericUserConfig<T>) {
-          // ...
-        }
-      `,
-      errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Config' } },
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Config' } },
-      ],
-      output: `
-        type GenericUserProps<T> = {
-          data: T;
-          options: string[];
-        };
-        function processGeneric<T>(config: GenericUserProps<T>) {
-          // ...
-        }
-      `,
-    },
-    // Edge case: User-defined types in union with built-in types should still be flagged (type definition only)
-    {
-      code: `
-        type UserSettings = {
-          theme: string;
-          language: string;
-        };
-        function processUnion(params: UserSettings | URLSearchParams) {
-          // ...
-        }
-      `,
-      errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Settings' } },
-      ],
-      output: `
-        type UserProps = {
-          theme: string;
-          language: string;
-        };
-        function processUnion(params: UserSettings | URLSearchParams) {
-          // ...
-        }
-      `,
-    },
-    // Edge case: User-defined types in intersection with built-in types should still be flagged (type definition only)
-    {
-      code: `
-        type UserConfig = {
-          theme: string;
-          language: string;
-        };
-        function processIntersection(params: UserConfig & { extra: string }) {
-          // ...
-        }
-      `,
-      errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Config' } },
-      ],
-      output: `
-        type UserProps = {
-          theme: string;
-          language: string;
-        };
-        function processIntersection(params: UserConfig & { extra: string }) {
-          // ...
-        }
-      `,
-    },
-    // Edge case: User-defined types in array should still be flagged (type definition only)
-    {
-      code: `
-        type UserParams = {
-          id: string;
-          name: string;
-        };
-        function processArray(params: UserParams[]) {
-          // ...
-        }
-      `,
-      errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Params' } },
-      ],
-      output: `
-        type UserProps = {
-          id: string;
-          name: string;
-        };
-        function processArray(params: UserParams[]) {
-          // ...
-        }
-      `,
-    },
-    // Edge case: User-defined types in tuple should still be flagged (type definition only)
-    {
-      code: `
-        type UserOptions = {
-          theme: string;
-        };
-        function processTuple(params: [UserOptions, string]) {
-          // ...
-        }
-      `,
-      errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Options' } },
-      ],
-      output: `
-        type UserProps = {
-          theme: string;
-        };
-        function processTuple(params: [UserOptions, string]) {
-          // ...
-        }
-      `,
-    },
-    // Edge case: User-defined types in utility types should still be flagged (type definition only)
-    {
-      code: `
-        type UserSettings = {
-          theme: string;
-          language: string;
-        };
-        function processPartial(params: Partial<UserSettings>) {
-          // ...
-        }
-      `,
-      errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Settings' } },
-      ],
-      output: `
-        type UserProps = {
-          theme: string;
-          language: string;
-        };
-        function processPartial(params: Partial<UserSettings>) {
-          // ...
-        }
-      `,
-    },
-    // Edge case: User-defined types in Promise should still be flagged (type definition only)
-    {
-      code: `
-        type AsyncUserConfig = {
-          endpoint: string;
-          timeout: number;
-        };
-        function processAsync(config: Promise<AsyncUserConfig>) {
-          // ...
-        }
-      `,
-      errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Config' } },
-      ],
-      output: `
-        type AsyncUserProps = {
-          endpoint: string;
-          timeout: number;
-        };
-        function processAsync(config: Promise<AsyncUserConfig>) {
-          // ...
-        }
-      `,
-    },
-    // Edge case: User-defined types in class methods should still be flagged
-    {
-      code: `
-        type ServiceConfig = {
-          apiKey: string;
-          baseUrl: string;
-        };
-        class ApiService {
-          configure(config: ServiceConfig) {
+        class PendingStrategy {
+          constructor(props: PendingStrategyProps) {
             // ...
           }
-        }
-      `,
-      errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Config' } },
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Config' } },
-      ],
-      output: `
-        type ServiceProps = {
-          apiKey: string;
-          baseUrl: string;
-        };
-        class ApiService {
-          configure(config: ServiceProps) {
-            // ...
-          }
-        }
-      `,
-    },
-    // Edge case: User-defined types in static methods should still be flagged
-    {
-      code: `
-        type FactoryOptions = {
-          type: string;
-          version: number;
-        };
-        class Factory {
-          static create(options: FactoryOptions) {
-            // ...
-          }
-        }
-      `,
-      errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Options' } },
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Options' } },
-      ],
-      output: `
-        type FactoryProps = {
-          type: string;
-          version: number;
-        };
-        class Factory {
-          static create(options: FactoryProps) {
-            // ...
-          }
-        }
-      `,
-    },
-    // Edge case: User-defined types in async functions should still be flagged
-    {
-      code: `
-        type FetchParams = {
-          url: string;
-          method: string;
-        };
-        async function fetchData(params: FetchParams) {
-          // ...
-        }
-      `,
-      errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Params' } },
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Params' } },
-      ],
-      output: `
-        type FetchProps = {
-          url: string;
-          method: string;
-        };
-        async function fetchData(params: FetchProps) {
-          // ...
-        }
-      `,
-    },
-    // Edge case: User-defined types in arrow functions should still be flagged
-    {
-      code: `
-        type HandlerOptions = {
-          timeout: number;
-          retries: number;
-        };
-        const handleRequest = (options: HandlerOptions) => {
-          // ...
-        };
-      `,
-      errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Options' } },
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Options' } },
-      ],
-      output: `
-        type HandlerProps = {
-          timeout: number;
-          retries: number;
-        };
-        const handleRequest = (options: HandlerProps) => {
-          // ...
-        };
-      `,
-    },
-    // Edge case: User-defined types in function expressions should still be flagged
-    {
-      code: `
-        type ProcessorConfig = {
-          batchSize: number;
-          parallel: boolean;
-        };
-        const processor = function(config: ProcessorConfig) {
-          // ...
-        };
-      `,
-      errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Config' } },
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Config' } },
-      ],
-      output: `
-        type ProcessorProps = {
-          batchSize: number;
-          parallel: boolean;
-        };
-        const processor = function(config: ProcessorProps) {
-          // ...
-        };
-      `,
-    },
-    // Edge case: User-defined types with multiple suffixes should be flagged
-    {
-      code: `
-        type ValidationArgs = {
-          rules: string[];
-          strict: boolean;
-        };
-        function validate(args: ValidationArgs) {
-          // ...
-        }
-      `,
-      errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Args' } },
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Args' } },
-      ],
-      output: `
-        type ValidationProps = {
-          rules: string[];
-          strict: boolean;
-        };
-        function validate(args: ValidationProps) {
-          // ...
-        }
-      `,
-    },
-    {
-      code: `
-        type InitializationArguments = {
-          plugins: string[];
-          debug: boolean;
-        };
-        function initialize(args: InitializationArguments) {
-          // ...
-        }
-      `,
-      errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Arguments' } },
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Arguments' } },
-      ],
-      output: `
-        type InitializationProps = {
-          plugins: string[];
-          debug: boolean;
-        };
-        function initialize(args: InitializationProps) {
-          // ...
-        }
-      `,
-    },
-    {
-      code: `
-        type DatabaseParameters = {
-          host: string;
-          port: number;
-          ssl: boolean;
-        };
-        function connect(params: DatabaseParameters) {
-          // ...
-        }
-      `,
-      errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Parameters' } },
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Parameters' } },
-      ],
-      output: `
-        type DatabaseProps = {
-          host: string;
-          port: number;
-          ssl: boolean;
-        };
-        function connect(params: DatabaseProps) {
-          // ...
         }
       `,
     },
 
-    // Edge case: Similar names to built-in types but not exact matches should be flagged
+    // Arrow functions
     {
       code: `
-        type MyURLSearchParams = {
-          custom: string;
+        type GameProps = { id: string };
+        const createGame = (gameConfig: GameProps) => {
+          return gameConfig.id;
         };
-        function processCustom(params: MyURLSearchParams) {
-          // ...
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'GameProps' },
+        },
+      ],
+      output: `
+        type GameProps = { id: string };
+        const createGame = (props: GameProps) => {
+          return gameConfig.id;
+        };
+      `,
+    },
+
+    // Function expressions
+    {
+      code: `
+        type HandlerProps = { event: Event };
+        const handler = function(eventData: HandlerProps) {
+          return eventData.event;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'HandlerProps' },
+        },
+      ],
+      output: `
+        type HandlerProps = { event: Event };
+        const handler = function(props: HandlerProps) {
+          return eventData.event;
+        };
+      `,
+    },
+
+    // Multiple parameters with Props types
+    {
+      code: `
+        type UIProps = { theme: string };
+        type DataProps = { source: string };
+        function mergeConfigs(uiSettings: UIProps, dataSettings: DataProps) {
+          return { ...uiSettings, ...dataSettings };
         }
       `,
       errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Params' } },
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Params' } },
+        {
+          messageId: 'usePropsParameterNameWithPrefix',
+          data: { typeName: 'UIProps', suggestedName: 'uIProps' },
+        },
+        {
+          messageId: 'usePropsParameterNameWithPrefix',
+          data: { typeName: 'DataProps', suggestedName: 'dataProps' },
+        },
       ],
       output: `
-        type MyURLSearchProps = {
-          custom: string;
-        };
-        function processCustom(params: MyURLSearchProps) {
-          // ...
+        type UIProps = { theme: string };
+        type DataProps = { source: string };
+        function mergeConfigs(uIProps: UIProps, dataProps: DataProps) {
+          return { ...uiSettings, ...dataSettings };
         }
       `,
     },
+
+    // Class with multiple constructor parameters
     {
       code: `
-        type CustomAudioContextOptions = {
-          custom: string;
-        };
-        function processCustomAudio(options: CustomAudioContextOptions) {
-          // ...
+        type ManagerProps = { config: Config };
+        class DataManager {
+          constructor(
+            dataSource: DataSource,
+            settings: ManagerProps,
+          ) {}
         }
       `,
       errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Options' } },
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Options' } },
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'ManagerProps' },
+        },
       ],
       output: `
-        type CustomAudioContextProps = {
-          custom: string;
-        };
-        function processCustomAudio(options: CustomAudioContextProps) {
-          // ...
+        type ManagerProps = { config: Config };
+        class DataManager {
+          constructor(
+            dataSource: DataSource,
+            props: ManagerProps,
+          ) {}
+        }
+      `,
+    },
+
+    // Generic Props types - only if the generic type itself ends with Props
+    {
+      code: `
+        function process<TProps extends ComponentProps>(data: TProps) {
+          return data;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'TProps' },
+        },
+      ],
+      output: `
+        function process<TProps extends ComponentProps>(props: TProps) {
+          return data;
+        }
+      `,
+    },
+
+    // Method signatures
+    {
+      code: `
+        interface Service {
+          process(data: ServiceProps): void;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'ServiceProps' },
+        },
+      ],
+      output: `
+        interface Service {
+          process(props: ServiceProps): void;
+        }
+      `,
+    },
+
+    // Edge case: Props type with different casing
+    {
+      code: `
+        type userProps = { name: string };
+        function createUser(userData: userProps) {
+          return userData.name;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'userProps' },
+        },
+      ],
+      output: `
+        type userProps = { name: string };
+        function createUser(props: userProps) {
+          return userData.name;
+        }
+      `,
+    },
+
+    // Edge case: Just "Props" type
+    {
+      code: `
+        type Props = { value: string };
+        function render(data: Props) {
+          return data.value;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'Props' },
+        },
+      ],
+      output: `
+        type Props = { value: string };
+        function render(props: Props) {
+          return data.value;
+        }
+      `,
+    },
+
+    // Complex type names
+    {
+      code: `
+        type VeryLongComponentNameProps = { id: string };
+        function process(componentData: VeryLongComponentNameProps) {
+          return componentData.id;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'VeryLongComponentNameProps' },
+        },
+      ],
+      output: `
+        type VeryLongComponentNameProps = { id: string };
+        function process(props: VeryLongComponentNameProps) {
+          return componentData.id;
+        }
+      `,
+    },
+
+    // Nested class methods
+    {
+      code: `
+        type ConfigProps = { setting: string };
+        class OuterClass {
+          method(config: ConfigProps) {}
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'ConfigProps' },
+        },
+      ],
+      output: `
+        type ConfigProps = { setting: string };
+        class OuterClass {
+          method(props: ConfigProps) {}
+        }
+      `,
+    },
+
+    // Optional parameters
+    {
+      code: `
+        type OptionalProps = { value?: string };
+        function process(data?: OptionalProps) {
+          return data?.value;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'OptionalProps' },
+        },
+      ],
+      output: `
+        type OptionalProps = { value?: string };
+        function process(props?: OptionalProps) {
+          return data?.value;
+        }
+      `,
+    },
+
+    // Mixed valid and invalid parameters
+    {
+      code: `
+        type UserProps = { name: string };
+        function createUser(id: string, userData: UserProps, callback: Function) {
+          return callback({ id, ...userData });
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'UserProps' },
+        },
+      ],
+      output: `
+        type UserProps = { name: string };
+        function createUser(id: string, props: UserProps, callback: Function) {
+          return callback({ id, ...userData });
         }
       `,
     },
   ],
 });
 
-// Run JSX tests - combined with the previous ruleTesterTs tests
+// Run JSX tests
 ruleTesterJsx.run('enforce-props-argument-name', enforcePropsArgumentName, {
   valid: [
     // React component with correct props naming
@@ -1632,20 +648,21 @@ ruleTesterJsx.run('enforce-props-argument-name', enforcePropsArgumentName, {
         };
       `,
     },
-    // React component with correct props naming and destructuring
+
+    // React component with destructuring (should be ignored)
     {
       code: `
         type ButtonProps = {
           label: string;
           onClick: () => void;
         };
-        const Button = (props: ButtonProps) => {
-          const { label, onClick } = props;
+        const Button = ({ label, onClick }: ButtonProps) => {
           return <button onClick={onClick}>{label}</button>;
         };
       `,
     },
-    // React class component with correct props naming
+
+    // React class component (doesn't apply to class components)
     {
       code: `
         type MyComponentProps = {
@@ -1658,41 +675,172 @@ ruleTesterJsx.run('enforce-props-argument-name', enforcePropsArgumentName, {
         }
       `,
     },
-    // React component with any parameter name is now allowed
+
+    // React component with correct props naming in function declaration
     {
       code: `
-        type AlgoliaLayoutProps = {
-          CatalogWrapper: RenderCatalogWrapper;
-          configureOptions: Required<UseConfigureProps, 'filters'>;
+        type UserCardProps = {
+          name: string;
+          avatar: string;
         };
-        const AlgoliaLayout = ({ CatalogWrapper, configureOptions }: AlgoliaLayoutProps) => {
-          // ...
+        function UserCard(props: UserCardProps) {
+          return <div>{props.name}</div>;
+        }
+      `,
+    },
+
+    // React component with multiple parameters where one is Props
+    {
+      code: `
+        type ComponentProps = { data: string };
+        function Component(key: string, props: ComponentProps) {
+          return <div key={key}>{props.data}</div>;
+        }
+      `,
+    },
+
+    // React component with non-Props types
+    {
+      code: `
+        type ComponentConfig = { theme: string };
+        const Component = (config: ComponentConfig) => {
+          return <div className={config.theme}>Content</div>;
         };
       `,
     },
   ],
+
   invalid: [
-    // React component with incorrect type suffix
+    // React component with wrong parameter name
     {
       code: `
-        type AlgoliaLayoutConfig = {
-          CatalogWrapper: RenderCatalogWrapper;
-          configureOptions: Required<UseConfigureProps, 'filters'>;
+        type ButtonProps = {
+          label: string;
+          onClick: () => void;
         };
-        const AlgoliaLayout = ({ CatalogWrapper, configureOptions }: AlgoliaLayoutConfig) => {
-          // ...
+        const Button = (buttonConfig: ButtonProps) => {
+          return <button onClick={buttonConfig.onClick}>{buttonConfig.label}</button>;
         };
       `,
       errors: [
-        { messageId: 'usePropsForType', data: { typeSuffix: 'Config' } },
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'ButtonProps' },
+        },
       ],
       output: `
-        type AlgoliaLayoutProps = {
-          CatalogWrapper: RenderCatalogWrapper;
-          configureOptions: Required<UseConfigureProps, 'filters'>;
+        type ButtonProps = {
+          label: string;
+          onClick: () => void;
         };
-        const AlgoliaLayout = ({ CatalogWrapper, configureOptions }: AlgoliaLayoutConfig) => {
-          // ...
+        const Button = (props: ButtonProps) => {
+          return <button onClick={buttonConfig.onClick}>{buttonConfig.label}</button>;
+        };
+      `,
+    },
+
+    // React function component with wrong parameter name
+    {
+      code: `
+        type UserCardProps = {
+          name: string;
+          avatar: string;
+        };
+        function UserCard(userInfo: UserCardProps) {
+          return <div>{userInfo.name}</div>;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'UserCardProps' },
+        },
+      ],
+      output: `
+        type UserCardProps = {
+          name: string;
+          avatar: string;
+        };
+        function UserCard(props: UserCardProps) {
+          return <div>{userInfo.name}</div>;
+        }
+      `,
+    },
+
+    // React component with multiple Props parameters
+    {
+      code: `
+        type UIProps = { theme: string };
+        type DataProps = { items: Item[] };
+        const Component = (uiConfig: UIProps, dataConfig: DataProps) => {
+          return <div className={uiConfig.theme}>{dataConfig.items.length}</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterNameWithPrefix',
+          data: { typeName: 'UIProps', suggestedName: 'uIProps' },
+        },
+        {
+          messageId: 'usePropsParameterNameWithPrefix',
+          data: { typeName: 'DataProps', suggestedName: 'dataProps' },
+        },
+      ],
+      output: `
+        type UIProps = { theme: string };
+        type DataProps = { items: Item[] };
+        const Component = (uIProps: UIProps, dataProps: DataProps) => {
+          return <div className={uiConfig.theme}>{dataConfig.items.length}</div>;
+        };
+      `,
+    },
+
+    // React component with generic Props
+    {
+      code: `
+        function GenericComponent<TProps extends ComponentProps>(data: TProps) {
+          return <div>{JSON.stringify(data)}</div>;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'TProps' },
+        },
+      ],
+      output: `
+        function GenericComponent<TProps extends ComponentProps>(props: TProps) {
+          return <div>{JSON.stringify(data)}</div>;
+        }
+      `,
+    },
+
+    // React component with complex Props type
+    {
+      code: `
+        type VeryComplexComponentProps = {
+          data: ComplexData;
+          handlers: EventHandlers;
+          config: Configuration;
+        };
+        const VeryComplexComponent = (componentData: VeryComplexComponentProps) => {
+          return <div>Complex component</div>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'usePropsParameterName',
+          data: { typeName: 'VeryComplexComponentProps' },
+        },
+      ],
+      output: `
+        type VeryComplexComponentProps = {
+          data: ComplexData;
+          handlers: EventHandlers;
+          config: Configuration;
+        };
+        const VeryComplexComponent = (props: VeryComplexComponentProps) => {
+          return <div>Complex component</div>;
         };
       `,
     },
