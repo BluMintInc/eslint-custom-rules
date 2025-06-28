@@ -16,6 +16,37 @@ ruleTesterTs.run(
       `/** API base URL */
     const BASE_URL = 'https://api.example.com';`,
 
+      // ESLint directive comment should be ignored - disable-next-line
+      `export type MatchSettingsElimination = Omit<
+      MatchSettings<ConditionEliminationGame, ConditionEliminationMatch>,
+      'maxTeamsPerMatch'
+    > & {
+      // eslint-disable-next-line no-unused-vars
+      includesRedemption?: boolean;
+      maxTeamsPerMatch: number;
+    };`,
+
+      // ESLint directive comment should be ignored - disable
+      `// eslint-disable
+    export type MatchSettingsEliminationWithDisable = {
+      includesRedemption?: boolean;
+      maxTeamsPerMatch: number;
+    };
+    // eslint-enable`,
+
+      // ESLint directive comment should be ignored - eslint-env
+      `// eslint-env node, browser
+    export type EnvironmentType = {
+      isNode: boolean;
+      isBrowser: boolean;
+    };`,
+
+      // ESLint directive comment should be ignored - globals
+      `// globals document, window
+    export type BrowserGlobals = {
+      doc: typeof document;
+      win: typeof window;
+    };`,
       // Interface with block comment
       `/** User type */
     interface User {

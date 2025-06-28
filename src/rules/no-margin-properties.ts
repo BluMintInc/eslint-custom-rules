@@ -3,6 +3,12 @@ import { createRule } from '../utils/createRule';
 
 type MessageIds = 'noMarginProperties';
 
+type Options = [
+  {
+    autofix?: boolean;
+  },
+];
+
 // Convert camelCase to kebab-case
 function toKebabCase(str: string): string {
   return str.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
@@ -36,24 +42,37 @@ const MARGIN_PROPERTIES = new Set([
   'm',
 ]);
 
-export const noMarginProperties = createRule<[], MessageIds>({
+export const noMarginProperties = createRule<Options, MessageIds>({
   name: 'no-margin-properties',
   meta: {
     type: 'suggestion',
     docs: {
       description:
         'Discourage using margin properties (margin, marginLeft, marginRight, marginTop, marginBottom, mx, my, etc.) for spacing in MUI components. Instead, prefer defining spacing with padding, gap, or the spacing prop for more predictable layouts.',
-      recommended: 'error',
+      recommended: 'warn',
     },
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          autofix: {
+            type: 'boolean',
+            default: false,
+          },
+        },
+        additionalProperties: false,
+      },
+    ],
     messages: {
       noMarginProperties:
         'Avoid using {{property}} for spacing in MUI components. Use padding, gap, or the spacing prop instead for more predictable layouts. See https://www.youtube.com/watch?v=KVQMoEFUee8 for more details.',
     },
   },
-  defaultOptions: [],
+  defaultOptions: [{ autofix: false }],
   create(context) {
     const seenNodes = new WeakSet<TSESTree.Node>();
+    // Note: autofix option is available but not currently implemented
+    // Future implementation can use: const { autofix = false } = _options;
 
     function checkProperty(propertyName: string): boolean {
       const normalizedName = normalizePropertyName(propertyName);
