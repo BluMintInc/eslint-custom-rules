@@ -211,6 +211,67 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
         }
       `,
     },
+
+    // Built-in Web API types should be whitelisted
+    {
+      code: `
+        function parseQuery(params: URLSearchParams) {
+          return Object.fromEntries(params.entries());
+        }
+      `,
+    },
+    {
+      code: `
+        function initializeAudio(options: AudioContextOptions) {
+          return new AudioContext(options);
+        }
+      `,
+    },
+    {
+      code: `
+        function setupCanvas(settings: CanvasRenderingContext2DSettings) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function processPayment(options: PaymentRequestOptions) {
+          // implementation
+        }
+      `,
+    },
+    // Node.js types should be whitelisted
+    {
+      code: `
+        function readFile(options: ReadFileOptions) {
+          // implementation
+        }
+      `,
+    },
+    {
+      code: `
+        function writeFile(options: WriteFileOptions) {
+          // implementation
+        }
+      `,
+    },
+    // DOM types should be whitelisted
+    {
+      code: `
+        function parseDOM(options: DOMParserOptions) {
+          // implementation
+        }
+      `,
+    },
+    // TypeScript Compiler types should be whitelisted
+    {
+      code: `
+        function compile(options: CompilerOptions) {
+          // implementation
+        }
+      `,
+    },
   ],
 
   invalid: [
@@ -274,7 +335,7 @@ ruleTesterTs.run('enforce-props-argument-name', enforcePropsArgumentName, {
           match: MatchAggregated;
         };
         class PendingStrategy {
-          constructor(options: PendingStrategyProps) {
+          constructor(settings: PendingStrategyProps) {
             // ...
           }
         }

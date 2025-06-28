@@ -4,6 +4,90 @@ import { createRule } from '../utils/createRule';
 type MessageIds = 'usePropsParameterName' | 'usePropsParameterNameWithPrefix';
 type Options = [];
 
+// Built-in types that should be whitelisted (not converted to Props)
+const BUILT_IN_TYPES = new Set([
+  // Web API Types
+  'URLSearchParams',
+  'AudioContextOptions',
+  'CanvasRenderingContext2DSettings',
+  'PaymentRequestOptions',
+  'PushSubscriptionOptions',
+  'MediaRecorderOptions',
+  'IDBObjectStoreParameters',
+  'ServiceWorkerRegistrationOptions',
+  'RTCConfiguration',
+  'ResizeObserverOptions',
+  'IntersectionObserverOptions',
+  'MutationObserverOptions',
+  'WebGLContextAttributes',
+  'NotificationOptions',
+  'CredentialRequestOptions',
+  'GeolocationPositionOptions',
+  'CacheQueryOptions',
+  'EventListenerOptions',
+  'AddEventListenerOptions',
+  'PerformanceObserverOptions',
+  'TextDecoderOptions',
+  'ShareOptions',
+  'ScrollIntoViewOptions',
+  'ScrollOptions',
+
+  // Node.js Types
+  'FSWatchOptions',
+  'ReadFileOptions',
+  'WriteFileOptions',
+  'MkdirOptions',
+  'HttpRequestOptions',
+  'HttpServerOptions',
+  'ChildProcessOptions',
+  'StreamOptions',
+  'ZlibOptions',
+  'ServerOptions',
+
+  // DOM Types
+  'DOMParserOptions',
+  'DOMRectOptions',
+  'DOMMatrixOptions',
+
+  // Intl and Formatting Types
+  'DateTimeFormatOptions',
+  'NumberFormatOptions',
+  'CollatorOptions',
+  'PluralRulesOptions',
+  'RelativeTimeFormatOptions',
+  'ListFormatOptions',
+  'DisplayNamesOptions',
+
+  // Speech and Media Types
+  'SpeechRecognitionOptions',
+  'SpeechSynthesisOptions',
+  'MediaQueryOptions',
+  'MediaStreamOptions',
+
+  // Security and Crypto Types
+  'CryptoKeyOptions',
+  'SubtleCryptoOptions',
+  'CryptoAlgorithmParameters',
+  'PermissionOptions',
+
+  // WebRTC Types
+  'RTCPeerConnectionOptions',
+  'RTCDataChannelOptions',
+  'RTCRtpEncodingParameters',
+  'RTCRtpSendParameters',
+
+  // Web Components and Animation
+  'ShadowRootOptions',
+  'CustomElementOptions',
+  'AnimationOptions',
+  'AnimationEffectOptions',
+
+  // TypeScript Compiler Types
+  'CompilerOptions',
+  'TSConfigOptions',
+  'TranspileOptions',
+]);
+
 export const enforcePropsArgumentName = createRule<Options, MessageIds>({
   name: 'enforce-props-argument-name',
   meta: {
@@ -116,7 +200,7 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
         ) {
           const typeName = getTypeName(param.typeAnnotation.typeAnnotation);
 
-          if (typeName && endsWithProps(typeName)) {
+          if (typeName && endsWithProps(typeName) && !BUILT_IN_TYPES.has(typeName)) {
             const suggestedName = getSuggestedParameterName(
               typeName,
               node.params,
@@ -169,7 +253,7 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
         ) {
           const typeName = getTypeName(param.typeAnnotation.typeAnnotation);
 
-          if (typeName && endsWithProps(typeName)) {
+          if (typeName && endsWithProps(typeName) && !BUILT_IN_TYPES.has(typeName)) {
             const suggestedName = getSuggestedParameterName(
               typeName,
               method.params,
