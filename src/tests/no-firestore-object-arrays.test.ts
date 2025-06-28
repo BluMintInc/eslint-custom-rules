@@ -27,7 +27,8 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
           'pinned',
         ];
       `,
-      filename: 'functions/src/types/firestore/User/ChannelGroup/util/isTemporary.ts',
+      filename:
+        'functions/src/types/firestore/User/ChannelGroup/util/isTemporary.ts',
     },
     // Test: Allow union of string literals
     {
@@ -95,6 +96,131 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
         };
       `,
       filename: 'functions/src/types/firestore/data.ts',
+    },
+    // Test: Allow imported string union types (edge case from bug report)
+    {
+      code: `
+        import { UserRole, Permission } from '../auth';
+        export type UserData = {
+          roles: UserRole[];
+          permissions: Permission[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/user.ts',
+    },
+    // Test: Allow locally defined string union with complex names
+    {
+      code: `
+        type DatabaseConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
+        type NetworkProtocol = 'http' | 'https' | 'ws' | 'wss';
+        export type SystemConfig = {
+          dbStatuses: DatabaseConnectionStatus[];
+          protocols: NetworkProtocol[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/config.ts',
+    },
+    // Test: Allow mixed primitive union arrays
+    {
+      code: `
+        export type FlexibleData = {
+          values: (string | number | boolean)[];
+          optionalValues: Array<string | null | undefined>;
+          mixedReadonly: ReadonlyArray<number | Date>;
+        };
+      `,
+      filename: 'functions/src/types/firestore/flexible.ts',
+    },
+    // Test: Allow nested string unions
+    {
+      code: `
+        type InnerStatus = 'active' | 'inactive';
+        type OuterStatus = InnerStatus | 'pending';
+        export type StatusData = {
+          statuses: OuterStatus[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/status.ts',
+    },
+    // Test: Allow literal type arrays
+    {
+      code: `
+        export type LiteralData = {
+          specificStrings: ('option1' | 'option2' | 'option3')[];
+          specificNumbers: (1 | 2 | 3 | 4 | 5)[];
+          specificBooleans: (true | false)[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/literals.ts',
+    },
+    // Test: Allow arrays with generic constraints that resolve to primitives
+    {
+      code: `
+        type StringLike<T extends string> = T;
+        type NumberLike<T extends number> = T;
+        export type GenericData = {
+          stringLikes: StringLike<'test'>[];
+          numberLikes: NumberLike<42>[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/generics.ts',
+    },
+    // Test: Allow enum-like const assertions
+    {
+      code: `
+        const STATUSES = ['active', 'inactive', 'pending'] as const;
+        type Status = typeof STATUSES[number];
+        export type UserData = {
+          statuses: Status[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/enums.ts',
+    },
+    // Test: Allow template literal types
+    {
+      code: `
+        type EventType = \`user_\${string}\` | \`system_\${string}\`;
+        export type EventData = {
+          eventTypes: EventType[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/events.ts',
+    },
+    // Test: Allow keyof types that resolve to strings
+    {
+      code: `
+        type ConfigKeys = {
+          theme: string;
+          language: string;
+          timezone: string;
+        };
+        export type UserPreferences = {
+          enabledFeatures: (keyof ConfigKeys)[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/preferences.ts',
+    },
+    // Test: Allow conditional types that resolve to primitives
+    {
+      code: `
+        type StringOrNumber<T> = T extends string ? string : number;
+        export type ConditionalData = {
+          values: StringOrNumber<string>[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/conditional.ts',
+    },
+    // Test: Allow imported types from different modules
+    {
+      code: `
+        import { FirebaseAuthError } from 'firebase-admin/auth';
+        import { Timestamp } from 'firebase-admin/firestore';
+        export type LogEntry = {
+          timestamps: Timestamp[];
+          errorCodes: string[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/logs.ts',
     },
   ],
   invalid: [
@@ -217,6 +343,187 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
         { messageId: 'noObjectArrays' },
         { messageId: 'noObjectArrays' },
       ],
+    },
+    // Test: Interface arrays (should be flagged)
+    {
+      code: `
+        interface UserProfile {
+          id: string;
+          name: string;
+        }
+        export type UserData = {
+          profiles: UserProfile[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/interfaces.ts',
+      errors: [{ messageId: 'noObjectArrays' }],
+    },
+    // Test: Class-like type arrays
+    {
+      code: `
+        type UserClass = {
+          new(): { id: string; name: string };
+        };
+        export type ClassData = {
+          users: UserClass[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/classes.ts',
+      errors: [{ messageId: 'noObjectArrays' }],
+    },
+    // Test: Function type arrays (edge case)
+    {
+      code: `
+        type Handler = {
+          handle: (data: any) => void;
+          name: string;
+        };
+        export type HandlerData = {
+          handlers: Handler[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/handlers.ts',
+      errors: [{ messageId: 'noObjectArrays' }],
+    },
+    // Test: Complex nested object with arrays
+    {
+      code: `
+        type NestedObject = {
+          metadata: {
+            tags: string[];
+            config: { key: string; value: any };
+          };
+        };
+        export type ComplexData = {
+          items: NestedObject[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/complex-nested.ts',
+      errors: [{ messageId: 'noObjectArrays' }],
+    },
+    // Test: Object arrays in function parameters
+    {
+      code: `
+        type ProcessorConfig = {
+          name: string;
+          options: Record<string, unknown>;
+        };
+        export type ProcessorData = {
+          configs: Array<ProcessorConfig>;
+        };
+      `,
+      filename: 'functions/src/types/firestore/processors.ts',
+      errors: [{ messageId: 'noObjectArrays' }],
+    },
+    // Test: Mixed object and primitive union (should be flagged if contains objects)
+    {
+      code: `
+        type MixedItem = { id: string } | string;
+        export type MixedData = {
+          items: MixedItem[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/mixed.ts',
+      errors: [{ messageId: 'noObjectArrays' }],
+    },
+    // Test: Tuple-like object arrays
+    {
+      code: `
+        type Coordinate = { x: number; y: number };
+        type Point3D = { x: number; y: number; z: number };
+        export type GeometryData = {
+          coordinates: Coordinate[];
+          points: Point3D[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/geometry.ts',
+      errors: [
+        { messageId: 'noObjectArrays' },
+        { messageId: 'noObjectArrays' },
+      ],
+    },
+    // Test: Object arrays with optional properties
+    {
+      code: `
+        type OptionalObject = {
+          id: string;
+          name?: string;
+          metadata?: Record<string, unknown>;
+        };
+        export type OptionalData = {
+          items: OptionalObject[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/optional.ts',
+      errors: [{ messageId: 'noObjectArrays' }],
+    },
+    // Test: Recursive object type arrays
+    {
+      code: `
+        type TreeNode = {
+          id: string;
+          children: TreeNode[];
+        };
+        export type TreeData = {
+          nodes: TreeNode[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/recursive.ts',
+      errors: [
+        { messageId: 'noObjectArrays' },
+        { messageId: 'noObjectArrays' },
+      ],
+    },
+    // Test: Generic object type arrays
+    {
+      code: `
+        type GenericObject<T> = {
+          data: T;
+          metadata: { created: Date };
+        };
+        export type GenericData = {
+          items: GenericObject<string>[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/generic-objects.ts',
+      errors: [{ messageId: 'noObjectArrays' }],
+    },
+    // Test: Utility type object arrays
+    {
+      code: `
+        type BaseUser = {
+          id: string;
+          name: string;
+          email: string;
+        };
+        export type UserData = {
+          partialUsers: Partial<BaseUser>[];
+          requiredUsers: Required<BaseUser>[];
+          pickedUsers: Pick<BaseUser, 'id' | 'name'>[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/utility-types.ts',
+      errors: [
+        { messageId: 'noObjectArrays' },
+        { messageId: 'noObjectArrays' },
+        { messageId: 'noObjectArrays' },
+      ],
+    },
+    // Test: Namespace qualified object arrays
+    {
+      code: `
+        declare namespace API {
+          interface Response {
+            data: any;
+            status: number;
+          }
+        }
+        export type APIData = {
+          responses: API.Response[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/namespaced.ts',
+      errors: [{ messageId: 'noObjectArrays' }],
     },
   ],
 });

@@ -238,9 +238,7 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
       }
 
       // Allow type assertions as arguments to constructor calls
-      if (
-        node.parent?.type === AST_NODE_TYPES.CallExpression
-      ) {
+      if (node.parent?.type === AST_NODE_TYPES.CallExpression) {
         let current: TSESTree.Node | undefined = node.parent;
         while (current?.parent) {
           if (current.parent.type === AST_NODE_TYPES.NewExpression) {
