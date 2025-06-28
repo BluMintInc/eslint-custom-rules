@@ -81,7 +81,7 @@ function getObjectUsagesInHook(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   context: any,
 ): { usages: Set<string>; needsEntireObject: boolean; notUsed: boolean } {
-  const usages = new Set<string>();
+  const usages = new Map<string, number>(); // Track usage and its position
   const visited = new Set<TSESTree.Node>();
   let needsEntireObject = false;
 
@@ -329,7 +329,7 @@ function getObjectUsagesInHook(
           // Static property access - add to usages
           const path = buildAccessPath(memberExpr);
           if (path) {
-            usages.add(path);
+            usages.set(path, memberExpr.range?.[0] || 0);
           }
         }
       }
@@ -338,7 +338,7 @@ function getObjectUsagesInHook(
       if (node.expression.type === AST_NODE_TYPES.MemberExpression) {
         const path = buildAccessPath(node.expression);
         if (path) {
-          usages.add(path);
+          usages.set(path, node.range?.[0] || 0);
         }
       }
     } else if (node.type === AST_NODE_TYPES.BinaryExpression || node.type === AST_NODE_TYPES.LogicalExpression) {
@@ -385,7 +385,7 @@ function getObjectUsagesInHook(
   visit(hookBody);
 
   // Filter out intermediate paths
-  const paths = Array.from(usages);
+  const paths = Array.from(usages.keys());
 
   // Filter out array paths when we're already accessing specific indices
   // For example, don't include 'obj.arr' if we have 'obj.arr[0]'
@@ -410,7 +410,14 @@ function getObjectUsagesInHook(
     return !isIntermediatePath && !isArrayWithSpecificIndices;
   });
 
-  const filteredUsages = new Set(filteredPaths);
+  // Sort by source position
+  const sortedPaths = filteredPaths.sort((a, b) => {
+    const posA = usages.get(a) || 0;
+    const posB = usages.get(b) || 0;
+    return posA - posB;
+  });
+
+  const filteredUsages = new Set(sortedPaths);
   const notUsed = !needsEntireObject && filteredUsages.size === 0;
 
   return {
@@ -476,10 +483,6 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
         ) {
           return;
         }
-
-        // Get the source code of the hook body to check for optional chaining
-        const sourceCode = context.getSourceCode();
-        const callbackBodyText = sourceCode.getText(callbackArg.body);
 
         // Check each dependency in the array
         depsArg.elements.forEach((element) => {
