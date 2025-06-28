@@ -102,6 +102,7 @@ import enforceDynamicFileNaming from './rules/enforce-dynamic-file-naming';
 import { default as preferUseCallbackOverUseMemoForFunctions } from './rules/prefer-usecallback-over-usememo-for-functions';
 import { noMarginProperties } from './rules/no-margin-properties';
 import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-prefixes';
+import { enforceFieldPathSyntaxInDocSetter } from './rules/enforce-fieldpath-syntax-in-docsetter';
 import { preferBlockCommentsForDeclarations } from './rules/prefer-block-comments-for-declarations';
 import { noUndefinedNullPassthrough } from './rules/no-undefined-null-passthrough';
 import { firestoreTransactionReadsBeforeWrites } from './rules/firestore-transaction-reads-before-writes';
@@ -246,6 +247,7 @@ module.exports = {
           'error',
         '@blumintinc/blumint/no-margin-properties': 'warn',
         '@blumintinc/blumint/enforce-boolean-naming-prefixes': 'error',
+        '@blumintinc/blumint/enforce-fieldpath-syntax-in-docsetter': 'error',
         '@blumintinc/blumint/no-undefined-null-passthrough': 'error',
         '@blumintinc/blumint/prefer-nullish-coalescing-boolean-props': 'error',
         '@blumintinc/blumint/no-restricted-properties-fix': 'error',
@@ -378,6 +380,7 @@ module.exports = {
       preferUseCallbackOverUseMemoForFunctions,
     'no-margin-properties': noMarginProperties,
     'enforce-boolean-naming-prefixes': enforceBooleanNamingPrefixes,
+    'enforce-fieldpath-syntax-in-docsetter': enforceFieldPathSyntaxInDocSetter,
     'no-undefined-null-passthrough': noUndefinedNullPassthrough,
     'prefer-nullish-coalescing-boolean-props':
       preferNullishCoalescingBooleanProps,
