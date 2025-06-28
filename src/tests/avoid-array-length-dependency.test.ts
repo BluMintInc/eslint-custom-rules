@@ -625,7 +625,7 @@ import { useEffect, useMemo } from 'react';
         }
       `,
     },
-    // Multiple array.length expressions - we only report the first one but fix both
+    // Multiple array.length expressions - we report each one separately but fix both
     {
       code: `
         import { useEffect } from 'react';
@@ -644,6 +644,13 @@ import { useEffect, useMemo } from 'react';
           data: {
             arrayName: 'items',
             hashName: 'itemsHash',
+          },
+        },
+        {
+          messageId: 'avoidArrayLengthDependency',
+          data: {
+            arrayName: 'users',
+            hashName: 'usersHash',
           },
         },
       ],
@@ -813,13 +820,14 @@ import { useEffect, useCallback, useMemo } from 'react';
 
         function Component({ items, users }) {
           const itemsHash = useMemo(() => stableHash(items), [items]);
+  const usersHash = useMemo(() => stableHash(users), [users]);
   useEffect(() => {
             console.log('Items changed!');
           }, [itemsHash]);
 
           const handleClick = useCallback(() => {
             console.log('Users changed!');
-          }, [users.length]);
+          }, [usersHash]);
 
           return <button onClick={handleClick}>Click</button>;
         }
@@ -1154,6 +1162,13 @@ import { useEffect, useMemo } from 'react';
           data: {
             arrayName: 'items1',
             hashName: 'items1Hash',
+          },
+        },
+        {
+          messageId: 'avoidArrayLengthDependency',
+          data: {
+            arrayName: 'items2',
+            hashName: 'items2Hash',
           },
         },
       ],

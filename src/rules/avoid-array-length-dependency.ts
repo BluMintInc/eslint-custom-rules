@@ -164,6 +164,13 @@ export const avoidArrayLengthDependency = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
+    const allLengthExpressions: Array<{
+      element: TSESTree.Node;
+      arrayName: string;
+      hashName: string;
+      hookNode: TSESTree.CallExpression;
+    }> = [];
+
     return {
       CallExpression(node) {
         if (!isHookCall(node)) {
@@ -199,108 +206,146 @@ export const avoidArrayLengthDependency = createRule<[], MessageIds>({
               arrayName,
               hashName,
             });
+
+            // Add to global collection
+            allLengthExpressions.push({
+              element: element,
+              arrayName,
+              hashName,
+              hookNode: node,
+            });
           }
         });
 
-        // If we found any array.length expressions, report and fix them
-        if (lengthExpressions.length > 0) {
-          // Report on the first one, but fix all of them
-          const firstExpr = lengthExpressions[0];
+        // Don't report here, we'll report in Program:exit to handle all violations together
+      },
 
+      'Program:exit'() {
+        if (allLengthExpressions.length === 0) {
+          return;
+        }
+
+        // Group expressions by unique array names to avoid duplicates
+        const uniqueExpressions = new Map<string, {
+          element: TSESTree.Node;
+          arrayName: string;
+          hashName: string;
+          hookNode: TSESTree.CallExpression;
+        }>();
+
+        allLengthExpressions.forEach((expr) => {
+          if (!uniqueExpressions.has(expr.arrayName)) {
+            uniqueExpressions.set(expr.arrayName, expr);
+          }
+        });
+
+        // Report each violation separately
+        allLengthExpressions.forEach((expr, index) => {
           context.report({
-            node: firstExpr.element,
+            node: expr.element,
             messageId: 'avoidArrayLengthDependency',
             data: {
-              arrayName: firstExpr.arrayName,
-              hashName: firstExpr.hashName,
+              arrayName: expr.arrayName,
+              hashName: expr.hashName,
             },
-            *fix(fixer) {
-              const sourceCode = context.getSourceCode();
+            // Only apply fix on the first violation to avoid conflicts
+            ...(index === 0 && {
+              *fix(fixer) {
+                const sourceCode = context.getSourceCode();
 
-              // 1. Check for existing stableHash import
-              const stableHashImports = sourceCode.ast.body.filter(
-                (node) =>
-                  node.type === AST_NODE_TYPES.ImportDeclaration &&
-                  node.source.value === 'functions/src/util/hash/stableHash',
-              );
-
-              if (stableHashImports.length === 0) {
-                // Add the stableHash import only if it doesn't exist
-                const stableHashImport =
-                  "import { stableHash } from 'functions/src/util/hash/stableHash';\n";
-                yield fixer.insertTextBefore(sourceCode.ast, stableHashImport);
-              }
-
-              // 2. Add or update the React import for useMemo
-              const reactImports = sourceCode.ast.body.filter(
-                (node) =>
-                  node.type === AST_NODE_TYPES.ImportDeclaration &&
-                  node.source.value === 'react',
-              );
-
-              if (reactImports.length > 0) {
-                // There's an existing React import
-                const reactImport =
-                  reactImports[0] as TSESTree.ImportDeclaration;
-                const specifiers = reactImport.specifiers;
-
-                // Check if useMemo is already imported
-                const hasUseMemo = specifiers.some(
-                  (spec) =>
-                    spec.type === AST_NODE_TYPES.ImportSpecifier &&
-                    spec.imported.name === 'useMemo',
+                // 1. Check for existing stableHash import
+                const stableHashImports = sourceCode.ast.body.filter(
+                  (node) =>
+                    node.type === AST_NODE_TYPES.ImportDeclaration &&
+                    node.source.value === 'functions/src/util/hash/stableHash',
                 );
 
-                if (!hasUseMemo) {
-                  if (
-                    specifiers.length === 1 &&
-                    specifiers[0].type === AST_NODE_TYPES.ImportDefaultSpecifier
-                  ) {
-                    // If it's just a default import, add a named import
-                    yield fixer.insertTextAfter(specifiers[0], ', { useMemo }');
-                  } else {
-                    // Add useMemo to the existing named imports
-                    const lastSpecifier = specifiers[specifiers.length - 1];
-                    yield fixer.insertTextAfter(
-                      lastSpecifier,
-                      specifiers.length > 0 ? ', useMemo' : 'useMemo',
-                    );
-                  }
+                if (stableHashImports.length === 0) {
+                  // Add the stableHash import only if it doesn't exist
+                  const stableHashImport =
+                    "import { stableHash } from 'functions/src/util/hash/stableHash';\n";
+                  yield fixer.insertTextBefore(sourceCode.ast, stableHashImport);
                 }
-              } else {
-                // No existing React import, add a new one
-                yield fixer.insertTextBefore(
-                  sourceCode.ast,
-                  "import { useMemo } from 'react';\n",
-                );
-              }
 
-              // 3. Create all the memoized hash variables
-              // Find the statement that contains the hook call
-              let currentNode: TSESTree.Node = node;
-              while (currentNode.parent) {
-                const parent = currentNode.parent;
-                if (
-                  parent.type === AST_NODE_TYPES.ExpressionStatement ||
-                  parent.type === AST_NODE_TYPES.VariableDeclaration
-                ) {
-                  // Insert before this statement
-                  for (const expr of lengthExpressions) {
+                // 2. Add or update the React import for useMemo
+                const reactImports = sourceCode.ast.body.filter(
+                  (node) =>
+                    node.type === AST_NODE_TYPES.ImportDeclaration &&
+                    node.source.value === 'react',
+                );
+
+                if (reactImports.length > 0) {
+                  // There's an existing React import
+                  const reactImport =
+                    reactImports[0] as TSESTree.ImportDeclaration;
+                  const specifiers = reactImport.specifiers;
+
+                  // Check if useMemo is already imported
+                  const hasUseMemo = specifiers.some(
+                    (spec) =>
+                      spec.type === AST_NODE_TYPES.ImportSpecifier &&
+                      spec.imported.name === 'useMemo',
+                  );
+
+                  if (!hasUseMemo) {
+                    if (
+                      specifiers.length === 1 &&
+                      specifiers[0].type === AST_NODE_TYPES.ImportDefaultSpecifier
+                    ) {
+                      // If it's just a default import, add a named import
+                      yield fixer.insertTextAfter(specifiers[0], ', { useMemo }');
+                    } else {
+                      // Add useMemo to the existing named imports
+                      const lastSpecifier = specifiers[specifiers.length - 1];
+                      yield fixer.insertTextAfter(
+                        lastSpecifier,
+                        specifiers.length > 0 ? ', useMemo' : 'useMemo',
+                      );
+                    }
+                  }
+                } else {
+                  // No existing React import, add a new one
+                  yield fixer.insertTextBefore(
+                    sourceCode.ast,
+                    "import { useMemo } from 'react';\n",
+                  );
+                }
+
+                // 3. Create all the memoized hash variables
+                // Find the first function/component body to insert the useMemo statements
+                let insertionPoint: TSESTree.Node | null = null;
+                for (const expr of uniqueExpressions.values()) {
+                  let currentNode: TSESTree.Node = expr.hookNode;
+                  while (currentNode.parent) {
+                    const parent = currentNode.parent;
+                    if (
+                      parent.type === AST_NODE_TYPES.ExpressionStatement ||
+                      parent.type === AST_NODE_TYPES.VariableDeclaration
+                    ) {
+                      insertionPoint = parent;
+                      break;
+                    }
+                    currentNode = parent;
+                  }
+                  if (insertionPoint) break;
+                }
+
+                if (insertionPoint) {
+                  // Insert all useMemo statements before the first hook
+                  for (const expr of uniqueExpressions.values()) {
                     const useMemoStatement = `const ${expr.hashName} = useMemo(() => stableHash(${expr.arrayName}), [${expr.arrayName}]);\n  `;
-                    yield fixer.insertTextBefore(parent, useMemoStatement);
+                    yield fixer.insertTextBefore(insertionPoint, useMemoStatement);
                   }
-                  break;
                 }
-                currentNode = parent;
-              }
 
-              // 4. Replace all array.length expressions with their hash variables
-              for (const expr of lengthExpressions) {
-                yield fixer.replaceText(expr.element, expr.hashName);
-              }
-            },
+                // 4. Replace all array.length expressions with their hash variables
+                for (const expr of allLengthExpressions) {
+                  yield fixer.replaceText(expr.element, expr.hashName);
+                }
+              },
+            }),
           });
-        }
+        });
       },
     };
   },
