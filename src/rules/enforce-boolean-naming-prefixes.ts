@@ -826,6 +826,217 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     }
 
     /**
+     * Check if a getter returns a boolean value by analyzing its body
+     */
+    function getterReturnsBooleanValue(node: TSESTree.MethodDefinition): boolean {
+      // Check for explicit boolean return type annotation first
+      if (
+        node.value.returnType?.typeAnnotation &&
+        node.value.returnType.typeAnnotation.type ===
+          (AST_NODE_TYPES.TSBooleanKeyword as any)
+      ) {
+        return true;
+      }
+
+      // Analyze the getter's body to determine if it returns a boolean
+      const functionBody = node.value.body;
+      if (!functionBody || functionBody.type !== AST_NODE_TYPES.BlockStatement) {
+        return false;
+      }
+
+      // Collect all return statements and their types
+      const returnStatements: TSESTree.ReturnStatement[] = [];
+      const returnTypes: string[] = [];
+
+      // Recursively find all return statements in the function body
+      function findReturnStatements(node: TSESTree.Node): void {
+        if (node.type === AST_NODE_TYPES.ReturnStatement && node.argument) {
+          returnStatements.push(node);
+          const returnArg = node.argument;
+
+          // Determine the type of this return statement
+          let returnType = 'unknown';
+
+          // Check for boolean literal
+          if (
+            returnArg.type === AST_NODE_TYPES.Literal &&
+            typeof returnArg.value === 'boolean'
+          ) {
+            returnType = 'boolean';
+          }
+          // Check for string literal
+          else if (
+            returnArg.type === AST_NODE_TYPES.Literal &&
+            typeof returnArg.value === 'string'
+          ) {
+            returnType = 'string';
+          }
+          // Check for number literal
+          else if (
+            returnArg.type === AST_NODE_TYPES.Literal &&
+            typeof returnArg.value === 'number'
+          ) {
+            returnType = 'number';
+          }
+          // Check for boolean expressions (comparison operators)
+          else if (
+            returnArg.type === AST_NODE_TYPES.BinaryExpression &&
+            ['===', '!==', '==', '!=', '>', '<', '>=', '<='].includes(
+              returnArg.operator,
+            )
+          ) {
+            returnType = 'boolean';
+          }
+          // Check for logical expressions (&&, ||)
+          else if (
+            returnArg.type === AST_NODE_TYPES.LogicalExpression
+          ) {
+            if (returnArg.operator === '&&') {
+              // && expressions typically return boolean
+              returnType = 'boolean';
+            } else if (returnArg.operator === '||') {
+              // || expressions need more careful analysis
+              const rightSide = returnArg.right;
+
+              // If right side is a boolean literal, it's likely a boolean expression
+              if (
+                rightSide.type === AST_NODE_TYPES.Literal &&
+                typeof rightSide.value === 'boolean'
+              ) {
+                returnType = 'boolean';
+              }
+              // If right side is a non-boolean literal, it's likely a fallback pattern
+              else if (
+                rightSide.type === AST_NODE_TYPES.Literal &&
+                typeof rightSide.value !== 'boolean'
+              ) {
+                returnType = typeof rightSide.value;
+              }
+              // If right side is an object expression, it's likely a fallback pattern
+              else if (
+                rightSide.type === AST_NODE_TYPES.ObjectExpression ||
+                rightSide.type === AST_NODE_TYPES.ArrayExpression
+              ) {
+                returnType = 'object';
+              }
+              // For other cases, be conservative
+              else {
+                returnType = 'unknown';
+              }
+            }
+          }
+          // Check for unary expressions with ! operator
+          else if (
+            returnArg.type === AST_NODE_TYPES.UnaryExpression &&
+            returnArg.operator === '!'
+          ) {
+            returnType = 'boolean';
+          }
+          // Check for function calls that might return boolean
+          else if (
+            returnArg.type === AST_NODE_TYPES.CallExpression &&
+            returnArg.callee.type === AST_NODE_TYPES.Identifier
+          ) {
+            const calleeName = returnArg.callee.name;
+            // Check if the function name suggests it returns a boolean
+            const isBooleanFunction = approvedPrefixes.some((prefix) =>
+              calleeName.toLowerCase().startsWith(prefix.toLowerCase()),
+            );
+            // Also check for common boolean-returning function patterns
+            const commonBooleanFunctions = [
+              'check', 'validate', 'verify', 'test', 'match', 'confirm',
+              'ensure', 'assert', 'auth', 'login', 'logout'
+            ];
+            const isCommonBooleanFunction = commonBooleanFunctions.some(pattern =>
+              calleeName.toLowerCase().includes(pattern.toLowerCase())
+            );
+
+            if (isBooleanFunction || isCommonBooleanFunction) {
+              returnType = 'boolean';
+            } else {
+              returnType = 'unknown';
+            }
+          }
+          // Check for member expressions that might return boolean
+          else if (
+            returnArg.type === AST_NODE_TYPES.MemberExpression &&
+            returnArg.property.type === AST_NODE_TYPES.Identifier
+          ) {
+            const propertyName = returnArg.property.name;
+            // Check if the property name suggests it returns a boolean
+            const isBooleanProperty = approvedPrefixes.some((prefix) =>
+              propertyName.toLowerCase().startsWith(prefix.toLowerCase()),
+            );
+            if (isBooleanProperty) {
+              returnType = 'boolean';
+            } else {
+              returnType = 'unknown';
+            }
+          }
+          // Check for conditional expressions (ternary operator)
+          else if (returnArg.type === AST_NODE_TYPES.ConditionalExpression) {
+            // If both consequent and alternate are boolean-like, consider it boolean
+            const consequent = returnArg.consequent;
+            const alternate = returnArg.alternate;
+
+            const isConsequentBoolean =
+              (consequent.type === AST_NODE_TYPES.Literal && typeof consequent.value === 'boolean') ||
+              (consequent.type === AST_NODE_TYPES.UnaryExpression && consequent.operator === '!');
+
+            const isAlternateBoolean =
+              (alternate.type === AST_NODE_TYPES.Literal && typeof alternate.value === 'boolean') ||
+              (alternate.type === AST_NODE_TYPES.UnaryExpression && alternate.operator === '!');
+
+            if (isConsequentBoolean && isAlternateBoolean) {
+              returnType = 'boolean';
+            } else {
+              returnType = 'mixed';
+            }
+          }
+
+          returnTypes.push(returnType);
+        }
+
+        // Recursively search child nodes
+        for (const key in node) {
+          if (key === 'parent' || key === 'range' || key === 'loc') continue;
+
+          const value = (node as any)[key];
+          if (Array.isArray(value)) {
+            for (const child of value) {
+              if (child && typeof child === 'object' && child.type) {
+                findReturnStatements(child);
+              }
+            }
+          } else if (value && typeof value === 'object' && value.type) {
+            findReturnStatements(value);
+          }
+        }
+      }
+
+      // Start the recursive search from the function body
+      findReturnStatements(functionBody);
+
+      // If there are no return statements, it's not a boolean getter
+      if (returnTypes.length === 0) {
+        return false;
+      }
+
+      // If all return statements are boolean, it's a boolean getter
+      const allBoolean = returnTypes.every(type => type === 'boolean');
+
+      // If there are mixed types (boolean and non-boolean), don't flag it
+      const hasNonBooleanTypes = returnTypes.some(type =>
+        type !== 'boolean' && type !== 'unknown' && type !== 'mixed'
+      );
+
+      // If there are any unknown types mixed with boolean types, be conservative and don't flag
+      const hasUnknownWithBoolean = returnTypes.includes('unknown') && returnTypes.includes('boolean');
+
+      return allBoolean && !hasNonBooleanTypes && !hasUnknownWithBoolean;
+    }
+
+    /**
      * Check method definitions for boolean return values
      */
     function checkMethodDefinition(node: TSESTree.MethodDefinition) {
@@ -842,18 +1053,36 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         return;
       }
 
+      // Determine the method type for error reporting
+      let methodType = 'method';
+      if (node.kind === 'get') {
+        methodType = 'getter';
+      } else if (node.kind === 'set') {
+        // Setters don't return values, so skip them
+        return;
+      }
+
       // Check if it returns a boolean
-      if (
-        node.value.returnType?.typeAnnotation &&
-        node.value.returnType.typeAnnotation.type ===
-          (AST_NODE_TYPES.TSBooleanKeyword as any) &&
-        !hasApprovedPrefix(methodName)
-      ) {
+      let returnsBoolean = false;
+
+      if (node.kind === 'get') {
+        // For getters, use the specialized getter analysis
+        returnsBoolean = getterReturnsBooleanValue(node);
+      } else {
+        // For regular methods, check explicit return type annotation
+        returnsBoolean = Boolean(
+          node.value.returnType?.typeAnnotation &&
+          node.value.returnType.typeAnnotation.type ===
+            (AST_NODE_TYPES.TSBooleanKeyword as any)
+        );
+      }
+
+      if (returnsBoolean && !hasApprovedPrefix(methodName)) {
         context.report({
           node: node.key,
           messageId: 'missingBooleanPrefix',
           data: {
-            type: 'method',
+            type: methodType,
             name: methodName,
             prefixes: formatPrefixes(),
           },
