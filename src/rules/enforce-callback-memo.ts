@@ -31,6 +31,89 @@ export default createRule<[], MessageIds>({
       );
     }
 
+    function isInsideUseCallback(node: TSESTree.Node): boolean {
+      let current: TSESTree.Node | undefined = node.parent;
+
+      while (current) {
+        // Check if we're inside a useCallback call
+        if (
+          current.type === TSESTree.AST_NODE_TYPES.CallExpression &&
+          current.callee.type === TSESTree.AST_NODE_TYPES.Identifier &&
+          current.callee.name === 'useCallback'
+        ) {
+          return true;
+        }
+        current = current.parent;
+      }
+
+      return false;
+    }
+
+    function getParentFunctionParams(node: TSESTree.Node): string[] {
+      let current: TSESTree.Node | undefined = node.parent;
+
+      while (current) {
+        if (isFunction(current)) {
+          const params: string[] = [];
+          current.params.forEach(param => {
+            if (param.type === TSESTree.AST_NODE_TYPES.Identifier) {
+              params.push(param.name);
+            } else if (param.type === TSESTree.AST_NODE_TYPES.ObjectPattern) {
+              param.properties.forEach(prop => {
+                if (
+                  prop.type === TSESTree.AST_NODE_TYPES.Property &&
+                  prop.key.type === TSESTree.AST_NODE_TYPES.Identifier
+                ) {
+                  params.push(prop.key.name);
+                }
+              });
+            }
+          });
+          return params;
+        }
+        current = current.parent;
+      }
+
+      return [];
+    }
+
+    function referencesParentScopeVariables(
+      functionNode: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
+      parentParams: string[]
+    ): boolean {
+      const referencedIdentifiers = new Set<string>();
+
+      function collectIdentifiers(node: TSESTree.Node) {
+        if (node.type === TSESTree.AST_NODE_TYPES.Identifier) {
+          referencedIdentifiers.add(node.name);
+        }
+
+        // Recursively check child nodes
+        for (const key in node) {
+          if (key === 'parent') continue;
+          const value = node[key as keyof typeof node];
+
+          if (Array.isArray(value)) {
+            value.forEach(child => {
+              if (child && typeof child === 'object' && 'type' in child) {
+                collectIdentifiers(child as TSESTree.Node);
+              }
+            });
+          } else if (value && typeof value === 'object' && 'type' in value) {
+            collectIdentifiers(value as TSESTree.Node);
+          }
+        }
+      }
+
+      // Collect all identifiers referenced in the function body
+      if (functionNode.body) {
+        collectIdentifiers(functionNode.body);
+      }
+
+      // Check if any referenced identifier matches a parent parameter
+      return parentParams.some(param => referencedIdentifiers.has(param));
+    }
+
     function containsFunction(node: TSESTree.Node): boolean {
       if (isFunction(node)) {
         return true;
@@ -102,6 +185,16 @@ export default createRule<[], MessageIds>({
 
       // Check for direct inline functions
       if (isFunction(expression)) {
+        // Skip reporting if this callback is inside a useCallback and references parent scope variables
+        const isInUseCallback = isInsideUseCallback(expression);
+        const parentParams = getParentFunctionParams(expression);
+        const referencesParentVars = referencesParentScopeVariables(expression, parentParams);
+
+        if (isInUseCallback && referencesParentVars) {
+          // Skip reporting - this is a nested callback that needs access to parent scope
+          return;
+        }
+
         context.report({
           node,
           messageId: 'enforceCallback',

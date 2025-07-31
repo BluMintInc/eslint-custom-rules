@@ -69,6 +69,63 @@ ruleTester.run('enforce-callback-memo', rule, {
         };
       `,
     },
+    // Valid: Inline callback inside useCallback that references parent scope variables
+    {
+      code: `
+        const SelectableWrapper = useCallback<RenderWrapper<EventHit<Date>, Date>>(
+          ({ hit, children }) => {
+            return (
+              <Selectable
+                isSelected={id === tournamentId}
+                onChange={(_, isSelected) => {
+                  if (isSelected) {
+                    setEvent(hit);
+                  }
+                }}
+              >
+                {children}
+              </Selectable>
+            );
+          },
+          [setEvent, tournamentId],
+        );
+      `,
+    },
+    // Valid: Multiple nested callbacks inside useCallback that reference parent scope
+    {
+      code: `
+        const Component = useCallback(({ items, onSelect }) => {
+          return (
+            <div>
+              {items.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => onSelect(item)}
+                  onMouseEnter={() => console.log(item.name)}
+                >
+                  {item.name}
+                </button>
+              ))}
+            </div>
+          );
+        }, [onSelect]);
+      `,
+    },
+    // Valid: Callback inside useCallback with destructured props
+    {
+      code: `
+        const FormWrapper = useCallback(({ formData, onSubmit }) => {
+          return (
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              onSubmit(formData);
+            }}>
+              <input />
+            </form>
+          );
+        }, [onSubmit]);
+      `,
+    },
   ],
   invalid: [
     // Invalid: Inline function
@@ -123,6 +180,52 @@ ruleTester.run('enforce-callback-memo', rule, {
             />
           );
         };
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: Inline callback NOT inside useCallback
+    {
+      code: `
+        const Component = () => {
+          return (
+            <button onClick={(e) => {
+              e.preventDefault();
+              console.log('clicked');
+            }}>
+              Click me
+            </button>
+          );
+        };
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: Inline callback inside useCallback but doesn't reference parent scope
+    {
+      code: `
+        const Component = useCallback(() => {
+          return (
+            <button onClick={() => {
+              console.log('clicked');
+            }}>
+              Click me
+            </button>
+          );
+        }, []);
+      `,
+      errors: [{ messageId: 'enforceCallback' }],
+    },
+    // Invalid: Inline callback that references global variables, not parent scope
+    {
+      code: `
+        const Component = useCallback(() => {
+          return (
+            <button onClick={() => {
+              console.log(globalVariable);
+            }}>
+              Click me
+            </button>
+          );
+        }, []);
       `,
       errors: [{ messageId: 'enforceCallback' }],
     },
