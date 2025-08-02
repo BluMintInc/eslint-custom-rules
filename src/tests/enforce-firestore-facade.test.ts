@@ -284,6 +284,41 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
         await manager.set({ ref: docRef, data: { name: 'John' } });
       `,
     },
+    // Valid BatchManager with variable name that doesn't contain "Manager" (bug fix test)
+    {
+      code: `
+        const batch = new BatchManager<UserDocument>();
+        await batch.set({ ref: docRef, data: { name: 'John' } });
+        await batch.update({ ref: docRef, data: { age: 30 } });
+        await batch.delete(docRef);
+        await batch.commit();
+      `,
+    },
+    // Valid BatchManager with short variable name (bug fix test)
+    {
+      code: `
+        const bm = new BatchManager();
+        bm.delete(doc.ref);
+        await bm.commit();
+      `,
+    },
+    // Valid BatchManager with generic variable name (bug fix test)
+    {
+      code: `
+        const writer = new BatchManager<UserDocument>();
+        writer.set({ ref: docRef, data: { name: 'John' } });
+        writer.delete(oldDocRef);
+      `,
+    },
+    // Valid BatchManager reassignment (bug fix test)
+    {
+      code: `
+        let processor;
+        processor = new BatchManager<UserDocument>();
+        processor.delete(docRef);
+        await processor.commit();
+      `,
+    },
     // Valid custom wrapper class with set method
     {
       code: `
