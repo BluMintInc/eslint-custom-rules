@@ -304,9 +304,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
             leftSide.callee.type === AST_NODE_TYPES.Identifier
           ) {
             const calleeName = leftSide.callee.name;
-            return approvedPrefixes.some((prefix) =>
-              calleeName.toLowerCase().startsWith(prefix.toLowerCase()),
-            );
+            return isBooleanReturningFunction(calleeName);
           }
 
           // Default to false for other cases with || to avoid false positives
@@ -327,10 +325,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           node.init.callee.type === AST_NODE_TYPES.Identifier
         ) {
           const calleeName = node.init.callee.name;
-          // Check if the function name suggests it returns a boolean
-          return approvedPrefixes.some((prefix) =>
-            calleeName.toLowerCase().startsWith(prefix.toLowerCase()),
-          );
+          return isBooleanReturningFunction(calleeName);
         }
       }
 
@@ -397,6 +392,73 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       }
 
       return false;
+    }
+
+    /**
+     * Check if a function call returns a boolean value based on its name
+     */
+    function isBooleanReturningFunction(calleeName: string): boolean {
+      // Special handling for "assert" functions - distinguish between validation and boolean assertion functions
+      if (calleeName.toLowerCase().startsWith('assert')) {
+        // Validation/assertion functions that return the validated input (not boolean)
+        // These typically have names like: assertSafe, assertValid, assertString, assertNumber, etc.
+        const validationAssertPatterns = [
+          'assertsafe',
+          'assertvalid',
+          'assertstring',
+          'assertnumber',
+          'assertobject',
+          'assertarray',
+          'assertfunction',
+          'assertdefined',
+          'assertnotnull',
+          'assertnotundefined',
+          'asserttype',
+          'assertinstance',
+          'assertproperty',
+          'assertkey',
+          'assertvalue',
+          'assertdata',
+          'assertinput',
+          'assertparam',
+          'assertarg',
+          'assertresult',
+          'assertresponse',
+          'assertconfig',
+          'assertsettings',
+          'assertoptions',
+          'assertformat',
+          'assertschema',
+          'assertstructure',
+        ];
+
+        const lowerCalleeName = calleeName.toLowerCase();
+        const isValidationAssert = validationAssertPatterns.some(pattern =>
+          lowerCalleeName.startsWith(pattern)
+        );
+
+        if (isValidationAssert) {
+          return false; // These return the validated input, not a boolean
+        }
+
+        // Boolean assertion functions typically have names like: assertIsValid, assertHasPermission, etc.
+        const booleanAssertPatterns = approvedPrefixes
+          .filter(prefix => prefix !== 'asserts') // Exclude generic 'asserts' prefix
+          .map(prefix => `assert${prefix}`);
+
+        const isBooleanAssert = booleanAssertPatterns.some(pattern =>
+          lowerCalleeName.startsWith(pattern.toLowerCase())
+        );
+
+        return isBooleanAssert;
+      }
+
+      // Check if the function name suggests it returns a boolean (for non-assert functions)
+      return approvedPrefixes
+        .filter(prefix => prefix !== 'asserts') // Exclude 'asserts' as it's handled above
+        .some((prefix) =>
+          calleeName.toLowerCase().startsWith(prefix.toLowerCase()),
+        );
     }
 
     /**
