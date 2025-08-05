@@ -582,6 +582,137 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
         }
       `,
     },
+    // Should allow objects with FieldValue.serverTimestamp() (bug fix)
+    {
+      code: `
+        function lockVaripotentEvent() {
+          const expireAt = new Date(Date.now() + TEN_MINS_MILLIS);
+
+          const varipotentEventData = {
+            createdAt: FieldValue.serverTimestamp(),
+            expireAt: Timestamp.fromDate(expireAt),
+          } as const satisfies UpdateData<VaripotentEvent>;
+
+          return varipotentEventData;
+        }
+      `,
+    },
+    // Should allow objects with FieldValue methods
+    {
+      code: `
+        function updateDocument() {
+          const updateData = {
+            lastModified: FieldValue.serverTimestamp(),
+            counter: FieldValue.increment(1),
+            tags: FieldValue.arrayUnion('new-tag'),
+          } as const;
+          return updateData;
+        }
+      `,
+    },
+    // Should allow objects with Timestamp methods
+    {
+      code: `
+        function createEvent() {
+          const eventData = {
+            startTime: Timestamp.now(),
+            endTime: Timestamp.fromDate(new Date()),
+          };
+          return eventData;
+        }
+      `,
+    },
+    // Should allow objects with GeoPoint
+    {
+      code: `
+        function createLocation() {
+          const locationData = {
+            position: new GeoPoint(37.7749, -122.4194),
+            timestamp: Timestamp.now(),
+          };
+          return locationData;
+        }
+      `,
+    },
+    // Should allow objects with DocumentReference methods
+    {
+      code: `
+        function createReference() {
+          const refData = {
+            userRef: DocumentReference.fromPath('users/123'),
+            createdAt: FieldValue.serverTimestamp(),
+          };
+          return refData;
+        }
+      `,
+    },
+    // Should allow nested objects with dynamic values
+    {
+      code: `
+        function createNestedData() {
+          const data = {
+            metadata: {
+              createdAt: FieldValue.serverTimestamp(),
+              version: 1,
+            },
+            content: {
+              lastUpdated: Timestamp.now(),
+            },
+          } as const;
+          return data;
+        }
+      `,
+    },
+    // Should allow arrays with dynamic values
+    {
+      code: `
+        function createArrayWithDynamicValues() {
+          const data = [
+            { timestamp: FieldValue.serverTimestamp() },
+            { timestamp: Timestamp.now() },
+          ];
+          return data;
+        }
+      `,
+    },
+    // Should allow objects with mixed static and dynamic values
+    {
+      code: `
+        function createMixedData() {
+          const data = {
+            staticValue: 'hello',
+            dynamicValue: FieldValue.serverTimestamp(),
+            anotherStatic: 42,
+          } as const satisfies SomeType;
+          return data;
+        }
+      `,
+    },
+    // Should allow objects with function calls (dynamic)
+    {
+      code: `
+        function createDataWithFunctionCalls() {
+          const data = {
+            id: generateId(),
+            timestamp: getCurrentTime(),
+            value: computeValue(),
+          };
+          return data;
+        }
+      `,
+    },
+    // Should allow objects with complex type assertions
+    {
+      code: `
+        function createComplexTypeAssertion() {
+          const data = {
+            field1: FieldValue.serverTimestamp(),
+            field2: 'static',
+          } as const satisfies ComplexType<SomeGeneric>;
+          return data;
+        }
+      `,
+    },
   ],
   invalid: [
     // Should flag immutable string constants

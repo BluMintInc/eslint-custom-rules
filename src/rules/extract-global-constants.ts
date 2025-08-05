@@ -42,44 +42,145 @@ function isImmutableValue(node: TSESTree.Expression | null): boolean {
   }
 }
 
+function unwrapTypeAssertions(node: TSESTree.Expression | null): TSESTree.Expression | null {
+  if (!node) return null;
+
+  // Unwrap TypeScript type assertions
+  if (node.type === 'TSAsExpression') {
+    return unwrapTypeAssertions(node.expression);
+  }
+
+  if (node.type === 'TSSatisfiesExpression') {
+    return unwrapTypeAssertions(node.expression);
+  }
+
+  return node;
+}
+
+function isDynamicFirestoreValue(node: TSESTree.Expression | null): boolean {
+  if (!node) return false;
+
+  if (node.type === 'CallExpression') {
+    const callee = node.callee;
+    if (callee.type === 'MemberExpression') {
+      // Check for FieldValue methods (dynamic Firestore values)
+      if (callee.object.type === 'Identifier' && callee.object.name === 'FieldValue') {
+        return true;
+      }
+
+      // Check for other dynamic Firestore methods
+      if (callee.object.type === 'Identifier') {
+        const objectName = callee.object.name;
+        const dynamicFirestoreObjects = ['FieldValue', 'Timestamp', 'GeoPoint', 'DocumentReference'];
+        if (dynamicFirestoreObjects.includes(objectName)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+function containsDynamicValues(node: TSESTree.Expression | null): boolean {
+  if (!node) return false;
+
+  const unwrapped = unwrapTypeAssertions(node);
+  if (!unwrapped) return false;
+
+  // Check if the node itself is a dynamic value
+  if (isDynamicFirestoreValue(unwrapped)) {
+    return true;
+  }
+
+  // Check object expressions for dynamic property values
+  if (unwrapped.type === 'ObjectExpression') {
+    return unwrapped.properties.some((prop) => {
+      if (prop.type === 'Property' && prop.value) {
+        return containsDynamicValues(prop.value as TSESTree.Expression);
+      }
+      return false;
+    });
+  }
+
+  // Check array expressions for dynamic elements
+  if (unwrapped.type === 'ArrayExpression') {
+    // Empty arrays are considered dynamic/mutable
+    if (unwrapped.elements.length === 0) {
+      return true;
+    }
+    // Arrays with spread elements are dynamic
+    if (unwrapped.elements.some((element) => !element || element.type === 'SpreadElement')) {
+      return true;
+    }
+    // Check if any elements are dynamic
+    return unwrapped.elements.some((element) => {
+      if (element && element.type !== 'SpreadElement') {
+        return containsDynamicValues(element as TSESTree.Expression);
+      }
+      return false;
+    });
+  }
+
+  // Check call expressions (function calls are generally dynamic)
+  if (unwrapped.type === 'CallExpression') {
+    return true;
+  }
+
+  return false;
+}
+
 function isMutableValue(node: TSESTree.Expression | null): boolean {
   if (!node) return false;
 
+  const unwrapped = unwrapTypeAssertions(node);
+  if (!unwrapped) return false;
+
   // Check for JSX elements (always mutable due to props/context)
-  if (node.type === 'JSXElement' || node.type === 'JSXFragment') {
+  if (unwrapped.type === 'JSXElement' || unwrapped.type === 'JSXFragment') {
     return true;
   }
 
-  // Check for object expressions (always mutable)
-  if (node.type === 'ObjectExpression') {
-    return true;
+  // Check for object expressions that contain dynamic values
+  if (unwrapped.type === 'ObjectExpression') {
+    // If the object contains dynamic values, it should be considered mutable
+    if (containsDynamicValues(unwrapped)) {
+      return true;
+    }
+    // Empty objects are mutable since they can be modified later
+    if (unwrapped.properties.length === 0) {
+      return true;
+    }
+    // Objects with only static values are not mutable in the context of this rule
+    // They can potentially be extracted to global scope
+    return false;
   }
 
   // Check array literals - mutable if empty or if they contain mutable values
-  if (node.type === 'ArrayExpression') {
+  if (unwrapped.type === 'ArrayExpression') {
     // Empty arrays are mutable since they can be modified later
-    if (node.elements.length === 0) return true;
+    if (unwrapped.elements.length === 0) return true;
     // Arrays with spread elements are mutable
     if (
-      node.elements.some(
+      unwrapped.elements.some(
         (element) => !element || element.type === 'SpreadElement',
       )
     )
       return true;
     // Arrays with non-immutable values are mutable
-    return node.elements.some(
+    return unwrapped.elements.some(
       (element) => !isImmutableValue(element as TSESTree.Expression),
     );
   }
 
   // Check for new expressions (e.g., new Map(), new Set())
-  if (node.type === 'NewExpression') {
+  if (unwrapped.type === 'NewExpression') {
     return true;
   }
 
   // Check for array/object methods that return mutable values
-  if (node.type === 'CallExpression') {
-    const callee = node.callee;
+  if (unwrapped.type === 'CallExpression') {
+    const callee = unwrapped.callee;
     if (callee.type === 'MemberExpression') {
       // Handle both Identifier and non-Identifier property nodes
       if (callee.property.type !== 'Identifier') {
