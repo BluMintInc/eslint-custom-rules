@@ -403,33 +403,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         // Validation/assertion functions that return the validated input (not boolean)
         // These typically have names like: assertSafe, assertValid, assertString, assertNumber, etc.
         const validationAssertPatterns = [
-          'assertsafe',
-          'assertvalid',
-          'assertstring',
-          'assertnumber',
-          'assertobject',
-          'assertarray',
-          'assertfunction',
-          'assertdefined',
-          'assertnotnull',
-          'assertnotundefined',
-          'asserttype',
-          'assertinstance',
-          'assertproperty',
-          'assertkey',
-          'assertvalue',
-          'assertdata',
-          'assertinput',
-          'assertparam',
-          'assertarg',
-          'assertresult',
-          'assertresponse',
-          'assertconfig',
-          'assertsettings',
-          'assertoptions',
-          'assertformat',
-          'assertschema',
-          'assertstructure',
+          'assert'
         ];
 
         const lowerCalleeName = calleeName.toLowerCase();
