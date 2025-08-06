@@ -284,6 +284,41 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
         await manager.set({ ref: docRef, data: { name: 'John' } });
       `,
     },
+    // Valid BatchManager with variable name that doesn't contain "Manager" (bug fix test)
+    {
+      code: `
+        const batch = new BatchManager<UserDocument>();
+        await batch.set({ ref: docRef, data: { name: 'John' } });
+        await batch.update({ ref: docRef, data: { age: 30 } });
+        await batch.delete(docRef);
+        await batch.commit();
+      `,
+    },
+    // Valid BatchManager with short variable name (bug fix test)
+    {
+      code: `
+        const bm = new BatchManager();
+        bm.delete(doc.ref);
+        await bm.commit();
+      `,
+    },
+    // Valid BatchManager with generic variable name (bug fix test)
+    {
+      code: `
+        const writer = new BatchManager<UserDocument>();
+        writer.set({ ref: docRef, data: { name: 'John' } });
+        writer.delete(oldDocRef);
+      `,
+    },
+    // Valid BatchManager reassignment (bug fix test)
+    {
+      code: `
+        let processor;
+        processor = new BatchManager<UserDocument>();
+        processor.delete(docRef);
+        await processor.commit();
+      `,
+    },
     // Valid custom wrapper class with set method
     {
       code: `
@@ -891,6 +926,98 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
         const orderBatchManager = new BatchManager<OrderDocument>();
         await userBatchManager.set({ ref: userRef, data: { name: 'John' } });
         await orderBatchManager.set({ ref: orderRef, data: { status: 'pending' } });
+      `,
+    },
+    // Valid BatchManager with confusing variable name containing "doc" (edge case)
+    {
+      code: `
+        const docProcessor = new BatchManager<UserDocument>();
+        await docProcessor.set({ ref: docRef, data: { name: 'John' } });
+        await docProcessor.update({ ref: docRef, data: { age: 30 } });
+        await docProcessor.delete(docRef);
+      `,
+    },
+    // Valid BatchManager with confusing variable name containing "ref" (edge case)
+    {
+      code: `
+        const refHandler = new BatchManager<UserDocument>();
+        await refHandler.set({ ref: docRef, data: { name: 'John' } });
+        await refHandler.delete(docRef);
+      `,
+    },
+    // Valid BatchManager with variable name that could be confused with DocumentReference (edge case)
+    {
+      code: `
+        const docRef = new BatchManager<UserDocument>();
+        await docRef.set({ ref: actualDocRef, data: { name: 'John' } });
+        await docRef.delete(actualDocRef);
+      `,
+    },
+    // Valid BatchManager with method chaining (edge case)
+    {
+      code: `
+        const batchManager = new BatchManager<UserDocument>();
+        await batchManager.set({ ref: docRef, data: { name: 'John' } }).then(() => console.log('done'));
+      `,
+    },
+    // Valid BatchManager in complex nested structure (edge case)
+    {
+      code: `
+        const services = {
+          database: {
+            writers: {
+              batchManager: new BatchManager<UserDocument>()
+            }
+          }
+        };
+        await services.database.writers.batchManager.set({ ref: docRef, data: { name: 'John' } });
+      `,
+    },
+    // Valid BatchManager with type assertion (edge case)
+    {
+      code: `
+        const manager = new BatchManager<UserDocument>() as any;
+        await manager.set({ ref: docRef, data: { name: 'John' } });
+        await manager.delete(docRef);
+      `,
+    },
+    // Valid BatchManager with all CRUD operations in sequence (comprehensive test)
+    {
+      code: `
+        const batchManager = new BatchManager<UserDocument>();
+        await batchManager.set({ ref: docRef1, data: { name: 'John', age: 25 } });
+        await batchManager.update({ ref: docRef2, data: { age: 30 } });
+        await batchManager.delete(docRef3);
+        await batchManager.commit();
+      `,
+    },
+    // Valid BatchManager with error handling (edge case)
+    {
+      code: `
+        const batchManager = new BatchManager<UserDocument>();
+        try {
+          await batchManager.set({ ref: docRef, data: { name: 'John' } });
+          await batchManager.delete(oldRef);
+          await batchManager.commit();
+        } catch (error) {
+          console.error('Batch operation failed:', error);
+        }
+      `,
+    },
+    // Valid BatchManager with conditional operations (edge case)
+    {
+      code: `
+        const batchManager = new BatchManager<UserDocument>();
+        if (shouldCreate) {
+          await batchManager.set({ ref: docRef, data: { name: 'John' } });
+        }
+        if (shouldUpdate) {
+          await batchManager.update({ ref: docRef, data: { age: 30 } });
+        }
+        if (shouldDelete) {
+          await batchManager.delete(oldRef);
+        }
+        await batchManager.commit();
       `,
     },
     // Valid Set.prototype.delete() with no type parameter

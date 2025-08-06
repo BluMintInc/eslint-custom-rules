@@ -51,6 +51,8 @@ const firestoreBatchVariables = new Set<string>();
 const firestoreTransactionVariables = new Set<string>();
 // Track variables that are assigned to DocSetter or DocSetterTransaction instances
 const docSetterVariables = new Set<string>();
+// Track variables that are assigned to BatchManager instances
+const batchManagerVariables = new Set<string>();
 
 const isFirestoreAssignment = (node: TSESTree.Node): boolean => {
   if (node.type !== AST_NODE_TYPES.VariableDeclarator) return false;
@@ -69,6 +71,17 @@ const isFirestoreAssignment = (node: TSESTree.Node): boolean => {
       init.callee.name === 'DocSetterTransaction')
   ) {
     docSetterVariables.add(varName);
+    return true;
+  }
+
+  // Check for BatchManager assignments
+  // e.g., const batchManager = new BatchManager<T>(); const batch = new BatchManager();
+  if (
+    init.type === AST_NODE_TYPES.NewExpression &&
+    isIdentifier(init.callee) &&
+    init.callee.name === 'BatchManager'
+  ) {
+    batchManagerVariables.add(varName);
     return true;
   }
 
@@ -125,7 +138,21 @@ const handleAssignmentExpression = (
       firestoreDocRefVariables.delete(varName);
       firestoreBatchVariables.delete(varName);
       firestoreTransactionVariables.delete(varName);
+      batchManagerVariables.delete(varName);
       docSetterVariables.add(varName);
+    }
+    // Check if reassigning to BatchManager
+    else if (
+      right.type === AST_NODE_TYPES.NewExpression &&
+      isIdentifier(right.callee) &&
+      right.callee.name === 'BatchManager'
+    ) {
+      // Remove from other sets and add to batchManagerVariables
+      firestoreDocRefVariables.delete(varName);
+      firestoreBatchVariables.delete(varName);
+      firestoreTransactionVariables.delete(varName);
+      docSetterVariables.delete(varName);
+      batchManagerVariables.add(varName);
     }
     // Check if reassigning to DocumentReference
     else if (isFirestoreDocumentReference(right)) {
@@ -133,6 +160,7 @@ const handleAssignmentExpression = (
       docSetterVariables.delete(varName);
       firestoreBatchVariables.delete(varName);
       firestoreTransactionVariables.delete(varName);
+      batchManagerVariables.delete(varName);
       firestoreDocRefVariables.add(varName);
     }
     // Check if reassigning to batch
@@ -148,6 +176,7 @@ const handleAssignmentExpression = (
       docSetterVariables.delete(varName);
       firestoreDocRefVariables.delete(varName);
       firestoreTransactionVariables.delete(varName);
+      batchManagerVariables.delete(varName);
       firestoreBatchVariables.add(varName);
     }
   }
@@ -276,6 +305,11 @@ const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
 
     // Skip if it's a tracked DocSetter instance
     if (docSetterVariables.has(name)) {
+      return false;
+    }
+
+    // Skip if it's a tracked BatchManager instance
+    if (batchManagerVariables.has(name)) {
       return false;
     }
 
@@ -466,6 +500,7 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
     firestoreBatchVariables.clear();
     firestoreTransactionVariables.clear();
     docSetterVariables.clear();
+    batchManagerVariables.clear();
 
     return {
       // Track variable declarations that are assigned realtimeDb references, collection objects, or Firestore references
