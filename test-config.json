@@ -1,7 +1,14 @@
 {
   "parser": "@typescript-eslint/parser",
-  "plugins": ["./lib/index.js"],
+  "parserOptions": {
+    "ecmaVersion": 2018,
+    "sourceType": "module",
+    "ecmaFeatures": {
+      "jsx": true
+    }
+  },
+  "plugins": ["@blumintinc/blumint"],
   "rules": {
-    "@blumintinc/blumint/enforce-firestore-facade": "error"
+    "@blumintinc/blumint/enforce-callback-memo": "error"
   }
 }

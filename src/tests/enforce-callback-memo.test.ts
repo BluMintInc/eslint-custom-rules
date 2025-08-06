@@ -339,14 +339,33 @@ ruleTester.run('enforce-callback-memo', rule, {
             <button onClick={() => {
               api.request({
                 url: config.endpoint,
-          
-                console.error('Failed to process data:', data.id);
-              }
+              }).catch((error) => {
+                console.error('Failed to process data:', error);
+              });
             }}>
               Process Async
             </button>
           );
         }, [api]);
+      `,
+    },
+    // Valid: Nested callback inside useCallback that references parent scope (bug report scenario)
+    {
+      code: `
+        const SelectableWrapper = useCallback(({ hit, children }) => {
+          return (
+            <Selectable
+              isSelected={id === tournamentId}
+              onChange={(_, isSelected) => {
+                if (isSelected) {
+                  setEvent(hit);
+                }
+              }}
+            >
+              {children}
+            </Selectable>
+          );
+        }, [setEvent, tournamentId]);
       `,
     },
     // Valid: String literal prop (non-function)
@@ -510,8 +529,6 @@ ruleTester.run('enforce-callback-memo', rule, {
       `,
       errors: [{ messageId: 'enforceCallback' }],
     },
-  ],
-});
     // Invalid: Function expression (not arrow function) not in useCallback
     {
       code: `
@@ -993,3 +1010,5 @@ ruleTester.run('enforce-callback-memo', rule, {
       `,
       errors: [{ messageId: 'enforceCallback' }],
     },
+  ],
+});
