@@ -137,6 +137,16 @@ export default createRule<[], MessageIds>({
         );
       }
 
+      // Check ternary expressions (conditional expressions)
+      if (node.type === TSESTree.AST_NODE_TYPES.ConditionalExpression) {
+        return containsFunction(node.consequent) || containsFunction(node.alternate);
+      }
+
+      // Check logical expressions (&&, ||)
+      if (node.type === TSESTree.AST_NODE_TYPES.LogicalExpression) {
+        return containsFunction(node.left) || containsFunction(node.right);
+      }
+
       return false;
     }
 
@@ -195,6 +205,19 @@ export default createRule<[], MessageIds>({
           return;
         }
 
+        context.report({
+          node,
+          messageId: 'enforceCallback',
+        });
+        return;
+      }
+
+      // Check for ternary expressions and logical expressions containing functions
+      if (
+        (expression.type === TSESTree.AST_NODE_TYPES.ConditionalExpression ||
+          expression.type === TSESTree.AST_NODE_TYPES.LogicalExpression) &&
+        containsFunction(expression)
+      ) {
         context.report({
           node,
           messageId: 'enforceCallback',
