@@ -1,8 +1,8 @@
-# Enforce using .get() with default values in Firestore security rules (`@blumintinc/blumint/enforce-firestore-rules-get-access`)
+# Ensure Firestore security rules use .get() with a default value instead of direct field access comparisons (e.g., resource.data.fieldX.fieldY != null) (`@blumintinc/blumint/enforce-firestore-rules-get-access`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix) for string literals.
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
 
 <!-- end auto-generated rule header -->
 
