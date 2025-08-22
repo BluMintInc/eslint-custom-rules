@@ -2,7 +2,7 @@
 name: ESLint Rule Request
 about: Propose a new custom ESLint rule
 title: "[RULE]"
-labels: enhancement, fix-me
+labels: enhancement
 assignees: ''
 
 ---
