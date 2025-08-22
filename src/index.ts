@@ -11,6 +11,7 @@ import { enforceFirebaseImports } from './rules/enforce-dynamic-firebase-imports
 import { enforceMuiRoundedIcons } from './rules/enforce-mui-rounded-icons';
 import { enforceQueryKeyTs } from './rules/enforce-querykey-ts';
 import { enforceReactTypeNaming } from './rules/enforce-react-type-naming';
+import { enforceFirestoreRulesGetAccess } from './rules/enforce-firestore-rules-get-access';
 import { exportIfInDoubt } from './rules/export-if-in-doubt';
 import { extractGlobalConstants } from './rules/extract-global-constants';
 import { enforceGlobalConstants } from './rules/enforce-global-constants';
@@ -141,6 +142,7 @@ module.exports = {
         '@blumintinc/blumint/parallelize-async-operations': 'error',
         '@blumintinc/blumint/avoid-utils-directory': 'error',
         '@blumintinc/blumint/enforce-firestore-path-utils': 'error',
+        '@blumintinc/blumint/enforce-firestore-rules-get-access': 'error',
         '@blumintinc/blumint/no-jsx-whitespace-literal': 'error',
         '@blumintinc/blumint/array-methods-this-context': 'error',
         '@blumintinc/blumint/class-methods-read-top-to-bottom': 'error',
@@ -285,6 +287,7 @@ module.exports = {
     'enforce-identifiable-firestore-type': enforceIdentifiableFirestoreType,
     'enforce-callback-memo': enforceCallbackMemo,
     'enforce-react-type-naming': enforceReactTypeNaming,
+    'enforce-firestore-rules-get-access': enforceFirestoreRulesGetAccess,
     'enforce-callable-types': enforceCallableTypes,
     'enforce-console-error': enforceConsoleError,
     'enforce-dynamic-firebase-imports': enforceFirebaseImports,
