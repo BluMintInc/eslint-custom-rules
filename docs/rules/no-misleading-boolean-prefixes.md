@@ -1,3 +1,8 @@
+# Reserve boolean-style prefixes (is/has/should) for functions that actually return boolean values (`@blumintinc/blumint/no-misleading-boolean-prefixes`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 ### no-misleading-boolean-prefixes
 
 Reserve boolean-style prefixes like is, has, or should for functions that actually return boolean values. This maintains clarity and sets accurate expectations about a function's return type.
