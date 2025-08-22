@@ -119,6 +119,7 @@ import { noSeparateLoadingState } from './rules/no-separate-loading-state';
 import { optimizeObjectBooleanConditions } from './rules/optimize-object-boolean-conditions';
 import { preferParamsOverParentId } from './rules/prefer-params-over-parent-id';
 import { preferFieldPathsInTransforms } from './rules/prefer-field-paths-in-transforms';
+import { noMisleadingBooleanPrefixes } from './rules/no-misleading-boolean-prefixes';
 
 module.exports = {
   meta: {
@@ -265,6 +266,7 @@ module.exports = {
         '@blumintinc/blumint/optimize-object-boolean-conditions': 'error',
         '@blumintinc/blumint/prefer-params-over-parent-id': 'error',
         '@blumintinc/blumint/prefer-field-paths-in-transforms': 'warn',
+        '@blumintinc/blumint/no-misleading-boolean-prefixes': 'error',
       },
     },
   },
@@ -398,5 +400,6 @@ module.exports = {
     'optimize-object-boolean-conditions': optimizeObjectBooleanConditions,
     'prefer-params-over-parent-id': preferParamsOverParentId,
     'prefer-field-paths-in-transforms': preferFieldPathsInTransforms,
+    'no-misleading-boolean-prefixes': noMisleadingBooleanPrefixes,
   },
 };
