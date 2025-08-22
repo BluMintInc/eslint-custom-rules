@@ -120,6 +120,7 @@ import { optimizeObjectBooleanConditions } from './rules/optimize-object-boolean
 import { preferParamsOverParentId } from './rules/prefer-params-over-parent-id';
 import { preferFieldPathsInTransforms } from './rules/prefer-field-paths-in-transforms';
 import { noMisleadingBooleanPrefixes } from './rules/no-misleading-boolean-prefixes';
+import { preferUrlToStringOverToJson } from './rules/prefer-url-tostring-over-tojson';
 
 module.exports = {
   meta: {
@@ -267,6 +268,7 @@ module.exports = {
         '@blumintinc/blumint/prefer-params-over-parent-id': 'error',
         '@blumintinc/blumint/prefer-field-paths-in-transforms': 'warn',
         '@blumintinc/blumint/no-misleading-boolean-prefixes': 'error',
+        '@blumintinc/blumint/prefer-url-tostring-over-tojson': 'error',
       },
     },
   },
@@ -401,5 +403,6 @@ module.exports = {
     'prefer-params-over-parent-id': preferParamsOverParentId,
     'prefer-field-paths-in-transforms': preferFieldPathsInTransforms,
     'no-misleading-boolean-prefixes': noMisleadingBooleanPrefixes,
+    'prefer-url-tostring-over-tojson': preferUrlToStringOverToJson,
   },
 };
