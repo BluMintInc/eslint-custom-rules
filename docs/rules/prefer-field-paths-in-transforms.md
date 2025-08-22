@@ -8,7 +8,7 @@ Enforces returning flattened dot-path keys (FieldPaths) from idempotent propagat
 
 ## Why
 
-BluMint commonly aggregates child documents into shared parent containers (e.g., `matchesAggregation.matchPreviews`). Our pipeline intentionally skips the “after” transform on deletes, so diffing “nested before” vs `{}` often produces parent-level REMOVE operations (e.g., removing `a` entirely). Firestore interprets that as deleting the whole container, which breaks sibling children. Using flattened dot-path keys avoids this by diffing at the leaf.
+BluMint commonly aggregates child documents into shared parent containers (e.g., `matchesAggregation.matchPreviews`). Our pipeline intentionally skips the "after" transform on deletes, so diffing "nested before" vs `{}` often produces parent-level REMOVE operations (e.g., removing `a` entirely). Firestore interprets that as deleting the whole container, which breaks sibling children. Using flattened dot-path keys avoids this by diffing at the leaf.
 
 ## Rule Details
 
@@ -57,7 +57,7 @@ return { matchesAggregation: { matchPreviews: {} } };
 ```
 
 2) Arrays and array operations
-- Arrays are handled by the diff’s array extraction. This rule focuses on nested object shapes under containers. Returning flattened keys that include array indices or leaf fields is valid.
+- Arrays are handled by the diff's array extraction. This rule focuses on nested object shapes under containers. Returning flattened keys that include array indices or leaf fields is valid.
 
 3) Mixed outputs (nested + flattened)
 - Only nested shapes under configured containers are flagged. Other top-level flattened keys in the same return are allowed.
@@ -66,7 +66,7 @@ return { matchesAggregation: { matchPreviews: {} } };
 - Computed dot-keys like ``[`matchesAggregation.matchPreviews.${matchId}`]`` are encouraged and not flagged.
 
 5) Non-aggregation targets
-- If a transform writes to fields that aren’t shared containers, the rule is silent by default. Scope can be configured via options.
+- If a transform writes to fields that aren't shared containers, the rule is silent by default. Scope can be configured via options.
 
 ## Options
 
@@ -92,5 +92,5 @@ return { matchesAggregation: { matchPreviews: {} } };
 
 ## Additional Notes
 
-- This rule aligns with BluMint’s type-system support: generics allow transforms to return either nested `Partial<TTarget>` or flattened `Partial<Flatten<TTarget>>`. This rule nudges developers toward flattened outputs for aggregation/sparse maps.
+- This rule aligns with BluMint's type-system support: generics allow transforms to return either nested `Partial<TTarget>` or flattened `Partial<Flatten<TTarget>>`. This rule nudges developers toward flattened outputs for aggregation/sparse maps.
 - Severity defaults to `warn` in the recommended config.
