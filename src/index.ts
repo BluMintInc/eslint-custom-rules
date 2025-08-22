@@ -117,6 +117,7 @@ import { noStaleStateAcrossAwait } from './rules/no-stale-state-across-await';
 import { noSeparateLoadingState } from './rules/no-separate-loading-state';
 import { optimizeObjectBooleanConditions } from './rules/optimize-object-boolean-conditions';
 import { preferParamsOverParentId } from './rules/prefer-params-over-parent-id';
+import { noInlineComponentProp } from './rules/no-inline-component-prop';
 
 module.exports = {
   meta: {
@@ -261,6 +262,7 @@ module.exports = {
         '@blumintinc/blumint/no-separate-loading-state': 'error',
         '@blumintinc/blumint/optimize-object-boolean-conditions': 'error',
         '@blumintinc/blumint/prefer-params-over-parent-id': 'error',
+        '@blumintinc/blumint/no-inline-component-prop': 'error',
       },
     },
   },
@@ -392,5 +394,6 @@ module.exports = {
     'no-separate-loading-state': noSeparateLoadingState,
     'optimize-object-boolean-conditions': optimizeObjectBooleanConditions,
     'prefer-params-over-parent-id': preferParamsOverParentId,
+    'no-inline-component-prop': noInlineComponentProp,
   },
 };
