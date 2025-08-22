@@ -220,3 +220,197 @@ ruleTesterTs.run('prefer-field-paths-in-transforms', preferFieldPathsInTransform
     },
   ],
 });
+
+// Additional edge cases to ensure robustness
+ruleTesterTs.run('prefer-field-paths-in-transforms - edge cases', preferFieldPathsInTransforms, {
+  valid: [
+    // Function declaration named differently should not be treated as transformEach
+    {
+      code: `
+        function notTransformEach(doc) {
+          return {
+            matchesAggregation: {
+              matchPreviews: { [doc.id]: doc.preview }
+            }
+          };
+        }
+      `,
+    },
+    // Function declaration named transformEachVaripotent (skip)
+    {
+      code: `
+        function transformEachVaripotent(doc) {
+          return {
+            matchesAggregation: {
+              matchPreviews: { [doc.id]: doc.preview }
+            }
+          };
+        }
+      `,
+    },
+    // Class property arrow for transformEachVaripotent (skip)
+    {
+      code: `
+        class S {
+          transformEachVaripotent = (doc) => ({
+            matchesAggregation: { matchPreviews: { [doc.id]: doc.preview } }
+          });
+        }
+      `,
+    },
+    // Arrow with implicit object return but top-level is already dot key
+    {
+      code: `
+        const strategy = {
+          transformEach: (d) => ({ 'matchesAggregation.leaf': d.v })
+        };
+      `,
+    },
+    // Object spread at container level with non-object replacement
+    {
+      code: `
+        const strategy = {
+          transformEach(doc) {
+            const updates = { ['matchesAggregation.matchPreviews.' + doc.id]: doc.preview };
+            return {
+              ...other,
+              ...updates,
+            };
+          }
+        };
+      `,
+    },
+    // Container present, but value is a non-object literal (e.g., number) – shouldn't flag
+    {
+      code: `
+        const strategy = {
+          transformEach(doc) {
+            return {
+              previews: 1,
+            };
+          }
+        };
+      `,
+    },
+    // Nested object under non-matching container pattern should be allowed
+    {
+      code: `
+        const strategy = {
+          transformEach(doc) {
+            return {
+              stats: { user: { [doc.id]: 1 } },
+            };
+          }
+        };
+      `,
+      options: [{ containers: ['matchesAggregation'] }],
+    },
+    // Computed top-level key (skip check for name pattern)
+    {
+      code: `
+        const strategy = {
+          transformEach(doc) {
+            const key = 'matchesAggregation';
+            return {
+              [key]: { matchPreviews: { [doc.id]: doc.preview } },
+            };
+          }
+        };
+      `,
+    },
+    // Property definition arrow for transformEach should be detected; this is valid because flattened
+    {
+      code: `
+        class Strategy {
+          transformEach = (doc) => ({ [` + "`matchesAggregation.matchPreviews.${doc.id}`" + `]: doc.preview });
+        }
+      `,
+    },
+    // AllowNestedIn exact filename
+    {
+      code: `
+        const strategy = {
+          transformEach(doc) {
+            return { matchesAggregation: { matchPreviews: { [doc.id]: doc.preview } } };
+          }
+        };
+      `,
+      filename: '/workspace/scripts/do-migration.ts',
+      options: [{ allowNestedIn: ['/workspace/scripts/**'] }],
+    },
+    // Arrow with implicit return, container value is identifier (not object literal)
+    {
+      code: `
+        const strategy = {
+          transformEach: (doc) => updates,
+        };
+      `,
+    },
+  ],
+  invalid: [
+    // Function declaration transformEach with nested container
+    {
+      code: `
+        function transformEach(doc) {
+          return {
+            matchesAggregation: {
+              matchPreviews: { [doc.id]: doc.preview },
+            },
+          };
+        }
+      `,
+      errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+    },
+    // Class property arrow transformEach with nested container
+    {
+      code: `
+        class Strategy {
+          transformEach = (doc) => ({
+            previews: { users: { [doc.id]: doc.preview } },
+          });
+        }
+      `,
+      errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+    },
+    // Arrow implicit return with nested container
+    {
+      code: `
+        const strategy = {
+          transformEach: (d) => ({
+            groupAggregation: { items: { [d.id]: d.item } }
+          })
+        };
+      `,
+      options: [{ containers: ['*Aggregation'] }],
+      errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+    },
+    // Nested at depth 2 under container should flag even with sibling dot key
+    {
+      code: `
+        const strategy = {
+          transformEach(x) {
+            return {
+              matchesAggregation: { a: { b: 1 } },
+              'matchesAggregation.c': 2,
+            };
+          }
+        };
+      `,
+      errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+    },
+    // Container with empty object at top-level nested then nested child
+    {
+      code: `
+        const strategy = {
+          transformEach(x) {
+            return {
+              previews: { },
+              previews: { users: { [x.id]: 1 } },
+            };
+          }
+        };
+      `,
+      errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+    },
+  ],
+});

@@ -28,7 +28,23 @@ function getPropertyName(node: TSESTree.Property): string | null {
   return null;
 }
 
-function isTransformEachFunction(fn: TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression | TSESTree.FunctionDeclaration): boolean {
+function isNamedFunction(fn: TSESTree.FunctionDeclaration | TSESTree.FunctionExpression, name: string): boolean {
+  if (fn.type === AST_NODE_TYPES.FunctionDeclaration) {
+    return !!fn.id && fn.id.type === AST_NODE_TYPES.Identifier && fn.id.name === name;
+  }
+  // For function expressions, parent determines name association
+  return false;
+}
+
+function isTransformEachFunction(
+  fn: TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression | TSESTree.FunctionDeclaration,
+): boolean {
+  // Handle named function declarations: function transformEach() {}
+  if (fn.type === AST_NODE_TYPES.FunctionDeclaration) {
+    if (isNamedFunction(fn, 'transformEach')) return true;
+    return false;
+  }
+
   // Check parent contexts to determine if this function is assigned to a property/method named transformEach
   const parent = fn.parent as TSESTree.Node | null;
   if (!parent) return false;
@@ -63,6 +79,16 @@ function isTransformEachFunction(fn: TSESTree.FunctionExpression | TSESTree.Arro
     }
   }
 
+  // Class property arrow: class X { transformEach = (..) => ... }
+  if (parent.type === AST_NODE_TYPES.PropertyDefinition) {
+    const key = parent.key;
+    if (parent.computed) {
+      return key.type === AST_NODE_TYPES.Literal && key.value === 'transformEach';
+    }
+    if (key.type === AST_NODE_TYPES.Identifier) return key.name === 'transformEach';
+    if (key.type === AST_NODE_TYPES.Literal) return key.value === 'transformEach';
+  }
+
   // Variable assignment: const transformEach = () => { ... }
   if (parent.type === AST_NODE_TYPES.VariableDeclarator) {
     if (parent.id.type === AST_NODE_TYPES.Identifier) {
@@ -85,7 +111,14 @@ function isTransformEachFunction(fn: TSESTree.FunctionExpression | TSESTree.Arro
   return false;
 }
 
-function isTransformEachVaripotent(fn: TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression | TSESTree.FunctionDeclaration): boolean {
+function isTransformEachVaripotent(
+  fn: TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression | TSESTree.FunctionDeclaration,
+): boolean {
+  // Handle named function declarations: function transformEachVaripotent() {}
+  if (fn.type === AST_NODE_TYPES.FunctionDeclaration) {
+    return !!fn.id && fn.id.type === AST_NODE_TYPES.Identifier && fn.id.name === 'transformEachVaripotent';
+  }
+
   const parent = fn.parent as TSESTree.Node | null;
   if (!parent) return false;
 
@@ -99,6 +132,15 @@ function isTransformEachVaripotent(fn: TSESTree.FunctionExpression | TSESTree.Ar
   }
 
   if (parent.type === AST_NODE_TYPES.MethodDefinition) {
+    const key = parent.key;
+    if (parent.computed) {
+      return key.type === AST_NODE_TYPES.Literal && key.value === 'transformEachVaripotent';
+    }
+    if (key.type === AST_NODE_TYPES.Identifier) return key.name === 'transformEachVaripotent';
+    if (key.type === AST_NODE_TYPES.Literal) return key.value === 'transformEachVaripotent';
+  }
+
+  if (parent.type === AST_NODE_TYPES.PropertyDefinition) {
     const key = parent.key;
     if (parent.computed) {
       return key.type === AST_NODE_TYPES.Literal && key.value === 'transformEachVaripotent';
@@ -134,11 +176,41 @@ function hasDeeperThanOneLevelUnderContainer(containerObj: TSESTree.ObjectExpres
 
     // If the child value is itself an object literal with at least one property, we have depth >= 2
     if (isObjectExpression(value)) {
-      const hasAnyProp = value.properties.some(p => p.type === AST_NODE_TYPES.Property);
+      const hasAnyProp = value.properties.some((p) => p.type === AST_NODE_TYPES.Property);
       if (hasAnyProp) return true;
     }
   }
   return false;
+}
+
+function analyzeReturnedObject(
+  obj: TSESTree.ObjectExpression,
+  context: any,
+  containerNameMatches: (name: string) => boolean,
+) {
+  for (const top of obj.properties) {
+    if (top.type === AST_NODE_TYPES.SpreadElement) continue;
+    if (!isProperty(top)) continue;
+
+    // Skip computed top-level keys and already-flattened keys containing dots
+    if (top.computed) continue;
+
+    const keyName = getPropertyName(top);
+    if (!keyName) continue;
+    if (keyName.includes('.')) continue;
+
+    if (!containerNameMatches(keyName)) continue;
+
+    const containerValue = top.value;
+    if (!isObjectExpression(containerValue)) continue; // only care if returning an object under the container
+
+    if (hasDeeperThanOneLevelUnderContainer(containerValue)) {
+      context.report({
+        node: top,
+        messageId: 'preferFieldPathsInTransforms',
+      });
+    }
+  }
 }
 
 export const preferFieldPathsInTransforms = createRule<[RuleOptions?], MessageIds>({
@@ -179,17 +251,17 @@ export const preferFieldPathsInTransforms = createRule<[RuleOptions?], MessageId
     const { containers = DEFAULT_CONTAINERS, allowNestedIn = [] } = options || {};
 
     // Skip files explicitly allowed
-    if (allowNestedIn.length > 0 && allowNestedIn.some(glob => minimatch(filename, glob))) {
+    if (allowNestedIn.length > 0 && allowNestedIn.some((glob) => minimatch(filename, glob))) {
       return {};
     }
 
     function containerNameMatches(name: string): boolean {
-      return containers.some(pattern => minimatch(name, pattern));
+      return containers.some((pattern) => minimatch(name, pattern));
     }
 
-    function isInTargetTransform(returnNode: TSESTree.ReturnStatement): boolean {
+    function isInTargetTransform(returnNode: TSESTree.Node): boolean {
       // Find nearest function ancestor
-      let current: TSESTree.Node | undefined | null = returnNode.parent as TSESTree.Node | null;
+      let current: TSESTree.Node | undefined | null = (returnNode as any).parent as TSESTree.Node | null;
       while (current) {
         if (
           current.type === AST_NODE_TYPES.FunctionExpression ||
@@ -212,30 +284,13 @@ export const preferFieldPathsInTransforms = createRule<[RuleOptions?], MessageId
       ReturnStatement(node) {
         if (!node.argument || !isObjectExpression(node.argument)) return;
         if (!isInTargetTransform(node)) return;
-
-        // Examine the returned object literal's top-level properties
-        for (const top of node.argument.properties) {
-          if (top.type === AST_NODE_TYPES.SpreadElement) continue;
-          if (!isProperty(top)) continue;
-
-          // Skip computed top-level keys and already-flattened keys containing dots
-          if (top.computed) continue;
-
-          const keyName = getPropertyName(top);
-          if (!keyName) continue;
-          if (keyName.includes('.')) continue;
-
-          if (!containerNameMatches(keyName)) continue;
-
-          const containerValue = top.value;
-          if (!isObjectExpression(containerValue)) continue; // only care if returning an object under the container
-
-          if (hasDeeperThanOneLevelUnderContainer(containerValue)) {
-            context.report({
-              node: top,
-              messageId: 'preferFieldPathsInTransforms',
-            });
-          }
+        analyzeReturnedObject(node.argument, context, containerNameMatches);
+      },
+      ArrowFunctionExpression(node) {
+        // Handle implicit returns: transformEach: doc => ({ ... })
+        if (!isTransformEachFunction(node) || isTransformEachVaripotent(node)) return;
+        if (isObjectExpression(node.body)) {
+          analyzeReturnedObject(node.body, context, containerNameMatches);
         }
       },
     };
