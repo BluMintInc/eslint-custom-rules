@@ -28,6 +28,7 @@ import { noUnusedProps } from './rules/no-unused-props';
 import { noUselessFragment } from './rules/no-useless-fragment';
 import { preferFragmentShorthand } from './rules/prefer-fragment-shorthand';
 import { preferTypeOverInterface } from './rules/prefer-type-over-interface';
+import { preferTypeAliasOverTypeofConstant } from './rules/prefer-type-alias-over-typeof-constant';
 import { requireMemo } from './rules/require-memo';
 import { noJsxWhitespaceLiteral } from './rules/no-jsx-whitespace-literal';
 import { default as requireDynamicFirebaseImports } from './rules/require-dynamic-firebase-imports';
@@ -174,6 +175,7 @@ module.exports = {
         '@blumintinc/blumint/no-useless-fragment': 'error',
         '@blumintinc/blumint/prefer-fragment-shorthand': 'error',
         '@blumintinc/blumint/prefer-type-over-interface': 'error',
+        '@blumintinc/blumint/prefer-type-alias-over-typeof-constant': 'error',
         '@blumintinc/blumint/require-memo': 'error',
         '@blumintinc/blumint/require-dynamic-firebase-imports': 'error',
         '@blumintinc/blumint/require-https-error': 'error',
@@ -314,6 +316,7 @@ module.exports = {
     'enforce-dynamic-file-naming': enforceDynamicFileNaming,
     'prefer-fragment-shorthand': preferFragmentShorthand,
     'prefer-type-over-interface': preferTypeOverInterface,
+    'prefer-type-alias-over-typeof-constant': preferTypeAliasOverTypeofConstant,
     'require-memo': requireMemo,
     'no-jsx-whitespace-literal': noJsxWhitespaceLiteral,
     'require-dynamic-firebase-imports': requireDynamicFirebaseImports,
