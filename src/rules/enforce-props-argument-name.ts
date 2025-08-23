@@ -140,7 +140,9 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
           param.typeAnnotation &&
           param.typeAnnotation.typeAnnotation
         ) {
-          const paramTypeName = getTypeName(param.typeAnnotation.typeAnnotation);
+          const paramTypeName = getTypeName(
+            param.typeAnnotation.typeAnnotation,
+          );
           return paramTypeName && endsWithProps(paramTypeName);
         }
         return false;
@@ -154,7 +156,8 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
       // If there are multiple Props parameters, use prefixed names
       // For types like "UserProps", suggest "userProps"
       const baseName = typeName.slice(0, -5); // Remove "Props"
-      const camelCaseBase = baseName.charAt(0).toLowerCase() + baseName.slice(1);
+      const camelCaseBase =
+        baseName.charAt(0).toLowerCase() + baseName.slice(1);
       return `${camelCaseBase}Props`;
     }
 
@@ -165,8 +168,6 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
         param.type === AST_NODE_TYPES.ArrayPattern
       );
     }
-
-
 
     // Check function parameters
     function checkFunctionParams(
@@ -200,7 +201,11 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
         ) {
           const typeName = getTypeName(param.typeAnnotation.typeAnnotation);
 
-          if (typeName && endsWithProps(typeName) && !BUILT_IN_TYPES.has(typeName)) {
+          if (
+            typeName &&
+            endsWithProps(typeName) &&
+            !BUILT_IN_TYPES.has(typeName)
+          ) {
             const suggestedName = getSuggestedParameterName(
               typeName,
               node.params,
@@ -225,7 +230,10 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
                     ? context.getSourceCode().getText(param.typeAnnotation)
                     : '';
                   const optional = param.optional ? '?' : '';
-                  return fixer.replaceText(param, `${suggestedName}${optional}${typeText}`);
+                  return fixer.replaceText(
+                    param,
+                    `${suggestedName}${optional}${typeText}`,
+                  );
                 },
               });
             }
@@ -233,8 +241,6 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
         }
       });
     }
-
-
 
     // Check class method parameters (including constructors)
     function checkClassMethod(node: TSESTree.MethodDefinition): void {
@@ -253,7 +259,11 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
         ) {
           const typeName = getTypeName(param.typeAnnotation.typeAnnotation);
 
-          if (typeName && endsWithProps(typeName) && !BUILT_IN_TYPES.has(typeName)) {
+          if (
+            typeName &&
+            endsWithProps(typeName) &&
+            !BUILT_IN_TYPES.has(typeName)
+          ) {
             const suggestedName = getSuggestedParameterName(
               typeName,
               method.params,
@@ -277,7 +287,10 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
                     ? context.getSourceCode().getText(param.typeAnnotation)
                     : '';
                   const optional = param.optional ? '?' : '';
-                  return fixer.replaceText(param, `${suggestedName}${optional}${typeText}`);
+                  return fixer.replaceText(
+                    param,
+                    `${suggestedName}${optional}${typeText}`,
+                  );
                 },
               });
             }

@@ -689,7 +689,7 @@ ruleTester.run('enforce-callback-memo', rule, {
       `,
       errors: [
         { messageId: 'enforceCallback' },
-        { messageId: 'enforceCallback' }
+        { messageId: 'enforceCallback' },
       ],
     },
     // Invalid: Callback with conditional but no parent scope reference
@@ -817,7 +817,7 @@ ruleTester.run('enforce-callback-memo', rule, {
       errors: [
         { messageId: 'enforceCallback' },
         { messageId: 'enforceCallback' },
-        { messageId: 'enforceCallback' }
+        { messageId: 'enforceCallback' },
       ],
     },
     // Invalid: Function in form event handler

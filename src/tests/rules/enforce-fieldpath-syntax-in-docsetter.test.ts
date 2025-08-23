@@ -1,21 +1,24 @@
 import { ruleTesterTs } from '../../utils/ruleTester';
 import { enforceFieldPathSyntaxInDocSetter } from '../../rules/enforce-fieldpath-syntax-in-docsetter';
 
-ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntaxInDocSetter, {
-  valid: [
-    // Already using FieldPath syntax
-    {
-      code: `
+ruleTesterTs.run(
+  'enforce-fieldpath-syntax-in-docsetter',
+  enforceFieldPathSyntaxInDocSetter,
+  {
+    valid: [
+      // Already using FieldPath syntax
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
           'roles.contributor': FieldValue.arrayUnion(contributorId),
         });
       `,
-    },
-    // Multiple fields with FieldPath syntax
-    {
-      code: `
+      },
+      // Multiple fields with FieldPath syntax
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -23,10 +26,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           'metadata.updatedBy': userId,
         });
       `,
-    },
-    // Non-nested object
-    {
-      code: `
+      },
+      // Non-nested object
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -34,20 +37,20 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           active: true,
         });
       `,
-    },
-    // Using overwrite method (should be ignored)
-    {
-      code: `
+      },
+      // Using overwrite method (should be ignored)
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.overwrite({
           id: tournamentId,
           roles: { contributor: FieldValue.arrayUnion(contributorId) },
         });
       `,
-    },
-    // Not a DocSetter call
-    {
-      code: `
+      },
+      // Not a DocSetter call
+      {
+        code: `
         const someObject = {
           set: (data) => console.log(data)
         };
@@ -56,28 +59,28 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           roles: { contributor: 'value' },
         });
       `,
-    },
-    // Array of objects (should be ignored)
-    {
-      code: `
+      },
+      // Array of objects (should be ignored)
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
           players: [{ id: 'player1', score: 10 }],
         });
       `,
-    },
-    // Dynamic object construction (should be ignored)
-    {
-      code: `
+      },
+      // Dynamic object construction (should be ignored)
+      {
+        code: `
         const data = { id: tournamentId };
         data.roles = { contributor: FieldValue.arrayUnion(contributorId) };
         await docSetter.set(data);
       `,
-    },
-    // Spread operator usage (should be ignored)
-    {
-      code: `
+      },
+      // Spread operator usage (should be ignored)
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         const baseData = { id: tournamentId };
         const nestedData = { contributor: FieldValue.arrayUnion(contributorId) };
@@ -86,10 +89,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           roles: { ...nestedData },
         });
       `,
-    },
-    // Computed property names (should be ignored)
-    {
-      code: `
+      },
+      // Computed property names (should be ignored)
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         const fieldName = 'roles';
         await docSetter.set({
@@ -97,10 +100,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           [fieldName]: { contributor: FieldValue.arrayUnion(contributorId) },
         });
       `,
-    },
-    // Template literal keys (should be ignored)
-    {
-      code: `
+      },
+      // Template literal keys (should be ignored)
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         const prefix = 'meta';
         await docSetter.set({
@@ -108,10 +111,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           [\`\${prefix}data\`]: { createdAt: new Date() },
         });
       `,
-    },
-    // Function call returning object (should be ignored)
-    {
-      code: `
+      },
+      // Function call returning object (should be ignored)
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         function createRoles() {
           return { contributor: FieldValue.arrayUnion(contributorId) };
@@ -121,10 +124,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           roles: createRoles(),
         });
       `,
-    },
-    // Variable reference (should be ignored)
-    {
-      code: `
+      },
+      // Variable reference (should be ignored)
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         const rolesData = { contributor: FieldValue.arrayUnion(contributorId) };
         await docSetter.set({
@@ -132,10 +135,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           roles: rolesData,
         });
       `,
-    },
-    // Method chaining with non-DocSetter
-    {
-      code: `
+      },
+      // Method chaining with non-DocSetter
+      {
+        code: `
         const someService = {
           getDocSetter: () => ({ set: (data) => console.log(data) })
         };
@@ -144,10 +147,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           roles: { contributor: FieldValue.arrayUnion(contributorId) },
         });
       `,
-    },
-    // Array with nested objects (should be ignored)
-    {
-      code: `
+      },
+      // Array with nested objects (should be ignored)
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -157,20 +160,20 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           ],
         });
       `,
-    },
-    // Conditional object properties (should be ignored)
-    {
-      code: `
+      },
+      // Conditional object properties (should be ignored)
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
           ...(condition && { roles: { contributor: FieldValue.arrayUnion(contributorId) } }),
         });
       `,
-    },
-    // Object with null/undefined values
-    {
-      code: `
+      },
+      // Object with null/undefined values
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -179,10 +182,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           active: true,
         });
       `,
-    },
-    // Object with mixed property types but no nested objects
-    {
-      code: `
+      },
+      // Object with mixed property types but no nested objects
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -192,46 +195,46 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           'metadata.version': '1.0',
         });
       `,
-    },
-    // Empty object
-    {
-      code: `
+      },
+      // Empty object
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({});
       `,
-    },
-    // Object with only id
-    {
-      code: `
+      },
+      // Object with only id
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
         });
       `,
-    },
-    // Non-DocSetter variable with similar name
-    {
-      code: `
+      },
+      // Non-DocSetter variable with similar name
+      {
+        code: `
         const docSetterLike = { set: (data) => console.log(data) };
         await docSetterLike.set({
           id: tournamentId,
           roles: { contributor: FieldValue.arrayUnion(contributorId) },
         });
       `,
-    },
-    // DocSetter method called on different object
-    {
-      code: `
+      },
+      // DocSetter method called on different object
+      {
+        code: `
         const otherObject = { set: (data) => console.log(data) };
         await otherObject.set({
           id: tournamentId,
           roles: { contributor: FieldValue.arrayUnion(contributorId) },
         });
       `,
-    },
-    // Object with numeric keys
-    {
-      code: `
+      },
+      // Object with numeric keys
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -239,10 +242,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           1: 'second',
         });
       `,
-    },
-    // Object with boolean keys
-    {
-      code: `
+      },
+      // Object with boolean keys
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -250,10 +253,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           false: 'no',
         });
       `,
-    },
-    // Object with special characters in keys
-    {
-      code: `
+      },
+      // Object with special characters in keys
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -262,10 +265,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           'key with spaces': 'value',
         });
       `,
-    },
-    // Object with already flattened mixed syntax
-    {
-      code: `
+      },
+      // Object with already flattened mixed syntax
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -274,20 +277,20 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           name: 'Tournament Name',
         });
       `,
-    },
-    // Promise chain instead of await
-    {
-      code: `
+      },
+      // Promise chain instead of await
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         docSetter.set({
           id: tournamentId,
           name: 'Tournament Name',
         }).then(() => console.log('done'));
       `,
-    },
-    // Object with function values
-    {
-      code: `
+      },
+      // Object with function values
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -295,10 +298,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           handler: function() { return 'handler'; },
         });
       `,
-    },
-    // Object with Date and other built-in types
-    {
-      code: `
+      },
+      // Object with Date and other built-in types
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -308,10 +311,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           set: new Set(),
         });
       `,
-    },
-    // Object with FieldValue operations
-    {
-      code: `
+      },
+      // Object with FieldValue operations
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -320,10 +323,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           timestamp: FieldValue.serverTimestamp(),
         });
       `,
-    },
-    // Object with comments (should still work)
-    {
-      code: `
+      },
+      // Object with comments (should still work)
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId, // tournament identifier
@@ -331,10 +334,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           active: true, // is active
         });
       `,
-    },
-    // Object with trailing comma
-    {
-      code: `
+      },
+      // Object with trailing comma
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -342,10 +345,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           active: true,
         });
       `,
-    },
-    // Multiple DocSetter instances
-    {
-      code: `
+      },
+      // Multiple DocSetter instances
+      {
+        code: `
         const docSetter1 = new DocSetter<Tournament>(ref1);
         const docSetter2 = new DocSetter<User>(ref2);
         await docSetter1.set({
@@ -357,38 +360,38 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           email: 'user@example.com',
         });
       `,
-    },
-  ],
-  invalid: [
-    // Basic nested object
-    {
-      code: `
+      },
+    ],
+    invalid: [
+      // Basic nested object
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
           roles: { contributor: FieldValue.arrayUnion(contributorId) },
         });
       `,
-      errors: [{ messageId: 'enforceFieldPathSyntax' }],
-      output: `
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
   id: tournamentId,
   'roles.contributor': FieldValue.arrayUnion(contributorId),
 });
       `,
-    },
-    // Multiple nested fields
-    {
-      code: `
+      },
+      // Multiple nested fields
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
           metadata: { createdAt: new Date(), updatedBy: userId },
         });
       `,
-      errors: [{ messageId: 'enforceFieldPathSyntax' }],
-      output: `
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
   id: tournamentId,
@@ -396,10 +399,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
   'metadata.updatedBy': userId,
 });
       `,
-    },
-    // Deeply nested fields
-    {
-      code: `
+      },
+      // Deeply nested fields
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -411,8 +414,8 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           },
         });
       `,
-      errors: [{ messageId: 'enforceFieldPathSyntax' }],
-      output: `
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
   id: tournamentId,
@@ -420,28 +423,28 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
   'settings.display.fontSize': 14,
 });
       `,
-    },
-    // Using updateIfExists method
-    {
-      code: `
+      },
+      // Using updateIfExists method
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.updateIfExists({
           id: tournamentId,
           roles: { contributor: FieldValue.arrayUnion(contributorId) },
         });
       `,
-      errors: [{ messageId: 'enforceFieldPathSyntax' }],
-      output: `
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.updateIfExists({
   id: tournamentId,
   'roles.contributor': FieldValue.arrayUnion(contributorId),
 });
       `,
-    },
-    // Mixed nested and non-nested fields
-    {
-      code: `
+      },
+      // Mixed nested and non-nested fields
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -450,8 +453,8 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           active: true,
         });
       `,
-      errors: [{ messageId: 'enforceFieldPathSyntax' }],
-      output: `
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
   id: tournamentId,
@@ -460,28 +463,28 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
   active: true,
 });
       `,
-    },
-    // Nested object with string literal key
-    {
-      code: `
+      },
+      // Nested object with string literal key
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
           'roles': { contributor: FieldValue.arrayUnion(contributorId) },
         });
       `,
-      errors: [{ messageId: 'enforceFieldPathSyntax' }],
-      output: `
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
   id: tournamentId,
   'roles.contributor': FieldValue.arrayUnion(contributorId),
 });
       `,
-    },
-    // Multiple levels of nesting with mixed types
-    {
-      code: `
+      },
+      // Multiple levels of nesting with mixed types
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -492,8 +495,8 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           },
         });
       `,
-      errors: [{ messageId: 'enforceFieldPathSyntax' }],
-      output: `
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
   id: tournamentId,
@@ -502,10 +505,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
   'config.features.enabled': true,
 });
       `,
-    },
-    // Nested object with FieldValue operations
-    {
-      code: `
+      },
+      // Nested object with FieldValue operations
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -515,8 +518,8 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           },
         });
       `,
-      errors: [{ messageId: 'enforceFieldPathSyntax' }],
-      output: `
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
   id: tournamentId,
@@ -524,10 +527,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
   'stats.lastViewed': FieldValue.serverTimestamp(),
 });
       `,
-    },
-    // Nested object with null/undefined values
-    {
-      code: `
+      },
+      // Nested object with null/undefined values
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -538,8 +541,8 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           },
         });
       `,
-      errors: [{ messageId: 'enforceFieldPathSyntax' }],
-      output: `
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
   id: tournamentId,
@@ -548,10 +551,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
   'metadata.version': '1.0',
 });
       `,
-    },
-    // Nested object with numeric values
-    {
-      code: `
+      },
+      // Nested object with numeric values
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -562,8 +565,8 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           },
         });
       `,
-      errors: [{ messageId: 'enforceFieldPathSyntax' }],
-      output: `
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
   id: tournamentId,
@@ -572,10 +575,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
   'scores.count': 0,
 });
       `,
-    },
-    // Nested object with boolean values
-    {
-      code: `
+      },
+      // Nested object with boolean values
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -586,8 +589,8 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           },
         });
       `,
-      errors: [{ messageId: 'enforceFieldPathSyntax' }],
-      output: `
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
   id: tournamentId,
@@ -596,10 +599,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
   'flags.featured': true,
 });
       `,
-    },
-    // Nested object with array values
-    {
-      code: `
+      },
+      // Nested object with array values
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -609,8 +612,8 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           },
         });
       `,
-      errors: [{ messageId: 'enforceFieldPathSyntax' }],
-      output: `
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
   id: tournamentId,
@@ -618,10 +621,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
   'data.categories': [],
 });
       `,
-    },
-    // Nested object with Date values
-    {
-      code: `
+      },
+      // Nested object with Date values
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -631,8 +634,8 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           },
         });
       `,
-      errors: [{ messageId: 'enforceFieldPathSyntax' }],
-      output: `
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
   id: tournamentId,
@@ -640,10 +643,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
   'timestamps.updated': new Date('2023-01-01'),
 });
       `,
-    },
-    // Very deeply nested object (4 levels)
-    {
-      code: `
+      },
+      // Very deeply nested object (4 levels)
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -656,18 +659,18 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           },
         });
       `,
-      errors: [{ messageId: 'enforceFieldPathSyntax' }],
-      output: `
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
   id: tournamentId,
   'deep.level1.level2.level3': 'value',
 });
       `,
-    },
-    // Multiple separate nested objects
-    {
-      code: `
+      },
+      // Multiple separate nested objects
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -676,8 +679,8 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           stats: { count: 0 },
         });
       `,
-      errors: [{ messageId: 'enforceFieldPathSyntax' }],
-      output: `
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
   id: tournamentId,
@@ -686,28 +689,28 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
   'stats.count': 0,
 });
       `,
-    },
-    // Nested object without id field
-    {
-      code: `
+      },
+      // Nested object without id field
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           name: 'Tournament Name',
           metadata: { version: '1.0' },
         });
       `,
-      errors: [{ messageId: 'enforceFieldPathSyntax' }],
-      output: `
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
   name: 'Tournament Name',
   'metadata.version': '1.0',
 });
       `,
-    },
-    // Nested object with mixed property key types
-    {
-      code: `
+      },
+      // Nested object with mixed property key types
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -718,8 +721,8 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           },
         });
       `,
-      errors: [{ messageId: 'enforceFieldPathSyntax' }],
-      output: `
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
   id: tournamentId,
@@ -728,10 +731,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
   'data.123': 'value3',
 });
       `,
-    },
-    // Nested object with special characters in values
-    {
-      code: `
+      },
+      // Nested object with special characters in values
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -742,8 +745,8 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           },
         });
       `,
-      errors: [{ messageId: 'enforceFieldPathSyntax' }],
-      output: `
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
   id: tournamentId,
@@ -752,36 +755,36 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
   'text.regex': '/pattern/g',
 });
       `,
-    },
-    // Different DocSetter variable names
-    {
-      code: `
+      },
+      // Different DocSetter variable names
+      {
+        code: `
         const setter = new DocSetter<Tournament>(tournamentRef.parent);
         await setter.set({
           id: tournamentId,
           roles: { contributor: FieldValue.arrayUnion(contributorId) },
         });
       `,
-      errors: [{ messageId: 'enforceFieldPathSyntax' }],
-      output: `
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        output: `
         const setter = new DocSetter<Tournament>(tournamentRef.parent);
         await setter.set({
   id: tournamentId,
   'roles.contributor': FieldValue.arrayUnion(contributorId),
 });
       `,
-    },
-    // DocSetter with different generic type
-    {
-      code: `
+      },
+      // DocSetter with different generic type
+      {
+        code: `
         const userSetter = new DocSetter<User>(userRef.parent);
         await userSetter.set({
           id: userId,
           profile: { name: 'John Doe', age: 30 },
         });
       `,
-      errors: [{ messageId: 'enforceFieldPathSyntax' }],
-      output: `
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        output: `
         const userSetter = new DocSetter<User>(userRef.parent);
         await userSetter.set({
   id: userId,
@@ -789,28 +792,28 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
   'profile.age': 30,
 });
       `,
-    },
-    // Promise chain with nested object
-    {
-      code: `
+      },
+      // Promise chain with nested object
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         docSetter.set({
           id: tournamentId,
           metadata: { version: '1.0' },
         }).then(() => console.log('done'));
       `,
-      errors: [{ messageId: 'enforceFieldPathSyntax' }],
-      output: `
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         docSetter.set({
   id: tournamentId,
   'metadata.version': '1.0',
 }).then(() => console.log('done'));
       `,
-    },
-    // Nested object with trailing commas
-    {
-      code: `
+      },
+      // Nested object with trailing commas
+      {
+        code: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
           id: tournamentId,
@@ -820,8 +823,8 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           },
         });
       `,
-      errors: [{ messageId: 'enforceFieldPathSyntax' }],
-      output: `
+        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
   id: tournamentId,
@@ -829,10 +832,10 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
   'metadata.author': 'system',
 });
       `,
-    },
-    // Multiple DocSetter instances with nested objects
-    {
-      code: `
+      },
+      // Multiple DocSetter instances with nested objects
+      {
+        code: `
         const tournamentSetter = new DocSetter<Tournament>(tournamentRef);
         const userSetter = new DocSetter<User>(userRef);
         await tournamentSetter.set({
@@ -844,11 +847,11 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
           profile: { name: 'John' },
         });
       `,
-      errors: [
-        { messageId: 'enforceFieldPathSyntax' },
-        { messageId: 'enforceFieldPathSyntax' }
-      ],
-      output: `
+        errors: [
+          { messageId: 'enforceFieldPathSyntax' },
+          { messageId: 'enforceFieldPathSyntax' },
+        ],
+        output: `
         const tournamentSetter = new DocSetter<Tournament>(tournamentRef);
         const userSetter = new DocSetter<User>(userRef);
         await tournamentSetter.set({
@@ -860,6 +863,7 @@ ruleTesterTs.run('enforce-fieldpath-syntax-in-docsetter', enforceFieldPathSyntax
   'profile.name': 'John',
 });
       `,
-    },
-  ],
-});
+      },
+    ],
+  },
+);

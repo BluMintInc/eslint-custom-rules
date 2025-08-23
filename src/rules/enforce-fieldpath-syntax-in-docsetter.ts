@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'enforceFieldPathSyntax';
@@ -34,16 +34,11 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
 
       const { object, property } = node.callee;
 
-      // Check if the method is set, updateIfExists, or overwrite
+      // Only enforce for set/updateIfExists; skip overwrite (full-document replacement)
       if (
         property.type !== AST_NODE_TYPES.Identifier ||
         !['set', 'updateIfExists'].includes(property.name)
       ) {
-        return false;
-      }
-
-      // Skip overwrite method as it replaces the entire document
-      if (property.name === 'overwrite') {
         return false;
       }
 
@@ -53,6 +48,16 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       }
 
       return false;
+    }
+
+    // Helper: detect spread or computed properties in an object literal
+    function isSpreadOrComputed(
+      prop: TSESTree.Property | TSESTree.SpreadElement,
+    ): boolean {
+      return (
+        prop.type === AST_NODE_TYPES.SpreadElement ||
+        (prop.type === AST_NODE_TYPES.Property && prop.computed === true)
+      );
     }
 
     // Helper function to check if an object has nested objects (excluding arrays)
@@ -86,10 +91,7 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
         // Check if the value is an object (but not an array)
         if (value.type === AST_NODE_TYPES.ObjectExpression) {
           // Skip nested objects that contain spread elements or computed properties
-          const hasSpreadOrComputed = value.properties.some(prop =>
-            prop.type === AST_NODE_TYPES.SpreadElement ||
-            (prop.type === AST_NODE_TYPES.Property && prop.computed)
-          );
+          const hasSpreadOrComputed = value.properties.some(isSpreadOrComputed);
           if (!hasSpreadOrComputed) {
             return true;
           }
@@ -101,7 +103,7 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
     // Helper function to flatten nested objects into FieldPath syntax
     function flattenObject(
       obj: TSESTree.ObjectExpression,
-      sourceCode: any,
+      sourceCode: TSESLint.SourceCode,
       prefix = '',
     ): { [key: string]: string } {
       const result: { [key: string]: string } = {};
@@ -158,10 +160,15 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       return result;
     }
 
+    // Helper to decide if a key needs quoting (contains dot or is not IdentifierName)
+    function needsQuoting(key: string): boolean {
+      return key.includes('.') || !/^(?:[$_A-Za-z][$\w]*)$/u.test(key);
+    }
+
     // Helper function to convert an object to FieldPath syntax
     function convertToFieldPathSyntax(
       node: TSESTree.ObjectExpression,
-      sourceCode: any,
+      sourceCode: TSESLint.SourceCode,
     ): string {
       const idProperty = node.properties.find(
         (prop) =>
@@ -181,8 +188,7 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
 
       // Add the flattened properties
       for (const [key, value] of Object.entries(flattenedProperties)) {
-        // Only add quotes for nested properties (those containing dots)
-        if (key.includes('.')) {
+        if (needsQuoting(key)) {
           result += `  '${key}': ${value},\n`;
         } else {
           result += `  ${key}: ${value},\n`;
