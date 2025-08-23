@@ -131,17 +131,16 @@ function inferVariableInfo(node: TSESTree.VariableDeclarator): {
     return { kind, idText: decl.id.name, namedExportKey: null };
   }
   if (decl.id.type === AST_NODE_TYPES.ObjectPattern) {
-    // Only handle one property destructuring pattern like { Picker }
+    // Only handle a single-property destructure like { Picker }
+    if (decl.id.properties.length !== 1) {
+      return null;
+    }
     const prop = decl.id.properties[0];
     if (prop && prop.type === AST_NODE_TYPES.Property) {
       const key =
-        prop.key.type === AST_NODE_TYPES.Identifier
-          ? prop.key.name
-          : null;
+        prop.key.type === AST_NODE_TYPES.Identifier ? prop.key.name : null;
       const valueName =
-        prop.value.type === AST_NODE_TYPES.Identifier
-          ? prop.value.name
-          : null;
+        prop.value.type === AST_NODE_TYPES.Identifier ? prop.value.name : null;
       if (key && valueName) {
         return { kind, idText: valueName, namedExportKey: key };
       }
@@ -164,7 +163,8 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
     messages: {
       preferNextDynamic:
         'Use Next.js dynamic() instead of useDynamic(import(...)) for component imports',
-      addNextDynamicImport: "Add default import: import dynamic from 'next/dynamic'",
+      addNextDynamicImport:
+        "Add default import: import dynamic from 'next/dynamic'",
       removeUseDynamicImport: 'Remove unused useDynamic import',
     },
   },
@@ -213,7 +213,10 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
                 }
               }
             } else if (child && typeof child === 'object') {
-              if ((child as any).type && typeof (child as any).type === 'string') {
+              if (
+                (child as any).type &&
+                typeof (child as any).type === 'string'
+              ) {
                 checkJsxUsage(child as unknown as TSESTree.Node);
               }
             }
@@ -240,12 +243,22 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
             const programNode = findProgramNode(node)!;
             const hasDynamic = hasNextDynamicImport(programNode);
             if (!hasDynamic) {
-              // Insert at top before first statement
-              const firstNode = programNode.body[0];
-              const indentation = sourceCode.text.match(/^[ \t]*/m)?.[0] || '';
+              // Insert after directive prologue (e.g., "use client")
+              const insertionIndex = programNode.body.findIndex((stmt) => {
+                return !(
+                  stmt.type === AST_NODE_TYPES.ExpressionStatement &&
+                  stmt.expression.type === AST_NODE_TYPES.Literal &&
+                  typeof stmt.expression.value === 'string'
+                );
+              });
+              const target =
+                insertionIndex === -1
+                  ? programNode.body[0]
+                  : programNode.body[insertionIndex];
+              const indentation = '';
               fixes.push(
                 fixer.insertTextBefore(
-                  firstNode,
+                  target,
                   `${indentation}import dynamic from 'next/dynamic';\n`,
                 ),
               );
@@ -270,12 +283,7 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
                   info.namedExportKey,
                   sourceCode,
                 );
-                fixes.push(
-                  fixer.replaceText(
-                    init,
-                    dynamicExpr,
-                  ),
-                );
+                fixes.push(fixer.replaceText(init, dynamicExpr));
               } else if (node.id.type === AST_NODE_TYPES.ObjectPattern) {
                 // Replace the whole declarator with "<localName> = dynamic(...)"
                 const dynamicExpr = buildDynamicExpression(
@@ -291,6 +299,39 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
             // Remove unused useDynamic import if present and no longer referenced
             const useDynamicImport = findUseDynamicImport(programNode);
             if (useDynamicImport) {
+              // Abort removal if there are other useDynamic(import(...)) calls in the file
+              let otherUseDynamicCalls = false;
+              const visit = (n: TSESTree.Node) => {
+                if (otherUseDynamicCalls) return;
+                if (
+                  n.type === AST_NODE_TYPES.CallExpression &&
+                  isUseDynamicCall(n)
+                ) {
+                  if (n !== init) otherUseDynamicCalls = true;
+                }
+                const anyNode = n as unknown as Record<string, unknown>;
+                for (const key of Object.keys(anyNode)) {
+                  if (key === 'parent') continue;
+                  const child = anyNode[key];
+                  if (Array.isArray(child)) {
+                    for (const c of child)
+                      if (c && typeof (c as any).type === 'string')
+                        visit(c as any);
+                  } else if (
+                    child &&
+                    typeof child === 'object' &&
+                    (child as any).type
+                  ) {
+                    visit(child as any);
+                  }
+                }
+              };
+              programNode.body.forEach((b) =>
+                visit(b as unknown as TSESTree.Node),
+              );
+              if (otherUseDynamicCalls) {
+                return fixes; // keep the import; other occurrences still rely on it
+              }
               // If import had only useDynamic, remove entire declaration; else remove just its specifier
               const specifiers = useDynamicImport.specifiers;
               const useDynamicSpecifier = specifiers.find(
@@ -337,8 +378,10 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
                     fixes.push(fixer.replaceText(useDynamicImport, newText));
                   } else {
                     // Otherwise, remove the specifier with proper comma handling
-                    const tokenAfter = sourceCode.getTokenAfter(useDynamicSpecifier);
-                    const tokenBefore = sourceCode.getTokenBefore(useDynamicSpecifier);
+                    const tokenAfter =
+                      sourceCode.getTokenAfter(useDynamicSpecifier);
+                    const tokenBefore =
+                      sourceCode.getTokenBefore(useDynamicSpecifier);
                     if (tokenAfter && tokenAfter.value === ',') {
                       fixes.push(
                         fixer.removeRange([

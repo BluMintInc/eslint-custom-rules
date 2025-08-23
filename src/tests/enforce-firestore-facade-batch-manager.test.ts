@@ -396,7 +396,7 @@ ruleTesterTs.run(
         errors: [
           { messageId: 'noDirectGet' },
           { messageId: 'noDirectUpdate' },
-          { messageId: 'noDirectDelete' }
+          { messageId: 'noDirectDelete' },
         ],
       },
 

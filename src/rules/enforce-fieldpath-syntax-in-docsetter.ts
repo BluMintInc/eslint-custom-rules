@@ -86,9 +86,10 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
         // Check if the value is an object (but not an array)
         if (value.type === AST_NODE_TYPES.ObjectExpression) {
           // Skip nested objects that contain spread elements or computed properties
-          const hasSpreadOrComputed = value.properties.some(prop =>
-            prop.type === AST_NODE_TYPES.SpreadElement ||
-            (prop.type === AST_NODE_TYPES.Property && prop.computed)
+          const hasSpreadOrComputed = value.properties.some(
+            (prop) =>
+              prop.type === AST_NODE_TYPES.SpreadElement ||
+              (prop.type === AST_NODE_TYPES.Property && prop.computed),
           );
           if (!hasSpreadOrComputed) {
             return true;

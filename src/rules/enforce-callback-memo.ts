@@ -55,11 +55,11 @@ export default createRule<[], MessageIds>({
       while (current) {
         if (isFunction(current)) {
           const params: string[] = [];
-          current.params.forEach(param => {
+          current.params.forEach((param) => {
             if (param.type === TSESTree.AST_NODE_TYPES.Identifier) {
               params.push(param.name);
             } else if (param.type === TSESTree.AST_NODE_TYPES.ObjectPattern) {
-              param.properties.forEach(prop => {
+              param.properties.forEach((prop) => {
                 if (
                   prop.type === TSESTree.AST_NODE_TYPES.Property &&
                   prop.key.type === TSESTree.AST_NODE_TYPES.Identifier
@@ -78,8 +78,10 @@ export default createRule<[], MessageIds>({
     }
 
     function referencesParentScopeVariables(
-      functionNode: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
-      parentParams: string[]
+      functionNode:
+        | TSESTree.ArrowFunctionExpression
+        | TSESTree.FunctionExpression,
+      parentParams: string[],
     ): boolean {
       const referencedIdentifiers = new Set<string>();
 
@@ -94,7 +96,7 @@ export default createRule<[], MessageIds>({
           const value = node[key as keyof typeof node];
 
           if (Array.isArray(value)) {
-            value.forEach(child => {
+            value.forEach((child) => {
               if (child && typeof child === 'object' && 'type' in child) {
                 collectIdentifiers(child as TSESTree.Node);
               }
@@ -111,7 +113,7 @@ export default createRule<[], MessageIds>({
       }
 
       // Check if any referenced identifier matches a parent parameter
-      return parentParams.some(param => referencedIdentifiers.has(param));
+      return parentParams.some((param) => referencedIdentifiers.has(param));
     }
 
     function containsFunction(node: TSESTree.Node): boolean {
@@ -139,7 +141,9 @@ export default createRule<[], MessageIds>({
 
       // Check ternary expressions (conditional expressions)
       if (node.type === TSESTree.AST_NODE_TYPES.ConditionalExpression) {
-        return containsFunction(node.consequent) || containsFunction(node.alternate);
+        return (
+          containsFunction(node.consequent) || containsFunction(node.alternate)
+        );
       }
 
       // Check logical expressions (&&, ||)
@@ -198,7 +202,10 @@ export default createRule<[], MessageIds>({
         // Skip reporting if this callback is inside a useCallback and references parent scope variables
         const isInUseCallback = isInsideUseCallback(expression);
         const parentParams = getParentFunctionParams(expression);
-        const referencesParentVars = referencesParentScopeVariables(expression, parentParams);
+        const referencesParentVars = referencesParentScopeVariables(
+          expression,
+          parentParams,
+        );
 
         if (isInUseCallback && referencesParentVars) {
           // Skip reporting - this is a nested callback that needs access to parent scope

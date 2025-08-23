@@ -1,11 +1,14 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { preferFieldPathsInTransforms } from '../rules/prefer-field-paths-in-transforms';
 
-ruleTesterTs.run('prefer-field-paths-in-transforms', preferFieldPathsInTransforms, {
-  valid: [
-    // Not inside transformEach => ignore
-    {
-      code: `
+ruleTesterTs.run(
+  'prefer-field-paths-in-transforms',
+  preferFieldPathsInTransforms,
+  {
+    valid: [
+      // Not inside transformEach => ignore
+      {
+        code: `
         const transform = () => {
           return {
             matchesAggregation: {
@@ -16,24 +19,27 @@ ruleTesterTs.run('prefer-field-paths-in-transforms', preferFieldPathsInTransform
           };
         };
       `,
-    },
-    // Inside transformEach but using flattened keys
-    {
-      code: `
+      },
+      // Inside transformEach but using flattened keys
+      {
+        code:
+          `
         const strategy = {
           transformEach(source) {
             return {
               [
-                ` + "`matchesAggregation.matchPreviews.${source.id}`" + `
+                ` +
+          '`matchesAggregation.matchPreviews.${source.id}`' +
+          `
               ]: source.preview,
             };
           },
         };
       `,
-    },
-    // Inside transformEach but container value is not an object literal (dynamic)
-    {
-      code: `
+      },
+      // Inside transformEach but container value is not an object literal (dynamic)
+      {
+        code: `
         const strategy = {
           transformEach(item) {
             const updates = compute(item);
@@ -43,10 +49,10 @@ ruleTesterTs.run('prefer-field-paths-in-transforms', preferFieldPathsInTransform
           }
         };
       `,
-    },
-    // Already flattened with dot key
-    {
-      code: `
+      },
+      // Already flattened with dot key
+      {
+        code: `
         const strategy = {
           transformEach(x) {
             return {
@@ -55,10 +61,10 @@ ruleTesterTs.run('prefer-field-paths-in-transforms', preferFieldPathsInTransform
           }
         };
       `,
-    },
-    // transformEachVaripotent should be ignored
-    {
-      code: `
+      },
+      // transformEachVaripotent should be ignored
+      {
+        code: `
         const strategy = {
           transformEachVaripotent(doc) {
             return {
@@ -71,10 +77,10 @@ ruleTesterTs.run('prefer-field-paths-in-transforms', preferFieldPathsInTransform
           }
         };
       `,
-    },
-    // File allowed via allowNestedIn option
-    {
-      code: `
+      },
+      // File allowed via allowNestedIn option
+      {
+        code: `
         const strategy = {
           transformEach(doc) {
             return {
@@ -87,12 +93,12 @@ ruleTesterTs.run('prefer-field-paths-in-transforms', preferFieldPathsInTransform
           }
         };
       `,
-      filename: '/app/scripts/migration.ts',
-      options: [{ allowNestedIn: ['**/scripts/**'] }],
-    },
-    // Non-container key should be allowed by default
-    {
-      code: `
+        filename: '/app/scripts/migration.ts',
+        options: [{ allowNestedIn: ['**/scripts/**'] }],
+      },
+      // Non-container key should be allowed by default
+      {
+        code: `
         const strategy = {
           transformEach(doc) {
             return {
@@ -103,10 +109,10 @@ ruleTesterTs.run('prefer-field-paths-in-transforms', preferFieldPathsInTransform
           }
         };
       `,
-    },
-    // Custom containers option narrows scope
-    {
-      code: `
+      },
+      // Custom containers option narrows scope
+      {
+        code: `
         const strategy = {
           transformEach(doc) {
             return {
@@ -117,13 +123,13 @@ ruleTesterTs.run('prefer-field-paths-in-transforms', preferFieldPathsInTransform
           }
         };
       `,
-      options: [{ containers: ['customContainer'] }],
-    },
-  ],
-  invalid: [
-    // Basic nested under matchesAggregation.matchPreviews
-    {
-      code: `
+        options: [{ containers: ['customContainer'] }],
+      },
+    ],
+    invalid: [
+      // Basic nested under matchesAggregation.matchPreviews
+      {
+        code: `
         const strategy = {
           transformEach(doc) {
             return {
@@ -136,11 +142,11 @@ ruleTesterTs.run('prefer-field-paths-in-transforms', preferFieldPathsInTransform
           }
         };
       `,
-      errors: [{ messageId: 'preferFieldPathsInTransforms' }],
-    },
-    // Nested two levels under previews
-    {
-      code: `
+        errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+      },
+      // Nested two levels under previews
+      {
+        code: `
         const strategy = {
           transformEach(x) {
             return {
@@ -153,11 +159,11 @@ ruleTesterTs.run('prefer-field-paths-in-transforms', preferFieldPathsInTransform
           }
         };
       `,
-      errors: [{ messageId: 'preferFieldPathsInTransforms' }],
-    },
-    // Class method form
-    {
-      code: `
+        errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+      },
+      // Class method form
+      {
+        code: `
         class Strategy {
           transformEach(doc) {
             return {
@@ -170,12 +176,12 @@ ruleTesterTs.run('prefer-field-paths-in-transforms', preferFieldPathsInTransform
           }
         }
       `,
-      errors: [{ messageId: 'preferFieldPathsInTransforms' }],
-      options: [{ containers: ['*Aggregation'] }],
-    },
-    // Variable named transformEach
-    {
-      code: `
+        errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+        options: [{ containers: ['*Aggregation'] }],
+      },
+      // Variable named transformEach
+      {
+        code: `
         const transformEach = (doc) => {
           return {
             matchesAggregation: {
@@ -184,11 +190,11 @@ ruleTesterTs.run('prefer-field-paths-in-transforms', preferFieldPathsInTransform
           };
         };
       `,
-      errors: [{ messageId: 'preferFieldPathsInTransforms' }],
-    },
-    // Assignment to obj.transformEach
-    {
-      code: `
+        errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+      },
+      // Assignment to obj.transformEach
+      {
+        code: `
         const obj = {} as any;
         obj.transformEach = function(doc) {
           return {
@@ -200,11 +206,11 @@ ruleTesterTs.run('prefer-field-paths-in-transforms', preferFieldPathsInTransform
           };
         };
       `,
-      errors: [{ messageId: 'preferFieldPathsInTransforms' }],
-    },
-    // Dot-key at top but nested object under container still flagged
-    {
-      code: `
+        errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+      },
+      // Dot-key at top but nested object under container still flagged
+      {
+        code: `
         const strategy = {
           transformEach(d) {
             return {
@@ -216,17 +222,21 @@ ruleTesterTs.run('prefer-field-paths-in-transforms', preferFieldPathsInTransform
           }
         };
       `,
-      errors: [{ messageId: 'preferFieldPathsInTransforms' }],
-    },
-  ],
-});
+        errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+      },
+    ],
+  },
+);
 
 // Additional edge cases to ensure robustness
-ruleTesterTs.run('prefer-field-paths-in-transforms - edge cases', preferFieldPathsInTransforms, {
-  valid: [
-    // Function declaration named differently should not be treated as transformEach
-    {
-      code: `
+ruleTesterTs.run(
+  'prefer-field-paths-in-transforms - edge cases',
+  preferFieldPathsInTransforms,
+  {
+    valid: [
+      // Function declaration named differently should not be treated as transformEach
+      {
+        code: `
         function notTransformEach(doc) {
           return {
             matchesAggregation: {
@@ -235,10 +245,10 @@ ruleTesterTs.run('prefer-field-paths-in-transforms - edge cases', preferFieldPat
           };
         }
       `,
-    },
-    // Function declaration named transformEachVaripotent (skip)
-    {
-      code: `
+      },
+      // Function declaration named transformEachVaripotent (skip)
+      {
+        code: `
         function transformEachVaripotent(doc) {
           return {
             matchesAggregation: {
@@ -247,28 +257,28 @@ ruleTesterTs.run('prefer-field-paths-in-transforms - edge cases', preferFieldPat
           };
         }
       `,
-    },
-    // Class property arrow for transformEachVaripotent (skip)
-    {
-      code: `
+      },
+      // Class property arrow for transformEachVaripotent (skip)
+      {
+        code: `
         class S {
           transformEachVaripotent = (doc) => ({
             matchesAggregation: { matchPreviews: { [doc.id]: doc.preview } }
           });
         }
       `,
-    },
-    // Arrow with implicit object return but top-level is already dot key
-    {
-      code: `
+      },
+      // Arrow with implicit object return but top-level is already dot key
+      {
+        code: `
         const strategy = {
           transformEach: (d) => ({ 'matchesAggregation.leaf': d.v })
         };
       `,
-    },
-    // Object spread at container level with non-object replacement
-    {
-      code: `
+      },
+      // Object spread at container level with non-object replacement
+      {
+        code: `
         const strategy = {
           transformEach(doc) {
             const updates = { ['matchesAggregation.matchPreviews.' + doc.id]: doc.preview };
@@ -279,10 +289,10 @@ ruleTesterTs.run('prefer-field-paths-in-transforms - edge cases', preferFieldPat
           }
         };
       `,
-    },
-    // Container present, but value is a non-object literal (e.g., number) – shouldn't flag
-    {
-      code: `
+      },
+      // Container present, but value is a non-object literal (e.g., number) – shouldn't flag
+      {
+        code: `
         const strategy = {
           transformEach(doc) {
             return {
@@ -291,10 +301,10 @@ ruleTesterTs.run('prefer-field-paths-in-transforms - edge cases', preferFieldPat
           }
         };
       `,
-    },
-    // Nested object under non-matching container pattern should be allowed
-    {
-      code: `
+      },
+      // Nested object under non-matching container pattern should be allowed
+      {
+        code: `
         const strategy = {
           transformEach(doc) {
             return {
@@ -303,11 +313,11 @@ ruleTesterTs.run('prefer-field-paths-in-transforms - edge cases', preferFieldPat
           }
         };
       `,
-      options: [{ containers: ['matchesAggregation'] }],
-    },
-    // Computed top-level key (skip check for name pattern)
-    {
-      code: `
+        options: [{ containers: ['matchesAggregation'] }],
+      },
+      // Computed top-level key (skip check for name pattern)
+      {
+        code: `
         const strategy = {
           transformEach(doc) {
             const key = 'matchesAggregation';
@@ -317,40 +327,43 @@ ruleTesterTs.run('prefer-field-paths-in-transforms - edge cases', preferFieldPat
           }
         };
       `,
-    },
-    // Property definition arrow for transformEach should be detected; this is valid because flattened
-    {
-      code: `
+      },
+      // Property definition arrow for transformEach should be detected; this is valid because flattened
+      {
+        code:
+          `
         class Strategy {
-          transformEach = (doc) => ({ [` + "`matchesAggregation.matchPreviews.${doc.id}`" + `]: doc.preview });
+          transformEach = (doc) => ({ [` +
+          '`matchesAggregation.matchPreviews.${doc.id}`' +
+          `]: doc.preview });
         }
       `,
-    },
-    // AllowNestedIn exact filename
-    {
-      code: `
+      },
+      // AllowNestedIn exact filename
+      {
+        code: `
         const strategy = {
           transformEach(doc) {
             return { matchesAggregation: { matchPreviews: { [doc.id]: doc.preview } } };
           }
         };
       `,
-      filename: '/workspace/scripts/do-migration.ts',
-      options: [{ allowNestedIn: ['/workspace/scripts/**'] }],
-    },
-    // Arrow with implicit return, container value is identifier (not object literal)
-    {
-      code: `
+        filename: '/workspace/scripts/do-migration.ts',
+        options: [{ allowNestedIn: ['/workspace/scripts/**'] }],
+      },
+      // Arrow with implicit return, container value is identifier (not object literal)
+      {
+        code: `
         const strategy = {
           transformEach: (doc) => updates,
         };
       `,
-    },
-  ],
-  invalid: [
-    // Function declaration transformEach with nested container
-    {
-      code: `
+      },
+    ],
+    invalid: [
+      // Function declaration transformEach with nested container
+      {
+        code: `
         function transformEach(doc) {
           return {
             matchesAggregation: {
@@ -359,34 +372,34 @@ ruleTesterTs.run('prefer-field-paths-in-transforms - edge cases', preferFieldPat
           };
         }
       `,
-      errors: [{ messageId: 'preferFieldPathsInTransforms' }],
-    },
-    // Class property arrow transformEach with nested container
-    {
-      code: `
+        errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+      },
+      // Class property arrow transformEach with nested container
+      {
+        code: `
         class Strategy {
           transformEach = (doc) => ({
             previews: { users: { [doc.id]: doc.preview } },
           });
         }
       `,
-      errors: [{ messageId: 'preferFieldPathsInTransforms' }],
-    },
-    // Arrow implicit return with nested container
-    {
-      code: `
+        errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+      },
+      // Arrow implicit return with nested container
+      {
+        code: `
         const strategy = {
           transformEach: (d) => ({
             groupAggregation: { items: { [d.id]: d.item } }
           })
         };
       `,
-      options: [{ containers: ['*Aggregation'] }],
-      errors: [{ messageId: 'preferFieldPathsInTransforms' }],
-    },
-    // Nested at depth 2 under container should flag even with sibling dot key
-    {
-      code: `
+        options: [{ containers: ['*Aggregation'] }],
+        errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+      },
+      // Nested at depth 2 under container should flag even with sibling dot key
+      {
+        code: `
         const strategy = {
           transformEach(x) {
             return {
@@ -396,11 +409,11 @@ ruleTesterTs.run('prefer-field-paths-in-transforms - edge cases', preferFieldPat
           }
         };
       `,
-      errors: [{ messageId: 'preferFieldPathsInTransforms' }],
-    },
-    // Container with empty object at top-level nested then nested child
-    {
-      code: `
+        errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+      },
+      // Container with empty object at top-level nested then nested child
+      {
+        code: `
         const strategy = {
           transformEach(x) {
             return {
@@ -410,7 +423,8 @@ ruleTesterTs.run('prefer-field-paths-in-transforms - edge cases', preferFieldPat
           }
         };
       `,
-      errors: [{ messageId: 'preferFieldPathsInTransforms' }],
-    },
-  ],
-});
+        errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+      },
+    ],
+  },
+);

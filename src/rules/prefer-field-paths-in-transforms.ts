@@ -13,7 +13,9 @@ type MessageIds = 'preferFieldPathsInTransforms';
 // Defaults aim to catch common BluMint aggregation container names
 const DEFAULT_CONTAINERS: string[] = ['*Aggregation', 'previews', '*Previews'];
 
-function isObjectExpression(node: TSESTree.Node | null | undefined): node is TSESTree.ObjectExpression {
+function isObjectExpression(
+  node: TSESTree.Node | null | undefined,
+): node is TSESTree.ObjectExpression {
   return !!node && node.type === AST_NODE_TYPES.ObjectExpression;
 }
 
@@ -24,20 +26,32 @@ function isProperty(node: TSESTree.Node): node is TSESTree.Property {
 function getPropertyName(node: TSESTree.Property): string | null {
   if (node.computed) return null;
   if (node.key.type === AST_NODE_TYPES.Identifier) return node.key.name;
-  if (node.key.type === AST_NODE_TYPES.Literal && typeof node.key.value === 'string') return node.key.value;
+  if (
+    node.key.type === AST_NODE_TYPES.Literal &&
+    typeof node.key.value === 'string'
+  )
+    return node.key.value;
   return null;
 }
 
-function isNamedFunction(fn: TSESTree.FunctionDeclaration | TSESTree.FunctionExpression, name: string): boolean {
+function isNamedFunction(
+  fn: TSESTree.FunctionDeclaration | TSESTree.FunctionExpression,
+  name: string,
+): boolean {
   if (fn.type === AST_NODE_TYPES.FunctionDeclaration) {
-    return !!fn.id && fn.id.type === AST_NODE_TYPES.Identifier && fn.id.name === name;
+    return (
+      !!fn.id && fn.id.type === AST_NODE_TYPES.Identifier && fn.id.name === name
+    );
   }
   // For function expressions, parent determines name association
   return false;
 }
 
 function isTransformEachFunction(
-  fn: TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression | TSESTree.FunctionDeclaration,
+  fn:
+    | TSESTree.FunctionExpression
+    | TSESTree.ArrowFunctionExpression
+    | TSESTree.FunctionDeclaration,
 ): boolean {
   // Handle named function declarations: function transformEach() {}
   if (fn.type === AST_NODE_TYPES.FunctionDeclaration) {
@@ -53,7 +67,8 @@ function isTransformEachFunction(
   if (parent.type === AST_NODE_TYPES.Property) {
     const key = parent.key;
     if (parent.computed) {
-      if (key.type === AST_NODE_TYPES.Literal && key.value === 'transformEach') return true;
+      if (key.type === AST_NODE_TYPES.Literal && key.value === 'transformEach')
+        return true;
       return false;
     }
     if (key.type === AST_NODE_TYPES.Identifier) {
@@ -68,7 +83,8 @@ function isTransformEachFunction(
   if (parent.type === AST_NODE_TYPES.MethodDefinition) {
     const key = parent.key;
     if (parent.computed) {
-      if (key.type === AST_NODE_TYPES.Literal && key.value === 'transformEach') return true;
+      if (key.type === AST_NODE_TYPES.Literal && key.value === 'transformEach')
+        return true;
       return false;
     }
     if (key.type === AST_NODE_TYPES.Identifier) {
@@ -83,10 +99,14 @@ function isTransformEachFunction(
   if (parent.type === AST_NODE_TYPES.PropertyDefinition) {
     const key = parent.key;
     if (parent.computed) {
-      return key.type === AST_NODE_TYPES.Literal && key.value === 'transformEach';
+      return (
+        key.type === AST_NODE_TYPES.Literal && key.value === 'transformEach'
+      );
     }
-    if (key.type === AST_NODE_TYPES.Identifier) return key.name === 'transformEach';
-    if (key.type === AST_NODE_TYPES.Literal) return key.value === 'transformEach';
+    if (key.type === AST_NODE_TYPES.Identifier)
+      return key.name === 'transformEach';
+    if (key.type === AST_NODE_TYPES.Literal)
+      return key.value === 'transformEach';
   }
 
   // Variable assignment: const transformEach = () => { ... }
@@ -101,8 +121,10 @@ function isTransformEachFunction(
     const left = parent.left;
     if (left.type === AST_NODE_TYPES.MemberExpression) {
       const prop = left.property;
-      if (prop.type === AST_NODE_TYPES.Identifier) return prop.name === 'transformEach';
-      if (prop.type === AST_NODE_TYPES.Literal) return prop.value === 'transformEach';
+      if (prop.type === AST_NODE_TYPES.Identifier)
+        return prop.name === 'transformEach';
+      if (prop.type === AST_NODE_TYPES.Literal)
+        return prop.value === 'transformEach';
     } else if (left.type === AST_NODE_TYPES.Identifier) {
       return left.name === 'transformEach';
     }
@@ -112,11 +134,18 @@ function isTransformEachFunction(
 }
 
 function isTransformEachVaripotent(
-  fn: TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression | TSESTree.FunctionDeclaration,
+  fn:
+    | TSESTree.FunctionExpression
+    | TSESTree.ArrowFunctionExpression
+    | TSESTree.FunctionDeclaration,
 ): boolean {
   // Handle named function declarations: function transformEachVaripotent() {}
   if (fn.type === AST_NODE_TYPES.FunctionDeclaration) {
-    return !!fn.id && fn.id.type === AST_NODE_TYPES.Identifier && fn.id.name === 'transformEachVaripotent';
+    return (
+      !!fn.id &&
+      fn.id.type === AST_NODE_TYPES.Identifier &&
+      fn.id.name === 'transformEachVaripotent'
+    );
   }
 
   const parent = fn.parent as TSESTree.Node | null;
@@ -125,40 +154,60 @@ function isTransformEachVaripotent(
   if (parent.type === AST_NODE_TYPES.Property) {
     const key = parent.key;
     if (parent.computed) {
-      return key.type === AST_NODE_TYPES.Literal && key.value === 'transformEachVaripotent';
+      return (
+        key.type === AST_NODE_TYPES.Literal &&
+        key.value === 'transformEachVaripotent'
+      );
     }
-    if (key.type === AST_NODE_TYPES.Identifier) return key.name === 'transformEachVaripotent';
-    if (key.type === AST_NODE_TYPES.Literal) return key.value === 'transformEachVaripotent';
+    if (key.type === AST_NODE_TYPES.Identifier)
+      return key.name === 'transformEachVaripotent';
+    if (key.type === AST_NODE_TYPES.Literal)
+      return key.value === 'transformEachVaripotent';
   }
 
   if (parent.type === AST_NODE_TYPES.MethodDefinition) {
     const key = parent.key;
     if (parent.computed) {
-      return key.type === AST_NODE_TYPES.Literal && key.value === 'transformEachVaripotent';
+      return (
+        key.type === AST_NODE_TYPES.Literal &&
+        key.value === 'transformEachVaripotent'
+      );
     }
-    if (key.type === AST_NODE_TYPES.Identifier) return key.name === 'transformEachVaripotent';
-    if (key.type === AST_NODE_TYPES.Literal) return key.value === 'transformEachVaripotent';
+    if (key.type === AST_NODE_TYPES.Identifier)
+      return key.name === 'transformEachVaripotent';
+    if (key.type === AST_NODE_TYPES.Literal)
+      return key.value === 'transformEachVaripotent';
   }
 
   if (parent.type === AST_NODE_TYPES.PropertyDefinition) {
     const key = parent.key;
     if (parent.computed) {
-      return key.type === AST_NODE_TYPES.Literal && key.value === 'transformEachVaripotent';
+      return (
+        key.type === AST_NODE_TYPES.Literal &&
+        key.value === 'transformEachVaripotent'
+      );
     }
-    if (key.type === AST_NODE_TYPES.Identifier) return key.name === 'transformEachVaripotent';
-    if (key.type === AST_NODE_TYPES.Literal) return key.value === 'transformEachVaripotent';
+    if (key.type === AST_NODE_TYPES.Identifier)
+      return key.name === 'transformEachVaripotent';
+    if (key.type === AST_NODE_TYPES.Literal)
+      return key.value === 'transformEachVaripotent';
   }
 
   if (parent.type === AST_NODE_TYPES.VariableDeclarator) {
-    return parent.id.type === AST_NODE_TYPES.Identifier && parent.id.name === 'transformEachVaripotent';
+    return (
+      parent.id.type === AST_NODE_TYPES.Identifier &&
+      parent.id.name === 'transformEachVaripotent'
+    );
   }
 
   if (parent.type === AST_NODE_TYPES.AssignmentExpression) {
     const left = parent.left;
     if (left.type === AST_NODE_TYPES.MemberExpression) {
       const prop = left.property;
-      if (prop.type === AST_NODE_TYPES.Identifier) return prop.name === 'transformEachVaripotent';
-      if (prop.type === AST_NODE_TYPES.Literal) return prop.value === 'transformEachVaripotent';
+      if (prop.type === AST_NODE_TYPES.Identifier)
+        return prop.name === 'transformEachVaripotent';
+      if (prop.type === AST_NODE_TYPES.Literal)
+        return prop.value === 'transformEachVaripotent';
     } else if (left.type === AST_NODE_TYPES.Identifier) {
       return left.name === 'transformEachVaripotent';
     }
@@ -168,7 +217,9 @@ function isTransformEachVaripotent(
 }
 
 // Determine whether any path two or more levels below a container is created using object literals
-function hasDeeperThanOneLevelUnderContainer(containerObj: TSESTree.ObjectExpression): boolean {
+function hasDeeperThanOneLevelUnderContainer(
+  containerObj: TSESTree.ObjectExpression,
+): boolean {
   for (const prop of containerObj.properties) {
     if (prop.type === AST_NODE_TYPES.SpreadElement) continue;
     if (!isProperty(prop)) continue;
@@ -176,7 +227,9 @@ function hasDeeperThanOneLevelUnderContainer(containerObj: TSESTree.ObjectExpres
 
     // If the child value is itself an object literal with at least one property, we have depth >= 2
     if (isObjectExpression(value)) {
-      const hasAnyProp = value.properties.some((p) => p.type === AST_NODE_TYPES.Property);
+      const hasAnyProp = value.properties.some(
+        (p) => p.type === AST_NODE_TYPES.Property,
+      );
       if (hasAnyProp) return true;
     }
   }
@@ -213,7 +266,10 @@ function analyzeReturnedObject(
   }
 }
 
-export const preferFieldPathsInTransforms = createRule<[RuleOptions?], MessageIds>({
+export const preferFieldPathsInTransforms = createRule<
+  [RuleOptions?],
+  MessageIds
+>({
   name: 'prefer-field-paths-in-transforms',
   meta: {
     type: 'suggestion',
@@ -248,10 +304,14 @@ export const preferFieldPathsInTransforms = createRule<[RuleOptions?], MessageId
   defaultOptions: [{}],
   create(context, [options]) {
     const filename = context.getFilename();
-    const { containers = DEFAULT_CONTAINERS, allowNestedIn = [] } = options || {};
+    const { containers = DEFAULT_CONTAINERS, allowNestedIn = [] } =
+      options || {};
 
     // Skip files explicitly allowed
-    if (allowNestedIn.length > 0 && allowNestedIn.some((glob) => minimatch(filename, glob))) {
+    if (
+      allowNestedIn.length > 0 &&
+      allowNestedIn.some((glob) => minimatch(filename, glob))
+    ) {
       return {};
     }
 
@@ -261,7 +321,8 @@ export const preferFieldPathsInTransforms = createRule<[RuleOptions?], MessageId
 
     function isInTargetTransform(returnNode: TSESTree.Node): boolean {
       // Find nearest function ancestor
-      let current: TSESTree.Node | undefined | null = (returnNode as any).parent as TSESTree.Node | null;
+      let current: TSESTree.Node | undefined | null = (returnNode as any)
+        .parent as TSESTree.Node | null;
       while (current) {
         if (
           current.type === AST_NODE_TYPES.FunctionExpression ||
@@ -288,7 +349,8 @@ export const preferFieldPathsInTransforms = createRule<[RuleOptions?], MessageId
       },
       ArrowFunctionExpression(node) {
         // Handle implicit returns: transformEach: doc => ({ ... })
-        if (!isTransformEachFunction(node) || isTransformEachVaripotent(node)) return;
+        if (!isTransformEachFunction(node) || isTransformEachVaripotent(node))
+          return;
         if (isObjectExpression(node.body)) {
           analyzeReturnedObject(node.body, context, containerNameMatches);
         }

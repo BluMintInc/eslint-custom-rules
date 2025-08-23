@@ -1,20 +1,24 @@
-### prefer-next-dynamic
+# prefer-next-dynamic
 
-**Description**
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
+## Description
 
 Enforce using Next.js `dynamic` for dynamically importing React components instead of custom `useDynamic` hooks. This promotes best practices, performance, and consistency in Next.js apps.
 
 - **Why**: Next.js `dynamic` handles code-splitting, SSR control, and optimizations. Custom wrappers like `useDynamic` are discouraged.
 - **Scope**: Flags only cases where `useDynamic(import(...))` results are used as React components (appear in JSX). Non-component dynamic imports are ignored.
 
-**Recommended**: error  
-**Fixable**: yes
-
----
+## Rule Details
 
 ### Examples
 
 Bad:
+
 ```ts
 import { useDynamic } from '../../hooks/useDynamic';
 
@@ -23,6 +27,7 @@ const App = () => <EmojiPicker/>;
 ```
 
 Good:
+
 ```ts
 import dynamic from 'next/dynamic';
 
@@ -38,6 +43,7 @@ const App = () => <EmojiPicker/>;
 ```
 
 Named export:
+
 ```ts
 import dynamic from 'next/dynamic';
 
@@ -50,8 +56,6 @@ const Picker = dynamic(
 );
 ```
 
----
-
 ### What this rule checks
 
 - Any variable declaration of the form `const X = useDynamic(import('...'))` where `X` is later used as a JSX component is flagged.
@@ -62,6 +66,7 @@ const Picker = dynamic(
 ### Autofix behavior
 
 - Replaces `useDynamic(import('lib'))` with:
+
 ```ts
 const Component = dynamic(
   async () => {
@@ -71,6 +76,7 @@ const Component = dynamic(
   { ssr: false }
 );
 ```
+
 - Adds `import dynamic from 'next/dynamic';` when not present.
 - Removes `useDynamic` import when no longer used.
 
