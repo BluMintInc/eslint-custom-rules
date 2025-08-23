@@ -15,11 +15,11 @@ The rule also reports when a constant’s explicit type annotation refers to a t
 
 ```ts
 const STATUS_EXCEEDING = 'exceeding' as const;
-const STATUS_SUBCEEDING = 'succeeding' as const;
+const STATUS_SUCCEEDING = 'succeeding' as const;
 
-type StatusToCheck = typeof STATUS_EXCEEDING | typeof STATUS_SUBCEEDING;
+type StatusToCheck = typeof STATUS_EXCEEDING | typeof STATUS_SUCCEEDING;
 
-function checkStatus(status: typeof STATUS_EXCEEDING | typeof STATUS_SUBCEEDING) {}
+function checkStatus(status: typeof STATUS_EXCEEDING | typeof STATUS_SUCCEEDING) {}
 ```
 
 ```ts
@@ -33,14 +33,14 @@ type StatusExceeding = 'exceeding'; // declared after the constant
 ```ts
 // Define types
 type StatusExceeding = 'exceeding';
-type StatusSubceeding = 'succeeding';
+type StatusSucceeding = 'succeeding';
 
 // Use types in constants
 const STATUS_EXCEEDING: StatusExceeding = 'exceeding' as const;
-const STATUS_SUBCEEDING: StatusSubceeding = 'succeeding' as const;
+const STATUS_SUCCEEDING: StatusSucceeding = 'succeeding' as const;
 
 // Reuse types
-type StatusToCheck = StatusExceeding | StatusSubceeding;
+type StatusToCheck = StatusExceeding | StatusSucceeding;
 function checkStatus(status: StatusToCheck) {}
 ```
 

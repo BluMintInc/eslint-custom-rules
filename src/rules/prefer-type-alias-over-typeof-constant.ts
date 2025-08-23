@@ -40,6 +40,41 @@ function isConstantLikeInitializer(init: TSESTree.Expression | null | undefined)
 	}
 }
 
+/** Traverse a TSType and collect referenced identifier names (e.g., A, B in A | B). */
+function collectReferencedTypeNames(node: TSESTree.Node, acc = new Set<string>()): Set<string> {
+	switch (node.type) {
+		case AST_NODE_TYPES.TSTypeReference: {
+			if (node.typeName.type === AST_NODE_TYPES.Identifier) {
+				acc.add(node.typeName.name);
+			}
+			if (node.typeParameters) {
+				for (const p of node.typeParameters.params) collectReferencedTypeNames(p, acc);
+			}
+			break;
+		}
+		case AST_NODE_TYPES.TSUnionType:
+		case AST_NODE_TYPES.TSIntersectionType: {
+			for (const t of node.types) collectReferencedTypeNames(t, acc);
+			break;
+		}
+		case AST_NODE_TYPES.TSArrayType: {
+			collectReferencedTypeNames((node as any).elementType, acc);
+			break;
+		}
+		case AST_NODE_TYPES.TSTypeOperator: {
+			collectReferencedTypeNames((node as any).typeAnnotation, acc);
+			break;
+		}
+		case AST_NODE_TYPES.TSTupleType: {
+			for (const e of (node as any).elementTypes) collectReferencedTypeNames(e, acc);
+			break;
+		}
+		default:
+			break;
+	}
+	return acc;
+}
+
 /** Collects module-level consts and type aliases for quick lookup */
 function collectTopLevelContext(program: TSESTree.Program) {
 	const topLevelConstInitByName = new Map<string, TSESTree.Expression | null>();
@@ -82,6 +117,19 @@ function collectTopLevelContext(program: TSESTree.Program) {
 			}
 		} else if (stmt.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
 			typeAliasByName.set(stmt.id.name, stmt);
+		} else if (stmt.type === AST_NODE_TYPES.ExportNamedDeclaration && stmt.declaration) {
+			// Handle exported declarations: export const FOO = ...; export type Foo = ...
+			const decl = stmt.declaration;
+			if (decl.type === AST_NODE_TYPES.VariableDeclaration && decl.kind === 'const') {
+				for (const d of decl.declarations) {
+					if (d.id.type === AST_NODE_TYPES.Identifier) {
+						topLevelConstInitByName.set(d.id.name, (d.init as TSESTree.Expression) ?? null);
+						topLevelConstNodeByName.set(d.id.name, d);
+					}
+				}
+			} else if (decl.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
+				typeAliasByName.set(decl.id.name, decl);
+			}
 		}
 	}
 
@@ -113,16 +161,14 @@ export const preferTypeAliasOverTypeofConstant: TSESLint.RuleModule<
 		schema: [],
 		messages: {
 			preferTypeAlias:
-				'Use a named type alias instead of `typeof {{constName}}` for global constants.',
+				'Use a named type alias instead of `typeof {{constName}}` for global constants. Suggested alias: {{suggested}}.',
 			defineTypeBeforeConstant:
 				'Declare the type alias {{typeName}} before the constant {{constName}}.',
 		},
 	},
 	defaultOptions: [],
 	create(context) {
-		let collected:
-			| ReturnType<typeof collectTopLevelContext>
-			| undefined;
+		let collected: ReturnType<typeof collectTopLevelContext> | undefined;
 
 		return {
 			Program(program) {
@@ -141,14 +187,11 @@ export const preferTypeAliasOverTypeofConstant: TSESLint.RuleModule<
 				const parentDecl = node.parent as TSESTree.VariableDeclaration;
 				if (!parentDecl || parentDecl.kind !== 'const') return;
 				const typeAnn = node.id.typeAnnotation?.typeAnnotation;
-				if (
-					typeAnn &&
-					typeAnn.type === AST_NODE_TYPES.TSTypeReference &&
-					typeAnn.typeName.type === AST_NODE_TYPES.Identifier
-				) {
-					const typeName = typeAnn.typeName.name;
+				if (!typeAnn) return;
+
+				for (const typeName of collectReferencedTypeNames(typeAnn)) {
 					// If imported type, allow any order
-					if (collected.importedTypeNames.has(typeName)) return;
+					if (collected.importedTypeNames.has(typeName)) continue;
 					const typeDecl = collected.typeAliasByName.get(typeName);
 					if (typeDecl && typeDecl.range[0] > parentDecl.range[0]) {
 						context.report({
