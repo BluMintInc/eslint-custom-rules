@@ -2,13 +2,13 @@
 
 Prevent wrapping already memoized callbacks from hooks/contexts with an extra `useCallback`.
 
-### Why
+## Why
 
 - Reduces unnecessary function allocations
 - Avoids type mismatches from wrapper signatures
 - Improves readability by passing stable callbacks directly
 
-### Rule Details
+## Rule Details
 
 Flags cases like:
 
@@ -34,7 +34,7 @@ function SignInButton() {
 }
 ```
 
-### Options
+## Options
 
 ```json
 {
@@ -51,7 +51,7 @@ function SignInButton() {
 - `memoizedHookNames`: additional hook names to treat as returning memoized/stable callbacks.
 - `assumeAllUseAreMemoized` (default `false`): when `true`, treat any callee starting with `use` as memoized/stable. Leave `false` to opt-in only via `memoizedHookNames`.
 
-### Valid
+## Valid
 
 ```tsx
 const { signIn } = useAuthSubmit();
@@ -82,7 +82,7 @@ const { signIn } = useAuthSubmit();
 const onClick = useCallback(() => signIn(username), [signIn, username]);
 ```
 
-### Invalid
+## Invalid
 
 ```tsx
 // ✖ Redundant direct wrapper
@@ -102,15 +102,15 @@ const svc = useSomething();
 const onClick = useCallback(() => svc.handle(), [svc]);
 ```
 
-### Fixes
+## Fixes
 
 Where safe, the rule auto-fixes to pass the memoized function directly (removing `useCallback`).
 
 - If the wrapper simply returns an identifier function (e.g., `signIn`) with no arguments, it auto-fixes to that identifier.
 - If the wrapper targets a member function (e.g., `svc.handle()`), it reports without an auto-fix to avoid breaking `this` binding.
-- If the wrapper supplies any arguments (literals, closures, or derived values), it is treated as non-redundant and not reported unless it is purely parameter passthrough.
+- If the wrapper supplies any arguments (literals, closures, or derived values), it is treated as non-redundant and not reported.
 
-### Edge Cases Handled
+## Edge Cases Handled
 
 - Identifies callbacks destructured from hook results
 - Allows substantial logic in wrappers

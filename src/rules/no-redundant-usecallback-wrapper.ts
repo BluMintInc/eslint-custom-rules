@@ -25,6 +25,17 @@ function isKnownHookCallee(
       knownHooks.has(callee.name)
     );
   }
+  // Support namespaced hook calls, e.g., Hooks.useAuthSubmit()
+  if (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.property.type === AST_NODE_TYPES.Identifier
+  ) {
+    const prop = callee.property.name;
+    return (
+      (assumeAllUseAreMemoized && isHookLikeName(prop)) || knownHooks.has(prop)
+    );
+  }
   return false;
 }
 
@@ -133,6 +144,10 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
             type: 'array',
             items: { type: 'string' },
             default: [],
+          },
+          assumeAllUseAreMemoized: {
+            type: 'boolean',
+            default: false,
           },
         },
         additionalProperties: false,

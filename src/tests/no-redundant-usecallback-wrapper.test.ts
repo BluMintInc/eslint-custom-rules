@@ -113,7 +113,7 @@ function C() {
   return <button onClick={handle}/>;
 }`,
     options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
-      { memoizedHookNames: string[] }
+      { memoizedHookNames: string[] },
     ],
     errors: [{ messageId: 'redundantWrapper' as const }],
     output: `import { useCallback } from 'react';
@@ -136,7 +136,7 @@ function C() {
   return <button onClick={handle}/>;
 }`,
     options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
-      { memoizedHookNames: string[] }
+      { memoizedHookNames: string[] },
     ],
     errors: [{ messageId: 'redundantWrapper' as const }],
     output: `import { useCallback } from 'react';
@@ -162,7 +162,7 @@ function C() {
   return <button onClick={onClick}/>;
 }`,
     options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
-      { memoizedHookNames: string[] }
+      { memoizedHookNames: string[] },
     ],
     errors: [{ messageId: 'redundantWrapper' as const }],
     output: `import { useCallback } from 'react';
@@ -186,7 +186,7 @@ function C() {
   return <button onClick={click}/>;
 }`,
     options: [{ memoizedHookNames: ['useSomething'] }] as [
-      { memoizedHookNames: string[] }
+      { memoizedHookNames: string[] },
     ],
     errors: [{ messageId: 'redundantWrapper' as const }],
   },
@@ -222,7 +222,7 @@ function C(){
   return <button onClick={h}/>;
 }`,
     options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
-      { memoizedHookNames: string[] }
+      { memoizedHookNames: string[] },
     ],
     errors: [{ messageId: 'redundantWrapper' as const }],
   },
@@ -237,7 +237,7 @@ function C() {
   return <button onClick={handle}/>;
 }`,
     options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
-      { memoizedHookNames: string[] }
+      { memoizedHookNames: string[] },
     ],
     errors: [{ messageId: 'redundantWrapper' as const }],
     output: `import React from 'react';
@@ -260,7 +260,7 @@ function C() {
   return <button onClick={handle}/>;
 }`,
     options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
-      { memoizedHookNames: string[] }
+      { memoizedHookNames: string[] },
     ],
     errors: [{ messageId: 'redundantWrapper' as const }],
     output: `import React from 'react';

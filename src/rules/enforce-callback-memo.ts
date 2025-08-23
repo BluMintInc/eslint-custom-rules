@@ -161,6 +161,12 @@ export default createRule<[], MessageIds>({
             if (attr.value.type === AST_NODE_TYPES.JSXExpressionContainer) {
               return containsFunction(attr.value.expression);
             }
+          } else if (
+            attr.type === AST_NODE_TYPES.JSXSpreadAttribute &&
+            attr.argument.type === AST_NODE_TYPES.ObjectExpression
+          ) {
+            // Only inspect literal objects to avoid heavy/static-unsafe analysis on identifiers.
+            return containsFunction(attr.argument);
           }
           return false;
         });
