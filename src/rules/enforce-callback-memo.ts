@@ -1,5 +1,5 @@
 import { createRule } from '../utils/createRule';
-import { TSESTree } from '@typescript-eslint/utils';
+import { TSESTree, AST_NODE_TYPES } from '@typescript-eslint/utils';
 
 type MessageIds = 'enforceCallback' | 'enforceMemo';
 
@@ -26,8 +26,8 @@ export default createRule<[], MessageIds>({
       node: TSESTree.Node,
     ): node is TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression {
       return (
-        node.type === TSESTree.AST_NODE_TYPES.ArrowFunctionExpression ||
-        node.type === TSESTree.AST_NODE_TYPES.FunctionExpression
+        node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+        node.type === AST_NODE_TYPES.FunctionExpression
       );
     }
 
@@ -37,8 +37,8 @@ export default createRule<[], MessageIds>({
       while (current) {
         // Check if we're inside a useCallback call
         if (
-          current.type === TSESTree.AST_NODE_TYPES.CallExpression &&
-          current.callee.type === TSESTree.AST_NODE_TYPES.Identifier &&
+          current.type === AST_NODE_TYPES.CallExpression &&
+          current.callee.type === AST_NODE_TYPES.Identifier &&
           current.callee.name === 'useCallback'
         ) {
           return true;
@@ -49,105 +49,33 @@ export default createRule<[], MessageIds>({
       return false;
     }
 
-    function getParentFunctionParams(node: TSESTree.Node): string[] {
-      let current: TSESTree.Node | undefined = node.parent;
-
-      while (current) {
-        if (isFunction(current)) {
-          const params: string[] = [];
-          current.params.forEach((param) => {
-            if (param.type === TSESTree.AST_NODE_TYPES.Identifier) {
-              params.push(param.name);
-            } else if (param.type === TSESTree.AST_NODE_TYPES.ObjectPattern) {
-              param.properties.forEach((prop) => {
-                if (
-                  prop.type === TSESTree.AST_NODE_TYPES.Property &&
-                  prop.key.type === TSESTree.AST_NODE_TYPES.Identifier
-                ) {
-                  params.push(prop.key.name);
-                }
-              });
-            }
-          });
-          return params;
-        }
-        current = current.parent;
-      }
-
-      return [];
-    }
-
-    function referencesParentScopeVariables(
-      functionNode:
-        | TSESTree.ArrowFunctionExpression
-        | TSESTree.FunctionExpression,
-      parentParams: string[],
-    ): boolean {
-      const referencedIdentifiers = new Set<string>();
-
-      function collectIdentifiers(node: TSESTree.Node) {
-        if (node.type === TSESTree.AST_NODE_TYPES.Identifier) {
-          referencedIdentifiers.add(node.name);
-        }
-
-        // Recursively check child nodes
-        for (const key in node) {
-          if (key === 'parent') continue;
-          const value = node[key as keyof typeof node];
-
-          if (Array.isArray(value)) {
-            value.forEach((child) => {
-              if (child && typeof child === 'object' && 'type' in child) {
-                collectIdentifiers(child as TSESTree.Node);
-              }
-            });
-          } else if (value && typeof value === 'object' && 'type' in value) {
-            collectIdentifiers(value as TSESTree.Node);
-          }
-        }
-      }
-
-      // Collect all identifiers referenced in the function body
-      if (functionNode.body) {
-        collectIdentifiers(functionNode.body);
-      }
-
-      // Check if any referenced identifier matches a parent parameter
-      return parentParams.some((param) => referencedIdentifiers.has(param));
-    }
-
     function containsFunction(node: TSESTree.Node): boolean {
       if (isFunction(node)) {
         return true;
       }
 
-      if (node.type === TSESTree.AST_NODE_TYPES.ObjectExpression) {
+      if (node.type === AST_NODE_TYPES.ObjectExpression) {
         return node.properties.some((prop) => {
-          if (
-            prop.type === TSESTree.AST_NODE_TYPES.Property &&
-            'value' in prop
-          ) {
+          if (prop.type === AST_NODE_TYPES.Property && 'value' in prop) {
             return containsFunction(prop.value);
           }
           return false;
         });
       }
 
-      if (node.type === TSESTree.AST_NODE_TYPES.ArrayExpression) {
+      if (node.type === AST_NODE_TYPES.ArrayExpression) {
         return node.elements.some(
           (element) => element && containsFunction(element),
         );
       }
 
       // Check ternary expressions (conditional expressions)
-      if (node.type === TSESTree.AST_NODE_TYPES.ConditionalExpression) {
-        return (
-          containsFunction(node.consequent) || containsFunction(node.alternate)
-        );
+      if (node.type === AST_NODE_TYPES.ConditionalExpression) {
+        return containsFunction(node.consequent) || containsFunction(node.alternate);
       }
 
       // Check logical expressions (&&, ||)
-      if (node.type === TSESTree.AST_NODE_TYPES.LogicalExpression) {
+      if (node.type === AST_NODE_TYPES.LogicalExpression) {
         return containsFunction(node.left) || containsFunction(node.right);
       }
 
@@ -155,16 +83,15 @@ export default createRule<[], MessageIds>({
     }
 
     function hasJSXWithFunction(node: TSESTree.Node): boolean {
-      if (node.type === TSESTree.AST_NODE_TYPES.JSXElement) {
+      if (node.type === AST_NODE_TYPES.JSXElement) {
         return (node as TSESTree.JSXElement).openingElement.attributes.some(
           (attr) => {
             if (
-              attr.type === TSESTree.AST_NODE_TYPES.JSXAttribute &&
+              attr.type === AST_NODE_TYPES.JSXAttribute &&
               attr.value
             ) {
               if (
-                attr.value.type ===
-                TSESTree.AST_NODE_TYPES.JSXExpressionContainer
+                attr.value.type === AST_NODE_TYPES.JSXExpressionContainer
               ) {
                 return containsFunction(attr.value.expression);
               }
@@ -178,10 +105,7 @@ export default createRule<[], MessageIds>({
     }
 
     function checkJSXAttribute(node: TSESTree.JSXAttribute) {
-      if (
-        !node.value ||
-        node.value.type !== TSESTree.AST_NODE_TYPES.JSXExpressionContainer
-      ) {
+      if (!node.value || node.value.type !== AST_NODE_TYPES.JSXExpressionContainer) {
         return;
       }
 
@@ -189,26 +113,18 @@ export default createRule<[], MessageIds>({
 
       // Skip if the prop is already wrapped in useCallback or useMemo
       if (
-        expression.type === TSESTree.AST_NODE_TYPES.CallExpression &&
-        expression.callee.type === TSESTree.AST_NODE_TYPES.Identifier &&
-        (expression.callee.name === 'useCallback' ||
-          expression.callee.name === 'useMemo')
+        expression.type === AST_NODE_TYPES.CallExpression &&
+        expression.callee.type === AST_NODE_TYPES.Identifier &&
+        (expression.callee.name === 'useCallback' || expression.callee.name === 'useMemo')
       ) {
         return;
       }
 
       // Check for direct inline functions
       if (isFunction(expression)) {
-        // Skip reporting if this callback is inside a useCallback and references parent scope variables
+        // Skip reporting if this callback is inside a useCallback
         const isInUseCallback = isInsideUseCallback(expression);
-        const parentParams = getParentFunctionParams(expression);
-        const referencesParentVars = referencesParentScopeVariables(
-          expression,
-          parentParams,
-        );
-
-        if (isInUseCallback && referencesParentVars) {
-          // Skip reporting - this is a nested callback that needs access to parent scope
+        if (isInUseCallback) {
           return;
         }
 
@@ -221,8 +137,8 @@ export default createRule<[], MessageIds>({
 
       // Check for ternary expressions and logical expressions containing functions
       if (
-        (expression.type === TSESTree.AST_NODE_TYPES.ConditionalExpression ||
-          expression.type === TSESTree.AST_NODE_TYPES.LogicalExpression) &&
+        (expression.type === AST_NODE_TYPES.ConditionalExpression ||
+          expression.type === AST_NODE_TYPES.LogicalExpression) &&
         containsFunction(expression)
       ) {
         context.report({
@@ -234,14 +150,14 @@ export default createRule<[], MessageIds>({
 
       // Check for objects/arrays/JSX elements containing functions
       if (
-        (expression.type === TSESTree.AST_NODE_TYPES.ObjectExpression ||
-          expression.type === TSESTree.AST_NODE_TYPES.ArrayExpression ||
-          expression.type === TSESTree.AST_NODE_TYPES.JSXElement) &&
+        (expression.type === AST_NODE_TYPES.ObjectExpression ||
+          expression.type === AST_NODE_TYPES.ArrayExpression ||
+          expression.type === AST_NODE_TYPES.JSXElement) &&
         (containsFunction(expression) || hasJSXWithFunction(expression))
       ) {
         // Skip reporting if this is a JSX element and we already reported an inline function
         if (
-          expression.type === TSESTree.AST_NODE_TYPES.JSXElement &&
+          expression.type === AST_NODE_TYPES.JSXElement &&
           hasJSXWithFunction(expression)
         ) {
           return;
