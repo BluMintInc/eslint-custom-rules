@@ -4,6 +4,7 @@ import { createRule } from '../utils/createRule';
 type Options = [
   {
     memoizedHookNames?: string[];
+    assumeAllUseAreMemoized?: boolean;
   },
 ];
 
@@ -16,9 +17,13 @@ function isHookLikeName(name: string): boolean {
 function isKnownHookCallee(
   callee: TSESTree.LeftHandSideExpression,
   knownHooks: Set<string>,
+  assumeAllUseAreMemoized: boolean,
 ): boolean {
   if (callee.type === AST_NODE_TYPES.Identifier) {
-    return isHookLikeName(callee.name) || knownHooks.has(callee.name);
+    return (
+      (assumeAllUseAreMemoized && isHookLikeName(callee.name)) ||
+      knownHooks.has(callee.name)
+    );
   }
   return false;
 }
@@ -53,11 +58,26 @@ function getParams(
     if (p.type === AST_NODE_TYPES.Identifier) names.push(p.name);
     else if (p.type === AST_NODE_TYPES.ObjectPattern) {
       for (const prop of p.properties) {
-        if (
-          prop.type === AST_NODE_TYPES.Property &&
-          prop.key.type === AST_NODE_TYPES.Identifier
-        ) {
-          names.push(prop.key.name);
+        if (prop.type === AST_NODE_TYPES.Property) {
+          if (prop.key.type === AST_NODE_TYPES.Identifier) {
+            // Shorthand collects key name
+            if ((prop as any).shorthand) {
+              names.push(prop.key.name);
+            }
+          }
+          // Collect bound identifier names (aliases/defaults)
+          if (prop.value.type === AST_NODE_TYPES.Identifier) {
+            names.push(prop.value.name);
+          } else if (
+            prop.value.type === AST_NODE_TYPES.AssignmentPattern &&
+            prop.value.left.type === AST_NODE_TYPES.Identifier
+          ) {
+            names.push(prop.value.left.name);
+          }
+        } else if (prop.type === AST_NODE_TYPES.RestElement) {
+          if (prop.argument.type === AST_NODE_TYPES.Identifier) {
+            names.push(prop.argument.name);
+          }
         }
       }
     }
@@ -86,74 +106,14 @@ function unwrapChainExpression<T extends TSESTree.Node>(
 ): T | null {
   if (!node) return null;
   if (node.type === AST_NODE_TYPES.ChainExpression) {
-    return (node.expression as unknown) as T;
+    return node.expression as unknown as T;
   }
-  return (node as unknown) as T;
+  return node as unknown as T;
 }
 
-function collectValueIdentifiers(node: TSESTree.Node | null, acc: Set<string>) {
-  if (!node) return;
-  switch (node.type) {
-    case AST_NODE_TYPES.Identifier: {
-      const parent = (node as any).parent;
-      if (
-        parent &&
-        ((parent.type === AST_NODE_TYPES.MemberExpression &&
-          (parent as TSESTree.MemberExpression).property === node &&
-          !(parent as TSESTree.MemberExpression).computed) ||
-          (parent.type === AST_NODE_TYPES.Property &&
-            (parent as TSESTree.Property).key === node))
-      ) {
-        // skip property names
-        return;
-      }
-      acc.add(node.name);
-      return;
-    }
-    case AST_NODE_TYPES.MemberExpression: {
-      // traverse only the object; traverse property only if computed
-      collectValueIdentifiers(node.object as TSESTree.Node, acc);
-      if (node.computed) {
-        collectValueIdentifiers(node.property as TSESTree.Node, acc);
-      }
-      return;
-    }
-    case AST_NODE_TYPES.Property: {
-      collectValueIdentifiers(node.value as TSESTree.Node, acc);
-      return;
-    }
-    default: {
-      for (const key in node) {
-        if (key === 'parent') continue;
-        const value = (node as any)[key];
-        if (Array.isArray(value)) {
-          for (const v of value)
-            if (v && typeof v === 'object' && 'type' in v)
-              collectValueIdentifiers(v as TSESTree.Node, acc);
-        } else if (value && typeof value === 'object' && 'type' in value) {
-          collectValueIdentifiers(value as TSESTree.Node, acc);
-        }
-      }
-    }
-  }
-}
+// intentionally removed: helper for param-only detection not needed after simplification
 
-function depsArrayLength(arg: TSESTree.Node | undefined): number {
-  if (!arg || arg.type !== AST_NODE_TYPES.ArrayExpression) return 0;
-  return arg.elements.filter(Boolean).length;
-}
-
-function argsOnlyUseParams(args: TSESTree.Node[], params: string[]): boolean {
-  const paramSet = new Set(params);
-  const idents = new Set<string>();
-  for (const a of args) {
-    collectValueIdentifiers(a as TSESTree.Node, idents);
-  }
-  for (const name of idents) {
-    if (!paramSet.has(name)) return false;
-  }
-  return idents.size > 0; // at least uses params
-}
+// reserved for potential future options/heuristics
 
 export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
   name: 'no-redundant-usecallback-wrapper',
@@ -187,6 +147,7 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
   create(context) {
     const option = context.options?.[0] ?? {};
     const knownHooks = new Set(option.memoizedHookNames ?? []);
+    const assumeAllUseAreMemoized = option.assumeAllUseAreMemoized === true;
 
     // Track identifiers coming from hook-like calls
     const hookReturnObjects = new Set<string>(); // variables assigned to a hook call result (object or function)
@@ -197,7 +158,8 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
         if (!node.init || node.init.type !== AST_NODE_TYPES.CallExpression)
           return;
         const callee = node.init.callee;
-        if (!isKnownHookCallee(callee, knownHooks)) return;
+        if (!isKnownHookCallee(callee, knownHooks, assumeAllUseAreMemoized))
+          return;
 
         if (node.id.type === AST_NODE_TYPES.Identifier) {
           hookReturnObjects.add(node.id.name);
@@ -222,12 +184,16 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
       },
 
       CallExpression(node) {
-        // Detect useCallback wrappers
-        if (
-          node.callee.type === AST_NODE_TYPES.Identifier &&
-          node.callee.name === 'useCallback' &&
-          node.arguments.length >= 1
-        ) {
+        // Detect useCallback wrappers (including React.useCallback)
+        const calleeNode = node.callee;
+        const isUseCallback =
+          (calleeNode.type === AST_NODE_TYPES.Identifier &&
+            calleeNode.name === 'useCallback') ||
+          (calleeNode.type === AST_NODE_TYPES.MemberExpression &&
+            !calleeNode.computed &&
+            calleeNode.property.type === AST_NODE_TYPES.Identifier &&
+            calleeNode.property.name === 'useCallback');
+        if (isUseCallback && node.arguments.length >= 1) {
           const arg = node.arguments[0];
           const unwrappedArg = unwrapChainExpression<TSESTree.Node>(arg);
 
@@ -245,12 +211,17 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
                 unwrappedArg.object.type === AST_NODE_TYPES.Identifier &&
                 hookReturnObjects.has(unwrappedArg.object.name))
             ) {
-              const replaceText = context.getSourceCode().getText(unwrappedArg);
-              context.report({
-                node,
-                messageId: 'redundantWrapper',
-                fix: (fixer) => fixer.replaceText(node, replaceText),
-              });
+              if (unwrappedArg.type === AST_NODE_TYPES.Identifier) {
+                const replaceText = unwrappedArg.name;
+                context.report({
+                  node,
+                  messageId: 'redundantWrapper',
+                  fix: (fixer) => fixer.replaceText(node, replaceText),
+                });
+              } else {
+                // Member function — report only, no fix to avoid breaking `this`.
+                context.report({ node, messageId: 'redundantWrapper' });
+              }
             }
             return;
           }
@@ -287,28 +258,20 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
                     hookReturnProps.has(callee.name))
                 ) {
                   if (bodyExpr.arguments.length > 0) {
-                    // Allow parameter transformation or multiple deps
-                    if (
-                      argsOnlyUseParams(
-                        (bodyExpr.arguments as unknown) as TSESTree.Node[],
-                        params,
-                      )
-                    ) {
-                      return;
-                    }
-                    const depLen = depsArrayLength(node.arguments[1]);
-                    if (depLen > 1) return;
-                    context.report({ node, messageId: 'redundantWrapper' });
+                    // Passing any arguments: treat as non-redundant (avoid false positives)
+                    return;
                   } else {
-                    const replaceText =
-                      callee.type === AST_NODE_TYPES.MemberExpression
-                        ? context.getSourceCode().getText(callee)
-                        : (callee as TSESTree.Identifier).name;
-                    context.report({
-                      node,
-                      messageId: 'redundantWrapper',
-                      fix: (fixer) => fixer.replaceText(node, replaceText),
-                    });
+                    if (callee.type === AST_NODE_TYPES.Identifier) {
+                      const replaceText = (callee as TSESTree.Identifier).name;
+                      context.report({
+                        node,
+                        messageId: 'redundantWrapper',
+                        fix: (fixer) => fixer.replaceText(node, replaceText),
+                      });
+                    } else {
+                      // Member function — report only, no fix to avoid breaking `this`.
+                      context.report({ node, messageId: 'redundantWrapper' });
+                    }
                   }
                 }
               }
@@ -351,27 +314,26 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
                       hookReturnObjects.has(callee.object.name);
                     if (isHookProp || isHookObjMember) {
                       if ((expr.arguments?.length ?? 0) > 0) {
-                        if (
-                          argsOnlyUseParams(
-                            (expr.arguments as unknown) as TSESTree.Node[],
-                            params,
-                          )
-                        )
-                          return; // allow parameter transformation
-                        const depLen = depsArrayLength(node.arguments[1]);
-                        if (depLen > 1) return; // allow multiple deps
-                        context.report({ node, messageId: 'redundantWrapper' });
+                        // Passing any arguments: treat as non-redundant
+                        return;
                       } else {
-                        // No args: treat preventDefault-only as non-substantial; auto-fix
-                        const replaceText =
-                          callee.type === AST_NODE_TYPES.MemberExpression
-                            ? context.getSourceCode().getText(callee)
-                            : (callee as TSESTree.Identifier).name;
-                        context.report({
-                          node,
-                          messageId: 'redundantWrapper',
-                          fix: (fixer) => fixer.replaceText(node, replaceText),
-                        });
+                        // No args and trivial wrapper
+                        if (callee.type === AST_NODE_TYPES.Identifier) {
+                          const replaceText = (callee as TSESTree.Identifier)
+                            .name;
+                          context.report({
+                            node,
+                            messageId: 'redundantWrapper',
+                            fix: (fixer) =>
+                              fixer.replaceText(node, replaceText),
+                          });
+                        } else {
+                          // Member function — report only, no fix to avoid breaking `this`.
+                          context.report({
+                            node,
+                            messageId: 'redundantWrapper',
+                          });
+                        }
                       }
                     }
                   }
@@ -386,4 +348,3 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
 });
 
 export default noRedundantUseCallbackWrapper;
-

@@ -142,8 +142,7 @@ export default createRule<[], MessageIds>({
       // Check ternary expressions (conditional expressions)
       if (node.type === AST_NODE_TYPES.ConditionalExpression) {
         return (
-          containsFunction(node.consequent) ||
-          containsFunction(node.alternate)
+          containsFunction(node.consequent) || containsFunction(node.alternate)
         );
       }
 
@@ -157,16 +156,14 @@ export default createRule<[], MessageIds>({
 
     function hasJSXWithFunction(node: TSESTree.Node): boolean {
       if (node.type === AST_NODE_TYPES.JSXElement) {
-        return node.openingElement.attributes.some(
-          (attr) => {
-            if (attr.type === AST_NODE_TYPES.JSXAttribute && attr.value) {
-              if (attr.value.type === AST_NODE_TYPES.JSXExpressionContainer) {
-                return containsFunction(attr.value.expression);
-              }
+        return node.openingElement.attributes.some((attr) => {
+          if (attr.type === AST_NODE_TYPES.JSXAttribute && attr.value) {
+            if (attr.value.type === AST_NODE_TYPES.JSXExpressionContainer) {
+              return containsFunction(attr.value.expression);
             }
-            return false;
-          },
-        );
+          }
+          return false;
+        });
       }
 
       return false;

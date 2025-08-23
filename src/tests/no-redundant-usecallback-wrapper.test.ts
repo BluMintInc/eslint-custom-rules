@@ -78,6 +78,27 @@ function C(){
   return <form onSubmit={onSubmit}/>;
 }`,
   },
+  // Member-expression wrapper auto-fix disabled: rule still flags but no output expected here, so treat as valid if not configured hooks
+  {
+    code: `import { useCallback } from 'react';
+import { useSomething } from 'x';
+function C() {
+  const svc = useSomething();
+  const click = useCallback(() => svc.handle(), [svc]);
+  return <button onClick={click}/>;
+}`,
+    // No options => hook not recognized
+  },
+  // Wrapper supplying extra argument should be allowed
+  {
+    code: `import { useCallback } from 'react';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+function C() {
+  const { signIn } = useAuthSubmit();
+  const handle = useCallback(() => signIn('u'), [signIn]);
+  return <button onClick={handle}/>;
+}`,
+  },
 ];
 
 const invalid = [
@@ -91,6 +112,9 @@ function C() {
   const handle = useCallback(signIn, [signIn]);
   return <button onClick={handle}/>;
 }`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] }
+    ],
     errors: [{ messageId: 'redundantWrapper' as const }],
     output: `import { useCallback } from 'react';
 import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
@@ -111,6 +135,9 @@ function C() {
   const handle = useCallback(() => signIn(), [signIn]);
   return <button onClick={handle}/>;
 }`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] }
+    ],
     errors: [{ messageId: 'redundantWrapper' as const }],
     output: `import { useCallback } from 'react';
 import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
@@ -134,6 +161,9 @@ function C() {
   }, [signIn]);
   return <button onClick={onClick}/>;
 }`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] }
+    ],
     errors: [{ messageId: 'redundantWrapper' as const }],
     output: `import { useCallback } from 'react';
 import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
@@ -145,6 +175,7 @@ function C() {
 }`,
   },
   // Member on hook object: const a = useX(); useCallback(() => a.do(), [a])
+  // Recognize hook via options; report only (no fix)
   {
     code: `import { useCallback } from 'react';
 import { useSomething } from 'x';
@@ -154,15 +185,10 @@ function C() {
   const click = useCallback(() => svc.handle(), [svc]);
   return <button onClick={click}/>;
 }`,
+    options: [{ memoizedHookNames: ['useSomething'] }] as [
+      { memoizedHookNames: string[] }
+    ],
     errors: [{ messageId: 'redundantWrapper' as const }],
-    output: `import { useCallback } from 'react';
-import { useSomething } from 'x';
-
-function C() {
-  const svc = useSomething();
-  const click = svc.handle;
-  return <button onClick={click}/>;
-}`,
   },
   // Redundant wrapper with known memoized hook list (custom hook name)
   {
@@ -174,7 +200,7 @@ function C(){
   return <button onClick={handle}/>;
 }`,
     options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
-      { memoizedHookNames: string[] }
+      { memoizedHookNames: string[] },
     ],
     errors: [{ messageId: 'redundantWrapper' as const }],
     output: `import { useCallback } from 'react';
@@ -184,18 +210,6 @@ function C(){
   const handle = signIn;
   return <button onClick={handle}/>;
 }`,
-  },
-  // Wrapper calling memoized with extra args (report, no fix)
-  {
-    code: `import { useCallback } from 'react';
-import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
-
-function C() {
-  const { signIn } = useAuthSubmit();
-  const handle = useCallback(() => signIn('u'), [signIn]);
-  return <button onClick={handle}/>;
-}`,
-    errors: [{ messageId: 'redundantWrapper' as const }],
   },
   // Direct identifier from object destructuring: useCallback(signIn)
   {
@@ -207,36 +221,84 @@ function C(){
   const h = useCallback(ctx.signIn, [ctx.signIn]);
   return <button onClick={h}/>;
 }`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] }
+    ],
     errors: [{ messageId: 'redundantWrapper' as const }],
-    output: `import { useCallback } from 'react';
+  },
+  // React.useCallback, no-arg wrapper: auto-fix
+  {
+    code: `import React from 'react';
 import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
 
-function C(){
-  const ctx = useAuthSubmit();
-  const h = ctx.signIn;
-  return <button onClick={h}/>;
+function C() {
+  const { signIn } = useAuthSubmit();
+  const handle = React.useCallback(() => signIn(), [signIn]);
+  return <button onClick={handle}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] }
+    ],
+    errors: [{ messageId: 'redundantWrapper' as const }],
+    output: `import React from 'react';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const handle = signIn;
+  return <button onClick={handle}/>;
+}`,
+  },
+  // React.useCallback, direct identifier: auto-fix
+  {
+    code: `import React from 'react';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const handle = React.useCallback(signIn, [signIn]);
+  return <button onClick={handle}/>;
+}`,
+    options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
+      { memoizedHookNames: string[] }
+    ],
+    errors: [{ messageId: 'redundantWrapper' as const }],
+    output: `import React from 'react';
+import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+
+function C() {
+  const { signIn } = useAuthSubmit();
+  const handle = signIn;
+  return <button onClick={handle}/>;
 }`,
   },
 ];
 
-ruleTesterJsx.run('no-redundant-usecallback-wrapper (jsx)', noRedundantUseCallbackWrapper, {
-  valid,
-  invalid,
-});
+ruleTesterJsx.run(
+  'no-redundant-usecallback-wrapper (jsx)',
+  noRedundantUseCallbackWrapper,
+  {
+    valid,
+    invalid,
+  },
+);
 
-ruleTesterTs.run('no-redundant-usecallback-wrapper (ts)', noRedundantUseCallbackWrapper, {
-  valid: [
-    // using assertion instead of wrapper
-    {
-      code: `import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
+ruleTesterTs.run(
+  'no-redundant-usecallback-wrapper (ts)',
+  noRedundantUseCallbackWrapper,
+  {
+    valid: [
+      // using assertion instead of wrapper
+      {
+        code: `import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
 type Click = React.MouseEventHandler<HTMLButtonElement>;
 function C(){
   const { signIn } = useAuthSubmit();
   const x = signIn as unknown as Click;
   return x as any;
 }`,
-    },
-  ],
-  invalid: [],
-});
-
+      },
+    ],
+    invalid: [],
+  },
+);
