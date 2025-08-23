@@ -35,6 +35,11 @@ function isConstantLikeInitializer(init: TSESTree.Expression | null | undefined)
 			return true;
 		case AST_NODE_TYPES.TSAsExpression:
 			return isConstantLikeInitializer(init.expression as TSESTree.Expression);
+		case AST_NODE_TYPES.UnaryExpression: {
+			// treat unary constants (e.g., -1) as constant-like; exclude typeof
+			if (init.operator === 'typeof') return false;
+			return isConstantLikeInitializer(init.argument as TSESTree.Expression);
+		}
 		default:
 			return false;
 	}
