@@ -123,6 +123,7 @@ import { preferFieldPathsInTransforms } from './rules/prefer-field-paths-in-tran
 import { noMisleadingBooleanPrefixes } from './rules/no-misleading-boolean-prefixes';
 import { preferUrlToStringOverToJson } from './rules/prefer-url-tostring-over-tojson';
 import { preferNextDynamic } from './rules/prefer-next-dynamic';
+import { default as noRedundantUseCallbackWrapper } from './rules/no-redundant-usecallback-wrapper';
 
 module.exports = {
   meta: {
@@ -273,6 +274,7 @@ module.exports = {
         '@blumintinc/blumint/no-misleading-boolean-prefixes': 'error',
         '@blumintinc/blumint/prefer-url-tostring-over-tojson': 'error',
         '@blumintinc/blumint/prefer-next-dynamic': 'error',
+        '@blumintinc/blumint/no-redundant-usecallback-wrapper': 'error',
       },
     },
   },
@@ -410,5 +412,6 @@ module.exports = {
     'no-misleading-boolean-prefixes': noMisleadingBooleanPrefixes,
     'prefer-url-tostring-over-tojson': preferUrlToStringOverToJson,
     'prefer-next-dynamic': preferNextDynamic,
+    'no-redundant-usecallback-wrapper': noRedundantUseCallbackWrapper,
   },
 };
