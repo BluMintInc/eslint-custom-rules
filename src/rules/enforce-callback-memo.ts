@@ -49,6 +49,76 @@ export default createRule<[], MessageIds>({
       return false;
     }
 
+    function getParentFunctionParams(node: TSESTree.Node): string[] {
+      let current: TSESTree.Node | undefined = node.parent;
+
+      while (current) {
+        if (
+          current.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+          current.type === AST_NODE_TYPES.FunctionExpression
+        ) {
+          const params: string[] = [];
+          current.params.forEach((param) => {
+            if (param.type === AST_NODE_TYPES.Identifier) {
+              params.push(param.name);
+            } else if (param.type === AST_NODE_TYPES.ObjectPattern) {
+              param.properties.forEach((prop) => {
+                if (
+                  prop.type === AST_NODE_TYPES.Property &&
+                  prop.key.type === AST_NODE_TYPES.Identifier
+                ) {
+                  params.push(prop.key.name);
+                }
+              });
+            }
+          });
+          return params;
+        }
+        current = current.parent;
+      }
+
+      return [];
+    }
+
+    function referencesParentScopeVariables(
+      functionNode:
+        | TSESTree.ArrowFunctionExpression
+        | TSESTree.FunctionExpression,
+      parentParams: string[],
+    ): boolean {
+      const referencedIdentifiers = new Set<string>();
+
+      function collectIdentifiers(node: TSESTree.Node) {
+        if (node.type === AST_NODE_TYPES.Identifier) {
+          referencedIdentifiers.add(node.name);
+        }
+
+        // Recursively check child nodes
+        for (const key in node) {
+          if (key === 'parent') continue;
+          const value = (node as any)[key];
+
+          if (Array.isArray(value)) {
+            value.forEach((child) => {
+              if (child && typeof child === 'object' && 'type' in child) {
+                collectIdentifiers(child as TSESTree.Node);
+              }
+            });
+          } else if (value && typeof value === 'object' && 'type' in value) {
+            collectIdentifiers(value as TSESTree.Node);
+          }
+        }
+      }
+
+      // Collect all identifiers referenced in the function body
+      if (functionNode.body) {
+        collectIdentifiers(functionNode.body);
+      }
+
+      // Check if any referenced identifier matches a parent parameter
+      return parentParams.some((param) => referencedIdentifiers.has(param));
+    }
+
     function containsFunction(node: TSESTree.Node): boolean {
       if (isFunction(node)) {
         return true;
@@ -71,7 +141,10 @@ export default createRule<[], MessageIds>({
 
       // Check ternary expressions (conditional expressions)
       if (node.type === AST_NODE_TYPES.ConditionalExpression) {
-        return containsFunction(node.consequent) || containsFunction(node.alternate);
+        return (
+          containsFunction(node.consequent) ||
+          containsFunction(node.alternate)
+        );
       }
 
       // Check logical expressions (&&, ||)
@@ -84,15 +157,10 @@ export default createRule<[], MessageIds>({
 
     function hasJSXWithFunction(node: TSESTree.Node): boolean {
       if (node.type === AST_NODE_TYPES.JSXElement) {
-        return (node as TSESTree.JSXElement).openingElement.attributes.some(
+        return node.openingElement.attributes.some(
           (attr) => {
-            if (
-              attr.type === AST_NODE_TYPES.JSXAttribute &&
-              attr.value
-            ) {
-              if (
-                attr.value.type === AST_NODE_TYPES.JSXExpressionContainer
-              ) {
+            if (attr.type === AST_NODE_TYPES.JSXAttribute && attr.value) {
+              if (attr.value.type === AST_NODE_TYPES.JSXExpressionContainer) {
                 return containsFunction(attr.value.expression);
               }
             }
@@ -105,7 +173,10 @@ export default createRule<[], MessageIds>({
     }
 
     function checkJSXAttribute(node: TSESTree.JSXAttribute) {
-      if (!node.value || node.value.type !== AST_NODE_TYPES.JSXExpressionContainer) {
+      if (
+        !node.value ||
+        node.value.type !== AST_NODE_TYPES.JSXExpressionContainer
+      ) {
         return;
       }
 
@@ -115,16 +186,24 @@ export default createRule<[], MessageIds>({
       if (
         expression.type === AST_NODE_TYPES.CallExpression &&
         expression.callee.type === AST_NODE_TYPES.Identifier &&
-        (expression.callee.name === 'useCallback' || expression.callee.name === 'useMemo')
+        (expression.callee.name === 'useCallback' ||
+          expression.callee.name === 'useMemo')
       ) {
         return;
       }
 
       // Check for direct inline functions
       if (isFunction(expression)) {
-        // Skip reporting if this callback is inside a useCallback
+        // Skip reporting if this callback is inside a useCallback and references parent scope variables
         const isInUseCallback = isInsideUseCallback(expression);
-        if (isInUseCallback) {
+        const parentParams = getParentFunctionParams(expression);
+        const referencesParentVars = referencesParentScopeVariables(
+          expression,
+          parentParams,
+        );
+
+        if (isInUseCallback && referencesParentVars) {
+          // Skip reporting - this is a nested callback that needs access to parent scope
           return;
         }
 

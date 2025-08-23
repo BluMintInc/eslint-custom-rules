@@ -50,7 +50,7 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       return false;
     }
 
-    // Helper function to check if an object has nested objects (excluding arrays)
+    // Helper: detect spread or computed properties in an object literal
     function isSpreadOrComputed(
       prop: TSESTree.Property | TSESTree.SpreadElement,
     ): boolean {
@@ -160,6 +160,11 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       return result;
     }
 
+    // Helper to decide if a key needs quoting (contains dot or is not IdentifierName)
+    function needsQuoting(key: string): boolean {
+      return key.includes('.') || !/^(?:[$_A-Za-z][$\w]*)$/u.test(key);
+    }
+
     // Helper function to convert an object to FieldPath syntax
     function convertToFieldPathSyntax(
       node: TSESTree.ObjectExpression,
@@ -183,8 +188,7 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
 
       // Add the flattened properties
       for (const [key, value] of Object.entries(flattenedProperties)) {
-        // Only add quotes for nested properties (those containing dots)
-        if (key.includes('.')) {
+        if (needsQuoting(key)) {
           result += `  '${key}': ${value},\n`;
         } else {
           result += `  ${key}: ${value},\n`;
