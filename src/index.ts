@@ -124,6 +124,7 @@ import { noMisleadingBooleanPrefixes } from './rules/no-misleading-boolean-prefi
 import { preferUrlToStringOverToJson } from './rules/prefer-url-tostring-over-tojson';
 import { preferNextDynamic } from './rules/prefer-next-dynamic';
 import { default as noRedundantUseCallbackWrapper } from './rules/no-redundant-usecallback-wrapper';
+import { noArrayLengthInDeps } from './rules/no-array-length-in-deps';
 
 module.exports = {
   meta: {
@@ -275,6 +276,7 @@ module.exports = {
         '@blumintinc/blumint/prefer-url-tostring-over-tojson': 'error',
         '@blumintinc/blumint/prefer-next-dynamic': 'error',
         '@blumintinc/blumint/no-redundant-usecallback-wrapper': 'error',
+        '@blumintinc/blumint/no-array-length-in-deps': 'error',
       },
     },
   },
@@ -413,5 +415,6 @@ module.exports = {
     'prefer-url-tostring-over-tojson': preferUrlToStringOverToJson,
     'prefer-next-dynamic': preferNextDynamic,
     'no-redundant-usecallback-wrapper': noRedundantUseCallbackWrapper,
+    'no-array-length-in-deps': noArrayLengthInDeps,
   },
 };
