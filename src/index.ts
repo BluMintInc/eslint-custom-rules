@@ -125,6 +125,7 @@ import { preferUrlToStringOverToJson } from './rules/prefer-url-tostring-over-to
 import { preferNextDynamic } from './rules/prefer-next-dynamic';
 import { default as noRedundantUseCallbackWrapper } from './rules/no-redundant-usecallback-wrapper';
 import { noArrayLengthInDeps } from './rules/no-array-length-in-deps';
+import { preferUseDeepCompareMemo } from './rules/prefer-use-deep-compare-memo';
 
 module.exports = {
   meta: {
@@ -237,13 +238,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-props-naming-consistency': 'error',
         '@blumintinc/blumint/prefer-global-router-state-key': 'error',
         '@blumintinc/blumint/prefer-usememo-over-useeffect-usestate': 'error',
-        '@blumintinc/blumint/enforce-dynamic-imports': [
-          'error',
-          {
-            libraries: ['@stream-io/video-react-sdk', 'some-heavy-lib*'],
-            allowImportType: true,
-          },
-        ],
+        '@blumintinc/blumint/enforce-dynamic-imports': 'error',
         '@blumintinc/blumint/ensure-pointer-events-none': 'error',
         '@blumintinc/blumint/no-object-values-on-strings': 'error',
         '@blumintinc/blumint/no-unnecessary-destructuring': 'error',
@@ -252,17 +247,13 @@ module.exports = {
         '@blumintinc/blumint/omit-index-html': 'error',
         '@blumintinc/blumint/enforce-id-capitalization': 'error',
         '@blumintinc/blumint/no-unused-usestate': 'error',
-        '@blumintinc/blumint/enforce-dynamic-file-naming': 'error',
         '@blumintinc/blumint/prefer-usecallback-over-usememo-for-functions':
           'error',
-        '@blumintinc/blumint/no-margin-properties': 'warn',
+        '@blumintinc/blumint/no-margin-properties': 'error',
         '@blumintinc/blumint/enforce-boolean-naming-prefixes': 'error',
         '@blumintinc/blumint/enforce-fieldpath-syntax-in-docsetter': 'error',
         '@blumintinc/blumint/no-undefined-null-passthrough': 'error',
         '@blumintinc/blumint/prefer-nullish-coalescing-boolean-props': 'error',
-        '@blumintinc/blumint/no-restricted-properties-fix': 'error',
-        '@blumintinc/blumint/no-excessive-parent-chain': 'error',
-        '@blumintinc/blumint/prefer-document-flattening': 'error',
         '@blumintinc/blumint/no-overridable-method-calls-in-constructor':
           'error',
         '@blumintinc/blumint/use-latest-callback': 'error',
@@ -277,6 +268,7 @@ module.exports = {
         '@blumintinc/blumint/prefer-next-dynamic': 'error',
         '@blumintinc/blumint/no-redundant-usecallback-wrapper': 'error',
         '@blumintinc/blumint/no-array-length-in-deps': 'error',
+        '@blumintinc/blumint/prefer-use-deep-compare-memo': 'error',
       },
     },
   },
@@ -416,5 +408,6 @@ module.exports = {
     'prefer-next-dynamic': preferNextDynamic,
     'no-redundant-usecallback-wrapper': noRedundantUseCallbackWrapper,
     'no-array-length-in-deps': noArrayLengthInDeps,
+    'prefer-use-deep-compare-memo': preferUseDeepCompareMemo,
   },
 };
