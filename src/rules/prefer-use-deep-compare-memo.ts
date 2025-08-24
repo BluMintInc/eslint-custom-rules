@@ -49,7 +49,9 @@ function containsJsx(node: TSESTree.Node | null | undefined): boolean {
       if (!child) continue;
       if (Array.isArray(child)) {
         for (const c of child) {
-          if (c && typeof c === 'object' && 'type' in c) stack.push(c as TSESTree.Node);
+          if (c && typeof c === 'object' && 'type' in c) {
+            stack.push(c as TSESTree.Node);
+          }
         }
       } else if (typeof child === 'object' && 'type' in child) {
         stack.push(child as TSESTree.Node);
@@ -59,9 +61,7 @@ function containsJsx(node: TSESTree.Node | null | undefined): boolean {
   return false;
 }
 
-function isNonPrimitiveWithoutTypes(
-  expr: TSESTree.Expression,
-): boolean {
+function isNonPrimitiveWithoutTypes(expr: TSESTree.Expression): boolean {
   switch (expr.type) {
     case AST_NODE_TYPES.ArrayExpression:
     case AST_NODE_TYPES.ObjectExpression:
@@ -152,7 +152,9 @@ function collectMemoizedIdentifiers(
       if (!child) continue;
       if (Array.isArray(child)) {
         for (const c of child) {
-          if (c && typeof c === 'object' && 'type' in c) visit(c as TSESTree.Node);
+          if (c && typeof c === 'object' && 'type' in c) {
+            visit(c as TSESTree.Node);
+          }
         }
       } else if (typeof child === 'object' && 'type' in child) {
         visit(child as TSESTree.Node);
@@ -206,6 +208,28 @@ function ensureDeepCompareImportFixes(
   }
 
   return fixes;
+}
+
+function isImportedIdentifier(
+  context: TSESLint.RuleContext<'preferUseDeepCompareMemo', []>,
+  name: string,
+): boolean {
+  const sourceCode = context.getSourceCode();
+  const program = sourceCode.ast;
+  for (const node of program.body) {
+    if (node.type === AST_NODE_TYPES.ImportDeclaration) {
+      for (const spec of node.specifiers) {
+        if (
+          spec.type === AST_NODE_TYPES.ImportSpecifier ||
+          spec.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
+          spec.type === AST_NODE_TYPES.ImportNamespaceSpecifier
+        ) {
+          if (spec.local.name === name) return true;
+        }
+      }
+    }
+  }
+  return false;
 }
 
 function identifierUsedAsObjectOrFunction(
@@ -272,7 +296,9 @@ function identifierUsedAsObjectOrFunction(
       if (!child) continue;
       if (Array.isArray(child)) {
         for (const c of child) {
-          if (c && typeof c === 'object' && 'type' in c) stack.push(c as TSESTree.Node);
+          if (c && typeof c === 'object' && 'type' in c) {
+            stack.push(c as TSESTree.Node);
+          }
         }
       } else if (typeof child === 'object' && 'type' in child) {
         stack.push(child as TSESTree.Node);
@@ -346,7 +372,10 @@ export const preferUseDeepCompareMemo = createRule<[], MessageIds>({
 
           // Identifier-specific heuristic: consider non-primitive only if used as object or function in callback
           if (!isNonPrimitive && expr.type === AST_NODE_TYPES.Identifier) {
-            if (
+            // Imported identifiers are treated as stable
+            if (isImportedIdentifier(context, expr.name)) {
+              isNonPrimitive = false;
+            } else if (
               identifierUsedAsObjectOrFunction(callback, expr.name) &&
               !isIdentifierMemoizedAbove(expr.name, memoizedIds)
             ) {
