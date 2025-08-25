@@ -97,7 +97,9 @@ export const enforceFirebaseImports = createRule({
                 const destructureParts = namedSpecifiers.map((spec) => {
                   const imported = spec.imported.name;
                   const local = spec.local.name;
-                  return imported === local ? imported : `${imported}: ${local}`;
+                  return imported === local
+                    ? imported
+                    : `${imported}: ${local}`;
                 });
                 statements.push(
                   `const { ${destructureParts.join(', ')} } = ${nsLocal};`,
@@ -128,7 +130,9 @@ export const enforceFirebaseImports = createRule({
 
             if (destructureParts.length > 0) {
               statements.push(
-                `const { ${destructureParts.join(', ')} } = await import('${importPath}');`,
+                `const { ${destructureParts.join(
+                  ', ',
+                )} } = await import('${importPath}');`,
               );
               return fixer.replaceText(node, statements.join(' '));
             }

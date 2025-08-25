@@ -31,7 +31,10 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
     }
 
     function isComponentOrHookFunction(
-      fn: TSESTree.FunctionDeclaration | TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
+      fn:
+        | TSESTree.FunctionDeclaration
+        | TSESTree.ArrowFunctionExpression
+        | TSESTree.FunctionExpression,
     ): boolean {
       if (fn.type === AST_NODE_TYPES.FunctionDeclaration) {
         const n = fn.id?.name ?? '';
@@ -49,7 +52,9 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
       return false;
     }
 
-    function getEnclosingFunction(node: TSESTree.Node):
+    function getEnclosingFunction(
+      node: TSESTree.Node,
+    ):
       | TSESTree.FunctionDeclaration
       | TSESTree.ArrowFunctionExpression
       | TSESTree.FunctionExpression
@@ -69,7 +74,10 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
     }
 
     function toUpperSnakeCase(name: string): string {
-      return name.replace(/([A-Z])/g, '_$1').toUpperCase().replace(/^_/, '');
+      return name
+        .replace(/([A-Z])/g, '_$1')
+        .toUpperCase()
+        .replace(/^_/, '');
     }
 
     function collectAssignmentDefaultsFromPattern(
@@ -114,11 +122,12 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
                 }
               } else if (
                 value &&
-                (value as TSESTree.ObjectPattern | TSESTree.ArrayPattern).type &&
-                ((value as TSESTree.ObjectPattern | TSESTree.ArrayPattern).type ===
-                  AST_NODE_TYPES.ObjectPattern ||
-                  (value as TSESTree.ObjectPattern | TSESTree.ArrayPattern).type ===
-                    AST_NODE_TYPES.ArrayPattern)
+                (value as TSESTree.ObjectPattern | TSESTree.ArrayPattern)
+                  .type &&
+                ((value as TSESTree.ObjectPattern | TSESTree.ArrayPattern)
+                  .type === AST_NODE_TYPES.ObjectPattern ||
+                  (value as TSESTree.ObjectPattern | TSESTree.ArrayPattern)
+                    .type === AST_NODE_TYPES.ArrayPattern)
               ) {
                 visitPattern(
                   value as TSESTree.ObjectPattern | TSESTree.ArrayPattern,
@@ -153,17 +162,25 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
     }
 
     function hasIdentifiers(node: TSESTree.Expression | null): boolean {
-      return ASTHelpers.declarationIncludesIdentifier(node as unknown as TSESTree.Node);
+      return ASTHelpers.declarationIncludesIdentifier(
+        node as unknown as TSESTree.Node,
+      );
     }
 
-    function alreadyHasConst(program: TSESTree.Program, constName: string): boolean {
+    function alreadyHasConst(
+      program: TSESTree.Program,
+      constName: string,
+    ): boolean {
       for (const stmt of program.body) {
         if (
           stmt.type === AST_NODE_TYPES.VariableDeclaration &&
           stmt.kind === 'const'
         ) {
           for (const d of stmt.declarations) {
-            if (d.id.type === AST_NODE_TYPES.Identifier && d.id.name === constName) {
+            if (
+              d.id.type === AST_NODE_TYPES.Identifier &&
+              d.id.name === constName
+            ) {
               return true;
             }
           }
@@ -172,8 +189,13 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
       return false;
     }
 
-    function buildConstDeclarationLine(constName: string, initText: string): string {
-      const needsAsConst = /^(?:true|false|\d|\[|\{|[`'"])/.test(initText) && !/\bas const\b/.test(initText);
+    function buildConstDeclarationLine(
+      constName: string,
+      initText: string,
+    ): string {
+      const needsAsConst =
+        /^(?:true|false|\d|\[|\{|[`'"])/.test(initText) &&
+        !/\bas const\b/.test(initText);
       const initializer = needsAsConst ? `${initText} as const` : initText;
       return `const ${constName} = ${initializer};`;
     }
@@ -301,21 +323,23 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
               if (imports.length > 0) {
                 const lastImport = imports[imports.length - 1];
                 const rest = declLines.slice(1).join('\n');
-                const block = `\n${declLines[0]}\n\n${rest ? rest + '\n\n' : ''}`;
+                const block = `\n${declLines[0]}\n\n${
+                  rest ? rest + '\n\n' : ''
+                }`;
 
                 // Remove whitespace after the last import up to the next node (if any)
                 const body = program.body;
                 const idx = body.findIndex((s) => s === lastImport);
                 const next = body[idx + 1];
                 if (next) {
-                  fixes.unshift(fixer.replaceTextRange([lastImport.range[1], next.range[0]], ''));
+                  fixes.unshift(
+                    fixer.replaceTextRange(
+                      [lastImport.range[1], next.range[0]],
+                      '',
+                    ),
+                  );
                 }
-                fixes.unshift(
-                  fixer.insertTextAfter(
-                    lastImport,
-                    block,
-                  ),
-                );
+                fixes.unshift(fixer.insertTextAfter(lastImport, block));
               } else {
                 // No imports. If a directive prologue exists (e.g., 'use client'), insert after it; otherwise insert at file start.
                 const body = program.body;
@@ -333,7 +357,9 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
                   }
                 }
                 const rest = declLines.slice(1).join('\n');
-                const block = `\n${declLines[0]}\n\n${rest ? rest + '\n\n' : ''}`;
+                const block = `\n${declLines[0]}\n\n${
+                  rest ? rest + '\n\n' : ''
+                }`;
                 if (directiveEnd > 0) {
                   const lastDirective = body[directiveEnd - 1];
                   const nextNode = body[directiveEnd];

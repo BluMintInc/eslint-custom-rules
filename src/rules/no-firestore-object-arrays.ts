@@ -15,10 +15,76 @@ const PRIMITIVE_TYPES = new Set([
 ]);
 
 const isInFirestoreTypesDirectory = (filename: string): boolean => {
-  return filename.includes('functions/src/types/firestore');
+  const normalized = filename.replace(/\\/g, '/');
+  // Match typical monorepo layouts
+  return normalized.includes('/types/firestore');
+};
+
+const getRightmostIdentifierName = (
+  name: TSESTree.TSQualifiedName | TSESTree.Identifier,
+): string => {
+  if (name.type === AST_NODE_TYPES.Identifier) {
+    return name.name;
+  }
+  return getRightmostIdentifierName(name.right);
+};
+
+const isArrayGenericReference = (node: TSESTree.TSTypeReference): boolean => {
+  return (
+    node.typeName.type === AST_NODE_TYPES.Identifier &&
+    (node.typeName.name === 'Array' || node.typeName.name === 'ReadonlyArray')
+  );
+};
+
+const isParenthesizedType = (
+  node: TSESTree.TypeNode,
+): node is TSESTree.TypeNode & { typeAnnotation: TSESTree.TypeNode } => {
+  // Use enum if available; fall back to string check for compatibility
+  return (
+    (AST_NODE_TYPES as any).TSParenthesizedType
+      ? node.type === (AST_NODE_TYPES as any).TSParenthesizedType
+      : (node as unknown as { type?: string }).type === 'TSParenthesizedType'
+  );
+};
+
+const unwrapArrayElementType = (node: TSESTree.TypeNode): TSESTree.TypeNode => {
+  let current: TSESTree.TypeNode = node;
+  // Fixpoint loop: peel wrappers in any order until none remain
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    if (
+      current.type === AST_NODE_TYPES.TSTypeOperator &&
+      (current as TSESTree.TSTypeOperator).operator === 'readonly'
+    ) {
+      current = (current as TSESTree.TSTypeOperator).typeAnnotation as TSESTree.TypeNode;
+      continue;
+    }
+    if (isParenthesizedType(current)) {
+      current = (current as unknown as { typeAnnotation: TSESTree.TypeNode }).typeAnnotation;
+      continue;
+    }
+    if (current.type === AST_NODE_TYPES.TSArrayType) {
+      current = (current as TSESTree.TSArrayType).elementType;
+      continue;
+    }
+    if (
+      current.type === AST_NODE_TYPES.TSTypeReference &&
+      isArrayGenericReference(current as TSESTree.TSTypeReference) &&
+      (current as TSESTree.TSTypeReference).typeParameters &&
+      (current as TSESTree.TSTypeReference).typeParameters!.params.length > 0
+    ) {
+      current = (current as TSESTree.TSTypeReference).typeParameters!.params[0];
+      continue;
+    }
+    break;
+  }
+  return current;
 };
 
 const isObjectType = (node: TSESTree.TypeNode): boolean => {
+  if (isParenthesizedType(node)) {
+    return isObjectType((node as unknown as { typeAnnotation: TSESTree.TypeNode }).typeAnnotation);
+  }
   switch (node.type) {
     case AST_NODE_TYPES.TSTypeLiteral:
       return true;
@@ -26,20 +92,58 @@ const isObjectType = (node: TSESTree.TypeNode): boolean => {
       if (node.typeName.type === AST_NODE_TYPES.Identifier) {
         const typeName = node.typeName.name;
         return !PRIMITIVE_TYPES.has(typeName);
-      } else if (node.typeName.type === AST_NODE_TYPES.TSQualifiedName) {
-        // Handle namespace.Type cases
-        return true;
+      }
+      if (node.typeName.type === AST_NODE_TYPES.TSQualifiedName) {
+        const rightMost = getRightmostIdentifierName(node.typeName);
+        return !PRIMITIVE_TYPES.has(rightMost);
       }
       return true;
     case AST_NODE_TYPES.TSIntersectionType:
     case AST_NODE_TYPES.TSUnionType:
       return node.types.some(isObjectType);
     case AST_NODE_TYPES.TSMappedType:
-    case AST_NODE_TYPES.TSIndexedAccessType:
       return true;
+    case AST_NODE_TYPES.TSIndexedAccessType:
+      // Treat indexed access as object-like to align with existing tests
+      return true;
+    case AST_NODE_TYPES.TSTypeOperator:
+      if ((node as TSESTree.TSTypeOperator).operator === 'readonly') {
+        return isObjectType((node as TSESTree.TSTypeOperator).typeAnnotation as TSESTree.TypeNode);
+      }
+      return false;
+    case AST_NODE_TYPES.TSAnyKeyword:
+    case AST_NODE_TYPES.TSUnknownKeyword:
+      return false;
     default:
       return false;
   }
+};
+
+const isImmediatelyWrappedByArraySyntax = (node: TSESTree.Node): boolean => {
+  let parent = (node as TSESTree.Node).parent as TSESTree.Node | undefined;
+  // Skip non-semantic wrappers (readonly/parens)
+  while (parent) {
+    if (
+      parent.type === AST_NODE_TYPES.TSTypeOperator &&
+      (parent as TSESTree.TSTypeOperator).operator === 'readonly'
+    ) {
+      parent = (parent as unknown as { parent?: TSESTree.Node }).parent as TSESTree.Node | undefined;
+      continue;
+    }
+    if ((AST_NODE_TYPES as any).TSParenthesizedType && parent.type === (AST_NODE_TYPES as any).TSParenthesizedType) {
+      parent = (parent as unknown as { parent?: TSESTree.Node }).parent as TSESTree.Node | undefined;
+      continue;
+    }
+    break;
+  }
+  if (!parent) return false;
+  if (parent.type === AST_NODE_TYPES.TSArrayType) return true;
+  if (
+    parent.type === AST_NODE_TYPES.TSTypeReference &&
+    isArrayGenericReference(parent as TSESTree.TSTypeReference)
+  )
+    return true;
+  return false;
 };
 
 export const noFirestoreObjectArrays = createRule<[], MessageIds>({
@@ -48,13 +152,22 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
     type: 'problem',
     docs: {
       description:
-        'Disallow arrays of objects in Firestore type definitions to optimize performance and avoid unnecessary fetches',
+        'Disallow arrays of object types in Firestore models. Prefer Record maps keyed by id with an index field, or subcollections/arrays of IDs.',
       recommended: 'warn',
+      requiresTypeChecking: false,
     },
     schema: [],
     messages: {
       noObjectArrays:
-        'Arrays of objects are not recommended in Firestore. Use subcollections, arrays of IDs, or structured maps (Record<string, T>) instead.',
+        `Arrays of objects are problematic in Firestore:
+- Not queryable
+- Destructive updates
+- Concurrency risks
+
+Prefer:
+- Record<string, T> keyed by id with an index field for order (use toMap/toArr)
+- Subcollections
+- Arrays of IDs where appropriate`,
     },
   },
   defaultOptions: [],
@@ -65,7 +178,11 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
 
     return {
       TSArrayType(node) {
-        if (isObjectType(node.elementType)) {
+        if (isImmediatelyWrappedByArraySyntax(node)) {
+          return;
+        }
+        const base = unwrapArrayElementType(node.elementType);
+        if (isObjectType(base)) {
           context.report({
             node,
             messageId: 'noObjectArrays',
@@ -73,14 +190,19 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
         }
       },
       TSTypeReference(node) {
-        // Handle Array<T> and ReadonlyArray<T> syntax
-        const typeName = (node.typeName as TSESTree.Identifier).name;
         if (
-          (typeName === 'Array' || typeName === 'ReadonlyArray') &&
+          node.typeName.type === AST_NODE_TYPES.Identifier &&
+          (node.typeName.name === 'Array' ||
+            node.typeName.name === 'ReadonlyArray') &&
           node.typeParameters
         ) {
-          const elementType = node.typeParameters.params[0];
-          if (isObjectType(elementType)) {
+          if (isImmediatelyWrappedByArraySyntax(node)) {
+            return;
+          }
+          const elementType = node.typeParameters.params[0] ?? null;
+          if (!elementType) return;
+          const base = unwrapArrayElementType(elementType);
+          if (isObjectType(base)) {
             context.report({
               node,
               messageId: 'noObjectArrays',

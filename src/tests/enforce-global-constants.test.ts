@@ -181,9 +181,7 @@ export const useQuerySelector = <TElement extends HTMLElement>({
   return { root, observeOptions, debounceMs, shouldStopOnFound };
 };
       `,
-      errors: [
-        { messageId: 'extractDefaultToGlobalConstant' },
-      ],
+      errors: [{ messageId: 'extractDefaultToGlobalConstant' }],
     },
     // Extract array default and primitive defaults
     {
