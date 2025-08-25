@@ -1,7 +1,5 @@
 # Disallow certain properties on certain objects, with special handling for Object.keys() and Object.values() (`@blumintinc/blumint/no-restricted-properties-fix`)
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
 <!-- end auto-generated rule header -->
 
 > Disallow certain properties on certain objects, with special handling for Object.keys() and Object.values()

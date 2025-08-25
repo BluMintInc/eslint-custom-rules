@@ -1,4 +1,4 @@
-# Disallow arrays of objects in Firestore type definitions to optimize performance and avoid unnecessary fetches (`@blumintinc/blumint/no-firestore-object-arrays`)
+# Disallow arrays of object types in Firestore models. Prefer Record maps keyed by id with an index field, or subcollections/arrays of IDs (`@blumintinc/blumint/no-firestore-object-arrays`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
