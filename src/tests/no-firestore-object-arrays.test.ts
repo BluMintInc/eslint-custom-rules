@@ -75,6 +75,46 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
       `,
       filename: 'functions/src/types/firestore/data.ts',
     },
+    // Test: Allow namespaced primitive arrays (e.g., firebase.firestore.Timestamp)
+    {
+      code: `
+        declare namespace firebase { namespace firestore { export class Timestamp {} } }
+        export type T = { ts: firebase.firestore.Timestamp[] };
+      `,
+      filename: 'functions/src/types/firestore/ts.ts',
+    },
+    // Test: Allow nullable primitive arrays and unknown/any
+    {
+      code: `
+        export type T = {
+          maybeNumbers: (number | null | undefined)[];
+          anyValues: any[];
+          unknownValues: unknown[];
+          neverValues: never[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/misc.ts',
+    },
+    // Test: Allow tuples of primitives (still primitive container)
+    {
+      code: `
+        export type T = {
+          coords: Array<[number, number]>;
+          flags: (readonly [boolean, string])[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/tuples.ts',
+    },
+    // Test: Allow arrays of primitive arrays (e.g., string[][])
+    {
+      code: `
+        export type T = {
+          matrix: string[][];
+          lists: Array<Array<number>>;
+        };
+      `,
+      filename: 'functions/src/types/firestore/primitives-nested.ts',
+    },
   ],
   invalid: [
     // Test: Basic object array
@@ -196,6 +236,24 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
         { messageId: 'noObjectArrays' },
         { messageId: 'noObjectArrays' },
       ],
+    },
+    // Test: Arrays of arrays of objects (still invalid)
+    {
+      code: `
+        type Obj = { x: number };
+        export type T = { grid: Obj[][] };
+      `,
+      filename: 'functions/src/types/firestore/array-of-arrays.ts',
+      errors: [{ messageId: 'noObjectArrays' }],
+    },
+    // Test: Namespaced object arrays should still be invalid
+    {
+      code: `
+        declare namespace models { export interface User { id: string } }
+        export type T = { users: models.User[] };
+      `,
+      filename: 'functions/src/types/firestore/ns-objects.ts',
+      errors: [{ messageId: 'noObjectArrays' }],
     },
   ],
 });
