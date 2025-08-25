@@ -364,7 +364,10 @@ function checkAll(prevData, newData, previousMetadataRef, newMetadata) {
 
   return isDataEqual && isMetadataEqual;
 }`,
-      errors: [{ messageId: 'useFastDeepEqual' }, { messageId: 'useFastDeepEqual' }],
+      errors: [
+        { messageId: 'useFastDeepEqual' },
+        { messageId: 'useFastDeepEqual' },
+      ],
       output: `import diff from 'microdiff';
 import isEqual from 'fast-deep-equal';
 

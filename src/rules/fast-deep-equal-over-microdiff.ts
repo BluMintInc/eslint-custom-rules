@@ -33,77 +33,79 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
     /**
      * Resolve an identifier to its variable and return the initializer CallExpression if it's a microdiff call.
      */
-function findVariableInScopeChain(
-  identifier: TSESTree.Identifier,
-): any | undefined {
-  let scope: any = context.getScope();
-  let variable: any | undefined;
-  while (scope && !variable) {
-    variable = scope.variables.find((v: any) => v.name === identifier.name);
-    scope = scope.upper;
-  }
-  return variable;
-}
-
-function resolveIdentifierToMicrodiffCall(
-  identifier: TSESTree.Identifier,
-): TSESTree.CallExpression | undefined {
-  // Look for a reference in the current scope chain
-  const variable = findVariableInScopeChain(identifier);
-  if (!variable) return undefined;
-  const defNode = variable.defs[0]?.node as any;
-  if (!defNode) return undefined;
-
-  // Variable declarator with initializer call
-  if (
-    defNode.type === AST_NODE_TYPES.VariableDeclarator &&
-    defNode.init &&
-    defNode.init.type === AST_NODE_TYPES.CallExpression &&
-    defNode.init.callee &&
-    defNode.init.callee.type === AST_NODE_TYPES.Identifier &&
-    defNode.init.callee.name === microdiffImportName
-  ) {
-    return defNode.init as TSESTree.CallExpression;
-  }
-  return undefined;
-}
-
-/**
- * Determine if the given variable is used only for `.length` property accesses.
- * If there is any non-length usage (e.g., indexing, iteration, method calls), return false.
- */
-function isVariableOnlyUsedForLength(identifier: TSESTree.Identifier): boolean {
-  // Walk up scope chain to find a reference for this identifier
-  const variable = findVariableInScopeChain(identifier);
-  if (!variable) return false;
-
-  // All references must be strictly of the form <id>.length, except the variable's own declaration
-  return variable.references.every((reference: any) => {
-    const idNode = reference.identifier as TSESTree.Identifier;
-    const parent = idNode.parent as TSESTree.Node | undefined;
-    if (!parent) return false;
-
-    // Allow the declaration id (not considered a read)
-    if (
-      parent.type === AST_NODE_TYPES.VariableDeclarator &&
-      (parent.id as any) === idNode
-    ) {
-      return true;
+    function findVariableInScopeChain(
+      identifier: TSESTree.Identifier,
+    ): any | undefined {
+      let scope: any = context.getScope();
+      let variable: any | undefined;
+      while (scope && !variable) {
+        variable = scope.variables.find((v: any) => v.name === identifier.name);
+        scope = scope.upper;
+      }
+      return variable;
     }
 
-    // Accept only the specific pattern: Identifier used as object in MemberExpression with property `length`
-    if (
-      parent.type === AST_NODE_TYPES.MemberExpression &&
-      parent.object === idNode &&
-      !parent.computed &&
-      parent.property.type === AST_NODE_TYPES.Identifier &&
-      parent.property.name === 'length'
-    ) {
-      return true;
+    function resolveIdentifierToMicrodiffCall(
+      identifier: TSESTree.Identifier,
+    ): TSESTree.CallExpression | undefined {
+      // Look for a reference in the current scope chain
+      const variable = findVariableInScopeChain(identifier);
+      if (!variable) return undefined;
+      const defNode = variable.defs[0]?.node as any;
+      if (!defNode) return undefined;
+
+      // Variable declarator with initializer call
+      if (
+        defNode.type === AST_NODE_TYPES.VariableDeclarator &&
+        defNode.init &&
+        defNode.init.type === AST_NODE_TYPES.CallExpression &&
+        defNode.init.callee &&
+        defNode.init.callee.type === AST_NODE_TYPES.Identifier &&
+        defNode.init.callee.name === microdiffImportName
+      ) {
+        return defNode.init as TSESTree.CallExpression;
+      }
+      return undefined;
     }
-    return false;
-  });
-}
+
+    /**
+     * Determine if the given variable is used only for `.length` property accesses.
+     * If there is any non-length usage (e.g., indexing, iteration, method calls), return false.
+     */
+    function isVariableOnlyUsedForLength(
+      identifier: TSESTree.Identifier,
+    ): boolean {
+      // Walk up scope chain to find a reference for this identifier
+      const variable = findVariableInScopeChain(identifier);
+      if (!variable) return false;
+
+      // All references must be strictly of the form <id>.length, except the variable's own declaration
+      return variable.references.every((reference: any) => {
+        const idNode = reference.identifier as TSESTree.Identifier;
+        const parent = idNode.parent as TSESTree.Node | undefined;
+        if (!parent) return false;
+
+        // Allow the declaration id (not considered a read)
+        if (
+          parent.type === AST_NODE_TYPES.VariableDeclarator &&
+          (parent.id as any) === idNode
+        ) {
+          return true;
+        }
+
+        // Accept only the specific pattern: Identifier used as object in MemberExpression with property `length`
+        if (
+          parent.type === AST_NODE_TYPES.MemberExpression &&
+          parent.object === idNode &&
+          !parent.computed &&
+          parent.property.type === AST_NODE_TYPES.Identifier &&
+          parent.property.name === 'length'
+        ) {
+          return true;
+        }
+        return false;
+      });
+    }
 
     /**
      * If a MemberExpression is `<something>.length`, returns the underlying microdiff call if applicable.
@@ -220,15 +222,23 @@ function isVariableOnlyUsedForLength(identifier: TSESTree.Identifier): boolean {
       if (node.type === AST_NODE_TYPES.BinaryExpression) {
         const left = node.left;
         const right = node.right;
-        const isLengthMember = (n: TSESTree.Node): n is TSESTree.MemberExpression =>
+        const isLengthMember = (
+          n: TSESTree.Node,
+        ): n is TSESTree.MemberExpression =>
           n.type === AST_NODE_TYPES.MemberExpression &&
           !n.computed &&
           n.property.type === AST_NODE_TYPES.Identifier &&
           n.property.name === 'length';
-        if (isLengthMember(left) && left.object.type === AST_NODE_TYPES.Identifier) {
+        if (
+          isLengthMember(left) &&
+          left.object.type === AST_NODE_TYPES.Identifier
+        ) {
           return left.object;
         }
-        if (isLengthMember(right) && right.object.type === AST_NODE_TYPES.Identifier) {
+        if (
+          isLengthMember(right) &&
+          right.object.type === AST_NODE_TYPES.Identifier
+        ) {
           return right.object;
         }
       }
@@ -322,7 +332,8 @@ function isVariableOnlyUsedForLength(identifier: TSESTree.Identifier): boolean {
           );
           scope = scope.upper;
         }
-        const defNode = variable?.defs?.[0]?.node as TSESTree.VariableDeclarator;
+        const defNode = variable?.defs?.[0]
+          ?.node as TSESTree.VariableDeclarator;
         if (
           defNode &&
           defNode.type === AST_NODE_TYPES.VariableDeclarator &&

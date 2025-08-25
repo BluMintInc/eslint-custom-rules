@@ -15,7 +15,8 @@ const PRIMITIVE_TYPES = new Set([
 ]);
 
 const isInFirestoreTypesDirectory = (filename: string): boolean => {
-  return filename.includes('functions/src/types/firestore');
+  const normalized = filename.replace(/\\/g, '/');
+  return normalized.includes('functions/src/types/firestore');
 };
 
 const getRightmostIdentifierName = (
@@ -35,11 +36,33 @@ const isArrayGenericReference = (node: TSESTree.TSTypeReference): boolean => {
   );
 };
 
+const isParenthesizedType = (
+  node: TSESTree.TypeNode,
+): node is TSESTree.TypeNode & {
+  type: 'TSParenthesizedType';
+  typeAnnotation: TSESTree.TypeNode;
+} => {
+  return (node as unknown as { type?: string }).type === 'TSParenthesizedType';
+};
+
 const unwrapArrayElementType = (node: TSESTree.TypeNode): TSESTree.TypeNode => {
   let current: TSESTree.TypeNode = node;
   // Unwrap TS[] syntax
   while (current.type === AST_NODE_TYPES.TSArrayType) {
     current = (current as TSESTree.TSArrayType).elementType;
+  }
+  // Unwrap readonly T[] (TSTypeOperator with operator 'readonly')
+  while (
+    current.type === AST_NODE_TYPES.TSTypeOperator &&
+    (current as TSESTree.TSTypeOperator).operator === 'readonly'
+  ) {
+    current = (current as TSESTree.TSTypeOperator)
+      .typeAnnotation as TSESTree.TypeNode;
+  }
+  // Unwrap parenthesized types: (T)
+  while (isParenthesizedType(current)) {
+    current = (current as unknown as { typeAnnotation: TSESTree.TypeNode })
+      .typeAnnotation;
   }
   // Unwrap Array<T>/ReadonlyArray<T> syntax recursively
   while (
@@ -52,6 +75,17 @@ const unwrapArrayElementType = (node: TSESTree.TypeNode): TSESTree.TypeNode => {
     while (current.type === AST_NODE_TYPES.TSArrayType) {
       current = (current as TSESTree.TSArrayType).elementType;
     }
+    while (
+      current.type === AST_NODE_TYPES.TSTypeOperator &&
+      (current as TSESTree.TSTypeOperator).operator === 'readonly'
+    ) {
+      current = (current as TSESTree.TSTypeOperator)
+        .typeAnnotation as TSESTree.TypeNode;
+    }
+    while (isParenthesizedType(current)) {
+      current = (current as unknown as { typeAnnotation: TSESTree.TypeNode })
+        .typeAnnotation;
+    }
   }
   return current;
 };
@@ -60,6 +94,16 @@ const isObjectType = (node: TSESTree.TypeNode): boolean => {
   switch (node.type) {
     case AST_NODE_TYPES.TSTypeLiteral:
       return true;
+    default:
+      if (isParenthesizedType(node)) {
+        return isObjectType(
+          (node as unknown as { typeAnnotation: TSESTree.TypeNode })
+            .typeAnnotation,
+        );
+      }
+      break;
+  }
+  switch (node.type) {
     case AST_NODE_TYPES.TSTypeReference:
       if (node.typeName.type === AST_NODE_TYPES.Identifier) {
         const typeName = node.typeName.name;
@@ -76,6 +120,10 @@ const isObjectType = (node: TSESTree.TypeNode): boolean => {
     case AST_NODE_TYPES.TSMappedType:
     case AST_NODE_TYPES.TSIndexedAccessType:
       return true;
+    case AST_NODE_TYPES.TSAnyKeyword:
+    case AST_NODE_TYPES.TSUnknownKeyword:
+      // Be conservative: not enough information to assert object-ness
+      return false;
     default:
       return false;
   }
@@ -87,6 +135,12 @@ const isImmediatelyWrappedByArraySyntax = (node: TSESTree.Node): boolean => {
     | undefined;
   if (!parent) return false;
   if (parent.type === AST_NODE_TYPES.TSArrayType) {
+    return true;
+  }
+  if (
+    parent.type === AST_NODE_TYPES.TSTypeOperator &&
+    (parent as TSESTree.TSTypeOperator).operator === 'readonly'
+  ) {
     return true;
   }
   if (
@@ -137,14 +191,16 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
         // Handle Array<T> and ReadonlyArray<T> syntax (and nested arrays through unwrap)
         if (
           node.typeName.type === AST_NODE_TYPES.Identifier &&
-          (node.typeName.name === 'Array' || node.typeName.name === 'ReadonlyArray') &&
+          (node.typeName.name === 'Array' ||
+            node.typeName.name === 'ReadonlyArray') &&
           node.typeParameters
         ) {
           // Avoid duplicate reports only for direct array-of-array wrappers
           if (isImmediatelyWrappedByArraySyntax(node)) {
             return;
           }
-          const elementType = node.typeParameters.params[0];
+          const elementType = node.typeParameters.params[0] ?? null;
+          if (!elementType) return;
           const base = unwrapArrayElementType(elementType);
           if (isObjectType(base)) {
             context.report({

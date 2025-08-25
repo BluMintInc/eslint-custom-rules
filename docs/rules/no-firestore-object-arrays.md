@@ -4,32 +4,34 @@
 
 <!-- end auto-generated rule header -->
 
-### What this rule enforces
+## What this rule enforces
 
 - Disallows arrays whose element type is an object (including type literals, interfaces, unions/intersections of objects, mapped types, and indexed access types) in Firestore model definitions located under `functions/src/types/firestore`.
-- Allows arrays of Firestore primitives such as `string`, `number`, `boolean`, `Date`, `Timestamp`, `GeoPoint`, including qualified names like `firebase.firestore.Timestamp`.
+- Allows arrays of Firestore primitives such as `string`, `number`, `boolean`, `Date`, `Timestamp`, `GeoPoint`, including qualified names such as `firebase.firestore.Timestamp`.
 - Allows map-like structures such as `Record<string, T>` or `{ [key: string]: T }`.
 
-### Why arrays of objects are problematic in Firestore
+## Why arrays of objects are problematic in Firestore
 
 - Arrays of objects are not queryable in Firestore.
 - Updating a single item requires rewriting the entire array (destructive updates).
-- Concurrency issues arise when multiple writers update the array simultaneously.
+- They are prone to write conflicts when multiple clients update items concurrently.
 
-### Recommended alternative: Array-Map Conversion system
+## Recommended alternative: Array-to-Map conversion pattern
 
-To preserve order while maintaining queryability and safe updates, store collections as maps keyed by id and add an `index` field to each value. Convert between arrays and maps at the edges of your system.
+To preserve order while maintaining queryability and safe updates, store collections as maps keyed by id and add an `index` field to each value. Convert between arrays and maps at your domain boundaries.
 
-- Convert arrays to maps: `toMap<T extends Identifiable>(arr)` adds an `index` field to each item.
-- Convert maps back to arrays: `toArr<T extends Indexed>(map)` sorts by `index` and returns an ordered array.
+- Convert arrays to maps with `toMap<T extends Identifiable>(arr)`, which adds an `index` field to each item.
+- Convert maps back to arrays with `toArr<T extends Indexed>(map)`, which sorts by `index` and returns an ordered array.
 
-This pattern enables:
-- Querying and updating individual items without rewriting the entire collection.
-- Preserving the original order via the `index` field.
+This pattern enables you to:
 
-### Examples
+- Query and update individual items without rewriting the entire collection.
+- Preserve the original order via the `index` field.
 
-Valid (maps and primitive arrays):
+## Examples
+
+Valid (maps and primitive arrays). These shapes are accepted by the rule:
+
 ```ts
 export type UserProfile = {
   id: string;
@@ -40,26 +42,27 @@ export type UserProfile = {
 };
 ```
 
-Invalid (arrays of objects):
+Invalid (arrays of objects). Replace with a map keyed by id and include `index`:
+
 ```ts
 export type UserProfile = {
   friends: { id: string; name: string }[]; // ❌ Use Record<string, Friend & { index: number }>
 };
 ```
 
-### When not to use maps
+## When not to use maps
 
-- Primitive arrays (e.g., `string[]`, `number[]`) are fine to store as arrays in Firestore.
-- If you need per-item documents or cross-document queries, consider subcollections instead of embedding.
+- Primitive arrays (e.g., `string[]`, `number[]`) are appropriate to store as arrays in Firestore.
+- If you need per-item documents or cross-document queries, use subcollections instead of embedding.
 
-### Common pitfalls
+## Common pitfalls
 
-- Arrays of object unions/intersections are still arrays of objects and thus disallowed.
-- Readonly arrays (`ReadonlyArray<T>`) of objects are disallowed.
+- Arrays of object unions/intersections are still arrays of objects and are disallowed.
+- Readonly forms are also disallowed: `ReadonlyArray<T>` or `readonly T[]` when `T` is an object.
 - Namespaced primitives are allowed: `firebase.firestore.Timestamp[]` is valid.
-- Arrays of arrays of primitives are allowed (`string[][]`), but arrays of arrays of objects are disallowed (`{x:number}[][]`).
+- Nested arrays follow the same rule: `string[][]` is allowed; `{ x: number }[][]` is disallowed.
 
-### Error message
+## Error message
 
 When this rule flags a violation, it provides actionable guidance:
 
