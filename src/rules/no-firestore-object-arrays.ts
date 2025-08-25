@@ -159,7 +159,15 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
     schema: [],
     messages: {
       noObjectArrays:
-        'Arrays of objects are problematic in Firestore: not queryable, destructive updates, and concurrency risks. Prefer Record<string, T> keyed by id and include an index field for order (use toMap/toArr), or use subcollections/arrays of IDs where appropriate.',
+        `Arrays of objects are problematic in Firestore:
+- Not queryable
+- Destructive updates
+- Concurrency risks
+
+Prefer:
+- Record<string, T> keyed by id with an index field for order (use toMap/toArr)
+- Subcollections
+- Arrays of IDs where appropriate`,
     },
   },
   defaultOptions: [],
