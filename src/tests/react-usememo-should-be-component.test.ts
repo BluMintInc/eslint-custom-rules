@@ -973,6 +973,87 @@ ruleTesterJsx.run(
         };
       `,
       },
+      // Additional valid: useMemo returning an array of JSX elements directly
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const elements = useMemo(() => {
+            return items.map(item => (
+              <div key={item.id}>{item.name}</div>
+            ));
+          }, [items]);
+
+          return <div>{elements}</div>;
+        };
+      `,
+      },
+      // Additional valid: useMemo with array.map returning JSX
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ items }) => {
+          const renderedItems = useMemo(() =>
+            items.map(item => <ListItem key={item.id}>{item.name}</ListItem>)
+          , [items]);
+
+          return <List>{renderedItems}</List>;
+        };
+      `,
+      },
+      // Additional valid: useMemo with Array.from returning JSX array
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ count }) => {
+          const items = useMemo(() => Array.from({ length: count }, (_, i) => <li key={i}>Item {i}</li>), [count]);
+          return <ul>{items}</ul>;
+        };
+      `,
+      },
+      // Additional valid: useMemo with flatMap returning JSX array
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ sections }) => {
+          const nodes = useMemo(() => sections.flatMap(s => [<h3 key={s.id+'h'}>{s.title}</h3>, <p key={s.id+'p'}>{s.text}</p>]), [sections]);
+          return <div>{nodes}</div>;
+        };
+      `,
+      },
+      // Additional valid: useMemo with array literal of JSX
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ a, b }) => {
+          const nodes = useMemo(() => [<span key="a">{a}</span>, <span key="b">{b}</span>], [a, b]);
+          return <div>{nodes}</div>;
+        };
+      `,
+      },
+      // Additional valid: useMemo with JSX in nested functions returning array
+      {
+        code: `
+        import React, { useMemo } from 'react';
+
+        const Component = ({ data }) => {
+          const processedContent = useMemo(() => {
+            const renderItem = (item) => {
+              return <div key={item.id}>{item.name}</div>;
+            };
+
+            return data.map(renderItem);
+          }, [data]);
+
+          return <div>{processedContent}</div>;
+        };
+      `,
+      },
     ],
     invalid: [
       // useMemo returning JSX directly
@@ -996,23 +1077,7 @@ ruleTesterJsx.run(
       `,
         errors: [{ messageId: 'useMemoShouldBeComponent' }],
       },
-      // useMemo returning an array of JSX elements directly should be invalid
-      {
-        code: `
-        import React, { useMemo } from 'react';
-
-        const Component = ({ items }) => {
-          const elements = useMemo(() => {
-            return items.map(item => (
-              <div key={item.id}>{item.name}</div>
-            ));
-          }, [items]);
-
-          return <div>{elements}</div>;
-        };
-      `,
-        errors: [{ messageId: 'useMemoShouldBeComponent' }],
-      },
+      
       // useMemo with direct JSX return (no block)
       {
         code: `
@@ -1048,21 +1113,10 @@ ruleTesterJsx.run(
       `,
         errors: [{ messageId: 'useMemoShouldBeComponent' }],
       },
-      // useMemo with array.map returning JSX
-      {
-        code: `
-        import React, { useMemo } from 'react';
-
-        const Component = ({ items }) => {
-          const renderedItems = useMemo(() =>
-            items.map(item => <ListItem key={item.id}>{item.name}</ListItem>)
-          , [items]);
-
-          return <List>{renderedItems}</List>;
-        };
-      `,
-        errors: [{ messageId: 'useMemoShouldBeComponent' }],
-      },
+      
+      
+      
+      
       // Multiple useMemo with JSX in the same component
       {
         code: `
@@ -1217,7 +1271,7 @@ ruleTesterJsx.run(
       `,
         errors: [{ messageId: 'useMemoShouldBeComponent' }],
       },
-      // useMemo with JSX in array methods other than map
+      // useMemo with JSX in array methods other than map (returns single JSX) remains invalid
       {
         code: `
         import React, { useMemo } from 'react';
@@ -1234,25 +1288,7 @@ ruleTesterJsx.run(
       `,
         errors: [{ messageId: 'useMemoShouldBeComponent' }],
       },
-      // useMemo with JSX in nested functions
-      {
-        code: `
-        import React, { useMemo } from 'react';
-
-        const Component = ({ data }) => {
-          const processedContent = useMemo(() => {
-            const renderItem = (item) => {
-              return <div key={item.id}>{item.name}</div>;
-            };
-
-            return data.map(renderItem);
-          }, [data]);
-
-          return <div>{processedContent}</div>;
-        };
-      `,
-        errors: [{ messageId: 'useMemoShouldBeComponent' }],
-      },
+      
       // useMemo with JSX in IIFE
       {
         code: `

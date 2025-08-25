@@ -721,34 +721,23 @@ const containsJsxInFunction = (
     return containsJsxInBlockStatement(body);
   }
 
-  // Check for array methods returning JSX
+  // Check for array methods returning arrays (do not flag arrays of JSX)
   if (body.type === AST_NODE_TYPES.CallExpression) {
     if (
       body.callee.type === AST_NODE_TYPES.MemberExpression &&
       body.callee.property.type === AST_NODE_TYPES.Identifier
     ) {
-      // Check array methods like map, filter, find, etc.
-      const arrayMethods = [
+      const arrayReturningMethods = new Set([
         'map',
+        'flatMap',
         'filter',
-        'find',
-        'findIndex',
-        'some',
-        'every',
         'reduce',
-      ];
-      if (
-        arrayMethods.includes(body.callee.property.name) &&
-        body.arguments.length > 0
-      ) {
-        const callback = body.arguments[0];
-        if (
-          (callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-            callback.type === AST_NODE_TYPES.FunctionExpression) &&
-          containsJsxInFunction(callback)
-        ) {
-          return true;
-        }
+        'concat',
+        'slice',
+      ]);
+      if (arrayReturningMethods.has(body.callee.property.name)) {
+        // Returning an array (even if its elements are JSX) should not be flagged
+        return false;
       }
     }
 
@@ -835,47 +824,33 @@ const containsJsxInExpression = (node: TSESTree.Expression): boolean => {
       return containsJsxInObject(node);
 
     case AST_NODE_TYPES.CallExpression:
-      // Special case for array methods that return data structures with JSX
+      // Do not flag arrays of JSX: common array-producing patterns
       if (
         node.callee.type === AST_NODE_TYPES.MemberExpression &&
-        node.callee.property.type === AST_NODE_TYPES.Identifier &&
-        node.callee.property.name === 'map' &&
-        node.arguments.length > 0
+        node.callee.property.type === AST_NODE_TYPES.Identifier
       ) {
-        const callback = node.arguments[0];
-        if (
-          callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-          callback.type === AST_NODE_TYPES.FunctionExpression
-        ) {
-          // Check if the callback returns an object with both JSX and non-JSX properties
-          if (
-            callback.body.type !== AST_NODE_TYPES.BlockStatement &&
-            callback.body.type === AST_NODE_TYPES.ObjectExpression
-          ) {
-            let hasNonJsxProperties = false;
-            let hasJsxProperties = false;
-
-            for (const property of callback.body.properties) {
-              if (property.type === AST_NODE_TYPES.Property && property.value) {
-                if (isJsxElement(property.value)) {
-                  hasJsxProperties = true;
-                } else if (
-                  property.value.type !== AST_NODE_TYPES.ObjectExpression
-                ) {
-                  hasNonJsxProperties = true;
-                }
-              }
-            }
-
-            // If the object has both JSX and non-JSX properties, it's likely a data object
-            if (hasNonJsxProperties && hasJsxProperties) {
-              return false;
-            }
-          }
-
-          // For other cases, check if the function returns JSX directly
-          return containsJsxInFunction(callback);
+        const arrayReturningMethods = new Set([
+          'map',
+          'flatMap',
+          'filter',
+          'reduce',
+          'concat',
+          'slice',
+        ]);
+        if (arrayReturningMethods.has(node.callee.property.name)) {
+          return false;
         }
+      }
+
+      // Array.from(...) returns an array as well
+      if (
+        node.callee.type === AST_NODE_TYPES.MemberExpression &&
+        node.callee.object.type === AST_NODE_TYPES.Identifier &&
+        node.callee.object.name === 'Array' &&
+        node.callee.property.type === AST_NODE_TYPES.Identifier &&
+        node.callee.property.name === 'from'
+      ) {
+        return false;
       }
 
       // Check if it's an IIFE
@@ -886,42 +861,7 @@ const containsJsxInExpression = (node: TSESTree.Expression): boolean => {
         return containsJsxInFunction(node.callee);
       }
 
-      // Check array methods
-      if (
-        node.callee.type === AST_NODE_TYPES.MemberExpression &&
-        node.callee.property.type === AST_NODE_TYPES.Identifier
-      ) {
-        const arrayMethods = [
-          'filter',
-          'find',
-          'findIndex',
-          'some',
-          'every',
-          'reduce',
-        ];
-        if (
-          arrayMethods.includes(node.callee.property.name) &&
-          node.arguments.length > 0
-        ) {
-          const callback = node.arguments[0];
-          if (
-            callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-            callback.type === AST_NODE_TYPES.FunctionExpression
-          ) {
-            return containsJsxInFunction(callback);
-          }
-        }
-      }
-
-      // Check arguments for JSX
-      for (const arg of node.arguments) {
-        if (
-          arg.type !== AST_NODE_TYPES.SpreadElement &&
-          containsJsxInExpression(arg)
-        ) {
-          return true;
-        }
-      }
+      // Do not flag based on JSX in arguments of non-IIFE calls
       return false;
 
     case AST_NODE_TYPES.ArrowFunctionExpression:
@@ -1012,8 +952,17 @@ const containsJsxInBlockStatement = (
     // Check variable declarations for JSX
     if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
       for (const declarator of statement.declarations) {
-        if (declarator.init && containsJsxInExpression(declarator.init)) {
-          return true;
+        if (declarator.init) {
+          // Ignore nested function expressions (helpers/callbacks) even if they return JSX
+          if (
+            declarator.init.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+            declarator.init.type === AST_NODE_TYPES.FunctionExpression
+          ) {
+            continue;
+          }
+          if (containsJsxInExpression(declarator.init)) {
+            return true;
+          }
         }
       }
     }
@@ -1137,3 +1086,4 @@ export const reactUseMemoShouldBeComponent = createRule<[], MessageIds>({
     };
   },
 });
+
