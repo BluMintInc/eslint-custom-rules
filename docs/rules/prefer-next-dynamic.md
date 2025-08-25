@@ -1,4 +1,4 @@
-# prefer-next-dynamic
+# Prefer Next.js dynamic() over custom useDynamic() for component imports (`@blumintinc/blumint/prefer-next-dynamic`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

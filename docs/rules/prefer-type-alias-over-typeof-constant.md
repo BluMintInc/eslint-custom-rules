@@ -1,4 +1,8 @@
-# prefer-type-alias-over-typeof-constant
+# Prefer named type aliases over `typeof` on same-file global constants; ensure types are declared before constants (`@blumintinc/blumint/prefer-type-alias-over-typeof-constant`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 Enforce defining and using named type aliases instead of `typeof` on same-file global constants. Also ensures the type alias is declared before constants using it.
 

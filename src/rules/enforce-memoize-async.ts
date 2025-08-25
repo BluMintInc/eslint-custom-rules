@@ -1,8 +1,41 @@
-import { AST_NODE_TYPES } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'requireMemoize';
 type Options = [];
+
+const MEMOIZE_MODULE = 'typescript-memoize';
+
+function isMemoizeDecorator(
+  decorator: TSESTree.Decorator,
+  alias: string,
+): boolean {
+  const expression = decorator.expression;
+  // @Alias()
+  if (expression.type === AST_NODE_TYPES.CallExpression) {
+    const callee = expression.callee;
+    return (
+      (callee.type === AST_NODE_TYPES.Identifier && callee.name === alias) ||
+      (callee.type === AST_NODE_TYPES.MemberExpression &&
+        !callee.computed &&
+        callee.property.type === AST_NODE_TYPES.Identifier &&
+        callee.property.name === alias)
+    );
+  }
+  // @Alias
+  if (expression.type === AST_NODE_TYPES.Identifier) {
+    return expression.name === alias;
+  }
+  // @ns.Alias
+  if (
+    expression.type === AST_NODE_TYPES.MemberExpression &&
+    !expression.computed &&
+    expression.property.type === AST_NODE_TYPES.Identifier
+  ) {
+    return expression.property.name === alias;
+  }
+  return false;
+}
 
 export const enforceMemoizeAsync = createRule<Options, MessageIds>({
   name: 'enforce-memoize-async',
@@ -24,10 +57,11 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
   create(context) {
     let hasMemoizeImport = false;
     let memoizeAlias = 'Memoize';
+    let scheduledImportFix = false;
 
     return {
-      ImportDeclaration(node) {
-        if (node.source.value === 'typescript-memoize') {
+      ImportDeclaration(node: TSESTree.ImportDeclaration) {
+        if (node.source.value === MEMOIZE_MODULE) {
           const memoizeSpecifier = node.specifiers.find(
             (spec) =>
               spec.type === AST_NODE_TYPES.ImportSpecifier &&
@@ -42,7 +76,7 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
         }
       },
 
-      MethodDefinition(node) {
+      MethodDefinition(node: TSESTree.MethodDefinition) {
         // Only process async instance methods (skip static methods)
         if (
           node.value.type !== AST_NODE_TYPES.FunctionExpression ||
@@ -57,32 +91,69 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
           return;
         }
 
-        // Check if method already has @Memoize decorator
-        const hasDecorator = node.decorators?.some((decorator) => {
-          if (decorator.expression.type !== AST_NODE_TYPES.CallExpression) {
-            return false;
-          }
-          const callee = decorator.expression.callee;
-          return (
-            callee.type === AST_NODE_TYPES.Identifier &&
-            callee.name === memoizeAlias
-          );
-        });
+        // Check if method already has @Memoize or @Memoize() decorator
+        const hasDecorator = node.decorators?.some((decorator) =>
+          isMemoizeDecorator(decorator, memoizeAlias),
+        );
 
-        if (!hasDecorator && hasMemoizeImport) {
-          context.report({
-            node,
-            messageId: 'requireMemoize',
-            fix(fixer) {
-              // Add import if needed
-              // Add decorator
-              return fixer.insertTextBefore(
+        if (hasDecorator) {
+          return;
+        }
+
+        context.report({
+          node,
+          messageId: 'requireMemoize',
+          fix(fixer) {
+            const fixes: TSESLint.RuleFix[] = [];
+
+            // Add import if it's not already present; ensure we only add once per file
+            if (!hasMemoizeImport && !scheduledImportFix) {
+              const sourceCode = context.getSourceCode();
+              const programBody = (sourceCode.ast as TSESTree.Program).body;
+              const firstImport = programBody.find(
+                (n) => n.type === AST_NODE_TYPES.ImportDeclaration,
+              );
+              const anchorNode = (firstImport ?? programBody[0]) as
+                | typeof programBody[number]
+                | undefined;
+
+              if (anchorNode) {
+                const text = sourceCode.text;
+                const anchorStart = anchorNode.range![0];
+                const lineStart = text.lastIndexOf('\n', anchorStart - 1) + 1;
+                const leadingWhitespace =
+                  text.slice(lineStart, anchorStart).match(/^[ \t]*/)?.[0] ??
+                  '';
+                const importLine = `${leadingWhitespace}import { Memoize } from '${MEMOIZE_MODULE}';\n`;
+                fixes.push(
+                  fixer.insertTextBeforeRange(
+                    [lineStart, lineStart],
+                    importLine,
+                  ),
+                );
+              } else {
+                // Fallback: empty file
+                fixes.push(
+                  fixer.insertTextBeforeRange(
+                    [0, 0],
+                    `import { Memoize } from '${MEMOIZE_MODULE}';\n`,
+                  ),
+                );
+              }
+              scheduledImportFix = true;
+            }
+
+            // Add decorator for this method
+            fixes.push(
+              fixer.insertTextBefore(
                 node,
                 `@${memoizeAlias}()\n${' '.repeat(node.loc.start.column)}`,
-              );
-            },
-          });
-        }
+              ),
+            );
+
+            return fixes;
+          },
+        });
       },
     };
   },
