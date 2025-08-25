@@ -60,7 +60,7 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
 
         // Check if method already has @Memoize or @Memoize() decorator
         const hasDecorator = node.decorators?.some((decorator) => {
-          const expr = decorator.expression as any;
+          const expression = decorator.expression as any;
           // @Memoize()
           if (expr.type === AST_NODE_TYPES.CallExpression) {
             const callee = expr.callee;
