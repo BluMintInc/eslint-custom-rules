@@ -191,38 +191,84 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           // Check if the right side is a method call that might return a non-boolean value
           const rightSide = node.init.right;
           if (rightSide.type === AST_NODE_TYPES.CallExpression) {
+            // If right side is a simple identifier call
+            if (rightSide.callee.type === AST_NODE_TYPES.Identifier) {
+              const calleeName = rightSide.callee.name;
+              const lowerCallee = calleeName.toLowerCase();
+
+              // For assert*-style utilities, only treat as boolean if we can confirm boolean return type
+              if (lowerCallee.startsWith('assert')) {
+                return identifierReturnsBoolean(calleeName);
+              }
+
+              // Otherwise, infer based on naming heuristics
+              const isBooleanCall = approvedPrefixes.some(
+                (prefix) =>
+                  prefix !== 'asserts' &&
+                  lowerCallee.startsWith(prefix.toLowerCase()),
+              );
+
+              if (
+                isBooleanCall ||
+                lowerCallee.includes('boolean') ||
+                lowerCallee.includes('enabled') ||
+                lowerCallee.includes('auth') ||
+                lowerCallee.includes('valid') ||
+                lowerCallee.includes('check')
+              ) {
+                return true;
+              }
+
+              if (
+                lowerCallee.startsWith('get') ||
+                lowerCallee.startsWith('fetch') ||
+                lowerCallee.startsWith('retrieve') ||
+                lowerCallee.startsWith('load') ||
+                lowerCallee.startsWith('read')
+              ) {
+                return false;
+              }
+            }
+
             // If the method name doesn't suggest it returns a boolean, don't flag it
             if (
               rightSide.callee.type === AST_NODE_TYPES.MemberExpression &&
               rightSide.callee.property.type === AST_NODE_TYPES.Identifier
             ) {
               const methodName = rightSide.callee.property.name;
+              const lowerMethodName = methodName.toLowerCase();
+
+              // Ignore assert*-style methods which often return the input value
+              if (lowerMethodName.startsWith('assert')) {
+                return false;
+              }
 
               // Check if the method name suggests it returns a boolean
               const isBooleanMethod = approvedPrefixes.some((prefix) =>
-                methodName.toLowerCase().startsWith(prefix.toLowerCase()),
+                prefix !== 'asserts' &&
+                lowerMethodName.startsWith(prefix.toLowerCase()),
               );
 
               // If the method name suggests it returns a boolean (starts with a boolean prefix or contains 'boolean' or 'enabled'),
               // then the variable should be treated as a boolean
               if (
                 isBooleanMethod ||
-                methodName.toLowerCase().includes('boolean') ||
-                methodName.toLowerCase().includes('enabled') ||
-                methodName.toLowerCase().includes('auth') ||
-                methodName.toLowerCase().includes('valid') ||
-                methodName.toLowerCase().includes('check')
+                lowerMethodName.includes('boolean') ||
+                lowerMethodName.includes('enabled') ||
+                lowerMethodName.includes('auth') ||
+                lowerMethodName.includes('valid') ||
+                lowerMethodName.includes('check')
               ) {
                 return true;
               }
 
               // For methods like getVolume(), getData(), etc., assume they return non-boolean values
               if (
-                methodName.toLowerCase().startsWith('get') ||
-                methodName.toLowerCase().startsWith('fetch') ||
-                methodName.toLowerCase().startsWith('retrieve') ||
-                methodName.toLowerCase().startsWith('load') ||
-                methodName.toLowerCase().startsWith('read')
+                lowerMethodName.startsWith('get') ||
+                lowerMethodName.startsWith('fetch') ||
+                lowerMethodName.startsWith('retrieve') ||
+                lowerMethodName.startsWith('load') ||
+                lowerMethodName.startsWith('read')
               ) {
                 return false;
               }
@@ -235,21 +281,28 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
             rightSide.property.type === AST_NODE_TYPES.Identifier
           ) {
             const propertyName = rightSide.property.name;
+            const lowerPropertyName = propertyName.toLowerCase();
 
             // If the property name is 'parentElement', 'parentNode', etc., it's likely not a boolean
             if (
-              propertyName.toLowerCase().includes('parent') ||
-              propertyName.toLowerCase().includes('element') ||
-              propertyName.toLowerCase().includes('node') ||
-              propertyName.toLowerCase().includes('child') ||
-              propertyName.toLowerCase().includes('sibling')
+              lowerPropertyName.includes('parent') ||
+              lowerPropertyName.includes('element') ||
+              lowerPropertyName.includes('node') ||
+              lowerPropertyName.includes('child') ||
+              lowerPropertyName.includes('sibling')
             ) {
+              return false;
+            }
+
+            // Ignore assert*-style properties which often return the input value
+            if (lowerPropertyName.startsWith('assert')) {
               return false;
             }
 
             // For property access like user.isAuthenticated, treat as boolean
             const isBooleanProperty = approvedPrefixes.some((prefix) =>
-              propertyName.toLowerCase().startsWith(prefix.toLowerCase()),
+              prefix !== 'asserts' &&
+              lowerPropertyName.startsWith(prefix.toLowerCase()),
             );
             if (isBooleanProperty) {
               return true;
@@ -304,8 +357,16 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
             leftSide.callee.type === AST_NODE_TYPES.Identifier
           ) {
             const calleeName = leftSide.callee.name;
-            return approvedPrefixes.some((prefix) =>
-              calleeName.toLowerCase().startsWith(prefix.toLowerCase()),
+            const lowerCallee = calleeName.toLowerCase();
+
+            // For assert*-style utilities, only treat as boolean if we can confirm boolean return type
+            if (lowerCallee.startsWith('assert')) {
+              return identifierReturnsBoolean(calleeName);
+            }
+
+            return approvedPrefixes.some(
+              (prefix) => prefix !== 'asserts' &&
+                lowerCallee.startsWith(prefix.toLowerCase()),
             );
           }
 
@@ -327,9 +388,17 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           node.init.callee.type === AST_NODE_TYPES.Identifier
         ) {
           const calleeName = node.init.callee.name;
+          const lowerCallee = calleeName.toLowerCase();
+
+          // For assert*-style utilities, only treat as boolean if we can confirm boolean return type
+          if (lowerCallee.startsWith('assert')) {
+            return identifierReturnsBoolean(calleeName);
+          }
+
           // Check if the function name suggests it returns a boolean
           return approvedPrefixes.some((prefix) =>
-            calleeName.toLowerCase().startsWith(prefix.toLowerCase()),
+            prefix !== 'asserts' &&
+            lowerCallee.startsWith(prefix.toLowerCase()),
           );
         }
       }
@@ -389,6 +458,61 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           if (
             node.returnType?.typeAnnotation &&
             node.returnType.typeAnnotation.type ===
+              (AST_NODE_TYPES.TSBooleanKeyword as any)
+          ) {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    }
+
+    /**
+     * Attempt to resolve an identifier to a function declaration/expression and detect if it returns boolean
+     */
+    function identifierReturnsBoolean(
+      name: string,
+    ): boolean {
+      // Try to find the variable in all scopes, starting from current and going up
+      let currentScope: any = context.getScope();
+      let variable: any = undefined;
+
+      while (currentScope && !variable) {
+        variable = currentScope.variables.find((v: any) => v.name === name);
+        if (!variable) {
+          currentScope = currentScope.upper;
+        }
+      }
+
+      if (!variable) return false;
+
+      for (const def of variable.defs) {
+        // Function declaration
+        if (def.type === 'FunctionName' && def.node) {
+          const fn = def.node as unknown as TSESTree.FunctionDeclaration;
+          if (
+            fn.returnType?.typeAnnotation &&
+            fn.returnType.typeAnnotation.type ===
+              (AST_NODE_TYPES.TSBooleanKeyword as any)
+          ) {
+            return true;
+          }
+        }
+
+        // Variable with function expression or arrow function
+        if (def.type === 'Variable' && def.node) {
+          const varDecl = def.node as unknown as TSESTree.VariableDeclarator;
+          const init = (varDecl && (varDecl as any).init) as
+            | TSESTree.Expression
+            | undefined;
+          if (!init) continue;
+
+          if (
+            (init.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+              init.type === AST_NODE_TYPES.FunctionExpression) &&
+            init.returnType?.typeAnnotation &&
+            init.returnType.typeAnnotation.type ===
               (AST_NODE_TYPES.TSBooleanKeyword as any)
           ) {
             return true;
