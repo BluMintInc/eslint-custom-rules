@@ -24,13 +24,10 @@ export const preferBlockCommentsForDeclarations: TSESLint.RuleModule<
 
       // Ignore ESLint directive comments
       const commentText = comment.value.trim();
-      if (
-        commentText.startsWith('eslint-disable') ||
-        commentText.startsWith('eslint-enable') ||
-        commentText.startsWith('eslint-env') ||
-        commentText.startsWith('global ') ||
-        commentText.startsWith('globals ')
-      ) {
+      const isDirective = /^(?:eslint(?:-disable(?:-next-line)?|-enable|-env)\b|eslint(?:\s|$)|globals?\b|exported\b)/.test(
+        commentText,
+      );
+      if (isDirective) {
         return false;
       }
 
