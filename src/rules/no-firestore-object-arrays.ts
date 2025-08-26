@@ -260,31 +260,24 @@ Prefer:
       switch (node.type) {
         case AST_NODE_TYPES.TSTypeLiteral:
           return true;
-        case AST_NODE_TYPES.TSInterfaceDeclaration as any:
-          return true;
         case AST_NODE_TYPES.TSTypeReference: {
-          if (node.typeName.type === AST_NODE_TYPES.Identifier) {
-            const typeName = node.typeName.name;
-            if (PRIMITIVE_TYPES.has(typeName)) return false;
-            if (interfaceNames.has(typeName)) return true;
-            if (enumNames.has(typeName)) return false;
-            // If alias exists, analyze its underlying type; otherwise, be conservative and do not flag
-            if (aliasNameToType.has(typeName)) {
-              return !isPrimitiveLikeAlias(typeName);
-            }
-            // Unknown reference: do not assume object to avoid false positives
+          const tn = node.typeName as TSESTree.Identifier | TSESTree.TSQualifiedName | TSESTree.ThisExpression;
+          if (tn.type !== AST_NODE_TYPES.Identifier && tn.type !== AST_NODE_TYPES.TSQualifiedName) {
+            // Unsupported reference (e.g., ThisType) — do not assume object to avoid false positives
             return false;
           }
-          if (node.typeName.type === AST_NODE_TYPES.TSQualifiedName) {
-            const rightMost = getRightmostIdentifierName(node.typeName);
-            if (PRIMITIVE_TYPES.has(rightMost)) return false;
-            if (interfaceNames.has(rightMost)) return true;
-            if (enumNames.has(rightMost)) return false;
-            if (aliasNameToType.has(rightMost)) {
-              return !isPrimitiveLikeAlias(rightMost);
-            }
-            return false;
+          const refName =
+            tn.type === AST_NODE_TYPES.Identifier
+              ? tn.name
+              : getRightmostIdentifierName(tn);
+
+          if (PRIMITIVE_TYPES.has(refName)) return false;
+          if (interfaceNames.has(refName)) return true;
+          if (enumNames.has(refName)) return false;
+          if (aliasNameToType.has(refName)) {
+            return !isPrimitiveLikeAlias(refName);
           }
+          // Unknown reference: do not assume object to avoid false positives
           return false;
         }
         case AST_NODE_TYPES.TSIntersectionType:
