@@ -196,3 +196,69 @@ ruleTesterTs.run(
     ],
   },
 );
+
+// Additional valid cases to ensure ESLint directive comments are ignored
+ruleTesterTs.run(
+  'prefer-block-comments-for-declarations (eslint directives)',
+  preferBlockCommentsForDeclarations,
+  {
+    valid: [
+      // Top-of-file block ESLint disables before imports (should be ignored)
+      `/* eslint-disable no-console */
+/* eslint-disable eqeqeq */
+/* eslint-disable max-params */
+/* eslint-disable no-undef */
+/* eslint-disable no-alert */
+import { ComponentProps, ComponentType, FC, useMemo } from 'react';
+
+// A real declaration after imports
+/** description */
+export type AfterImports = { a: number };`,
+
+      // Block ESLint disable directly before a declaration
+      `/* eslint-disable no-console */
+function foo() { console.log('x'); }`,
+
+      // Block ESLint enable directly before a declaration
+      `/* eslint-enable no-console */
+const value = 1;`,
+
+      // Block eslint rule configuration before a declaration
+      `/* eslint eqeqeq: "error", curly: "error" */
+interface Cfg { id: number }`,
+
+      // Block globals declaration
+      `/* global window, document */
+type Env = { w: typeof window; d: typeof document };`,
+
+      // Block exported directive
+      `/* exported SOME_CONST */
+const SOME_CONST = 42;`,
+
+      // Line eslint rule configuration before a declaration
+      `// eslint eqeqeq: 0, curly: 0
+class A {}`,
+
+      // Line exported directive before a declaration
+      `// exported FOO
+const FOO = 'bar';`,
+
+      // Line global directive (singular) before a declaration
+      `// global process
+enum E { A, B }`,
+
+      // Ensure trimming/spacing is handled
+      `   //    eslint-disable-next-line no-unused-vars
+const X = 1;`,
+
+      // Ensure weird spacing in block comment is ignored
+      `/*eslint-disable no-alert*/
+function alertUser() { /* noop */ }`,
+
+      // Ensure eslint-enable-next-line style comments are ignored if present
+      `// eslint-disable-next-line no-unused-vars
+const unused = 0;`,
+    ],
+    invalid: [],
+  },
+);
