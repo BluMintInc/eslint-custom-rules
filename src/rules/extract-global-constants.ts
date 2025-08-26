@@ -51,30 +51,15 @@ function unwrapExpression(
   return current;
 }
 
-function isImmutableValue(node: TSESTree.Expression | null): boolean {
-  const unwrapped = unwrapExpression(node);
-  if (!unwrapped) return false;
-
-  switch (unwrapped.type) {
-    case 'Literal':
-      return true;
-    case 'TemplateLiteral':
-      return unwrapped.expressions.length === 0;
-    case 'UnaryExpression':
-      return isImmutableValue(unwrapped.argument);
-    case 'BinaryExpression':
-      if (unwrapped.left.type === 'PrivateIdentifier') return false;
-      return (
-        isImmutableValue(unwrapped.left) && isImmutableValue(unwrapped.right)
-      );
-    default:
-      return false;
-  }
-}
 
 function isMutableValue(node: TSESTree.Expression | null): boolean {
   const unwrapped = unwrapExpression(node);
   if (!unwrapped) return false;
+
+  // If explicitly marked readonly with `as const`, treat as immutable
+  if (node && isAsConstExpression(node)) {
+    return false;
+  }
 
   // Check for JSX elements (always mutable due to props/context)
   if (unwrapped.type === 'JSXElement' || unwrapped.type === 'JSXFragment') {
@@ -86,21 +71,9 @@ function isMutableValue(node: TSESTree.Expression | null): boolean {
     return true;
   }
 
-  // Check array literals - mutable if empty or if they contain mutable values
+  // Arrays are mutable objects unless explicitly narrowed with `as const`.
   if (unwrapped.type === 'ArrayExpression') {
-    // Empty arrays are mutable since they can be modified later
-    if (unwrapped.elements.length === 0) return true;
-    // Arrays with spread elements are mutable
-    if (
-      unwrapped.elements.some(
-        (element) => !element || element.type === 'SpreadElement',
-      )
-    )
-      return true;
-    // Arrays with non-immutable values are mutable
-    return unwrapped.elements.some(
-      (element) => !isImmutableValue(element as TSESTree.Expression),
-    );
+    return true;
   }
 
   // Check for new expressions (e.g., new Map(), new Set())

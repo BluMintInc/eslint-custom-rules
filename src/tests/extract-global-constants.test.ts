@@ -672,6 +672,42 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
         }
       `,
     },
+    // Arrays without explicit readonly should be allowed (mutable by default)
+    {
+      code: `
+        export class DatadogGitHubIssue implements GitHubIssueRequest {
+          public get labels(): components['schemas']['issue']['labels'] {
+            const labels = ['datadog', 'fix-me'];
+
+            if (this.host) {
+              labels.push(\`${'${'}this.host${'}'}\`);
+            }
+
+            if (this.version) {
+              labels.push(\`v${'${'}this.version${'}'}\`);
+            }
+
+            return labels;
+          }
+        }
+      `,
+    },
+    {
+      code: `
+        function Component() {
+          const COLORS = ['red', 'green', 'blue'];
+          return COLORS;
+        }
+      `,
+    },
+    {
+      code: `
+        function Component() {
+          const SIZES = [100 + 50, 200 * 2, 300];
+          return SIZES;
+        }
+      `,
+    },
   ],
   invalid: [
     // Should flag immutable string constants
@@ -731,62 +767,6 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
         {
           messageId: 'extractGlobalConstants',
           data: { declarationName: 'REGEX' },
-        },
-      ],
-    },
-    // Should flag immutable array constants
-    {
-      code: `
-        export class DatadogGitHubIssue implements GitHubIssueRequest {
-          public get labels(): components['schemas']['issue']['labels'] {
-            const labels = ['datadog', 'fix-me'];
-
-            if (this.host) {
-              labels.push(\`${'${'}this.host${'}'}\`);
-            }
-
-            if (this.version) {
-              labels.push(\`v${'${'}this.version${'}'}\`);
-            }
-
-            return labels;
-          }
-        }
-      `,
-      errors: [
-        {
-          messageId: 'extractGlobalConstants',
-          data: { declarationName: 'labels' },
-        },
-      ],
-    },
-    // Should flag array with only immutable values
-    {
-      code: `
-        function Component() {
-          const COLORS = ['red', 'green', 'blue'];
-          return COLORS;
-        }
-      `,
-      errors: [
-        {
-          messageId: 'extractGlobalConstants',
-          data: { declarationName: 'COLORS' },
-        },
-      ],
-    },
-    // Should flag array with immutable expressions
-    {
-      code: `
-        function Component() {
-          const SIZES = [100 + 50, 200 * 2, 300];
-          return SIZES;
-        }
-      `,
-      errors: [
-        {
-          messageId: 'extractGlobalConstants',
-          data: { declarationName: 'SIZES' },
         },
       ],
     },
