@@ -582,6 +582,132 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
         }
       `,
     },
+    // Firestore sentinels inside object literal with as const satisfies should NOT be flagged
+    {
+      code: `
+        function createEvent(expireAt: Date) {
+          const varipotentEventData = {
+            createdAt: FieldValue.serverTimestamp(),
+            expireAt: Timestamp.fromDate(expireAt),
+          } as const satisfies UpdateData<VaripotentEvent>;
+          return varipotentEventData;
+        }
+      `,
+    },
+    // Same as above but with extra parentheses around the object and only as const
+    {
+      code: `
+        function createEvent(expireAt: Date) {
+          const varipotentEventData = ({
+            createdAt: FieldValue.serverTimestamp(),
+            expireAt: Timestamp.fromDate(expireAt),
+          } as const);
+          return varipotentEventData;
+        }
+      `,
+    },
+    // Using other FieldValue sentinels (increment/arrayUnion) should also be ignored
+    {
+      code: `
+        function updateStats() {
+          const update = {
+            views: FieldValue.increment(1),
+            tags: FieldValue.arrayUnion('x'),
+            lastViewed: FieldValue.serverTimestamp(),
+          } as const satisfies UpdateData<Stats>;
+          return update;
+        }
+      `,
+    },
+    // Nested object with sentinels should be ignored
+    {
+      code: `
+        function nestedUpdate(userId: string, expireAt: Date) {
+          const payload = {
+            user: {
+              id: userId,
+              lastLogin: FieldValue.serverTimestamp(),
+            },
+            meta: {
+              expireAt: Timestamp.fromDate(expireAt),
+            },
+          } as const satisfies UpdateData<UserDoc>;
+          return payload;
+        }
+      `,
+    },
+    // Object literal with a TS as-type (not const) plus sentinel should be ignored
+    {
+      code: `
+        function asTypeOnly(expireAt: Date) {
+          const data = ({
+            createdAt: FieldValue.serverTimestamp(),
+            expireAt: Timestamp.fromDate(expireAt),
+          } as UpdateData<VaripotentEvent>);
+          return data;
+        }
+      `,
+    },
+    // ParenthesizedExpression + satisfies wrapper around object with sentinel should be ignored
+    {
+      code: `
+        function parenthesized(expireAt: Date) {
+          const data = (({
+            createdAt: FieldValue.serverTimestamp(),
+            expireAt: Timestamp.fromDate(expireAt),
+          }) as const) satisfies UpdateData<VaripotentEvent>;
+          return data;
+        }
+      `,
+    },
+    // Optional chaining leading to a call expression in a property should still be ignored
+    {
+      code: `
+        function withOptional(expireAt: Date) {
+          const data = {
+            createdAt: FieldValue?.serverTimestamp(),
+            expireAt: Timestamp.fromDate(expireAt),
+          } as const;
+          return data;
+        }
+      `,
+    },
+    // Arrays without explicit readonly should be allowed (mutable by default)
+    {
+      code: `
+        export class DatadogGitHubIssue implements GitHubIssueRequest {
+          public get labels(): components['schemas']['issue']['labels'] {
+            const labels = ['datadog', 'fix-me'];
+
+            if (this.host) {
+              labels.push(\`${'${'}this.host${'}'}\`);
+            }
+
+            if (this.version) {
+              labels.push(\`v${'${'}this.version${'}'}\`);
+            }
+
+            return labels;
+          }
+        }
+      `,
+    },
+    {
+      code: `
+        function Component() {
+          const COLORS = ['red', 'green', 'blue'];
+          return COLORS;
+        }
+      `,
+    },
+    {
+      code: `
+        function Component() {
+          const SIZES = [100 + 50, 200 * 2, 300];
+          return SIZES;
+        }
+      `,
+    },
   ],
   invalid: [
     // Should flag immutable string constants
@@ -641,62 +767,6 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
         {
           messageId: 'extractGlobalConstants',
           data: { declarationName: 'REGEX' },
-        },
-      ],
-    },
-    // Should flag immutable array constants
-    {
-      code: `
-        export class DatadogGitHubIssue implements GitHubIssueRequest {
-          public get labels(): components['schemas']['issue']['labels'] {
-            const labels = ['datadog', 'fix-me'];
-
-            if (this.host) {
-              labels.push(\`\${this.host}\`);
-            }
-
-            if (this.version) {
-              labels.push(\`v\${this.version}\`);
-            }
-
-            return labels;
-          }
-        }
-      `,
-      errors: [
-        {
-          messageId: 'extractGlobalConstants',
-          data: { declarationName: 'labels' },
-        },
-      ],
-    },
-    // Should flag array with only immutable values
-    {
-      code: `
-        function Component() {
-          const COLORS = ['red', 'green', 'blue'];
-          return COLORS;
-        }
-      `,
-      errors: [
-        {
-          messageId: 'extractGlobalConstants',
-          data: { declarationName: 'COLORS' },
-        },
-      ],
-    },
-    // Should flag array with immutable expressions
-    {
-      code: `
-        function Component() {
-          const SIZES = [100 + 50, 200 * 2, 300];
-          return SIZES;
-        }
-      `,
-      errors: [
-        {
-          messageId: 'extractGlobalConstants',
-          data: { declarationName: 'SIZES' },
         },
       ],
     },

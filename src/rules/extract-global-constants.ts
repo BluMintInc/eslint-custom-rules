@@ -24,62 +24,66 @@ function isFunctionDefinition(node: TSESTree.Expression | null): boolean {
   );
 }
 
-function isImmutableValue(node: TSESTree.Expression | null): boolean {
-  if (!node) return false;
-
-  switch (node.type) {
-    case 'Literal':
-      return true;
-    case 'TemplateLiteral':
-      return node.expressions.length === 0;
-    case 'UnaryExpression':
-      return isImmutableValue(node.argument);
-    case 'BinaryExpression':
-      if (node.left.type === 'PrivateIdentifier') return false;
-      return isImmutableValue(node.left) && isImmutableValue(node.right);
-    default:
-      return false;
+function unwrapExpression(
+  node: TSESTree.Expression | null,
+): TSESTree.Expression | null {
+  let current: TSESTree.Expression | null = node;
+  // Unwrap common TS/JS wrappers iteratively
+  // We intentionally include ParenthesizedExpression via a runtime string check
+  while (current) {
+    if (
+      current.type === 'TSAsExpression' ||
+      current.type === 'TSSatisfiesExpression' ||
+      current.type === 'TSNonNullExpression' ||
+      current.type === 'ChainExpression' ||
+      current.type === 'TSTypeAssertion' ||
+      (current as any).type === 'ParenthesizedExpression'
+    ) {
+      const inner = (current as any).expression as
+        | TSESTree.Expression
+        | undefined;
+      if (!inner) break;
+      current = inner;
+      continue;
+    }
+    break;
   }
+  return current;
 }
 
+
 function isMutableValue(node: TSESTree.Expression | null): boolean {
-  if (!node) return false;
+  const unwrapped = unwrapExpression(node);
+  if (!unwrapped) return false;
+
+  // If explicitly marked readonly with `as const`, treat as immutable
+  if (node && isAsConstExpression(node)) {
+    return false;
+  }
 
   // Check for JSX elements (always mutable due to props/context)
-  if (node.type === 'JSXElement' || node.type === 'JSXFragment') {
+  if (unwrapped.type === 'JSXElement' || unwrapped.type === 'JSXFragment') {
     return true;
   }
 
   // Check for object expressions (always mutable)
-  if (node.type === 'ObjectExpression') {
+  if (unwrapped.type === 'ObjectExpression') {
     return true;
   }
 
-  // Check array literals - mutable if empty or if they contain mutable values
-  if (node.type === 'ArrayExpression') {
-    // Empty arrays are mutable since they can be modified later
-    if (node.elements.length === 0) return true;
-    // Arrays with spread elements are mutable
-    if (
-      node.elements.some(
-        (element) => !element || element.type === 'SpreadElement',
-      )
-    )
-      return true;
-    // Arrays with non-immutable values are mutable
-    return node.elements.some(
-      (element) => !isImmutableValue(element as TSESTree.Expression),
-    );
+  // Arrays are mutable objects unless explicitly narrowed with `as const`.
+  if (unwrapped.type === 'ArrayExpression') {
+    return true;
   }
 
   // Check for new expressions (e.g., new Map(), new Set())
-  if (node.type === 'NewExpression') {
+  if (unwrapped.type === 'NewExpression') {
     return true;
   }
 
   // Check for array/object methods that return mutable values
-  if (node.type === 'CallExpression') {
-    const callee = node.callee;
+  if (unwrapped.type === 'CallExpression') {
+    const callee = unwrapped.callee;
     if (callee.type === 'MemberExpression') {
       // Handle both Identifier and non-Identifier property nodes
       if (callee.property.type !== 'Identifier') {
@@ -123,6 +127,7 @@ function isZeroOrOne(node: TSESTree.Node | null): boolean {
 function isAsConstExpression(node: TSESTree.Node | null): boolean {
   if (!node) return false;
 
+  // If this is an "as const" assertion directly
   if (node.type === 'TSAsExpression') {
     if (
       node.typeAnnotation.type === 'TSTypeReference' &&
@@ -131,6 +136,26 @@ function isAsConstExpression(node: TSESTree.Node | null): boolean {
     ) {
       return true;
     }
+    // Not "as const" - check nested expression
+    return isAsConstExpression(node.expression);
+  }
+
+  // Unwrap other wrappers and re-check
+  if (node.type === 'TSSatisfiesExpression') {
+    return isAsConstExpression(node.expression);
+  }
+  if (node.type === 'TSNonNullExpression') {
+    return isAsConstExpression(node.expression);
+  }
+  if (node.type === 'ChainExpression') {
+    return isAsConstExpression(node.expression);
+  }
+  if (node.type === 'TSTypeAssertion') {
+    return isAsConstExpression(node.expression);
+  }
+  // ParenthesizedExpression handled via runtime check to avoid enum type issues
+  if ((node as any).type === 'ParenthesizedExpression') {
+    return isAsConstExpression((node as any).expression);
   }
 
   return false;
