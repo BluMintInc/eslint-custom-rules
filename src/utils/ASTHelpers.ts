@@ -18,8 +18,16 @@ export class ASTHelpers {
     if (!node) {
       return false;
     }
+
+    // Gracefully handle ParenthesizedExpression without widening AST node types
+    if ((node as any).type === 'ParenthesizedExpression') {
+      return this.declarationIncludesIdentifier((node as any).expression);
+    }
+
     switch (node.type) {
       case 'TSNonNullExpression':
+        return this.declarationIncludesIdentifier(node.expression);
+      case 'TSSatisfiesExpression':
         return this.declarationIncludesIdentifier(node.expression);
       case 'ArrayPattern':
         return node.elements.some((element) =>
@@ -157,6 +165,16 @@ export class ASTHelpers {
     if (!node) {
       return dependencies;
     }
+
+    // Gracefully handle ParenthesizedExpression without widening AST node types
+    if ((node as any).type === 'ParenthesizedExpression') {
+      return ASTHelpers.classMethodDependenciesOf(
+        (node as any).expression,
+        graph,
+        className,
+      );
+    }
+
     switch (node.type) {
       case 'MethodDefinition':
         const functionBody = node.value.body;

@@ -582,6 +582,96 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
         }
       `,
     },
+    // Firestore sentinels inside object literal with as const satisfies should NOT be flagged
+    {
+      code: `
+        function createEvent(expireAt: Date) {
+          const varipotentEventData = {
+            createdAt: FieldValue.serverTimestamp(),
+            expireAt: Timestamp.fromDate(expireAt),
+          } as const satisfies UpdateData<VaripotentEvent>;
+          return varipotentEventData;
+        }
+      `,
+    },
+    // Same as above but with extra parentheses around the object and only as const
+    {
+      code: `
+        function createEvent(expireAt: Date) {
+          const varipotentEventData = ({
+            createdAt: FieldValue.serverTimestamp(),
+            expireAt: Timestamp.fromDate(expireAt),
+          } as const);
+          return varipotentEventData;
+        }
+      `,
+    },
+    // Using other FieldValue sentinels (increment/arrayUnion) should also be ignored
+    {
+      code: `
+        function updateStats() {
+          const update = {
+            views: FieldValue.increment(1),
+            tags: FieldValue.arrayUnion('x'),
+            lastViewed: FieldValue.serverTimestamp(),
+          } as const satisfies UpdateData<Stats>;
+          return update;
+        }
+      `,
+    },
+    // Nested object with sentinels should be ignored
+    {
+      code: `
+        function nestedUpdate(userId: string, expireAt: Date) {
+          const payload = {
+            user: {
+              id: userId,
+              lastLogin: FieldValue.serverTimestamp(),
+            },
+            meta: {
+              expireAt: Timestamp.fromDate(expireAt),
+            },
+          } as const satisfies UpdateData<UserDoc>;
+          return payload;
+        }
+      `,
+    },
+    // Object literal with a TS as-type (not const) plus sentinel should be ignored
+    {
+      code: `
+        function asTypeOnly(expireAt: Date) {
+          const data = ({
+            createdAt: FieldValue.serverTimestamp(),
+            expireAt: Timestamp.fromDate(expireAt),
+          } as UpdateData<VaripotentEvent>);
+          return data;
+        }
+      `,
+    },
+    // ParenthesizedExpression + satisfies wrapper around object with sentinel should be ignored
+    {
+      code: `
+        function parenthesized(expireAt: Date) {
+          const data = (({
+            createdAt: FieldValue.serverTimestamp(),
+            expireAt: Timestamp.fromDate(expireAt),
+          }) as const) satisfies UpdateData<VaripotentEvent>;
+          return data;
+        }
+      `,
+    },
+    // Optional chaining leading to a call expression in a property should still be ignored
+    {
+      code: `
+        function withOptional(expireAt: Date) {
+          const data = {
+            createdAt: FieldValue?.serverTimestamp(),
+            expireAt: Timestamp.fromDate(expireAt),
+          } as const;
+          return data;
+        }
+      `,
+    },
   ],
   invalid: [
     // Should flag immutable string constants
@@ -652,11 +742,11 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
             const labels = ['datadog', 'fix-me'];
 
             if (this.host) {
-              labels.push(\`\${this.host}\`);
+              labels.push(\`${'${'}this.host${'}'}\`);
             }
 
             if (this.version) {
-              labels.push(\`v\${this.version}\`);
+              labels.push(\`v${'${'}this.version${'}'}\`);
             }
 
             return labels;
