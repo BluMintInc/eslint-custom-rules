@@ -115,6 +115,64 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
       `,
       filename: 'functions/src/types/firestore/primitives-nested.ts',
     },
+    // Test: Allow arrays of alias to string literal union (bug repro)
+    {
+      code: `
+        export type ChannelGroupPermanence = 'temporary' | 'pinned';
+        export type Model = {
+          types: ChannelGroupPermanence[];
+          list: Array<ChannelGroupPermanence>;
+          readOnly: ReadonlyArray<ChannelGroupPermanence>;
+          nested: (ChannelGroupPermanence)[];
+        };
+      `,
+      filename: 'functions/src/types/firestore/User/ChannelGroup/util/isTemporary.ts',
+    },
+    // Test: Allow variable-level arrays of alias to string literal union
+    {
+      code: `
+        export type ChannelGroupPermanence = 'temporary' | 'pinned';
+        export const TEMP1: ChannelGroupPermanence[] = ['temporary', 'pinned'];
+        export const TEMP2: ReadonlyArray<ChannelGroupPermanence> = ['temporary'];
+        export const TEMP3: Array<ChannelGroupPermanence> = ['temporary'];
+      `,
+      filename: 'functions/src/types/firestore/User/ChannelGroup/util/isTemporary.ts',
+    },
+    // Test: Allow arrays of enums
+    {
+      code: `
+        export enum Perm { TEMPORARY = 'temporary', PINNED = 'pinned' }
+        export type T = { arr: Perm[]; ro: ReadonlyArray<Perm> };
+        export const ok: Perm[] = [Perm.TEMPORARY, Perm.PINNED];
+      `,
+      filename: 'functions/src/types/firestore/enums.ts',
+    },
+    // Test: Allow namespaced alias to string literals
+    {
+      code: `
+        declare namespace NS { export type Role = 'owner' | 'member' }
+        export type T = { roles: NS.Role[]; list: Array<NS.Role> };
+      `,
+      filename: 'functions/src/types/firestore/ns-alias.ts',
+    },
+    // Test: Allow arrays of keyof and template literal aliases
+    {
+      code: `
+        type Some = { a: 1; b: 2 };
+        type Slug = \`\${string}-\${string}\`;
+        export type T = { keys: (keyof Some)[]; slugs: Slug[] };
+      `,
+      filename: 'functions/src/types/firestore/keys-and-templates.ts',
+    },
+    // Test: Allow arrays of alias-of-alias literals
+    {
+      code: `
+        type A = 'a' | 'b';
+        type B = A;
+        export type T = { list: B[]; arr: Array<B> };
+      `,
+      filename: 'functions/src/types/firestore/alias-of-alias.ts',
+    },
   ],
   invalid: [
     // Test: Basic object array
@@ -253,6 +311,47 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
         export type T = { users: models.User[] };
       `,
       filename: 'functions/src/types/firestore/ns-objects.ts',
+      errors: [{ messageId: 'noObjectArrays' }],
+    },
+    // Test: Alias to object should be invalid
+    {
+      code: `
+        type Obj = { id: string };
+        type Alias = Obj;
+        export type T = { list: Alias[] };
+      `,
+      filename: 'functions/src/types/firestore/alias-object.ts',
+      errors: [{ messageId: 'noObjectArrays' }],
+    },
+    // Test: Alias to union including object should be invalid
+    {
+      code: `
+        type Obj = { id: string };
+        type Alias = Obj | 'ok';
+        export type T = { list: Alias[] };
+      `,
+      filename: 'functions/src/types/firestore/alias-union-object.ts',
+      errors: [{ messageId: 'noObjectArrays' }],
+    },
+    // Test: Namespaced interface alias should be invalid
+    {
+      code: `
+        declare namespace NS { export interface Obj { id: string } }
+        type Alias = NS.Obj;
+        export type T = { list: Alias[] };
+      `,
+      filename: 'functions/src/types/firestore/ns-alias-object.ts',
+      errors: [{ messageId: 'noObjectArrays' }],
+    },
+    // Test: Alias to mapped/intersection object should be invalid
+    {
+      code: `
+        type Keys = 'a' | 'b';
+        type Mapped = { [K in Keys]: string } & { extra: number };
+        type Alias = Mapped;
+        export type T = { list: Alias[] };
+      `,
+      filename: 'functions/src/types/firestore/mapped-intersection.ts',
       errors: [{ messageId: 'noObjectArrays' }],
     },
   ],
