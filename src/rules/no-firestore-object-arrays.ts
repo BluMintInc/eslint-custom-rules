@@ -81,68 +81,33 @@ const unwrapArrayElementType = (node: TSESTree.TypeNode): TSESTree.TypeNode => {
   return current;
 };
 
-const isObjectType = (node: TSESTree.TypeNode): boolean => {
-  if (isParenthesizedType(node)) {
-    return isObjectType((node as unknown as { typeAnnotation: TSESTree.TypeNode }).typeAnnotation);
-  }
-  switch (node.type) {
-    case AST_NODE_TYPES.TSTypeLiteral:
-      return true;
-    case AST_NODE_TYPES.TSTypeReference:
-      if (node.typeName.type === AST_NODE_TYPES.Identifier) {
-        const typeName = node.typeName.name;
-        return !PRIMITIVE_TYPES.has(typeName);
-      }
-      if (node.typeName.type === AST_NODE_TYPES.TSQualifiedName) {
-        const rightMost = getRightmostIdentifierName(node.typeName);
-        return !PRIMITIVE_TYPES.has(rightMost);
-      }
-      return true;
-    case AST_NODE_TYPES.TSIntersectionType:
-    case AST_NODE_TYPES.TSUnionType:
-      return node.types.some(isObjectType);
-    case AST_NODE_TYPES.TSMappedType:
-      return true;
-    case AST_NODE_TYPES.TSIndexedAccessType:
-      // Treat indexed access as object-like to align with existing tests
-      return true;
-    case AST_NODE_TYPES.TSTypeOperator:
-      if ((node as TSESTree.TSTypeOperator).operator === 'readonly') {
-        return isObjectType((node as TSESTree.TSTypeOperator).typeAnnotation as TSESTree.TypeNode);
-      }
-      return false;
-    case AST_NODE_TYPES.TSAnyKeyword:
-    case AST_NODE_TYPES.TSUnknownKeyword:
-      return false;
-    default:
-      return false;
-  }
-};
-
-const isImmediatelyWrappedByArraySyntax = (node: TSESTree.Node): boolean => {
-  let parent = (node as TSESTree.Node).parent as TSESTree.Node | undefined;
-  // Skip non-semantic wrappers (readonly/parens)
-  while (parent) {
+// Determine whether this type node appears in a Firestore model type context
+// i.e., within an interface or type alias declaration, and not within variable/function annotations
+const isInModelTypeContext = (node: TSESTree.Node): boolean => {
+  let current: TSESTree.Node | undefined = (node as TSESTree.Node).parent as TSESTree.Node | undefined;
+  while (current) {
+    // Hard stop for non-type declaration contexts
     if (
-      parent.type === AST_NODE_TYPES.TSTypeOperator &&
-      (parent as TSESTree.TSTypeOperator).operator === 'readonly'
+      current.type === AST_NODE_TYPES.VariableDeclarator ||
+      current.type === AST_NODE_TYPES.FunctionDeclaration ||
+      current.type === AST_NODE_TYPES.FunctionExpression ||
+      current.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+      current.type === AST_NODE_TYPES.MethodDefinition ||
+      current.type === AST_NODE_TYPES.TSMethodSignature ||
+      current.type === AST_NODE_TYPES.ClassDeclaration ||
+      current.type === AST_NODE_TYPES.PropertyDefinition ||
+      current.type === AST_NODE_TYPES.TSParameterProperty
     ) {
-      parent = (parent as unknown as { parent?: TSESTree.Node }).parent as TSESTree.Node | undefined;
-      continue;
+      return false;
     }
-    if ((AST_NODE_TYPES as any).TSParenthesizedType && parent.type === (AST_NODE_TYPES as any).TSParenthesizedType) {
-      parent = (parent as unknown as { parent?: TSESTree.Node }).parent as TSESTree.Node | undefined;
-      continue;
+    if (
+      current.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
+      current.type === AST_NODE_TYPES.TSInterfaceDeclaration
+    ) {
+      return true;
     }
-    break;
+    current = (current as unknown as { parent?: TSESTree.Node }).parent as TSESTree.Node | undefined;
   }
-  if (!parent) return false;
-  if (parent.type === AST_NODE_TYPES.TSArrayType) return true;
-  if (
-    parent.type === AST_NODE_TYPES.TSTypeReference &&
-    isArrayGenericReference(parent as TSESTree.TSTypeReference)
-  )
-    return true;
   return false;
 };
 
@@ -176,8 +141,199 @@ Prefer:
       return {};
     }
 
+    const sourceCode = context.getSourceCode();
+
+    // Collect alias/interface/enum information within this file to refine object vs primitive classification
+    const aliasNameToType = new Map<string, TSESTree.TypeNode>();
+    const interfaceNames = new Set<string>();
+    const enumNames = new Set<string>();
+
+    const visitNode = (n: TSESTree.Node): void => {
+      switch (n.type) {
+        case AST_NODE_TYPES.TSTypeAliasDeclaration: {
+          aliasNameToType.set(n.id.name, n.typeAnnotation);
+          break;
+        }
+        case AST_NODE_TYPES.TSInterfaceDeclaration: {
+          interfaceNames.add(n.id.name);
+          break;
+        }
+        case AST_NODE_TYPES.TSEnumDeclaration: {
+          enumNames.add(n.id.name);
+          break;
+        }
+        case AST_NODE_TYPES.ExportNamedDeclaration: {
+          if (n.declaration) visitNode(n.declaration as unknown as TSESTree.Node);
+          break;
+        }
+        case AST_NODE_TYPES.TSModuleDeclaration: {
+          const body = (n.body as any) || null;
+          if (body && body.type === AST_NODE_TYPES.TSModuleBlock) {
+            for (const stmt of (body.body as TSESTree.Node[])) {
+              visitNode(stmt);
+            }
+          } else if (body && body.type === AST_NODE_TYPES.TSModuleDeclaration) {
+            visitNode(body as unknown as TSESTree.Node);
+          }
+          break;
+        }
+        default: {
+          // Only traverse a shallow subset we care about
+          break;
+        }
+      }
+    };
+
+    for (const stmt of (sourceCode.ast.body as unknown as TSESTree.Node[])) {
+      visitNode(stmt);
+    }
+
+    const seenAlias = new Set<string>();
+
+    const isPrimitiveLikeAlias = (name: string, depth: number = 0): boolean => {
+      if (depth > 5) return false; // guard against cycles
+      if (PRIMITIVE_TYPES.has(name)) return true;
+      if (enumNames.has(name)) return true; // enums are non-object primitives for our purposes
+      const aliased = aliasNameToType.get(name);
+      if (!aliased) return false;
+      // Determine if the alias ultimately resolves to only primitive-like/literal types
+      const node = aliased as TSESTree.TypeNode;
+      const result = isPrimitiveLikeTypeNode(node, depth + 1);
+      if (result) seenAlias.add(name);
+      return result;
+    };
+
+    const isPrimitiveLikeTypeNode = (node: TSESTree.TypeNode, depth: number = 0): boolean => {
+      if (isParenthesizedType(node)) {
+        return isPrimitiveLikeTypeNode((node as unknown as { typeAnnotation: TSESTree.TypeNode }).typeAnnotation, depth + 1);
+      }
+      switch (node.type) {
+        case AST_NODE_TYPES.TSStringKeyword:
+        case AST_NODE_TYPES.TSNumberKeyword:
+        case AST_NODE_TYPES.TSBooleanKeyword:
+        case AST_NODE_TYPES.TSNullKeyword:
+        case AST_NODE_TYPES.TSUndefinedKeyword:
+        case AST_NODE_TYPES.TSAnyKeyword:
+        case AST_NODE_TYPES.TSUnknownKeyword:
+        case AST_NODE_TYPES.TSNeverKeyword:
+          return true;
+        case AST_NODE_TYPES.TSLiteralType:
+          return true; // string/number/boolean literals
+        case AST_NODE_TYPES.TSTypeReference: {
+          // Allow known primitive-like references and enums or primitive-like aliases
+          const ref = node as TSESTree.TSTypeReference;
+          if (ref.typeName.type === AST_NODE_TYPES.Identifier) {
+            const name = ref.typeName.name;
+            if (PRIMITIVE_TYPES.has(name) || enumNames.has(name)) return true;
+            if (seenAlias.has(name)) return true;
+            return isPrimitiveLikeAlias(name, depth + 1);
+          }
+          if (ref.typeName.type === AST_NODE_TYPES.TSQualifiedName) {
+            const name = getRightmostIdentifierName(ref.typeName);
+            if (PRIMITIVE_TYPES.has(name) || enumNames.has(name)) return true;
+            if (seenAlias.has(name)) return true;
+            return isPrimitiveLikeAlias(name, depth + 1);
+          }
+          return false;
+        }
+        case AST_NODE_TYPES.TSUnionType: {
+          return (node.types as TSESTree.TypeNode[]).every((t) => isPrimitiveLikeTypeNode(t, depth + 1));
+        }
+        case AST_NODE_TYPES.TSTypeOperator: {
+          // Treat keyof/unique symbol/etc as primitive-like to avoid false positives
+          if ((node as TSESTree.TSTypeOperator).operator !== 'readonly') return true;
+          return isPrimitiveLikeTypeNode((node as TSESTree.TSTypeOperator).typeAnnotation as TSESTree.TypeNode, depth + 1);
+        }
+        case (AST_NODE_TYPES as any).TSTemplateLiteralType as any: {
+          // Template literal types behave like strings
+          return true;
+        }
+        default:
+          return false;
+      }
+    };
+
+    const isObjectType = (node: TSESTree.TypeNode): boolean => {
+      if (isParenthesizedType(node)) {
+        return isObjectType((node as unknown as { typeAnnotation: TSESTree.TypeNode }).typeAnnotation);
+      }
+      switch (node.type) {
+        case AST_NODE_TYPES.TSTypeLiteral:
+          return true;
+        case AST_NODE_TYPES.TSTypeReference: {
+          const tn = node.typeName as TSESTree.Identifier | TSESTree.TSQualifiedName | TSESTree.ThisExpression;
+          if (tn.type !== AST_NODE_TYPES.Identifier && tn.type !== AST_NODE_TYPES.TSQualifiedName) {
+            // Unsupported reference (e.g., ThisType) — do not assume object to avoid false positives
+            return false;
+          }
+          const refName =
+            tn.type === AST_NODE_TYPES.Identifier
+              ? tn.name
+              : getRightmostIdentifierName(tn);
+
+          if (PRIMITIVE_TYPES.has(refName)) return false;
+          if (interfaceNames.has(refName)) return true;
+          if (enumNames.has(refName)) return false;
+          if (aliasNameToType.has(refName)) {
+            return !isPrimitiveLikeAlias(refName);
+          }
+          // Unknown reference: do not assume object to avoid false positives
+          return false;
+        }
+        case AST_NODE_TYPES.TSIntersectionType:
+        case AST_NODE_TYPES.TSUnionType:
+          return node.types.some(isObjectType);
+        case AST_NODE_TYPES.TSMappedType:
+          return true;
+        case AST_NODE_TYPES.TSIndexedAccessType:
+          // Treat indexed access as object-like to align with existing tests
+          return true;
+        case AST_NODE_TYPES.TSTypeOperator:
+          if ((node as TSESTree.TSTypeOperator).operator === 'readonly') {
+            return isObjectType((node as TSESTree.TSTypeOperator).typeAnnotation as TSESTree.TypeNode);
+          }
+          return false;
+        case AST_NODE_TYPES.TSAnyKeyword:
+        case AST_NODE_TYPES.TSUnknownKeyword:
+          return false;
+        default:
+          return false;
+      }
+    };
+
+    const isImmediatelyWrappedByArraySyntax = (node: TSESTree.Node): boolean => {
+      let parent = (node as TSESTree.Node).parent as TSESTree.Node | undefined;
+      // Skip non-semantic wrappers (readonly/parens)
+      while (parent) {
+        if (
+          parent.type === AST_NODE_TYPES.TSTypeOperator &&
+          (parent as TSESTree.TSTypeOperator).operator === 'readonly'
+        ) {
+          parent = (parent as unknown as { parent?: TSESTree.Node }).parent as TSESTree.Node | undefined;
+          continue;
+        }
+        if ((AST_NODE_TYPES as any).TSParenthesizedType && parent.type === (AST_NODE_TYPES as any).TSParenthesizedType) {
+          parent = (parent as unknown as { parent?: TSESTree.Node }).parent as TSESTree.Node | undefined;
+          continue;
+        }
+        break;
+      }
+      if (!parent) return false;
+      if (parent.type === AST_NODE_TYPES.TSArrayType) return true;
+      if (
+        parent.type === AST_NODE_TYPES.TSTypeReference &&
+        isArrayGenericReference(parent as TSESTree.TSTypeReference)
+      )
+        return true;
+      return false;
+    };
+
     return {
       TSArrayType(node) {
+        // Only consider arrays within model type/interface declarations
+        if (!isInModelTypeContext(node)) {
+          return;
+        }
         if (isImmediatelyWrappedByArraySyntax(node)) {
           return;
         }
@@ -196,6 +352,10 @@ Prefer:
             node.typeName.name === 'ReadonlyArray') &&
           node.typeParameters
         ) {
+          // Only consider arrays within model type/interface declarations
+          if (!isInModelTypeContext(node)) {
+            return;
+          }
           if (isImmediatelyWrappedByArraySyntax(node)) {
             return;
           }
