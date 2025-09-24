@@ -54,7 +54,7 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
     schema: [],
     messages: {
       requireMemoizeGetter:
-        'Private getters should be decorated with @Memoize() to preserve instance state and avoid redundant instantiation. Import Memoize from "typescript-memoize".',
+        'Private getters should be decorated with @Memoize() to preserve instance state and avoid redundant instantiation. Import Memoize from "@blumintinc/typescript-memoize".',
     },
   },
   defaultOptions: [],
