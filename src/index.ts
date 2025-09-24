@@ -54,6 +54,7 @@ import { default as enforceSerializableParams } from './rules/enforce-serializab
 import { enforceRealtimedbPathUtils } from './rules/enforce-realtimedb-path-utils';
 import { enforceMemoizeAsync } from './rules/enforce-memoize-async';
 import { enforceExportedFunctionTypes } from './rules/enforce-exported-function-types';
+import { enforceMemoizeGetters } from './rules/enforce-memoize-getters';
 import { noRedundantParamTypes } from './rules/no-redundant-param-types';
 import { noClassInstanceDestructuring } from './rules/no-class-instance-destructuring';
 import { noFirestoreObjectArrays } from './rules/no-firestore-object-arrays';
@@ -203,6 +204,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-memoize-async': 'error',
         '@blumintinc/blumint/enforce-exported-function-types': 'error',
         '@blumintinc/blumint/no-redundant-param-types': 'error',
+        '@blumintinc/blumint/enforce-memoize-getters': 'error',
         '@blumintinc/blumint/no-class-instance-destructuring': 'error',
         '@blumintinc/blumint/no-firestore-object-arrays': 'error',
         '@blumintinc/blumint/no-memoize-on-static': 'error',
@@ -341,6 +343,7 @@ module.exports = {
     'enforce-memoize-async': enforceMemoizeAsync,
     'enforce-exported-function-types': enforceExportedFunctionTypes,
     'no-redundant-param-types': noRedundantParamTypes,
+    'enforce-memoize-getters': enforceMemoizeGetters,
     'no-class-instance-destructuring': noClassInstanceDestructuring,
     'no-firestore-object-arrays': noFirestoreObjectArrays,
     'no-memoize-on-static': noMemoizeOnStatic,
