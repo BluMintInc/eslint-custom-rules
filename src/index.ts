@@ -127,6 +127,7 @@ import { preferNextDynamic } from './rules/prefer-next-dynamic';
 import { default as noRedundantUseCallbackWrapper } from './rules/no-redundant-usecallback-wrapper';
 import { noArrayLengthInDeps } from './rules/no-array-length-in-deps';
 import { preferUseDeepCompareMemo } from './rules/prefer-use-deep-compare-memo';
+import { enforceHttpsErrorCause } from './rules/enforce-https-error-cause';
 
 module.exports = {
   meta: {
@@ -271,6 +272,7 @@ module.exports = {
         '@blumintinc/blumint/no-redundant-usecallback-wrapper': 'error',
         '@blumintinc/blumint/no-array-length-in-deps': 'error',
         '@blumintinc/blumint/prefer-use-deep-compare-memo': 'error',
+        '@blumintinc/blumint/enforce-https-error-cause': 'error',
       },
     },
   },
@@ -412,5 +414,6 @@ module.exports = {
     'no-redundant-usecallback-wrapper': noRedundantUseCallbackWrapper,
     'no-array-length-in-deps': noArrayLengthInDeps,
     'prefer-use-deep-compare-memo': preferUseDeepCompareMemo,
+    'enforce-https-error-cause': enforceHttpsErrorCause,
   },
 };
