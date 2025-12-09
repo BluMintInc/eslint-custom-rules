@@ -15,9 +15,9 @@ const errors = (
   recommendedHook = 'useLatestCallback',
   count = 2,
 ) =>
-  (Array.from({ length: count }, () => ({
+  Array.from({ length: count }, () => ({
     message: expectedMessage(currentHook, recommendedHook),
-  })) as unknown as RuleError[]);
+  })) as unknown as RuleError[];
 
 ruleTesterJsx.run('use-latest-callback', useLatestCallback, {
   valid: [

@@ -2,7 +2,7 @@ import { ruleTesterTs, ruleTesterJsx } from '../utils/ruleTester';
 import { preferSettingsObject } from '../rules/prefer-settings-object';
 
 const tooManyParamsTemplate =
-  'Function accepts {{count}} positional parameters (limit {{minimum}}). Long positional lists hide each argument\'s meaning and make call sites easy to mis-order. Pass a single settings object so callers name each field and keep the call readable.';
+  "Function accepts {{count}} positional parameters (limit {{minimum}}). Long positional lists hide each argument's meaning and make call sites easy to mis-order. Pass a single settings object so callers name each field and keep the call readable.";
 
 const sameTypeParamsTemplate =
   'Function receives {{paramCount}} positional parameters including multiple "{{type}}" values. Repeated types in positional arguments invite swapped values and force callers to remember parameter order. Replace the positional list with a settings object so each value is labeled and self-documenting.';
@@ -240,7 +240,10 @@ ruleTesterTs.run('prefer-settings-object', preferSettingsObject, {
       code: `function sendEmail(to: string, from: string) { console.log(to, from); }`,
       options: [{ checkSameTypeParameters: true }],
       errors: [
-        { messageId: 'sameTypeParams', data: { paramCount: 2, type: 'string' } },
+        {
+          messageId: 'sameTypeParams',
+          data: { paramCount: 2, type: 'string' },
+        },
       ],
     },
     // Method signatures

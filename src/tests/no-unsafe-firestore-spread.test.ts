@@ -297,7 +297,10 @@ ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
         );
       `,
       errors: [
-        { messageId: 'unsafeObjectSpread', data: errorData('settings.preferences') },
+        {
+          messageId: 'unsafeObjectSpread',
+          data: errorData('settings.preferences'),
+        },
       ],
     },
     // Invalid: Dynamic object construction with spread
@@ -314,7 +317,9 @@ ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
           { merge: true }
         );
       `,
-      errors: [{ messageId: 'unsafeObjectSpread', data: errorData('settings') }],
+      errors: [
+        { messageId: 'unsafeObjectSpread', data: errorData('settings') },
+      ],
     },
     // Invalid: Spread in array methods
     {
@@ -369,7 +374,9 @@ ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
           },
         }, { merge: true });
       `,
-      errors: [{ messageId: 'unsafeObjectSpread', data: errorData('settings') }],
+      errors: [
+        { messageId: 'unsafeObjectSpread', data: errorData('settings') },
+      ],
     },
     // Invalid: Conditional spread
     {
@@ -384,7 +391,9 @@ ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
           { merge: true }
         );
       `,
-      errors: [{ messageId: 'unsafeObjectSpread', data: errorData('preferences') }],
+      errors: [
+        { messageId: 'unsafeObjectSpread', data: errorData('preferences') },
+      ],
     },
     // Invalid: Spread in array with FieldValue
     {
@@ -488,7 +497,10 @@ ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
       `,
       errors: [
         { messageId: 'unsafeObjectSpread', data: errorData('profile') },
-        { messageId: 'unsafeArraySpread', data: errorData('profile.preferences') },
+        {
+          messageId: 'unsafeArraySpread',
+          data: errorData('profile.preferences'),
+        },
       ],
     },
   ],

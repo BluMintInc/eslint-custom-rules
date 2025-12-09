@@ -122,7 +122,8 @@ export const useLatestCallback = createRule<[], MessageIds>({
             jsxReturningCallbacks.add(node);
           } else {
             hasNonJsxUseCallbacks = true;
-            const currentCallbackName = (node.callee as TSESTree.Identifier).name;
+            const currentCallbackName = (node.callee as TSESTree.Identifier)
+              .name;
             const replacementName = hasUseLatestCallbackImport
               ? useLatestCallbackImportName
               : currentCallbackName === 'useCallback'

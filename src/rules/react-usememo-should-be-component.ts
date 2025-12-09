@@ -1048,7 +1048,7 @@ export const reactUseMemoShouldBeComponent = createRule<[], MessageIds>({
     schema: [],
     messages: {
       useMemoShouldBeComponent:
-          'useMemo result "{{memoName}}" returns JSX, which hides a component inside a memoized value. JSX needs component identity so React can manage props, state, and dev tooling; wrapping it in useMemo bypasses that boundary and makes reuse/debugging harder. Extract this JSX into its own component and memoize it with React.memo if stability is required.',
+        'useMemo result "{{memoName}}" returns JSX, which hides a component inside a memoized value. JSX needs component identity so React can manage props, state, and dev tooling; wrapping it in useMemo bypasses that boundary and makes reuse/debugging harder. Extract this JSX into its own component and memoize it with React.memo if stability is required.',
     },
   },
   defaultOptions: [],

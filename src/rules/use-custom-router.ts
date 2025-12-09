@@ -36,7 +36,9 @@ export const useCustomRouter = createRule<[], MessageIds>({
               node,
               messageId: 'useCustomRouter',
               data: {
-                imports: specifiers.map((specifier) => specifier.local.name).join(', '),
+                imports: specifiers
+                  .map((specifier) => specifier.local.name)
+                  .join(', '),
               },
               fix(fixer) {
                 // If there are other imports from next/router, keep them
