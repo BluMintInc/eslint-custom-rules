@@ -12,7 +12,8 @@ ruleTesterJson.run(
         code: '{dependencies: {eslint: "^8.19.0"}}',
         errors: [
           {
-            messageId: 'unexpected',
+            message:
+              "Dependency 'eslint' is declared with the range '^8.19.0'. Ranges let package managers pull newer releases outside code review, which breaks reproducible installs and can hide breaking changes. Pin to an exact version like '8.19.0' (no ^ or ~) so dependency updates stay intentional and auditable.",
           },
         ],
         output: '{dependencies: {eslint: "8.19.0"}}',
@@ -21,7 +22,8 @@ ruleTesterJson.run(
         code: `{dependencies: {eslint: "~8.19.0"}}`,
         errors: [
           {
-            messageId: 'unexpected',
+            message:
+              "Dependency 'eslint' is declared with the range '~8.19.0'. Ranges let package managers pull newer releases outside code review, which breaks reproducible installs and can hide breaking changes. Pin to an exact version like '8.19.0' (no ^ or ~) so dependency updates stay intentional and auditable.",
           },
         ],
         output: '{dependencies: {eslint: "8.19.0"}}',
@@ -53,10 +55,12 @@ ruleTesterJson.run(
           `,
         errors: [
           {
-            messageId: 'unexpected',
+            message:
+              "Dependency 'requireindex' is declared with the range '^1.2.3'. Ranges let package managers pull newer releases outside code review, which breaks reproducible installs and can hide breaking changes. Pin to an exact version like '1.2.3' (no ^ or ~) so dependency updates stay intentional and auditable.",
           },
           {
-            messageId: 'unexpected',
+            message:
+              "Dependency 'eslint-doc-generator' is declared with the range '~4.5.6'. Ranges let package managers pull newer releases outside code review, which breaks reproducible installs and can hide breaking changes. Pin to an exact version like '4.5.6' (no ^ or ~) so dependency updates stay intentional and auditable.",
           },
         ],
         output: `{

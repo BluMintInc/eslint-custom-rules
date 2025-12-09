@@ -21,7 +21,7 @@ export const noUnpinnedDependencies: TSESLint.RuleModule<'unexpected', any[]> =
       schema: [],
       messages: {
         unexpected:
-          "Dependency '{{ propertyName }}' should be pinned to a specific version, but '{{ version }}' was found.",
+          "Dependency '{{ propertyName }}' is declared with the range '{{ version }}'. Ranges let package managers pull newer releases outside code review, which breaks reproducible installs and can hide breaking changes. Pin to an exact version like '{{ fixedVersion }}' (no ^ or ~) so dependency updates stay intentional and auditable.",
       },
     },
     defaultOptions: [],
@@ -59,16 +59,20 @@ export const noUnpinnedDependencies: TSESLint.RuleModule<'unexpected', any[]> =
               typeof version === 'string' &&
               (version.includes('^') || version.includes('~'))
             ) {
+              const fixedVersion = version.replace('^', '').replace('~', '');
               context.report({
                 node: node as unknown as TSESTree.Node,
                 messageId: 'unexpected',
                 data: {
                   propertyName,
                   version,
+                  fixedVersion,
                 },
                 fix: function (fixer) {
-                  const fixed = version.replace('^', '').replace('~', '');
-                  return fixer.replaceTextRange(node.range, `"${fixed}"`);
+                  return fixer.replaceTextRange(
+                    node.range,
+                    `"${fixedVersion}"`,
+                  );
                 },
               });
             }
