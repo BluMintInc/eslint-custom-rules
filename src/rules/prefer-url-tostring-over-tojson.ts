@@ -163,6 +163,9 @@ export const preferUrlToStringOverToJson: TSESLint.RuleModule<
         context.report({
           node,
           messageId: 'preferToString',
+          data: {
+            urlText: sourceCode.getText(objectExpr),
+          },
           fix(fixer) {
             // If inside JSON.stringify and not optional chain, replace the entire call with just the object
             if (
@@ -194,7 +197,7 @@ export const preferUrlToStringOverToJson: TSESLint.RuleModule<
     schema: [],
     messages: {
       preferToString:
-        'Use toString() instead of toJSON() on URL objects. When serializing with JSON.stringify, pass the URL object directly.',
+        'URL value {{urlText}} calls toJSON(), which hides that JSON.stringify already invokes toJSON and adds an unnecessary method hop. Replace the call with toString() when you need a string, or pass the URL object directly to JSON.stringify so serialization stays explicit and stable.',
     },
   },
   defaultOptions: [],
