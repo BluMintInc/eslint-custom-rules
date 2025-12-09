@@ -7,14 +7,14 @@ export const enforceFirebaseImports = createRule({
     type: 'problem',
     docs: {
       description:
-        'Enforce dynamic importing for modules within the firebaseCloud directory to optimize initial bundle size. This ensures Firebase-related code is only loaded when needed, improving application startup time and reducing the main bundle size.',
+        'Require firebaseCloud modules to be loaded via dynamic import so Firebase code stays out of the initial bundle and only loads when needed.',
       recommended: 'error',
     },
     fixable: 'code',
     schema: [],
     messages: {
       noDynamicImport:
-        'Static imports from firebaseCloud directory are not allowed to reduce initial bundle size. Instead of `import { func } from "./firebaseCloud/module"`, use dynamic import: `const { func } = await import("./firebaseCloud/module")`.',
+        'Static import from firebaseCloud path "{{importPath}}" eagerly bundles Firebase handlers into the initial client chunk, which inflates startup time and prevents lazy loading. Replace it with an awaited dynamic import so the code only loads when invoked (e.g., `const module = await import(\'{{importPath}}\')` or destructure the exports you need).',
     },
   },
   defaultOptions: [],
@@ -64,6 +64,7 @@ export const enforceFirebaseImports = createRule({
         context.report({
           node,
           messageId: 'noDynamicImport',
+          data: { importPath },
           fix(fixer) {
             const statements: string[] = [];
 
