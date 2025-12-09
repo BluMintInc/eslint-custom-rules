@@ -119,7 +119,7 @@ jobs:
           The script will:
           1. Post your research findings as a comment on the issue
           2. Manipulate labels based on your recommendation:
-             - Remove \`research-needed\` label
+             - Remove \`cursor-research\` label
              - Add \`research-complete\` label
              - If NO MATCH: Also add \`cursor-implement\` label
           PROMPT_ISSUE

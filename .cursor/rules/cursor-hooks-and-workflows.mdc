@@ -20,7 +20,7 @@ This system automates the ESLint rule development lifecycle using **Cursor Hooks
                                       │
                                       ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│               cursor-rule-research-agent.yml (research-needed)               │
+│               cursor-rule-research-agent.yml (cursor-research)               │
 │     • Searches web for existing ESLint rules                                 │
 │     • Posts findings as issue comment                                        │
 │     • Labels: research-complete, cursor-implement (if NO MATCH)              │
@@ -91,7 +91,7 @@ scripts/
 |-------|---------|
 | `rule-request` | New ESLint rule request |
 | `bug` | Bug in existing rule |
-| `research-needed` | Triggers research workflow |
+| `cursor-research` | Triggers research workflow |
 | `research-complete` | Research has been performed |
 | `cursor-implement` | Triggers implementation workflow |
 | `cursor-fix` | Triggers bug fix workflow |
@@ -100,7 +100,7 @@ scripts/
 
 ### 1. Research Workflow (`cursor-rule-research-agent.yml`)
 
-**Trigger**: Issue labeled with `research-needed`
+**Trigger**: Issue labeled with `cursor-research`
 
 **Purpose**: Search for existing ESLint rules before implementing
 
@@ -110,7 +110,7 @@ scripts/
 3. Agent writes findings to `.cursor/tmp/research-results.md`
 4. Agent runs `post-research-comment.ts` which:
    - Posts findings as issue comment
-   - Removes `research-needed` label
+   - Removes `cursor-research` label
    - Adds `research-complete` label
    - If NO MATCH: Adds `cursor-implement` label
 
@@ -248,7 +248,7 @@ If an agent keeps failing the same check:
 
 ### Research Workflow Not Triggering
 
-- Ensure issue has `research-needed` label
+- Ensure issue has `cursor-research` label
 - Check if research comment already exists (short-circuit logic)
 - Verify `CURSOR_API_KEY` secret is configured
 
@@ -361,7 +361,7 @@ Use [act](https://github.com/nektos/act) to test GitHub workflows locally:
 cat > test-event.json << 'EOF'
 {
   "action": "labeled",
-  "label": { "name": "research-needed" },
+  "label": { "name": "cursor-research" },
   "issue": { "number": 123, "title": "Test Rule", "body": "Test body" }
 }
 EOF
