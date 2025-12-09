@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { minimatch } from 'minimatch';
 import { createRule } from '../utils/createRule';
 
@@ -16,6 +16,8 @@ const DEFAULT_CONTAINERS: string[] = ['*Aggregation', 'previews', '*Previews'];
 function describeNestedPath(
   containerValue: TSESTree.ObjectExpression,
 ): string | null {
+  let objectFallback: string | null = null;
+  let primitiveFallback: string | null = null;
   for (const prop of containerValue.properties) {
     if (prop.type === AST_NODE_TYPES.SpreadElement) continue;
     if (!isProperty(prop)) continue;
@@ -31,12 +33,16 @@ function describeNestedPath(
         const childKey = getPropertyName(child);
         if (childKey) return `${firstKey}.${childKey}`;
       }
+
+      // Object container without usable child keys still signals nested intent
+      if (!objectFallback) objectFallback = firstKey;
+      continue;
     }
 
-    return firstKey;
+    if (!primitiveFallback) primitiveFallback = firstKey;
   }
 
-  return null;
+  return objectFallback ?? primitiveFallback;
 }
 
 function isObjectExpression(
@@ -264,7 +270,7 @@ function hasDeeperThanOneLevelUnderContainer(
 
 function analyzeReturnedObject(
   obj: TSESTree.ObjectExpression,
-  context: any,
+  context: TSESLint.RuleContext<MessageIds, [RuleOptions?]>,
   containerNameMatches: (name: string) => boolean,
 ) {
   for (const top of obj.properties) {
@@ -353,8 +359,8 @@ export const preferFieldPathsInTransforms = createRule<
 
     function isInTargetTransform(returnNode: TSESTree.Node): boolean {
       // Find nearest function ancestor
-      let current: TSESTree.Node | undefined | null = (returnNode as any)
-        .parent as TSESTree.Node | null;
+      let current: TSESTree.Node | null =
+        (returnNode as { parent?: TSESTree.Node | null }).parent ?? null;
       while (current) {
         if (
           current.type === AST_NODE_TYPES.FunctionExpression ||
@@ -368,7 +374,7 @@ export const preferFieldPathsInTransforms = createRule<
           if (isTransformEachVaripotent(fn)) return false;
           if (isTransformEachFunction(fn)) return true;
         }
-        current = (current as any).parent as TSESTree.Node | null;
+        current = (current as { parent?: TSESTree.Node | null }).parent ?? null;
       }
       return false;
     }

@@ -159,6 +159,38 @@ ruleTesterTs.run(
       `,
         errors: [error('matchesAggregation', 'matchPreviews')],
       },
+      // Nested object is not the first property under container
+      {
+        code: `
+        const strategy = {
+          transformEach(doc) {
+            return {
+              matchesAggregation: {
+                leaf: 123,
+                matchPreviews: { [doc.id]: doc.preview },
+              },
+            };
+          }
+        };
+      `,
+        errors: [error('matchesAggregation', 'matchPreviews')],
+      },
+      // Computed-only nested objects: prefer first object key for fallback
+      {
+        code: `
+        const strategy = {
+          transformEach(doc) {
+            return {
+              matchesAggregation: {
+                first: { [doc.id]: doc.preview },
+                second: { [doc.otherId]: doc.preview },
+              },
+            };
+          }
+        };
+      `,
+        errors: [error('matchesAggregation', 'first')],
+      },
       // Nested two levels under previews
       {
         code: `
