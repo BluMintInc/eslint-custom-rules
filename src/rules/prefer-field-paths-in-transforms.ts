@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { minimatch } from 'minimatch';
 import { createRule } from '../utils/createRule';
 
@@ -270,7 +270,7 @@ function hasDeeperThanOneLevelUnderContainer(
 
 function analyzeReturnedObject(
   obj: TSESTree.ObjectExpression,
-  context: any,
+  context: TSESLint.RuleContext<MessageIds, [RuleOptions?]>,
   containerNameMatches: (name: string) => boolean,
 ) {
   for (const top of obj.properties) {
@@ -359,8 +359,8 @@ export const preferFieldPathsInTransforms = createRule<
 
     function isInTargetTransform(returnNode: TSESTree.Node): boolean {
       // Find nearest function ancestor
-      let current: TSESTree.Node | undefined | null = (returnNode as any)
-        .parent as TSESTree.Node | null;
+      let current: TSESTree.Node | null =
+        (returnNode as { parent?: TSESTree.Node | null }).parent ?? null;
       while (current) {
         if (
           current.type === AST_NODE_TYPES.FunctionExpression ||
@@ -374,7 +374,7 @@ export const preferFieldPathsInTransforms = createRule<
           if (isTransformEachVaripotent(fn)) return false;
           if (isTransformEachFunction(fn)) return true;
         }
-        current = (current as any).parent as TSESTree.Node | null;
+        current = (current as { parent?: TSESTree.Node | null }).parent ?? null;
       }
       return false;
     }
