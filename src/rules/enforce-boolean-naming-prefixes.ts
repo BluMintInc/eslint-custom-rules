@@ -56,9 +56,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     ],
     messages: {
       missingBooleanPrefix:
-        'Boolean {{type}} "{{name}}" should start with a prefix like "is", "has", "can", or "should" (e.g., is{{capitalizedName}}, has{{capitalizedName}}). ' +
-        'Boolean prefixes make code self-documenting—readers immediately know the value is true/false without checking its declaration or type. ' +
-        'This improves readability at call sites: `if (user.{{name}})` is ambiguous, but `if (user.is{{capitalizedName}})` clearly signals a boolean check.',
+        'Boolean {{type}} "{{name}}" is missing an approved boolean prefix ({{prefixes}}). ' +
+        'Prefixes immediately communicate that the value is a true/false predicate; without one, checks like `if ({{name}})` read as generic truthiness guards and hide the boolean intent. ' +
+        'Rename by prepending any approved prefix so the name becomes `prefix{{capitalizedName}}`, making the boolean contract obvious at call sites and API boundaries.',
     },
   },
   defaultOptions: [{ prefixes: DEFAULT_BOOLEAN_PREFIXES }],

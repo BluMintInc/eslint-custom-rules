@@ -1,5 +1,34 @@
+import type { TSESLint } from '@typescript-eslint/utils';
+
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceBooleanNamingPrefixes } from '../rules/enforce-boolean-naming-prefixes';
+
+const defaultPrefixes =
+  'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts';
+
+type MessageArgs = {
+  type: string;
+  name: string;
+  capitalizedName: string;
+  prefixes: string;
+};
+
+const buildMessage = ({
+  type,
+  name,
+  capitalizedName,
+  prefixes,
+}: MessageArgs) =>
+  `Boolean ${type} "${name}" is missing an approved boolean prefix (${prefixes}). ` +
+  `Prefixes immediately communicate that the value is a true/false predicate; without one, checks like \`if (${name})\` read as generic truthiness guards and hide the boolean intent. ` +
+  `Rename by prepending any approved prefix so the name becomes \`prefix${capitalizedName}\`, making the boolean contract obvious at call sites and API boundaries.`;
+
+const buildError = (
+  args: MessageArgs,
+): TSESLint.TestCaseError<'missingBooleanPrefix'> =>
+  ({
+    message: buildMessage(args),
+  } as unknown as TSESLint.TestCaseError<'missingBooleanPrefix'>);
 
 ruleTesterTs.run(
   'enforce-boolean-naming-prefixes',
@@ -77,46 +106,34 @@ ruleTesterTs.run(
       {
         code: 'const active = true;',
         errors: [
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'variable',
-              name: 'active',
-              capitalizedName: 'Active',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
+          buildError({
+            type: 'variable',
+            name: 'active',
+            capitalizedName: 'Active',
+            prefixes: defaultPrefixes,
+          }),
         ],
       },
       {
         code: 'const userLoggedIn = false;',
         errors: [
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'variable',
-              name: 'userLoggedIn',
-              capitalizedName: 'UserLoggedIn',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
+          buildError({
+            type: 'variable',
+            name: 'userLoggedIn',
+            capitalizedName: 'UserLoggedIn',
+            prefixes: defaultPrefixes,
+          }),
         ],
       },
       {
         code: 'const completed = isTaskFinished();',
         errors: [
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'variable',
-              name: 'completed',
-              capitalizedName: 'Completed',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
+          buildError({
+            type: 'variable',
+            name: 'completed',
+            capitalizedName: 'Completed',
+            prefixes: defaultPrefixes,
+          }),
         ],
       },
 
@@ -124,31 +141,23 @@ ruleTesterTs.run(
       {
         code: 'function toggleFeature(enabled: boolean) { /* ... */ }',
         errors: [
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'parameter',
-              name: 'enabled',
-              capitalizedName: 'Enabled',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
+          buildError({
+            type: 'parameter',
+            name: 'enabled',
+            capitalizedName: 'Enabled',
+            prefixes: defaultPrefixes,
+          }),
         ],
       },
       {
         code: 'const handleSubmit = (valid: boolean) => { /* ... */ };',
         errors: [
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'parameter',
-              name: 'valid',
-              capitalizedName: 'Valid',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
+          buildError({
+            type: 'parameter',
+            name: 'valid',
+            capitalizedName: 'Valid',
+            prefixes: defaultPrefixes,
+          }),
         ],
       },
 
@@ -165,36 +174,24 @@ ruleTesterTs.run(
       }
       `,
         errors: [
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'verified',
-              capitalizedName: 'Verified',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'premium',
-              capitalizedName: 'Premium',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'method',
-              name: 'accountLocked',
-              capitalizedName: 'AccountLocked',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
+          buildError({
+            type: 'property',
+            name: 'verified',
+            capitalizedName: 'Verified',
+            prefixes: defaultPrefixes,
+          }),
+          buildError({
+            type: 'property',
+            name: 'premium',
+            capitalizedName: 'Premium',
+            prefixes: defaultPrefixes,
+          }),
+          buildError({
+            type: 'method',
+            name: 'accountLocked',
+            capitalizedName: 'AccountLocked',
+            prefixes: defaultPrefixes,
+          }),
         ],
       },
 
@@ -207,26 +204,18 @@ ruleTesterTs.run(
       }
       `,
         errors: [
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'active',
-              capitalizedName: 'Active',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'subscription',
-              capitalizedName: 'Subscription',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
+          buildError({
+            type: 'property',
+            name: 'active',
+            capitalizedName: 'Active',
+            prefixes: defaultPrefixes,
+          }),
+          buildError({
+            type: 'property',
+            name: 'subscription',
+            capitalizedName: 'Subscription',
+            prefixes: defaultPrefixes,
+          }),
         ],
       },
 
@@ -234,26 +223,18 @@ ruleTesterTs.run(
       {
         code: 'const settings = { enabled: true, feature: false };',
         errors: [
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'enabled',
-              capitalizedName: 'Enabled',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'feature',
-              capitalizedName: 'Feature',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
+          buildError({
+            type: 'property',
+            name: 'enabled',
+            capitalizedName: 'Enabled',
+            prefixes: defaultPrefixes,
+          }),
+          buildError({
+            type: 'property',
+            name: 'feature',
+            capitalizedName: 'Feature',
+            prefixes: defaultPrefixes,
+          }),
         ],
       },
 
@@ -261,31 +242,23 @@ ruleTesterTs.run(
       {
         code: 'function authorized(): boolean { return checkAuth(); }',
         errors: [
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'function',
-              name: 'authorized',
-              capitalizedName: 'Authorized',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
+          buildError({
+            type: 'function',
+            name: 'authorized',
+            capitalizedName: 'Authorized',
+            prefixes: defaultPrefixes,
+          }),
         ],
       },
       {
         code: 'function userExists(id: string): boolean { /* ... */ }',
         errors: [
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'function',
-              name: 'userExists',
-              capitalizedName: 'UserExists',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
+          buildError({
+            type: 'function',
+            name: 'userExists',
+            capitalizedName: 'UserExists',
+            prefixes: defaultPrefixes,
+          }),
         ],
       },
 
@@ -293,31 +266,23 @@ ruleTesterTs.run(
       {
         code: 'const valid = (): boolean => true;',
         errors: [
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'variable',
-              name: 'valid',
-              capitalizedName: 'Valid',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
+          buildError({
+            type: 'variable',
+            name: 'valid',
+            capitalizedName: 'Valid',
+            prefixes: defaultPrefixes,
+          }),
         ],
       },
       {
         code: 'const permission = (user): boolean => checkAccess(user);',
         errors: [
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'variable',
-              name: 'permission',
-              capitalizedName: 'Permission',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
+          buildError({
+            type: 'variable',
+            name: 'permission',
+            capitalizedName: 'Permission',
+            prefixes: defaultPrefixes,
+          }),
         ],
       },
 
@@ -326,15 +291,12 @@ ruleTesterTs.run(
         code: 'const isActive = true;',
         options: [{ prefixes: ['has', 'can'] }],
         errors: [
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'variable',
-              name: 'isActive',
-              capitalizedName: 'IsActive',
-              prefixes: 'has, can',
-            },
-          },
+          buildError({
+            type: 'variable',
+            name: 'isActive',
+            capitalizedName: 'IsActive',
+            prefixes: 'has, can',
+          }),
         ],
       },
     ],

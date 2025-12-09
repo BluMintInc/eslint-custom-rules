@@ -6,11 +6,27 @@
 
 <!-- end auto-generated rule header -->
 
-Enforce consistent naming conventions for boolean values by requiring approved prefixes.
+Boolean names without a clear prefix read like generic nouns. When they appear in conditions, props, or configuration objects, readers cannot tell that they are true/false values and may treat them as strings or objects. This rule enforces an approved boolean prefix so every boolean value advertises its contract at the call site.
 
 ## Rule Details
 
-This rule enforces that variables, parameters, properties, and functions with boolean types or values must start with an approved prefix. This improves code readability by making boolean values immediately recognizable from their names.
+This rule requires boolean-typed or boolean-valued identifiers to start with an approved prefix. Without one, checks like `if (user.active)` read as generic truthiness guards; `if (user.isActive)` signals a boolean predicate and makes the intent obvious.
+
+### Why this rule matters
+
+- Boolean prefixes make predicates self-documenting at call sites and in object literals, reducing misreads like treating a boolean as a string or object.
+- Truthiness checks become explicit: `if (user.isActive)` signals a boolean contract, while `if (user.active)` could mask non-boolean values.
+- Consistent prefixes keep public APIs and props easy to scan, especially when options objects cross module boundaries.
+
+### What this rule checks
+
+- Variable declarations typed or inferred as boolean (including arrow functions returning boolean).
+- Functions and methods that return boolean values.
+- Function parameters typed as boolean and boolean properties inside parameter object type literals.
+- Object literal properties, class properties, and interface/type property signatures with boolean types or values.
+- Excludes type predicates and identifiers starting with `_`, which are treated as internal state.
+
+### Approved prefixes
 
 By default, the following prefixes are allowed:
 - `is` - indicates state (e.g., `isActive`)
@@ -29,19 +45,16 @@ By default, the following prefixes are allowed:
 - `needs` - indicates requirement (e.g., `needsUpdate`)
 - `asserts` - indicates verification (e.g., `assertsValidity`)
 
-### Examples of **incorrect** code for this rule:
+### Examples of **incorrect** code for this rule
 
 ```ts
-// Variables with boolean values
 const active = true;
 const userLoggedIn = false;
 const completed = isTaskFinished();
 
-// Function parameters with boolean types
 function toggleFeature(enabled: boolean) { /* ... */ }
 const handleSubmit = (valid: boolean) => { /* ... */ };
 
-// Class properties with boolean values
 class UserAccount {
   private verified = false;
   static premium = false;
@@ -51,24 +64,20 @@ class UserAccount {
   }
 }
 
-// Interface properties with boolean types
 interface UserState {
   active: boolean;
   subscription: boolean;
 }
 
-// Object literal with boolean properties
 const settings = { enabled: true, feature: false };
 
-// Functions returning boolean values
 function authorized(): boolean { return checkAuth(); }
 function userExists(id: string): boolean { /* ... */ }
 ```
 
-### Examples of **correct** code for this rule:
+### Examples of **correct** code for this rule
 
 ```ts
-// Variables with boolean values
 const isActive = true;
 const isUserLoggedIn = false;
 const hasCompleted = isTaskFinished();
@@ -84,12 +93,10 @@ const allowsEditing = checkPermission("edit");
 const supportsVideo = checkFeatures().video;
 const needsRefresh = isStale || isOutdated;
 
-// Function parameters with boolean types
 function toggleFeature(isEnabled: boolean) { /* ... */ }
 function processUser(hasAccess: boolean, canModify: boolean) { /* ... */ }
 const handleSubmit = (isValid: boolean) => { /* ... */ };
 
-// Class properties with boolean values
 class UserAccount {
   private isVerified = false;
   static isPremium = false;
@@ -99,17 +106,14 @@ class UserAccount {
   }
 }
 
-// Interface properties with boolean types
 interface UserState {
   isActive: boolean;
   hasSubscription: boolean;
   canAccessPremium: boolean;
 }
 
-// Object literal with boolean properties
 const settings = { isEnabled: true, hasFeature: false };
 
-// Functions returning boolean values
 function isAuthorized(): boolean { return checkAuth(); }
 function canPerformAction(): boolean { return true; }
 ```
@@ -118,10 +122,9 @@ function canPerformAction(): boolean { return true; }
 
 #### Type Predicates
 
-Type predicates are not checked by this rule, as they have their own naming conventions:
+Type predicates are exempt because their `is` naming is part of the TypeScript type system:
 
 ```ts
-// These are valid even though they don't follow the boolean prefix rule
 function isString(value: any): value is string { return typeof value === "string"; }
 function isUser(obj: any): obj is User { return obj && obj.id && obj.name; }
 const isNumber = (val: any): val is number => typeof val === "number";
@@ -129,10 +132,9 @@ const isNumber = (val: any): val is number => typeof val === "number";
 
 #### Private/Internal Properties with Underscore Prefix
 
-Properties that start with an underscore (`_`) are considered private or internal implementation details and are exempt from this rule:
+Properties that start with an underscore (`_`) are treated as internal state and are exempt from this rule:
 
 ```ts
-// These are valid even though they don't have an approved boolean prefix after the underscore
 interface UserState {
   _loading: boolean;  // Valid - underscore prefix indicates internal state
   _fetched: boolean;  // Valid - underscore prefix indicates internal state
