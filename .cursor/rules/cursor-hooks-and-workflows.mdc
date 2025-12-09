@@ -72,10 +72,13 @@ scripts/
 │   ├── agent-check.ts                   # Main stop hook logic
 │   ├── change-log.ts                    # Change log utilities
 │   ├── lint-diff.ts                     # Lint changed files only
+│   ├── pr-review-check.ts               # PR review comment check for stop hook
 │   ├── track-changes.ts                 # Track file modifications
 │   ├── track-prompt.ts                  # Track prompts & detect flags
 │   ├── types.ts                         # Shared TypeScript types
 │   └── validate-rule-structure.ts       # Validate rule has all files
+├── cli/
+│   └── git-utils.ts                     # Git CLI utilities
 └── github/
     └── post-research-comment.ts         # Post research findings to issue
 
@@ -161,17 +164,18 @@ scripts/
 
 1. **Heartbeat Update**: Record activity timestamp
 2. **Status Check**: Skip checks if agent status is not `completed`
-3. **Build Validation**: `npm run build` must succeed
-4. **Linting Validation**: ESLint on changed files only
-5. **Test Validation**: `npm test` must pass
-6. **Rule Structure Validation**: For rule implementations, verify:
+3. **PR Review Check**: For PR review branches (`*-review-pr-*`), check for unresolved comments (see `automated-review-addressing.mdc`)
+4. **Build Validation**: `npm run build` must succeed
+5. **Linting Validation**: ESLint on changed files only
+6. **Test Validation**: `npm test` must pass
+7. **Rule Structure Validation**: For rule implementations, verify:
    - `src/rules/{rule-name}.ts` exists
    - `src/tests/{rule-name}.test.ts` exists
    - `docs/rules/{rule-name}.md` exists
    - `src/index.ts` updated in 3 places (import, config, rules)
    - `README.md` mentions the rule
-7. **Check-Your-Work Prompt**: Self-review prompt
-8. **Expand Tests Prompt**: For rule implementations only (requires 20+ tests)
+8. **Check-Your-Work Prompt**: Self-review prompt
+9. **Expand Tests Prompt**: For rule implementations only (requires 20+ tests)
 
 ### Rule Request Detection
 

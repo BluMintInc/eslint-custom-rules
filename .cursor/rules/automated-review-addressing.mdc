@@ -1,0 +1,209 @@
+---
+description: Automated Review Addressing System — PR review batches launch a Cursor Background Agent to fetch, triage, implement, and resolve feedback
+globs: .github/workflows/cursor-pr-review-agent.yml,.github/scripts/address-review.ts,.github/scripts/build-pr-review-context.py,.github/scripts/build-pr-review-prompt.ts,scripts/pr-check-comments.sh,scripts/pr-check-bot-comments.sh,scripts/pr-apply-comment-decisions.sh,scripts/pr-resolve-comments.sh,scripts/cursor-hooks/pr-review-check.ts,scripts/cli/git-utils.ts,.cursor/commands/pr-review.md,.cursor/commands/pr-review-ai-bots.md
+alwaysApply: false
+---
+
+## Introduction
+
+### Purpose
+
+The Automated Review Addressing System streamlines pull request reviews by automatically launching a Cursor Background Agent for human reviews to implement code changes that address a review batch immediately after submission. For bot reviews, the system skips automatic launches, requiring manual triggering via `/pr-review-ai-bots` to provide explicit instructions. The agent iterates on feedback in small batches, opens a "mini PR" targeting the original PR's branch, and resolves review threads via repository-provided scripts. The result is faster PR cycles with less manual triage for human reviews, while preserving developer control for bot reviews.
+
+### Definitions
+
+- **Background Agent**: A Cursor agent launched automatically (for human reviews) or manually (for bot reviews) to process a review batch and create a mini PR with edits.
+- **Review Batch**: A single GitHub review submission (human or AI bot) that may contain multiple inline comments.
+- **Mini PR**: A PR created by the agent with the reviewed edits, targeting the original PR's source branch.
+- **Human Review Flow**: Automatically triggered; processes human review comments; works in sets of ~7 comments; resolves via `resolve-comments`.
+- **AI Bot Review Flow**: Manually triggered via `/pr-review-ai-bots`; processes AI bot review comments; triages validity first; works in sets of ~5 comments; resolves via `apply-comment-decisions`.
+- **Review Batch ID**: The numeric GitHub review identifier; encoded in the agent's target branch name to allow precise scoping.
+
+## Why did we build Automated Review Addressing?
+
+Manual triage of dense review batches slows down delivery and burdens reviewers with repetitive coordination. For human reviews, automatically launching a Background Agent on each review batch keeps PRs progressing: unresolved items are fetched and addressed in tight loops, small groups of comments are processed per pass, and result changes are proposed via a mini PR for developers to review and merge. For bot reviews, automatic launches are disabled to prevent PR clutter and reduce costs, since developers often cherry-pick from bot PRs rather than merging them fully; manual triggering via `/pr-review-ai-bots` provides better control and efficiency.
+
+## How does this system make developers' lives easier?
+
+- **Faster review turnaround**: For human reviews, an agent begins addressing comments immediately upon review submission.
+- **Reduced toil**: Repetitive fetch/triage/resolve steps are automated using in-repo scripts and rules.
+- **Clear artifacts**: The agent opens a mini PR that is easy to audit, amend, or decline.
+- **Manual control for bot reviews**: Bot reviews require manual triggering via `/pr-review-ai-bots`, allowing developers to provide explicit instructions (e.g., ignoring invalid comments) rather than automatically opening mini-PRs that often get cherry-picked from instead of merged fully.
+
+## Directory Structure
+
+```
+.github/
+├── workflows/
+│   └── cursor-pr-review-agent.yml        # Launches Background Agent on pull_request_review: submitted
+└── scripts/
+    ├── address-review.ts                  # Local CLI to replicate cloud agent setup
+    ├── build-pr-review-context.py        # Gathers structured context for agent prompts
+    └── build-pr-review-prompt.ts         # Constructs agent prompt with dynamic task sizing
+
+scripts/
+├── cursor-hooks/
+│   ├── pr-review-check.ts                # Detects PR review branches, checks for unresolved comments
+│   └── agent-check.ts                    # Orchestrates all stop-time checks including PR review
+├── cli/
+│   └── git-utils.ts                      # Git CLI utilities for branch/PR operations
+├── pr-check-comments.sh                  # Fetch unresolved human comments via GitHub GraphQL API
+├── pr-check-bot-comments.sh              # Fetch unresolved bot comments
+├── pr-apply-comment-decisions.sh         # Apply reactions and resolve threads for bot comments
+└── pr-resolve-comments.sh                # Resolve review threads directly
+
+.cursor/commands/
+├── pr-review.md                          # Command playbook for human reviews
+└── pr-review-ai-bots.md                  # Command playbook for AI bot reviews
+```
+
+## How It Works
+
+### 1) Launch on Review Submission
+
+When a review is submitted on a PR, `.github/workflows/cursor-pr-review-agent.yml` executes:
+
+- Runs Python context builder (`.github/scripts/build-pr-review-context.py`) to gather PR metadata, review metadata, determine bot status, and fetch CodeRabbit summary.
+- **For human reviews**: Automatically launches a Background Agent to address comments.
+- **For bot reviews**: Skips automatic agent launch. Developers should manually use the `/pr-review-ai-bots` command in Cursor Chat.
+- Derives a background branch name that encodes the PR number and review batch ID:
+  - Pattern: `{source_branch}-review-pr-{PR_NUMBER}-{REVIEW_ID}`
+- Builds a structured prompt file embedding the JSON context and inline instructions.
+- Calls the Cursor Background Agent API with repository/ref, target branch, and model.
+- Posts a PR review comment with a link to the agent run for visibility.
+
+### 2) Agent Iteration Loop
+
+Inside the agent session, the agent follows inline instructions embedded in the prompt:
+
+- **Human review flow** (automatic): The agent receives ~7 unresolved comments in the initial prompt and then every time it attempts to finish, receives more unresolved comments via Cursor "stop" Hook followup messages. It processes comments, implements edits, and resolves completed threads with `npm run resolve-comments -- <comment_url_1> <comment_url_2> ...`.
+- **AI bot review flow** (manual): When manually triggered via `/pr-review-ai-bots`, the agent receives ~5 unresolved bot comments. It triages validity one-by-one, generates `decisions.json`, and runs `npm run apply-comment-decisions -- .cursor/tmp/decisions.json` to react and resolve threads.
+- The agent opens a mini PR targeting the source branch of the original PR.
+- **Note**: The agent does not need to fetch comments manually; the stop hook automatically fetches and presents unresolved comments when the agent attempts to stop.
+
+### 3) Stop Hook Integration
+
+When the agent attempts to stop, the stop hook (`scripts/cursor-hooks/agent-check.ts`) executes:
+
+- Calls `performPrReviewCheck()` from `pr-review-check.ts` BEFORE running build/lint/test checks (priority 1).
+- `performPrReviewCheck()` extracts PR number and review batch from branch patterns:
+  - Pattern: `.*-review-pr-(\d+)-(\d+)`
+- Determines bot vs human review by querying GitHub GraphQL API when a review batch is present.
+- Runs the appropriate fetch script (`fetch-unresolved-comments` or `fetch-unresolved-bot-comments`) to check for remaining comments.
+- If comments remain, returns a followup message with:
+  - The full markdown checklist of unresolved comments
+  - Resolution instructions specific to review type
+  - The agent cannot stop until all comments are resolved.
+- If no comments remain, allows the agent to proceed to build/lint/test checks.
+
+**Execution Order**: PR review comment check → build → linting → tests → rule structure validation → check-your-work. This prioritizes completing all reviewer feedback before enforcing code quality checks.
+
+## How to Use the System
+
+### Human Review Batches
+
+1. Submit a standard GitHub review with inline comments.
+2. Wait for the PR comment confirming that a Background Agent was launched. Follow the link to monitor it.
+3. The agent processes ~7 comments per pass, proposes edits via a mini PR.
+4. If needed, run locally:
+   - Fetch unresolved: `npm run fetch-unresolved-comments -- --pr=<PR_NUMBER> [--review-batch=<REVIEW_ID>]`
+   - Resolve threads: `npm run resolve-comments -- <comment_url_1> <comment_url_2> ...`
+
+### AI Bot Review Batches (CodeRabbit, Graphite, Cursor BugBot, etc.)
+
+1. Submit or trigger an AI bot review.
+2. **Manual workflow**: Use the `/pr-review-ai-bots` command in Cursor Chat to manually launch an agent with explicit instructions. This allows you to:
+   - Ignore invalid comments by giving them a 👎 reaction and resolving them before running the command
+   - Provide specific guidance on which comments to address
+3. The agent triages validity, processes ~5 comments at a time, and resolves valid items with `apply-comment-decisions`.
+4. If needed, run locally:
+   - Fetch unresolved: `npm run fetch-unresolved-bot-comments -- --pr=<PR_NUMBER> [--review-batch=<REVIEW_ID>]`
+   - Apply decisions: `npm run apply-comment-decisions -- .cursor/tmp/decisions.json [--pr=<PR_NUMBER>]`
+
+**Note**: Automatic mini-PRs are disabled for bot reviews to prevent clutter and reduce costs.
+
+### Tips
+
+- **For bot reviews**: Before using `/pr-review-ai-bots`, mark invalid comments with a 👎 reaction and resolve them. This prevents the agent from fetching them.
+- If the agent mini PR only contains changes under `/tmp/`, the AI likely concluded that all bot comments were invalid and skipped edits.
+- You can still use `.cursor/commands/pr-review.md` or `.cursor/commands/pr-review-ai-bots.md` manually in Cursor Chat for follow-ups.
+
+## Local Development Workflow
+
+Developers can replicate the cloud agent setup locally using the `address-review` npm script:
+
+```bash
+# Auto-detect PR from current branch, process all unresolved comments
+npm run address-review
+
+# Specify PR explicitly
+npm run address-review -- --pr=123
+
+# Process specific review batch (PR inferred from current branch)
+npm run address-review -- --review-batch=456789
+
+# Process specific review batch with explicit PR
+npm run address-review -- --pr=123 --review-batch=456789
+
+# Force bot review workflow (overrides auto-detection)
+npm run address-review -- --pr=123 --review-batch=456789 --force-bot
+
+# Force human review workflow (overrides auto-detection)
+npm run address-review -- --pr=123 --review-batch=456789 --force-human
+```
+
+### What the Script Does
+
+1. **Validates Prerequisites**: Checks that `gh`, `jq`, and `git` are installed and working directory is clean
+2. **Infers Context**: Auto-detects PR number from current branch if not provided
+3. **Builds Review Context**: Gathers PR metadata, review metadata, determines bot vs. human review
+4. **Fetches Unresolved Comments**: Runs the appropriate bash script to get the checklist
+5. **Builds Agent Prompt**: Uses the same prompt builder as the cloud workflow
+6. **Creates Review Branch**: Checks out a new branch following the naming pattern
+7. **Writes Prompt File**: Saves the complete prompt to `.cursor/tmp/pr-review-prompt.md`
+8. **Provides Instructions**: Displays next steps for opening Cursor Chat
+
+### After Running the Script
+
+1. Open the prompt file at `.cursor/tmp/pr-review-prompt.md`
+2. Copy its entire contents
+3. Open a new Cursor Composer conversation
+4. Paste the prompt and start the agent
+
+The agent follows the same workflow as a cloud agent—the stop hook automatically presents new unresolved comments when the agent attempts to finish.
+
+### Prerequisites
+
+- **GitHub CLI (`gh`)**: Authenticated with appropriate repository permissions
+- **jq**: JSON parsing utility for processing GitHub API responses
+- **git**: Clean working directory (no uncommitted changes)
+
+## Configuration
+
+### GitHub Action Secrets
+
+| Secret | Purpose |
+|--------|---------|
+| `CURSOR_API_KEY` | Cursor API authentication for background agents |
+| `GITHUB_TOKEN` | Auto-provided, used for PR/issue operations |
+
+### npm Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `npm run address-review` | Local CLI to set up PR review workflow |
+| `npm run fetch-unresolved-comments` | Fetch unresolved human review comments |
+| `npm run fetch-unresolved-bot-comments` | Fetch unresolved bot review comments |
+| `npm run resolve-comments` | Resolve review threads by URL |
+| `npm run apply-comment-decisions` | Apply reactions and resolve bot comment threads |
+
+## Common Pitfalls
+
+- Ensure the agent target branch name includes the PR number and review batch ID so PR resolution maps correctly.
+- The CLI review scripts require both `gh` and `jq` in the execution environment.
+- The agent does not need to fetch comments manually; the stop hook handles this automatically.
+- For manual runs, you can still use `.cursor/commands/pr-review.md` or `.cursor/commands/pr-review-ai-bots.md` in Cursor Chat.
+
+## Relationship to Other Systems
+
+This system integrates with the **Cursor Hooks and Workflows System** documented in `cursor-hooks-and-workflows.mdc`. The PR review check runs as the first priority in the stop hook execution order, before build/lint/test checks. This ensures all reviewer feedback is addressed before code quality enforcement.
