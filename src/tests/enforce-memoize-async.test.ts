@@ -254,7 +254,10 @@ ruleTesterTs.run('enforce-memoize-async', enforceMemoizeAsync, {
           async c(x: string, y: number) { return x + y; }
         }
       `,
-      errors: [{ messageId: 'requireMemoize' }, { messageId: 'requireMemoize' }],
+      errors: [
+        { messageId: 'requireMemoize' },
+        { messageId: 'requireMemoize' },
+      ],
       output: `
         import { Memoize } from 'typescript-memoize';
         class Example {

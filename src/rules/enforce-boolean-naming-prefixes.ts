@@ -244,9 +244,10 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
               }
 
               // Check if the method name suggests it returns a boolean
-              const isBooleanMethod = approvedPrefixes.some((prefix) =>
-                prefix !== 'asserts' &&
-                lowerMethodName.startsWith(prefix.toLowerCase()),
+              const isBooleanMethod = approvedPrefixes.some(
+                (prefix) =>
+                  prefix !== 'asserts' &&
+                  lowerMethodName.startsWith(prefix.toLowerCase()),
               );
 
               // If the method name suggests it returns a boolean (starts with a boolean prefix or contains 'boolean' or 'enabled'),
@@ -300,9 +301,10 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
             }
 
             // For property access like user.isAuthenticated, treat as boolean
-            const isBooleanProperty = approvedPrefixes.some((prefix) =>
-              prefix !== 'asserts' &&
-              lowerPropertyName.startsWith(prefix.toLowerCase()),
+            const isBooleanProperty = approvedPrefixes.some(
+              (prefix) =>
+                prefix !== 'asserts' &&
+                lowerPropertyName.startsWith(prefix.toLowerCase()),
             );
             if (isBooleanProperty) {
               return true;
@@ -365,7 +367,8 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
             }
 
             return approvedPrefixes.some(
-              (prefix) => prefix !== 'asserts' &&
+              (prefix) =>
+                prefix !== 'asserts' &&
                 lowerCallee.startsWith(prefix.toLowerCase()),
             );
           }
@@ -396,9 +399,10 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           }
 
           // Check if the function name suggests it returns a boolean
-          return approvedPrefixes.some((prefix) =>
-            prefix !== 'asserts' &&
-            lowerCallee.startsWith(prefix.toLowerCase()),
+          return approvedPrefixes.some(
+            (prefix) =>
+              prefix !== 'asserts' &&
+              lowerCallee.startsWith(prefix.toLowerCase()),
           );
         }
       }
@@ -471,9 +475,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     /**
      * Attempt to resolve an identifier to a function declaration/expression and detect if it returns boolean
      */
-    function identifierReturnsBoolean(
-      name: string,
-    ): boolean {
+    function identifierReturnsBoolean(name: string): boolean {
       // Try to find the variable in all scopes, starting from current and going up
       let currentScope: any = context.getScope();
       let variable: any = undefined;

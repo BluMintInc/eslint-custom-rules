@@ -2,7 +2,7 @@
 name: ESLint Rule Bug Report
 about: Report a bug in an ESLint rule
 title: "[BUG]"
-labels: bug
+labels: bug, cursor-fix
 assignees: ''
 
 ---

@@ -29,7 +29,6 @@
     "lint": "npm-run-all \"lint:*\"",
     "lint:eslint-docs": "npm-run-all \"update:eslint-docs -- --check\"",
     "lint:js": "eslint ./src",
-    "lint:shell": "shellcheck .devcontainer/git-flow-completion.bash",
     "lint:fix": "tsc && eslint \"./src/**/*\" --quiet --fix",
     "test": "jest --passWithNoTests --reporters=default --reporters=jest-junit",
     "test:ci": "jest --ci --passWithNoTests --reporters=default --reporters=jest-junit",
@@ -95,6 +94,7 @@
     "semantic-release": "19.0.3",
     "ts-jest": "29.2.6",
     "ts-node": "10.9.1",
+    "tsx": "4.19.4",
     "typescript": "^4.9.5"
   },
   "peerDependencies": {

@@ -127,6 +127,8 @@ import { preferNextDynamic } from './rules/prefer-next-dynamic';
 import { default as noRedundantUseCallbackWrapper } from './rules/no-redundant-usecallback-wrapper';
 import { noArrayLengthInDeps } from './rules/no-array-length-in-deps';
 import { preferUseDeepCompareMemo } from './rules/prefer-use-deep-compare-memo';
+import { noCircularReferences } from './rules/no-circular-references';
+import { noPassthroughGetters } from './rules/no-passthrough-getters';
 
 module.exports = {
   meta: {
@@ -271,6 +273,8 @@ module.exports = {
         '@blumintinc/blumint/no-redundant-usecallback-wrapper': 'error',
         '@blumintinc/blumint/no-array-length-in-deps': 'error',
         '@blumintinc/blumint/prefer-use-deep-compare-memo': 'error',
+        '@blumintinc/blumint/no-circular-references': 'error',
+        '@blumintinc/blumint/no-passthrough-getters': 'error',
       },
     },
   },
@@ -412,5 +416,7 @@ module.exports = {
     'no-redundant-usecallback-wrapper': noRedundantUseCallbackWrapper,
     'no-array-length-in-deps': noArrayLengthInDeps,
     'prefer-use-deep-compare-memo': preferUseDeepCompareMemo,
+    'no-circular-references': noCircularReferences,
+    'no-passthrough-getters': noPassthroughGetters,
   },
 };

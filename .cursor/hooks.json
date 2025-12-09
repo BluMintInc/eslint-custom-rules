@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "afterFileEdit": [
+      { "command": ".cursor/hooks/track-changes.sh" }
+    ],
+    "beforeSubmitPrompt": [
+      { "command": ".cursor/hooks/track-prompt.sh" }
+    ],
+    "stop": [{ "command": ".cursor/hooks/stop.sh" }]
+  }
+}
+
