@@ -11,13 +11,14 @@ export const noConditionalLiteralsInJsx: TSESLint.RuleModule<
   meta: {
     type: 'problem',
     docs: {
-      description: 'Disallow use of conditional literals in JSX code',
+      description:
+        'Disallow conditional string literals beside other JSX text to avoid fragmented text nodes, translation issues, and hydration mismatches.',
       recommended: 'error',
     },
     schema: [],
     messages: {
       unexpected:
-        'Conditional text literals must be wrapped in a container element when next to other text. Instead of `<div>text {condition && "more text"}</div>`, use `<div>text <span>{condition && "more text"}</span></div>` to prevent React hydration issues.',
+        'Conditional text literal {{literal}} is rendered next to other JSX text or expressions. Splitting a sentence across conditional strings creates fragmented text nodes that confuse browser translation and can trigger React hydration mismatches. Wrap the conditional literal in its own element (for example, <span>{ {{condition}} && {{literal}} }</span>) or move the entire sentence inside the conditional so it renders as a single text node.',
     },
   },
   defaultOptions: [],
@@ -66,7 +67,25 @@ export const noConditionalLiteralsInJsx: TSESLint.RuleModule<
           siblingTextNodes.concat(siblingExpressionNodes).length > 0 &&
           expressionOperandTypes.includes(TSESTree.AST_NODE_TYPES.Literal)
         ) {
-          context.report({ node, messageId: 'unexpected' });
+          const logicalExpression = node.expression as TSESTree.LogicalExpression;
+          const sourceCode = context.getSourceCode();
+          const literalNode =
+            logicalExpression.right.type === TSESTree.AST_NODE_TYPES.Literal
+              ? logicalExpression.right
+              : logicalExpression.left;
+          const conditionalNode =
+            literalNode === logicalExpression.right
+              ? logicalExpression.left
+              : logicalExpression.right;
+
+          context.report({
+            node,
+            messageId: 'unexpected',
+            data: {
+              literal: sourceCode.getText(literalNode),
+              condition: sourceCode.getText(conditionalNode),
+            },
+          });
         }
       },
     };
