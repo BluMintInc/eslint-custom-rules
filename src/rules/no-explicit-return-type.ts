@@ -23,6 +23,82 @@ const defaultOptions: Options[0] = {
   allowFirestoreFunctionFiles: true,
 };
 
+function describeFunctionKind(node: TSESTree.Node): string {
+  if (
+    node.type === AST_NODE_TYPES.MethodDefinition &&
+    (node.key.type === AST_NODE_TYPES.Identifier ||
+      (node.key.type === AST_NODE_TYPES.Literal &&
+        typeof node.key.value === 'string'))
+  ) {
+    const name =
+      node.key.type === AST_NODE_TYPES.Identifier
+        ? node.key.name
+        : node.key.value;
+    return `class method "${name}"`;
+  }
+
+  if (
+    node.type === AST_NODE_TYPES.TSMethodSignature &&
+    (node.key.type === AST_NODE_TYPES.Identifier ||
+      (node.key.type === AST_NODE_TYPES.Literal &&
+        typeof node.key.value === 'string'))
+  ) {
+    const name =
+      node.key.type === AST_NODE_TYPES.Identifier
+        ? node.key.name
+        : node.key.value;
+    return `interface method "${name}"`;
+  }
+
+  if (
+    node.type === AST_NODE_TYPES.FunctionDeclaration &&
+    node.id?.name
+  ) {
+    return `function "${node.id.name}"`;
+  }
+
+  if (node.type === AST_NODE_TYPES.FunctionExpression) {
+    if (node.id?.name) {
+      return `function "${node.id.name}"`;
+    }
+
+    if (
+      node.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+      node.parent.id.type === AST_NODE_TYPES.Identifier
+    ) {
+      return `function "${node.parent.id.name}"`;
+    }
+
+    if (
+      node.parent?.type === AST_NODE_TYPES.Property &&
+      (node.parent.key.type === AST_NODE_TYPES.Identifier ||
+        (node.parent.key.type === AST_NODE_TYPES.Literal &&
+          typeof node.parent.key.value === 'string'))
+    ) {
+      const name =
+        node.parent.key.type === AST_NODE_TYPES.Identifier
+          ? node.parent.key.name
+          : node.parent.key.value;
+      return `object method "${name}"`;
+    }
+
+    return 'function expression';
+  }
+
+  if (node.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+    if (
+      node.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+      node.parent.id.type === AST_NODE_TYPES.Identifier
+    ) {
+      return `arrow function "${node.parent.id.name}"`;
+    }
+
+    return 'arrow function';
+  }
+
+  return 'function';
+}
+
 function isRecursiveFunction(node: TSESTree.FunctionLike): boolean {
   const functionName =
     node.type === AST_NODE_TYPES.FunctionDeclaration
@@ -169,7 +245,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<
     ],
     messages: {
       noExplicitReturnType:
-        'Explicit return type is not allowed. Let TypeScript infer it.',
+        'Explicit return type on {{functionKind}} requires manual upkeep and can drift from the value actually returned. Remove the return type annotation so TypeScript infers it and keeps the signature aligned automatically.',
     },
   },
   defaultOptions: [defaultOptions],
@@ -207,6 +283,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<
         context.report({
           node: node.returnType,
           messageId: 'noExplicitReturnType',
+          data: { functionKind: describeFunctionKind(node) },
           fix: (fixer) => fixReturnType(fixer, node),
         });
       },
@@ -224,6 +301,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<
         context.report({
           node: node.returnType,
           messageId: 'noExplicitReturnType',
+          data: { functionKind: describeFunctionKind(node) },
           fix: (fixer) => fixReturnType(fixer, node),
         });
       },
@@ -238,6 +316,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<
         context.report({
           node: node.returnType,
           messageId: 'noExplicitReturnType',
+          data: { functionKind: describeFunctionKind(node) },
           fix: (fixer) => fixReturnType(fixer, node),
         });
       },
@@ -259,6 +338,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<
         context.report({
           node: node.returnType,
           messageId: 'noExplicitReturnType',
+          data: { functionKind: describeFunctionKind(node) },
           fix: (fixer) => fixReturnType(fixer, node),
         });
       },
@@ -277,6 +357,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<
         context.report({
           node: node.value.returnType,
           messageId: 'noExplicitReturnType',
+          data: { functionKind: describeFunctionKind(node) },
           fix: (fixer) => fixReturnType(fixer, node),
         });
       },
