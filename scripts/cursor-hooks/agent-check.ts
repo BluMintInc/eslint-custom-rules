@@ -256,10 +256,6 @@ class CheckRegistry {
               | {
                   readonly conversationId: string;
                   readonly changedTypeScriptFiles: readonly string[];
-                }
-              | {
-                  readonly conversationId: string;
-                  readonly hasBackendChanges: boolean;
                 },
           ) => Promise<AgentCheckResult | null> | AgentCheckResult | null
         >
@@ -276,10 +272,6 @@ class CheckRegistry {
           | {
               readonly conversationId: string;
               readonly changedTypeScriptFiles: readonly string[];
-            }
-          | {
-              readonly conversationId: string;
-              readonly hasBackendChanges: boolean;
             }
         >
       >
