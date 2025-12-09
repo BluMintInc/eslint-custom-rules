@@ -1,16 +1,17 @@
 # no-try-catch-already-exists-in-transaction
 
-Disallow handling Firestore `ALREADY_EXISTS` errors inside `runTransaction` callbacks. `ALREADY_EXISTS` is a permanent failure, but Firestore retries transaction bodies on contention. Catching it inside the transaction re-runs the handler on every retry and breaks the ask-for-forgiveness pattern.
+💼 Enabled in the recommended config.
+
+Disallow handling Firestore `ALREADY_EXISTS` errors inside `runTransaction` callbacks. `ALREADY_EXISTS` is permanent; the transaction body is retried on contention, so a catch inside the callback will re-run and can append/mutate state multiple times. Handle the error outside the transaction or via a helper (e.g., `runCreateForgivenessTransaction`) so the handler runs once.
 
 ## Why this rule exists
 
-- Firestore retries transaction callbacks, so error handling inside the callback is executed again when the transaction retries for unrelated contention.
-- `ALREADY_EXISTS` (code `6`) is not retryable; handling it inside the transaction couples idempotent logic to the retry loop.
-- BluMint uses the ask-for-forgiveness pattern for idempotent writes (e.g., Coinflow webhook processors). The handler for `ALREADY_EXISTS` must run once, outside the transaction.
+- Firestore retries transaction callbacks on contention; in-callback catches run again on retry.
+- `ALREADY_EXISTS` (code `6`) is not retryable, so handling it inside the retried section breaks idempotent “ask-for-forgiveness” patterns (e.g., Coinflow processors).
 
 ## Rule details
 
-This rule reports any `try`/`catch` inside a Firestore `runTransaction` callback that checks for `ALREADY_EXISTS`, whether by string (`'already-exists'`, `'ALREADY_EXISTS'`) or numeric code (`6`).
+The rule reports any `try`/`catch` inside a `runTransaction` callback that checks for `ALREADY_EXISTS` by string (`'already-exists'`, `'ALREADY_EXISTS'`) or numeric code (`6`) using equality (`==`/`===`). Inequality checks (e.g., `!== 'already-exists'`) are allowed.
 
 ### Options
 
@@ -32,9 +33,21 @@ await db.runTransaction(async (transaction) => {
 });
 ```
 
+```ts
+await firestore.runTransaction(async (transaction) => {
+  try {
+    await creator.createTransaction();
+  } catch ({ code }) {
+    if (code === 'already-exists') {
+      await appendAdvancementToExisting(transaction);
+    }
+  }
+});
+```
+
 ## Correct
 
-Place the handler outside the transaction:
+Handle the error outside the transaction:
 
 ```ts
 try {
@@ -42,7 +55,8 @@ try {
     await creator.createTransaction(transaction);
   });
 } catch (error) {
-  if (error.code === 'already-exists' || error.code === 6) {
+  const errorWithCode = error as { code?: string | number };
+  if (errorWithCode.code === 'already-exists' || errorWithCode.code === 6) {
     await this.appendAdvancementToExisting();
     return;
   }
@@ -65,3 +79,12 @@ await runCreateForgivenessTransaction({
 });
 ```
 
+## Edge cases handled
+
+- Detects both `db.runTransaction(...)` and `runTransaction(firestore, ...)`.
+- Supports equality comparisons against `'already-exists'`, `'ALREADY_EXISTS'`, and numeric `6`.
+- Handles optional chaining, destructured catch params, aliases from the caught error, nested try/catch, and `switch` cases on `error.code`.
+
+## Limitations
+
+- Focuses on try/catch blocks inside the transaction callback; it does not follow external helpers invoked from inside the transaction. Keep `ALREADY_EXISTS` handling adjacent to the transaction call site.

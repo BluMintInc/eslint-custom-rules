@@ -198,6 +198,34 @@ ruleTesterTs.run(
         });
         `,
       },
+      // Inequality guard should not trigger
+      {
+        code: `
+        await db.runTransaction(async (transaction) => {
+          try {
+            await creator.createTransaction(transaction);
+          } catch (error) {
+            if (error.code !== 'already-exists') {
+              throw error;
+            }
+          }
+        });
+        `,
+      },
+      // Loose inequality guard should not trigger
+      {
+        code: `
+        await db.runTransaction(async (transaction) => {
+          try {
+            await creator.createTransaction(transaction);
+          } catch (error) {
+            if (error.code != 6) {
+              throw error;
+            }
+          }
+        });
+        `,
+      },
     ],
     invalid: [
       // Simple already-exists check in transaction

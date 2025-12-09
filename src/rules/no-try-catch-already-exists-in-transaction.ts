@@ -160,7 +160,7 @@ function isAlreadyExistsComparison(
     return null;
   }
 
-  if (!['==', '===', '!=', '!=='].includes(expression.operator)) {
+  if (!['==', '==='].includes(expression.operator)) {
     return null;
   }
 
