@@ -21,14 +21,14 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Enforce the use of event.params over .ref.parent.id in Firebase change handlers',
+        'Prefer handler params for parent IDs instead of traversing ref.parent.id so Firebase triggers stay aligned with path templates and type-safe.',
       recommended: 'error',
     },
     fixable: 'code',
     schema: [],
     messages: {
       preferParams:
-        'Avoid using .ref.parent.id to access parent document IDs. Use the params object from the event instead: `const { params: { {{paramName}} } } = event;`',
+        'Accessing parent IDs through `ref.parent.id` bypasses the handler params and breaks when collection nesting changes. Use the params object for stable, typed IDs instead (destructure `const { params: { {{paramName}} } } = event` or read `params.{{paramName}}`).',
     },
   },
   defaultOptions: [],

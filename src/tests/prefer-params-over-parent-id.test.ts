@@ -1,5 +1,26 @@
+import type { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { preferParamsOverParentId } from '../rules/prefer-params-over-parent-id';
+
+type PreferParamsError = TSESLint.TestCaseError<'preferParams'>;
+
+const preferParamsMessage = (paramName: 'userId' | 'parentId' = 'userId') =>
+  `Accessing parent IDs through \`ref.parent.id\` bypasses the handler params and breaks when collection nesting changes. Use the params object for stable, typed IDs instead (destructure \`const { params: { ${paramName} } } = event\` or read \`params.${paramName}\`).`;
+
+const userIdError = (): PreferParamsError =>
+  ({
+    message: preferParamsMessage('userId'),
+  } as unknown as PreferParamsError);
+
+const parentIdError = (): PreferParamsError =>
+  ({
+    message: preferParamsMessage('parentId'),
+  } as unknown as PreferParamsError);
+
+const repeatError = (
+  count: number,
+  factory: () => PreferParamsError,
+) => Array.from({ length: count }, () => factory());
 
 ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
   valid: [
@@ -743,7 +764,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const userProfile = await db.doc(\`UserProfile/\${userId}\`).get();
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // Using .ref.parent.id directly in expression (no auto-fix when params not in scope)
@@ -758,7 +779,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const userProfile = await db.doc(\`UserProfile/\${change.after.ref.parent.id}\`).get();
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // Using change.before.ref.parent.id (no auto-fix when params not in scope)
@@ -773,7 +794,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const userId = change.before.ref.parent.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // Auto-fix should work when params is in scope
@@ -788,7 +809,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const userId = change.after.ref.parent.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
       output: `
         export const withParamsInScope: DocumentChangeHandler<
           UserData,
@@ -813,7 +834,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const userId = change.after?.ref?.parent?.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // Multiple parent levels (grandparent) (no auto-fix when params not in scope)
@@ -828,7 +849,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const grandparentId = change.after.ref.parent.parent.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [parentIdError()],
     },
 
     // DocumentChangeHandlerTransaction
@@ -844,7 +865,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           transaction.update(db.doc(\`User/\${userId}\`), { updated: true });
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // RealtimeDbChangeHandler
@@ -859,7 +880,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const gameId = snapshot.ref.parent.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // RealtimeDbChangeHandlerTransaction
@@ -875,7 +896,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           transaction.update(\`games/\${gameId}\`, { active: true });
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // Arrow function with implicit return
@@ -886,7 +907,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           UserPath
         > = (event) => event.data.after.ref.parent.id;
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // Function expression
@@ -897,7 +918,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           return parentId;
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // Multiple usages in same function
@@ -913,7 +934,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const userId2 = change.before.ref.parent.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
+      errors: repeatError(2, userIdError),
     },
 
     // Complex member expression chain
@@ -928,7 +949,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const result = someFunction(change.after.ref.parent.id, 'other', 'args');
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // Nested function calls
@@ -943,7 +964,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           await updateUser(change.after.ref.parent.id);
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // Object property access
@@ -961,7 +982,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           };
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // Template literal usage
@@ -976,7 +997,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const message = \`User \${change.after.ref.parent.id} was updated\`;
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // Conditional expression
@@ -991,7 +1012,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const id = change.after ? change.after.ref.parent.id : null;
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // Array element
@@ -1006,7 +1027,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const ids = [change.after.ref.parent.id, 'other-id'];
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // Return statement
@@ -1021,7 +1042,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           return change.after.ref.parent.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // Assignment to existing variable
@@ -1037,7 +1058,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           userId = change.after.ref.parent.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Complex destructuring in function parameters
@@ -1050,7 +1071,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const parentId = change.after.ref.parent.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
       output: `
         export const complexDestructuring: DocumentChangeHandler<
           UserData,
@@ -1076,7 +1097,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const greatGrandparentId = change.after.ref.parent.parent.parent.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [parentIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Mixed optional and non-optional chaining
@@ -1090,7 +1111,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const parentId = change.after?.ref.parent.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with different parameter name
@@ -1104,7 +1125,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const parentId = change.after.ref.parent.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with rest parameters
@@ -1118,7 +1139,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const parentId = change.after.ref.parent.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with default parameters
@@ -1132,7 +1153,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const parentId = change.after.ref.parent.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Handler function in class method with proper type (not detected by current rule)
@@ -1163,7 +1184,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const parentId1 = change.after.ref.parent.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // EDGE CASE: Handler with snapshot.ref.parent.id (RealtimeDB)
@@ -1178,7 +1199,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const parentId = snapshot.ref.parent.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // EDGE CASE: Handler with data.ref.parent.id (alternative destructuring)
@@ -1193,7 +1214,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const parentId = data.after.ref.parent.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // EDGE CASE: Handler with event.data.after.ref.parent.id (no destructuring)
@@ -1206,7 +1227,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const parentId = event.data.after.ref.parent.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // EDGE CASE: Handler with mixed access patterns
@@ -1223,11 +1244,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const directAccess = event.data.after.ref.parent.id;
         };
       `,
-      errors: [
-        { messageId: 'preferParams' },
-        { messageId: 'preferParams' },
-        { messageId: 'preferParams' },
-      ],
+      errors: repeatError(3, userIdError),
     },
 
     // EDGE CASE: Handler with very deep parent access
@@ -1242,7 +1259,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const deepParent = change.after.ref.parent.parent.parent.parent.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [parentIdError()],
     },
 
     // EDGE CASE: Handler with ref.parent.id in complex expressions
@@ -1267,13 +1284,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           };
         };
       `,
-      errors: [
-        { messageId: 'preferParams' },
-        { messageId: 'preferParams' },
-        { messageId: 'preferParams' },
-        { messageId: 'preferParams' },
-        { messageId: 'preferParams' },
-      ],
+      errors: repeatError(5, userIdError),
     },
 
     // FALSE NEGATIVE PREVENTION: Multiple handlers in same file
@@ -1287,7 +1298,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const parentId = event.data.before.ref.parent.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
+      errors: repeatError(2, userIdError),
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with conditional logic
@@ -1305,7 +1316,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           }
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with loop containing access
@@ -1323,7 +1334,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           }
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with try-catch block
@@ -1343,7 +1354,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           }
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with async/await patterns
@@ -1362,7 +1373,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           ]);
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with JSDoc comments
@@ -1380,7 +1391,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const parentId = change.after.ref.parent.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Handler function declaration (not detected by current rule)
@@ -1403,7 +1414,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           };
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with spread operator usage
@@ -1421,7 +1432,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           };
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with logical operators
@@ -1437,7 +1448,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const fallback = parentId || 'default-id';
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with nullish coalescing
@@ -1452,7 +1463,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const parentId = change.after?.ref?.parent?.id ?? 'default';
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with array destructuring
@@ -1467,7 +1478,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const [parentId] = [change.after.ref.parent.id];
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with computed property names
@@ -1485,7 +1496,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           };
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with function calls as arguments
@@ -1501,7 +1512,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           setTimeout(() => console.log(change.after.ref.parent.id), 1000);
         };
       `,
-      errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
+      errors: repeatError(2, userIdError),
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with nested object access
@@ -1522,7 +1533,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           };
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with switch statement
@@ -1543,7 +1554,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           }
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with while loop
@@ -1562,7 +1573,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           }
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with for...of loop
@@ -1579,7 +1590,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           }
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with for...in loop
@@ -1597,7 +1608,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           }
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with do...while loop
@@ -1616,7 +1627,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           } while (count < 2);
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with labeled statement
@@ -1636,7 +1647,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           }
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with generator function
@@ -1655,7 +1666,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const gen = generator();
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // FALSE NEGATIVE PREVENTION: Handler with class expression
@@ -1672,7 +1683,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           };
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // EDGE CASE: Access through destructuring in handler
@@ -1686,7 +1697,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const parentId = after.ref.parent.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // EDGE CASE: Nested functions in handlers should still trigger
@@ -1705,7 +1716,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           return process();
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // EDGE CASE: Callbacks in handlers should trigger
@@ -1721,7 +1732,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           items.map(() => change.after.ref.parent.id);
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // EDGE CASE: Transaction handlers with multiple operations
@@ -1739,7 +1750,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           transaction.set(db.doc(\`Profile/\${userId}\`), { userId });
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // EDGE CASE: Missing params destructuring should error
@@ -1756,7 +1767,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const userProfile = await db.doc(\`UserProfile/\${userId}\`).get();
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // EDGE CASE: Mixed usage - params in scope but still using ref.parent.id
@@ -1773,7 +1784,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           console.log(params.groupId);
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
       output: `
         export const mixedUsageHandler: DocumentChangeHandler<
           UserData,
@@ -1801,7 +1812,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const message = \`Processing user \${change.after.ref.parent.id}\`;
         };
       `,
-      errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
+      errors: repeatError(2, userIdError),
     },
 
     // EDGE CASE: Document references using ref.parent.id
@@ -1817,7 +1828,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const userSettings = await db.doc(\`UserSettings/\${change.before.ref.parent.id}\`).get();
         };
       `,
-      errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
+      errors: repeatError(2, userIdError),
     },
 
     // EDGE CASE: Collection queries using ref.parent.id
@@ -1833,7 +1844,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const profiles = await db.collection('profiles').where('userId', '==', change.after.ref.parent.id).get();
         };
       `,
-      errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
+      errors: repeatError(2, userIdError),
     },
 
     // EDGE CASE: Batch operations using ref.parent.id
@@ -1851,7 +1862,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           await batch.commit();
         };
       `,
-      errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
+      errors: repeatError(2, userIdError),
     },
 
     // EDGE CASE: Multi-level path parameters (grandparent access)
@@ -1869,11 +1880,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const roundId = change.after.ref.parent.id;
         };
       `,
-      errors: [
-        { messageId: 'preferParams' },
-        { messageId: 'preferParams' },
-        { messageId: 'preferParams' },
-      ],
+      errors: [parentIdError(), parentIdError(), userIdError()],
     },
 
     // EDGE CASE: Variable assignment and reuse
@@ -1893,7 +1900,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           console.log(\`Processing \${parentId}\`);
         };
       `,
-      errors: [{ messageId: 'preferParams' }],
+      errors: [userIdError()],
     },
 
     // EDGE CASE: Complex reference chains
@@ -1909,7 +1916,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const grandparentId = change.after.ref.parent.parent.parent.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
+      errors: repeatError(2, parentIdError),
     },
 
     // EDGE CASE: Optional chaining variants
@@ -1926,11 +1933,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const maybeParentId3 = change.before?.ref?.parent?.id;
         };
       `,
-      errors: [
-        { messageId: 'preferParams' },
-        { messageId: 'preferParams' },
-        { messageId: 'preferParams' },
-      ],
+      errors: repeatError(3, userIdError),
     },
 
     // EDGE CASE: All handler type variations
@@ -1952,12 +1955,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const parentId = event.data.ref.parent.id;
         };
       `,
-      errors: [
-        { messageId: 'preferParams' },
-        { messageId: 'preferParams' },
-        { messageId: 'preferParams' },
-        { messageId: 'preferParams' },
-      ],
+      errors: repeatError(4, userIdError),
     },
 
     // EDGE CASE: Handler with arrow function and complex destructuring
@@ -1972,7 +1970,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const beforeParentId = before?.ref?.parent?.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
+      errors: repeatError(2, userIdError),
       output: `
         export const complexArrowHandler: DocumentChangeHandler<
           UserData,
@@ -1998,7 +1996,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const grandparentId = snapshot.ref.parent.parent.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
+      errors: [userIdError(), parentIdError()],
     },
 
     // EDGE CASE: Handler with data.ref.parent.id (alternative destructuring)
@@ -2014,7 +2012,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const beforeParentId = data.before?.ref?.parent?.id;
         };
       `,
-      errors: [{ messageId: 'preferParams' }, { messageId: 'preferParams' }],
+      errors: repeatError(2, userIdError),
     },
 
     // EDGE CASE: Handler with event.data.after.ref.parent.id (no destructuring)
@@ -2029,11 +2027,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const snapshotParentId = event.data.ref?.parent?.id;
         };
       `,
-      errors: [
-        { messageId: 'preferParams' },
-        { messageId: 'preferParams' },
-        { messageId: 'preferParams' },
-      ],
+      errors: repeatError(3, userIdError),
     },
   ],
 });

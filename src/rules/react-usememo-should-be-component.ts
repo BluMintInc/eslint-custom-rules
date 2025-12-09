@@ -1048,7 +1048,7 @@ export const reactUseMemoShouldBeComponent = createRule<[], MessageIds>({
     schema: [],
     messages: {
       useMemoShouldBeComponent:
-        'useMemo returning JSX should be extracted into a separate component. Use React.memo() for component memoization instead.',
+          'useMemo result "{{memoName}}" returns JSX, which hides a component inside a memoized value. JSX needs component identity so React can manage props, state, and dev tooling; wrapping it in useMemo bypasses that boundary and makes reuse/debugging harder. Extract this JSX into its own component and memoize it with React.memo if stability is required.',
     },
   },
   defaultOptions: [],
@@ -1077,9 +1077,19 @@ export const reactUseMemoShouldBeComponent = createRule<[], MessageIds>({
             }
           }
 
+          const memoName =
+            node.parent &&
+            node.parent.type === AST_NODE_TYPES.VariableDeclarator &&
+            node.parent.id.type === AST_NODE_TYPES.Identifier
+              ? node.parent.id.name
+              : 'useMemo return value';
+
           context.report({
             node,
             messageId: 'useMemoShouldBeComponent',
+            data: {
+              memoName,
+            },
           });
         }
       },

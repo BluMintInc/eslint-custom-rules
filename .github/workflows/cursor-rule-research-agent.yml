@@ -18,8 +18,8 @@ concurrency:
 jobs:
   research_existing_rules:
     if: |
-      (github.event.action == 'labeled' && github.event.label.name == 'research-needed') ||
-      (github.event.action == 'reopened' && contains(github.event.issue.labels.*.name, 'research-needed'))
+      (github.event.action == 'labeled' && github.event.label.name == 'cursor-research') ||
+      (github.event.action == 'reopened' && contains(github.event.issue.labels.*.name, 'cursor-research'))
     runs-on: ubuntu-latest
     steps:
       - name: Check for existing research
@@ -119,7 +119,7 @@ jobs:
           The script will:
           1. Post your research findings as a comment on the issue
           2. Manipulate labels based on your recommendation:
-             - Remove \`research-needed\` label
+             - Remove \`cursor-research\` label
              - Add \`research-complete\` label
              - If NO MATCH: Also add \`cursor-implement\` label
           PROMPT_ISSUE
