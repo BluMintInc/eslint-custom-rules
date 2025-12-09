@@ -24,15 +24,15 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
       type: 'suggestion',
       docs: {
         description:
-          'Dynamic error details should only be in the third argument of the HttpsError constructor. The second argument is hashed to produce a unique id. All HttpsError constructor calls must include a third argument for contextual details.',
+          'Keep HttpsError messages static and move request-specific details to the third argument so error identifiers remain stable and debugging context is preserved.',
         recommended: 'error',
       },
       schema: [],
       messages: {
         dynamicHttpsErrors:
-          'Found dynamic error details in the second argument of the HttpsError constructor - the "message" field. This field is hashed to produce a unique id for error monitoring. Move any dynamic details to the third argument - the "details" field - to preserve the unique id and to monitor the error correctly.',
+          'The HttpsError message (second argument) must stay static. Template expressions here change the hashed message and explode the number of error ids for the same failure. Keep this argument constant and move interpolated values into the third "details" argument so monitoring groups the error while still capturing request context.',
         missingThirdArgument:
-          "HttpsError constructor calls must include a third argument for contextual details. The third argument should contain relevant context that aids in debugging without affecting the error's unique identifier.",
+          'HttpsError calls must include a third "details" argument. The message (second argument) is hashed into a stable identifier, so omitting details leaves errors hard to debug and encourages packing variables into the hashed message. Provide a third argument with the request-specific context (object or string) to keep identifiers stable and diagnostics useful.',
       },
     },
     defaultOptions: [],

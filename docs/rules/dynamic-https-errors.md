@@ -1,16 +1,26 @@
-# Dynamic error details should only be in the third argument of the HttpsError constructor. The second argument is hashed to produce a unique id. All HttpsError constructor calls must include a third argument for contextual details (`@blumintinc/blumint/dynamic-https-errors`)
+# Keep HttpsError messages static and put request context in the third argument (`@blumintinc/blumint/dynamic-https-errors`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
 
-This rule enforces two important requirements for `HttpsError` constructor calls:
+This rule keeps Firebase `HttpsError` messages stable for monitoring while preserving rich debugging details. It enforces two constraints:
 
-1. **No dynamic content in the message field**: Template literals and dynamic content should not be used in the second argument (message field) of the `HttpsError` constructor, as this field is hashed to produce a unique identifier for error monitoring.
-
-2. **Required third argument**: All `HttpsError` constructor calls must include a third argument for contextual details that aids in debugging.
+1. **Static messages in the second argument**: The message (second argument) is hashed to produce an error identifier. Dynamic content here fractures monitoring because every interpolation produces a different hash.
+2. **Context in the third argument**: Every `HttpsError` call must pass a third `"details"` argument so request-specific context is available without altering the hashed identifier.
 
 ## Rule Details
+
+### Why this rule matters
+
+- Dynamic message strings explode the number of error ids, making it hard to group and alert on recurring issues.
+- Omitting the third argument hides the request context needed to debug and nudges developers to stuff variables into the hashed message.
+- Keeping the message static while passing details separately yields stable identifiers and actionable logs.
+
+### How to fix
+
+- Keep the second argument a constant string that describes the error type.
+- Put interpolated or request-specific values (ids, emails, payload snippets) in the third argument as an object or string.
 
 Examples of **incorrect** code for this rule:
 
@@ -39,9 +49,3 @@ throw new https.HttpsError('foo', 'bar', 'baz');
 throw new https.HttpsError('foo', 'bar', `Details: ${baz}`);
 throw new HttpsError('not-found', 'Resource not found', { id: resourceId });
 ```
-
-## Why?
-
-The second argument of `HttpsError` is used to generate a unique identifier for error monitoring and tracking. Including dynamic content in this field would result in different identifiers for what should be considered the same type of error, making it difficult to aggregate and monitor errors effectively.
-
-The third argument should contain all dynamic context information that helps with debugging while preserving the error's unique identifier.
