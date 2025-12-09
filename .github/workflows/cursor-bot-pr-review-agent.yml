@@ -46,8 +46,8 @@ jobs:
           # Fetch all check runs for this head SHA
           CHECKS_JSON=$(gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/commits/$HEAD_SHA/check-runs")
 
-          has_cursor=$(echo "$CHECKS_JSON" | jq 'any(.check_runs[]; ((.app.slug|ascii_downcase|test("cursor")) or (.name|test("Cursor Bugbot";"i"))) and .status == "completed" and .conclusion == "success")')
-          has_coderabbit=$(echo "$CHECKS_JSON" | jq 'any(.check_runs[]; ((.app.slug|ascii_downcase|test("coderabbit")) or (.name|test("CodeRabbit";"i"))) and .status == "completed" and .conclusion == "success")')
+          has_cursor=$(echo "$CHECKS_JSON" | jq 'any(.check_runs[]; ((.app.slug|ascii_downcase|test("cursor")) or (.name|test("Cursor Bugbot";"i"))) and .status == "completed" and (.conclusion == "success" or .conclusion == "neutral"))')
+          has_coderabbit=$(echo "$CHECKS_JSON" | jq 'any(.check_runs[]; ((.app.slug|ascii_downcase|test("coderabbit")) or (.name|test("CodeRabbit";"i"))) and .status == "completed" and (.conclusion == "success" or .conclusion == "neutral"))')
 
           if [ "$has_cursor" != "true" ] || [ "$has_coderabbit" != "true" ]; then
             echo "missing_required=true" >> "$GITHUB_OUTPUT"
