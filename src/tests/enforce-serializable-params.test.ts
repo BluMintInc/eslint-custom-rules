@@ -1,5 +1,11 @@
+import type { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterTs } from '../utils/ruleTester';
 import rule from '../rules/enforce-serializable-params';
+
+const propertyError = (
+  message: string,
+): TSESLint.TestCaseError<'nonSerializableProperty'> =>
+  ({ message } as unknown as TSESLint.TestCaseError<'nonSerializableProperty'>);
 
 ruleTesterTs.run('enforce-serializable-params', rule, {
   valid: [
@@ -35,14 +41,12 @@ ruleTesterTs.run('enforce-serializable-params', rule, {
         };
       `,
       errors: [
-        {
-          messageId: 'nonSerializableProperty',
-          data: { type: 'DocumentReference', prop: 'userRef' },
-        },
-        {
-          messageId: 'nonSerializableProperty',
-          data: { type: 'Date', prop: 'createdAt' },
-        },
+        propertyError(
+          'Property "userRef" uses non-serializable type "DocumentReference", which Firebase cannot encode when sending callable/HTTPS request payloads. Non-JSON values fail at runtime and silently lose data. Accept only JSON-safe primitives, arrays, or plain objects, and convert DocumentReference to a safe representation (e.g., Date -> ISO string, DocumentReference -> document path string, Map/Set -> plain array or object).',
+        ),
+        propertyError(
+          'Property "createdAt" uses non-serializable type "Date", which Firebase cannot encode when sending callable/HTTPS request payloads. Non-JSON values fail at runtime and silently lose data. Accept only JSON-safe primitives, arrays, or plain objects, and convert Date to a safe representation (e.g., Date -> ISO string, DocumentReference -> document path string, Map/Set -> plain array or object).',
+        ),
       ],
     },
     {
@@ -59,14 +63,12 @@ ruleTesterTs.run('enforce-serializable-params', rule, {
         };
       `,
       errors: [
-        {
-          messageId: 'nonSerializableProperty',
-          data: { type: 'Timestamp', prop: 'timestamp' },
-        },
-        {
-          messageId: 'nonSerializableProperty',
-          data: { type: 'DocumentReference', prop: 'users' },
-        },
+        propertyError(
+          'Property "timestamp" uses non-serializable type "Timestamp", which Firebase cannot encode when sending callable/HTTPS request payloads. Non-JSON values fail at runtime and silently lose data. Accept only JSON-safe primitives, arrays, or plain objects, and convert Timestamp to a safe representation (e.g., Date -> ISO string, DocumentReference -> document path string, Map/Set -> plain array or object).',
+        ),
+        propertyError(
+          'Property "users" uses non-serializable type "DocumentReference", which Firebase cannot encode when sending callable/HTTPS request payloads. Non-JSON values fail at runtime and silently lose data. Accept only JSON-safe primitives, arrays, or plain objects, and convert DocumentReference to a safe representation (e.g., Date -> ISO string, DocumentReference -> document path string, Map/Set -> plain array or object).',
+        ),
       ],
     },
     {
@@ -82,14 +84,12 @@ ruleTesterTs.run('enforce-serializable-params', rule, {
         };
       `,
       errors: [
-        {
-          messageId: 'nonSerializableProperty',
-          data: { type: 'Map', prop: 'cache' },
-        },
-        {
-          messageId: 'nonSerializableProperty',
-          data: { type: 'Set', prop: 'set' },
-        },
+        propertyError(
+          'Property "cache" uses non-serializable type "Map", which Firebase cannot encode when sending callable/HTTPS request payloads. Non-JSON values fail at runtime and silently lose data. Accept only JSON-safe primitives, arrays, or plain objects, and convert Map to a safe representation (e.g., Date -> ISO string, DocumentReference -> document path string, Map/Set -> plain array or object).',
+        ),
+        propertyError(
+          'Property "set" uses non-serializable type "Set", which Firebase cannot encode when sending callable/HTTPS request payloads. Non-JSON values fail at runtime and silently lose data. Accept only JSON-safe primitives, arrays, or plain objects, and convert Set to a safe representation (e.g., Date -> ISO string, DocumentReference -> document path string, Map/Set -> plain array or object).',
+        ),
       ],
     },
   ],

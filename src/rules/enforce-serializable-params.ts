@@ -18,7 +18,7 @@ export default createRule({
     type: 'problem',
     docs: {
       description:
-        'Enforce serializable parameters in Firebase Callable/HTTPS Cloud Functions to prevent runtime errors. Firebase Functions can only pass JSON-serializable data, so using non-serializable types like Date, DocumentReference, or Map will cause failures. Use primitive types, plain objects, and arrays instead, converting complex types to their serializable representations (e.g., Date to ISO string).',
+        'Ensure Firebase Callable/HTTPS request parameters use JSON-serializable types so payloads survive transport. Non-serializable values such as Date, DocumentReference, Map, or Set cause runtime serialization failures and drop data; convert complex values to strings or plain objects before including them.',
       recommended: 'error',
     },
     schema: [
@@ -40,9 +40,9 @@ export default createRule({
     ],
     messages: {
       nonSerializableParam:
-        'Parameter type "{{ type }}" is not serializable in Firebase Cloud Functions. Use JSON-serializable types like string, number, boolean, arrays, or plain objects. Instead of `Date`, use ISO strings: `new Date().toISOString()`.',
+        'Parameter type "{{ type }}" cannot be serialized by Firebase Callable/HTTPS functions. Firebase only transfers JSON-safe primitives, arrays, and plain objects; passing {{ type }} causes runtime serialization failures and drops values. Convert {{ type }} to a JSON-safe shape (for example, use an ISO date string, a document path string, or a plain object) before adding it to the request type.',
       nonSerializableProperty:
-        'Property "{{ prop }}" has non-serializable type "{{ type }}". Use JSON-serializable types. For example, instead of `{ timestamp: Date }`, use `{ timestamp: string }` with ISO format.',
+        'Property "{{ prop }}" uses non-serializable type "{{ type }}", which Firebase cannot encode when sending callable/HTTPS request payloads. Non-JSON values fail at runtime and silently lose data. Accept only JSON-safe primitives, arrays, or plain objects, and convert {{ type }} to a safe representation (e.g., Date -> ISO string, DocumentReference -> document path string, Map/Set -> plain array or object).',
     },
   },
   defaultOptions: [
