@@ -103,7 +103,12 @@ ruleTesterTs.run(
       function getUser() {
         return fetch('/api/user');
       }`,
-        errors: [{ messageId: 'preferBlockComment' }],
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'This function fetches user data' },
+          },
+        ],
         output: `/** This function fetches user data */
       function getUser() {
         return fetch('/api/user');
@@ -114,7 +119,12 @@ ruleTesterTs.run(
       {
         code: `// API base URL
       const BASE_URL = 'https://api.example.com';`,
-        errors: [{ messageId: 'preferBlockComment' }],
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'API base URL' },
+          },
+        ],
         output: `/** API base URL */
       const BASE_URL = 'https://api.example.com';`,
       },
@@ -128,8 +138,14 @@ ruleTesterTs.run(
         name: string;
       }`,
         errors: [
-          { messageId: 'preferBlockComment' },
-          { messageId: 'preferBlockComment' },
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'User type' },
+          },
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'Name of user' },
+          },
         ],
         output: `/** User type */
       interface User {
@@ -146,7 +162,12 @@ ruleTesterTs.run(
         id: number;
         name: string;
       };`,
-        errors: [{ messageId: 'preferBlockComment' }],
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'User type alias' },
+          },
+        ],
         output: `/** User type alias */
       type UserType = {
         id: number;
@@ -165,9 +186,18 @@ ruleTesterTs.run(
         name: string;
       }`,
         errors: [
-          { messageId: 'preferBlockComment' },
-          { messageId: 'preferBlockComment' },
-          { messageId: 'preferBlockComment' },
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'User class' },
+          },
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'User ID' },
+          },
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'User name' },
+          },
         ],
         output: `/** User class */
       class User {
@@ -186,7 +216,12 @@ ruleTesterTs.run(
         ADMIN,
         USER
       }`,
-        errors: [{ messageId: 'preferBlockComment' }],
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'User roles' },
+          },
+        ],
         output: `/** User roles */
       enum Role {
         ADMIN,
