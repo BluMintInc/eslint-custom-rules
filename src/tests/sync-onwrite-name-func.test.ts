@@ -87,7 +87,10 @@ ruleTesterTs.run('sync-onwrite-name-func', syncOnwriteNameFunc, {
       errors: [
         {
           messageId: 'mismatchedName',
-          data: mismatchedNameData('processMatchMessages', 'notifyMatchChanges'),
+          data: mismatchedNameData(
+            'processMatchMessages',
+            'notifyMatchChanges',
+          ),
         },
       ],
       output: `

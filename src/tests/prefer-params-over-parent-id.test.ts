@@ -17,10 +17,8 @@ const parentIdError = (): PreferParamsError =>
     message: preferParamsMessage('parentId'),
   } as unknown as PreferParamsError);
 
-const repeatError = (
-  count: number,
-  factory: () => PreferParamsError,
-) => Array.from({ length: count }, () => factory());
+const repeatError = (count: number, factory: () => PreferParamsError) =>
+  Array.from({ length: count }, () => factory());
 
 ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
   valid: [

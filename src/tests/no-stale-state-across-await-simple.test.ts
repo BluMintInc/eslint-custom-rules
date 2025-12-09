@@ -1,10 +1,7 @@
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { noStaleStateAcrossAwait } from '../rules/no-stale-state-across-await';
 
-const expectStaleStateError = (
-  setterName: string,
-  boundaryType: string,
-) => ({
+const expectStaleStateError = (setterName: string, boundaryType: string) => ({
   messageId: 'staleStateAcrossAwait' as const,
   data: { setterName, boundaryType },
 });
@@ -51,9 +48,7 @@ ruleTesterJsx.run(
           return <div>{profile?.name}</div>;
         }
       `,
-        errors: [
-        expectStaleStateError('setProfile', 'an await boundary'),
-        ],
+        errors: [expectStaleStateError('setProfile', 'an await boundary')],
       },
 
       // Invalid: Basic violation with .then()
@@ -74,9 +69,7 @@ ruleTesterJsx.run(
           return <div>{profile?.name}</div>;
         }
       `,
-        errors: [
-        expectStaleStateError('setProfile', 'a .then() callback'),
-        ],
+        errors: [expectStaleStateError('setProfile', 'a .then() callback')],
       },
     ],
   },

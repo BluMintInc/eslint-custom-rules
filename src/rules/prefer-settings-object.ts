@@ -51,7 +51,7 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
     ],
     messages: {
       tooManyParams:
-        'Function accepts {{count}} positional parameters (limit {{minimum}}). Long positional lists hide each argument\'s meaning and make call sites easy to mis-order. Pass a single settings object so callers name each field and keep the call readable.',
+        "Function accepts {{count}} positional parameters (limit {{minimum}}). Long positional lists hide each argument's meaning and make call sites easy to mis-order. Pass a single settings object so callers name each field and keep the call readable.",
       sameTypeParams:
         'Function receives {{paramCount}} positional parameters including multiple "{{type}}" values. Repeated types in positional arguments invite swapped values and force callers to remember parameter order. Replace the positional list with a settings object so each value is labeled and self-documenting.',
     },

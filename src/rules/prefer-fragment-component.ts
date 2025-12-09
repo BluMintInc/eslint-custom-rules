@@ -18,7 +18,7 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
       preferFragment:
         'Prefer Fragment imported from react over {{type}}. Shorthand fragments block props like "key" and mixing fragment styles makes JSX harder to refactor. Import { Fragment } from "react" and wrap the children with <Fragment>...</Fragment> so fragment usage stays explicit.',
       addFragmentImport:
-        'Fragment is used but not imported from react. Without an explicit import the fixer leaves <Fragment> undefined and the React dependency implicit. Add `import { Fragment } from \'react\'` alongside your other React imports so the file compiles.',
+        "Fragment is used but not imported from react. Without an explicit import the fixer leaves <Fragment> undefined and the React dependency implicit. Add `import { Fragment } from 'react'` alongside your other React imports so the file compiles.",
     },
   },
   defaultOptions: [],
