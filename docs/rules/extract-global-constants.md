@@ -4,32 +4,47 @@
 
 <!-- end auto-generated rule header -->
 
-This rule suggests that if a constant or a function within a function or block scope doesn't depend on any other identifiers in that scope, it should be moved to the global scope. This aims to improve the readability of the code and the possibility of reuse.
+This rule flags two patterns:
 
-## Rule Details
+- Constants or helper functions declared inside another function/block that never read from that scope.
+- Numeric literals greater than 1 used directly inside loop boundaries (init, test, or update) without an `as const` assertion.
 
-This rule enforces that all `const` declarations and `FunctionDeclaration` at a non-global scope, which have no dependencies on other identifiers within the scope, should be extracted to the global scope.
+## Why this rule matters
 
-### Examples of incorrect code for this rule:
+- **Hidden reuse and extra allocations:** Nested declarations that do not use local values are recreated on every call, hiding that they are shared configuration or helpers that belong at module scope.
+- **Magic numbers in loops:** Bare numeric literals are widened to `number`, so small edits can change related loops in surprising ways. Naming the value and locking it with `as const` documents the boundary and prevents accidental drift.
+
+## How to fix
+
+- Hoist the declaration to module scope. Use `UPPER_SNAKE_CASE` for immutable constants to signal their stability.
+- Extract loop literals to a named constant with `as const`, or append `as const` inline when a local constant is appropriate.
+
+## Examples
 
 ```typescript
-function someFunc() {
-  const SOME_CONST = "Hello, world!";
+function renderPage() {
+  const DEFAULT_PAGE_SIZE = 50; // ❌ recreated every render
+  return paginate(items, DEFAULT_PAGE_SIZE);
 }
 
-function parentFunc() {
-  function childFunc() { return "Hello, world!"; }
+function loop() {
+  for (let i = 2; i < items.length; i += 2) { // ❌ magic numbers with widened type
+    console.log(items[i]);
+  }
 }
 ```
 
-### Examples of correct code for this rule:
-
 ```typescript
-const SOME_CONST = "Hello, world!";
-function someFunc() { /* ... */ }
+const DEFAULT_PAGE_SIZE = 50;
+function renderPage() {
+  return paginate(items, DEFAULT_PAGE_SIZE);
+}
 
-function childFunc() { return "Hello, world!"; }
-function parentFunc() { /* ... */ }
+const START = 2 as const;
+const STEP = 2 as const;
+function loop() {
+  for (let i = START; i < items.length; i += STEP) {
+    console.log(items[i]);
+  }
+}
 ```
-
-In the correct examples, each declaration is moved to the global scope since they don't depend on any identifier in their previous block or function scope. This aligns with the rule and promotes potential reuse of these declarations.

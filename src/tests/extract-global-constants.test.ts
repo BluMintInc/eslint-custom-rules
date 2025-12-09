@@ -1,5 +1,25 @@
 import { RuleTester } from '@typescript-eslint/utils/dist/ts-eslint';
+import type { TSESLint } from '@typescript-eslint/utils';
 import { extractGlobalConstants } from '../rules/extract-global-constants';
+
+const buildExtractMessage = (name: string) =>
+  `Declaration "${name}" does not reference values from this scope. Keeping it nested rebuilds the same helper on every call and hides that it can be shared. Hoist it to module scope (use UPPER_SNAKE_CASE for constants) so the value is created once and can be imported.`;
+
+const buildRequireAsConstMessage = (value: number) =>
+  `Numeric literal ${value} in this loop is a hidden magic number. Without an "as const" assertion TypeScript widens it to number, so later edits can silently change behavior across loops. Extract it to a named constant with an "as const" (or add "as const" inline) to make the boundary explicit and reusable.`;
+
+type ExtractGlobalConstantsError =
+  TSESLint.TestCaseError<'extractGlobalConstants' | 'requireAsConst'>;
+
+const buildExtractError = (name: string): ExtractGlobalConstantsError =>
+  ({
+    message: buildExtractMessage(name),
+  } as unknown as ExtractGlobalConstantsError);
+
+const buildRequireAsConstError = (value: number): ExtractGlobalConstantsError =>
+  ({
+    message: buildRequireAsConstMessage(value),
+  } as unknown as ExtractGlobalConstantsError);
 
 const ruleTester = new RuleTester({
   parser: require.resolve('@typescript-eslint/parser'),
@@ -718,12 +738,7 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
           return MESSAGE;
         }
       `,
-      errors: [
-        {
-          messageId: 'extractGlobalConstants',
-          data: { declarationName: 'MESSAGE' },
-        },
-      ],
+      errors: [buildExtractError('MESSAGE')],
     },
     // Should flag immutable number constants
     {
@@ -733,12 +748,7 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
           return MAX_COUNT;
         }
       `,
-      errors: [
-        {
-          messageId: 'extractGlobalConstants',
-          data: { declarationName: 'MAX_COUNT' },
-        },
-      ],
+      errors: [buildExtractError('MAX_COUNT')],
     },
     // Should flag immutable boolean constants
     {
@@ -748,12 +758,7 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
           return ENABLED;
         }
       `,
-      errors: [
-        {
-          messageId: 'extractGlobalConstants',
-          data: { declarationName: 'ENABLED' },
-        },
-      ],
+      errors: [buildExtractError('ENABLED')],
     },
     // Should flag immutable RegExp constants
     {
@@ -763,12 +768,7 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
           return REGEX;
         }
       `,
-      errors: [
-        {
-          messageId: 'extractGlobalConstants',
-          data: { declarationName: 'REGEX' },
-        },
-      ],
+      errors: [buildExtractError('REGEX')],
     },
     // Should flag numeric literals > 1 in for loop initialization
     {
@@ -779,12 +779,7 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
           }
         }
       `,
-      errors: [
-        {
-          messageId: 'requireAsConst',
-          data: { value: 3 },
-        },
-      ],
+      errors: [buildRequireAsConstError(3)],
     },
     // Should flag numeric literals > 1 in for loop test condition
     {
@@ -795,12 +790,7 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
           }
         }
       `,
-      errors: [
-        {
-          messageId: 'requireAsConst',
-          data: { value: 5 },
-        },
-      ],
+      errors: [buildRequireAsConstError(5)],
     },
     // Should flag numeric literals > 1 in for loop update expression
     {
@@ -811,12 +801,7 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
           }
         }
       `,
-      errors: [
-        {
-          messageId: 'requireAsConst',
-          data: { value: 2 },
-        },
-      ],
+      errors: [buildRequireAsConstError(2)],
     },
     // Should flag numeric literals > 1 in while loop test condition
     {
@@ -828,12 +813,7 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
           }
         }
       `,
-      errors: [
-        {
-          messageId: 'requireAsConst',
-          data: { value: 5 },
-        },
-      ],
+      errors: [buildRequireAsConstError(5)],
     },
     // Should flag numeric literals > 1 in do-while loop test condition
     {
@@ -845,12 +825,7 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
           } while (count < 10);
         }
       `,
-      errors: [
-        {
-          messageId: 'requireAsConst',
-          data: { value: 10 },
-        },
-      ],
+      errors: [buildRequireAsConstError(10)],
     },
     // Should flag multiple numeric literals > 1 in the same loop
     {
@@ -862,18 +837,9 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
         }
       `,
       errors: [
-        {
-          messageId: 'requireAsConst',
-          data: { value: 2 },
-        },
-        {
-          messageId: 'requireAsConst',
-          data: { value: 10 },
-        },
-        {
-          messageId: 'requireAsConst',
-          data: { value: 3 },
-        },
+        buildRequireAsConstError(2),
+        buildRequireAsConstError(10),
+        buildRequireAsConstError(3),
       ],
     },
     // Should still flag regular identifier constants (not destructuring)
@@ -884,12 +850,7 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
           return fetch(API_URL);
         }
       `,
-      errors: [
-        {
-          messageId: 'extractGlobalConstants',
-          data: { declarationName: 'API_URL' },
-        },
-      ],
+      errors: [buildExtractError('API_URL')],
     },
     // Should flag multiple identifier constants in same function
     {
@@ -901,14 +862,8 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
         }
       `,
       errors: [
-        {
-          messageId: 'extractGlobalConstants',
-          data: { declarationName: 'MAX_RETRIES' },
-        },
-        {
-          messageId: 'extractGlobalConstants',
-          data: { declarationName: 'TIMEOUT' },
-        },
+        buildExtractError('MAX_RETRIES'),
+        buildExtractError('TIMEOUT'),
       ],
     },
     // Should flag identifier constants in nested blocks
@@ -921,12 +876,7 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
           }
         }
       `,
-      errors: [
-        {
-          messageId: 'extractGlobalConstants',
-          data: { declarationName: 'ERROR_MESSAGE' },
-        },
-      ],
+      errors: [buildExtractError('ERROR_MESSAGE')],
     },
     // Should flag identifier constants in arrow functions
     {
@@ -936,12 +886,7 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
           return DEFAULT_VALUE;
         };
       `,
-      errors: [
-        {
-          messageId: 'extractGlobalConstants',
-          data: { declarationName: 'DEFAULT_VALUE' },
-        },
-      ],
+      errors: [buildExtractError('DEFAULT_VALUE')],
     },
     // Should flag identifier constants in async functions
     {
@@ -951,12 +896,7 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
           return await cache.get(CACHE_KEY);
         }
       `,
-      errors: [
-        {
-          messageId: 'extractGlobalConstants',
-          data: { declarationName: 'CACHE_KEY' },
-        },
-      ],
+      errors: [buildExtractError('CACHE_KEY')],
     },
   ],
 });

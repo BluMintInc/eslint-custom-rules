@@ -357,9 +357,9 @@ export const extractGlobalConstants: TSESLint.RuleModule<
     schema: [],
     messages: {
       extractGlobalConstants:
-        'Move this declaration {{ declarationName }} to the global scope and rename it to UPPER_SNAKE_CASE if necessary.',
+        'Declaration "{{declarationName}}" does not reference values from this scope. Keeping it nested rebuilds the same helper on every call and hides that it can be shared. Hoist it to module scope (use UPPER_SNAKE_CASE for constants) so the value is created once and can be imported.',
       requireAsConst:
-        'Numeric literal {{ value }} in loop expression should be extracted to a constant with "as const" type assertion.',
+        'Numeric literal {{value}} in this loop is a hidden magic number. Without an "as const" assertion TypeScript widens it to number, so later edits can silently change behavior across loops. Extract it to a named constant with an "as const" (or add "as const" inline) to make the boundary explicit and reusable.',
     },
   },
   defaultOptions: [],
