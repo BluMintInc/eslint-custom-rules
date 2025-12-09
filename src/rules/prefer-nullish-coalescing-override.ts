@@ -21,11 +21,13 @@ export const preferNullishCoalescingOverride = createRule<[], MessageIds>({
     schema: [],
     messages: {
       preferNullishCoalescing:
-        'Prefer using nullish coalescing operator (`??`) instead of logical OR operator (`||`) when only checking for null/undefined.',
+        'Replace "{{left}} || {{right}}" with nullish coalescing when you only want a fallback for null or undefined. The logical OR operator treats "", 0, and false as missing values and silently swaps in the fallback, which hides valid data. Use "{{left}} ?? {{right}}" so only nullish inputs trigger the fallback.',
     },
   },
   defaultOptions: [],
   create(context) {
+    const sourceCode = context.getSourceCode();
+
     /**
      * Checks if a node is in a boolean context where truthiness matters
      */
@@ -235,12 +237,16 @@ export const preferNullishCoalescingOverride = createRule<[], MessageIds>({
           context.report({
             node,
             messageId: 'preferNullishCoalescing',
+            data: {
+              left: sourceCode.getText(node.left),
+              right: sourceCode.getText(node.right),
+            },
             fix(fixer) {
               return fixer.replaceText(
                 node,
-                `${context.getSourceCode().getText(node.left)} ?? ${context
-                  .getSourceCode()
-                  .getText(node.right)}`,
+                `${sourceCode.getText(node.left)} ?? ${sourceCode.getText(
+                  node.right,
+                )}`,
               );
             },
           });
