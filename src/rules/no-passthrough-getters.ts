@@ -56,9 +56,18 @@ export const noPassthroughGetters = createRule({
 
           // Check if the return statement is accessing a property from a constructor parameter
           if (isConstructorParameterPropertyAccess(returnStatement.argument)) {
+            const getterName = getMethodName(node);
+            const propertyPath =
+              getMemberPath(returnStatement.argument) ??
+              'constructor parameter property';
+
             context.report({
               node,
               messageId: 'noPassthroughGetter',
+              data: {
+                getterName,
+                propertyPath,
+              },
             });
           }
         }
@@ -127,6 +136,59 @@ export const noPassthroughGetters = createRule({
         return containsSuper(node.object);
       }
       return false;
+    }
+
+    function getMethodName(node: TSESTree.MethodDefinition): string {
+      if (node.key.type === 'Identifier') {
+        return node.key.name;
+      }
+
+      if (node.key.type === 'Literal' && typeof node.key.value === 'string') {
+        return node.key.value;
+      }
+
+      return 'getter';
+    }
+
+    function getMemberPath(node: TSESTree.Expression): string | null {
+      if (node.type === 'ThisExpression') {
+        return 'this';
+      }
+
+      if (node.type === 'Identifier') {
+        return node.name;
+      }
+
+      if (node.type !== 'MemberExpression') {
+        return null;
+      }
+
+      const objectPath = getMemberPath(node.object);
+      if (!objectPath) {
+        return null;
+      }
+
+      if (node.computed && node.property.type === 'Literal') {
+        const literalValue =
+          typeof node.property.value === 'string'
+            ? JSON.stringify(node.property.value)
+            : String(node.property.value);
+        return `${objectPath}[${literalValue}]`;
+      }
+
+      if (node.property.type === 'Identifier') {
+        return `${objectPath}.${node.property.name}`;
+      }
+
+      if (
+        node.property.type === 'Literal' &&
+        (typeof node.property.value === 'string' ||
+          typeof node.property.value === 'number')
+      ) {
+        return `${objectPath}.${node.property.value}`;
+      }
+
+      return null;
     }
 
     /**
@@ -224,13 +286,13 @@ export const noPassthroughGetters = createRule({
     type: 'suggestion',
     docs: {
       description:
-        'Avoid unnecessary getter methods that simply return properties from constructor parameters',
+        'Avoid getter methods that only re-expose constructor parameter properties without adding behavior',
       recommended: 'error',
     },
     schema: [],
     messages: {
       noPassthroughGetter:
-        'Avoid unnecessary getter methods that simply return properties from constructor parameters. Access the property directly instead.',
+        'Getter "{{getterName}}" only forwards constructor parameter property "{{propertyPath}}". This indirection hides the real source of state and expands the class API without adding behavior. Read the constructor parameter directly or add logic that justifies a getter (validation, memoization, fallback).',
     },
   },
   defaultOptions: [],
