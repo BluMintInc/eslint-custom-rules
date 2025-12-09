@@ -8,14 +8,16 @@ Enforce dynamic imports for specified libraries to optimize bundle size.
 
 ## Rule Details
 
-This rule enforces dynamic imports for specified npm packages instead of static imports. Some libraries, such as `@stream-io/video-react-sdk`, are large and can significantly impact the initial bundle size. By dynamically importing these libraries, we can improve performance and optimize loading times.
+Static imports pull the entire target package into the entry bundle. For heavy UI SDKs and media clients, that eager load inflates the first download, delays time-to-interactive, and forces users to fetch code paths they might never hit. This rule blocks static imports for configured libraries and requires a dynamic import so the dependency downloads only when the code path runs. Type-only imports stay allowed when `allowImportType` is enabled, letting you keep type safety without shipping runtime code.
+
+Use this rule when a library is large, rarely needed on initial render, or better loaded just before use (for example, before opening a call UI).
 
 ### Examples
 
 #### ❌ Incorrect
 
 ```js
-// Static import from a large library
+// Static import from a large library – ships everything on first load
 import { VideoCall } from "@stream-io/video-react-sdk";
 
 // Default import from a large library
@@ -31,7 +33,7 @@ import "@stream-io/video-react-sdk";
 #### ✅ Correct
 
 ```js
-// Dynamic import using useDynamic hook
+// Dynamic import using useDynamic hook keeps the initial bundle lean
 const VideoCall = useDynamic(() => import("@stream-io/video-react-sdk").then(mod => mod.VideoCall));
 
 // Type imports are allowed by default
