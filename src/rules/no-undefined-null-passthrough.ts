@@ -99,7 +99,7 @@ export const noUndefinedNullPassthrough: TSESLint.RuleModule<
     schema: [],
     messages: {
       unexpected:
-        'Avoid functions that return undefined or null when their single argument is undefined or null. Move the null/undefined check to the caller instead.',
+        'Function returns null or undefined when "{{paramName}}" is nullish, which just passes the missing value to callers and hides where validation belongs. Validate the argument before calling or return a concrete fallback so this function always provides a meaningful result.',
     },
   },
   defaultOptions: [],
@@ -149,6 +149,7 @@ function checkFunctionBody(
                 context.report({
                   node: statement,
                   messageId: 'unexpected',
+                  data: { paramName },
                 });
               }
               return;
@@ -167,6 +168,7 @@ function checkFunctionBody(
             context.report({
               node: statement,
               messageId: 'unexpected',
+              data: { paramName },
             });
           }
           return;
@@ -320,6 +322,7 @@ function checkImplicitReturn(
       context.report({
         node,
         messageId: 'unexpected',
+        data: { paramName },
       });
     }
   } else if (node.body.type === 'LogicalExpression') {
@@ -331,6 +334,7 @@ function checkImplicitReturn(
       context.report({
         node,
         messageId: 'unexpected',
+        data: { paramName },
       });
     }
   } else if (node.body.type === 'Identifier' && node.body.name === paramName) {
@@ -338,6 +342,7 @@ function checkImplicitReturn(
     context.report({
       node,
       messageId: 'unexpected',
+      data: { paramName },
     });
   }
 }
@@ -459,11 +464,12 @@ function checkFunctionBodyForEarlyReturns(
       const test = statement.test;
 
       // Check if the test is checking any parameter for null/undefined
-      const isParameterCheck = paramNames.some((paramName) =>
+      const matchedParam = paramNames.find((paramName) =>
         isNullUndefinedCheck(test, paramName),
       );
 
-      if (isParameterCheck) {
+      if (matchedParam) {
+        const paramNameForMessage = matchedParam ?? 'argument';
         // Check if the consequent is a block statement with a return
         if (statement.consequent.type === 'BlockStatement') {
           for (const consequentStmt of statement.consequent.body) {
@@ -480,6 +486,7 @@ function checkFunctionBodyForEarlyReturns(
                 context.report({
                   node: statement,
                   messageId: 'unexpected',
+                  data: { paramName: paramNameForMessage },
                 });
               }
               return;
@@ -500,6 +507,7 @@ function checkFunctionBodyForEarlyReturns(
             context.report({
               node: statement,
               messageId: 'unexpected',
+              data: { paramName: paramNameForMessage },
             });
           }
           return;
