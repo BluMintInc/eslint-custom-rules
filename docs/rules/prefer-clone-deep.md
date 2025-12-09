@@ -6,11 +6,23 @@
 
 <!-- end auto-generated rule header -->
 
-Enforces the use of `cloneDeep` from `functions/src/util/cloneDeep.ts` when performing deep object copies instead of using nested spread syntax (`...obj`).
+Prefer `cloneDeep` from `functions/src/util/cloneDeep.ts` instead of chaining nested spread operators for deep copies.
 
 ## Rule Details
 
-The spread operator is error-prone when copying deeply nested objects, as it only performs shallow copies, leading to unintended mutations and increased complexity. Using `cloneDeep` ensures a true deep copy while also correctly inferring types, preventing unnecessary type casting and reducing cognitive load.
+Chained spreads only clone one level of an object. Every deeper property still points at the original structure, so later mutations leak back into the source state/config and invalidate assumptions about immutability. `cloneDeep(base, overrides)` deep-clones the base object first and then applies overrides in one place, keeping referential stability and preserving literal type inference.
+
+### Why cloneDeep instead of nested spreads
+
+- Nested spreads leave inner references shared, so mutations to the "copy" also mutate the source.
+- Deep spread chains are hard to read and easy to miss optional branches, especially with conditional spreads.
+- `cloneDeep` applies overrides in one call, which keeps TypeScript literal types and avoids brittle spread ordering.
+
+### How to fix violations
+
+1. Identify the base object being spread (the first `...base` entry).
+2. Call `cloneDeep(baseObject, { /* overrides */ } as const)` instead of chaining nested spreads.
+3. Move only the overridden leaves into the overrides object; the rest is cloned by `cloneDeep`.
 
 ### ❌ Incorrect
 
@@ -80,9 +92,9 @@ const membership = {
 
 ## When Not To Use It
 
-- When dealing with objects that contain functions or symbols, as `cloneDeep` does not support cloning these types
-- When only performing shallow copies (single level spread)
-- When you need specific control over which properties are deeply vs. shallowly copied
+- Objects that contain functions or symbols, which `cloneDeep` does not clone safely
+- Single-level, shallow copies where nested references are intentionally shared
+- Scenarios that need a custom mix of shallow and deep copying for performance or semantics
 
 ## Version
 
