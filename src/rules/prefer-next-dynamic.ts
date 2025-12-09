@@ -162,10 +162,11 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
     schema: [],
     messages: {
       preferNextDynamic:
-        'Use Next.js dynamic() instead of useDynamic(import(...)) for component imports',
+        'Component "{{componentName}}" is created with useDynamic(import(...)), which bypasses Next.js dynamic() handling for client-only components and leaves SSR control to a custom wrapper. Wrap the import in dynamic(() => import(...), { ssr: false }) so Next.js manages code-splitting and disables server rendering safely.',
       addNextDynamicImport:
-        "Add default import: import dynamic from 'next/dynamic'",
-      removeUseDynamicImport: 'Remove unused useDynamic import',
+        "Add `import dynamic from 'next/dynamic'` so the fixer can call Next.js dynamic() and avoid a runtime ReferenceError when replacing useDynamic(import(...)).",
+      removeUseDynamicImport:
+        'Remove the unused useDynamic import after migrating to dynamic(); leaving the custom hook imported invites accidental reuse and keeps dead code in the bundle.',
     },
   },
   defaultOptions: [],
@@ -236,6 +237,7 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
         context.report({
           node: init,
           messageId: 'preferNextDynamic',
+          data: { componentName: identifierName },
           fix(fixer) {
             const fixes: TSESLint.RuleFix[] = [];
 
