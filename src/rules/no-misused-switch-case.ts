@@ -16,11 +16,13 @@ export const noMisusedSwitchCase: TSESLint.RuleModule<
     schema: [],
     messages: {
       noMisusedSwitchCase:
-        'Avoid using logical OR (||) in switch case statements. Instead of `case x || y:`, use cascading cases like `case x: case y:`.',
+        'Case expression uses logical OR "{{expressionText}}", but "||" collapses to a single value so only one operand is ever compared. Move each operand into its own case (e.g., "case {{leftText}}: case {{rightText}}:") to make both values reachable and the switch intent readable.',
     },
   },
   defaultOptions: [],
   create(context) {
+    const sourceCode = context.getSourceCode();
+
     return {
       SwitchStatement(node: TSESTree.SwitchStatement) {
         for (const switchCase of node.cases) {
@@ -31,6 +33,11 @@ export const noMisusedSwitchCase: TSESLint.RuleModule<
             context.report({
               node: switchCase,
               messageId: 'noMisusedSwitchCase',
+              data: {
+                expressionText: sourceCode.getText(switchCase.test),
+                leftText: sourceCode.getText(switchCase.test.left),
+                rightText: sourceCode.getText(switchCase.test.right),
+              },
             });
           }
         }

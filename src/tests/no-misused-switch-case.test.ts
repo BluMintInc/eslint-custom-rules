@@ -55,7 +55,16 @@ ruleTesterTs.run('no-misused-switch-case', noMisusedSwitchCase, {
   ].map((testCase) => {
     return {
       code: testCase,
-      errors: [{ messageId: 'noMisusedSwitchCase' }],
+      errors: [
+        {
+          messageId: 'noMisusedSwitchCase',
+          data: {
+            expressionText: "'a' || 'b'",
+            leftText: "'a'",
+            rightText: "'b'",
+          },
+        },
+      ],
     };
   }),
 });
