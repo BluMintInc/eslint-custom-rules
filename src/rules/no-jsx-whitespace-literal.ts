@@ -14,11 +14,13 @@ export const noJsxWhitespaceLiteral = createRule<Options, MessageIds>({
     schema: [],
     messages: {
       noWhitespaceLiteral:
-        'Avoid using {" "} for spacing in JSX. Use proper text nodes or CSS spacing instead.',
+        'Whitespace-only JSX expression {{literal}} inserts an invisible text node that relies on manual spacing. These spacer nodes shift or collapse when translations, formatters, or dynamic rendering rearrange children. Put spacing inside the surrounding text (e.g., "Hello ") or use layout spacing like CSS gap, margin, or padding instead.',
     },
   },
   defaultOptions: [],
   create(context) {
+    const sourceCode = context.getSourceCode();
+
     return {
       JSXExpressionContainer(node) {
         if (
@@ -29,6 +31,9 @@ export const noJsxWhitespaceLiteral = createRule<Options, MessageIds>({
           context.report({
             node,
             messageId: 'noWhitespaceLiteral',
+            data: {
+              literal: sourceCode.getText(node),
+            },
           });
         }
       },
