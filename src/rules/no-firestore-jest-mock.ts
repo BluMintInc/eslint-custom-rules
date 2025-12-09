@@ -3,6 +3,9 @@ import { createRule } from '../utils/createRule';
 
 type MessageIds = 'noFirestoreJestMock';
 
+const FIRESTORE_JEST_MOCK = 'firestore-jest-mock';
+const MOCK_FIRESTORE_PATH = '../../../../../__test-utils__/mockFirestore';
+
 export const noFirestoreJestMock = createRule<[], MessageIds>({
   name: 'no-firestore-jest-mock',
   meta: {
@@ -15,7 +18,7 @@ export const noFirestoreJestMock = createRule<[], MessageIds>({
     schema: [],
     messages: {
       noFirestoreJestMock:
-        'Do not import from firestore-jest-mock. Use mockFirestore from the centralized mock utility instead.',
+        'Importing "{{moduleName}}" in tests bypasses the shared mockFirestore helper that mirrors production schema and centralized seeding/cleanup. Use mockFirestore from "{{replacementPath}}" so Firestore tests stay consistent and avoid flaky state.',
     },
   },
   defaultOptions: [],
@@ -34,14 +37,18 @@ export const noFirestoreJestMock = createRule<[], MessageIds>({
           return;
         }
 
-        if (node.source.value === 'firestore-jest-mock') {
+        if (node.source.value === FIRESTORE_JEST_MOCK) {
           context.report({
             node,
             messageId: 'noFirestoreJestMock',
+            data: {
+              moduleName: FIRESTORE_JEST_MOCK,
+              replacementPath: MOCK_FIRESTORE_PATH,
+            },
             fix: (fixer) => {
               return fixer.replaceText(
                 node,
-                `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';`,
+                `import { mockFirestore } from '${MOCK_FIRESTORE_PATH}';`,
               );
             },
           });
@@ -50,11 +57,15 @@ export const noFirestoreJestMock = createRule<[], MessageIds>({
       ImportExpression(node) {
         if (
           node.source.type === AST_NODE_TYPES.Literal &&
-          node.source.value === 'firestore-jest-mock'
+          node.source.value === FIRESTORE_JEST_MOCK
         ) {
           context.report({
             node,
             messageId: 'noFirestoreJestMock',
+            data: {
+              moduleName: FIRESTORE_JEST_MOCK,
+              replacementPath: MOCK_FIRESTORE_PATH,
+            },
           });
         }
       },
@@ -68,11 +79,15 @@ export const noFirestoreJestMock = createRule<[], MessageIds>({
           node.callee.property.name === 'mock' &&
           node.arguments.length > 0 &&
           node.arguments[0].type === AST_NODE_TYPES.Literal &&
-          node.arguments[0].value === 'firestore-jest-mock'
+          node.arguments[0].value === FIRESTORE_JEST_MOCK
         ) {
           context.report({
             node,
             messageId: 'noFirestoreJestMock',
+            data: {
+              moduleName: FIRESTORE_JEST_MOCK,
+              replacementPath: MOCK_FIRESTORE_PATH,
+            },
           });
         }
 
@@ -82,11 +97,15 @@ export const noFirestoreJestMock = createRule<[], MessageIds>({
           node.callee.name === 'require' &&
           node.arguments.length > 0 &&
           node.arguments[0].type === AST_NODE_TYPES.Literal &&
-          node.arguments[0].value === 'firestore-jest-mock'
+          node.arguments[0].value === FIRESTORE_JEST_MOCK
         ) {
           context.report({
             node,
             messageId: 'noFirestoreJestMock',
+            data: {
+              moduleName: FIRESTORE_JEST_MOCK,
+              replacementPath: MOCK_FIRESTORE_PATH,
+            },
           });
         }
       },

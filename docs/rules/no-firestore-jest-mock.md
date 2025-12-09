@@ -6,11 +6,15 @@
 
 <!-- end auto-generated rule header -->
 
-Prevents importing from `firestore-jest-mock` in test files to ensure consistent Firestore mocking through our centralized `mockFirestore` utility.
+Direct imports from `firestore-jest-mock` bypass the shared `mockFirestore` helper that mirrors our production Firestore schema and centralizes test seeding/cleanup. The shared helper keeps mocks aligned with real collections, applies the same reset logic across suites, and prevents drift that leads to flaky or misleading tests.
 
 ## Rule Details
 
-This rule aims to enforce standardized Firestore mocking by preventing direct imports from `firestore-jest-mock` in test files. Instead, it encourages using our centralized `mockFirestore` utility.
+This rule ensures every test relies on the same Firestore test harness:
+
+- Direct `firestore-jest-mock` imports set up mocks that diverge from our production schema and skip the shared teardown hooks, which causes brittle, stateful tests.
+- The centralized `mockFirestore` helper seeds data and cleanup consistently, so suites share reliable Firestore behavior.
+- The rule is scoped to test files (`*.test.ts`) and offers an autofix that replaces the disallowed import with the recommended helper path.
 
 Examples of **incorrect** code for this rule:
 
@@ -29,6 +33,9 @@ jest.mock('firestore-jest-mock');
 
 // And with aliases:
 import { mockFirebase as myMock } from 'firestore-jest-mock';
+
+// Dynamic import also violates the rule:
+const loadMock = async () => import('firestore-jest-mock');
 ```
 
 Examples of **correct** code for this rule:
