@@ -213,7 +213,8 @@ export const noHungarian = createRule<[], MessageIds>({
     fixable: undefined,
     schema: [],
     messages: {
-      noHungarian: 'Avoid Hungarian notation in variable name "{{name}}"',
+      noHungarian:
+        'Identifier "{{name}}" encodes its type through a prefix or suffix (Hungarian notation). Type-coded names hide the domain concept and become misleading when the underlying type changes. Rename it to a domain-focused name without the type marker and rely on TypeScript for type information.',
     },
   },
   defaultOptions: [],

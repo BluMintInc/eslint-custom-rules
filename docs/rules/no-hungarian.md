@@ -4,22 +4,23 @@
 
 <!-- end auto-generated rule header -->
 
-This rule disallows the use of Hungarian notation in variable names, which is the practice of adding a prefix or suffix that indicates the type of the variable.
+This rule disallows embedding type information in identifier names (Hungarian notation) for locally declared variables, parameters, functions, classes, interfaces, and type aliases. Type prefixes and suffixes such as `str`, `num`, `bool`, `String`, or `Number` are flagged because they duplicate what the type system already communicates.
 
 ## Rule Details
 
-This rule aims to prevent the use of Hungarian notation, which is considered an outdated practice in modern TypeScript and JavaScript development. With type annotations and modern tooling, Hungarian notation adds unnecessary verbosity to code.
+### Why this matters
+- Type-coded names drift as soon as the underlying type changes, leaving misleading hints that cause misuse and slow reviews.
+- Prefixes and suffixes push the domain concept out of the name, making it harder to see what the value represents at a glance.
+- Type information already lives in TypeScript annotations and runtime validation; duplicating it in names increases maintenance overhead without adding safety.
 
-The rule detects both common prefixes (like `str`, `num`, `bool`) and suffixes (like `String`, `Number`, `Boolean`) that indicate variable types.
+### What gets checked
+- Locally declared identifiers that start or end with common type markers (camelCase, PascalCase, or SCREAMING_SNAKE_CASE).
+- Class members and parameters that reuse the same markers.
+- The rule allows common compound nouns (for example, `PhoneNumber`, `EmailAddress`) and descriptive suffixes like `Formatted`, `Parsed`, or `Converted`.
+- Built-in methods and imported identifiers are ignored to avoid false positives for code you do not control.
 
-### Important Note
-
-The rule will **ignore**:
-1. Built-in JavaScript methods (like `String.prototype.startsWith`, `Array.prototype.map`, etc.)
-2. Identifiers imported from external modules
-3. Object properties (only variables, parameters, and declarations are checked)
-
-This ensures that we don't get false positives for code we don't control.
+### How to fix
+Rename the identifier to a domain-focused term and keep the type information in the type annotation or inference. For example, use `email` or `customerEmail` instead of `emailString`, and `results` instead of `resultsArray`.
 
 ### Examples of **incorrect** code for this rule:
 
@@ -30,14 +31,14 @@ const isActiveBoolean = true;
 const userDataObject = { name: "John", age: 30 };
 const itemsArray = ["apple", "banana"];
 
-function getUserDataObject() {
-  const strName = "John";
-  const intAge = 30;
-  const boolIsActive = true;
-  return { strName, intAge, boolIsActive };
+const USER_ROLES_ARRAY = ["admin", "user"];
+
+function getUserObjectData() {
+  const paramString = "value";
+  return paramString;
 }
 
-class UserClass {}
+class UserObjData {}
 ```
 
 ### Examples of **correct** code for this rule:
@@ -48,6 +49,8 @@ const age = 30;
 const isActive = true;
 const userData = { name: "John", age: 30 };
 const items = ["apple", "banana"];
+
+const userRoles = ["admin", "user"];
 
 function getUserData() {
   const name = "John";
@@ -67,7 +70,7 @@ import { userDataString } from './module';
 
 ## When Not To Use It
 
-If your team has an established convention that uses Hungarian notation, you might want to disable this rule. However, we strongly recommend moving away from Hungarian notation, especially in TypeScript projects.
+If your team intentionally encodes types in identifiers, disable this rule. Modern TypeScript and linting make type prefixes unnecessary and often misleading during refactors.
 
 ## Further Reading
 
