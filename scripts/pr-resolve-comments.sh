@@ -2,9 +2,9 @@
 
 set -euo pipefail
 
-# Usage: bash scripts/pr-resolve-comments.sh [--pr=<PR_NUMBER>] <comment_url_1> [comment_url_2] ...
+# Usage: bash scripts/pr-resolve-comments.sh [--pr=<PR_NUMBER>] [--branch=<BRANCH>] <comment_url_1> [comment_url_2] ...
 # Resolves the review threads containing the provided comment URLs. If --pr is provided,
-# resolves threads on that PR explicitly; otherwise, resolves on the open PR for the current branch.
+# resolves threads on that PR explicitly; otherwise, resolves on the open PR for the chosen branch (current branch by default).
 
 # Prefer non-interactive token from env for Background Agents
 # If GH_TOKEN/GITHUB_TOKEN are unset but GITHUB_BLUBOT_PAT is provided, use it.
@@ -29,10 +29,12 @@ if ! gh auth status >/dev/null 2>&1; then
 fi
 
 PR_OVERRIDE=""
+BRANCH_OVERRIDE=""
 COMMENTS=()
 for arg in "$@"; do
   case "$arg" in
     --pr=*) PR_OVERRIDE="${arg#*=}" ;;
+    --branch=*) BRANCH_OVERRIDE="${arg#*=}" ;;
     *) COMMENTS+=("$arg") ;;
   esac
 done
@@ -45,8 +47,29 @@ fi
 if [ -n "$PR_OVERRIDE" ]; then
   PR_NUMBER="$PR_OVERRIDE"
 else
-  BRANCH=$(git rev-parse --abbrev-ref HEAD)
+  if [ -n "$BRANCH_OVERRIDE" ]; then
+    BRANCH="$BRANCH_OVERRIDE"
+    echo "Checking for open PR on branch override: $BRANCH"
+  else
+    BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    echo "Checking for open PR on current branch: $BRANCH"
+  fi
+
   PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null)
+
+  if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" == "null" ]; then
+    if [ -z "$BRANCH_OVERRIDE" ]; then
+      BASE_BRANCH=$(echo "$BRANCH" | sed -E 's/^(.*)-review-pr-[0-9]+(-[0-9]+)?(-human|-bot)?$/\1/')
+      if [ "$BASE_BRANCH" != "$BRANCH" ]; then
+        echo "No open pull request found for branch '$BRANCH'. Trying inferred base branch '$BASE_BRANCH'..."
+        PR_NUMBER=$(gh pr list --head "$BASE_BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null)
+        if [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "null" ]; then
+          BRANCH="$BASE_BRANCH"
+        fi
+      fi
+    fi
+  fi
+
   if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" == "null" ]; then
     echo "No open pull request found for branch '$BRANCH'." >&2
     exit 1
@@ -129,4 +152,3 @@ for COMMENT_URL in "${COMMENTS[@]}"; do
 done
 
 echo "Done. Resolved: $APPLIED, Failed: $FAILED"
-
