@@ -13,6 +13,32 @@ type MessageIds = 'preferFieldPathsInTransforms';
 // Defaults aim to catch common BluMint aggregation container names
 const DEFAULT_CONTAINERS: string[] = ['*Aggregation', 'previews', '*Previews'];
 
+function describeNestedPath(
+  containerValue: TSESTree.ObjectExpression,
+): string | null {
+  for (const prop of containerValue.properties) {
+    if (prop.type === AST_NODE_TYPES.SpreadElement) continue;
+    if (!isProperty(prop)) continue;
+    if (prop.computed) continue;
+    const firstKey = getPropertyName(prop);
+    if (!firstKey) continue;
+
+    if (isObjectExpression(prop.value)) {
+      for (const child of prop.value.properties) {
+        if (child.type === AST_NODE_TYPES.SpreadElement) continue;
+        if (!isProperty(child)) continue;
+        if (child.computed) continue;
+        const childKey = getPropertyName(child);
+        if (childKey) return `${firstKey}.${childKey}`;
+      }
+    }
+
+    return firstKey;
+  }
+
+  return null;
+}
+
 function isObjectExpression(
   node: TSESTree.Node | null | undefined,
 ): node is TSESTree.ObjectExpression {
@@ -258,9 +284,15 @@ function analyzeReturnedObject(
     if (!isObjectExpression(containerValue)) continue; // only care if returning an object under the container
 
     if (hasDeeperThanOneLevelUnderContainer(containerValue)) {
+      const nestedPath = describeNestedPath(containerValue) ?? 'nestedField';
       context.report({
         node: top,
         messageId: 'preferFieldPathsInTransforms',
+        data: {
+          container: keyName,
+          nestedPath,
+          flattenedPath: `${keyName}.${nestedPath}`,
+        },
       });
     }
   }
@@ -275,7 +307,7 @@ export const preferFieldPathsInTransforms = createRule<
     type: 'suggestion',
     docs: {
       description:
-        'In propagation transforms, avoid returning multi-level nested objects under aggregation containers. Prefer flattened dot-path keys so diffs remove only leaf entries.',
+        'Flatten aggregation updates inside transformEach so diff-based deletes remove only the intended fields instead of wiping sibling data.',
       recommended: 'warn',
     },
     schema: [
@@ -298,7 +330,7 @@ export const preferFieldPathsInTransforms = createRule<
     ],
     messages: {
       preferFieldPathsInTransforms:
-        "Prefer flattened field paths in transforms. Returning nested objects under shared containers can cause destructive deletes. Example: instead of { matchesAggregation: { matchPreviews: { [id]: value } } }, return { ['matchesAggregation.matchPreviews.' + id]: value }.",
+        'Transform returns nested object under "{{container}}" (e.g., "{{nestedPath}}"). Nested writes in shared aggregation containers cause diff reconciliation to delete the whole subtree, wiping sibling fields. Flatten the update into field-path keys such as "{{flattenedPath}}" so only the intended leaf changes and other aggregation data stays intact.',
     },
   },
   defaultOptions: [{}],
