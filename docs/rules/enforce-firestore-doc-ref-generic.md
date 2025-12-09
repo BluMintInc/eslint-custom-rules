@@ -6,30 +6,39 @@
 
 <!-- end auto-generated rule header -->
 
-This rule enforces that all `DocumentReference` types from Firestore must specify a generic type argument and that the generic type is not `any` or an empty object type `{}`.
+This rule requires every Firestore `DocumentReference`, `CollectionReference`, and `CollectionGroup` to declare the document shape via their generic type and rejects generics that resolve to `any` or `{}` (including nested usages). Firestore does not enforce schemas at runtime; without a typed generic, TypeScript treats the data as loose `DocumentData`, so field typos and missing properties compile and ship to production unchecked.
 
 ## Rule Details
 
-Using properly typed `DocumentReference` helps catch type errors early and provides better type safety when working with Firestore documents.
+- Provide a concrete document interface or type whenever you create a Firestore reference or call `doc`, `collection`, or `collectionGroup`.
+- Calls on an already typed `CollectionReference<T>` may omit the `doc` generic because the collection supplies the document shape.
+- Generics that collapse to `any` or `{}` (directly or through nested properties) are disallowed because they erase the schema and disable compile-time checks on reads and writes.
 
 Examples of **incorrect** code for this rule:
 
 ```ts
-// Missing generic type argument
+// Missing generic type argument on a reference
 const docRef: DocumentReference = db.doc('users/123');
 
-// Using 'any' as generic type
+// Missing generic when creating a collection
+const users = db.collection('users');
+
+// Using `any` erases the schema
 const docRef: DocumentReference<any> = db.doc('users/123');
 
 // Using empty object type
 const docRef: DocumentReference<{}> = db.doc('users/123');
 
-// Using interface with any properties
+// Nested `any` still erases the document type
 interface UserData {
-  name: any;
-  age: any;
+  name: string;
+  metadata: { audit: any };
 }
 const docRef: DocumentReference<UserData> = db.doc('users/123');
+
+// Overriding a typed collection with an unsafe generic
+const usersCollection = db.collection<UserData>('users');
+const userDoc = usersCollection.doc<any>('user123');
 ```
 
 Examples of **correct** code for this rule:
@@ -52,15 +61,16 @@ type ProductData = {
 };
 const docRef: DocumentReference<ProductData> = db.doc('products/456');
 
-// Using intersection types
-type BaseData = {
-  id: string;
-  createdAt: Date;
-};
+// Typed collection supplies the generic to doc()
+const users = db.collection<UserData>('users');
+const userDoc = users.doc('123');
+
+// Using intersection types keeps the schema intact
+type BaseData = { id: string; createdAt: Date };
 type UserWithBase = UserData & BaseData;
 const docRef: DocumentReference<UserWithBase> = db.doc('users/123');
 ```
 
 ## When Not To Use It
 
-If you're working with untyped Firestore documents or if you need to temporarily work with unknown document types during development/prototyping phases. However, it's recommended to always properly type your Firestore documents in production code.
+Only disable this rule when you intentionally work with dynamic collections whose shape is unknown and you accept the loss of type safety. Even then, prefer modeling the uncertainty explicitly (e.g., with `unknown` plus runtime validation) instead of relying on `any` or `{}`.

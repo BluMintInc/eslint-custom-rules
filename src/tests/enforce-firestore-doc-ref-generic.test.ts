@@ -1,5 +1,28 @@
+import type { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceFirestoreDocRefGeneric } from '../rules/enforce-firestore-doc-ref-generic';
+
+type MessageIds = 'missingGeneric' | 'invalidGeneric';
+
+const missingGenericMessage = (type: string) =>
+  `${type} is missing its document generic. Without the generic Firestore references fall back to loose DocumentData, so TypeScript cannot catch field typos or missing required properties before they reach Firestore. Add the document interface as the generic (e.g., doc<UserDoc>(collection) or const ref: ${type}<UserDoc> = ...) to enforce the schema at compile time.`;
+
+const invalidGenericMessage = (type: string) =>
+  `${type} uses "any" or an empty object in its generic, which erases the document schema and disables TypeScript checks on Firestore reads and writes. That lets malformed payloads and missing fields pass silently. Define a concrete interface or type for the document (e.g., UserDoc { name: string }) and use it as the generic instead of "any" or {}.`;
+
+const missingGenericError = (
+  type: string,
+): TSESLint.TestCaseError<MessageIds> =>
+  ({
+    message: missingGenericMessage(type),
+  } as unknown as TSESLint.TestCaseError<MessageIds>);
+
+const invalidGenericError = (
+  type: string,
+): TSESLint.TestCaseError<MessageIds> =>
+  ({
+    message: invalidGenericMessage(type),
+  } as unknown as TSESLint.TestCaseError<MessageIds>);
 
 ruleTesterTs.run(
   'enforce-firestore-doc-ref-generic',
@@ -820,122 +843,77 @@ ruleTesterTs.run(
       // Missing generic type - DocumentReference
       {
         code: `const userRef: DocumentReference = db.collection('users').doc(userId);`,
-        errors: [
-          { messageId: 'missingGeneric', data: { type: 'DocumentReference' } },
-        ],
+        errors: [missingGenericError('DocumentReference')],
       },
       // Missing generic type - CollectionReference
       {
         code: `const usersCollection: CollectionReference = db.collection('users');`,
-        errors: [
-          {
-            messageId: 'missingGeneric',
-            data: { type: 'CollectionReference' },
-          },
-        ],
+        errors: [missingGenericError('CollectionReference')],
       },
       // Missing generic type - CollectionGroup
       {
         code: `const productsGroup: CollectionGroup = db.collectionGroup('products');`,
-        errors: [
-          { messageId: 'missingGeneric', data: { type: 'CollectionGroup' } },
-        ],
+        errors: [missingGenericError('CollectionGroup')],
       },
       // Missing generic type in .doc() call
       {
         code: `const userRef = db.collection('users').doc(userId);`,
-        errors: [
-          { messageId: 'missingGeneric', data: { type: 'DocumentReference' } },
-        ],
+        errors: [missingGenericError('DocumentReference')],
       },
       // Missing generic type in .collection() call
       {
         code: `const usersCollection = db.collection('users');`,
-        errors: [
-          {
-            messageId: 'missingGeneric',
-            data: { type: 'CollectionReference' },
-          },
-        ],
+        errors: [missingGenericError('CollectionReference')],
       },
       // Missing generic type in .collectionGroup() call
       {
         code: `const productsGroup = db.collectionGroup('products');`,
-        errors: [
-          { messageId: 'missingGeneric', data: { type: 'CollectionGroup' } },
-        ],
+        errors: [missingGenericError('CollectionGroup')],
       },
       // Invalid generic type in .doc() call
       {
         code: `const userRef = db.collection<User>('users').doc<any>(userId);`,
-        errors: [
-          { messageId: 'invalidGeneric', data: { type: 'DocumentReference' } },
-        ],
+        errors: [invalidGenericError('DocumentReference')],
       },
       // Invalid generic type in .collection() call
       {
         code: `const usersCollection = db.collection<{}>("users");`,
-        errors: [
-          {
-            messageId: 'invalidGeneric',
-            data: { type: 'CollectionReference' },
-          },
-        ],
+        errors: [invalidGenericError('CollectionReference')],
       },
       // Invalid generic type in .collectionGroup() call
       {
         code: `const productsGroup = db.collectionGroup<any>('products');`,
-        errors: [
-          { messageId: 'invalidGeneric', data: { type: 'CollectionGroup' } },
-        ],
+        errors: [invalidGenericError('CollectionGroup')],
       },
       // Using any - DocumentReference
       {
         code: `const userRef: DocumentReference<any> = db.collection('users').doc(userId);`,
-        errors: [
-          { messageId: 'invalidGeneric', data: { type: 'DocumentReference' } },
-        ],
+        errors: [invalidGenericError('DocumentReference')],
       },
       // Using any - CollectionReference
       {
         code: `const usersCollection: CollectionReference<any> = db.collection('users');`,
-        errors: [
-          {
-            messageId: 'invalidGeneric',
-            data: { type: 'CollectionReference' },
-          },
-        ],
+        errors: [invalidGenericError('CollectionReference')],
       },
       // Using any - CollectionGroup
       {
         code: `const productsGroup: CollectionGroup<any> = db.collectionGroup('products');`,
-        errors: [
-          { messageId: 'invalidGeneric', data: { type: 'CollectionGroup' } },
-        ],
+        errors: [invalidGenericError('CollectionGroup')],
       },
       // Using empty object type - DocumentReference
       {
         code: `const userRef: DocumentReference<{}> = db.collection('users').doc(userId);`,
-        errors: [
-          { messageId: 'invalidGeneric', data: { type: 'DocumentReference' } },
-        ],
+        errors: [invalidGenericError('DocumentReference')],
       },
       // Using empty object type - CollectionReference
       {
         code: `const usersCollection: CollectionReference<{}> = db.collection('users');`,
-        errors: [
-          {
-            messageId: 'invalidGeneric',
-            data: { type: 'CollectionReference' },
-          },
-        ],
+        errors: [invalidGenericError('CollectionReference')],
       },
       // Using empty object type - CollectionGroup
       {
         code: `const productsGroup: CollectionGroup<{}> = db.collectionGroup('products');`,
-        errors: [
-          { messageId: 'invalidGeneric', data: { type: 'CollectionGroup' } },
-        ],
+        errors: [invalidGenericError('CollectionGroup')],
       },
       // Using any in nested type
       {
@@ -945,12 +923,12 @@ ruleTesterTs.run(
         }
         const userRef: DocumentReference<User> = db.collection('users').doc(userId);
       `,
-        errors: [{ messageId: 'invalidGeneric' }],
+        errors: [invalidGenericError('DocumentReference')],
       },
       // Using empty object in array
       {
         code: `const refs: Array<DocumentReference<{}>> = docs.map(d => d.ref);`,
-        errors: [{ messageId: 'invalidGeneric' }],
+        errors: [invalidGenericError('DocumentReference')],
       },
       // Using any in Promise
       {
@@ -959,7 +937,7 @@ ruleTesterTs.run(
           return db.collection('users').doc(userId);
         }
       `,
-        errors: [{ messageId: 'invalidGeneric' }],
+        errors: [invalidGenericError('DocumentReference')],
       },
       // Using any in class member
       {
@@ -971,7 +949,7 @@ ruleTesterTs.run(
           }
         }
       `,
-        errors: [{ messageId: 'invalidGeneric' }],
+        errors: [invalidGenericError('DocumentReference')],
       },
       // Using empty object in function parameter
       {
@@ -980,7 +958,7 @@ ruleTesterTs.run(
           return ref.get();
         }
       `,
-        errors: [{ messageId: 'invalidGeneric' }],
+        errors: [invalidGenericError('DocumentReference')],
       },
       // Using any in intersection type
       {
@@ -990,7 +968,7 @@ ruleTesterTs.run(
         }
         const ref: DocumentReference<Base & any> = db.collection('users').doc(userId);
       `,
-        errors: [{ messageId: 'invalidGeneric' }],
+        errors: [invalidGenericError('DocumentReference')],
       },
       // Using empty object in union type
       {
@@ -1000,7 +978,7 @@ ruleTesterTs.run(
         }
         const ref: DocumentReference<User | {}> = db.collection('users').doc(userId);
       `,
-        errors: [{ messageId: 'invalidGeneric' }],
+        errors: [invalidGenericError('DocumentReference')],
       },
       // Invalid generic on typed collection should still be caught
       {
@@ -1012,9 +990,7 @@ ruleTesterTs.run(
         const usersCollection: CollectionReference<User> = db.collection<User>('users');
         const userDoc = usersCollection.doc<any>('user123');
       `,
-        errors: [
-          { messageId: 'invalidGeneric', data: { type: 'DocumentReference' } },
-        ],
+        errors: [invalidGenericError('DocumentReference')],
       },
       // Invalid generic on method chained typed collection should still be caught
       {
@@ -1025,23 +1001,17 @@ ruleTesterTs.run(
         }
         const productDoc = db.collection<Product>('products').doc<{}>('product123');
       `,
-        errors: [
-          { messageId: 'invalidGeneric', data: { type: 'DocumentReference' } },
-        ],
+        errors: [invalidGenericError('DocumentReference')],
       },
       // Standalone doc() function call should still require generics
       {
         code: `const docRef = doc(firestore, 'collection/docId');`,
-        errors: [
-          { messageId: 'missingGeneric', data: { type: 'DocumentReference' } },
-        ],
+        errors: [missingGenericError('DocumentReference')],
       },
       // Standalone doc() function call with invalid generic
       {
         code: `const docRef = doc<any>(firestore, 'collection/docId');`,
-        errors: [
-          { messageId: 'invalidGeneric', data: { type: 'DocumentReference' } },
-        ],
+        errors: [invalidGenericError('DocumentReference')],
       },
       // Untyped CollectionReference calling doc() should still require generics
       {
@@ -1050,11 +1020,8 @@ ruleTesterTs.run(
         const docRef = untypedCollection.doc('doc-id');
       `,
         errors: [
-          {
-            messageId: 'missingGeneric',
-            data: { type: 'CollectionReference' },
-          },
-          { messageId: 'missingGeneric', data: { type: 'DocumentReference' } },
+          missingGenericError('CollectionReference'),
+          missingGenericError('DocumentReference'),
         ],
       },
       // CollectionReference without type annotation calling doc()
@@ -1073,11 +1040,8 @@ ruleTesterTs.run(
         }
       `,
         errors: [
-          {
-            messageId: 'missingGeneric',
-            data: { type: 'CollectionReference' },
-          },
-          { messageId: 'missingGeneric', data: { type: 'DocumentReference' } },
+          missingGenericError('CollectionReference'),
+          missingGenericError('DocumentReference'),
         ],
       },
       // Function parameter without type annotation
@@ -1087,9 +1051,7 @@ ruleTesterTs.run(
           return collection.doc(id);
         }
       `,
-        errors: [
-          { messageId: 'missingGeneric', data: { type: 'DocumentReference' } },
-        ],
+        errors: [missingGenericError('DocumentReference')],
       },
       // Variable without type annotation
       {
@@ -1098,11 +1060,8 @@ ruleTesterTs.run(
         const doc = untypedCollection.doc('id');
       `,
         errors: [
-          {
-            messageId: 'missingGeneric',
-            data: { type: 'CollectionReference' },
-          },
-          { messageId: 'missingGeneric', data: { type: 'DocumentReference' } },
+          missingGenericError('CollectionReference'),
+          missingGenericError('DocumentReference'),
         ],
       },
       // Method returning untyped collection
@@ -1119,11 +1078,8 @@ ruleTesterTs.run(
         }
       `,
         errors: [
-          {
-            messageId: 'missingGeneric',
-            data: { type: 'CollectionReference' },
-          },
-          { messageId: 'missingGeneric', data: { type: 'DocumentReference' } },
+          missingGenericError('CollectionReference'),
+          missingGenericError('DocumentReference'),
         ],
       },
       // Array of untyped collections
@@ -1133,15 +1089,9 @@ ruleTesterTs.run(
         const doc = collections[0].doc('id');
       `,
         errors: [
-          {
-            messageId: 'missingGeneric',
-            data: { type: 'CollectionReference' },
-          },
-          {
-            messageId: 'missingGeneric',
-            data: { type: 'CollectionReference' },
-          },
-          { messageId: 'missingGeneric', data: { type: 'DocumentReference' } },
+          missingGenericError('CollectionReference'),
+          missingGenericError('CollectionReference'),
+          missingGenericError('DocumentReference'),
         ],
       },
       // Object with untyped collection property
@@ -1154,15 +1104,9 @@ ruleTesterTs.run(
         const userDoc = collections.users.doc('user-id');
       `,
         errors: [
-          {
-            messageId: 'missingGeneric',
-            data: { type: 'CollectionReference' },
-          },
-          {
-            messageId: 'missingGeneric',
-            data: { type: 'CollectionReference' },
-          },
-          { messageId: 'missingGeneric', data: { type: 'DocumentReference' } },
+          missingGenericError('CollectionReference'),
+          missingGenericError('CollectionReference'),
+          missingGenericError('DocumentReference'),
         ],
       },
     ],
