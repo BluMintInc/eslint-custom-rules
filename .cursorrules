@@ -1,7 +1,5 @@
 **As an agent, use as many steps as you need to get to a solution, and do not stop until you are VERY confident in a solution.**
 
-Leverage the `interactive-mcp` MCP server to ask clarification questions whenever requirements are unclear. Use `request_user_input` for single questions and `start_intensive_chat` + `ask_intensive_chat` + `stop_intensive_chat` for multi-question workflows.
-
 ---
 
 # BluMint ESLint Plugin Development Guidelines
@@ -10,7 +8,7 @@ This repository contains custom ESLint rules for BluMint. When contributing, fol
 
 ## Repository Purpose
 
-This ESLint plugin provides **131 custom rules** for BluMint's TypeScript/React codebase. The rules enforce coding standards, prevent common mistakes, and maintain code quality across BluMint's projects.
+This ESLint plugin provides **100+ custom rules** for BluMint's TypeScript/React codebase. The rules enforce coding standards, prevent common mistakes, and maintain code quality across BluMint's projects.
 
 ## Temporary Files
 
@@ -26,19 +24,19 @@ Place all temporary artifacts (verification checklists, scratch notes, generated
 ```
 eslint-custom-rules/
 ├── docs/                    # Markdown documentation for each rule
-│   └── rules/               # Auto-generated rule documentation (132 files)
+│   └── rules/               # Auto-generated rule documentation
 ├── scripts/                 # Utility scripts for development
 │   ├── make-docs.sh         # Documentation generation script
 │   ├── test-release.js      # Release testing script
 │   └── update-version.js    # Version update script
 ├── src/                     # Source code
 │   ├── index.ts             # Main entry point with rule exports and recommended config
-│   ├── rules/               # ESLint rule implementations (131 rules)
-│   ├── tests/               # Jest test suites (196 files)
+│   ├── rules/               # ESLint rule implementations
+│   ├── tests/               # Jest test suites
 │   └── utils/               # Helper functions and utilities
 │       ├── ASTHelpers.ts    # AST manipulation helpers
 │       ├── createRule.ts    # Rule creation utility
-│       ├── ruleTester.ts    # Test utility exports (3 variants)
+│       ├── ruleTester.ts    # Test utility exports
 │       └── graph/           # Class graph analysis utilities
 │           ├── ClassGraphBuilder.ts
 │           ├── ClassGraphSorter.ts
