@@ -1,6 +1,11 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { syncOnwriteNameFunc } from '../rules/sync-onwrite-name-func';
 
+const mismatchedNameData = (nameValue: string, funcName: string) => ({
+  nameValue,
+  funcName,
+});
+
 ruleTesterTs.run('sync-onwrite-name-func', syncOnwriteNameFunc, {
   valid: [
     // Basic valid cases
@@ -79,7 +84,12 @@ ruleTesterTs.run('sync-onwrite-name-func', syncOnwriteNameFunc, {
           func: notifyMatchChanges,
         };
       `,
-      errors: [{ messageId: 'mismatchedName' }],
+      errors: [
+        {
+          messageId: 'mismatchedName',
+          data: mismatchedNameData('processMatchMessages', 'notifyMatchChanges'),
+        },
+      ],
       output: `
         const config = {
           name: 'notifyMatchChanges',
@@ -97,7 +107,12 @@ ruleTesterTs.run('sync-onwrite-name-func', syncOnwriteNameFunc, {
           memory: '256MB',
         };
       `,
-      errors: [{ messageId: 'mismatchedName' }],
+      errors: [
+        {
+          messageId: 'mismatchedName',
+          data: mismatchedNameData('oldName', 'newFunctionName'),
+        },
+      ],
       output: `
         const config = {
           name: 'newFunctionName',
@@ -117,7 +132,12 @@ ruleTesterTs.run('sync-onwrite-name-func', syncOnwriteNameFunc, {
           timeout: '60s',
         };
       `,
-      errors: [{ messageId: 'mismatchedName' }],
+      errors: [
+        {
+          messageId: 'mismatchedName',
+          data: mismatchedNameData('oldAuthHandler', 'processAuth'),
+        },
+      ],
       output: `
         const handler = {
           memory: '512MB',
@@ -137,7 +157,12 @@ ruleTesterTs.run('sync-onwrite-name-func', syncOnwriteNameFunc, {
           func: processQueue,
         };
       `,
-      errors: [{ messageId: 'mismatchedName' }],
+      errors: [
+        {
+          messageId: 'mismatchedName',
+          data: mismatchedNameData('oldName', 'processQueue'),
+        },
+      ],
       output: `
         const baseConfig = { memory: '256MB', timeout: '30s' };
         const config = {
@@ -156,7 +181,12 @@ ruleTesterTs.run('sync-onwrite-name-func', syncOnwriteNameFunc, {
           func: funcRef,
         };
       `,
-      errors: [{ messageId: 'mismatchedName' }],
+      errors: [
+        {
+          messageId: 'mismatchedName',
+          data: mismatchedNameData('wrongName', 'myFunction'),
+        },
+      ],
       output: `
         const funcRef = myFunction;
         const config = {
@@ -170,7 +200,12 @@ ruleTesterTs.run('sync-onwrite-name-func', syncOnwriteNameFunc, {
       code: `
         const config = { name: 'wrong', func: minimal };
       `,
-      errors: [{ messageId: 'mismatchedName' }],
+      errors: [
+        {
+          messageId: 'mismatchedName',
+          data: mismatchedNameData('wrong', 'minimal'),
+        },
+      ],
       output: `
         const config = { name: 'minimal', func: minimal };
       `,
@@ -183,7 +218,12 @@ ruleTesterTs.run('sync-onwrite-name-func', syncOnwriteNameFunc, {
           func: newHandler,
         };
       `,
-      errors: [{ messageId: 'mismatchedName' }],
+      errors: [
+        {
+          messageId: 'mismatchedName',
+          data: mismatchedNameData('oldHandler', 'newHandler'),
+        },
+      ],
       output: `
         const config = {
           name: 'newHandler',
