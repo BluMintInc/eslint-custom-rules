@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { request } from 'node:https';
+import type { IncomingMessage } from 'node:http';
 import * as ts from 'typescript';
 
 type LaunchResult =
@@ -13,7 +14,8 @@ const GITHUB_REPOSITORY =
 const SOURCE_REF = process.env.SOURCE_REF || 'develop';
 const MODEL = process.env.CURSOR_MODEL || 'gpt-5.1-codex-max-high';
 const BATCH_SIZE = Number(process.env.BATCH_SIZE || 20);
-const BATCH_DELAY_MS = Number(process.env.BATCH_DELAY_MS || 15 * 60 * 1000); // 5 minutes
+// Default gap between batches: 15 minutes
+const BATCH_DELAY_MS = Number(process.env.BATCH_DELAY_MS || 15 * 60 * 1000);
 const DRY_RUN = process.argv.includes('--dry-run');
 
 if (!CURSOR_API_KEY) {
@@ -76,13 +78,17 @@ function extractRuleNames(): string[] {
   return Array.from(names).sort();
 }
 
-const lintMessageSummary = [
-  'Structure messages as: [What is wrong] -> [Why it matters] -> [How to fix].',
-  'Use {{handlebars}} variables to point at the specific code that triggered the message.',
-  'Explain the underlying pitfall or bug the rule prevents; do not rely on prior context.',
-  'Offer concrete, actionable fixes when the next step is not obvious.',
-  'Avoid tautological, purely imperative, or AST-jargon-only messages.',
-].join('\n- ');
+function readLintMessageGuide(): string {
+  const path = '.cursor/rules/lint-message.mdc';
+  try {
+    return readFileSync(path, 'utf-8');
+  } catch (error) {
+    console.error(`Failed to read ${path}`);
+    throw error;
+  }
+}
+
+const lintMessageGuide = readLintMessageGuide();
 
 function buildPrompt(ruleName: string): string {
   const rulePath = `src/rules/${ruleName}.ts`;
@@ -97,8 +103,8 @@ function buildPrompt(ruleName: string): string {
     `- Update tests such as ${testPath} to expect the refined messages (no behavior changes).`,
     `- Refresh ${docPath} so it explains the why/how of the rule and shows updated examples.`,
     '',
-    'Lint message requirements (from .cursor/rules/lint-message.mdc):',
-    `- ${lintMessageSummary}`,
+    'Lint message requirements (full guide from .cursor/rules/lint-message.mdc):',
+    lintMessageGuide,
     '',
     'Constraints:',
     '- Keep statements a-temporal and clear; prefer explicit reasoning over brevity.',
@@ -118,7 +124,7 @@ function slugifyBranch(ruleName: string): string {
   return `improve-msg-docs-${base}`;
 }
 
-function callCursorAPI(payload: unknown): Promise<any> {
+function callCursorAPI(payload: unknown): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const data = JSON.stringify(payload);
     const req = request(
@@ -132,9 +138,9 @@ function callCursorAPI(payload: unknown): Promise<any> {
           'Content-Length': Buffer.byteLength(data),
         },
       },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on('data', (chunk) => chunks.push(chunk));
+      (res: IncomingMessage) => {
+        const chunks: Uint8Array[] = [];
+        res.on('data', (chunk: Uint8Array) => chunks.push(chunk));
         res.on('end', () => {
           const body = Buffer.concat(chunks).toString('utf-8');
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
@@ -190,9 +196,10 @@ async function launchAgent(rule: string): Promise<LaunchResult> {
   };
 
   try {
-    const response = await callCursorAPI(payload);
-    const agentUrl =
-      (response && response.target && response.target.url) || 'unknown';
+    const response = (await callCursorAPI(payload)) as {
+      target?: { url?: string };
+    };
+    const agentUrl = response.target?.url ?? 'unknown';
     console.log(`Launched agent for ${rule} -> ${agentUrl}`);
     return { rule, branch, agentUrl };
   } catch (error) {
