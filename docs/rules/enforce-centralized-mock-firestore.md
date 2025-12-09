@@ -6,11 +6,11 @@
 
 <!-- end auto-generated rule header -->
 
-Enforces the use of the centralized mockFirestore from the predefined location instead of creating new mock instances.
+Require tests to use the shared `mockFirestore` from `../../../../../__test-utils__/mockFirestore` instead of declaring ad-hoc mocks. A single, centralized mock keeps Firestore test behavior aligned with real API changes and ensures fixes land in one place rather than being copied across suites.
 
 ## Rule Details
 
-This rule aims to ensure consistency in test mocks by requiring the use of a centralized mockFirestore implementation.
+Using locally defined `mockFirestore` functions causes tests to diverge from the canonical behavior. When Firestore data shapes or helper APIs change, scattered mocks silently drift and break only in the suites that forgot to update. The centralized mock absorbs these changes once and keeps every test using the same behavior. This rule reports any file that declares, destructures, or references a local `mockFirestore` (including renames and `this.mockFirestore`) instead of importing from the shared path. The fixer rewrites the file to import the shared mock and swaps local references to it.
 
 Examples of **incorrect** code for this rule:
 
@@ -35,6 +35,18 @@ beforeEach(() => {
 });
 ```
 
+```js
+const { mockFirestore: customMockFirestore } = require('./customMocks');
+
+describe('test suite', () => {
+  beforeEach(() => {
+    customMockFirestore({
+      'some/path': [{ id: 'test' }],
+    });
+  });
+});
+```
+
 Examples of **correct** code for this rule:
 
 ```js
@@ -47,9 +59,19 @@ beforeEach(() => {
 });
 ```
 
+```js
+import { mockFirestore as centralMockFirestore } from '../../../../../__test-utils__/mockFirestore';
+
+beforeEach(() => {
+  centralMockFirestore({
+    'some/path': [{ id: 'test' }],
+  });
+});
+```
+
 ## When Not To Use It
 
-If you need to use different mock implementations for specific test cases, you might want to disable this rule. However, consider contributing to the centralized mockFirestore implementation instead of creating custom mocks.
+Disable this rule only when a suite must intentionally exercise a different Firestore mock. Prefer extending the centralized mock to cover that behavior so the team benefits from a single source of truth.
 
 ## Further Reading
 
