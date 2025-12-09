@@ -21,7 +21,7 @@ export const noSeparateLoadingState = createRule<[], MessageIds>({
     schema: [],
     messages: {
       separateLoadingState:
-        'Avoid separate loading state. Encode loading status directly in the primary state using a sentinel value like "loading".',
+        'Loading flag "{{stateName}}" splits the source of truth for data fetching. Boolean toggles drift from the actual data and add extra renders. Encode the loading phase inside the primary state instead (use a "loading" sentinel or discriminated union) so components read a single authoritative value.',
     },
   },
   defaultOptions: [],
@@ -128,7 +128,7 @@ export const noSeparateLoadingState = createRule<[], MessageIds>({
 
       'Program:exit'() {
         // Analyze collected data to determine violations
-        for (const [, declarator] of loadingStateVariables) {
+        for (const [stateName, declarator] of loadingStateVariables) {
           const setterName = getSetterName(declarator);
           if (!setterName) continue;
 
@@ -140,6 +140,9 @@ export const noSeparateLoadingState = createRule<[], MessageIds>({
             context.report({
               node: declarator,
               messageId: 'separateLoadingState',
+              data: {
+                stateName,
+              },
             });
           }
         }
