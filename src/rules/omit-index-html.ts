@@ -64,7 +64,7 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
     ],
     messages: {
       omitIndexHtml:
-        'Avoid using "index.html" in URLs. Many web servers automatically resolve directory requests to index.html.',
+        'URL "{{url}}" includes "index.html", which servers already serve implicitly for directory paths. Keeping the file name creates duplicate URLs, breaks canonical links, and can make caches treat the same page as different assets. Drop the file name and point to the directory path instead (e.g., "{{suggestedUrl}}").',
     },
   },
   defaultOptions: [{ allowWithQueryOrHash: true }],
@@ -85,6 +85,10 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
           context.report({
             node,
             messageId: 'omitIndexHtml',
+            data: {
+              url: value,
+              suggestedUrl: fixUrl(value),
+            },
             fix: (fixer) => {
               return fixer.replaceText(node, `"${fixUrl(value)}"`);
             },
@@ -99,6 +103,10 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
           context.report({
             node,
             messageId: 'omitIndexHtml',
+            data: {
+              url: value,
+              suggestedUrl: fixUrl(value),
+            },
             // No automatic fix for template literals as they may contain dynamic parts
           });
         }
