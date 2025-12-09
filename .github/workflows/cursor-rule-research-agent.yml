@@ -18,8 +18,8 @@ concurrency:
 jobs:
   research_existing_rules:
     if: |
-      (github.event.action == 'labeled' && github.event.label.name == 'research-needed') ||
-      (github.event.action == 'reopened' && contains(github.event.issue.labels.*.name, 'research-needed'))
+      (github.event.action == 'labeled' && github.event.label.name == 'cursor-research') ||
+      (github.event.action == 'reopened' && contains(github.event.issue.labels.*.name, 'cursor-research'))
     runs-on: ubuntu-latest
     steps:
       - name: Check for existing research
