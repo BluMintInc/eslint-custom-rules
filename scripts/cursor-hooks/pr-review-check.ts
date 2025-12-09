@@ -4,6 +4,7 @@ import type { Input } from './types';
 
 const BOT_NAME_PATTERN = /(coderabbit|graphite|cursor|bugbot)/i;
 const SUCCESS_PATTERN = /✅ All .* are resolved/;
+const NO_PR_PATTERN = /No open pull request found/i;
 
 function executeCommand(command: string) {
   try {
@@ -123,14 +124,16 @@ export function determineBotReview(params: {
 
 export function validateUnresolvedComments(params: {
   readonly prNumber: number;
-  readonly reviewId: number;
+  readonly reviewId?: number;
   readonly isBot: boolean;
 }) {
   const { prNumber, reviewId, isBot } = params;
 
+  const reviewArg = reviewId !== undefined ? ` --review-batch=${reviewId}` : '';
+
   const command = isBot
-    ? `npm run fetch-unresolved-bot-comments -- --pr=${prNumber} --review-batch=${reviewId}`
-    : `npm run fetch-unresolved-comments -- --pr=${prNumber} --review-batch=${reviewId}`;
+    ? `npm run fetch-unresolved-bot-comments -- --pr=${prNumber}${reviewArg}`
+    : `npm run fetch-unresolved-comments -- --pr=${prNumber}${reviewArg}`;
 
   const result = executeCommand(command);
 
@@ -144,12 +147,69 @@ export function validateUnresolvedComments(params: {
 
   // Parse output to detect if comments remain
   // The script outputs "✅ All ... are resolved" when no comments remain
-  const hasComments = !SUCCESS_PATTERN.test(result.output);
+  const hasComments =
+    !SUCCESS_PATTERN.test(result.output) && !NO_PR_PATTERN.test(result.output);
 
   return {
     hasComments,
     commentsList: result.output,
   } as const;
+}
+
+function findOpenPrNumberForBranch(branchName: string) {
+  const prLookup = executeCommand(
+    `gh pr list --head "${branchName}" --state open --json number --jq '.[0].number'`,
+  );
+
+  if (!prLookup.isSuccess) {
+    console.error('Could not determine PR number for branch', branchName);
+    return null;
+  }
+
+  const prNumberRaw = prLookup.output.trim();
+  if (!prNumberRaw || prNumberRaw === 'null') {
+    return null;
+  }
+
+  const parsed = Number(prNumberRaw);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function validateWithoutReviewBatch(branchName: string) {
+  const prNumber = findOpenPrNumberForBranch(branchName);
+  if (!prNumber) {
+    return null;
+  }
+
+  // Prefer bot comments when present; fall back to human comments otherwise.
+  const botResult = validateUnresolvedComments({
+    prNumber,
+    isBot: true,
+  });
+  if (botResult.hasComments) {
+    return {
+      hasComments: true,
+      isBot: true,
+      commentsList: botResult.commentsList,
+      prNumber,
+    } as const;
+  }
+
+  const humanResult = validateUnresolvedComments({
+    prNumber,
+    isBot: false,
+  });
+
+  if (humanResult.hasComments) {
+    return {
+      hasComments: true,
+      isBot: false,
+      commentsList: humanResult.commentsList,
+      prNumber,
+    } as const;
+  }
+
+  return null;
 }
 
 function constructFollowupMessage(isBot: boolean, commentsList: string) {
@@ -199,7 +259,27 @@ export function performPrReviewCheck(_input: Input) {
     const context = extractPrReviewContext(branchName);
 
     if (!context) {
-      return null; // Not a PR review branch
+      const fallbackResult = validateWithoutReviewBatch(branchName);
+      if (!fallbackResult) {
+        return null; // Not a PR review branch
+      }
+
+      console.error(
+        `Detected unresolved ${
+          fallbackResult.isBot ? 'bot' : 'human'
+        } review comments on PR #${
+          fallbackResult.prNumber
+        } for branch ${branchName}`,
+      );
+
+      const followupMessage = constructFollowupMessage(
+        fallbackResult.isBot,
+        fallbackResult.commentsList,
+      );
+
+      return {
+        followup_message: followupMessage,
+      } as const;
     }
 
     console.error(
