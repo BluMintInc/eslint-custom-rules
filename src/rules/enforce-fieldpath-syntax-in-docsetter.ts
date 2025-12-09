@@ -18,7 +18,7 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
     schema: [],
     messages: {
       enforceFieldPathSyntax:
-        'Use FieldPath syntax (dot notation) for nested fields in DocSetter. Instead of `{ roles: { contributor: value } }`, use `{ "roles.contributor": value }`.',
+        'DocSetter {{methodName}} receives nested object data under "{{topLevelKey}}", which Firestore treats as a whole sub-document write and can overwrite siblings during partial updates. Use FieldPath dot notation so only the intended leaves are written (e.g., "{{exampleFieldPath}}"), flattening nested properties before passing documentData.',
     },
   },
   defaultOptions: [],
@@ -199,6 +199,32 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       return result;
     }
 
+    function getMethodName(node: TSESTree.CallExpression): string {
+      if (
+        node.callee.type === AST_NODE_TYPES.MemberExpression &&
+        node.callee.property.type === AST_NODE_TYPES.Identifier
+      ) {
+        return `${node.callee.property.name}()`;
+      }
+      return 'set()';
+    }
+
+    function getPropertyKeyText(
+      property: TSESTree.Property,
+    ): string | undefined {
+      if (property.key.type === AST_NODE_TYPES.Identifier) {
+        return property.key.name;
+      }
+      if (
+        property.key.type === AST_NODE_TYPES.Literal &&
+        (typeof property.key.value === 'string' ||
+          typeof property.key.value === 'number')
+      ) {
+        return String(property.key.value);
+      }
+      return undefined;
+    }
+
     return {
       // Track DocSetter variable declarations
       VariableDeclarator(node) {
@@ -227,10 +253,34 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
           return;
         }
 
+        const flattenedProperties = flattenObject(
+          firstArg,
+          context.getSourceCode(),
+        );
+        const exampleFieldPath =
+          Object.keys(flattenedProperties).find((key) => key.includes('.')) ??
+          'field.nested';
+
+        const firstNestedProperty = firstArg.properties.find(
+          (prop): prop is TSESTree.Property =>
+            prop.type === AST_NODE_TYPES.Property &&
+            !prop.computed &&
+            prop.value.type === AST_NODE_TYPES.ObjectExpression,
+        );
+
+        const topLevelKey =
+          (firstNestedProperty && getPropertyKeyText(firstNestedProperty)) ??
+          'nested field';
+
         // Report and fix the issue
         context.report({
           node: firstArg,
           messageId: 'enforceFieldPathSyntax',
+          data: {
+            methodName: getMethodName(node),
+            topLevelKey,
+            exampleFieldPath,
+          },
           fix(fixer) {
             const newText = convertToFieldPathSyntax(
               firstArg,

@@ -1,6 +1,16 @@
 import { ruleTesterTs } from '../../utils/ruleTester';
 import { enforceFieldPathSyntaxInDocSetter } from '../../rules/enforce-fieldpath-syntax-in-docsetter';
 
+const buildData = (
+  methodName: string,
+  topLevelKey: string,
+  exampleFieldPath: string,
+) => ({
+  methodName,
+  topLevelKey,
+  exampleFieldPath,
+});
+
 ruleTesterTs.run(
   'enforce-fieldpath-syntax-in-docsetter',
   enforceFieldPathSyntaxInDocSetter,
@@ -372,7 +382,12 @@ ruleTesterTs.run(
           roles: { contributor: FieldValue.arrayUnion(contributorId) },
         });
       `,
-        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        errors: [
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData('set()', 'roles', 'roles.contributor'),
+          },
+        ],
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
@@ -390,7 +405,16 @@ ruleTesterTs.run(
           metadata: { createdAt: new Date(), updatedBy: userId },
         });
       `,
-        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        errors: [
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData(
+              'set()',
+              'metadata',
+              'metadata.createdAt',
+            ),
+          },
+        ],
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
@@ -414,7 +438,16 @@ ruleTesterTs.run(
           },
         });
       `,
-        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        errors: [
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData(
+              'set()',
+              'settings',
+              'settings.display.theme',
+            ),
+          },
+        ],
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
@@ -433,7 +466,16 @@ ruleTesterTs.run(
           roles: { contributor: FieldValue.arrayUnion(contributorId) },
         });
       `,
-        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        errors: [
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData(
+              'updateIfExists()',
+              'roles',
+              'roles.contributor',
+            ),
+          },
+        ],
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.updateIfExists({
@@ -453,7 +495,16 @@ ruleTesterTs.run(
           active: true,
         });
       `,
-        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        errors: [
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData(
+              'set()',
+              'metadata',
+              'metadata.createdAt',
+            ),
+          },
+        ],
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
@@ -473,7 +524,12 @@ ruleTesterTs.run(
           'roles': { contributor: FieldValue.arrayUnion(contributorId) },
         });
       `,
-        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        errors: [
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData('set()', 'roles', 'roles.contributor'),
+          },
+        ],
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
@@ -495,7 +551,12 @@ ruleTesterTs.run(
           },
         });
       `,
-        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        errors: [
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData('set()', 'config', 'config.ui.theme'),
+          },
+        ],
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
@@ -518,7 +579,12 @@ ruleTesterTs.run(
           },
         });
       `,
-        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        errors: [
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData('set()', 'stats', 'stats.views'),
+          },
+        ],
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
@@ -541,7 +607,12 @@ ruleTesterTs.run(
           },
         });
       `,
-        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        errors: [
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData('set()', 'metadata', 'metadata.description'),
+          },
+        ],
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
@@ -565,7 +636,12 @@ ruleTesterTs.run(
           },
         });
       `,
-        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        errors: [
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData('set()', 'scores', 'scores.total'),
+          },
+        ],
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
@@ -589,7 +665,12 @@ ruleTesterTs.run(
           },
         });
       `,
-        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        errors: [
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData('set()', 'flags', 'flags.active'),
+          },
+        ],
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
@@ -612,7 +693,12 @@ ruleTesterTs.run(
           },
         });
       `,
-        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        errors: [
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData('set()', 'data', 'data.tags'),
+          },
+        ],
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
@@ -634,7 +720,12 @@ ruleTesterTs.run(
           },
         });
       `,
-        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        errors: [
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData('set()', 'timestamps', 'timestamps.created'),
+          },
+        ],
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
@@ -659,7 +750,16 @@ ruleTesterTs.run(
           },
         });
       `,
-        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        errors: [
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData(
+              'set()',
+              'deep',
+              'deep.level1.level2.level3',
+            ),
+          },
+        ],
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
@@ -679,7 +779,16 @@ ruleTesterTs.run(
           stats: { count: 0 },
         });
       `,
-        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        errors: [
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData(
+              'set()',
+              'metadata',
+              'metadata.version',
+            ),
+          },
+        ],
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
@@ -699,7 +808,16 @@ ruleTesterTs.run(
           metadata: { version: '1.0' },
         });
       `,
-        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        errors: [
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData(
+              'set()',
+              'metadata',
+              'metadata.version',
+            ),
+          },
+        ],
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
@@ -721,7 +839,16 @@ ruleTesterTs.run(
           },
         });
       `,
-        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        errors: [
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData(
+              'set()',
+              'data',
+              'data.string-key',
+            ),
+          },
+        ],
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
@@ -745,7 +872,12 @@ ruleTesterTs.run(
           },
         });
       `,
-        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        errors: [
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData('set()', 'text', 'text.title'),
+          },
+        ],
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
@@ -765,7 +897,12 @@ ruleTesterTs.run(
           roles: { contributor: FieldValue.arrayUnion(contributorId) },
         });
       `,
-        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        errors: [
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData('set()', 'roles', 'roles.contributor'),
+          },
+        ],
         output: `
         const setter = new DocSetter<Tournament>(tournamentRef.parent);
         await setter.set({
@@ -783,7 +920,12 @@ ruleTesterTs.run(
           profile: { name: 'John Doe', age: 30 },
         });
       `,
-        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        errors: [
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData('set()', 'profile', 'profile.name'),
+          },
+        ],
         output: `
         const userSetter = new DocSetter<User>(userRef.parent);
         await userSetter.set({
@@ -802,7 +944,16 @@ ruleTesterTs.run(
           metadata: { version: '1.0' },
         }).then(() => console.log('done'));
       `,
-        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        errors: [
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData(
+              'set()',
+              'metadata',
+              'metadata.version',
+            ),
+          },
+        ],
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         docSetter.set({
@@ -823,7 +974,16 @@ ruleTesterTs.run(
           },
         });
       `,
-        errors: [{ messageId: 'enforceFieldPathSyntax' }],
+        errors: [
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData(
+              'set()',
+              'metadata',
+              'metadata.version',
+            ),
+          },
+        ],
         output: `
         const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
         await docSetter.set({
@@ -848,8 +1008,18 @@ ruleTesterTs.run(
         });
       `,
         errors: [
-          { messageId: 'enforceFieldPathSyntax' },
-          { messageId: 'enforceFieldPathSyntax' },
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData(
+              'set()',
+              'metadata',
+              'metadata.version',
+            ),
+          },
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData('set()', 'profile', 'profile.name'),
+          },
         ],
         output: `
         const tournamentSetter = new DocSetter<Tournament>(tournamentRef);
