@@ -26,7 +26,7 @@ export const noExcessiveParentChain = createRule<[], MessageIds>({
     schema: [],
     messages: {
       excessiveParentChain:
-        'Avoid using long chains of .parent calls ({{count}} found). Use the params object from the event parameter instead, which provides type-safe access to path segments.',
+        'Found {{count}} consecutive ref.parent hops in this handler. Long parent chains break when Firestore/RealtimeDB paths change and bypass the typed params the trigger already provides. Read path components from event.params (for example, params.userId) instead of walking ref.parent repeatedly.',
     },
   },
   defaultOptions: [],
