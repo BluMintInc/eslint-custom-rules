@@ -352,15 +352,6 @@ async function performAgentCheckInternal(input: Input) {
   const qualityCheckResult = await performQualityChecks(input);
   if (qualityCheckResult) return qualityCheckResult;
 
-  const changedFiles = fetchChangedFiles({
-    conversationId: conversation_id,
-    generationId: generation_id,
-  });
-  if (changedFiles.length === 0 || loop_count >= MAX_LOOPS) {
-    modifyConversationEnd(conversation_id);
-    return { followup_message: undefined } as const;
-  }
-
   const hasBeenPromptedBefore = hasCheckWorkBeenPrompted(conversation_id);
   markCheckWorkPrompted(conversation_id);
 
@@ -372,6 +363,15 @@ async function performAgentCheckInternal(input: Input) {
       markExpandTestsPrompted(conversation_id);
       return { followup_message: EXPAND_TESTS_PROMPT } as const;
     }
+  }
+
+  const changedFiles = fetchChangedFiles({
+    conversationId: conversation_id,
+    generationId: generation_id,
+  });
+  if (changedFiles.length === 0 || loop_count >= MAX_LOOPS) {
+    modifyConversationEnd(conversation_id);
+    return { followup_message: undefined } as const;
   }
 
   const followupMessage = hasBeenPromptedBefore
