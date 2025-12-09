@@ -10,11 +10,21 @@ ruleTesterTs.run('no-async-foreach', noAsyncForEach, {
   invalid: [
     {
       code: `['a', 'b', 'c'].forEach(async (letter) => { await someAsyncFunction(letter); console.log(letter); });`,
-      errors: [{ messageId: 'noAsyncForEach' }],
+      errors: [
+        {
+          messageId: 'noAsyncForEach',
+          data: { callbackLabel: 'arrow function' },
+        },
+      ],
     },
     {
       code: `['foo', 'bar'].forEach(async function(letter) { await someAsyncFunction(letter); console.log(letter); });`,
-      errors: [{ messageId: 'noAsyncForEach' }],
+      errors: [
+        {
+          messageId: 'noAsyncForEach',
+          data: { callbackLabel: 'function expression' },
+        },
+      ],
     },
   ],
 });

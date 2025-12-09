@@ -5,18 +5,29 @@ export const noAsyncForEach: TSESLint.RuleModule<'noAsyncForEach', []> = {
     return {
       CallExpression(node: TSESTree.CallExpression) {
         const callee = node.callee;
+        const callback = node.arguments[0];
         if (
           callee.type === 'MemberExpression' &&
           callee.property.type === 'Identifier' &&
           callee.property.name === 'forEach' &&
-          node.arguments[0] &&
-          (node.arguments[0].type === 'ArrowFunctionExpression' ||
-            node.arguments[0].type === 'FunctionExpression') &&
-          node.arguments[0].async
+          callback &&
+          (callback.type === 'ArrowFunctionExpression' ||
+            callback.type === 'FunctionExpression') &&
+          callback.async
         ) {
+          const callbackLabel =
+            callback.type === 'FunctionExpression' && callback.id?.name
+              ? `function "${callback.id.name}"`
+              : callback.type === 'ArrowFunctionExpression'
+                ? 'arrow function'
+                : 'function expression';
+
           context.report({
             node,
             messageId: 'noAsyncForEach',
+            data: {
+              callbackLabel,
+            },
           });
         }
       },
@@ -26,12 +37,12 @@ export const noAsyncForEach: TSESLint.RuleModule<'noAsyncForEach', []> = {
     type: 'problem',
     docs: {
       description:
-        'Disallow Array.forEach with an async callback function as it does not wait for promises to resolve. This can lead to race conditions and unexpected behavior. Use a standard for...of loop for sequential execution or Promise.all with map for concurrent execution.',
+        'Disallow Array.forEach with async callbacks because forEach ignores returned promises, leading to parallel execution and unhandled rejections. Use a for...of loop when you need to await each iteration or map with Promise.all when concurrency is intended.',
       recommended: 'error',
     },
     messages: {
       noAsyncForEach:
-        'Do not use async function as callback in Array.forEach. Use a standard for loop for sequential execution or Promise.all for concurrent execution.',
+        'Async {{callbackLabel}} passed to Array.forEach runs without awaiting each item. Array.forEach ignores returned promises, so async work executes in parallel and rejections go unhandled. Use a for...of loop to await sequentially or map with Promise.all when you want controlled concurrency.',
     },
     schema: [],
   },
