@@ -18,8 +18,10 @@ export default createRule<[], MessageIds>({
     fixable: 'code',
     schema: [],
     messages: {
-      upperSnakeCase: 'Global constants should be in UPPER_SNAKE_CASE',
-      asConst: 'Global constants should use "as const"',
+      upperSnakeCase:
+        'Global constant "{{name}}" should be written in UPPER_SNAKE_CASE (e.g., "{{suggestedName}}") so it reads as a module-level configuration value that never changes; rename it to make its immutability obvious.',
+      asConst:
+        'Global constant "{{name}}" is initialized with {{valueKind}} but lacks `as const`, so TypeScript widens the type and code can mutate it accidentally; append `as const` to freeze the value and preserve literal types.',
     },
   },
   defaultOptions: [],
@@ -28,6 +30,25 @@ export default createRule<[], MessageIds>({
     const isTypeScript =
       context.getFilename().endsWith('.ts') ||
       context.getFilename().endsWith('.tsx');
+
+    const describeValueKind = (node: TSESTree.Node): string => {
+      const target =
+        node.type === AST_NODE_TYPES.TSTypeAssertion ||
+        node.type === AST_NODE_TYPES.TSAsExpression
+          ? node.expression
+          : node;
+
+      if (target.type === AST_NODE_TYPES.ArrayExpression) {
+        return 'an array literal';
+      }
+      if (target.type === AST_NODE_TYPES.ObjectExpression) {
+        return 'an object literal';
+      }
+      if (target.type === AST_NODE_TYPES.Literal) {
+        return 'a literal value';
+      }
+      return 'a value';
+    };
 
     return {
       VariableDeclaration(node) {
@@ -171,6 +192,10 @@ export default createRule<[], MessageIds>({
               context.report({
                 node: declaration,
                 messageId: 'asConst',
+                data: {
+                  name,
+                  valueKind: describeValueKind(init),
+                },
                 fix(fixer) {
                   return fixer.replaceText(init, `${initText} as const`);
                 },
@@ -188,6 +213,10 @@ export default createRule<[], MessageIds>({
             context.report({
               node: declaration,
               messageId: 'upperSnakeCase',
+              data: {
+                name,
+                suggestedName: newName,
+              },
               fix(fixer) {
                 if (typeAnnotation) {
                   return fixer.replaceText(

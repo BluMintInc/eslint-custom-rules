@@ -6,21 +6,26 @@
 
 <!-- end auto-generated rule header -->
 
-This rule enforces a consistent format for global static constants in BluMint's codebase. Global constants declared in the top-level scope of a file (not inside any function or block) must follow these two conventions:
+Top-level constants should read as immutable configuration and stay frozen at the value authored. This rule keeps that intent obvious by enforcing:
 
-1. They must use `as const` to indicate immutability explicitly.
-2. They must be written in `UPPER_SNAKE_CASE` to visually distinguish them from other variables.
+1. `UPPER_SNAKE_CASE` names for module-scope constants so they stand out from runtime variables.
+2. `as const` for literal, array, and object initializers in TypeScript so the type stays exact and the value cannot be mutated accidentally.
 
 ## Rule Details
 
-This rule aims to improve code readability, ensure consistent styling for global constants, and enforce immutability for constants in a clear way.
+Global configuration often feeds props, feature flags, and lookups. When these values look like regular variables or lose their literal types, downstream code can mutate them or accidentally rely on widened types. UPPER_SNAKE_CASE signals “static config lives here,” and `as const` preserves literal types so enums, discriminated unions, and memoized consumers stay stable.
 
 Examples of **incorrect** code for this rule:
 
 ```ts
+// Looks like a runtime variable and can be widened
 const apiEndpoint = 'https://api.bluemint.com/v1';
-const maxRetries = 3;
-const baseConfig = { timeout: 5000 };
+
+// Literal object is mutable without `as const`
+const COLORS = { primary: '#000', secondary: '#fff' };
+
+// Array literal loses its literal element types without `as const`
+const buttonSizes = ['small', 'medium', 'large'];
 ```
 
 Examples of **correct** code for this rule:
@@ -28,7 +33,8 @@ Examples of **correct** code for this rule:
 ```ts
 const API_ENDPOINT = 'https://api.bluemint.com/v1' as const;
 const MAX_RETRIES = 3 as const;
-const BASE_CONFIG = { timeout: 5000 } as const;
+const COLORS = { primary: '#000', secondary: '#fff' } as const;
+const BUTTON_SIZES = ['small', 'medium', 'large'] as const;
 
 // Inside functions (not affected by this rule)
 function example() {
@@ -36,21 +42,25 @@ function example() {
   const maxRetries = 3;
 }
 
-// Dynamic values (not affected by this rule)
+// Dynamic or computed values (not affected by this rule)
 const API_VERSION = getApiVersion();
 const DEFAULT_TIMEOUT = 1000 * 60;
 
 // Destructuring (not affected by this rule)
 const { apiUrl, maxRetries } = config;
+
+// React components and hooks at module scope (not affected)
+const MyComponent = () => null;
+const memoized = memo(MyComponent);
 ```
 
 ## When Not To Use It
 
 You might want to disable this rule if:
 
-1. Your project has different naming conventions for constants
-2. You prefer not to use TypeScript's `as const` assertion
-3. You have many global constants that cannot use `as const` (e.g., computed values)
+1. Your project uses a different naming convention for module-level constants.
+2. You avoid `as const` and rely on explicit type annotations for literals.
+3. Your codebase rarely defines literal values at module scope and the visual distinction is unnecessary.
 
 ## Further Reading
 
