@@ -186,7 +186,12 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
         };
       `,
       filename: 'functions/src/types/firestore/user.ts',
-      errors: [{ messageId: 'noObjectArrays' }],
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'friends' },
+        },
+      ],
     },
     // Test: Array of type alias
     {
@@ -199,8 +204,14 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
       `,
       filename: 'functions/src/types/firestore/user.ts',
       errors: [
-        { messageId: 'noObjectArrays' },
-        { messageId: 'noObjectArrays' },
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'friends' },
+        },
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'contacts' },
+        },
       ],
     },
     // Test: Nested object arrays
@@ -212,8 +223,14 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
       `,
       filename: 'functions/src/types/firestore/complex.ts',
       errors: [
-        { messageId: 'noObjectArrays' },
-        { messageId: 'noObjectArrays' },
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'steps' },
+        },
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'actions' },
+        },
       ],
     },
     // Test: Array with intersection type
@@ -226,7 +243,12 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
         };
       `,
       filename: 'functions/src/types/firestore/data.ts',
-      errors: [{ messageId: 'noObjectArrays' }],
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'items' },
+        },
+      ],
     },
     // Test: Array with union of objects
     {
@@ -238,7 +260,12 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
         };
       `,
       filename: 'functions/src/types/firestore/media.ts',
-      errors: [{ messageId: 'noObjectArrays' }],
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'media' },
+        },
+      ],
     },
     // Test: ReadonlyArray of objects
     {
@@ -249,7 +276,12 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
         };
       `,
       filename: 'functions/src/types/firestore/post.ts',
-      errors: [{ messageId: 'noObjectArrays' }],
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'comments' },
+        },
+      ],
     },
     // Test: Array with mapped type
     {
@@ -260,7 +292,12 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
         };
       `,
       filename: 'functions/src/types/firestore/user.ts',
-      errors: [{ messageId: 'noObjectArrays' }],
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'fields' },
+        },
+      ],
     },
     // Test: Array with indexed access type
     {
@@ -274,7 +311,12 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
         };
       `,
       filename: 'functions/src/types/firestore/collection.ts',
-      errors: [{ messageId: 'noObjectArrays' }],
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'items' },
+        },
+      ],
     },
     // Test: Deeply nested object arrays
     {
@@ -291,10 +333,22 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
       `,
       filename: 'functions/src/types/firestore/deep.ts',
       errors: [
-        { messageId: 'noObjectArrays' },
-        { messageId: 'noObjectArrays' },
-        { messageId: 'noObjectArrays' },
-        { messageId: 'noObjectArrays' },
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'level1' },
+        },
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'level2' },
+        },
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'level3' },
+        },
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'data' },
+        },
       ],
     },
     // Test: Arrays of arrays of objects (still invalid)
@@ -304,7 +358,12 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
         export type T = { grid: Obj[][] };
       `,
       filename: 'functions/src/types/firestore/array-of-arrays.ts',
-      errors: [{ messageId: 'noObjectArrays' }],
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'grid' },
+        },
+      ],
     },
     // Test: Namespaced object arrays should still be invalid
     {
@@ -313,7 +372,12 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
         export type T = { users: models.User[] };
       `,
       filename: 'functions/src/types/firestore/ns-objects.ts',
-      errors: [{ messageId: 'noObjectArrays' }],
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'users' },
+        },
+      ],
     },
     // Test: Alias to object should be invalid
     {
@@ -323,7 +387,12 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
         export type T = { list: Alias[] };
       `,
       filename: 'functions/src/types/firestore/alias-object.ts',
-      errors: [{ messageId: 'noObjectArrays' }],
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'list' },
+        },
+      ],
     },
     // Test: Alias to union including object should be invalid
     {
@@ -333,7 +402,12 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
         export type T = { list: Alias[] };
       `,
       filename: 'functions/src/types/firestore/alias-union-object.ts',
-      errors: [{ messageId: 'noObjectArrays' }],
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'list' },
+        },
+      ],
     },
     // Test: Namespaced interface alias should be invalid
     {
@@ -343,7 +417,12 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
         export type T = { list: Alias[] };
       `,
       filename: 'functions/src/types/firestore/ns-alias-object.ts',
-      errors: [{ messageId: 'noObjectArrays' }],
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'list' },
+        },
+      ],
     },
     // Test: Alias to mapped/intersection object should be invalid
     {
@@ -354,7 +433,12 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
         export type T = { list: Alias[] };
       `,
       filename: 'functions/src/types/firestore/mapped-intersection.ts',
-      errors: [{ messageId: 'noObjectArrays' }],
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'list' },
+        },
+      ],
     },
   ],
 });

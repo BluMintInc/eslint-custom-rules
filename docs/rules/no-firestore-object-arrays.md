@@ -6,31 +6,24 @@
 
 ## What this rule enforces
 
-- Disallows arrays whose element type is an object (including type literals, interfaces, unions/intersections of objects, mapped types, and indexed access types) in Firestore model definitions located under `functions/src/types/firestore`.
+- Flags any Firestore model field under `functions/src/types/firestore` whose type is an array of objects (type literals, interfaces, unions/intersections of objects, mapped types, or indexed access types).
 - Allows arrays of Firestore primitives such as `string`, `number`, `boolean`, `Date`, `Timestamp`, `GeoPoint`, including qualified names such as `firebase.firestore.Timestamp`.
-- Allows map-like structures such as `Record<string, T>` or `{ [key: string]: T }`.
+- Allows map-like structures such as `Record<string, T>` or `{ [key: string]: T }`, which support targeted updates.
 
-## Why arrays of objects are problematic in Firestore
+## Why arrays of objects are risky in Firestore
 
-- Arrays of objects are not queryable in Firestore.
-- Updating a single item requires rewriting the entire array (destructive updates).
-- They are prone to write conflicts when multiple clients update items concurrently.
+- Firestore cannot query inside array items, so object arrays force full-document reads and client-side filtering.
+- Updating a single item rewrites the entire array; concurrent writers overwrite each other and silently drop items.
+- Arrays grow without per-item security rules or indexing; map/subcollection shapes keep per-item isolation.
 
-## Recommended alternative: Array-to-Map conversion pattern
+## How to structure object collections safely
 
-To preserve order while maintaining queryability and safe updates, store collections as maps keyed by id and add an `index` field to each value. Convert between arrays and maps at your domain boundaries.
-
-- Convert arrays to maps with `toMap<T extends Identifiable>(arr)`, which adds an `index` field to each item.
-- Convert maps back to arrays with `toArr<T extends Indexed>(map)`, which sorts by `index` and returns an ordered array.
-
-This pattern enables you to:
-
-- Query and update individual items without rewriting the entire collection.
-- Preserve the original order via the `index` field.
+- Prefer `Record<string, T & { index: number }>` keyed by id. Convert arrays to maps with `toMap` and back with `toArr` to preserve ordering via the `index` field.
+- If you need per-item documents or cross-document queries, store items in a subcollection or keep an array of item IDs and fetch the documents individually.
 
 ## Examples
 
-Valid (maps and primitive arrays). These shapes are accepted by the rule:
+Valid (primitive arrays and map shapes):
 
 ```ts
 export type UserProfile = {
@@ -42,7 +35,7 @@ export type UserProfile = {
 };
 ```
 
-Invalid (arrays of objects). Replace with a map keyed by id and include `index`:
+Invalid (arrays of objects — convert to a map keyed by id and index):
 
 ```ts
 export type UserProfile = {
@@ -50,20 +43,8 @@ export type UserProfile = {
 };
 ```
 
-## When not to use maps
-
-- Primitive arrays (e.g., `string[]`, `number[]`) are appropriate to store as arrays in Firestore.
-- If you need per-item documents or cross-document queries, use subcollections instead of embedding.
-
-## Common pitfalls
-
-- Arrays of object unions/intersections are still arrays of objects and are disallowed.
-- Readonly forms are also disallowed: `ReadonlyArray<T>` or `readonly T[]` when `T` is an object.
-- Namespaced primitives are allowed: `firebase.firestore.Timestamp[]` is valid.
-- Nested arrays follow the same rule: `string[][]` is allowed; `{ x: number }[][]` is disallowed.
-
 ## Error message
 
-When this rule flags a violation, it provides actionable guidance:
+When the rule fires, it points to the problematic field and suggests a replacement:
 
-> Arrays of objects are problematic in Firestore: not queryable, destructive updates, and concurrency risks. Prefer `Record<string, T>` keyed by id and include an `index` field for order (use toMap/toArr), or use subcollections/arrays of IDs where appropriate.
+> Array field "friends" stores objects in a Firestore document. Firestore cannot query inside object arrays, and updates rewrite the entire array so concurrent writes drop data. Store this collection as Record<string, T> keyed by id with an index for ordering (convert with toMap/toArr), or move the items into a subcollection or array of IDs.

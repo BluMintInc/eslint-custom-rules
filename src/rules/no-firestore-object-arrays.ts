@@ -81,6 +81,32 @@ const unwrapArrayElementType = (node: TSESTree.TypeNode): TSESTree.TypeNode => {
   return current;
 };
 
+const getFieldName = (node: TSESTree.Node): string | null => {
+  let current: TSESTree.Node | undefined = node;
+  while (current) {
+    if (current.type === AST_NODE_TYPES.TSPropertySignature) {
+      const key = current.key;
+      if (key.type === AST_NODE_TYPES.Identifier) return key.name;
+      if (key.type === AST_NODE_TYPES.Literal && typeof key.value === 'string') {
+        return String(key.value);
+      }
+    }
+    if (
+      current.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
+      current.type === AST_NODE_TYPES.TSInterfaceDeclaration
+    ) {
+      const id = current.id;
+      if (id.type === AST_NODE_TYPES.Identifier) {
+        return id.name;
+      }
+    }
+    current = (current as { parent?: TSESTree.Node }).parent as
+      | TSESTree.Node
+      | undefined;
+  }
+  return null;
+};
+
 // Determine whether this type node appears in a Firestore model type context
 // i.e., within an interface or type alias declaration, and not within variable/function annotations
 const isInModelTypeContext = (node: TSESTree.Node): boolean => {
@@ -127,15 +153,8 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
     },
     schema: [],
     messages: {
-      noObjectArrays: `Arrays of objects are problematic in Firestore:
-- Not queryable
-- Destructive updates
-- Concurrency risks
-
-Prefer:
-- Record<string, T> keyed by id with an index field for order (use toMap/toArr)
-- Subcollections
-- Arrays of IDs where appropriate`,
+      noObjectArrays:
+        'Array field "{{fieldName}}" stores objects in a Firestore document. Firestore cannot query inside object arrays, and updates rewrite the entire array so concurrent writes drop data. Store this collection as Record<string, T> keyed by id with an index for ordering (convert with toMap/toArr), or move the items into a subcollection or array of IDs.',
     },
   },
   defaultOptions: [],
@@ -381,6 +400,9 @@ Prefer:
           context.report({
             node,
             messageId: 'noObjectArrays',
+            data: {
+              fieldName: getFieldName(node) ?? 'this field',
+            },
           });
         }
       },
@@ -405,6 +427,9 @@ Prefer:
             context.report({
               node,
               messageId: 'noObjectArrays',
+              data: {
+                fieldName: getFieldName(node) ?? 'this field',
+              },
             });
           }
         }
