@@ -39,6 +39,7 @@ ruleTesterTs.run(
             data: {
               type: 'property',
               name: 'grow',
+              capitalizedName: 'Grow',
               prefixes:
                 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
@@ -48,6 +49,7 @@ ruleTesterTs.run(
             data: {
               type: 'property',
               name: 'visible',
+              capitalizedName: 'Visible',
               prefixes:
                 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },

@@ -60,6 +60,7 @@ ruleTesterTs.run(
             data: {
               type: 'variable',
               name: 'authorized',
+              capitalizedName: 'Authorized',
               prefixes:
                 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },

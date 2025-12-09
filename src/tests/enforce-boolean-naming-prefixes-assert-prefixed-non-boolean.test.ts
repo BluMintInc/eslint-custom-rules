@@ -85,6 +85,7 @@ ruleTesterTs.run(
             data: {
               type: 'function',
               name: 'assertIsValid',
+              capitalizedName: 'AssertIsValid',
               prefixes:
                 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
@@ -104,6 +105,7 @@ ruleTesterTs.run(
             data: {
               type: 'function',
               name: 'assertIsEnabled',
+              capitalizedName: 'AssertIsEnabled',
               prefixes:
                 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
@@ -123,6 +125,7 @@ ruleTesterTs.run(
             data: {
               type: 'variable',
               name: 'notOk',
+              capitalizedName: 'NotOk',
               prefixes:
                 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
