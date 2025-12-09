@@ -194,6 +194,8 @@ jobs:
             sudo apt-get update && sudo apt-get install -y jq
           fi
 
+          echo "::add-mask::${CURSOR_API_KEY}"
+
           # Build JSON safely using --rawfile for prompt
           JSON_PAYLOAD=$(jq -n \
             --rawfile prompt_text /tmp/pr-review-prompt.txt \

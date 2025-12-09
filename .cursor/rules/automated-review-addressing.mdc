@@ -15,11 +15,11 @@ The Automated Review Addressing System streamlines pull request reviews by autom
 - **Background Agent**: A Cursor agent launched automatically for human reviews and for bot reviews after required checks succeed; it edits the PR head branch directly.
 - **Review Batch**: A single GitHub review submission (human or AI bot) that may contain multiple inline comments.
 - **Direct Branch Update**: The agent pushes commits to the PR head branch; no mini PR is opened.
-- **Human Review Flow**: Automatically triggered; processes human review comments; works in sets of ~7 comments; resolves via `resolve-comments`.
-- **AI Bot Review Flow**: Automatically triggered after CodeRabbit and Cursor Bugbot checks succeed; processes AI bot review comments; triages validity first; works in sets of ~5 comments; resolves via `apply-comment-decisions`. The manual `/pr-review-ai-bots` command remains available for explicit instructions.
+- **Human Review Flow**: Automatically triggered for human review submissions; processes about seven comments per pass to keep context focused.
+- **AI Bot Review Flow**: Automatically triggered after CodeRabbit and Cursor Bugbot checks succeed; processes about five comments per pass and triages validity before applying updates.
 - **Review Batch ID**: The numeric GitHub review identifier; used for context building and, when present, scoping human review fetches.
 
-## Why did we build Automated Review Addressing?
+## Why Automated Review Addressing Exists
 
 Manual triage of dense review batches slows down delivery and burdens reviewers with repetitive coordination. Automatically launching a Background Agent keeps PRs progressing: unresolved items are fetched and addressed in tight loops, small groups of comments are processed per pass, and the resulting commits land on the PR branch without extra merge steps. Bot reviews wait for CodeRabbit and Cursor Bugbot checks so all automated feedback is available before launching.
 
