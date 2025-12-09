@@ -1,5 +1,23 @@
+import type { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterJsx } from '../utils/ruleTester';
 import rule from '../rules/consistent-callback-naming';
+
+type MessageId = 'callbackPropPrefix' | 'callbackFunctionPrefix';
+
+const propMessage = (propName: string, suggestedName: string) =>
+  `Callback prop "${propName}" is a function but does not use the "on" prefix. The "on" prefix marks event-style props so readers know they must pass a callback instead of data or a component. Rename it to "${suggestedName}" (and update the prop definition) so call sites make the callback contract explicit.`;
+
+const handleMessage = (functionName: string, suggestedName: string) =>
+  `Callback function "${functionName}" uses the generic "handle" prefix, which hides the action being performed and makes call sites read like plumbing instead of behavior. Use a verb phrase such as "${suggestedName}" to describe the side effect so handlers are self-documenting and easy to scan.`;
+
+const withMessage = (
+  message: string,
+  data?: Record<string, unknown>,
+): TSESLint.TestCaseError<MessageId> =>
+  ({
+    message,
+    ...(data ? { data } : {}),
+  } as unknown as TSESLint.TestCaseError<MessageId>);
 
 ruleTesterJsx.run('consistent-callback-naming', rule, {
   valid: [
@@ -168,7 +186,9 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
           </form>
         );
       `,
-      errors: [{ messageId: 'callbackPropPrefix' }],
+      errors: [
+        withMessage(propMessage('validateInput', 'onValidateInput')),
+      ],
       output: `
         interface Props {
           submitForm: (data: FormData) => Promise<void>;
@@ -196,7 +216,9 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
           );
         };
       `,
-      errors: [{ messageId: 'callbackFunctionPrefix' }],
+      errors: [
+        withMessage(handleMessage('handleSubmit', 'submit')),
+      ],
       output: `
         const Component = () => {
           const submit = async (data: FormData): Promise<void> => {
@@ -223,8 +245,8 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         }
       `,
       errors: [
-        { messageId: 'callbackFunctionPrefix' },
-        { messageId: 'callbackFunctionPrefix' },
+        withMessage(handleMessage('handleSubmit', 'submit')),
+        withMessage(handleMessage('handleValidate', 'validate')),
       ],
       output: `
         class FormHandler {
@@ -264,9 +286,9 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         };
       `,
       errors: [
-        { messageId: 'callbackFunctionPrefix' },
-        { messageId: 'callbackFunctionPrefix' },
-        { messageId: 'callbackPropPrefix' },
+        withMessage(handleMessage('handleFormSubmit', 'formSubmit')),
+        withMessage(handleMessage('handleValidation', 'validation')),
+        withMessage(propMessage('validateInput', 'onValidateInput')),
       ],
       output: `
         interface Props {
@@ -314,8 +336,8 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         }
       `,
       errors: [
-        { messageId: 'callbackFunctionPrefix' },
-        { messageId: 'callbackFunctionPrefix' },
+        withMessage(handleMessage('handleEvents', 'events')),
+        withMessage(handleMessage('handleEvent', 'event')),
       ],
       // No autofix should be applied for handler/handlers or getter
       output: `
@@ -357,8 +379,8 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         }
       `,
       errors: [
-        { messageId: 'callbackFunctionPrefix' },
-        { messageId: 'callbackFunctionPrefix' },
+        withMessage(handleMessage('handleClick', 'click')),
+        withMessage(handleMessage('handleChange', 'change')),
       ],
       // No autofix should be applied for class parameters
       output: `
