@@ -1,5 +1,23 @@
+import { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { useLatestCallback } from '../rules/use-latest-callback';
+
+type RuleError = TSESLint.TestCaseError<'useLatestCallback'>;
+
+const expectedMessage = (
+  currentHook = 'useCallback',
+  recommendedHook = 'useLatestCallback',
+) =>
+  `Replace ${currentHook} with ${recommendedHook} from "use-latest-callback" so the callback keeps a stable reference while still reading the latest props/state. useCallback recreates functions whenever dependencies change, which can trigger needless renders and stale closures. Drop the dependency array when switching to ${recommendedHook}.`;
+
+const errors = (
+  currentHook = 'useCallback',
+  recommendedHook = 'useLatestCallback',
+  count = 2,
+) =>
+  (Array.from({ length: count }, () => ({
+    message: expectedMessage(currentHook, recommendedHook),
+  })) as unknown as RuleError[]);
 
 ruleTesterJsx.run('use-latest-callback', useLatestCallback, {
   valid: [
@@ -144,10 +162,7 @@ function MyComponent() {
   });
   return <button onClick={handleClick}>Click me</button>;
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors(),
     },
     // useCallback with dependencies
     {
@@ -169,10 +184,7 @@ function MyComponent({ id, onAction }) {
   });
   return <button onClick={handleClick}>Click me</button>;
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors(),
     },
     // useCallback with other React imports
     {
@@ -201,10 +213,7 @@ function MyComponent() {
   }, [count]);
   return <button onClick={handleClick}>Increment</button>;
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors(),
     },
     // useCallback with renamed import
     {
@@ -224,10 +233,7 @@ function MyComponent() {
   });
   return <button onClick={handleClick}>Click me</button>;
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors('useStableCallback', 'useStableCallback'),
     },
     // useCallback with existing useLatestCallback import
     {
@@ -265,10 +271,7 @@ function MyComponent() {
     </>
   );
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors(),
     },
     // Arrow function with implicit return (not JSX)
     {
@@ -284,10 +287,7 @@ function MyComponent() {
   const getValue = useLatestCallback(() => 42);
   return <div>{getValue()}</div>;
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors(),
     },
     // Async function
     {
@@ -309,10 +309,7 @@ function MyComponent() {
   });
   return <button onClick={fetchData}>Fetch data</button>;
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors(),
     },
     // useCallback without dependency array
     {
@@ -332,10 +329,7 @@ function MyComponent() {
   });
   return <button onClick={handleClick}>Click me</button>;
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors(),
     },
     // Multiple useCallback calls in same file
     {
@@ -379,12 +373,7 @@ function MyComponent() {
     </form>
   );
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors('useCallback', 'useLatestCallback', 4),
     },
     // useCallback with complex dependency array
     {
@@ -404,10 +393,7 @@ function MyComponent({ user, settings, ...props }) {
   });
   return <button onClick={handleAction}>Action</button>;
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors(),
     },
     // useCallback with destructured parameters
     {
@@ -427,10 +413,7 @@ function MyComponent() {
   });
   return <input onChange={handleEvent} />;
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors(),
     },
     // useCallback with default parameters
     {
@@ -450,10 +433,7 @@ function MyComponent() {
   });
   return <button onClick={handleClick}>Click me</button>;
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors(),
     },
     // useCallback in custom hook
     {
@@ -473,10 +453,7 @@ function useCustomHook(value) {
   });
   return memoizedCallback;
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors(),
     },
     // useCallback with conditional logic inside
     {
@@ -504,10 +481,7 @@ function MyComponent({ isEnabled }) {
   });
   return <button onClick={handleClick}>Click me</button>;
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors(),
     },
     // useCallback with try/catch block
     {
@@ -537,10 +511,7 @@ function MyComponent() {
   });
   return <button onClick={handleAsyncAction}>Fetch</button>;
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors(),
     },
     // useCallback with nested functions
     {
@@ -564,10 +535,7 @@ function MyComponent() {
   });
   return <button onClick={handleComplexAction}>Complex Action</button>;
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors(),
     },
     // useCallback returning a promise
     {
@@ -587,10 +555,7 @@ function MyComponent() {
   });
   return <button onClick={() => getPromise().then(console.log)}>Get Promise</button>;
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors(),
     },
     // useCallback with spread operator in dependencies
     {
@@ -610,10 +575,7 @@ function MyComponent({ items }) {
   });
   return <button onClick={handleAction}>Action</button>;
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors(),
     },
     // useCallback with object dependencies
     {
@@ -633,10 +595,7 @@ function MyComponent({ config }) {
   });
   return <button onClick={handleAction}>Action</button>;
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors(),
     },
     // useCallback with function expression instead of arrow function
     {
@@ -656,10 +615,7 @@ function MyComponent() {
   });
   return <button onClick={handleClick}>Click me</button>;
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors(),
     },
     // useCallback with TypeScript types
     {
@@ -679,10 +635,7 @@ function MyComponent() {
   });
   return <button onClick={() => handleTyped('test', 123)}>Typed</button>;
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors(),
     },
     // useCallback with comments in import
     {
@@ -706,10 +659,7 @@ function MyComponent() {
   });
   return <button onClick={handleClick}>Click me</button>;
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors(),
     },
     // useCallback with multiline function body
     {
@@ -741,10 +691,7 @@ function MyComponent({ data }) {
   });
   return <div>{processData().length} items</div>;
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors(),
     },
     // useCallback with rest parameters
     {
@@ -764,10 +711,7 @@ function MyComponent() {
   });
   return <button onClick={() => handleMultiple(1, 2, 3)}>Multiple Args</button>;
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors(),
     },
     // TypeScript file without JSX (should be flagged)
     {
@@ -787,10 +731,7 @@ function useCustomHook() {
   });
   return callback;
 }`,
-      errors: [
-        { messageId: 'useLatestCallback' },
-        { messageId: 'useLatestCallback' },
-      ],
+      errors: errors(),
     },
   ],
 });
