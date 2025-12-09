@@ -65,7 +65,6 @@ import { enforceAssertThrows } from './rules/enforce-assert-throws';
 import { preferBatchOperations } from './rules/prefer-batch-operations';
 import { noComplexCloudParams } from './rules/no-complex-cloud-params';
 import { noMixedFirestoreTransactions } from './rules/no-mixed-firestore-transactions';
-import { noTryCatchAlreadyExistsInTransaction } from './rules/no-try-catch-already-exists-in-transaction';
 import { enforceFirestoreFacade } from './rules/enforce-firestore-facade';
 import { syncOnwriteNameFunc } from './rules/sync-onwrite-name-func';
 import { preferCloneDeep } from './rules/prefer-clone-deep';
@@ -217,8 +216,6 @@ module.exports = {
         '@blumintinc/blumint/prefer-batch-operations': 'error',
         '@blumintinc/blumint/no-complex-cloud-params': 'error',
         '@blumintinc/blumint/no-mixed-firestore-transactions': 'error',
-        '@blumintinc/blumint/no-try-catch-already-exists-in-transaction':
-          'error',
         '@blumintinc/blumint/enforce-firestore-facade': 'error',
         '@blumintinc/blumint/sync-onwrite-name-func': 'error',
         '@blumintinc/blumint/prefer-clone-deep': 'error',
@@ -360,8 +357,6 @@ module.exports = {
     'prefer-batch-operations': preferBatchOperations,
     'no-complex-cloud-params': noComplexCloudParams,
     'no-mixed-firestore-transactions': noMixedFirestoreTransactions,
-    'no-try-catch-already-exists-in-transaction':
-      noTryCatchAlreadyExistsInTransaction,
     'enforce-firestore-facade': enforceFirestoreFacade,
     'sync-onwrite-name-func': syncOnwriteNameFunc,
     'prefer-clone-deep': preferCloneDeep,
