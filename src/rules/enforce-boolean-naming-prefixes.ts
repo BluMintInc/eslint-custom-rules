@@ -56,7 +56,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     ],
     messages: {
       missingBooleanPrefix:
-        'Boolean {{type}} "{{name}}" should start with an approved prefix: {{prefixes}}',
+        'Boolean {{type}} "{{name}}" should start with a prefix like "is", "has", "can", or "should" (e.g., is{{capitalizedName}}, has{{capitalizedName}}). ' +
+        'Boolean prefixes make code self-documenting—readers immediately know the value is true/false without checking its declaration or type. ' +
+        'This improves readability at call sites: `if (user.{{name}})` is ambiguous, but `if (user.is{{capitalizedName}})` clearly signals a boolean check.',
     },
   },
   defaultOptions: [{ prefixes: DEFAULT_BOOLEAN_PREFIXES }],
@@ -88,6 +90,14 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
 
         return false;
       });
+    }
+
+    /**
+     * Capitalize the first letter of a name for use in suggested alternatives
+     */
+    function capitalizeFirst(name: string): string {
+      if (!name) return '';
+      return name.charAt(0).toUpperCase() + name.slice(1);
     }
 
     /**
@@ -244,9 +254,10 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
               }
 
               // Check if the method name suggests it returns a boolean
-              const isBooleanMethod = approvedPrefixes.some((prefix) =>
-                prefix !== 'asserts' &&
-                lowerMethodName.startsWith(prefix.toLowerCase()),
+              const isBooleanMethod = approvedPrefixes.some(
+                (prefix) =>
+                  prefix !== 'asserts' &&
+                  lowerMethodName.startsWith(prefix.toLowerCase()),
               );
 
               // If the method name suggests it returns a boolean (starts with a boolean prefix or contains 'boolean' or 'enabled'),
@@ -300,9 +311,10 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
             }
 
             // For property access like user.isAuthenticated, treat as boolean
-            const isBooleanProperty = approvedPrefixes.some((prefix) =>
-              prefix !== 'asserts' &&
-              lowerPropertyName.startsWith(prefix.toLowerCase()),
+            const isBooleanProperty = approvedPrefixes.some(
+              (prefix) =>
+                prefix !== 'asserts' &&
+                lowerPropertyName.startsWith(prefix.toLowerCase()),
             );
             if (isBooleanProperty) {
               return true;
@@ -365,7 +377,8 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
             }
 
             return approvedPrefixes.some(
-              (prefix) => prefix !== 'asserts' &&
+              (prefix) =>
+                prefix !== 'asserts' &&
                 lowerCallee.startsWith(prefix.toLowerCase()),
             );
           }
@@ -396,9 +409,10 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           }
 
           // Check if the function name suggests it returns a boolean
-          return approvedPrefixes.some((prefix) =>
-            prefix !== 'asserts' &&
-            lowerCallee.startsWith(prefix.toLowerCase()),
+          return approvedPrefixes.some(
+            (prefix) =>
+              prefix !== 'asserts' &&
+              lowerCallee.startsWith(prefix.toLowerCase()),
           );
         }
       }
@@ -471,9 +485,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     /**
      * Attempt to resolve an identifier to a function declaration/expression and detect if it returns boolean
      */
-    function identifierReturnsBoolean(
-      name: string,
-    ): boolean {
+    function identifierReturnsBoolean(name: string): boolean {
       // Try to find the variable in all scopes, starting from current and going up
       let currentScope: any = context.getScope();
       let variable: any = undefined;
@@ -885,6 +897,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           data: {
             type: 'variable',
             name: variableName,
+            capitalizedName: capitalizeFirst(variableName),
             prefixes: formatPrefixes(),
           },
         });
@@ -943,6 +956,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           data: {
             type: 'function',
             name: functionName,
+            capitalizedName: capitalizeFirst(functionName),
             prefixes: formatPrefixes(),
           },
         });
@@ -979,6 +993,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           data: {
             type: 'method',
             name: methodName,
+            capitalizedName: capitalizeFirst(methodName),
             prefixes: formatPrefixes(),
           },
         });
@@ -1020,6 +1035,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           data: {
             type: 'property',
             name: propertyName,
+            capitalizedName: capitalizeFirst(propertyName),
             prefixes: formatPrefixes(),
           },
         });
@@ -1061,6 +1077,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           data: {
             type: 'property',
             name: propertyName,
+            capitalizedName: capitalizeFirst(propertyName),
             prefixes: formatPrefixes(),
           },
         });
@@ -1379,6 +1396,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
             data: {
               type: 'property',
               name: propertyName,
+              capitalizedName: capitalizeFirst(propertyName),
               prefixes: formatPrefixes(),
             },
           });
@@ -1430,6 +1448,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
             data: {
               type: 'property',
               name: propertyName,
+              capitalizedName: capitalizeFirst(propertyName),
               prefixes: formatPrefixes(),
             },
           });
@@ -1458,6 +1477,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           data: {
             type: 'parameter',
             name: paramName,
+            capitalizedName: capitalizeFirst(paramName),
             prefixes: formatPrefixes(),
           },
         });
@@ -1487,6 +1507,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
                 data: {
                   type: 'property',
                   name: propertyName,
+                  capitalizedName: capitalizeFirst(propertyName),
                   prefixes: formatPrefixes(),
                 },
               });

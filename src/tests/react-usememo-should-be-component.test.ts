@@ -1077,7 +1077,7 @@ ruleTesterJsx.run(
       `,
         errors: [{ messageId: 'useMemoShouldBeComponent' }],
       },
-      
+
       // useMemo with direct JSX return (no block)
       {
         code: `
@@ -1113,10 +1113,7 @@ ruleTesterJsx.run(
       `,
         errors: [{ messageId: 'useMemoShouldBeComponent' }],
       },
-      
-      
-      
-      
+
       // Multiple useMemo with JSX in the same component
       {
         code: `
@@ -1288,7 +1285,7 @@ ruleTesterJsx.run(
       `,
         errors: [{ messageId: 'useMemoShouldBeComponent' }],
       },
-      
+
       // useMemo with JSX in IIFE
       {
         code: `

@@ -40,11 +40,9 @@ const isParenthesizedType = (
   node: TSESTree.TypeNode,
 ): node is TSESTree.TypeNode & { typeAnnotation: TSESTree.TypeNode } => {
   // Use enum if available; fall back to string check for compatibility
-  return (
-    (AST_NODE_TYPES as any).TSParenthesizedType
-      ? node.type === (AST_NODE_TYPES as any).TSParenthesizedType
-      : (node as unknown as { type?: string }).type === 'TSParenthesizedType'
-  );
+  return (AST_NODE_TYPES as any).TSParenthesizedType
+    ? node.type === (AST_NODE_TYPES as any).TSParenthesizedType
+    : (node as unknown as { type?: string }).type === 'TSParenthesizedType';
 };
 
 const unwrapArrayElementType = (node: TSESTree.TypeNode): TSESTree.TypeNode => {
@@ -56,11 +54,13 @@ const unwrapArrayElementType = (node: TSESTree.TypeNode): TSESTree.TypeNode => {
       current.type === AST_NODE_TYPES.TSTypeOperator &&
       (current as TSESTree.TSTypeOperator).operator === 'readonly'
     ) {
-      current = (current as TSESTree.TSTypeOperator).typeAnnotation as TSESTree.TypeNode;
+      current = (current as TSESTree.TSTypeOperator)
+        .typeAnnotation as TSESTree.TypeNode;
       continue;
     }
     if (isParenthesizedType(current)) {
-      current = (current as unknown as { typeAnnotation: TSESTree.TypeNode }).typeAnnotation;
+      current = (current as unknown as { typeAnnotation: TSESTree.TypeNode })
+        .typeAnnotation;
       continue;
     }
     if (current.type === AST_NODE_TYPES.TSArrayType) {
@@ -84,7 +84,9 @@ const unwrapArrayElementType = (node: TSESTree.TypeNode): TSESTree.TypeNode => {
 // Determine whether this type node appears in a Firestore model type context
 // i.e., within an interface or type alias declaration, and not within variable/function annotations
 const isInModelTypeContext = (node: TSESTree.Node): boolean => {
-  let current: TSESTree.Node | undefined = (node as TSESTree.Node).parent as TSESTree.Node | undefined;
+  let current: TSESTree.Node | undefined = (node as TSESTree.Node).parent as
+    | TSESTree.Node
+    | undefined;
   while (current) {
     // Hard stop for non-type declaration contexts
     if (
@@ -106,7 +108,9 @@ const isInModelTypeContext = (node: TSESTree.Node): boolean => {
     ) {
       return true;
     }
-    current = (current as unknown as { parent?: TSESTree.Node }).parent as TSESTree.Node | undefined;
+    current = (current as unknown as { parent?: TSESTree.Node }).parent as
+      | TSESTree.Node
+      | undefined;
   }
   return false;
 };
@@ -123,8 +127,7 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
     },
     schema: [],
     messages: {
-      noObjectArrays:
-        `Arrays of objects are problematic in Firestore:
+      noObjectArrays: `Arrays of objects are problematic in Firestore:
 - Not queryable
 - Destructive updates
 - Concurrency risks
@@ -163,13 +166,14 @@ Prefer:
           break;
         }
         case AST_NODE_TYPES.ExportNamedDeclaration: {
-          if (n.declaration) visitNode(n.declaration as unknown as TSESTree.Node);
+          if (n.declaration)
+            visitNode(n.declaration as unknown as TSESTree.Node);
           break;
         }
         case AST_NODE_TYPES.TSModuleDeclaration: {
           const body = (n.body as any) || null;
           if (body && body.type === AST_NODE_TYPES.TSModuleBlock) {
-            for (const stmt of (body.body as TSESTree.Node[])) {
+            for (const stmt of body.body as TSESTree.Node[]) {
               visitNode(stmt);
             }
           } else if (body && body.type === AST_NODE_TYPES.TSModuleDeclaration) {
@@ -184,13 +188,13 @@ Prefer:
       }
     };
 
-    for (const stmt of (sourceCode.ast.body as unknown as TSESTree.Node[])) {
+    for (const stmt of sourceCode.ast.body as unknown as TSESTree.Node[]) {
       visitNode(stmt);
     }
 
     const seenAlias = new Set<string>();
 
-    const isPrimitiveLikeAlias = (name: string, depth: number = 0): boolean => {
+    const isPrimitiveLikeAlias = (name: string, depth = 0): boolean => {
       if (depth > 5) return false; // guard against cycles
       if (PRIMITIVE_TYPES.has(name)) return true;
       if (enumNames.has(name)) return true; // enums are non-object primitives for our purposes
@@ -203,9 +207,16 @@ Prefer:
       return result;
     };
 
-    const isPrimitiveLikeTypeNode = (node: TSESTree.TypeNode, depth: number = 0): boolean => {
+    const isPrimitiveLikeTypeNode = (
+      node: TSESTree.TypeNode,
+      depth = 0,
+    ): boolean => {
       if (isParenthesizedType(node)) {
-        return isPrimitiveLikeTypeNode((node as unknown as { typeAnnotation: TSESTree.TypeNode }).typeAnnotation, depth + 1);
+        return isPrimitiveLikeTypeNode(
+          (node as unknown as { typeAnnotation: TSESTree.TypeNode })
+            .typeAnnotation,
+          depth + 1,
+        );
       }
       switch (node.type) {
         case AST_NODE_TYPES.TSStringKeyword:
@@ -237,12 +248,19 @@ Prefer:
           return false;
         }
         case AST_NODE_TYPES.TSUnionType: {
-          return (node.types as TSESTree.TypeNode[]).every((t) => isPrimitiveLikeTypeNode(t, depth + 1));
+          return (node.types as TSESTree.TypeNode[]).every((t) =>
+            isPrimitiveLikeTypeNode(t, depth + 1),
+          );
         }
         case AST_NODE_TYPES.TSTypeOperator: {
           // Treat keyof/unique symbol/etc as primitive-like to avoid false positives
-          if ((node as TSESTree.TSTypeOperator).operator !== 'readonly') return true;
-          return isPrimitiveLikeTypeNode((node as TSESTree.TSTypeOperator).typeAnnotation as TSESTree.TypeNode, depth + 1);
+          if ((node as TSESTree.TSTypeOperator).operator !== 'readonly')
+            return true;
+          return isPrimitiveLikeTypeNode(
+            (node as TSESTree.TSTypeOperator)
+              .typeAnnotation as TSESTree.TypeNode,
+            depth + 1,
+          );
         }
         case (AST_NODE_TYPES as any).TSTemplateLiteralType as any: {
           // Template literal types behave like strings
@@ -255,14 +273,23 @@ Prefer:
 
     const isObjectType = (node: TSESTree.TypeNode): boolean => {
       if (isParenthesizedType(node)) {
-        return isObjectType((node as unknown as { typeAnnotation: TSESTree.TypeNode }).typeAnnotation);
+        return isObjectType(
+          (node as unknown as { typeAnnotation: TSESTree.TypeNode })
+            .typeAnnotation,
+        );
       }
       switch (node.type) {
         case AST_NODE_TYPES.TSTypeLiteral:
           return true;
         case AST_NODE_TYPES.TSTypeReference: {
-          const tn = node.typeName as TSESTree.Identifier | TSESTree.TSQualifiedName | TSESTree.ThisExpression;
-          if (tn.type !== AST_NODE_TYPES.Identifier && tn.type !== AST_NODE_TYPES.TSQualifiedName) {
+          const tn = node.typeName as
+            | TSESTree.Identifier
+            | TSESTree.TSQualifiedName
+            | TSESTree.ThisExpression;
+          if (
+            tn.type !== AST_NODE_TYPES.Identifier &&
+            tn.type !== AST_NODE_TYPES.TSQualifiedName
+          ) {
             // Unsupported reference (e.g., ThisType) — do not assume object to avoid false positives
             return false;
           }
@@ -290,7 +317,10 @@ Prefer:
           return true;
         case AST_NODE_TYPES.TSTypeOperator:
           if ((node as TSESTree.TSTypeOperator).operator === 'readonly') {
-            return isObjectType((node as TSESTree.TSTypeOperator).typeAnnotation as TSESTree.TypeNode);
+            return isObjectType(
+              (node as TSESTree.TSTypeOperator)
+                .typeAnnotation as TSESTree.TypeNode,
+            );
           }
           return false;
         case AST_NODE_TYPES.TSAnyKeyword:
@@ -301,7 +331,9 @@ Prefer:
       }
     };
 
-    const isImmediatelyWrappedByArraySyntax = (node: TSESTree.Node): boolean => {
+    const isImmediatelyWrappedByArraySyntax = (
+      node: TSESTree.Node,
+    ): boolean => {
       let parent = (node as TSESTree.Node).parent as TSESTree.Node | undefined;
       // Skip non-semantic wrappers (readonly/parens)
       while (parent) {
@@ -309,11 +341,18 @@ Prefer:
           parent.type === AST_NODE_TYPES.TSTypeOperator &&
           (parent as TSESTree.TSTypeOperator).operator === 'readonly'
         ) {
-          parent = (parent as unknown as { parent?: TSESTree.Node }).parent as TSESTree.Node | undefined;
+          parent = (parent as unknown as { parent?: TSESTree.Node }).parent as
+            | TSESTree.Node
+            | undefined;
           continue;
         }
-        if ((AST_NODE_TYPES as any).TSParenthesizedType && parent.type === (AST_NODE_TYPES as any).TSParenthesizedType) {
-          parent = (parent as unknown as { parent?: TSESTree.Node }).parent as TSESTree.Node | undefined;
+        if (
+          (AST_NODE_TYPES as any).TSParenthesizedType &&
+          parent.type === (AST_NODE_TYPES as any).TSParenthesizedType
+        ) {
+          parent = (parent as unknown as { parent?: TSESTree.Node }).parent as
+            | TSESTree.Node
+            | undefined;
           continue;
         }
         break;

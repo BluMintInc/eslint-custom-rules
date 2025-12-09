@@ -126,7 +126,8 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
           nested: (ChannelGroupPermanence)[];
         };
       `,
-      filename: 'functions/src/types/firestore/User/ChannelGroup/util/isTemporary.ts',
+      filename:
+        'functions/src/types/firestore/User/ChannelGroup/util/isTemporary.ts',
     },
     // Test: Allow variable-level arrays of alias to string literal union
     {
@@ -136,7 +137,8 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
         export const TEMP2: ReadonlyArray<ChannelGroupPermanence> = ['temporary'];
         export const TEMP3: Array<ChannelGroupPermanence> = ['temporary'];
       `,
-      filename: 'functions/src/types/firestore/User/ChannelGroup/util/isTemporary.ts',
+      filename:
+        'functions/src/types/firestore/User/ChannelGroup/util/isTemporary.ts',
     },
     // Test: Allow arrays of enums
     {

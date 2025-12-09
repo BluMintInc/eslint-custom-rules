@@ -195,6 +195,7 @@ ruleTesterTs.run(
             data: {
               type: 'property',
               name: 'fetchedFromRemote',
+              capitalizedName: 'FetchedFromRemote',
               prefixes:
                 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
@@ -218,6 +219,7 @@ ruleTesterTs.run(
             data: {
               type: 'property',
               name: 'active',
+              capitalizedName: 'Active',
               prefixes:
                 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
@@ -227,6 +229,7 @@ ruleTesterTs.run(
             data: {
               type: 'property',
               name: 'enabled',
+              capitalizedName: 'Enabled',
               prefixes:
                 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
@@ -250,6 +253,7 @@ ruleTesterTs.run(
             data: {
               type: 'property',
               name: 'active',
+              capitalizedName: 'Active',
               prefixes:
                 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
@@ -259,6 +263,7 @@ ruleTesterTs.run(
             data: {
               type: 'property',
               name: 'visible',
+              capitalizedName: 'Visible',
               prefixes:
                 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },

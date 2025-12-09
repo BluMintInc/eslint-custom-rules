@@ -124,7 +124,10 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
                   '';
                 const importLine = `${leadingWhitespace}import { Memoize } from '${MEMOIZE_PREFERRED_MODULE}';\n`;
                 fixes.push(
-                  fixer.insertTextBeforeRange([lineStart, lineStart], importLine),
+                  fixer.insertTextBeforeRange(
+                    [lineStart, lineStart],
+                    importLine,
+                  ),
                 );
               } else {
                 fixes.push(
@@ -154,4 +157,3 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
 });
 
 export default enforceMemoizeGetters;
-

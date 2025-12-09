@@ -268,7 +268,10 @@ ruleTesterTs.run('enforce-memoize-getters', enforceMemoizeGetters, {
           protected get c() { return 3; }
         }
       `,
-      errors: [{ messageId: 'requireMemoizeGetter' }, { messageId: 'requireMemoizeGetter' }],
+      errors: [
+        { messageId: 'requireMemoizeGetter' },
+        { messageId: 'requireMemoizeGetter' },
+      ],
       output: `
         import { Memoize } from '@blumintinc/typescript-memoize';
         class Example {
@@ -335,4 +338,3 @@ ruleTesterTs.run('enforce-memoize-getters', enforceMemoizeGetters, {
     },
   ],
 });
-

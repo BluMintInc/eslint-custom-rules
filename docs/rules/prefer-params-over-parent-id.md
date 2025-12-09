@@ -12,6 +12,22 @@ This rule enforces the use of the `event.params` property over directly accessin
 
 This rule only applies to functions that are either `DocumentChangeHandler`, `DocumentChangeHandlerTransaction`, `RealtimeDbChangeHandler`, or `RealtimeDbChangeHandlerTransaction` types.
 
+## Configuration
+
+This rule is enabled by default in the recommended config. To configure it explicitly:
+
+```json
+{
+  "rules": {
+    "@blumintinc/blumint/prefer-params-over-parent-id": "error"
+  }
+}
+```
+
+## Auto-fix
+
+The fixer replaces `.ref.parent.id` access with the corresponding `params` property and preserves optional chaining when present.
+
 ## Examples
 
 ### ❌ Incorrect
@@ -140,12 +156,26 @@ const maybeParentId = change.after?.ref?.parent?.id;
 const maybeParentId = params?.userId;
 ```
 
+### 5. Parameter naming
+For single `.parent` access, prefer parameter names like `userId`. For deeper chains such as `.parent.parent`, prefer `parentId` to reflect the relationship depth.
+
+## Benefits
+- Type safety by relying on structured handler params
+- Better readability and maintainability than reference traversal
+- More reliable access when document paths change
+- Avoids unnecessary reference traversal work
+- Enforces consistent patterns across handlers
+
 ## When Not To Use It
 
 This rule should not be used if:
 - You're not using Firebase change handlers
 - You're working with functions that don't have the handler type annotations
 - You need to access reference properties other than parent IDs
+
+## Related Rules
+- `enforce-firestore-doc-ref-generic`
+- `enforce-firestore-path-utils`
 
 ## Further Reading
 

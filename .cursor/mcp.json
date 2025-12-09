@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "interactive": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "interactive-mcp",
+        "--disable-tools",
+        "message_complete_notification",
+        "-t", "600"
+      ],
+      "enabled": true
+    }
+  }
+} 

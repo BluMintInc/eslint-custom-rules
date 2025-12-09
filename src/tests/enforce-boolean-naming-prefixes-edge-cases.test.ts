@@ -144,6 +144,7 @@ ruleTesterTs.run(
             data: {
               type: 'variable',
               name: 'active',
+              capitalizedName: 'Active',
               prefixes:
                 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
@@ -160,6 +161,7 @@ ruleTesterTs.run(
             data: {
               type: 'variable',
               name: 'ready',
+              capitalizedName: 'Ready',
               prefixes:
                 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
@@ -176,6 +178,7 @@ ruleTesterTs.run(
             data: {
               type: 'variable',
               name: 'x',
+              capitalizedName: 'X',
               prefixes:
                 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
@@ -192,6 +195,7 @@ ruleTesterTs.run(
             data: {
               type: 'property',
               name: 'active',
+              capitalizedName: 'Active',
               prefixes:
                 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
@@ -201,6 +205,7 @@ ruleTesterTs.run(
             data: {
               type: 'property',
               name: 'ready',
+              capitalizedName: 'Ready',
               prefixes:
                 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },

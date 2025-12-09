@@ -86,7 +86,9 @@ export const enforceFirebaseImports = createRule({
             // When namespace import exists
             if (namespaceSpecifier) {
               const nsLocal = namespaceSpecifier.local.name;
-              statements.push(`const ${nsLocal} = await import('${importPath}');`);
+              statements.push(
+                `const ${nsLocal} = await import('${importPath}');`,
+              );
               // If default is also requested, assign from namespace
               if (defaultSpecifier) {
                 const defLocal = defaultSpecifier.local.name;

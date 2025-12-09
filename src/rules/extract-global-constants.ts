@@ -51,7 +51,6 @@ function unwrapExpression(
   return current;
 }
 
-
 function isMutableValue(node: TSESTree.Expression | null): boolean {
   const unwrapped = unwrapExpression(node);
   if (!unwrapped) return false;

@@ -41,6 +41,7 @@ ruleTesterTs.run(
             data: {
               type: 'variable',
               name: 'active',
+              capitalizedName: 'Active',
               prefixes:
                 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
@@ -58,6 +59,7 @@ ruleTesterTs.run(
             data: {
               type: 'variable',
               name: 'loggedIn',
+              capitalizedName: 'LoggedIn',
               prefixes:
                 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
