@@ -17,11 +17,11 @@ export const enforceConsoleError = createRule<[], MessageIds>({
     },
     messages: {
       missingConsoleError:
-        'useAlertDialog with severity "error" requires a console.error statement in the same function scope for proper monitoring.',
+        'useAlertDialog call with severity "{{severity}}" shows an error dialog but this function never logs with {{consoleMethod}}. Without the log the alert is invisible to monitoring and post-incident breadcrumbs. Add a {{consoleMethod}} call in this function scope before or after the open() call so the dialog is paired with an observable error trail.',
       missingConsoleWarn:
-        'useAlertDialog with severity "warning" requires a console.warn statement in the same function scope for proper monitoring.',
+        'useAlertDialog call with severity "{{severity}}" shows a warning dialog but this function never logs with {{consoleMethod}}. Without the log the warning lacks telemetry, making degraded states hard to diagnose. Add a {{consoleMethod}} call in this function scope before or after the open() call so the dialog is paired with an observable warning trail.',
       missingConsoleBoth:
-        'useAlertDialog with dynamic severity requires both console.error and console.warn statements in the same function scope for proper monitoring.',
+        'useAlertDialog call relies on a dynamic severity value, so the function may show either errors or warnings but it logs neither with {{consoleError}} nor {{consoleWarn}}. Monitoring misses whichever branch executes, leaving the dialog untraceable. Add both {{consoleError}} and {{consoleWarn}} in this function scope around the open() call so every severity path leaves a log trail.',
     },
     schema: [],
   },
@@ -196,6 +196,10 @@ export const enforceConsoleError = createRule<[], MessageIds>({
               context.report({
                 node: dynamicCall.node,
                 messageId: 'missingConsoleBoth',
+                data: {
+                  consoleError: 'console.error',
+                  consoleWarn: 'console.warn',
+                },
               });
             }
           } else {
@@ -207,6 +211,10 @@ export const enforceConsoleError = createRule<[], MessageIds>({
                 context.report({
                   node: errorCall.node,
                   messageId: 'missingConsoleError',
+                  data: {
+                    severity: 'error',
+                    consoleMethod: 'console.error',
+                  },
                 });
               }
             }
@@ -219,6 +227,10 @@ export const enforceConsoleError = createRule<[], MessageIds>({
                 context.report({
                   node: warningCall.node,
                   messageId: 'missingConsoleWarn',
+                  data: {
+                    severity: 'warning',
+                    consoleMethod: 'console.warn',
+                  },
                 });
               }
             }

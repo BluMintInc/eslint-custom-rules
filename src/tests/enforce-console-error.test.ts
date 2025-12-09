@@ -1,5 +1,27 @@
+import { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceConsoleError } from '../rules/enforce-console-error';
+
+const missingConsoleErrorMessage =
+  'useAlertDialog call with severity "error" shows an error dialog but this function never logs with console.error. Without the log the alert is invisible to monitoring and post-incident breadcrumbs. Add a console.error call in this function scope before or after the open() call so the dialog is paired with an observable error trail.';
+const missingConsoleWarnMessage =
+  'useAlertDialog call with severity "warning" shows a warning dialog but this function never logs with console.warn. Without the log the warning lacks telemetry, making degraded states hard to diagnose. Add a console.warn call in this function scope before or after the open() call so the dialog is paired with an observable warning trail.';
+const missingConsoleBothMessage =
+  'useAlertDialog call relies on a dynamic severity value, so the function may show either errors or warnings but it logs neither with console.error nor console.warn. Monitoring misses whichever branch executes, leaving the dialog untraceable. Add both console.error and console.warn in this function scope around the open() call so every severity path leaves a log trail.';
+
+type MessageIds = 'missingConsoleError' | 'missingConsoleWarn' | 'missingConsoleBoth';
+
+const missingConsoleError = {
+  message: missingConsoleErrorMessage,
+} as unknown as TSESLint.TestCaseError<MessageIds>;
+
+const missingConsoleWarn = {
+  message: missingConsoleWarnMessage,
+} as unknown as TSESLint.TestCaseError<MessageIds>;
+
+const missingConsoleBoth = {
+  message: missingConsoleBothMessage,
+} as unknown as TSESLint.TestCaseError<MessageIds>;
 
 ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
   valid: [
@@ -937,7 +959,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { openErrorDialog };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Warning severity without console.warn
@@ -960,7 +982,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { openWarningDialog };
         };
       `,
-      errors: [{ messageId: 'missingConsoleWarn' }],
+      errors: [missingConsoleWarn],
     },
 
     // Invalid: Error severity with wrong console method
@@ -984,7 +1006,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { openErrorDialog };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Warning severity with wrong console method
@@ -1008,7 +1030,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { openWarningDialog };
         };
       `,
-      errors: [{ messageId: 'missingConsoleWarn' }],
+      errors: [missingConsoleWarn],
     },
 
     // Invalid: Multiple error dialogs, missing console.error
@@ -1040,8 +1062,8 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
         };
       `,
       errors: [
-        { messageId: 'missingConsoleError' },
-        { messageId: 'missingConsoleError' },
+        missingConsoleError,
+        missingConsoleError,
       ],
     },
 
@@ -1075,8 +1097,8 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
         };
       `,
       errors: [
-        { messageId: 'missingConsoleError' },
-        { messageId: 'missingConsoleWarn' },
+        missingConsoleError,
+        missingConsoleWarn,
       ],
     },
 
@@ -1109,7 +1131,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { openErrorDialog, openWarningDialog };
         };
       `,
-      errors: [{ messageId: 'missingConsoleWarn' }],
+      errors: [missingConsoleWarn],
     },
 
     // Invalid: Dynamic severity without both console statements
@@ -1132,7 +1154,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { openDialog };
         };
       `,
-      errors: [{ messageId: 'missingConsoleBoth' }],
+      errors: [missingConsoleBoth],
     },
 
     // Invalid: Dynamic severity with only console.error
@@ -1156,7 +1178,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { openDialog };
         };
       `,
-      errors: [{ messageId: 'missingConsoleBoth' }],
+      errors: [missingConsoleBoth],
     },
 
     // Invalid: Dynamic severity with only console.warn
@@ -1180,7 +1202,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { openDialog };
         };
       `,
-      errors: [{ messageId: 'missingConsoleBoth' }],
+      errors: [missingConsoleBoth],
     },
 
     // Invalid: Severity from variable
@@ -1204,7 +1226,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { openDialog };
         };
       `,
-      errors: [{ messageId: 'missingConsoleBoth' }],
+      errors: [missingConsoleBoth],
     },
 
     // Invalid: Severity from object property
@@ -1228,7 +1250,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { openDialog };
         };
       `,
-      errors: [{ messageId: 'missingConsoleBoth' }],
+      errors: [missingConsoleBoth],
     },
 
     // Invalid: Computed property for severity
@@ -1251,7 +1273,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { openDialog };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Function call result as severity
@@ -1276,7 +1298,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { openDialog };
         };
       `,
-      errors: [{ messageId: 'missingConsoleBoth' }],
+      errors: [missingConsoleBoth],
     },
 
     // Invalid: Arrow function without useCallback
@@ -1298,7 +1320,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { openErrorDialog };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Regular function declaration
@@ -1320,7 +1342,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { openErrorDialog };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Inline function call
@@ -1342,7 +1364,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Async function without console.error
@@ -1366,7 +1388,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Generator function without console.error
@@ -1388,7 +1410,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Class method without console.error
@@ -1411,7 +1433,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           }
         }
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Try-catch block without console.error
@@ -1438,7 +1460,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Loop without console.error
@@ -1463,7 +1485,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showErrors };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Conditional without console.error
@@ -1488,7 +1510,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: IIFE without console.error
@@ -1511,7 +1533,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { result };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Higher-order function without console.error
@@ -1536,7 +1558,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { createErrorHandler };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Promise chain without console.error
@@ -1562,7 +1584,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Object shorthand property without console.error
@@ -1586,7 +1608,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleBoth' }],
+      errors: [missingConsoleBoth],
     },
 
     // Invalid: Template literal severity without both console statements
@@ -1610,7 +1632,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleBoth' }],
+      errors: [missingConsoleBoth],
     },
 
     // Invalid: Recursive function without console.error
@@ -1635,7 +1657,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { recursiveError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Event handler without console.error
@@ -1658,7 +1680,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { handleError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Closure without console.error
@@ -1685,7 +1707,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Arrow function with expression body without console.error
@@ -1707,7 +1729,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Multiple console calls but wrong type
@@ -1733,7 +1755,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Multiple useAlertDialog instances with missing console
@@ -1766,8 +1788,8 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
         };
       `,
       errors: [
-        { messageId: 'missingConsoleError' },
-        { messageId: 'missingConsoleWarn' },
+        missingConsoleError,
+        missingConsoleWarn,
       ],
     },
 
@@ -1803,8 +1825,8 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
         };
       `,
       errors: [
-        { messageId: 'missingConsoleError' },
-        { messageId: 'missingConsoleWarn' },
+        missingConsoleError,
+        missingConsoleWarn,
       ],
     },
 
@@ -1828,7 +1850,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showDialog };
         };
       `,
-      errors: [{ messageId: 'missingConsoleBoth' }],
+      errors: [missingConsoleBoth],
     },
 
     // Invalid: Logical AND operator without console.error
@@ -1851,7 +1873,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Logical OR operator without console.error
@@ -1874,7 +1896,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Array method callback without console.error
@@ -1899,7 +1921,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showErrors };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: setTimeout callback without console.error
@@ -1924,7 +1946,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: setInterval callback without console.error
@@ -1949,7 +1971,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: requestAnimationFrame callback without console.error
@@ -1974,7 +1996,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Object method without console.error
@@ -1998,7 +2020,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { dialogManager };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Getter method without console.error
@@ -2023,7 +2045,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { dialogManager };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Setter method without console.error
@@ -2047,7 +2069,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { dialogManager };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Destructuring assignment without console.error
@@ -2071,7 +2093,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Rest parameters without console.error
@@ -2094,7 +2116,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Default parameters without console.error
@@ -2117,7 +2139,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Complex destructuring without console.error
@@ -2140,7 +2162,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Aliased import without console.error
@@ -2163,7 +2185,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Early return without console.error
@@ -2188,7 +2210,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Async/await without console.error
@@ -2215,7 +2237,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Multiple severity types without proper console calls
@@ -2249,8 +2271,8 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
         };
       `,
       errors: [
-        { messageId: 'missingConsoleError' },
-        { messageId: 'missingConsoleWarn' },
+        missingConsoleError,
+        missingConsoleWarn,
       ],
     },
 
@@ -2277,7 +2299,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Nested function without console in correct scope
@@ -2305,7 +2327,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { outerFunction };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Promise chain without console in correct scope
@@ -2333,7 +2355,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
 
     // Invalid: Mixed valid and invalid in same file
@@ -2366,7 +2388,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showValidError, showInvalidError };
         };
       `,
-      errors: [{ messageId: 'missingConsoleError' }],
+      errors: [missingConsoleError],
     },
   ],
 });
