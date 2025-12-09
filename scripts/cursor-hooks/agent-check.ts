@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { exec, execSync } from 'node:child_process';
@@ -5,132 +6,18 @@ import { promisify } from 'node:util';
 import {
   fetchAllConversationFiles,
   fetchChangedFiles,
+  fetchLastUserMessage,
   hasCheckWorkBeenPrompted,
-  markCheckWorkPrompted,
   hasExpandTestsBeenPrompted,
-  markExpandTestsPrompted,
   isRuleRequestConversation,
+  markCheckWorkPrompted,
+  markExpandTestsPrompted,
   setLastUserMessage,
   modifyConversationEnd,
   modifyHeartbeat,
   MAX_LOOPS,
 } from './change-log';
-import { validateRuleStructure } from './validate-rule-structure';
-import type { Input } from './types';
-
-function readInput() {
-  try {
-    if (process.stdin.isTTY) return null;
-    const input = readFileSync(0, 'utf-8');
-    if (!input) return null;
-    return JSON.parse(input);
-  } catch {
-    return null;
-  }
-}
-
-export function executeCommand(command: string) {
-  try {
-    const output = execSync(command, { encoding: 'utf-8', stdio: 'pipe' });
-    return { isSuccess: true, output } as const;
-  } catch (error: unknown) {
-    const stdout = (error as any).stdout ? String((error as any).stdout) : null;
-    const stderr = (error as any).stderr ? String((error as any).stderr) : null;
-    return {
-      isSuccess: false,
-      output: `${stdout ?? ''}\n${stderr ?? ''}`,
-    } as const;
-  }
-}
-
-const execAsync = promisify(exec);
-
-async function executeCommandAsync(command: string) {
-  try {
-    const { stdout, stderr } = await execAsync(command, {
-      encoding: 'utf-8',
-    });
-    return {
-      isSuccess: true,
-      output: `${stdout ?? ''}\n${stderr ?? ''}`,
-    } as const;
-  } catch (error: unknown) {
-    const stdout = (error as any).stdout ? String((error as any).stdout) : null;
-    const stderr = (error as any).stderr ? String((error as any).stderr) : null;
-    return {
-      isSuccess: false,
-      output: `${stdout ?? ''}\n${stderr ?? ''}`,
-    } as const;
-  }
-}
-
-function validateBuild() {
-  const buildResult = executeCommand('npm run build');
-  if (!buildResult.isSuccess) {
-    return {
-      followup_message: `Build failed.\n${buildResult.output}\n\nPlease fix the TypeScript compilation errors.`,
-    } as const;
-  }
-  return null;
-}
-
-function validateLinting(params: {
-  readonly conversationId: string;
-  readonly generationId: string;
-}) {
-  const { conversationId, generationId } = params;
-  const lintDiffScript = join(
-    process.cwd(),
-    'scripts/cursor-hooks/lint-diff.ts',
-  );
-  const lintCmd = `npx tsx "${lintDiffScript}" --conversation-id "${conversationId}" --generation-id "${generationId}"`;
-  const lintResult = executeCommand(lintCmd);
-  if (!lintResult.isSuccess) {
-    return {
-      followup_message: `Linting failed on changed files.\n${lintResult.output}\n\nPlease fix these linting errors.`,
-    } as const;
-  }
-  return null;
-}
-
-async function validateTests() {
-  const testResult = await executeCommandAsync('npm test');
-  if (!testResult.isSuccess) {
-    return {
-      followup_message: `Tests failed.\n${testResult.output}\n\nPlease fix the failing tests. Remember to write 20+ comprehensive tests per rule.`,
-    } as const;
-  }
-  return null;
-}
-
-function performRuleStructureValidation(changedFiles: readonly string[]) {
-  // Detect if this is a new rule implementation by checking for new rule files
-  const newRuleFiles = changedFiles.filter(
-    (f) =>
-      f.startsWith('src/rules/') && f.endsWith('.ts') && !f.includes('.test.'),
-  );
-
-  if (newRuleFiles.length === 0) return null; // Not a rule implementation
-
-  for (const ruleFile of newRuleFiles) {
-    // Extract rule name from path: src/rules/my-rule.ts -> my-rule
-    const ruleName = ruleFile.replace('src/rules/', '').replace('.ts', '');
-    const validation = validateRuleStructure(ruleName);
-
-    if (!validation.isValid) {
-      const issues = [
-        ...validation.missingFiles.map((f) => `- Missing file: ${f}`),
-        ...validation.indexIssues.map((i) => `- ${i}`),
-      ].join('\n');
-
-      return {
-        followup_message: `ESLint Rule Structure Validation Failed.\n\nThe following issues were found with the rule "${ruleName}":\n${issues}\n\nPlease ensure all required files exist and src/index.ts properly exports the rule in all 3 places (import, configs.recommended.rules, and rules object).`,
-      };
-    }
-  }
-
-  return null;
-}
+import type { Input, AgentCheckResult } from './types';
 
 const EXPAND_TESTS_PROMPT = `
 Your implementation looks good so far! Now let's ensure comprehensive test coverage.
@@ -156,9 +43,304 @@ Think outside the box. What could go wrong? What edge cases exist in real codeba
 After expanding tests, ensure all tests pass with: npm test
 `;
 
+function readInput() {
+  try {
+    if (process.stdin.isTTY) return null;
+    const input = readFileSync(0, 'utf-8');
+    if (!input) return null;
+    return JSON.parse(input);
+  } catch {
+    return null;
+  }
+}
+
+export function executeCommand(command: string) {
+  try {
+    const output = execSync(command, { encoding: 'utf-8', stdio: 'pipe' });
+    return { isSuccess: true, output } as const;
+  } catch (error: unknown) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stdout = (error as any).stdout ? String((error as any).stdout) : null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stderr = (error as any).stderr ? String((error as any).stderr) : null;
+    return {
+      isSuccess: false,
+      output: `${stdout ?? ''}\n${stderr ?? ''}`,
+    } as const;
+  }
+}
+
+const execAsync = promisify(exec);
+
+// We need both sync (executeCommand) and async (executeCommandAsync) versions
+// eslint-disable-next-line @typescript-eslint/naming-convention
+async function executeCommandAsync(command: string) {
+  try {
+    const { stdout, stderr } = await execAsync(command, {
+      encoding: 'utf-8',
+    });
+    return {
+      isSuccess: true,
+      output: `${stdout ?? ''}\n${stderr ?? ''}`,
+    } as const;
+  } catch (error: unknown) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stdout = (error as any).stdout ? String((error as any).stdout) : null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stderr = (error as any).stderr ? String((error as any).stderr) : null;
+    return {
+      isSuccess: false,
+      output: `${stdout ?? ''}\n${stderr ?? ''}`,
+    } as const;
+  }
+}
+
+type CheckType = 'build' | 'lint' | 'test';
+
+function filterTypeScriptFiles(files: readonly string[]) {
+  return files.filter((file) => {
+    return /\.(ts|tsx)$/.test(file);
+  });
+}
+
+function extractChecks({
+  conversationId,
+  generationId,
+}: {
+  readonly conversationId: string;
+  readonly generationId: string;
+}) {
+  const allChangedFiles = fetchAllConversationFiles({ conversationId });
+  const changedTypeScriptFiles = filterTypeScriptFiles(allChangedFiles);
+
+  if (changedTypeScriptFiles.length === 0) {
+    return {} as const;
+  }
+
+  return {
+    build: { conversationId, generationId },
+    lint: { conversationId, generationId },
+    test: { conversationId, changedTypeScriptFiles },
+  };
+}
+
+function validateBuild() {
+  const buildResult = executeCommand('npm run build');
+  if (!buildResult.isSuccess) {
+    return {
+      followup_message: `Build failed.\n${buildResult.output}\n\nPlease fix the TypeScript compilation errors.`,
+    } as const;
+  }
+  return null;
+}
+
+function validateLinting(params: {
+  readonly conversationId: string;
+  readonly generationId: string;
+}) {
+  const { conversationId, generationId } = params;
+  const lintDiffScript = join(
+    process.cwd(),
+    'scripts/cursor-hooks/lint-diff.ts',
+  );
+  const lintCmd = `npx tsx "${lintDiffScript}" --conversation-id "${conversationId}" --generation-id "${generationId}"`;
+  const lintResult = executeCommand(lintCmd);
+  if (!lintResult.isSuccess) {
+    return {
+      followup_message: `Linting failed on changed files.\n${lintResult.output}\n\nPlease fix these linting errors.\nNote: If any error appears to be a false positive (especially from custom rules), you may suppress it using \`// eslint-disable-next-line <rule-name>\`.`,
+    } as const;
+  }
+  return null;
+}
+
+const JEST_BASE_COMMAND = 'node ./node_modules/jest/bin/jest' as const;
+const JEST_FLAGS = '--passWithNoTests' as const;
+
+export async function validateTests(params: {
+  readonly conversationId: string;
+  readonly changedTypeScriptFiles: readonly string[];
+}) {
+  const { changedTypeScriptFiles } = params;
+
+  // Filter to identify "Source Files" (excluding tests, mocks, and type definitions)
+  const sourceFiles = changedTypeScriptFiles.filter((file) => {
+    const isTestFile = /\.(spec|test)\.(ts|tsx|js|jsx)$/.test(file);
+    const isMockFile = file.includes('__mocks__/');
+    // Exclude type definitions as per jest.mdc exception
+    const isTypeFile =
+      file.includes('functions/src/types/') || file.includes('/src/types/');
+    return !isTestFile && !isMockFile && !isTypeFile;
+  });
+
+  let testCommand: string;
+
+  if (sourceFiles.length > 0) {
+    // Scenario A: Source Files Changed - Enforce 100% Coverage
+    const filesArg = changedTypeScriptFiles.join(' ');
+
+    // Build --collectCoverageFrom flags for each source file to strictly scope coverage
+    const coverageFromFlags = sourceFiles
+      .map((file) => {
+        return `--collectCoverageFrom "${file}"`;
+      })
+      .join(' ');
+
+    // Run with coverage check enabled
+    testCommand = `CURSOR_AGENT_COVERAGE_CHECK=true ${JEST_BASE_COMMAND} --findRelatedTests ${filesArg} ${JEST_FLAGS} --collectCoverage ${coverageFromFlags}`;
+  } else {
+    // Scenario B: Only Tests/Exclusions Changed - Standard Check without coverage enforcement
+    const filesArg = changedTypeScriptFiles.join(' ');
+    testCommand = `${JEST_BASE_COMMAND} --findRelatedTests ${filesArg} ${JEST_FLAGS}`;
+  }
+
+  const testResult = await executeCommandAsync(testCommand);
+
+  if (!testResult.isSuccess) {
+    const { output } = testResult;
+    const isCoverageFailure =
+      output.includes('coverage threshold') ||
+      output.includes('Insufficient coverage') ||
+      output.includes('Jest: "global" coverage threshold for statements'); // Common Jest failure message
+
+    if (isCoverageFailure) {
+      return {
+        followup_message: `Insufficient Code Coverage.\n\nYour changes to source files must have 100% test coverage (statements, branches, functions, lines). The current tests do not meet this threshold for the modified files.\n\n${output}\n\nPlease write additional tests to cover the untested lines and branches in the files you modified.`,
+      } as const;
+    }
+
+    return {
+      followup_message: `Tests failed.\n${output}\n\nSee @.cursor/rules/jest.mdc if you haven't already for an overview our Jest testing infrastructure and best practices.\n\nPlease analyze the failures, fix the broken tests or code, and ensure all tests pass.`,
+    } as const;
+  }
+
+  return null;
+}
+
+const CODE_QUALITY_CHECKS: Readonly<
+  Record<
+    CheckType,
+    ReadonlyArray<
+      (
+        params:
+          | { readonly conversationId: string; readonly generationId: string }
+          | {
+              readonly conversationId: string;
+              readonly changedTypeScriptFiles: readonly string[];
+            },
+      ) => Promise<AgentCheckResult | null> | AgentCheckResult | null
+    >
+  >
+> = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  build: [validateBuild as any],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  lint: [validateLinting as any],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  test: [validateTests as any],
+} as const;
+
+const CHECK_PRIORITY_ORDER: CheckType[] = ['build', 'lint', 'test'];
+
+class CheckRegistry {
+  constructor(
+    private readonly registry: Readonly<
+      Record<
+        CheckType,
+        ReadonlyArray<
+          (
+            params:
+              | {
+                  readonly conversationId: string;
+                  readonly generationId: string;
+                }
+              | {
+                  readonly conversationId: string;
+                  readonly changedTypeScriptFiles: readonly string[];
+                }
+              | {
+                  readonly conversationId: string;
+                  readonly hasBackendChanges: boolean;
+                },
+          ) => Promise<AgentCheckResult | null> | AgentCheckResult | null
+        >
+      >
+    >,
+  ) {}
+
+  async dispatch(
+    checkDispatchMap: Readonly<
+      Partial<
+        Record<
+          CheckType,
+          | { readonly conversationId: string; readonly generationId: string }
+          | {
+              readonly conversationId: string;
+              readonly changedTypeScriptFiles: readonly string[];
+            }
+          | {
+              readonly conversationId: string;
+              readonly hasBackendChanges: boolean;
+            }
+        >
+      >
+    >,
+  ) {
+    const checkPromises: Array<Promise<AgentCheckResult | null>> = [];
+    const checkTypes: CheckType[] = [];
+
+    // eslint-disable-next-line no-restricted-properties
+    for (const checkType of Object.keys(checkDispatchMap) as CheckType[]) {
+      const params = checkDispatchMap[checkType];
+      if (!params) continue;
+
+      const checkFunctions = this.registry[checkType];
+      if (
+        !checkFunctions ||
+        !Array.isArray(checkFunctions) ||
+        checkFunctions.length === 0
+      ) {
+        continue;
+      }
+
+      const checkFn = checkFunctions[0];
+      const result = checkFn(params);
+
+      checkPromises.push(Promise.resolve(result));
+      checkTypes.push(checkType);
+    }
+
+    const results = await Promise.all(checkPromises);
+
+    for (const priorityType of CHECK_PRIORITY_ORDER) {
+      const index = checkTypes.indexOf(priorityType);
+      if (index !== -1 && results[index]) {
+        return results[index];
+      }
+    }
+
+    return null;
+  }
+}
+
+async function performQualityChecks(input: Input) {
+  const { conversation_id, generation_id } = input;
+
+  const checkDispatchMap = extractChecks({
+    conversationId: conversation_id,
+    generationId: generation_id,
+  });
+
+  // eslint-disable-next-line no-restricted-properties
+  if (Object.keys(checkDispatchMap).length === 0) {
+    return null;
+  }
+
+  const checkRegistry = new CheckRegistry(CODE_QUALITY_CHECKS);
+  return await checkRegistry.dispatch(checkDispatchMap);
+}
+
 async function performAgentCheckInternal(input: Input) {
   const { conversation_id, generation_id, loop_count = 0, status } = input;
-
   try {
     modifyHeartbeat(conversation_id);
   } catch {
@@ -170,77 +352,74 @@ async function performAgentCheckInternal(input: Input) {
     return { followup_message: undefined } as const;
   }
 
-  // Safety: Allow completion after MAX_LOOPS even if checks would fail
-  // This prevents infinite loops when issues are unfixable
-  if (loop_count >= MAX_LOOPS) {
-    console.log(
-      `MAX_LOOPS (${MAX_LOOPS}) reached for conversation ${conversation_id}. Allowing completion.`,
-    );
-    modifyConversationEnd(conversation_id);
-    return { followup_message: undefined } as const;
-  }
+  // Priority 0: PR Review Check
+  const { performPrReviewCheck } = await import('./pr-review-check');
+  const prReviewResult = await performPrReviewCheck(input);
+  if (prReviewResult) return prReviewResult;
 
-  // Priority 1: Build Check
-  const buildResult = validateBuild();
-  if (buildResult) return buildResult;
-
-  // Priority 2: Linting Check
-  const lintResult = validateLinting({
-    conversationId: conversation_id,
-    generationId: generation_id,
-  });
-  if (lintResult) return lintResult;
-
-  // Priority 3: Tests Check
-  const testResult = await validateTests();
-  if (testResult) return testResult;
+  const qualityCheckResult = await performQualityChecks(input);
+  if (qualityCheckResult) return qualityCheckResult;
 
   const changedFiles = fetchChangedFiles({
     conversationId: conversation_id,
     generationId: generation_id,
   });
-
-  // Priority 4: Rule Structure Validation (for rule implementations)
-  const allChangedFiles = fetchAllConversationFiles({
-    conversationId: conversation_id,
-  });
-  const ruleStructureResult = performRuleStructureValidation(allChangedFiles);
-  if (ruleStructureResult) return ruleStructureResult;
-
-  // Early exit if no files changed in this generation
-  if (changedFiles.length === 0) {
+  if (changedFiles.length === 0 || loop_count >= MAX_LOOPS) {
     modifyConversationEnd(conversation_id);
     return { followup_message: undefined } as const;
   }
 
-  // Priority 5: Check-Your-Work Prompt
   const hasBeenPromptedBefore = hasCheckWorkBeenPrompted(conversation_id);
+  markCheckWorkPrompted(conversation_id);
 
-  if (!hasBeenPromptedBefore) {
-    markCheckWorkPrompted(conversation_id);
-    return {
-      followup_message: `Please check your work. It's highly likely you missed something originally requested of you and your solution is incomplete. Now is your chance to construct a new to-do list and meticulously fill in all remaining gaps in your solution. Make sure you've satisfied all requirements in @.cursor/rules/task-completion-standards.mdc.\n\nNote: If you need to create temporary files for notetaking or testing during this review, please place them in the \`.cursor/tmp/\` directory so they are ignored by our Cursor Hooks.`,
-    } as const;
-  }
-
-  // Priority 6: Expand Tests Prompt (for rule implementations only, after first check-your-work)
+  // For rule implementations, send expand tests prompt after first check-your-work
   const isRuleRequest = isRuleRequestConversation(conversation_id);
-  const hasExpandedTests = hasExpandTestsBeenPrompted(conversation_id);
-
-  if (isRuleRequest && !hasExpandedTests) {
-    markExpandTestsPrompted(conversation_id);
-    return { followup_message: EXPAND_TESTS_PROMPT } as const;
+  if (isRuleRequest && hasBeenPromptedBefore) {
+    const hasExpandTestsPrompted = hasExpandTestsBeenPrompted(conversation_id);
+    if (!hasExpandTestsPrompted) {
+      markExpandTestsPrompted(conversation_id);
+      return { followup_message: EXPAND_TESTS_PROMPT } as const;
+    }
   }
 
-  // Subsequent check-your-work prompts
-  return {
-    followup_message: `Please double check your work again. Reminder: If you need to create temporary files for notetaking or testing during this review, please place them in the \`.cursor/tmp/\` directory so they are ignored by this check.`,
-  } as const;
+  const followupMessage = hasBeenPromptedBefore
+    ? `Please double check your work again. Reminder: If you need to create temporary files for notetaking or testing during this review, please place them in the \`.cursor/tmp/\` directory so they are ignored by this check.`
+    : `Please check your work. It's highly likely you missed something originally requested of you and your solution is incomplete. Now is your chance to construct a new to-do list to run for several more hours, meticulously filling in all remaining gaps in your solution. If your task was to create a plan, diagnosis, or report, make sure that your markdown file is complete, self-consistent, and correct. If your task was to implement a feature, make sure you've implemented the feature completely and correctly, and that you've properly tested your implementation. If your task was to fix a bug, make sure you've fixed the bug without introducing regressions elsewhere, created a test to make sure your fix works, and tested your fix. Please do not stop for a long time, and before you do, make sure you've completely satisfied @.cursor/rules/task-completion-standards.mdc.\n\nNote: If you need to create temporary files for notetaking or testing during this review, please place them in the \`.cursor/tmp/\` directory so they are ignored by our Cursor Hooks.`;
+
+  return { followup_message: followupMessage } as const;
+}
+
+function duplicateMessage({
+  conversationId,
+  followupMessage,
+}: {
+  readonly conversationId: string;
+  readonly followupMessage: string;
+}) {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+  const lastMessage = fetchLastUserMessage(conversationId);
+  if (lastMessage && lastMessage === followupMessage) {
+    try {
+      modifyConversationEnd(conversationId);
+    } catch {
+      /* Ignore */
+    }
+    return true;
+  }
+  return false;
 }
 
 export async function performAgentCheck(input: Input) {
   const result = await performAgentCheckInternal(input);
   if (result.followup_message) {
+    if (
+      duplicateMessage({
+        conversationId: input.conversation_id,
+        followupMessage: result.followup_message,
+      })
+    ) {
+      return {} as const;
+    }
     setLastUserMessage({
       conversationId: input.conversation_id,
       message: result.followup_message,
@@ -260,6 +439,7 @@ export async function executeMain() {
 }
 
 // Check if this file is being run directly (not imported)
+/** Conditional to avoid Jest parsing issues */
 const isDirectExecution = () => {
   return process.argv[1] && process.argv[1].endsWith('agent-check.ts');
 };

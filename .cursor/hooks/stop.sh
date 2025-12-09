@@ -33,4 +33,3 @@ TS_SCRIPT="scripts/cursor-hooks/agent-check.ts"
 
 # Pass the JSON input to the TS script via stdin
 echo "$JSON_INPUT" | npx tsx "$TS_SCRIPT"
-
