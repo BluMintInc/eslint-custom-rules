@@ -175,38 +175,67 @@ function findOpenPrNumberForBranch(branchName: string) {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-function validateWithoutReviewBatch(branchName: string) {
+type ReviewDetection =
+  | {
+      readonly hasComments: true;
+      readonly reviewType: 'bot' | 'human';
+      readonly commentsList: string;
+      readonly prNumber: number;
+    }
+  | {
+      readonly hasComments: true;
+      readonly reviewType: 'mixed';
+      readonly botCommentsList: string;
+      readonly humanCommentsList: string;
+      readonly prNumber: number;
+    }
+  | null;
+
+function validateWithoutReviewBatch(branchName: string): ReviewDetection {
   const prNumber = findOpenPrNumberForBranch(branchName);
   if (!prNumber) {
     return null;
   }
 
-  // Prefer bot comments when present; fall back to human comments otherwise.
   const botResult = validateUnresolvedComments({
     prNumber,
     isBot: true,
   });
-  if (botResult.hasComments) {
-    return {
-      hasComments: true,
-      isBot: true,
-      commentsList: botResult.commentsList,
-      prNumber,
-    } as const;
-  }
 
   const humanResult = validateUnresolvedComments({
     prNumber,
     isBot: false,
   });
 
-  if (humanResult.hasComments) {
+  const hasBot = botResult.hasComments;
+  const hasHuman = humanResult.hasComments;
+
+  if (hasBot && hasHuman) {
     return {
       hasComments: true,
-      isBot: false,
+      reviewType: 'mixed',
+      botCommentsList: botResult.commentsList,
+      humanCommentsList: humanResult.commentsList,
+      prNumber,
+    };
+  }
+
+  if (hasBot) {
+    return {
+      hasComments: true,
+      reviewType: 'bot',
+      commentsList: botResult.commentsList,
+      prNumber,
+    };
+  }
+
+  if (hasHuman) {
+    return {
+      hasComments: true,
+      reviewType: 'human',
       commentsList: humanResult.commentsList,
       prNumber,
-    } as const;
+    };
   }
 
   return null;
@@ -246,6 +275,25 @@ ${commentsList}
 ${resolutionInstructions}`;
 }
 
+function constructMixedFollowupMessage(params: {
+  readonly botCommentsList: string;
+  readonly humanCommentsList: string;
+}) {
+  const botSection = constructFollowupMessage(true, params.botCommentsList);
+  const humanSection = constructFollowupMessage(
+    false,
+    params.humanCommentsList,
+  );
+
+  return `You have both unresolved AI bot review comments and human review comments. Address both sets before stopping.
+
+${botSection}
+
+---
+
+${humanSection}`;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function performPrReviewCheck(_input: Input) {
   try {
@@ -264,18 +312,22 @@ export function performPrReviewCheck(_input: Input) {
         return null; // Not a PR review branch
       }
 
+      const { prNumber, reviewType } = fallbackResult;
+
       console.error(
-        `Detected unresolved ${
-          fallbackResult.isBot ? 'bot' : 'human'
-        } review comments on PR #${
-          fallbackResult.prNumber
-        } for branch ${branchName}`,
+        `Detected unresolved ${reviewType} review comments on PR #${prNumber} for branch ${branchName}`,
       );
 
-      const followupMessage = constructFollowupMessage(
-        fallbackResult.isBot,
-        fallbackResult.commentsList,
-      );
+      const followupMessage =
+        reviewType === 'mixed'
+          ? constructMixedFollowupMessage({
+              botCommentsList: fallbackResult.botCommentsList,
+              humanCommentsList: fallbackResult.humanCommentsList,
+            })
+          : constructFollowupMessage(
+              reviewType === 'bot',
+              fallbackResult.commentsList,
+            );
 
       return {
         followup_message: followupMessage,
