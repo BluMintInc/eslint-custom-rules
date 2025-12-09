@@ -4,13 +4,15 @@
 
 > Disallow certain properties on certain objects, with special handling for Object.keys() and Object.values()
 
-This rule is a wrapper around the core ESLint [no-restricted-properties](https://eslint.org/docs/latest/rules/no-restricted-properties) rule that adds special handling for `Object.keys()` and `Object.values()` results.
+This rule wraps ESLint core [no-restricted-properties](https://eslint.org/docs/latest/rules/no-restricted-properties) and adds guardrails so standard array methods on `Object.keys()` and `Object.values()` results are not flagged. Use it to enforce project-specific property restrictions without blocking safe iteration helpers.
 
 ## Rule Details
 
-The `no-restricted-properties-fix` rule prevents false positives when accessing standard array properties/methods on the arrays returned by `Object.keys()` and `Object.values()`.
+Use this rule when you need to block risky properties (for example, untyped `require` helpers or mutating methods) but still rely on `Object.keys()`/`Object.values()` to iterate safely. The rule:
 
-This rule is particularly useful when you want to restrict certain properties on specific objects but don't want to inadvertently restrict common array operations on the results of `Object.keys()` and `Object.values()`.
+- Applies your configured restrictions to specific objects or properties.
+- Skips safe array members on the arrays returned by `Object.keys()` and `Object.values()` to avoid noisy false positives.
+- Explains why an access is blocked and reminds developers to choose the approved alternative.
 
 Examples of **correct** code with this rule:
 
@@ -32,13 +34,15 @@ const teamCount = Object.keys(exampleAggregation.teams ?? {}).length;
 Examples of **incorrect** code with this rule:
 
 ```js
-/* eslint @blumintinc/blumint/no-restricted-properties-fix: ["error", [{ "object": "disallowedObject", "property": "disallowedProperty" }]] */
+/* eslint @blumintinc/blumint/no-restricted-properties-fix: ["error", [{ "object": "disallowedObject", "property": "disallowedProperty", "message": "This property is disallowed." }]] */
 const disallowedObject = { disallowedProperty: 'value' };
-const value = disallowedObject.disallowedProperty; // Error: Disallowed object property: 'disallowedObject.disallowedProperty'
+const value = disallowedObject.disallowedProperty;
+// Error: Access to "disallowedObject.disallowedProperty" is restricted. This property is disallowed. Restricted properties often bypass safer APIs, hide side effects, or encourage patterns this codebase forbids. Use the allowed alternative from your rule configuration or remove this property access.
 
-/* eslint @blumintinc/blumint/no-restricted-properties-fix: ["error", [{ "property": "push", "allowObjects": ["router", "history"] }]] */
+/* eslint @blumintinc/blumint/no-restricted-properties-fix: ["error", [{ "property": "push", "allowObjects": ["router", "history"], "message": "Use navigation helpers instead." }]] */
 const myArray = [1, 2, 3];
-myArray.push(4); // Error: Disallowed object property: 'myArray.push'
+myArray.push(4);
+// Error: Access to "myArray.push" is restricted. Use navigation helpers instead. Restricted properties often bypass safer APIs, hide side effects, or encourage patterns this codebase forbids. Use the allowed alternative from your rule configuration or remove this property access.
 ```
 
 ## Options
@@ -66,7 +70,7 @@ Each object in the array can have the following properties:
 
 - `object` (string): The name of the object to restrict.
 - `property` (string): The name of the property to restrict.
-- `message` (string): Optional custom error message.
+- `message` (string): Optional sentence injected into the lint message to explain the specific restriction or suggest an alternative.
 - `allowObjects` (string[]): Optional array of object names that are allowed to use the restricted property.
 
 ## When Not To Use It
