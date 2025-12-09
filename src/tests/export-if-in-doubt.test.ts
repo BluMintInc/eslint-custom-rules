@@ -54,16 +54,47 @@ ruleTesterTs.run('export-if-in-doubt', exportIfInDoubt, {
         `,
   ],
   invalid: [
-    // Not exporting const
-    "const myConst = 'Hello';",
-
-    // Not exporting function
-    'function myFunction() {}',
-
-    // Not exporting type
-    'type MyType = string;',
-
-    `import { https } from 'firebase-functions';
+    {
+      code: "const myConst = 'Hello';",
+      errors: [
+        {
+          messageId: 'exportIfInDoubt',
+          data: {
+            name: 'myConst',
+            kind: 'const',
+            exportExample: 'export const myConst',
+          },
+        },
+      ],
+    },
+    {
+      code: 'function myFunction() {}',
+      errors: [
+        {
+          messageId: 'exportIfInDoubt',
+          data: {
+            name: 'myFunction',
+            kind: 'function',
+            exportExample: 'export function myFunction',
+          },
+        },
+      ],
+    },
+    {
+      code: 'type MyType = string;',
+      errors: [
+        {
+          messageId: 'exportIfInDoubt',
+          data: {
+            name: 'MyType',
+            kind: 'type',
+            exportExample: 'export type MyType',
+          },
+        },
+      ],
+    },
+    {
+      code: `import { https } from 'firebase-functions';
         import { UserItem } from '../../types/firestore/User/UserItem';
         import { db } from '../../config/firebaseAdmin';
         import {
@@ -94,10 +125,16 @@ ruleTesterTs.run('export-if-in-doubt', exportIfInDoubt, {
         
         export { listAssetsImx as default };
         `,
-  ].map((testCase) => {
-    return {
-      code: testCase,
-      errors: [{ messageId: 'exportIfInDoubt' }],
-    };
-  }),
+      errors: [
+        {
+          messageId: 'exportIfInDoubt',
+          data: {
+            name: 'ListAssetsImxPayload',
+            kind: 'type',
+            exportExample: 'export type ListAssetsImxPayload',
+          },
+        },
+      ],
+    },
+  ],
 });

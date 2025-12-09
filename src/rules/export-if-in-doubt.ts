@@ -15,7 +15,7 @@ export const exportIfInDoubt: TSESLint.RuleModule<'exportIfInDoubt', never[]> =
       schema: [],
       messages: {
         exportIfInDoubt:
-          'Top-level const definitions, type definitions, and functions should be exported.',
+          'Top-level {{kind}} "{{name}}" is not exported. Module-level declarations define the file\'s public API; leaving this unexported makes the code effectively dead to other modules and hides reusable utilities. Export it (for example "{{exportExample}}") or move it into a narrower scope if it is intentionally private.',
       },
     },
     defaultOptions: [],
@@ -62,9 +62,29 @@ export const exportIfInDoubt: TSESLint.RuleModule<'exportIfInDoubt', never[]> =
               node.id.type === 'Identifier' &&
               !exportedIdentifiers.includes(node.id.name)
             ) {
+              const name = node.id.name;
+              const kind =
+                node.type === 'VariableDeclarator'
+                  ? node.parent?.type === 'VariableDeclaration'
+                    ? node.parent.kind
+                    : 'const'
+                  : node.type === 'FunctionDeclaration'
+                  ? 'function'
+                  : 'type';
+              const exportExample =
+                node.type === 'VariableDeclarator'
+                  ? `export ${kind} ${name}`
+                  : node.type === 'FunctionDeclaration'
+                  ? `export function ${name}`
+                  : `export type ${name}`;
               context.report({
                 node,
                 messageId: 'exportIfInDoubt',
+                data: {
+                  name,
+                  kind,
+                  exportExample,
+                },
               });
             }
           });
