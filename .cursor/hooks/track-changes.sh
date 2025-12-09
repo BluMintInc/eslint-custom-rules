@@ -14,10 +14,18 @@ else
   WORKSPACE_ROOT=$(echo "$JSON_INPUT" | grep -o '"workspace_roots"[[:space:]]*:\[[[:space:]]*"[^"]*"' | sed 's/.*"workspace_roots"[[:space:]]*:\[[[:space:]]*"\([^"]*\)".*/\1/' | head -1)
 fi
 
-# If we found a workspace root, change to it
-if [ -n "$WORKSPACE_ROOT" ] && [ -d "$WORKSPACE_ROOT" ]; then
-  cd "$WORKSPACE_ROOT" || exit 1
+# Abort when workspace root is unavailable to avoid running relative paths in the wrong directory
+if [ -z "$WORKSPACE_ROOT" ]; then
+  echo "Workspace root not provided; aborting track-changes hook." >&2
+  exit 1
 fi
+
+if [ ! -d "$WORKSPACE_ROOT" ]; then
+  echo "Workspace root '$WORKSPACE_ROOT' not found; aborting track-changes hook." >&2
+  exit 1
+fi
+
+cd "$WORKSPACE_ROOT" || exit 1
 
 # Calculate the path to the TS script
 # It is located in scripts/cursor-hooks/ relative to the workspace root
