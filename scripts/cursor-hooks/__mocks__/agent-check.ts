@@ -1,8 +1,10 @@
-/**
- * Shared types for Cursor stop hook modules.
- * Extracted to avoid circular dependencies between agent-check.ts
- * and modules it imports (pr-review-check.ts).
- */
+export const executeCommand = jest.fn((command: string) => ({
+  isSuccess: true,
+  output: 'mock output',
+}));
+
+export const performAgentCheck = jest.fn();
+export const executeMain = jest.fn();
 
 export type Input = {
   readonly conversation_id: string;
@@ -13,3 +15,4 @@ export type Input = {
 };
 
 export type AgentCheckResult = { readonly followup_message?: string };
+
