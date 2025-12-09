@@ -6,42 +6,42 @@
 
 <!-- end auto-generated rule header -->
 
-Prevents the use of unnecessary verb suffixes in function and method names unless they provide a necessary layer of description.
+Discourages verb-preposition suffixes in function and method names when the suffix does not add meaning beyond the parameters. These endings make the action harder to spot and bloat call sites with redundant phrasing.
 
 ## Rule Details
 
-This rule aims to maintain cleaner, more action-oriented function names by eliminating redundant verb suffixes. Common suffixes include 'From', 'For', 'With', 'To', 'By', 'In', 'On', etc. The rule will error by default, requiring explicit disabling when a suffix is truly needed.
+This rule keeps names action-oriented by removing trailing verb-preposition suffixes (e.g., `From`, `For`, `With`, `To`, `By`, `In`, `On`). The suffix rarely carries new information because the parameters already express the relationship. Redundant endings make call sites harder to scan, obscure the primary verb, and create noisy diffs when the relationship changes. Rename the function to the verb phrase and let arguments communicate the context.
 
 Examples of **incorrect** code:
 
 ```ts
-// Bad: Unnecessary verb suffixes that don't add meaning
-function createMatchFor(player) {}     // Just use createMatch
-function computeValueFrom(data) {}       // Just use computeValue
-function updateConfigWith(options) {} // Just use updateConfig
-function convertDataTo(format) {}      // Just use convertData
-function validateInputBy(rules) {}      // Just use validateInput
-function searchItemsIn(container) {} // Just use searchItems
-function processEventOn(element) {}    // Just use processEvent
+// Redundant suffix repeats the relationship already shown by parameters
+function createMatchFor(player) {}      // The target player is obvious from args
+function computeValueFrom(data) {}      // The source data is already the param
+function updateConfigWith(options) {}   // "With" adds no new meaning
+function convertDataTo(format) {}       // The destination format is the param
+function validateInputBy(rules) {}      // The rule set is already visible
+function searchItemsIn(container) {}    // The scope is the argument
+function processEventOn(element) {}     // The element is already the argument
 
-// Bad: Method implementations with unnecessary suffixes
+// Method names should surface the primary action, not the preposition
 class TournamentService {
-  initializeGameFor(player) {}    // Just use initializeGame
-  calculateScoreFrom(results) {} // Just use calculateScore
-  updateStateWith(data) {}         // Just use updateState
+  initializeGameFor(player) {}
+  calculateScoreFrom(results) {}
+  updateStateWith(data) {}
 }
 
-// Bad: Arrow functions with unnecessary suffixes
-const transformDataWith = (options) => {};  // Just use transformData
-const prepareStateFor = (component) => {};  // Just use prepareState
-const validateBy = (rules) => {};  // Just use validate
-const searchIn = (scope) => {};  // Just use search
+// Arrow functions inherit the same readability problem
+const transformDataWith = (options) => {};
+const prepareStateFor = (component) => {};
+const validateBy = (rules) => {};
+const searchIn = (scope) => {};
 ```
 
 Examples of **correct** code:
 
 ```ts
-// Good: Clear, action-oriented names without suffixes
+// Concise names highlight the action; parameters show the relationship
 function createMatch(player) {}
 function computeValue(data) {}
 function updateConfig(options) {}
@@ -50,7 +50,7 @@ function validateInput(rules) {}
 function searchItems(container) {}
 function processEvent(element) {}
 
-// Good: Method implementations
+// Class methods stay consistent with the same pattern
 class TournamentService {
   initializeGame(player) {}
   calculateScore(results) {}
@@ -59,28 +59,28 @@ class TournamentService {
   filterUsers(criteria) {}
 }
 
-// Good: Arrow functions
+// Arrow functions without redundant suffixes
 const transformData = (options) => {};
 const prepareState = (component) => {};
 const validate = (rules) => {};
 const search = (scope) => {};
 
-// Good: Cases where the suffix adds necessary context
+// When the suffix carries essential domain context, allow it explicitly
 /* eslint-disable no-unnecessary-verb-suffix */
-function migrateDataFromLegacy(data) {}  // System context matters
-function mergeConfigWithDefaults(config) {}  // Combination context matters
-function convertTemperatureToCelsius(temp) {}  // Conversion target matters
-function sortUsersByRank(users) {}  // Sort criteria matters
-function searchProductsInCategory(category) {}  // Search scope matters
-function validateInputAgainstSchema(input) {}  // Validation context matters
+function migrateDataFromLegacy(data) {}        // Source system is material
+function mergeConfigWithDefaults(config) {}    // The combination rule matters
+function convertTemperatureToCelsius(temp) {}  // Destination scale matters
+function sortUsersByRank(users) {}             // Ranking dimension matters
+function searchProductsInCategory(category) {} // Category scoping matters
+function validateInputAgainstSchema(input) {}  // Validation target matters
 function processEventsUntilTimeout(events) {}  // Time boundary matters
-function computeScoreViaAlgorithm(data) {}  // Process context matters
+function computeScoreViaAlgorithm(data) {}     // Algorithm choice matters
 /* eslint-enable no-unnecessary-verb-suffix */
 ```
 
 ## When Not To Use It
 
-If your codebase heavily relies on verb suffixes for clarity or you have a specific naming convention that requires these suffixes, you may want to disable this rule. You can also disable it for specific functions where the suffix adds necessary context using `/* eslint-disable no-unnecessary-verb-suffix */` comments.
+Disable this rule when the suffix carries domain meaning that parameters alone cannot convey (e.g., security mode, data partition, migration origin). Prefer targeted disables near the affected declarations so the exception stays visible to readers.
 
 ## Further Reading
 
