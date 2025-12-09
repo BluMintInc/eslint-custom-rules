@@ -16,6 +16,7 @@ const DEFAULT_CONTAINERS: string[] = ['*Aggregation', 'previews', '*Previews'];
 function describeNestedPath(
   containerValue: TSESTree.ObjectExpression,
 ): string | null {
+  let fallback: string | null = null;
   for (const prop of containerValue.properties) {
     if (prop.type === AST_NODE_TYPES.SpreadElement) continue;
     if (!isProperty(prop)) continue;
@@ -31,12 +32,16 @@ function describeNestedPath(
         const childKey = getPropertyName(child);
         if (childKey) return `${firstKey}.${childKey}`;
       }
+
+      // Object container without usable child keys still signals nested intent
+      fallback = firstKey;
+      continue;
     }
 
-    return firstKey;
+    if (!fallback) fallback = firstKey;
   }
 
-  return null;
+  return fallback;
 }
 
 function isObjectExpression(
