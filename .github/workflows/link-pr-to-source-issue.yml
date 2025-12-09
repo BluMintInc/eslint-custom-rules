@@ -104,7 +104,7 @@ jobs:
           # Build "Closes ..." lines for any issues not already declared in PR body
           PREPEND_LINES=""
           for num in "${ISSUES_TO_CLOSE[@]}"; do
-            if ! printf '%s' "$CURRENT_BODY" | grep -Ei -q "(^|[[:space:]])(closes|fixes|resolves)[[:space:]]+#${num}([[:space:]]|$)"; then
+            if ! printf '%s' "$CURRENT_BODY" | grep -Ei -q "(^|[[:space:]])(closes|fixes|resolves)[[:space:]]*#${num}([[:space:]]|$)"; then
               PREPEND_LINES="${PREPEND_LINES}Closes #${num}\n"
             fi
           done
