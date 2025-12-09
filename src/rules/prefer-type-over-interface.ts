@@ -14,7 +14,10 @@ export const preferTypeOverInterface: TSESLint.RuleModule<
     },
     schema: [],
     messages: {
-      preferType: 'Prefer using type alias over interface.',
+      preferType:
+        'Interface "{{interfaceName}}" should be declared as a type alias. ' +
+        'Interfaces merge across declarations and can reorder properties, which makes the public shape change without touching this file. ' +
+        'Replace `interface` with `type` and use intersections (for example, `type {{interfaceName}} = Base & { field: string }`) to keep the contract closed and predictable.',
     },
     fixable: 'code',
   },
@@ -26,6 +29,9 @@ export const preferTypeOverInterface: TSESLint.RuleModule<
         context.report({
           node,
           messageId: 'preferType',
+          data: {
+            interfaceName: node.id.name,
+          },
           fix(fixer) {
             const sourceCode = context.getSourceCode();
             const openingBrace = sourceCode.getTokenAfter(node.id, {
