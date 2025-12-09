@@ -14,13 +14,43 @@ export const noMemoizeOnStatic = createRule<[], MessageIds>({
     schema: [],
     messages: {
       noMemoizeOnStatic:
-        '@Memoize() decorator should not be used on static methods',
+        'Static member "{{methodName}}" uses @Memoize(), which shares one cache across every caller instead of per instance. Static memoization leaks stale or cross-tenant data because the cache survives between requests and deployments. Remove @Memoize() or move the logic into an instance method so each consumer gets its own cache lifecycle.',
     },
   },
   defaultOptions: [],
   create(context) {
     // Track renamed imports of Memoize
     const memoizeAliases = new Set(['Memoize']);
+
+    const getMethodName = (decoratorNode: TSESTree.Decorator): string => {
+      const parent = decoratorNode.parent;
+      if (
+        parent &&
+        parent.type === AST_NODE_TYPES.MethodDefinition &&
+        parent.key
+      ) {
+        const key = parent.key;
+        if (key.type === AST_NODE_TYPES.Identifier) {
+          return key.name;
+        }
+
+        if (key.type === AST_NODE_TYPES.PrivateIdentifier) {
+          return `#${key.name}`;
+        }
+
+        if (key.type === AST_NODE_TYPES.Literal) {
+          if (typeof key.value === 'string') {
+            return key.value;
+          }
+
+          if (typeof key.value === 'number') {
+            return String(key.value);
+          }
+        }
+      }
+
+      return 'this static member';
+    };
 
     return {
       ImportSpecifier(node: TSESTree.ImportSpecifier) {
@@ -48,6 +78,9 @@ export const noMemoizeOnStatic = createRule<[], MessageIds>({
               context.report({
                 node: decorator,
                 messageId: 'noMemoizeOnStatic',
+                data: {
+                  methodName: getMethodName(decorator),
+                },
               });
             }
           }
