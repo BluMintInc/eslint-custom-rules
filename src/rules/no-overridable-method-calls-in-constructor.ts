@@ -17,7 +17,7 @@ export const noOverridableMethodCallsInConstructor = createRule<[], MessageIds>(
       schema: [],
       messages: {
         noOverridableMethodCallsInConstructor:
-          'Avoid calling overridable methods in constructors. This can lead to unexpected behavior when the method is overridden in a derived class.',
+          'Constructor calls overridable or abstract {{target}} member "{{methodName}}", which executes subclass overrides before the subclass constructor finishes initializing its fields. This can read undefined state or run side effects on a partially constructed instance. Move the call to a post-construction initializer or make the member private/static so construction never executes overridable code.',
       },
     },
     defaultOptions: [],
@@ -235,6 +235,10 @@ export const noOverridableMethodCallsInConstructor = createRule<[], MessageIds>(
                   context.report({
                     node: bodyNode,
                     messageId: 'noOverridableMethodCallsInConstructor',
+                    data: {
+                      methodName,
+                      target: isSuper ? 'super' : 'this',
+                    },
                   });
                 }
                 // Overridable methods are a problem when called on 'this'
@@ -242,6 +246,10 @@ export const noOverridableMethodCallsInConstructor = createRule<[], MessageIds>(
                   context.report({
                     node: bodyNode,
                     messageId: 'noOverridableMethodCallsInConstructor',
+                    data: {
+                      methodName,
+                      target: 'this',
+                    },
                   });
                 }
               }
@@ -268,6 +276,10 @@ export const noOverridableMethodCallsInConstructor = createRule<[], MessageIds>(
                   context.report({
                     node: bodyNode,
                     messageId: 'noOverridableMethodCallsInConstructor',
+                    data: {
+                      methodName: propertyName,
+                      target: isSuper ? 'super' : 'this',
+                    },
                   });
                 }
                 // Overridable methods are a problem when accessed on 'this'
@@ -275,6 +287,10 @@ export const noOverridableMethodCallsInConstructor = createRule<[], MessageIds>(
                   context.report({
                     node: bodyNode,
                     messageId: 'noOverridableMethodCallsInConstructor',
+                    data: {
+                      methodName: propertyName,
+                      target: 'this',
+                    },
                   });
                 }
               }

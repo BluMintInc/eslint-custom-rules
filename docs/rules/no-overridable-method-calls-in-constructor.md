@@ -4,137 +4,100 @@
 
 <!-- end auto-generated rule header -->
 
-This rule aims to prevent a common pitfall in object-oriented programming where an overridable method (a method in a base class that is intended to be implemented or overridden by derived classes) is called from the constructor of the base class.
+Calling an overridable or abstract member inside a constructor executes subclass code before that subclass finishes initializing its own fields. The subclass version can read `undefined`, mutate partially constructed state, or trigger side effects that rely on initialization that has not happened yet.
 
 ## Rule Details
 
-When a base class constructor calls an overridable method, the version of the method in the most derived class is executed. However, the constructor of this derived class will not have completed its own initialization (e.g., assigning its own instance properties) because the `super()` call (which invokes the base class constructor) must complete first. If the overridden method in the derived class relies on these uninitialized properties, it can lead to runtime errors or incorrect logic.
+- Reports calls or property accesses on `this` or `super` that target overridable or abstract members inside a constructor.
+- Static and private members are allowed because they cannot be overridden.
+- Computed property names are ignored because the rule cannot determine whether they are overridable.
+
+When the rule fires, the message explains which member was called and why it is risky, and suggests moving the call after construction or making the member non-overridable.
 
 ### Examples of **incorrect** code for this rule:
 
 ```typescript
 abstract class Vehicle {
-  protected vehicleType: string;
-
   constructor() {
-    // PROBLEM: Calls overridable method 'displayType' from base constructor.
-    // When 'Car' is instantiated, Car.displayType() is called before
-    // Car's constructor has set 'this.numberOfDoors'.
-    this.displayType();
+    this.displayType(); // ❌ Constructor calls overridable "displayType"
   }
 
-  // Abstract method, to be implemented by derived classes
-  abstract getTypeSpecificDetails(): string;
-
-  log(message: string) {
-    console.log(message);
-  }
+  abstract getDetails(): string;
 
   displayType() {
-    // This method might be overridden, or use overridden methods like getTypeSpecificDetails
-    this.log(`Vehicle Type: ${this.vehicleType}, Details: ${this.getTypeSpecificDetails()}`);
+    return this.getDetails();
   }
 }
 
 class Car extends Vehicle {
-  private numberOfDoors: number;
+  private doors: number;
 
   constructor(doors: number) {
-    super(); // Base constructor calls displayType() -> Car.displayType() or Car.getTypeSpecificDetails()
-    this.numberOfDoors = doors; // Initialized AFTER super() completes
-    this.vehicleType = 'Car';
+    super(); // Car.getDetails runs before doors is assigned
+    this.doors = doors;
   }
 
-  getTypeSpecificDetails(): string {
-    // This would be called by displayType() during super() execution.
-    // If it relied on 'this.numberOfDoors', it would be undefined.
-    return `${this.numberOfDoors} doors`; // 'this.numberOfDoors' is undefined here if called from base constructor
+  getDetails() {
+    return `${this.doors} doors`; // doors is undefined during super()
   }
 }
-
-const myCar = new Car(4); // Leads to error or incorrect log because numberOfDoors is undefined during initial displayType call
 ```
 
 ### Examples of **correct** code for this rule:
 
-**Option 1: Use an initialization method**
-
 ```typescript
 abstract class Vehicle {
-  protected vehicleType: string;
-
   constructor() {
-    // Base constructor does not call overridable methods.
+    // No overridable calls here
   }
 
-  // Call this method after derived class is fully constructed.
-  public initialize() {
-    this.displayType();
-  }
+  abstract getDetails(): string;
 
-  abstract getTypeSpecificDetails(): string;
-
-  log(message: string) {
-    console.log(message);
-  }
-
-  displayType() {
-    this.log(`Vehicle Type: ${this.vehicleType}, Details: ${this.getTypeSpecificDetails()}`);
+  initialize() {
+    return this.getDetails(); // Call after subclasses finish constructing
   }
 }
 
 class Car extends Vehicle {
-  private numberOfDoors: number;
+  private doors: number;
 
   constructor(doors: number) {
     super();
-    this.numberOfDoors = doors;
-    this.vehicleType = 'Car';
+    this.doors = doors;
   }
 
-  getTypeSpecificDetails(): string {
-    return `${this.numberOfDoors} doors`;
+  getDetails() {
+    return `${this.doors} doors`;
   }
 }
 
-const myCar = new Car(4);
-myCar.initialize(); // Works correctly as Car is fully initialized.
+const car = new Car(4);
+car.initialize(); // ✅ Subclass state is ready
 ```
-
-**Option 2: Pass necessary data to base constructor or methods**
 
 ```typescript
 abstract class Vehicle {
-  protected vehicleType: string;
-
-  constructor(vehicleType: string, typeSpecificDetails: string) {
-    this.vehicleType = vehicleType;
-    // Display logic uses passed-in, already resolved data, not overridable methods.
-    this.log(`Vehicle Type: ${this.vehicleType}, Details: ${typeSpecificDetails}`);
+  protected constructor(type: string, details: string) {
+    this.log(type, details); // ✅ Uses constructor parameters, not overridable methods
   }
 
-  log(message: string) {
-    console.log(message);
+  protected log(type: string, details: string) {
+    console.log(type, details);
   }
 }
 
 class Car extends Vehicle {
-  private numberOfDoors: number;
-
   constructor(doors: number) {
-    // Derived class prepares its specific details before calling super.
     const details = `${doors} doors`;
-    super('Car', details); // Pass all necessary info to base
-    this.numberOfDoors = doors;
+    super('car', details); // ✅ Pass data instead of invoking overridable members
   }
 }
-
-const myCar = new Car(4); // Works correctly.
 ```
 
 ## When Not To Use It
 
-If your codebase doesn't use class inheritance or if you're working with a framework that requires calling methods in constructors, you might want to disable this rule.
+- Projects that avoid inheritance entirely (e.g., prefer composition).
+- Frameworks that guarantee safe constructor hooks and require these calls.
 
 ## Further Reading
 
