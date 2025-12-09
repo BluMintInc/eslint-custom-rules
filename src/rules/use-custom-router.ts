@@ -16,7 +16,7 @@ export const useCustomRouter = createRule<[], MessageIds>({
     schema: [],
     messages: {
       useCustomRouter:
-        'Import useRouter from src/hooks/routing/useRouter instead of next/router',
+        'useRouter import "{{imports}}" comes from next/router, which bypasses the app-specific hook that applies auth checks, analytics, and redirect helpers. Import it from src/hooks/routing/useRouter so routing code stays consistent with the rest of the app.',
     },
   },
   defaultOptions: [],
@@ -35,6 +35,9 @@ export const useCustomRouter = createRule<[], MessageIds>({
             context.report({
               node,
               messageId: 'useCustomRouter',
+              data: {
+                imports: specifiers.map((specifier) => specifier.local.name).join(', '),
+              },
               fix(fixer) {
                 // If there are other imports from next/router, keep them
                 const otherSpecifiers = node.specifiers.filter(

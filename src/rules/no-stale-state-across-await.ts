@@ -16,7 +16,7 @@ export const noStaleStateAcrossAwait = createRule<[], MessageIds>({
     schema: [],
     messages: {
       staleStateAcrossAwait:
-        'State setter "{{setterName}}" is called both before and after an async boundary. This can cause stale intermediate state. Consider using atomic updates or explicit loading sentinels with eslint-disable-next-line.',
+        'State setter "{{setterName}}" runs on both sides of {{boundaryType}}. Updates issued before the async boundary can resolve after later updates and overwrite fresher data, leaving the UI in a stale loading or placeholder state. Keep "{{setterName}}" updates on one side of the async boundary or consolidate into a single atomic update after the async work; if you intentionally use a sentinel value, document it with eslint-disable-next-line and a short comment explaining why.',
     },
   },
   defaultOptions: [],
@@ -53,7 +53,7 @@ export const noStaleStateAcrossAwait = createRule<[], MessageIds>({
       ) {
         // Collect all setter calls and async boundaries in this function
         const setterCalls: { name: string; position: number }[] = [];
-        const asyncBoundaries: { position: number; type: string }[] = [];
+        const asyncBoundaries: { position: number; label: string }[] = [];
 
         // Walk through the function body to find setter calls and async boundaries
         function walkNode(n: TSESTree.Node, skipNestedFunctions = true) {
@@ -77,7 +77,7 @@ export const noStaleStateAcrossAwait = createRule<[], MessageIds>({
             ) {
               asyncBoundaries.push({
                 position: n.range[0],
-                type: 'then',
+                label: 'a .then() callback',
               });
 
               // Walk into .then() callback arguments to find setter calls
@@ -98,14 +98,14 @@ export const noStaleStateAcrossAwait = createRule<[], MessageIds>({
           if (n.type === AST_NODE_TYPES.AwaitExpression) {
             asyncBoundaries.push({
               position: n.range[0],
-              type: 'await',
+              label: 'an await boundary',
             });
           }
 
           if (n.type === AST_NODE_TYPES.YieldExpression) {
             asyncBoundaries.push({
               position: n.range[0],
-              type: 'yield',
+              label: 'a yield boundary',
             });
           }
 
@@ -180,6 +180,7 @@ export const noStaleStateAcrossAwait = createRule<[], MessageIds>({
                 messageId: 'staleStateAcrossAwait',
                 data: {
                   setterName,
+                  boundaryType: boundary.label,
                 },
               });
               break; // Only report once per setter
