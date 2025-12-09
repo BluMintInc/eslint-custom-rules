@@ -1,6 +1,6 @@
 name: Launch Cursor Agent on Bot Checks
 
-on:
+'on':
   check_run:
     types: [completed]
 
@@ -17,24 +17,26 @@ jobs:
     if: ${{ github.event.check_run.pull_requests[0].number }}
     runs-on: ubuntu-latest
     concurrency:
-      group: cursor-bot-review-${{ github.event.check_run.pull_requests[0].head.sha || github.run_id }}
+      group: cursor-bot-review-${{ github.event.check_run.pull_requests[0].number || github.run_id }}
       cancel-in-progress: false
     steps:
       - name: Checkout
-        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955  # v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Determine required checks completion
-        id: checks
+      - name: Install jq
         run: |
           if ! command -v jq >/dev/null 2>&1; then
             sudo apt-get update && sudo apt-get install -y jq
           fi
 
+      - name: Determine required checks completion
+        id: checks
+        run: |
           PR_NUMBER='${{ github.event.check_run.pull_requests[0].number }}'
           HEAD_SHA='${{ github.event.check_run.pull_requests[0].head.sha }}'
           HEAD_REF='${{ github.event.check_run.pull_requests[0].head.ref }}'
@@ -62,12 +64,8 @@ jobs:
 
       - name: Fetch unresolved bot comments
         id: comments
-        if: steps.checks.outputs.missing_required != 'true'
+        if: steps.checks.outputs.missing_required == 'false'
         run: |
-          if ! command -v jq >/dev/null 2>&1; then
-            sudo apt-get update && sudo apt-get install -y jq
-          fi
-
           PR=${{ steps.checks.outputs.pr_number }}
           COMMENTS=$(./scripts/pr-check-bot-comments.sh --pr="$PR" --limit=5)
           echo "$COMMENTS" > /tmp/pr-review-comments.md
@@ -83,12 +81,12 @@ jobs:
           fi
 
       - name: Exit if no bot comments
-        if: steps.comments.outputs.no_comments == 'true'
+        if: steps.checks.outputs.missing_required == 'false' && steps.comments.outputs.no_comments == 'true'
         run: echo "No unresolved bot comments; skipping agent launch."
 
       - name: Build bot review context and prompt
         id: prompt
-        if: steps.comments.outputs.no_comments != 'true'
+        if: steps.checks.outputs.missing_required == 'false' && steps.comments.outputs.no_comments != 'true'
         run: |
           PR=${{ steps.checks.outputs.pr_number }}
           HEAD_REF='${{ steps.checks.outputs.head_ref }}'
@@ -130,15 +128,13 @@ jobs:
 
       - name: Launch Cursor Background Agent for bot comments
         id: launch
-        if: steps.comments.outputs.no_comments != 'true'
+        if: steps.checks.outputs.missing_required == 'false' && steps.comments.outputs.no_comments != 'true'
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
           CURSOR_WEBHOOK_SECRET: ${{ secrets.CURSOR_WEBHOOK_SECRET }}
           CURSOR_WEBHOOK_URL: ${{ secrets.CURSOR_WEBHOOK_URL }}
         run: |
-          if ! command -v jq >/dev/null 2>&1; then
-            sudo apt-get update && sudo apt-get install -y jq
-          fi
+          echo "::add-mask::${CURSOR_API_KEY}"
 
           JSON_PAYLOAD=$(jq -n \
             --rawfile prompt_text /tmp/pr-review-prompt.txt \
@@ -167,17 +163,24 @@ jobs:
           HTTP_BODY="${HTTP_RESPONSE%HTTPSTATUS:*}"
 
           echo "Cursor API HTTP status: $HTTP_STATUS"
-          echo "Cursor API response body (raw):"
-          if ! echo "$HTTP_BODY" | jq '.'; then
-            echo "$HTTP_BODY"
-          fi
-
           if [[ "$HTTP_STATUS" =~ ^2 ]]; then
             AGENT_URL=$(echo "$HTTP_BODY" | jq -r '.target.url // empty')
+            SAFE_SUMMARY=$(echo "$HTTP_BODY" | jq '{target: .target, status: "success"}' 2>/dev/null || true)
+            if [ -n "$SAFE_SUMMARY" ]; then
+              echo "Cursor API response (safe): $SAFE_SUMMARY"
+            fi
+
             echo "agent_url=$AGENT_URL" >> $GITHUB_OUTPUT
             echo "launched=true" >> $GITHUB_OUTPUT
           else
-            echo "::warning::Cursor API returned status $HTTP_STATUS. See response body above for details."
+            SAFE_ERROR=$(echo "$HTTP_BODY" | jq '{error: .error, message: .message}' 2>/dev/null || true)
+            if [ -n "$SAFE_ERROR" ]; then
+              echo "Cursor API error (safe): $SAFE_ERROR"
+            else
+              echo "Cursor API response not JSON; body length ${#HTTP_BODY} (redacted)."
+            fi
+
+            echo "::warning::Cursor API returned status $HTTP_STATUS. See response details above."
             echo "agent_url=" >> $GITHUB_OUTPUT
             echo "launched=false" >> $GITHUB_OUTPUT
           fi
@@ -190,4 +193,3 @@ jobs:
           URL='${{ steps.launch.outputs.agent_url }}'
           PR=${{ steps.checks.outputs.pr_number }}
           gh pr comment "$PR" --body "✅ Launched Cursor agent to address bot review comments after CodeRabbit and Cursor Bugbot checks passed. Agent: $URL. Changes are pushed directly to this PR branch."
-
