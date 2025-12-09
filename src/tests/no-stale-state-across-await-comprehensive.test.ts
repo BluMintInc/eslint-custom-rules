@@ -15,6 +15,14 @@ import { noStaleStateAcrossAwait } from '../rules/no-stale-state-across-await';
  * 8. Edge cases and complex patterns
  */
 
+const expectStaleStateError = (
+  setterName: string,
+  boundaryType: string,
+) => ({
+  messageId: 'staleStateAcrossAwait' as const,
+  data: { setterName, boundaryType },
+});
+
 ruleTesterJsx.run(
   'no-stale-state-across-await-comprehensive',
   noStaleStateAcrossAwait,
@@ -504,10 +512,7 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
+        expectStaleStateError('setData', 'an await boundary'),
         ],
       },
 
@@ -532,14 +537,8 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setCache' },
-          },
+        expectStaleStateError('setData', 'an await boundary'),
+        expectStaleStateError('setCache', 'an await boundary'),
         ],
       },
 
@@ -562,10 +561,7 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
+        expectStaleStateError('setData', 'an await boundary'),
         ],
       },
 
@@ -591,14 +587,8 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setUsers' },
-          },
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setLoading' },
-          },
+        expectStaleStateError('setUsers', 'an await boundary'),
+        expectStaleStateError('setLoading', 'an await boundary'),
         ],
       },
 
@@ -621,10 +611,7 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
+        expectStaleStateError('setData', 'an await boundary'),
         ],
       },
 
@@ -644,10 +631,7 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setStatus' },
-          },
+        expectStaleStateError('setStatus', 'a yield boundary'),
         ],
       },
 
@@ -669,10 +653,7 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
+        expectStaleStateError('setData', 'a .then() callback'),
         ],
       },
 
@@ -696,10 +677,7 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
+        expectStaleStateError('setData', 'a .then() callback'),
         ],
       },
 
@@ -717,10 +695,7 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
+        expectStaleStateError('setData', 'a yield boundary'),
         ],
       },
 
@@ -744,10 +719,7 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
+        expectStaleStateError('setData', 'an await boundary'),
         ],
       },
 
@@ -770,10 +742,7 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
+        expectStaleStateError('setData', 'an await boundary'),
         ],
       },
 
@@ -796,10 +765,7 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setItems' },
-          },
+        expectStaleStateError('setItems', 'an await boundary'),
         ],
       },
 
@@ -820,10 +786,7 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
+        expectStaleStateError('setData', 'an await boundary'),
         ],
       },
 
@@ -845,10 +808,7 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
+        expectStaleStateError('setData', 'an await boundary'),
         ],
       },
 
@@ -870,10 +830,7 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
+        expectStaleStateError('setData', 'an await boundary'),
         ],
       },
 
@@ -891,10 +848,7 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
+        expectStaleStateError('setData', 'an await boundary'),
         ],
       },
 
@@ -912,10 +866,7 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
+        expectStaleStateError('setData', 'an await boundary'),
         ],
       },
 
@@ -933,10 +884,7 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
+        expectStaleStateError('setData', 'an await boundary'),
         ],
       },
 
@@ -961,10 +909,7 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
+        expectStaleStateError('setData', 'an await boundary'),
         ],
       },
 
@@ -987,10 +932,7 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
+        expectStaleStateError('setData', 'an await boundary'),
         ],
       },
 
@@ -1013,10 +955,7 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
+        expectStaleStateError('setData', 'an await boundary'),
         ],
       },
 
@@ -1039,10 +978,7 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
+        expectStaleStateError('setData', 'an await boundary'),
         ],
       },
 
@@ -1067,14 +1003,8 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setStatus' },
-          },
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setProgress' },
-          },
+        expectStaleStateError('setStatus', 'a yield boundary'),
+        expectStaleStateError('setProgress', 'a yield boundary'),
         ],
       },
 
@@ -1101,10 +1031,7 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
+        expectStaleStateError('setData', 'an await boundary'),
         ],
       },
     ],
