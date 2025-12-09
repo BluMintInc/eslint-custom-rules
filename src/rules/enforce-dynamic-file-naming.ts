@@ -18,85 +18,93 @@ export default createRule<
     schema: [],
     messages: {
       requireDynamicExtension:
-        'Files with disabled @blumintinc/blumint/enforce-dynamic-imports or @blumintinc/blumint/require-dynamic-firebase-imports rule must use .dynamic.ts(x) extension',
+        'File "{{fileName}}" disables "{{ruleName}}" but keeps the standard {{extension}} extension, hiding that dynamic-import safeguards are bypassed. Rename to "{{suggestedName}}" (or another *.dynamic.ts/tsx name) so the exception is visible and static-import hotspots stay easy to audit.',
       requireDisableDirective:
-        'Files with .dynamic.ts(x) extension must have at least one @blumintinc/blumint/enforce-dynamic-imports or @blumintinc/blumint/require-dynamic-firebase-imports disable directive',
+        'File "{{fileName}}" uses the ".dynamic" suffix that signals dynamic-import rules are disabled, but it lacks a disable directive for "@blumintinc/blumint/enforce-dynamic-imports" or "@blumintinc/blumint/require-dynamic-firebase-imports". Add the matching disable comment for the static import you need, or rename the file to "{{standardName}}" so the rules keep protecting other files.',
     },
   },
   defaultOptions: [],
   create(context) {
-    // Get the file path and name
     const filePath = context.getFilename();
     const fileName = path.basename(filePath);
+    const extension = path.extname(fileName) || '.ts';
 
-    // Check if the file is a TypeScript file (ends with .ts or .tsx)
-    // Ignore files with other extensions like .test.ts, .deprecated.ts, etc.
     const isTypeScriptFile = /^[^.]+\.tsx?$/.test(fileName);
 
-    // Check if the file has .dynamic.ts or .dynamic.tsx extension
     const hasDynamicExtension = /\.dynamic\.tsx?$/.test(fileName);
 
-    // Skip if not a TypeScript file or has other extensions
     if (!isTypeScriptFile && !hasDynamicExtension) {
       return {};
     }
 
-    // Track if we found a disable directive for enforce-dynamic-imports
     let foundDisableDirective = false;
+    let disabledRuleName: string | null = null;
 
     return {
       Program() {
-        // Get the source code
         const sourceCode = context.getSourceCode();
         const comments = sourceCode.getAllComments();
 
-        // Check all comments for disable directives
         for (const comment of comments) {
           const commentText = comment.value.trim();
+          const disablesEnforceDynamicImports = commentText.includes(
+            '@blumintinc/blumint/enforce-dynamic-imports',
+          );
+          const disablesRequireDynamicFirebaseImports = commentText.includes(
+            '@blumintinc/blumint/require-dynamic-firebase-imports',
+          );
+          const disablesTargetRule =
+            disablesEnforceDynamicImports || disablesRequireDynamicFirebaseImports;
 
-          // Check for inline disable directive for either rule
-          if (
+          const inlineDisable =
             (commentText.includes('eslint-disable-next-line') ||
               commentText.includes('ednl')) &&
-            (commentText.includes(
-              '@blumintinc/blumint/enforce-dynamic-imports',
-            ) ||
-              commentText.includes(
-                '@blumintinc/blumint/require-dynamic-firebase-imports',
-              ))
-          ) {
-            foundDisableDirective = true;
-            break;
-          }
+            disablesTargetRule;
+          const blockDisable =
+            commentText.includes('eslint-disable ') && disablesTargetRule;
 
-          // Check for block disable directive for either rule
-          if (
-            commentText.includes('eslint-disable ') &&
-            (commentText.includes(
-              '@blumintinc/blumint/enforce-dynamic-imports',
-            ) ||
-              commentText.includes(
-                '@blumintinc/blumint/require-dynamic-firebase-imports',
-              ))
-          ) {
+          if (inlineDisable || blockDisable) {
             foundDisableDirective = true;
+            if (disablesEnforceDynamicImports && !disablesRequireDynamicFirebaseImports) {
+              disabledRuleName = '@blumintinc/blumint/enforce-dynamic-imports';
+            } else if (
+              disablesRequireDynamicFirebaseImports &&
+              !disablesEnforceDynamicImports
+            ) {
+              disabledRuleName = '@blumintinc/blumint/require-dynamic-firebase-imports';
+            } else {
+              disabledRuleName =
+                '@blumintinc/blumint/enforce-dynamic-imports or @blumintinc/blumint/require-dynamic-firebase-imports';
+            }
             break;
           }
         }
 
-        // If we found a disable directive but the file doesn't have .dynamic extension
         if (foundDisableDirective && !hasDynamicExtension) {
+          const suggestedName = fileName.replace(/\.tsx?$/, '.dynamic$&');
           context.report({
             loc: { line: 1, column: 0 },
             messageId: 'requireDynamicExtension',
+            data: {
+              fileName,
+              ruleName:
+                disabledRuleName ??
+                '@blumintinc/blumint/enforce-dynamic-imports or @blumintinc/blumint/require-dynamic-firebase-imports',
+              extension,
+              suggestedName,
+            },
           });
         }
 
-        // If the file has .dynamic extension but no disable directive
         if (hasDynamicExtension && !foundDisableDirective) {
+          const standardName = fileName.replace(/\.dynamic(?=\.tsx?$)/, '');
           context.report({
             loc: { line: 1, column: 0 },
             messageId: 'requireDisableDirective',
+            data: {
+              fileName,
+              standardName,
+            },
           });
         }
       },

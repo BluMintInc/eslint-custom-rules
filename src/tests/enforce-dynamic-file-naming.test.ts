@@ -71,47 +71,111 @@ import SomeModule from './SomeModule';`,
       code: `// ednl @blumintinc/blumint/enforce-dynamic-imports
 import SomeModule from './SomeModule';`,
       filename: 'example.ts',
-      errors: [{ messageId: 'requireDynamicExtension' }],
+      errors: [
+        {
+          messageId: 'requireDynamicExtension',
+          data: {
+            fileName: 'example.ts',
+            ruleName: '@blumintinc/blumint/enforce-dynamic-imports',
+            extension: '.ts',
+            suggestedName: 'example.dynamic.ts',
+          },
+        },
+      ],
     },
     // File without .dynamic.tsx extension but with enforce-dynamic-imports disable directive
     {
       code: `// ednl @blumintinc/blumint/enforce-dynamic-imports
 import SomeModule from './SomeModule';`,
       filename: 'example.tsx',
-      errors: [{ messageId: 'requireDynamicExtension' }],
+      errors: [
+        {
+          messageId: 'requireDynamicExtension',
+          data: {
+            fileName: 'example.tsx',
+            ruleName: '@blumintinc/blumint/enforce-dynamic-imports',
+            extension: '.tsx',
+            suggestedName: 'example.dynamic.tsx',
+          },
+        },
+      ],
     },
     // File without .dynamic.ts extension but with require-dynamic-firebase-imports disable directive
     {
       code: `// ednl @blumintinc/blumint/require-dynamic-firebase-imports
 import SomeModule from 'firebase/auth';`,
       filename: 'example.ts',
-      errors: [{ messageId: 'requireDynamicExtension' }],
+      errors: [
+        {
+          messageId: 'requireDynamicExtension',
+          data: {
+            fileName: 'example.ts',
+            ruleName: '@blumintinc/blumint/require-dynamic-firebase-imports',
+            extension: '.ts',
+            suggestedName: 'example.dynamic.ts',
+          },
+        },
+      ],
     },
     // File without .dynamic.tsx extension but with require-dynamic-firebase-imports disable directive
     {
       code: `// ednl @blumintinc/blumint/require-dynamic-firebase-imports
 import SomeModule from 'firebase/auth';`,
       filename: 'example.tsx',
-      errors: [{ messageId: 'requireDynamicExtension' }],
+      errors: [
+        {
+          messageId: 'requireDynamicExtension',
+          data: {
+            fileName: 'example.tsx',
+            ruleName: '@blumintinc/blumint/require-dynamic-firebase-imports',
+            extension: '.tsx',
+            suggestedName: 'example.dynamic.tsx',
+          },
+        },
+      ],
     },
     // File with .dynamic.ts extension but without disable directive
     {
       code: `import SomeModule from './SomeModule';`,
       filename: 'example.dynamic.ts',
-      errors: [{ messageId: 'requireDisableDirective' }],
+      errors: [
+        {
+          messageId: 'requireDisableDirective',
+          data: {
+            fileName: 'example.dynamic.ts',
+            standardName: 'example.ts',
+          },
+        },
+      ],
     },
     // File with .dynamic.tsx extension but without disable directive
     {
       code: `import SomeModule from './SomeModule';`,
       filename: 'example.dynamic.tsx',
-      errors: [{ messageId: 'requireDisableDirective' }],
+      errors: [
+        {
+          messageId: 'requireDisableDirective',
+          data: {
+            fileName: 'example.dynamic.tsx',
+            standardName: 'example.tsx',
+          },
+        },
+      ],
     },
     // File with .dynamic.tsx extension but with disable directive for another rule
     {
       code: `// ednl no-console
 console.log('Debugging');`,
       filename: 'example.dynamic.tsx',
-      errors: [{ messageId: 'requireDisableDirective' }],
+      errors: [
+        {
+          messageId: 'requireDisableDirective',
+          data: {
+            fileName: 'example.dynamic.tsx',
+            standardName: 'example.tsx',
+          },
+        },
+      ],
     },
   ],
 });
