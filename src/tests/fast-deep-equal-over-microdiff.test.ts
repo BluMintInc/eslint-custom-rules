@@ -1,6 +1,11 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { fastDeepEqualOverMicrodiff } from '../rules/fast-deep-equal-over-microdiff';
 
+const messageData = (diffName = 'diff', fastEqualName = 'isEqual') => ({
+  diffName,
+  fastEqualName,
+});
+
 ruleTesterTs.run('fast-deep-equal-over-microdiff', fastDeepEqualOverMicrodiff, {
   valid: [
     // Using fast-deep-equal correctly
@@ -101,7 +106,7 @@ function maybeEqual(a, b) {
 function areObjectsEqual(obj1, obj2) {
   return diff(obj1, obj2).length === 0;
 }`,
-      errors: [{ messageId: 'useFastDeepEqual' }],
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
       output: `import { diff } from 'microdiff';
 import isEqual from 'fast-deep-equal';
 
@@ -116,7 +121,7 @@ function areObjectsEqual(obj1, obj2) {
 function areObjectsEqual(obj1, obj2) {
   return diff(obj1, obj2).length == 0;
 }`,
-      errors: [{ messageId: 'useFastDeepEqual' }],
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
       output: `import { diff } from 'microdiff';
 import isEqual from 'fast-deep-equal';
 
@@ -131,7 +136,7 @@ function areObjectsEqual(obj1, obj2) {
 function objectsAreDifferent(obj1, obj2) {
   return diff(obj1, obj2).length !== 0;
 }`,
-      errors: [{ messageId: 'useFastDeepEqual' }],
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
       output: `import { diff } from 'microdiff';
 import isEqual from 'fast-deep-equal';
 
@@ -146,7 +151,7 @@ function objectsAreDifferent(obj1, obj2) {
 function objectsAreDifferent(obj1, obj2) {
   return diff(obj1, obj2).length != 0;
 }`,
-      errors: [{ messageId: 'useFastDeepEqual' }],
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
       output: `import { diff } from 'microdiff';
 import isEqual from 'fast-deep-equal';
 
@@ -161,7 +166,7 @@ function objectsAreDifferent(obj1, obj2) {
 function areObjectsEqual(obj1, obj2) {
   return !diff(obj1, obj2).length;
 }`,
-      errors: [{ messageId: 'useFastDeepEqual' }],
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
       output: `import { diff } from 'microdiff';
 import isEqual from 'fast-deep-equal';
 
@@ -179,7 +184,7 @@ function updateIfNeeded(obj1, obj2) {
   }
   return true;
 }`,
-      errors: [{ messageId: 'useFastDeepEqual' }],
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
       output: `import { diff } from 'microdiff';
 import isEqual from 'fast-deep-equal';
 
@@ -200,7 +205,7 @@ function updateIfNeeded(obj1, obj2) {
   }
   return true;
 }`,
-      errors: [{ messageId: 'useFastDeepEqual' }],
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
       output: `import { diff } from 'microdiff';
 import isEqual from 'fast-deep-equal';
 
@@ -223,7 +228,7 @@ function areObjectsEqual(obj1, obj2) {
 function objectsAreTheSame(obj1, obj2) {
   return isEqual(obj1, obj2);
 }`,
-      errors: [{ messageId: 'useFastDeepEqual' }],
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
       output: `import { diff } from 'microdiff';
 import isEqual from 'fast-deep-equal';
 
@@ -242,7 +247,12 @@ function objectsAreTheSame(obj1, obj2) {
 function areObjectsEqual(obj1, obj2) {
   return compareObjects(obj1, obj2).length === 0;
 }`,
-      errors: [{ messageId: 'useFastDeepEqual' }],
+      errors: [
+        {
+          messageId: 'useFastDeepEqual',
+          data: messageData('compareObjects'),
+        },
+      ],
       output: `import { diff as compareObjects } from 'microdiff';
 import isEqual from 'fast-deep-equal';
 
@@ -258,7 +268,12 @@ import deepEqual from 'fast-deep-equal';
 function areObjectsEqual(obj1, obj2) {
   return diff(obj1, obj2).length === 0;
 }`,
-      errors: [{ messageId: 'useFastDeepEqual' }],
+      errors: [
+        {
+          messageId: 'useFastDeepEqual',
+          data: messageData('diff', 'deepEqual'),
+        },
+      ],
       output: `import { diff } from 'microdiff';
 import deepEqual from 'fast-deep-equal';
 
@@ -273,7 +288,7 @@ function areObjectsEqual(obj1, obj2) {
 function areObjectsEqual(a, b) {
   return diff(a, b).length === 0;
 }`,
-      errors: [{ messageId: 'useFastDeepEqual' }],
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
       output: `import diff from 'microdiff';
 import isEqual from 'fast-deep-equal';
 
@@ -289,7 +304,7 @@ function areObjectsEqual(a, b) {
   const changes = diff(a, b);
   return changes.length === 0;
 }`,
-      errors: [{ messageId: 'useFastDeepEqual' }],
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
       output: `import diff from 'microdiff';
 import isEqual from 'fast-deep-equal';
 
@@ -307,7 +322,7 @@ function doSomething(before, after) {
     return;
   }
 }`,
-      errors: [{ messageId: 'useFastDeepEqual' }],
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
       output: `import diff from 'microdiff';
 import isEqual from 'fast-deep-equal';
 
@@ -325,7 +340,7 @@ function areSame(x, y) {
   const changes = diff(x, y);
   return !changes.length;
 }`,
-      errors: [{ messageId: 'useFastDeepEqual' }],
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
       output: `import diff from 'microdiff';
 import isEqual from 'fast-deep-equal';
 
@@ -340,7 +355,7 @@ function areSame(x, y) {
 function eq(a, b) {
   return 0 === diff(a, b).length;
 }`,
-      errors: [{ messageId: 'useFastDeepEqual' }],
+      errors: [{ messageId: 'useFastDeepEqual', data: messageData() }],
       output: `import diff from 'microdiff';
 import isEqual from 'fast-deep-equal';
 
@@ -365,8 +380,8 @@ function checkAll(prevData, newData, previousMetadataRef, newMetadata) {
   return isDataEqual && isMetadataEqual;
 }`,
       errors: [
-        { messageId: 'useFastDeepEqual' },
-        { messageId: 'useFastDeepEqual' },
+        { messageId: 'useFastDeepEqual', data: messageData() },
+        { messageId: 'useFastDeepEqual', data: messageData() },
       ],
       output: `import diff from 'microdiff';
 import isEqual from 'fast-deep-equal';

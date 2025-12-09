@@ -10,44 +10,46 @@ Enforce using fast-deep-equal for equality checks instead of microdiff.
 
 ## Rule Details
 
-This rule enforces that deep equality checks between objects should use `fast-deep-equal` instead of checking `microdiff(...).length === 0`. The `fast-deep-equal` library is specifically optimized for performant deep equality checks, while `microdiff` is designed for generating detailed object differences.
+This rule enforces that boolean equality checks use `fast-deep-equal` instead of counting results from `microdiff`. `microdiff` builds and returns a change list for diff inspection, so using it for equality forces unnecessary allocations and obscures the intent of a simple true/false comparison. `fast-deep-equal` performs a direct equality check and keeps equality intent obvious.
 
-Using `microdiff` purely for equality checks is inefficient because:
+**Why this matters**
 
-1. `microdiff` computes detailed differences between objects, which is unnecessary overhead when only checking for equality
-2. `fast-deep-equal` is significantly more performant for simple equality checks
-3. Code using `fast-deep-equal` is more readable when the intent is simply to check equality
+- `microdiff` creates diff entries (paths, types, values) before you ever count `.length`, which is wasted work when you only need a boolean.
+- Equality intent is explicit with `isEqual(a, b)`, reducing the chance that future edits treat the value as a diff they can iterate.
+- `fast-deep-equal` is optimized for equality and avoids the extra allocations that slow hot code paths.
 
-This rule will automatically fix violations by:
-1. Adding an import for `fast-deep-equal` if it doesn't exist
-2. Replacing `microdiff` equality checks with equivalent `fast-deep-equal` calls
+**What this rule checks**
+
+- Comparisons such as `microdiff(a, b).length === 0`, `0 === diff(a, b).length`, or `!diff(a, b).length`.
+- Comparisons that use a variable assigned to `diff(...)` when that variable is only used for `.length` checks.
+- Aliased imports of both `microdiff` and `fast-deep-equal`.
+
+**Autofix**
+
+- Adds `fast-deep-equal` import if missing.
+- Replaces `microdiff` length comparisons with `isEqual(left, right)` (or `!isEqual(left, right)` for inequality checks).
 
 ### Examples of **incorrect** code for this rule:
 
 ```ts
 import { diff } from 'microdiff';
 
-// Using microdiff for equality check
 function areObjectsEqual(obj1, obj2) {
   return diff(obj1, obj2).length === 0;
 }
 
-// Using microdiff for equality check (loose equality)
 function areObjectsLooseEqual(obj1, obj2) {
   return diff(obj1, obj2).length == 0;
 }
 
-// Using microdiff for inequality check
 function objectsAreDifferent(obj1, obj2) {
   return diff(obj1, obj2).length !== 0;
 }
 
-// Using microdiff with shorthand negation
 function areObjectsEqual(obj1, obj2) {
   return !diff(obj1, obj2).length;
 }
 
-// Using microdiff in conditional statements
 function updateIfNeeded(obj1, obj2) {
   if (diff(obj1, obj2).length === 0) {
     return false;
@@ -61,17 +63,14 @@ function updateIfNeeded(obj1, obj2) {
 ```ts
 import isEqual from 'fast-deep-equal';
 
-// Using fast-deep-equal directly
 function areObjectsEqual(obj1, obj2) {
   return isEqual(obj1, obj2);
 }
 
-// Using fast-deep-equal for inequality check
 function objectsAreDifferent(obj1, obj2) {
   return !isEqual(obj1, obj2);
 }
 
-// Using fast-deep-equal in conditional statements
 function updateIfNeeded(obj1, obj2) {
   if (isEqual(obj1, obj2)) {
     return false;
@@ -79,10 +78,14 @@ function updateIfNeeded(obj1, obj2) {
   return true;
 }
 
-// Using ES6 version of fast-deep-equal
 import isEqual from 'fast-deep-equal/es6';
 function areObjectsEqual(obj1, obj2) {
   return isEqual(obj1, obj2);
+}
+
+import deepEqual from 'fast-deep-equal';
+function areObjectsEqual(obj1, obj2) {
+  return deepEqual(obj1, obj2);
 }
 ```
 
@@ -99,7 +102,6 @@ function getConfigChanges(oldConfig, newConfig) {
   return changes;
 }
 
-// Using microdiff to analyze specific changes
 function applyPartialUpdates(oldSettings, newSettings) {
   const changes = diff(oldSettings, newSettings);
   const needsRefresh = changes.some(change =>
@@ -108,7 +110,6 @@ function applyPartialUpdates(oldSettings, newSettings) {
   return needsRefresh;
 }
 
-// Using microdiff to detect specific types of changes
 function detectItemChanges(oldItems, newItems) {
   const changes = diff(oldItems, newItems);
   const addedItems = changes.filter(change => change.type === 'CREATE');
@@ -117,7 +118,6 @@ function detectItemChanges(oldItems, newItems) {
   return { addedItems, removedItems, updatedItems };
 }
 
-// Using microdiff to check if changes exist (not equality)
 function hasConfigChanged(oldConfig, newConfig) {
   return diff(oldConfig, newConfig).length > 0;
 }
@@ -127,9 +127,9 @@ function hasConfigChanged(oldConfig, newConfig) {
 
 You should not use this rule if:
 
-1. Your project deliberately avoids adding additional dependencies and you want to use `microdiff` for both diffing and equality checks
-2. You're working in a performance-non-critical codebase where the additional overhead of using `microdiff` for equality checks is acceptable
-3. You need to maintain backward compatibility with existing code that relies on the specific behavior of `microdiff` for equality checks
+1. You deliberately want to rely on `microdiff` for both diffing and equality checks and accept the extra allocations.
+2. Your code path is not performance-sensitive and you prefer to avoid importing `fast-deep-equal`.
+3. You maintain compatibility with code that depends on `microdiff`’s change objects even when equality is all that is needed.
 
 ## Further Reading
 

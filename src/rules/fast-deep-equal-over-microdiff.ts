@@ -16,9 +16,9 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
     schema: [],
     messages: {
       useFastDeepEqual:
-        'Use fast-deep-equal for equality checks instead of microdiff.length === 0',
+        'Equality check uses microdiff via `{{diffName}}(...).length`, which builds a change list before you compare it to zero. That extra diff creation wastes allocations and hides that the code only needs a boolean equality check. Use fast-deep-equal by calling `{{fastEqualName}}(left, right)` for a direct deep equality comparison without generating diffs.',
       addFastDeepEqualImport:
-        'Import isEqual from fast-deep-equal for equality checks',
+        'Import fast-deep-equal as `{{fastEqualName}}` so equality checks call it directly instead of constructing microdiff results just to count them.',
     },
   },
   defaultOptions: [],
@@ -439,6 +439,10 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
           context.report({
             node,
             messageId: 'useFastDeepEqual',
+            data: {
+              diffName: microdiffImportName,
+              fastEqualName: fastDeepEqualImportName,
+            },
             fix(fixer) {
               return createFix(
                 fixer,
@@ -464,6 +468,10 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
           context.report({
             node: node.test,
             messageId: 'useFastDeepEqual',
+            data: {
+              diffName: microdiffImportName,
+              fastEqualName: fastDeepEqualImportName,
+            },
             fix(fixer) {
               return createFix(
                 fixer,
@@ -489,6 +497,10 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
           context.report({
             node: node.argument,
             messageId: 'useFastDeepEqual',
+            data: {
+              diffName: microdiffImportName,
+              fastEqualName: fastDeepEqualImportName,
+            },
             fix(fixer) {
               // We already checked that node.argument is not null above
               return createFix(
