@@ -25,11 +25,13 @@ export const noCircularReferences = createRule<[], MessageIds>({
     schema: [],
     messages: {
       circularReference:
-        'Circular reference detected in object. This can cause issues with JSON serialization and memory leaks.',
+        'Reference "{{referenceText}}" makes this object point back to itself (directly or through other objects). Circular object graphs throw in JSON.stringify and keep members reachable longer, which causes memory leaks and unexpected mutations. Store a copy or a serialize-safe identifier instead of the original object when assigning.',
     },
   },
   defaultOptions: [],
   create(context) {
+    const sourceCode = context.getSourceCode();
+
     function isObjectExpression(
       node: TSESTree.Node,
     ): node is TSESTree.ObjectExpression {
@@ -269,6 +271,9 @@ export const noCircularReferences = createRule<[], MessageIds>({
           context.report({
             node: reference,
             messageId: 'circularReference',
+            data: {
+              referenceText: sourceCode.getText(reference),
+            },
           });
         }
       }
@@ -681,6 +686,9 @@ export const noCircularReferences = createRule<[], MessageIds>({
                                   context.report({
                                     node: assignment,
                                     messageId: 'circularReference',
+                                    data: {
+                                      referenceText: sourceCode.getText(assignment),
+                                    },
                                   });
                                 }
                               }
@@ -708,6 +716,10 @@ export const noCircularReferences = createRule<[], MessageIds>({
                                       context.report({
                                         node: assignment,
                                         messageId: 'circularReference',
+                                        data: {
+                                          referenceText:
+                                            sourceCode.getText(assignment),
+                                        },
                                       });
                                     }
                                   }
@@ -764,6 +776,9 @@ export const noCircularReferences = createRule<[], MessageIds>({
                     context.report({
                       node,
                       messageId: 'circularReference',
+                      data: {
+                        referenceText: sourceCode.getText(node),
+                      },
                     });
                   }
                 }
