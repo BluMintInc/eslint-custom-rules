@@ -250,11 +250,11 @@ const Component = () => (
       errors: [
         {
           messageId: 'preferFragment',
-          data: { type: 'React.Fragment' },
+          data: { type: 'shorthand fragment (<>)' },
         },
         {
           messageId: 'preferFragment',
-          data: { type: 'shorthand fragment (<>)' },
+          data: { type: 'React.Fragment' },
         },
       ],
       output: `import React, { Fragment } from 'react';
