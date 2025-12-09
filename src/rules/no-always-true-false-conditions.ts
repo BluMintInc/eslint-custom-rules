@@ -14,13 +14,19 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
     schema: [],
     messages: {
       alwaysTrueCondition:
-        'This condition is always true, which may indicate a mistake or unnecessary code.',
+        'Condition "{{condition}}" is always true, so the guarded branch runs every time and hides logic errors or redundant checks. Remove the check or rewrite the condition so it depends on runtime values instead of constants.',
       alwaysFalseCondition:
-        'This condition is always false, which may indicate a mistake or dead code.',
+        'Condition "{{condition}}" is always false, so the guarded branch is unreachable and leaves misleading or dead code. Remove the unreachable branch or adjust the condition so it can evaluate to true when intended.',
     },
   },
   defaultOptions: [],
   create(context) {
+    const sourceCode = context.getSourceCode();
+
+    const messageDataFor = (node: TSESTree.Node) => ({
+      condition: sourceCode.getText(node),
+    });
+
     type ConditionResult = {
       isTruthy?: boolean;
       isFalsy?: boolean;
@@ -1638,12 +1644,14 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
         context.report({
           node,
           messageId: 'alwaysTrueCondition',
+          data: messageDataFor(node),
         });
         reportedNodes.add(node);
       } else if (result.isFalsy) {
         context.report({
           node,
           messageId: 'alwaysFalseCondition',
+          data: messageDataFor(node),
         });
         reportedNodes.add(node);
       }
@@ -1714,11 +1722,13 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
                 context.report({
                   node: node.test,
                   messageId: 'alwaysTrueCondition',
+                  data: messageDataFor(node.test),
                 });
               } else {
                 context.report({
                   node: node.test,
                   messageId: 'alwaysFalseCondition',
+                  data: messageDataFor(node.test),
                 });
               }
               reportedNodes.add(node.test);
@@ -1737,6 +1747,7 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
               context.report({
                 node: node.test,
                 messageId: 'alwaysFalseCondition',
+                data: messageDataFor(node.test),
               });
               reportedNodes.add(node.test);
             }
