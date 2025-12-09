@@ -4,16 +4,23 @@
 
 <!-- end auto-generated rule header -->
 
-This rule enforces the use of CSS media queries instead of JavaScript-based breakpoints in React components for better performance and separation of concerns.
+This rule keeps responsive breakpoints in CSS instead of runtime JavaScript hooks. JavaScript media detection (for example, `useMediaQuery` or `useMobile`) attaches resize listeners inside React renders, which forces avoidable re-renders and introduces a second, drifting source of truth for breakpoints. CSS is already optimized for media evaluation; letting styles own breakpoints keeps layout logic declarative and consistent.
 
 ## Rule Details
 
-JavaScript breakpoint handling (e.g., Material-UI's `useMediaQuery`) can cause unnecessary re-renders and impact performance, whereas CSS media queries are optimized for responsive design.
-
-This rule will flag any usage of JavaScript-based breakpoints, including:
+The rule reports any JavaScript-based viewport detection so that breakpoints live in CSS instead of the render path. It flags:
 - `useMediaQuery` from `@mui/material`
 - Any imports from `react-responsive`
-- `useMobile` hook from any path containing `hooks/useMobile`
+- The `useMobile` hook from any path containing `hooks/useMobile`
+
+Why this matters:
+- JavaScript breakpoint hooks attach listeners during render and trigger re-renders whenever the viewport changes, even if the component already has CSS that could handle the layout shift.
+- Duplicating breakpoints in JavaScript and CSS creates divergence: a JS breakpoint can drift from design tokens, leading to layouts that disagree with the stylesheet.
+- CSS media queries and container queries are evaluated by the browser’s rendering engine and avoid React work for viewport changes.
+
+How to fix:
+- Move breakpoint definitions into CSS `@media` rules or container queries.
+- Let CSS class names or utility classes drive the responsive behavior, instead of conditional React renders based on viewport hooks.
 
 ### Examples of **incorrect** code for this rule:
 
@@ -47,6 +54,16 @@ function Component() {
 }
 ```
 
+```jsx
+// Using custom useMobile hook with drift from CSS breakpoints
+import { useMobile } from '../hooks/useMobile';
+
+function Component() {
+  const isMobile = useMobile();
+  return <div className={isMobile ? 'stack' : 'inline'}>Content</div>;
+}
+```
+
 ### Examples of **correct** code for this rule:
 
 ```jsx
@@ -65,6 +82,18 @@ function Component() {
 @media (max-width: 600px) {
   .responsive-container {
     display: block;
+  }
+}
+
+.inline {
+  display: inline-flex;
+  gap: 8px;
+}
+
+@media (max-width: 600px) {
+  .stack {
+    display: grid;
+    gap: 8px;
   }
 }
 ```
