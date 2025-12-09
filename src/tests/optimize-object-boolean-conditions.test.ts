@@ -1,6 +1,47 @@
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { optimizeObjectBooleanConditions } from '../rules/optimize-object-boolean-conditions';
 
+const buildMessage = (
+  expression: string,
+  objectName: string,
+  suggestedName: string,
+) =>
+  `Dependency array includes boolean condition "${expression}" derived from object "${objectName}". Hook re-runs every time the object reference changes even when the boolean outcome stays the same, leading to wasted renders and unstable memoization. Extract the condition into a stable boolean like "${suggestedName}" and depend on that variable instead.`;
+
+const buildError = (
+  expression: string,
+  objectName: string,
+  suggestedName: string,
+) => ({
+  messageId: 'extractBooleanCondition' as const,
+  data: {
+    expression,
+    suggestedName,
+    objectName,
+  },
+});
+
+describe('optimize-object-boolean-conditions messages', () => {
+  it('explains the risk and how to resolve it', () => {
+    expect(
+      optimizeObjectBooleanConditions.meta.messages.extractBooleanCondition,
+    ).toBe(
+      'Dependency array includes boolean condition "{{expression}}" derived from object "{{objectName}}". Hook re-runs every time the object reference changes even when the boolean outcome stays the same, leading to wasted renders and unstable memoization. Extract the condition into a stable boolean like "{{suggestedName}}" and depend on that variable instead.',
+    );
+  });
+
+  it('renders a specific message with provided data', () => {
+    const template =
+      optimizeObjectBooleanConditions.meta.messages.extractBooleanCondition;
+    const rendered = template
+      .replace('{{expression}}', '!data')
+      .replace('{{objectName}}', 'data')
+      .replace('{{suggestedName}}', 'hasData');
+
+    expect(rendered).toBe(buildMessage('!data', 'data', 'hasData'));
+  });
+});
+
 ruleTesterJsx.run(
   'optimize-object-boolean-conditions',
   optimizeObjectBooleanConditions,
@@ -862,14 +903,7 @@ ruleTesterJsx.run(
         }, [!data]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '!data',
-              suggestedName: 'hasData',
-              objectName: 'data',
-            },
-          },
+          buildError('!data', 'data', 'hasData'),
         ],
       },
       // Object key count check in useCallback
@@ -880,14 +914,7 @@ ruleTesterJsx.run(
         }, [Object.keys(items).length === 0]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: 'Object.keys(items).length === 0',
-              suggestedName: 'hasItems',
-              objectName: 'items',
-            },
-          },
+          buildError('Object.keys(items).length === 0', 'items', 'hasItems'),
         ],
       },
       // Object key count check with greater than
@@ -898,14 +925,7 @@ ruleTesterJsx.run(
         }, [Object.keys(data).length > 0]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: 'Object.keys(data).length > 0',
-              suggestedName: 'hasData',
-              objectName: 'data',
-            },
-          },
+          buildError('Object.keys(data).length > 0', 'data', 'hasData'),
         ],
       },
       // Object key count check with not equal
@@ -916,14 +936,7 @@ ruleTesterJsx.run(
         }, [Object.keys(config).length !== 0]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: 'Object.keys(config).length !== 0',
-              suggestedName: 'hasConfig',
-              objectName: 'config',
-            },
-          },
+          buildError('Object.keys(config).length !== 0', 'config', 'hasConfig'),
         ],
       },
       // Complex boolean expression with logical OR
@@ -934,14 +947,7 @@ ruleTesterJsx.run(
         }, [!data || Object.keys(data).length === 0]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '!data || Object.keys(data).length === 0',
-              suggestedName: 'hasData',
-              objectName: 'data',
-            },
-          },
+          buildError('!data || Object.keys(data).length === 0', 'data', 'hasData'),
         ],
       },
       // Complex boolean expression with logical AND
@@ -952,14 +958,7 @@ ruleTesterJsx.run(
         }, [data && Object.keys(data).length > 0]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: 'data && Object.keys(data).length > 0',
-              suggestedName: 'hasData',
-              objectName: 'data',
-            },
-          },
+          buildError('data && Object.keys(data).length > 0', 'data', 'hasData'),
         ],
       },
       // useEffect with object existence check
@@ -971,14 +970,7 @@ ruleTesterJsx.run(
         }, [!user]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '!user',
-              suggestedName: 'hasUser',
-              objectName: 'user',
-            },
-          },
+          buildError('!user', 'user', 'hasUser'),
         ],
       },
       // Multiple boolean conditions in same dependency array
@@ -989,22 +981,8 @@ ruleTesterJsx.run(
         }, [!data || Object.keys(data).length === 0, !config || Object.keys(config).length === 0]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '!data || Object.keys(data).length === 0',
-              suggestedName: 'hasData',
-              objectName: 'data',
-            },
-          },
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '!config || Object.keys(config).length === 0',
-              suggestedName: 'hasConfig',
-              objectName: 'config',
-            },
-          },
+          buildError('!data || Object.keys(data).length === 0', 'data', 'hasData'),
+          buildError('!config || Object.keys(config).length === 0', 'config', 'hasConfig'),
         ],
       },
       // Object existence check with different variable name
@@ -1015,14 +993,7 @@ ruleTesterJsx.run(
         }, [!roundPreviews]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '!roundPreviews',
-              suggestedName: 'hasRoundPreviews',
-              objectName: 'roundPreviews',
-            },
-          },
+          buildError('!roundPreviews', 'roundPreviews', 'hasRoundPreviews'),
         ],
       },
       // Object key count with less than
@@ -1033,14 +1004,7 @@ ruleTesterJsx.run(
         }, [Object.keys(items).length < 1]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: 'Object.keys(items).length < 1',
-              suggestedName: 'hasItems',
-              objectName: 'items',
-            },
-          },
+          buildError('Object.keys(items).length < 1', 'items', 'hasItems'),
         ],
       },
       // Object key count with greater than or equal
@@ -1051,14 +1015,7 @@ ruleTesterJsx.run(
         }, [Object.keys(data).length >= 1]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: 'Object.keys(data).length >= 1',
-              suggestedName: 'hasData',
-              objectName: 'data',
-            },
-          },
+          buildError('Object.keys(data).length >= 1', 'data', 'hasData'),
         ],
       },
       // Object key count with less than or equal
@@ -1069,14 +1026,7 @@ ruleTesterJsx.run(
         }, [Object.keys(settings).length <= 0]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: 'Object.keys(settings).length <= 0',
-              suggestedName: 'hasSettings',
-              objectName: 'settings',
-            },
-          },
+          buildError('Object.keys(settings).length <= 0', 'settings', 'hasSettings'),
         ],
       },
       // Mixed dependencies with boolean condition
@@ -1087,14 +1037,7 @@ ruleTesterJsx.run(
         }, [!data, mode]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '!data',
-              suggestedName: 'hasData',
-              objectName: 'data',
-            },
-          },
+          buildError('!data', 'data', 'hasData'),
         ],
       },
       // Complex expression with multiple objects
@@ -1105,14 +1048,7 @@ ruleTesterJsx.run(
         }, [!user || !user.profile]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '!user || !user.profile',
-              suggestedName: 'hasUser',
-              objectName: 'user',
-            },
-          },
+          buildError('!user || !user.profile', 'user', 'hasUser'),
         ],
       },
       // Object existence in useCallback with arrow function
@@ -1124,14 +1060,7 @@ ruleTesterJsx.run(
         }, [!data]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '!data',
-              suggestedName: 'hasData',
-              objectName: 'data',
-            },
-          },
+          buildError('!data', 'data', 'hasData'),
         ],
       },
       // Object key count in useEffect
@@ -1144,14 +1073,7 @@ ruleTesterJsx.run(
         }, [Object.keys(cache).length === 0]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: 'Object.keys(cache).length === 0',
-              suggestedName: 'hasCache',
-              objectName: 'cache',
-            },
-          },
+          buildError('Object.keys(cache).length === 0', 'cache', 'hasCache'),
         ],
       },
       // Nested complex expression
@@ -1162,14 +1084,11 @@ ruleTesterJsx.run(
         }, [(data && Object.keys(data).length > 0) || fallback]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '(data && Object.keys(data).length > 0) || fallback',
-              suggestedName: 'hasData',
-              objectName: 'data',
-            },
-          },
+          buildError(
+            '(data && Object.keys(data).length > 0) || fallback',
+            'data',
+            'hasData',
+          ),
         ],
       },
       // Object existence with camelCase variable
@@ -1180,14 +1099,7 @@ ruleTesterJsx.run(
         }, [!userProfile]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '!userProfile',
-              suggestedName: 'hasUserProfile',
-              objectName: 'userProfile',
-            },
-          },
+          buildError('!userProfile', 'userProfile', 'hasUserProfile'),
         ],
       },
       // Object key count with camelCase variable
@@ -1198,14 +1110,7 @@ ruleTesterJsx.run(
         }, [Object.keys(apiResponse).length > 0]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: 'Object.keys(apiResponse).length > 0',
-              suggestedName: 'hasApiResponse',
-              objectName: 'apiResponse',
-            },
-          },
+          buildError('Object.keys(apiResponse).length > 0', 'apiResponse', 'hasApiResponse'),
         ],
       },
       // Multiple conditions with different objects
@@ -1216,22 +1121,8 @@ ruleTesterJsx.run(
         }, [!user || Object.keys(user).length === 0, !settings || Object.keys(settings).length === 0]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '!user || Object.keys(user).length === 0',
-              suggestedName: 'hasUser',
-              objectName: 'user',
-            },
-          },
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '!settings || Object.keys(settings).length === 0',
-              suggestedName: 'hasSettings',
-              objectName: 'settings',
-            },
-          },
+          buildError('!user || Object.keys(user).length === 0', 'user', 'hasUser'),
+          buildError('!settings || Object.keys(settings).length === 0', 'settings', 'hasSettings'),
         ],
       },
 
@@ -1245,14 +1136,7 @@ ruleTesterJsx.run(
         }, [(!data)]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '!data',
-              suggestedName: 'hasData',
-              objectName: 'data',
-            },
-          },
+          buildError('!data', 'data', 'hasData'),
         ],
       },
       // Object key count check with extra parentheses
@@ -1263,14 +1147,7 @@ ruleTesterJsx.run(
         }, [(Object.keys(items).length === 0)]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: 'Object.keys(items).length === 0',
-              suggestedName: 'hasItems',
-              objectName: 'items',
-            },
-          },
+          buildError('Object.keys(items).length === 0', 'items', 'hasItems'),
         ],
       },
       // Complex boolean expression with extra parentheses
@@ -1281,14 +1158,7 @@ ruleTesterJsx.run(
         }, [(!data || Object.keys(data).length === 0)]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '!data || Object.keys(data).length === 0',
-              suggestedName: 'hasData',
-              objectName: 'data',
-            },
-          },
+          buildError('!data || Object.keys(data).length === 0', 'data', 'hasData'),
         ],
       },
       // Object existence check with whitespace variations
@@ -1299,14 +1169,7 @@ ruleTesterJsx.run(
         }, [! data]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '! data',
-              suggestedName: 'hasData',
-              objectName: 'data',
-            },
-          },
+          buildError('! data', 'data', 'hasData'),
         ],
       },
       // Object key count with whitespace variations
@@ -1317,14 +1180,7 @@ ruleTesterJsx.run(
         }, [Object . keys ( data ) . length === 0]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: 'Object . keys ( data ) . length === 0',
-              suggestedName: 'hasData',
-              objectName: 'data',
-            },
-          },
+          buildError('Object . keys ( data ) . length === 0', 'data', 'hasData'),
         ],
       },
       // Object existence with underscore variable names
@@ -1335,14 +1191,7 @@ ruleTesterJsx.run(
         }, [!user_data]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '!user_data',
-              suggestedName: 'hasUser_data',
-              objectName: 'user_data',
-            },
-          },
+          buildError('!user_data', 'user_data', 'hasUser_data'),
         ],
       },
       // Object existence with camelCase variable names
@@ -1353,14 +1202,7 @@ ruleTesterJsx.run(
         }, [!userData]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '!userData',
-              suggestedName: 'hasUserData',
-              objectName: 'userData',
-            },
-          },
+          buildError('!userData', 'userData', 'hasUserData'),
         ],
       },
       // Object existence with PascalCase variable names
@@ -1371,14 +1213,7 @@ ruleTesterJsx.run(
         }, [!UserData]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '!UserData',
-              suggestedName: 'hasUserData',
-              objectName: 'UserData',
-            },
-          },
+          buildError('!UserData', 'UserData', 'hasUserData'),
         ],
       },
       // Object existence with numbers in variable names
@@ -1389,14 +1224,7 @@ ruleTesterJsx.run(
         }, [!data2]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '!data2',
-              suggestedName: 'hasData2',
-              objectName: 'data2',
-            },
-          },
+          buildError('!data2', 'data2', 'hasData2'),
         ],
       },
       // Object key count with different number comparisons
@@ -1407,14 +1235,7 @@ ruleTesterJsx.run(
         }, [Object.keys(data).length < 1]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: 'Object.keys(data).length < 1',
-              suggestedName: 'hasData',
-              objectName: 'data',
-            },
-          },
+          buildError('Object.keys(data).length < 1', 'data', 'hasData'),
         ],
       },
       // Object key count with different number comparisons (>= 1)
@@ -1425,14 +1246,7 @@ ruleTesterJsx.run(
         }, [Object.keys(data).length >= 1]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: 'Object.keys(data).length >= 1',
-              suggestedName: 'hasData',
-              objectName: 'data',
-            },
-          },
+          buildError('Object.keys(data).length >= 1', 'data', 'hasData'),
         ],
       },
       // Object key count with different number comparisons (<= 0)
@@ -1443,14 +1257,7 @@ ruleTesterJsx.run(
         }, [Object.keys(data).length <= 0]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: 'Object.keys(data).length <= 0',
-              suggestedName: 'hasData',
-              objectName: 'data',
-            },
-          },
+          buildError('Object.keys(data).length <= 0', 'data', 'hasData'),
         ],
       },
       // Complex expression with nested parentheses
@@ -1461,14 +1268,7 @@ ruleTesterJsx.run(
         }, [((data && Object.keys(data).length > 0))]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: 'data && Object.keys(data).length > 0',
-              suggestedName: 'hasData',
-              objectName: 'data',
-            },
-          },
+          buildError('data && Object.keys(data).length > 0', 'data', 'hasData'),
         ],
       },
       // Complex expression with mixed logical operators
@@ -1479,14 +1279,7 @@ ruleTesterJsx.run(
         }, [!data || Object.keys(data).length === 0]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '!data || Object.keys(data).length === 0',
-              suggestedName: 'hasData',
-              objectName: 'data',
-            },
-          },
+          buildError('!data || Object.keys(data).length === 0', 'data', 'hasData'),
         ],
       },
       // Complex expression with AND operator
@@ -1497,14 +1290,7 @@ ruleTesterJsx.run(
         }, [data && Object.keys(data).length > 0]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: 'data && Object.keys(data).length > 0',
-              suggestedName: 'hasData',
-              objectName: 'data',
-            },
-          },
+          buildError('data && Object.keys(data).length > 0', 'data', 'hasData'),
         ],
       },
       // Object existence check in different hook types
@@ -1515,14 +1301,7 @@ ruleTesterJsx.run(
         }, [!data]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '!data',
-              suggestedName: 'hasData',
-              objectName: 'data',
-            },
-          },
+          buildError('!data', 'data', 'hasData'),
         ],
       },
       // Object existence check in useEffect
@@ -1534,14 +1313,7 @@ ruleTesterJsx.run(
         }, [!data]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '!data',
-              suggestedName: 'hasData',
-              objectName: 'data',
-            },
-          },
+          buildError('!data', 'data', 'hasData'),
         ],
       },
       // Multiple object checks in same dependency array
@@ -1552,22 +1324,8 @@ ruleTesterJsx.run(
         }, [!data, Object.keys(config).length === 0]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '!data',
-              suggestedName: 'hasData',
-              objectName: 'data',
-            },
-          },
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: 'Object.keys(config).length === 0',
-              suggestedName: 'hasConfig',
-              objectName: 'config',
-            },
-          },
+          buildError('!data', 'data', 'hasData'),
+          buildError('Object.keys(config).length === 0', 'config', 'hasConfig'),
         ],
       },
       // Object existence check with very long variable names
@@ -1578,14 +1336,11 @@ ruleTesterJsx.run(
         }, [!veryLongVariableNameForUserData]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression: '!veryLongVariableNameForUserData',
-              suggestedName: 'hasVeryLongVariableNameForUserData',
-              objectName: 'veryLongVariableNameForUserData',
-            },
-          },
+          buildError(
+            '!veryLongVariableNameForUserData',
+            'veryLongVariableNameForUserData',
+            'hasVeryLongVariableNameForUserData',
+          ),
         ],
       },
       // Object key count with very long variable names
@@ -1596,15 +1351,11 @@ ruleTesterJsx.run(
         }, [Object.keys(veryLongVariableNameForConfig).length > 0]);
       `,
         errors: [
-          {
-            messageId: 'extractBooleanCondition',
-            data: {
-              expression:
-                'Object.keys(veryLongVariableNameForConfig).length > 0',
-              suggestedName: 'hasVeryLongVariableNameForConfig',
-              objectName: 'veryLongVariableNameForConfig',
-            },
-          },
+          buildError(
+            'Object.keys(veryLongVariableNameForConfig).length > 0',
+            'veryLongVariableNameForConfig',
+            'hasVeryLongVariableNameForConfig',
+          ),
         ],
       },
     ],
