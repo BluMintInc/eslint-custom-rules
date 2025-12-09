@@ -20,13 +20,14 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Ensures classes read linearly from top to bottom.',
+      description:
+        'Enforces a top-to-bottom class layout so callers lead into the helpers they rely on.',
       recommended: 'warn',
     },
     schema: [],
     messages: {
       classMethodsReadTopToBottom:
-        'Methods should be ordered for top-down readability.',
+        'Class "{{className}}" breaks top-to-bottom flow: "{{actualMember}}" appears before "{{expectedMember}}", which forces readers to jump backward to understand the call chain. Place "{{expectedMember}}" above "{{actualMember}}" so properties, constructors, and the helpers they rely on read downward without backtracking.',
     },
     fixable: 'code', // To allow ESLint to autofix issues.
   },
@@ -63,6 +64,9 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
 
         for (let i = 0; i < actualOrder.length; i++) {
           if (actualOrder[i] !== sortedOrder[i]) {
+            const classNameReport = className || 'this class';
+            const actualMember = actualOrder[i] || 'this member';
+            const expectedMember = sortedOrder[i] || 'the expected member';
             const sourceCode = context.getSourceCode();
             const newClassBody = sortedOrder
               .map((n) => {
@@ -99,6 +103,11 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
             return context.report({
               node,
               messageId: 'classMethodsReadTopToBottom',
+              data: {
+                className: classNameReport,
+                actualMember,
+                expectedMember,
+              },
               fix(fixer) {
                 return fixer.replaceTextRange(
                   [node.range[0] + 1, node.range[1] - 1], // Exclude the curly braces

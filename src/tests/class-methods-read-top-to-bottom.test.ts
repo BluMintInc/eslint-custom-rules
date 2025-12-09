@@ -381,7 +381,16 @@ ruleTesterTs.run(
           methodB() {}
           methodC() {}
         }`,
-        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+        errors: [
+          {
+            messageId: 'classMethodsReadTopToBottom',
+            data: {
+              className: 'TestClass',
+              actualMember: 'methodA',
+              expectedMember: 'constructor',
+            },
+          },
+        ],
         output: `
         class TestClass {field1: string;
 field2: number;
@@ -411,7 +420,16 @@ methodC() {}}`,
               return "foo";
             }
           }`,
-        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+        errors: [
+          {
+            messageId: 'classMethodsReadTopToBottom',
+            data: {
+              className: 'TestClass',
+              actualMember: 'methodB',
+              expectedMember: 'methodA',
+            },
+          },
+        ],
         output: `
         class TestClass {field1: string;
 field2: number;
@@ -459,7 +477,16 @@ methodB() {
              */
           }
         }`,
-        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+        errors: [
+          {
+            messageId: 'classMethodsReadTopToBottom',
+            data: {
+              className: 'TestClass',
+              actualMember: 'methodD',
+              expectedMember: 'methodB',
+            },
+          },
+        ],
         output: `export class TestClass {public field1: string;
 public fooBar: string;
 private field2: number;
