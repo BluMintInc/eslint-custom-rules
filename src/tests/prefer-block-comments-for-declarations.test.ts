@@ -236,10 +236,10 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'preferBlockComment',
-            data: { commentText: 'empty declaration comment' },
+            data: { commentText: 'declaration comment' },
           },
         ],
-        output: `/** */
+        output: `/** declaration comment */
       const EMPTY = true;`,
       },
     ],
