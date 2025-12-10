@@ -28,8 +28,9 @@ export = createRule({
     }
 
     let httpsIdentifier: string | null = null;
+    let httpsIdentifierSource: string | null = null;
     let httpsErrorIdentifier: string | null = null;
-    let httpsSourceModule: string | null = null;
+    let httpsErrorSource: string | null = null;
 
     return {
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
@@ -38,7 +39,6 @@ export = createRule({
           node.source.value === 'firebase-admin/lib/https-error'
         ) {
           const sourceModule = String(node.source.value);
-          httpsSourceModule = sourceModule;
 
           // Check for direct HttpsError import
           const httpsErrorSpecifier = node.specifiers.find(
@@ -56,6 +56,9 @@ export = createRule({
 
           if (httpsErrorSpecifier && 'local' in httpsErrorSpecifier) {
             httpsErrorIdentifier = httpsErrorSpecifier.local.name;
+            if (!httpsErrorSource) {
+              httpsErrorSource = sourceModule;
+            }
             context.report({
               node,
               messageId: 'useProprietaryHttpsError',
@@ -68,6 +71,9 @@ export = createRule({
 
           if (httpsSpecifier && 'local' in httpsSpecifier) {
             httpsIdentifier = httpsSpecifier.local.name;
+            if (!httpsIdentifierSource) {
+              httpsIdentifierSource = sourceModule;
+            }
             context.report({
               node,
               messageId: 'useProprietaryHttpsError',
@@ -123,13 +129,16 @@ export = createRule({
             isFirebaseHttpsError && httpsIdentifier
               ? `${httpsIdentifier}.HttpsError`
               : httpsErrorIdentifier ?? 'HttpsError';
+          const source =
+            (isFirebaseHttpsError ? httpsIdentifierSource : httpsErrorSource) ??
+            'firebase-admin';
 
           context.report({
             node,
             messageId: 'useProprietaryHttpsError',
             data: {
               reference,
-              source: httpsSourceModule ?? 'firebase-admin',
+              source,
             },
           });
         }

@@ -41,9 +41,7 @@ ruleTesterTs.run('require-https-error', requireHttpsError, {
     {
       code: 'throw new Error("test error");',
       filename: 'functions/src/test.ts',
-      errors: [
-        expectMessage(useHttpsErrorMessage),
-      ],
+      errors: [expectMessage(useHttpsErrorMessage)],
     },
     // Should not allow throw new Error in type assertion functions
     {
@@ -54,17 +52,13 @@ export function assertPositiveInteger(value: number): asserts value is PositiveI
   }
 }`,
       filename: 'functions/src/test.ts',
-      errors: [
-        expectMessage(useHttpsErrorMessage),
-      ],
+      errors: [expectMessage(useHttpsErrorMessage)],
     },
     // Should not allow throw new Error with multiple arguments in functions/src
     {
       code: 'throw new Error("test error", "additional info");',
       filename: 'functions/src/test.ts',
-      errors: [
-        expectMessage(useHttpsErrorMessage),
-      ],
+      errors: [expectMessage(useHttpsErrorMessage)],
     },
     // Should not allow firebase-admin HttpsError import
     {
@@ -73,6 +67,23 @@ export function assertPositiveInteger(value: number): asserts value is PositiveI
       errors: [
         expectMessage(proprietaryMessage('HttpsError', 'firebase-admin')),
         expectMessage(proprietaryMessage('HttpsError', 'firebase-admin')),
+      ],
+    },
+    // Should use original source when later import lacks HttpsError
+    {
+      code: `
+import { HttpsError } from "firebase-admin/lib/https-error";
+import { auth } from "firebase-admin";
+throw new HttpsError("failed-precondition", "test error");
+      `,
+      filename: 'functions/src/test.ts',
+      errors: [
+        expectMessage(
+          proprietaryMessage('HttpsError', 'firebase-admin/lib/https-error'),
+        ),
+        expectMessage(
+          proprietaryMessage('HttpsError', 'firebase-admin/lib/https-error'),
+        ),
       ],
     },
     // Should not allow firebase-admin/lib/https-error import
