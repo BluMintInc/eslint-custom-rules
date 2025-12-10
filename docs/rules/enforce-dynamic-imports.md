@@ -8,7 +8,7 @@ Enforce dynamic imports for specified libraries to optimize bundle size.
 
 ## Rule Details
 
-Static imports pull the entire target package into the entry bundle. For heavy UI SDKs and media clients, that eager load inflates the first download, delays time-to-interactive, and forces users to fetch code paths they might never hit. This rule blocks static imports for configured libraries and requires a dynamic import so the dependency downloads only when the code path runs. Type-only imports stay allowed when `allowImportType` is enabled, letting you keep type safety without shipping runtime code.
+Static imports pull the entire target package into your entry bundle. For heavy UI SDKs and media clients, that eager load inflates your users' first download, delays time-to-interactive, and forces them to fetch code paths they might never hit. This rule blocks your static imports for the configured libraries and requires a dynamic import so the dependency downloads only when your code path runs. Type-only imports stay allowed when you enable `allowImportType`, so you keep type safety without shipping runtime code.
 
 Use this rule when a library is large, rarely needed on initial render, or better loaded just before use (for example, before opening a call UI).
 
