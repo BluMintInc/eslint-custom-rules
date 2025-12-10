@@ -45,13 +45,20 @@ jobs:
           echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
           echo "head_ref=$HEAD_REF" >> "$GITHUB_OUTPUT"
 
-          # Fetch all check runs for this head SHA
-          CHECKS_JSON=$(gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/commits/$HEAD_SHA/check-runs")
+          # Fetch check runs (wider page size) and commit status contexts so we can accept
+          # CodeRabbit whether it reports as a check run or a legacy status context.
+          CHECKS_JSON=$(gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/commits/$HEAD_SHA/check-runs?per_page=100")
+          STATUSES_JSON=$(gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/commits/$HEAD_SHA/status")
 
-          has_cursor=$(echo "$CHECKS_JSON" | jq 'any(.check_runs[]; ((.app.slug|ascii_downcase|test("cursor")) or (.name|test("Cursor Bugbot";"i"))) and .status == "completed" and (.conclusion == "success" or .conclusion == "neutral"))')
-          has_coderabbit=$(echo "$CHECKS_JSON" | jq 'any(.check_runs[]; ((.app.slug|ascii_downcase|test("coderabbit")) or (.name|test("CodeRabbit";"i"))) and .status == "completed" and (.conclusion == "success" or .conclusion == "neutral"))')
+          has_cursor_run=$(echo "$CHECKS_JSON" | jq 'any(.check_runs[]; ((.app.slug|ascii_downcase|test("cursor")) or (.name|test("Cursor Bugbot";"i"))) and .status == "completed" and (.conclusion == "success" or .conclusion == "neutral"))')
+          has_coderabbit_run=$(echo "$CHECKS_JSON" | jq 'any(.check_runs[]; ((.app.slug|ascii_downcase|test("coderabbit")) or (.name|test("CodeRabbit";"i"))) and .status == "completed" and (.conclusion == "success" or .conclusion == "neutral"))')
+          has_coderabbit_status=$(echo "$STATUSES_JSON" | jq 'any(.statuses[]?; (.context|test("CodeRabbit";"i")) and (.state == "success" or .state == "neutral"))')
 
-          if [ "$has_cursor" != "true" ] || [ "$has_coderabbit" != "true" ]; then
+          echo "Cursor check run satisfied: $has_cursor_run"
+          echo "CodeRabbit check run satisfied: $has_coderabbit_run"
+          echo "CodeRabbit status satisfied: $has_coderabbit_status"
+
+          if [ "$has_cursor_run" != "true" ] || { [ "$has_coderabbit_run" != "true" ] && [ "$has_coderabbit_status" != "true" ]; }; then
             echo "missing_required=true" >> "$GITHUB_OUTPUT"
             echo "Required bot checks not yet successful (CodeRabbit & Cursor Bugbot). Skipping launch."
           else
