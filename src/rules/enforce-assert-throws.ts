@@ -54,9 +54,9 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
     schema: [],
     messages: {
       assertShouldThrow:
-        "Functions with an assert prefix must throw an error or call process.exit(1). Either rename the function or add a throw/exit statement.",
+        'Assert helper "{{functionName}}" does not throw, exit, or delegate to another assert helper. Assert-prefixed functions are fail-fast guards; letting them return normally hides failed checks and allows callers to continue with invalid state. Throw an error, call process.exit(1), or rename the function if it should not halt execution.',
       shouldBeAssertPrefixed:
-        "Functions that call assert-prefixed methods should themselves be assert-prefixed. Either rename the function to start with assert or avoid calling assert methods.",
+        'Function "{{functionName}}" calls an assert-prefixed helper but is not assert-prefixed itself. The assert- prefix signals that the function terminates on failed checks; without it, callers may assume it returns safely and keep running after an assertion aborts. Rename the function to start with "assert" or avoid calling assert helpers from non-assert functions.',
     },
   },
   defaultOptions: [],
@@ -765,6 +765,8 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
         }
       }
 
+      const displayName = functionName || 'this function';
+
       currentFunction = node;
       const functionBody =
         node.type === AST_NODE_TYPES.MethodDefinition
@@ -777,6 +779,7 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
           context.report({
             node,
             messageId: 'assertShouldThrow',
+            data: { functionName: displayName },
           });
         }
       } else if (functionName && functionBody) {
@@ -785,6 +788,7 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
           context.report({
             node,
             messageId: 'shouldBeAssertPrefixed',
+            data: { functionName: displayName },
           });
         }
       }

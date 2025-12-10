@@ -197,6 +197,3 @@ export const runMergeReviewCliIfDirect = (
 
 /* istanbul ignore next */
 runMergeReviewCliIfDirect();
-
-
-

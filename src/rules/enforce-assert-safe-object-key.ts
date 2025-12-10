@@ -17,7 +17,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
     schema: [],
     messages: {
       useAssertSafe:
-        'Use assertSafe() for object key access to ensure safe property access. Replace `obj[String(id)]` or `obj[`${id}`]` with `obj[assertSafe(id)]`.',
+        'Dynamic object key "{{key}}" is used without assertSafe() validation. Unvalidated keys can resolve to unexpected properties (including prototype fields) and make lookups fragile or unsafe. Wrap the key with assertSafe({{key}}) before accessing the object.',
     },
   },
   defaultOptions: [],
@@ -66,6 +66,20 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       return fixes;
     };
 
+    const reportUseAssertSafe = (
+      node: TSESTree.Node,
+      replacementNode: TSESTree.Node,
+      expressionText: string,
+    ) =>
+      context.report({
+        node,
+        messageId: 'useAssertSafe',
+        data: { key: expressionText },
+        fix(fixer) {
+          return createFixes(fixer, replacementNode, expressionText);
+        },
+      });
+
     return {
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
         // Check if assertSafe is already imported
@@ -90,15 +104,9 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             key.callee.type === AST_NODE_TYPES.Identifier &&
             key.callee.name === 'String'
           ) {
-            context.report({
-              node: key,
-              messageId: 'useAssertSafe',
-              fix(fixer) {
-                const arg = key.arguments[0];
-                const argText = context.getSourceCode().getText(arg);
-                return createFixes(fixer, key, argText);
-              },
-            });
+            const arg = key.arguments[0];
+            const argText = context.getSourceCode().getText(arg);
+            reportUseAssertSafe(key, key, argText);
           }
 
           // Check for template literals like `${id}`
@@ -109,15 +117,9 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             key.quasis[0].value.raw === '' &&
             key.quasis[1].value.raw === ''
           ) {
-            context.report({
-              node: key,
-              messageId: 'useAssertSafe',
-              fix(fixer) {
-                const expr = key.expressions[0];
-                const exprText = context.getSourceCode().getText(expr);
-                return createFixes(fixer, key, exprText);
-              },
-            });
+            const expr = key.expressions[0];
+            const exprText = context.getSourceCode().getText(expr);
+            reportUseAssertSafe(key, key, exprText);
           }
         }
       },
@@ -132,15 +134,9 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             left.callee.type === AST_NODE_TYPES.Identifier &&
             left.callee.name === 'String'
           ) {
-            context.report({
-              node: left,
-              messageId: 'useAssertSafe',
-              fix(fixer) {
-                const arg = left.arguments[0];
-                const argText = context.getSourceCode().getText(arg);
-                return createFixes(fixer, left, argText);
-              },
-            });
+            const arg = left.arguments[0];
+            const argText = context.getSourceCode().getText(arg);
+            reportUseAssertSafe(left, left, argText);
           }
 
           // Check for template literals like `${id}`
@@ -151,15 +147,9 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             left.quasis[0].value.raw === '' &&
             left.quasis[1].value.raw === ''
           ) {
-            context.report({
-              node: left,
-              messageId: 'useAssertSafe',
-              fix(fixer) {
-                const expr = left.expressions[0];
-                const exprText = context.getSourceCode().getText(expr);
-                return createFixes(fixer, left, exprText);
-              },
-            });
+            const expr = left.expressions[0];
+            const exprText = context.getSourceCode().getText(expr);
+            reportUseAssertSafe(left, left, exprText);
           }
         }
       },
@@ -214,15 +204,9 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             property.callee.type === AST_NODE_TYPES.Identifier &&
             property.callee.name === 'String'
           ) {
-            context.report({
-              node: property,
-              messageId: 'useAssertSafe',
-              fix(fixer) {
-                const arg = property.arguments[0];
-                const argText = context.getSourceCode().getText(arg);
-                return createFixes(fixer, property, argText);
-              },
-            });
+            const arg = property.arguments[0];
+            const argText = context.getSourceCode().getText(arg);
+            reportUseAssertSafe(property, property, argText);
             return;
           }
 
@@ -246,16 +230,9 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
               return;
             }
 
-            context.report({
-              node: property,
-              messageId: 'useAssertSafe',
-              fix(fixer) {
-                // Extract the expression from the template literal
-                const expr = property.expressions[0];
-                const exprText = context.getSourceCode().getText(expr);
-                return createFixes(fixer, property, exprText);
-              },
-            });
+            const expr = property.expressions[0];
+            const exprText = context.getSourceCode().getText(expr);
+            reportUseAssertSafe(property, property, exprText);
             return;
           }
 
@@ -271,15 +248,8 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
               return;
             }
 
-            context.report({
-              node: property,
-              messageId: 'useAssertSafe',
-              fix(fixer) {
-                // For direct variable use, just use the variable name
-                const propText = context.getSourceCode().getText(property);
-                return createFixes(fixer, property, propText);
-              },
-            });
+            const propText = context.getSourceCode().getText(property);
+            reportUseAssertSafe(property, property, propText);
             return;
           }
 
@@ -290,14 +260,8 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
               return;
             }
 
-            context.report({
-              node: property,
-              messageId: 'useAssertSafe',
-              fix(fixer) {
-                const propText = context.getSourceCode().getText(property);
-                return createFixes(fixer, property, propText);
-              },
-            });
+            const propText = context.getSourceCode().getText(property);
+            reportUseAssertSafe(property, property, propText);
             return;
           }
 
@@ -312,14 +276,8 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
               return;
             }
 
-            context.report({
-              node: property,
-              messageId: 'useAssertSafe',
-              fix(fixer) {
-                const propText = context.getSourceCode().getText(property);
-                return createFixes(fixer, property, propText);
-              },
-            });
+            const propText = context.getSourceCode().getText(property);
+            reportUseAssertSafe(property, property, propText);
             return;
           }
 
@@ -337,14 +295,8 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
               return;
             }
 
-            context.report({
-              node: property,
-              messageId: 'useAssertSafe',
-              fix(fixer) {
-                const propText = context.getSourceCode().getText(property);
-                return createFixes(fixer, property, propText);
-              },
-            });
+            const propText = context.getSourceCode().getText(property);
+            reportUseAssertSafe(property, property, propText);
             return;
           }
         }
