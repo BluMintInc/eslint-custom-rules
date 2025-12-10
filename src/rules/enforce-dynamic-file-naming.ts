@@ -7,6 +7,7 @@ const ENFORCE_DYNAMIC_IMPORTS_RULE =
   '@blumintinc/blumint/enforce-dynamic-imports';
 const REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE =
   '@blumintinc/blumint/require-dynamic-firebase-imports';
+const DYNAMIC_RULES_LABEL = `${ENFORCE_DYNAMIC_IMPORTS_RULE} or ${REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE}`;
 const SHORTHAND_DISABLE_NEXT_LINE = /\bednl\b/;
 const SHORTHAND_DISABLE_LINE = /\bedl\b/;
 const DISABLE_NEXT_LINE_TOKENS = ['eslint-disable-next-line'];
@@ -21,7 +22,7 @@ export default createRule<
   meta: {
     type: 'suggestion',
     docs: {
-      description: `Enforce .dynamic.ts(x) file naming when ${ENFORCE_DYNAMIC_IMPORTS_RULE} or ${REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE} rule is disabled`,
+      description: `Enforce .dynamic.ts(x) file naming when ${DYNAMIC_RULES_LABEL} rule is disabled`,
       recommended: 'error',
     },
     schema: [],
@@ -36,7 +37,6 @@ export default createRule<
   create(context) {
     const filePath = context.getFilename();
     const fileName = path.basename(filePath);
-    const extension = path.extname(fileName);
 
     const isTypeScriptFile = /^[^.]+\.tsx?$/.test(fileName);
 
@@ -56,20 +56,20 @@ export default createRule<
 
         for (const comment of comments) {
           const commentText = comment.value.trim();
-        const normalizedCommentText = commentText.toLowerCase();
+          const normalizedCommentText = commentText.toLowerCase();
           const disablesEnforceDynamicImports = commentText.includes(
-          ENFORCE_DYNAMIC_IMPORTS_RULE,
+            ENFORCE_DYNAMIC_IMPORTS_RULE,
           );
           const disablesRequireDynamicFirebaseImports = commentText.includes(
-          REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE,
+            REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE,
           );
           const disablesTargetRule =
             disablesEnforceDynamicImports || disablesRequireDynamicFirebaseImports;
 
           const inlineDisable =
-          (DISABLE_NEXT_LINE_TOKENS.some((token) =>
-            normalizedCommentText.includes(token),
-          ) ||
+            (DISABLE_NEXT_LINE_TOKENS.some((token) =>
+              normalizedCommentText.includes(token),
+            ) ||
             DISABLE_LINE_TOKENS.some((token) =>
               normalizedCommentText.includes(token),
             ) ||
@@ -77,20 +77,23 @@ export default createRule<
             SHORTHAND_DISABLE_LINE.test(normalizedCommentText)) &&
             disablesTargetRule;
           const blockDisable =
-          normalizedCommentText.includes(DISABLE_BLOCK_TOKEN) && disablesTargetRule;
+            normalizedCommentText.includes(DISABLE_BLOCK_TOKEN) &&
+            disablesTargetRule;
 
           if (inlineDisable || blockDisable) {
             foundDisableDirective = true;
-            if (disablesEnforceDynamicImports && !disablesRequireDynamicFirebaseImports) {
-            disabledRuleName = ENFORCE_DYNAMIC_IMPORTS_RULE;
+            if (
+              disablesEnforceDynamicImports &&
+              !disablesRequireDynamicFirebaseImports
+            ) {
+              disabledRuleName = ENFORCE_DYNAMIC_IMPORTS_RULE;
             } else if (
               disablesRequireDynamicFirebaseImports &&
               !disablesEnforceDynamicImports
             ) {
-            disabledRuleName = REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE;
+              disabledRuleName = REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE;
             } else {
-              disabledRuleName =
-              `${ENFORCE_DYNAMIC_IMPORTS_RULE} or ${REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE}`;
+              disabledRuleName = DYNAMIC_RULES_LABEL;
             }
             break;
           }
@@ -98,14 +101,13 @@ export default createRule<
 
         if (foundDisableDirective && !hasDynamicExtension) {
           const suggestedName = fileName.replace(/\.tsx?$/, '.dynamic$&');
+          const extension = path.extname(fileName);
           context.report({
             loc: { line: 1, column: 0 },
             messageId: 'requireDynamicExtension',
             data: {
               fileName,
-              ruleName:
-                disabledRuleName ??
-              `${ENFORCE_DYNAMIC_IMPORTS_RULE} or ${REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE}`,
+              ruleName: disabledRuleName ?? DYNAMIC_RULES_LABEL,
               extension,
               suggestedName,
             },
