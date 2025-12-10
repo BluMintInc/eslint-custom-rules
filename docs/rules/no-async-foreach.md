@@ -8,7 +8,7 @@ Passing an async function to `Array.forEach` does not behave like a sequential l
 
 ## Rule Details
 
-This rule reports any async callback passed to `Array.forEach`.
+This rule reports any async callback passed to `Array.forEach`, including inline async callbacks and async functions referenced by name.
 
 Examples of **incorrect** code for this rule:
 
@@ -22,6 +22,12 @@ Examples of **incorrect** code for this rule:
   await someAsyncFunction(letter);
   await audit(letter);
 });
+
+async function handle(letter: string) {
+  await someAsyncFunction(letter);
+}
+
+['a', 'b'].forEach(handle);
 ```
 
 Examples of **correct** code for this rule:

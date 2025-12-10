@@ -26,5 +26,35 @@ ruleTesterTs.run('no-async-foreach', noAsyncForEach, {
         },
       ],
     },
+    {
+      code: `
+async function handle(letter: string) {
+  await someAsyncFunction(letter);
+}
+
+['a', 'b'].forEach(handle);
+      `,
+      errors: [
+        {
+          messageId: 'noAsyncForEach',
+          data: { callbackLabel: 'function "handle"' },
+        },
+      ],
+    },
+    {
+      code: `
+const handle = async (letter: string) => {
+  await someAsyncFunction(letter);
+};
+
+['a', 'b'].forEach(handle);
+      `,
+      errors: [
+        {
+          messageId: 'noAsyncForEach',
+          data: { callbackLabel: 'function "handle"' },
+        },
+      ],
+    },
   ],
 });
