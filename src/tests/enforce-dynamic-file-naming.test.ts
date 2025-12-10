@@ -1,4 +1,5 @@
 import { ESLintUtils } from '@typescript-eslint/utils';
+import { Linter } from 'eslint';
 import rule, { RULE_NAME } from '../rules/enforce-dynamic-file-naming';
 
 // Create a custom rule tester that doesn't require the actual enforce-dynamic-imports rule
@@ -10,12 +11,37 @@ const ruleTester = new ESLintUtils.RuleTester({
   },
 });
 
+const linter = (ruleTester as unknown as { linter: Linter }).linter;
+
+linter.defineRule('@blumintinc/blumint/enforce-dynamic-imports', {
+  meta: {
+    type: 'problem',
+    docs: { description: 'stub', recommended: false },
+    schema: [],
+  },
+  create: () => ({}),
+});
+
+linter.defineRule('@blumintinc/blumint/require-dynamic-firebase-imports', {
+  meta: {
+    type: 'problem',
+    docs: { description: 'stub', recommended: false },
+    schema: [],
+  },
+  create: () => ({}),
+});
+
 ruleTester.run(RULE_NAME, rule, {
   valid: [
     // Regular TypeScript file without disable directive
     {
       code: `import React from 'react';`,
       filename: 'example.ts',
+    },
+    // File with .dynamic.ts extension and enforce-dynamic-imports eslint-disable-line directive
+    {
+      code: `import SomeModule from './SomeModule'; // eslint-disable-line @blumintinc/blumint/enforce-dynamic-imports`,
+      filename: 'example.dynamic.ts',
     },
     // Regular TypeScript file without disable directive
     {
@@ -173,6 +199,22 @@ console.log('Debugging');`,
           data: {
             fileName: 'example.dynamic.tsx',
             standardName: 'example.tsx',
+          },
+        },
+      ],
+    },
+    // File without .dynamic.ts extension but with enforce-dynamic-imports eslint-disable-line directive
+    {
+      code: `import SomeModule from './SomeModule'; // eslint-disable-line @blumintinc/blumint/enforce-dynamic-imports`,
+      filename: 'example.ts',
+      errors: [
+        {
+          messageId: 'requireDynamicExtension',
+          data: {
+            fileName: 'example.ts',
+            ruleName: '@blumintinc/blumint/enforce-dynamic-imports',
+            extension: '.ts',
+            suggestedName: 'example.dynamic.ts',
           },
         },
       ],

@@ -2,7 +2,7 @@
 
 <!-- end auto-generated rule header -->
 
-This rule keeps exceptions to our dynamic import rules explicit. When a file disables `@blumintinc/blumint/enforce-dynamic-imports` or `@blumintinc/blumint/require-dynamic-firebase-imports`, the filename must carry the `.dynamic.ts` or `.dynamic.tsx` suffix. The suffix signals to reviewers that static imports are intentional. The reverse also holds: any `.dynamic.ts(x)` file must include a disable directive for one of those rules, otherwise the suffix is misleading noise.
+This rule keeps exceptions to our dynamic import rules explicit. When you disable `@blumintinc/blumint/enforce-dynamic-imports` or `@blumintinc/blumint/require-dynamic-firebase-imports`, name the file with the `.dynamic.ts` or `.dynamic.tsx` suffix. The suffix tells reviewers that your static imports are intentional. The reverse also holds: if you choose a `.dynamic.ts(x)` filename, include a disable directive for one of those rules so the suffix is truthful signal rather than noise.
 
 Why it matters:
 - Static imports are a conscious escape hatch from dynamic-loading safeguards; the `.dynamic` suffix surfaces that choice for code reviewers and audit tools.
@@ -11,10 +11,10 @@ Why it matters:
 
 ## Rule Details
 
-The rule applies to `.ts` and `.tsx` files. It ignores other extensions (for example `.test.ts`, `.deprecated.ts`).
+The rule applies to `.ts` and `.tsx` files. It ignores other filename patterns (for example `*.test.ts`, `*.deprecated.ts`).
 
-- If a file disables `@blumintinc/blumint/enforce-dynamic-imports` or `@blumintinc/blumint/require-dynamic-firebase-imports`, it must be named `*.dynamic.ts` or `*.dynamic.tsx`.
-- If a file is named `*.dynamic.ts` or `*.dynamic.tsx`, it must contain a disable directive for one of the two rules above.
+- If you disable `@blumintinc/blumint/enforce-dynamic-imports` or `@blumintinc/blumint/require-dynamic-firebase-imports`, name the file `*.dynamic.ts` or `*.dynamic.tsx`.
+- If you name a file `*.dynamic.ts` or `*.dynamic.tsx`, include a disable directive for one of the two rules above.
 
 Examples of **incorrect** code for this rule:
 
@@ -65,6 +65,8 @@ import SomeFunction from './SomeFunction';
 // File: example.ts
 import SomeModule from './SomeModule';
 ```
+
+This rule only enforces the `.dynamic` suffix contract. Whether a static import is allowed in the first place is governed by `@blumintinc/blumint/enforce-dynamic-imports`.
 
 ## When Not To Use It
 

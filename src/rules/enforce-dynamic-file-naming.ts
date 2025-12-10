@@ -27,7 +27,7 @@ export default createRule<
   create(context) {
     const filePath = context.getFilename();
     const fileName = path.basename(filePath);
-    const extension = path.extname(fileName) || '.ts';
+    const extension = path.extname(fileName);
 
     const isTypeScriptFile = /^[^.]+\.tsx?$/.test(fileName);
 
@@ -58,7 +58,9 @@ export default createRule<
 
           const inlineDisable =
             (commentText.includes('eslint-disable-next-line') ||
-              commentText.includes('ednl')) &&
+              commentText.includes('eslint-disable-line') ||
+              commentText.includes('ednl') ||
+              commentText.includes('edl')) &&
             disablesTargetRule;
           const blockDisable =
             commentText.includes('eslint-disable ') && disablesTargetRule;
