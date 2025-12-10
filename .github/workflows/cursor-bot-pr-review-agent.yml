@@ -24,8 +24,8 @@ jobs:
       (github.event_name == 'status' && github.event.state == 'success' && (contains(github.event.context, 'CodeRabbit') || contains(github.event.context, 'coderabbit')))
     runs-on: ubuntu-latest
     concurrency:
-      # Group by commit SHA to prevent race conditions between check_run and status events for the same code
-      group: cursor-bot-review-${{ github.event.check_run.head_sha || github.event.pull_request.head.sha || github.event.sha }}
+      # Prefer PR number to dedupe across check_run/status events; fall back to SHA when PR context is absent
+      group: cursor-bot-review-pr-${{ github.event.pull_request.number || github.event.check_run.pull_requests[0].number || github.event.check_suite.pull_requests[0].number || github.event.workflow_run.pull_requests[0].number || github.event.number || github.event.sha }}
       cancel-in-progress: false
     steps:
       - name: Checkout
@@ -110,9 +110,27 @@ jobs:
         if: steps.checks.outputs.missing_required == 'true'
         run: echo "Waiting for required bot checks to succeed before launching agent."
 
+      - name: Check for existing agent launch on this commit
+        id: idempotency
+        if: steps.checks.outputs.missing_required == 'false'
+        run: |
+          PR=${{ steps.checks.outputs.pr_number }}
+          HEAD_SHA=${{ steps.checks.outputs.head_sha }}
+
+          echo "Checking for prior agent launch on PR #$PR for commit $HEAD_SHA"
+          HAS_COMMENT=$(gh pr view "$PR" --json comments --jq 'any(.comments[].body; contains("<!-- cursor-bot-agent:'"${HEAD_SHA}"' -->"))' 2>/dev/null || echo "false")
+
+          if [ "$HAS_COMMENT" = "true" ]; then
+            echo "Agent already launched for this commit; skipping."
+            echo "already_launched=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No prior launch detected for this commit."
+            echo "already_launched=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Fetch unresolved bot comments
         id: comments
-        if: steps.checks.outputs.missing_required == 'false'
+        if: steps.checks.outputs.missing_required == 'false' && steps.idempotency.outputs.already_launched != 'true'
         run: |
           PR=${{ steps.checks.outputs.pr_number }}
           COMMENTS=$(./scripts/pr-check-bot-comments.sh --pr="$PR" --limit=5)
@@ -129,12 +147,12 @@ jobs:
           fi
 
       - name: Exit if no bot comments
-        if: steps.checks.outputs.missing_required == 'false' && steps.comments.outputs.no_comments == 'true'
+        if: steps.checks.outputs.missing_required == 'false' && steps.idempotency.outputs.already_launched != 'true' && steps.comments.outputs.no_comments == 'true'
         run: echo "No unresolved bot comments; skipping agent launch."
 
       - name: Build bot review context and prompt
         id: prompt
-        if: steps.checks.outputs.missing_required == 'false' && steps.comments.outputs.no_comments != 'true'
+        if: steps.checks.outputs.missing_required == 'false' && steps.idempotency.outputs.already_launched != 'true' && steps.comments.outputs.no_comments != 'true'
         run: |
           PR=${{ steps.checks.outputs.pr_number }}
           HEAD_REF='${{ steps.checks.outputs.head_ref }}'
@@ -176,7 +194,7 @@ jobs:
 
       - name: Launch Cursor Background Agent for bot comments
         id: launch
-        if: steps.checks.outputs.missing_required == 'false' && steps.comments.outputs.no_comments != 'true'
+        if: steps.checks.outputs.missing_required == 'false' && steps.idempotency.outputs.already_launched != 'true' && steps.comments.outputs.no_comments != 'true'
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
           CURSOR_WEBHOOK_SECRET: ${{ secrets.CURSOR_WEBHOOK_SECRET }}
@@ -239,4 +257,5 @@ jobs:
         run: |
           URL='${{ steps.launch.outputs.agent_url }}'
           PR=${{ steps.checks.outputs.pr_number }}
-          gh pr comment "$PR" --body "✅ Launched Cursor agent to address bot review comments after CodeRabbit and Cursor Bugbot checks passed. Agent: $URL. Changes are pushed directly to this PR branch."
+          HEAD_SHA='${{ steps.checks.outputs.head_sha }}'
+          gh pr comment "$PR" --body "✅ Launched Cursor agent to address bot review comments after CodeRabbit and Cursor Bugbot checks passed (commit $HEAD_SHA). Agent: $URL. Changes are pushed directly to this PR branch. <!-- cursor-bot-agent:$HEAD_SHA -->"
