@@ -77,7 +77,7 @@ ruleTesterTs.run('omit-index-html', omitIndexHtml, {
     // Template literal with dynamic part and index.html
     {
       code: 'const url = `https://example.com/${page}/index.html`;',
-      errors: [buildError('https://example.com//index.html')],
+      errors: [buildError('https://example.com/${page}/index.html')],
       // No output as we don't auto-fix template literals
     },
   ],

@@ -1,3 +1,5 @@
+import { TSESLint, TSESTree } from '@typescript-eslint/utils';
+
 import { createRule } from '../utils/createRule';
 
 type Options = [
@@ -42,6 +44,27 @@ function fixUrl(url: string): string {
   return url.replace(/\/index\.html($|[?#])/, '/$1');
 }
 
+/**
+ * Reconstructs a template literal as it appears in source, including expressions.
+ */
+function describeTemplateLiteral(
+  node: TSESTree.TemplateLiteral,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+): string {
+  const parts: string[] = [];
+
+  node.quasis.forEach((quasi, index) => {
+    parts.push(quasi.value.raw);
+
+    const expression = node.expressions[index];
+    if (expression) {
+      parts.push(`\${${sourceCode.getText(expression)}}`);
+    }
+  });
+
+  return parts.join('');
+}
+
 export const omitIndexHtml = createRule<Options, MessageIds>({
   name: 'omit-index-html',
   meta: {
@@ -69,6 +92,7 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
   },
   defaultOptions: [{ allowWithQueryOrHash: true }],
   create(context, [options]) {
+    const sourceCode = context.getSourceCode();
     const allowWithQueryOrHash = options.allowWithQueryOrHash !== false;
 
     return {
@@ -96,8 +120,7 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
         }
       },
       TemplateLiteral(node) {
-        // For template literals, we can only check if the static parts contain index.html
-        const value = node.quasis.map((q) => q.value.raw).join('');
+        const value = describeTemplateLiteral(node, sourceCode);
 
         if (value.includes('/index.html')) {
           context.report({
