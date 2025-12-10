@@ -1,6 +1,11 @@
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { enforceCssMediaQueries } from '../rules/enforce-css-media-queries';
 
+const error = (source: string) => ({
+  messageId: 'enforceCssMediaQueries' as const,
+  data: { source },
+});
+
 ruleTesterJsx.run('enforce-css-media-queries', enforceCssMediaQueries, {
   valid: [
     // Valid component using CSS for responsive design
@@ -57,9 +62,9 @@ ruleTesterJsx.run('enforce-css-media-queries', enforceCssMediaQueries, {
         }
       `,
       errors: [
-        { messageId: 'enforceCssMediaQueries' },
-        { messageId: 'enforceCssMediaQueries' },
-        { messageId: 'enforceCssMediaQueries' },
+        error('useMediaQuery import from @mui/material'),
+        error('useMediaQuery import'),
+        error('useMediaQuery call'),
       ],
     },
     // Invalid component using useMediaQuery from a destructured import
@@ -73,9 +78,9 @@ ruleTesterJsx.run('enforce-css-media-queries', enforceCssMediaQueries, {
         }
       `,
       errors: [
-        { messageId: 'enforceCssMediaQueries' },
-        { messageId: 'enforceCssMediaQueries' },
-        { messageId: 'enforceCssMediaQueries' },
+        error('useMediaQuery import from @mui/material'),
+        error('useMediaQuery import'),
+        error('useMediaQuery call'),
       ],
     },
     // Invalid component using react-responsive
@@ -89,8 +94,8 @@ ruleTesterJsx.run('enforce-css-media-queries', enforceCssMediaQueries, {
         }
       `,
       errors: [
-        { messageId: 'enforceCssMediaQueries' },
-        { messageId: 'enforceCssMediaQueries' },
+        error('react-responsive import "react-responsive"'),
+        error('useMediaQuery call'),
       ],
     },
     // Invalid component using useMobile hook
@@ -104,9 +109,9 @@ ruleTesterJsx.run('enforce-css-media-queries', enforceCssMediaQueries, {
         }
       `,
       errors: [
-        { messageId: 'enforceCssMediaQueries' },
-        { messageId: 'enforceCssMediaQueries' },
-        { messageId: 'enforceCssMediaQueries' },
+        error('useMobile import from ../hooks/useMobile'),
+        error('useMobile import'),
+        error('useMobile call'),
       ],
     },
     // Invalid component using useMobile from a different path
@@ -120,9 +125,9 @@ ruleTesterJsx.run('enforce-css-media-queries', enforceCssMediaQueries, {
         }
       `,
       errors: [
-        { messageId: 'enforceCssMediaQueries' },
-        { messageId: 'enforceCssMediaQueries' },
-        { messageId: 'enforceCssMediaQueries' },
+        error('useMobile import from src/hooks/useMobile'),
+        error('useMobile import'),
+        error('useMobile call'),
       ],
     },
     // Invalid component using useMediaQuery directly
@@ -145,9 +150,9 @@ ruleTesterJsx.run('enforce-css-media-queries', enforceCssMediaQueries, {
         }
       `,
       errors: [
-        { messageId: 'enforceCssMediaQueries' },
-        { messageId: 'enforceCssMediaQueries' },
-        { messageId: 'enforceCssMediaQueries' },
+        error('useMediaQuery import from @mui/material'),
+        error('useMediaQuery import'),
+        error('useMediaQuery call'),
       ],
     },
   ],

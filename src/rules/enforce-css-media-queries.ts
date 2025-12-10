@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'enforceCssMediaQueries';
@@ -17,12 +17,19 @@ export const enforceCssMediaQueries = createRule<[], MessageIds>({
     },
     messages: {
       enforceCssMediaQueries:
-        'Use CSS media queries instead of JavaScript breakpoints for responsive design. JavaScript breakpoint handling can cause unnecessary re-renders and impact performance.',
+        'Responsive breakpoint "{{source}}" uses JavaScript media detection. JavaScript breakpoints attach resize listeners inside the render path, causing avoidable re-renders and drifting from the single CSS breakpoint source of truth. Move this breakpoint into CSS (@media or container queries) and drive layout changes through class names or CSS-driven props instead of runtime hooks.',
     },
     schema: [],
   },
   defaultOptions: [],
   create(context) {
+    const reportUsage = (node: TSESTree.Node, source: string) =>
+      context.report({
+        node,
+        messageId: 'enforceCssMediaQueries',
+        data: { source },
+      });
+
     return {
       // Check for Material-UI's useMediaQuery and react-responsive imports
       ImportDeclaration(node) {
@@ -36,10 +43,7 @@ export const enforceCssMediaQueries = createRule<[], MessageIds>({
               specifier.imported.name === 'useMediaQuery',
           )
         ) {
-          context.report({
-            node,
-            messageId: 'enforceCssMediaQueries',
-          });
+          reportUsage(node, 'useMediaQuery import from @mui/material');
         }
 
         // Check for react-responsive imports
@@ -47,10 +51,10 @@ export const enforceCssMediaQueries = createRule<[], MessageIds>({
           node.source.value === 'react-responsive' ||
           node.source.value.includes('react-responsive/')
         ) {
-          context.report({
+          reportUsage(
             node,
-            messageId: 'enforceCssMediaQueries',
-          });
+            `react-responsive import "${String(node.source.value)}"`,
+          );
         }
 
         // Check for useMobile import from hooks/useMobile
@@ -63,10 +67,10 @@ export const enforceCssMediaQueries = createRule<[], MessageIds>({
               specifier.imported.name === 'useMobile',
           )
         ) {
-          context.report({
+          reportUsage(
             node,
-            messageId: 'enforceCssMediaQueries',
-          });
+            `useMobile import from ${String(node.source.value)}`,
+          );
         }
       },
 
@@ -82,10 +86,7 @@ export const enforceCssMediaQueries = createRule<[], MessageIds>({
             // Check for useMobile from any source
             node.imported.name === 'useMobile')
         ) {
-          context.report({
-            node,
-            messageId: 'enforceCssMediaQueries',
-          });
+          reportUsage(node, `${node.imported.name} import`);
         }
       },
 
@@ -96,10 +97,7 @@ export const enforceCssMediaQueries = createRule<[], MessageIds>({
           (node.callee.name === 'useMediaQuery' ||
             node.callee.name === 'useMobile')
         ) {
-          context.report({
-            node,
-            messageId: 'enforceCssMediaQueries',
-          });
+          reportUsage(node, `${node.callee.name} call`);
         }
       },
     };

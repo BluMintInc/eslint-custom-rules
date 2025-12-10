@@ -1,6 +1,16 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceAssertThrows } from '../rules/enforce-assert-throws';
 
+const assertShouldThrowError = (functionName: string) => ({
+  messageId: 'assertShouldThrow' as const,
+  data: { functionName },
+});
+
+const shouldBeAssertPrefixedError = (functionName: string) => ({
+  messageId: 'shouldBeAssertPrefixed' as const,
+  data: { functionName },
+});
+
 ruleTesterTs.run('enforce-assert-throws', enforceAssertThrows, {
   valid: [
     // Function declaration with throw
@@ -134,7 +144,7 @@ ruleTesterTs.run('enforce-assert-throws', enforceAssertThrows, {
           assertTournamentDeletable();
         }
       `,
-      errors: [{ messageId: 'shouldBeAssertPrefixed' }],
+      errors: [shouldBeAssertPrefixedError('isDeletable')],
     },
     // Arrow function that calls assert- method but is not prefixed with assert-
     {
@@ -143,7 +153,7 @@ ruleTesterTs.run('enforce-assert-throws', enforceAssertThrows, {
           assertNotEmpty(data);
         };
       `,
-      errors: [{ messageId: 'shouldBeAssertPrefixed' }],
+      errors: [shouldBeAssertPrefixedError('validateData')],
     },
     // Method that calls assert- method but is not prefixed with assert-
     {
@@ -155,7 +165,7 @@ ruleTesterTs.run('enforce-assert-throws', enforceAssertThrows, {
           }
         }
       `,
-      errors: [{ messageId: 'shouldBeAssertPrefixed' }],
+      errors: [shouldBeAssertPrefixedError('processData')],
     },
     // Function that calls assert- method in conditional
     {
@@ -166,7 +176,7 @@ ruleTesterTs.run('enforce-assert-throws', enforceAssertThrows, {
           }
         }
       `,
-      errors: [{ messageId: 'shouldBeAssertPrefixed' }],
+      errors: [shouldBeAssertPrefixedError('validateInput')],
     },
     // Function declaration without throw
     {
@@ -175,7 +185,7 @@ ruleTesterTs.run('enforce-assert-throws', enforceAssertThrows, {
           return user !== null;
         }
       `,
-      errors: [{ messageId: 'assertShouldThrow' }],
+      errors: [assertShouldThrowError('assertValidUser')],
     },
     // Arrow function without throw
     {
@@ -184,7 +194,7 @@ ruleTesterTs.run('enforce-assert-throws', enforceAssertThrows, {
           return Boolean(data);
         };
       `,
-      errors: [{ messageId: 'assertShouldThrow' }],
+      errors: [assertShouldThrowError('assertDataLoaded')],
     },
     // Class method without throw
     {
@@ -195,7 +205,7 @@ ruleTesterTs.run('enforce-assert-throws', enforceAssertThrows, {
           }
         }
       `,
-      errors: [{ messageId: 'assertShouldThrow' }],
+      errors: [assertShouldThrowError('assertValidName')],
     },
     // Function with console.warn instead of throw
     {
@@ -206,7 +216,7 @@ ruleTesterTs.run('enforce-assert-throws', enforceAssertThrows, {
           }
         }
       `,
-      errors: [{ messageId: 'assertShouldThrow' }],
+      errors: [assertShouldThrowError('assertPositiveNumber')],
     },
     // Function that catches and suppresses error
     {
@@ -219,7 +229,7 @@ ruleTesterTs.run('enforce-assert-throws', enforceAssertThrows, {
           }
         }
       `,
-      errors: [{ messageId: 'assertShouldThrow' }],
+      errors: [assertShouldThrowError('assertFileExists')],
     },
     // Method that calls non-assert method (should fail)
     {
@@ -234,7 +244,7 @@ ruleTesterTs.run('enforce-assert-throws', enforceAssertThrows, {
           }
         }
       `,
-      errors: [{ messageId: 'assertShouldThrow' }],
+      errors: [assertShouldThrowError('assertSomething')],
     },
     // Method that calls assert method but also has other logic without throw (edge case)
     {
@@ -251,7 +261,7 @@ ruleTesterTs.run('enforce-assert-throws', enforceAssertThrows, {
           }
         }
       `,
-      errors: [{ messageId: 'assertShouldThrow' }],
+      errors: [assertShouldThrowError('assertComplexLogic')],
     },
   ],
 });
