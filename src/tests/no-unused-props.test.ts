@@ -41,6 +41,23 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
     },
     {
       code: `
+        type Props = {
+          tournamentId: string;
+          gameReadonly: Readonly<{ id: string; name: string }>;
+        };
+
+        export const createScheduler = ({ tournamentId }: Props) => {
+          return { id: tournamentId };
+        };
+      `,
+      filename: 'functions/src/util/tournaments/exampleBackendUsage.ts',
+      parserOptions: {
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
         type Props = { title: string };
         const MyComponent = ({ title }: Props) => <h1>{title}</h1>;
       `,

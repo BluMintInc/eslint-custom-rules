@@ -18,6 +18,12 @@ export const noUnusedProps = createRule({
   },
   defaultOptions: [],
   create(context) {
+    const filename = context.getFilename();
+    const isTsxFile = filename.toLowerCase().endsWith('.tsx');
+    let hasJsxInFile = false;
+
+    const shouldCheckFile = () => isTsxFile || hasJsxInFile;
+
     const propsTypes: Map<string, Record<string, TSESTree.Node>> = new Map();
     const usedProps: Map<string, Set<string>> = new Map();
     // Track which spread types have been used in a component
@@ -484,6 +490,13 @@ export const noUnusedProps = createRule({
           const propsType = propsTypes.get(typeName);
           const used = usedProps.get(typeName);
 
+          if (!shouldCheckFile()) {
+            propsTypes.delete(typeName);
+            usedProps.delete(typeName);
+            currentComponent = null;
+            return;
+          }
+
           if (propsType && used) {
             Object.keys(propsType).forEach((prop) => {
               if (!used.has(prop)) {
@@ -583,6 +596,14 @@ export const noUnusedProps = createRule({
           usedProps.delete(typeName);
           currentComponent = null;
         }
+      },
+
+      JSXElement() {
+        hasJsxInFile = true;
+      },
+
+      JSXFragment() {
+        hasJsxInFile = true;
       },
     };
   },
