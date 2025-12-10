@@ -15,10 +15,12 @@ Enforce the use of `toString()` over `toJSON()` when working with `URL` objects 
 ## Rule Details
 
 This rule reports usage of `URL#toJSON()` and suggests either:
+
 - Replacing it with `URL#toString()` in general code, or
 - Passing the `URL` object directly to `JSON.stringify` if the call occurs within the argument to `JSON.stringify`. In that context, `JSON.stringify` automatically invokes `toJSON` on the `URL` object.
 
 ### Incorrect
+
 ```javascript
 const url = new URL('https://example.com/path');
 console.log(url.toJSON()); // Works, but unnecessary
@@ -35,6 +37,7 @@ JSON.stringify({ link: u.toJSON() }); // toJSON() is redundant here
 ```
 
 ### Correct
+
 ```javascript
 const url = new URL('https://example.com/path');
 console.log(url.toString()); // Clearer and more direct
@@ -49,10 +52,6 @@ const payload = JSON.stringify({ link: url }); // `toJSON` called automatically 
 console.log(new URL('https://e.com').toString());
 ```
 
-## Options
-
-This rule does not have any options.
-
 ## When Not To Use It
 
 - If your project intentionally prefers `toJSON()` to signal JSON-only usage even outside of `JSON.stringify`. This is uncommon and discouraged due to redundancy with `toString()` on `URL`.
@@ -64,3 +63,4 @@ This rule does not have any options.
   - General case: `foo.toJSON()` → `foo.toString()`
   - Inside `JSON.stringify(...)`: `foo.toJSON()` → `foo` (drop the method call)
   - Optional chaining calls like `foo?.toJSON()` are fixed to `foo?.toString()` (the call is not dropped to preserve semantics).
+

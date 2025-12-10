@@ -1,4 +1,4 @@
-# Require the Fragment named import instead of shorthand fragments and React.Fragment (`@blumintinc/blumint/prefer-fragment-component`)
+# Enforce using Fragment imported from react over shorthand fragments and React.Fragment (`@blumintinc/blumint/prefer-fragment-component`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

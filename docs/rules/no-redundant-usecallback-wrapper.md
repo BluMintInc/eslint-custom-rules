@@ -10,9 +10,9 @@ Prevent wrapping already memoized callbacks from hooks/contexts with an extra `u
 
 ## Why
 
-- Reduces unnecessary function allocations
-- Avoids type mismatches from wrapper signatures
-- Improves readability by passing stable callbacks directly
+- Reduces unnecessary function allocations.
+- Avoids type mismatches from wrapper signatures.
+- Improves readability by passing stable callbacks directly.
 
 ## Rule Details
 
@@ -47,15 +47,15 @@ function SignInButton() {
   "@blumintinc/blumint/no-redundant-usecallback-wrapper": [
     "error",
     {
-      "memoizedHookNames": ["useAuthSubmit", "useLoadingWrapper", "useSomething"],
+      "memoizedHookNames": ["useAuthSubmit", "useLoadingWrapper"],
       "assumeAllUseAreMemoized": false
     }
   ]
 }
 ```
 
-- `memoizedHookNames`: additional hook names to treat as returning memoized/stable callbacks.
-- `assumeAllUseAreMemoized` (default `false`): when `true`, treat any callee starting with `use` as memoized/stable. Leave `false` to opt-in only via `memoizedHookNames`.
+- `memoizedHookNames` (default `[]`): additional hook names to treat as returning memoized/stable callbacks.
+- `assumeAllUseAreMemoized` (default `false`): when `true`, treat any callee starting with `use` as memoized/stable. Keep `false` to opt in via `memoizedHookNames`.
 
 ## Valid
 

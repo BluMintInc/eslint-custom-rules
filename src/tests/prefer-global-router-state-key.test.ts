@@ -251,31 +251,7 @@ ruleTesterJsx.run(
         `,
       },
 
-      // 16. Complex member expressions (allowed - permissive)
-      {
-        code: `
-        function Component() {
-          const keys = {
-            user: 'user-profile'
-          };
-          const [value] = useRouterState({ key: keys.user });
-          return <div>{value}</div>;
-        }
-        `,
-      },
-
-      // 17. Array access (allowed - permissive)
-      {
-        code: `
-        function Component() {
-          const keys = ['user-profile', 'user-settings'];
-          const [value] = useRouterState({ key: keys[0] });
-          return <div>{value}</div>;
-        }
-        `,
-      },
-
-      // 18. Spread operator (allowed - permissive for complex cases)
+      // 17. Spread operator (allowed - permissive for complex cases)
       {
         code: `
         function Component() {
@@ -345,7 +321,8 @@ ruleTesterJsx.run(
         }
         `,
         errors: [stringLiteralError("'user-profile'")],
-        output: `
+        output: `import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
         function Component() {
           const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
           return <div>{value}</div>;
@@ -447,6 +424,43 @@ ruleTesterJsx.run(
         ],
       },
 
+      // 9. Member expression without validated source
+      {
+        code: `
+        function Component() {
+          const keys = { user: 'user-profile' };
+          const [value] = useRouterState({ key: keys.user });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [invalidSourceError('keys.user')],
+      },
+
+      // 10. Array member expression without validated source
+      {
+        code: `
+        function Component() {
+          const keys = ['user-profile', 'user-settings'];
+          const [value] = useRouterState({ key: keys[0] });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [invalidSourceError('keys[0]')],
+      },
+
+      // 11. Import from unrelated queryKeys path should be rejected
+      {
+        code: `
+        import { QUERY_KEY_USER_PROFILE } from './some/other/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [invalidSourceError('QUERY_KEY_USER_PROFILE')],
+      },
+
       // 9. String literals in custom hooks
       {
         code: `
@@ -460,7 +474,8 @@ ruleTesterJsx.run(
         }
         `,
         errors: [stringLiteralError("'user-profile'")],
-        output: `
+        output: `import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
         function useCustomRouter() {
           return useRouterState({ key: QUERY_KEY_USER_PROFILE });
         }
@@ -481,7 +496,8 @@ ruleTesterJsx.run(
         };
         `,
         errors: [stringLiteralError("'user-profile'")],
-        output: `
+        output: `import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
         const withRouter = (Component) => (props) => {
           const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
           return <Component {...props} routerValue={value} />;
@@ -502,10 +518,11 @@ ruleTesterJsx.run(
           stringLiteralError("'user-profile'"),
           stringLiteralError("'user-settings'"),
         ],
-        output: `
+        output: `import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
         function Component() {
           const [value1] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
-          const [value2] = useRouterState({ key: QUERY_KEY_USER_SETTINGS });
+          const [value2] = useRouterState({ key: 'user-settings' });
           return <div>{value1} {value2}</div>;
         }
         `,
@@ -523,7 +540,8 @@ ruleTesterJsx.run(
         }
         `,
         errors: [stringLiteralError("'user-profile'")],
-        output: `
+        output: `import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
         function Component() {
           const [value] = useRouterState({
             key: QUERY_KEY_USER_PROFILE,

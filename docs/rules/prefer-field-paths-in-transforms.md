@@ -1,4 +1,4 @@
-# Flatten transformEach aggregation updates to field paths to avoid destructive deletes (`@blumintinc/blumint/prefer-field-paths-in-transforms`)
+# In propagation transforms, avoid returning multi-level nested objects under aggregation containers. Prefer flattened dot-path keys so diffs remove only leaf entries (`@blumintinc/blumint/prefer-field-paths-in-transforms`)
 
 ⚠️ This rule _warns_ in the ✅ `recommended` config.
 
@@ -48,10 +48,49 @@ const strategy = {
 };
 ```
 
+## Edge Cases
+
+1. Intentional parent deletion
+
+   If a parent container is exclusively owned by the source and deleting it is intended, disable inline:
+
+   ```ts
+   // eslint-disable-next-line @blumintinc/blumint/prefer-field-paths-in-transforms
+   return { matchesAggregation: { matchPreviews: {} } };
+   ```
+
+2. Arrays and array operations
+
+   Arrays are handled by the diff’s array extraction. This rule focuses on nested object shapes under containers. Returning flattened keys that include array indices or leaf fields is valid.
+
+3. Mixed outputs (nested + flattened)
+
+   Only nested shapes under configured containers are flagged. Other top-level flattened keys in the same return are allowed.
+
+4. Dynamic keys
+
+   Computed dot-keys like ``[`matchesAggregation.matchPreviews.${matchId}`]`` are encouraged and not flagged.
+
+5. Non-aggregation targets
+
+   If a transform writes to fields that aren’t shared containers, the rule is silent by default. Scope can be configured via options.
+
 ## Options
 
-- `containers` (string[]): glob patterns for container keys to enforce. Default: `['*Aggregation', 'previews', '*Previews']`.
-- `allowNestedIn` (string[]): glob patterns for file paths that may keep nested returns (e.g., one-off scripts or migrations).
+```json
+{
+  "@blumintinc/blumint/prefer-field-paths-in-transforms": [
+    "warn",
+    {
+      "containers": ["*Aggregation", "previews", "*Previews"],
+      "allowNestedIn": ["**/scripts/**", "**/migrations/**"]
+    }
+  ]
+}
+```
+
+- `containers`: glob patterns for container keys to enforce. Default: `["*Aggregation", "previews", "*Previews"]`.
+- `allowNestedIn`: glob patterns for file paths that may keep nested returns (e.g., one-off scripts or migrations).
 
 ## When not to use it
 

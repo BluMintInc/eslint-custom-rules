@@ -199,19 +199,17 @@ export const extractGlobalConstants: TSESLint.RuleModule<
           !hasAsConstAssertion &&
           (scope.type === 'function' || scope.type === 'block') &&
           isInsideFunction(node) &&
-          node.declarations.length > 0 &&
-          node.declarations[0].id &&
-          node.declarations[0].id.type === 'Identifier'
+          node.declarations.some((d) => d.id.type === 'Identifier')
         ) {
-          const constName = (node.declarations[0].id as TSESTree.Identifier)
-            .name;
-          context.report({
-            node,
-            messageId: 'extractGlobalConstants',
-            data: {
-              declarationName: constName,
-            },
-          });
+          for (const d of node.declarations) {
+            if (d.id.type !== 'Identifier') continue;
+            const constName = d.id.name;
+            context.report({
+              node: d,
+              messageId: 'extractGlobalConstants',
+              data: { declarationName: constName },
+            });
+          }
         }
       },
       FunctionDeclaration(node: TSESTree.FunctionDeclaration) {

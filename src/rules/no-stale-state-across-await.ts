@@ -2,6 +2,8 @@ import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'staleStateAcrossAwait';
+type SetterCall = { name: string; position: number };
+type AsyncBoundary = { position: number; label: string };
 
 export const noStaleStateAcrossAwait = createRule<[], MessageIds>({
   name: 'no-stale-state-across-await',
@@ -16,34 +18,12 @@ export const noStaleStateAcrossAwait = createRule<[], MessageIds>({
     schema: [],
     messages: {
       staleStateAcrossAwait:
-        'State setter "{{setterName}}" runs on both sides of {{boundaryType}}. Updates issued before the async boundary can resolve after later updates and overwrite fresher data, leaving the UI in a stale loading or placeholder state. Keep "{{setterName}}" updates on one side of the async boundary or consolidate into a single atomic update after the async work; if you intentionally use a sentinel value, document it with eslint-disable-next-line and a short comment explaining why.',
+        'State setter "{{setterName}}" runs on both sides of {{boundaryType}}. Updates issued before the async boundary can resolve after later updates and overwrite fresher data, leaving the UI in a stale loading or placeholder state. Keep "{{setterName}}" updates on one side of the async boundary or consolidate into a single atomic update after the async work; if you intentionally use a sentinel value, document it with // eslint-disable-next-line @blumintinc/blumint/no-stale-state-across-await and a short comment explaining why.',
     },
   },
   defaultOptions: [],
   create(context) {
-    // Track useState setters by mapping variable names to setter names
-    const useStateSetters = new Set<string>();
-
     return {
-      // Track useState destructuring to map setter names
-      VariableDeclarator(node) {
-        if (
-          node.id.type === AST_NODE_TYPES.ArrayPattern &&
-          node.init?.type === AST_NODE_TYPES.CallExpression &&
-          node.init.callee.type === AST_NODE_TYPES.Identifier &&
-          node.init.callee.name === 'useState'
-        ) {
-          const arrayPattern = node.id;
-          if (
-            arrayPattern.elements.length >= 2 &&
-            arrayPattern.elements[1]?.type === AST_NODE_TYPES.Identifier
-          ) {
-            const setterName = arrayPattern.elements[1].name;
-            useStateSetters.add(setterName);
-          }
-        }
-      },
-
       // Check functions for violations
       'FunctionDeclaration, FunctionExpression, ArrowFunctionExpression'(
         node:
@@ -51,9 +31,47 @@ export const noStaleStateAcrossAwait = createRule<[], MessageIds>({
           | TSESTree.FunctionExpression
           | TSESTree.ArrowFunctionExpression,
       ) {
+        const sourceCode = context.getSourceCode();
+        const scopeManager = sourceCode.scopeManager;
+        if (!scopeManager) return;
+        const acquiredScope = scopeManager.acquire(node);
+        if (!acquiredScope) return;
+        const scope = acquiredScope;
+
+        // Build local set of setter identifiers declared via useState in this scope
+        const localSetterNames = new Set<string>();
+        let scopeCursor: typeof scope | null = scope;
+        while (scopeCursor) {
+          for (const variable of scopeCursor.variables) {
+            for (const def of variable.defs) {
+              if (
+                def.type === 'Variable' &&
+                def.node.type === AST_NODE_TYPES.VariableDeclarator &&
+                def.node.id.type === AST_NODE_TYPES.ArrayPattern &&
+                def.node.init?.type === AST_NODE_TYPES.CallExpression &&
+                def.node.init.callee.type === AST_NODE_TYPES.Identifier &&
+                def.node.init.callee.name === 'useState'
+              ) {
+                const arrayPattern = def.node.id;
+                if (
+                  arrayPattern.elements.length >= 2 &&
+                  arrayPattern.elements[1]?.type === AST_NODE_TYPES.Identifier
+                ) {
+                  localSetterNames.add(arrayPattern.elements[1].name);
+                }
+              }
+            }
+          }
+          scopeCursor = scopeCursor.upper as typeof scope | null;
+        }
+
+        function isLocalSetter(identifier: TSESTree.Identifier): boolean {
+          return localSetterNames.has(identifier.name);
+        }
+
         // Collect all setter calls and async boundaries in this function
-        const setterCalls: { name: string; position: number }[] = [];
-        const asyncBoundaries: { position: number; label: string }[] = [];
+        const setterCalls: SetterCall[] = [];
+        const asyncBoundaries: AsyncBoundary[] = [];
 
         // Walk through the function body to find setter calls and async boundaries
         function walkNode(n: TSESTree.Node, skipNestedFunctions = true) {
@@ -61,7 +79,7 @@ export const noStaleStateAcrossAwait = createRule<[], MessageIds>({
             // Check for setter calls
             if (
               n.callee.type === AST_NODE_TYPES.Identifier &&
-              useStateSetters.has(n.callee.name)
+              isLocalSetter(n.callee)
             ) {
               setterCalls.push({
                 name: n.callee.name,
@@ -69,18 +87,23 @@ export const noStaleStateAcrossAwait = createRule<[], MessageIds>({
               });
             }
 
-            // Check for .then() calls
+            // Check for .then()/.catch()/.finally() calls
             if (
               n.callee.type === AST_NODE_TYPES.MemberExpression &&
               n.callee.property.type === AST_NODE_TYPES.Identifier &&
-              n.callee.property.name === 'then'
+              (n.callee.property.name === 'then' ||
+                n.callee.property.name === 'catch' ||
+                n.callee.property.name === 'finally')
             ) {
-              asyncBoundaries.push({
-                position: n.range[0],
-                label: 'a .then() callback',
-              });
+              const methodName = n.callee.property.name;
+              if (methodName === 'then' || methodName === 'catch') {
+                asyncBoundaries.push({
+                  position: n.range[0],
+                  label: `a .${methodName}() callback`,
+                });
+              }
 
-              // Walk into .then() callback arguments to find setter calls
+              // Walk into callback arguments to find setter calls
               if (n.arguments && n.arguments.length > 0) {
                 for (const arg of n.arguments) {
                   if (
@@ -103,6 +126,16 @@ export const noStaleStateAcrossAwait = createRule<[], MessageIds>({
           }
 
           if (n.type === AST_NODE_TYPES.YieldExpression) {
+            asyncBoundaries.push({
+              position: n.range[0],
+              label: 'a yield boundary',
+            });
+          }
+
+          if (
+            n.type === AST_NODE_TYPES.ForOfStatement &&
+            (n as any).await === true
+          ) {
             asyncBoundaries.push({
               position: n.range[0],
               label: 'a yield boundary',
