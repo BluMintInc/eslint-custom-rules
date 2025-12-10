@@ -18,7 +18,9 @@ export const noUnusedProps = createRule({
   },
   defaultOptions: [],
   create(context) {
-    const filename = context.getFilename();
+    const filename =
+      (context as { filename?: string; getFilename(): string }).filename ??
+      context.getFilename();
     const ruleSettings =
       ((context.settings && context.settings['no-unused-props']) as {
         reactLikeExtensions?: string[];
@@ -99,6 +101,10 @@ export const noUnusedProps = createRule({
 
       const spreadTypeName = prop.substring(3);
 
+      if (UTILITY_TYPES.has(spreadTypeName)) {
+        return true;
+      }
+
       return isAnyPropFromSpreadTypeUsed(spreadTypeName, used);
     };
 
@@ -109,8 +115,15 @@ export const noUnusedProps = createRule({
     ) => {
       for (const [spreadType, props] of usedSpreadTypes.entries()) {
         if (spreadType === currentTypeName) continue;
-        if (props.has(prop) && Array.from(props).some((p) => used.has(p))) {
-          return true;
+
+        if (!props.has(prop)) {
+          continue;
+        }
+
+        for (const spreadProp of props) {
+          if (used.has(spreadProp)) {
+            return true;
+          }
         }
       }
 
