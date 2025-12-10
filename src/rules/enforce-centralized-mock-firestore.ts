@@ -18,7 +18,7 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
     schema: [],
     messages: {
       useCentralizedMockFirestore:
-        'This file defines or re-exports a local mockFirestore instead of importing the shared one from "{{requiredPath}}". Local mocks drift from the canonical behavior and hide API changes; import mockFirestore from the centralized test util so fixes happen in one place.',
+        'This file defines or re-exports a local mockFirestore instead of importing the shared one from "{{requiredPath}}". Local mocks drift from the canonical behavior and hide API changes across suites. Import mockFirestore from the centralized test util so fixes happen in one place.',
     },
   },
   defaultOptions: [],
