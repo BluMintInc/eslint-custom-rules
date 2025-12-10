@@ -120,7 +120,7 @@ ruleTesterTs.run(
         `,
         output: `
         class User {
-          public get fullName {
+          public get fullName() {
             return this.first + this.last;
           }
         }
@@ -137,7 +137,7 @@ ruleTesterTs.run(
         `,
         output: `
         class Person {
-          get name {
+          get name() {
             return this.name;
           }
         }
@@ -154,7 +154,7 @@ ruleTesterTs.run(
         `,
         output: `
         class Previewer {
-          public get preview {
+          public get preview() {
             return { value: 1 } as const;
           }
         }
@@ -171,7 +171,7 @@ ruleTesterTs.run(
         `,
         output: `
         class Validator {
-          get isValid {
+          get isValid() {
             return true;
           }
         }
@@ -188,7 +188,7 @@ ruleTesterTs.run(
         `,
         output: `
         class MathUtils {
-          public static get pi {
+          public static get pi() {
             return 3.14;
           }
         }
@@ -198,14 +198,14 @@ ruleTesterTs.run(
       {
         code: `
         class Parser {
-          parse(): ParseResult {
+          result(): ParseResult {
             return this.doParse();
           }
         }
         `,
         output: `
         class Parser {
-          get parse(): ParseResult {
+          get result(): ParseResult {
             return this.doParse();
           }
         }
@@ -249,6 +249,18 @@ ruleTesterTs.run(
       },
       {
         code: `
+        class Tracker {
+          count() {
+            const next = ++this.counter;
+            return next;
+          }
+        }
+        `,
+        errors: [{ messageId: 'preferGetterSideEffect' }],
+        output: null,
+      },
+      {
+        code: `
         class Reporter {
           summary() {
             const title = this.title;
@@ -259,7 +271,7 @@ ruleTesterTs.run(
         options: [{ minBodyLines: 1 }],
         output: `
         class Reporter {
-          get summary {
+          get summary() {
             const title = this.title;
             return title;
           }
@@ -278,7 +290,7 @@ ruleTesterTs.run(
         options: [{ stripPrefixes: ['get', 'fetch'] }],
         output: `
         class Account {
-          get balance {
+          get balance() {
             return this.balance;
           }
         }
@@ -295,7 +307,7 @@ ruleTesterTs.run(
         `,
         output: `
         class TitleCase {
-          get URL {
+          get URL() {
             return this.url;
           }
         }

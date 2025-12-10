@@ -149,9 +149,9 @@ export const preferGetterOverParameterlessMethod = createRule<
     ],
     messages: {
       preferGetter:
-        'Method "{{name}}" has no parameters and returns a value, which reads like a computed property. Use a getter (e.g., "get {{suggestedName}}") to signal property access and avoid call-site parentheses.',
+        'Method "{{name}}" has no parameters and returns a value, which reads like a computed property. Use a getter (e.g., "get {{suggestedName}}()") to signal property access and avoid call-site parentheses.',
       preferGetterSideEffect:
-        'Method "{{name}}" looks like a computed value but {{reason}}. Keep it as a method or remove the side effects before converting to "get {{suggestedName}}".',
+        'Method "{{name}}" looks like a computed value but {{reason}}. Keep it as a method or remove the side effects before converting to "get {{suggestedName}}()".',
     },
   },
   defaultOptions: [DEFAULT_OPTIONS],
@@ -168,8 +168,24 @@ export const preferGetterOverParameterlessMethod = createRule<
     const prefixList = config.stripPrefixes;
     const sourceCode = context.getSourceCode();
 
-    function hasSideEffectTag(node: TSESTree.MethodDefinition): boolean {
-      const jsDoc = sourceCode.getJSDocComment(node);
+    function getJsDoc(node: MethodLikeDefinition) {
+      const comments = sourceCode.getCommentsBefore(node);
+      const candidate = comments[comments.length - 1];
+      if (
+        candidate &&
+        candidate.type === 'Block' &&
+        candidate.value.startsWith('*') &&
+        candidate.loc &&
+        node.loc &&
+        candidate.loc.end.line === node.loc.start.line - 1
+      ) {
+        return candidate;
+      }
+      return null;
+    }
+
+    function hasSideEffectTag(node: MethodLikeDefinition): boolean {
+      const jsDoc = getJsDoc(node);
       if (!jsDoc) {
         return false;
       }
@@ -199,7 +215,6 @@ export const preferGetterOverParameterlessMethod = createRule<
           if (current.left.type === AST_NODE_TYPES.MemberExpression) {
             return `it assigns to ${sourceCode.getText(current.left)}`;
           }
-          continue;
         }
 
         if (current.type === AST_NODE_TYPES.CallExpression) {
@@ -304,7 +319,12 @@ export const preferGetterOverParameterlessMethod = createRule<
         if (node.value.typeParameters) return;
         if (node.key.type !== AST_NODE_TYPES.Identifier) return;
         if (config.ignoreAsync && node.value.async) return;
-        if (config.ignoreAbstract && node.abstract) return;
+        if (
+          config.ignoreAbstract &&
+          node.type === AST_NODE_TYPES.TSAbstractMethodDefinition
+        ) {
+          return;
+        }
         if ((node as unknown as { override?: boolean }).override) return;
         if (!node.value.body) return;
 
@@ -347,7 +367,7 @@ export const preferGetterOverParameterlessMethod = createRule<
               : (fixer) =>
                   fixer.replaceTextRange(
                     [node.key.range[0], rightParen.range[1]],
-                    `get ${suggestedName}`,
+                    `get ${suggestedName}()`,
                   ),
         });
       },

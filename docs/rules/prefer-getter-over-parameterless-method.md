@@ -6,10 +6,10 @@ Enforce using getter syntax for synchronous class methods that take no parameter
 
 This rule reports parameterless, non-abstract, synchronous methods that return a value and are not in the ignore lists. It auto-fixes safe cases by:
 
-- Converting `methodName()` to `get <suggestedName>`
+- Converting `methodName()` to `get <suggestedName>()`
 - Preserving access modifiers, `static`, decorators, and return type annotations
-- Stripping configurable verb prefixes (for example, `getUser()` → `get user`)
-- Keeping boolean prefixes intact (`isValid()` → `get isValid`)
+- Stripping configurable verb prefixes (for example, `getUser()` → `get user()`)
+- Keeping boolean prefixes intact (`isValid()` → `get isValid()`)
 
 The fixer is withheld when mutations are detected (assignments, `++/--`, or obvious mutating array calls) so teams can keep intentional side-effect methods as-is.
 
