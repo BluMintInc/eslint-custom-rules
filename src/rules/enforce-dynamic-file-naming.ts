@@ -1,7 +1,17 @@
-import { createRule } from '../utils/createRule';
 import path from 'path';
+import { createRule } from '../utils/createRule';
 
 export const RULE_NAME = 'enforce-dynamic-file-naming';
+
+const ENFORCE_DYNAMIC_IMPORTS_RULE =
+  '@blumintinc/blumint/enforce-dynamic-imports';
+const REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE =
+  '@blumintinc/blumint/require-dynamic-firebase-imports';
+const SHORTHAND_DISABLE_NEXT_LINE = /\bednl\b/;
+const SHORTHAND_DISABLE_LINE = /\bedl\b/;
+const DISABLE_NEXT_LINE_TOKENS = ['eslint-disable-next-line'];
+const DISABLE_LINE_TOKENS = ['eslint-disable-line'];
+const DISABLE_BLOCK_TOKEN = 'eslint-disable';
 
 export default createRule<
   [],
@@ -11,8 +21,7 @@ export default createRule<
   meta: {
     type: 'suggestion',
     docs: {
-      description:
-        'Enforce .dynamic.ts(x) file naming when @blumintinc/blumint/enforce-dynamic-imports or @blumintinc/blumint/require-dynamic-firebase-imports rule is disabled',
+      description: `Enforce .dynamic.ts(x) file naming when ${ENFORCE_DYNAMIC_IMPORTS_RULE} or ${REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE} rule is disabled`,
       recommended: 'error',
     },
     schema: [],
@@ -20,7 +29,7 @@ export default createRule<
       requireDynamicExtension:
         'File "{{fileName}}" disables "{{ruleName}}" but keeps the standard {{extension}} extension, hiding that dynamic-import safeguards are bypassed. Rename to "{{suggestedName}}" (or another *.dynamic.ts/tsx name) so the exception is visible and static-import hotspots stay easy to audit.',
       requireDisableDirective:
-        'File "{{fileName}}" uses the ".dynamic" suffix that signals dynamic-import rules are disabled, but it lacks a disable directive for "@blumintinc/blumint/enforce-dynamic-imports" or "@blumintinc/blumint/require-dynamic-firebase-imports". Add the matching disable comment for the static import you need, or rename the file to "{{standardName}}" so the rules keep protecting other files.',
+        `File "{{fileName}}" uses the ".dynamic" suffix that signals dynamic-import rules are disabled, but it lacks a disable directive for "${ENFORCE_DYNAMIC_IMPORTS_RULE}" or "${REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE}". Add the matching disable comment for the static import you need, or rename the file to "{{standardName}}" so the rules keep protecting other files.`,
     },
   },
   defaultOptions: [],
@@ -47,36 +56,41 @@ export default createRule<
 
         for (const comment of comments) {
           const commentText = comment.value.trim();
+        const normalizedCommentText = commentText.toLowerCase();
           const disablesEnforceDynamicImports = commentText.includes(
-            '@blumintinc/blumint/enforce-dynamic-imports',
+          ENFORCE_DYNAMIC_IMPORTS_RULE,
           );
           const disablesRequireDynamicFirebaseImports = commentText.includes(
-            '@blumintinc/blumint/require-dynamic-firebase-imports',
+          REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE,
           );
           const disablesTargetRule =
             disablesEnforceDynamicImports || disablesRequireDynamicFirebaseImports;
 
           const inlineDisable =
-            (commentText.includes('eslint-disable-next-line') ||
-              commentText.includes('eslint-disable-line') ||
-              commentText.includes('ednl') ||
-              commentText.includes('edl')) &&
+          (DISABLE_NEXT_LINE_TOKENS.some((token) =>
+            normalizedCommentText.includes(token),
+          ) ||
+            DISABLE_LINE_TOKENS.some((token) =>
+              normalizedCommentText.includes(token),
+            ) ||
+            SHORTHAND_DISABLE_NEXT_LINE.test(normalizedCommentText) ||
+            SHORTHAND_DISABLE_LINE.test(normalizedCommentText)) &&
             disablesTargetRule;
           const blockDisable =
-            commentText.includes('eslint-disable ') && disablesTargetRule;
+          normalizedCommentText.includes(DISABLE_BLOCK_TOKEN) && disablesTargetRule;
 
           if (inlineDisable || blockDisable) {
             foundDisableDirective = true;
             if (disablesEnforceDynamicImports && !disablesRequireDynamicFirebaseImports) {
-              disabledRuleName = '@blumintinc/blumint/enforce-dynamic-imports';
+            disabledRuleName = ENFORCE_DYNAMIC_IMPORTS_RULE;
             } else if (
               disablesRequireDynamicFirebaseImports &&
               !disablesEnforceDynamicImports
             ) {
-              disabledRuleName = '@blumintinc/blumint/require-dynamic-firebase-imports';
+            disabledRuleName = REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE;
             } else {
               disabledRuleName =
-                '@blumintinc/blumint/enforce-dynamic-imports or @blumintinc/blumint/require-dynamic-firebase-imports';
+              `${ENFORCE_DYNAMIC_IMPORTS_RULE} or ${REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE}`;
             }
             break;
           }
@@ -91,7 +105,7 @@ export default createRule<
               fileName,
               ruleName:
                 disabledRuleName ??
-                '@blumintinc/blumint/enforce-dynamic-imports or @blumintinc/blumint/require-dynamic-firebase-imports',
+              `${ENFORCE_DYNAMIC_IMPORTS_RULE} or ${REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE}`,
               extension,
               suggestedName,
             },

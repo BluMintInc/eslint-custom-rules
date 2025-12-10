@@ -60,6 +60,12 @@ import SomeModule from './SomeModule';`,
 import SomeModule from './SomeModule';`,
       filename: 'example.dynamic.tsx',
     },
+    // File with .dynamic.ts extension and enforce-dynamic-imports edl shorthand
+    {
+      code: `// edl @blumintinc/blumint/enforce-dynamic-imports
+import SomeModule from './SomeModule';`,
+      filename: 'example.dynamic.ts',
+    },
     // File with .dynamic.ts extension and require-dynamic-firebase-imports disable directive
     {
       code: `// ednl @blumintinc/blumint/require-dynamic-firebase-imports
@@ -90,6 +96,12 @@ import SomeModule from './SomeModule';`,
 import SomeModule from './SomeModule';`,
       filename: 'example.js',
     },
+    // Reference to rule name in a comment without disable shorthand should not trigger
+    {
+      code: `// This is modeled after guidance in @blumintinc/blumint/enforce-dynamic-imports
+const value = 1;`,
+      filename: 'note.ts',
+    },
   ],
   invalid: [
     // File without .dynamic.ts extension but with enforce-dynamic-imports disable directive
@@ -105,6 +117,23 @@ import SomeModule from './SomeModule';`,
             ruleName: '@blumintinc/blumint/enforce-dynamic-imports',
             extension: '.ts',
             suggestedName: 'example.dynamic.ts',
+          },
+        },
+      ],
+    },
+    // File without .dynamic.ts extension but with enforce-dynamic-imports edl shorthand
+    {
+      code: `// edl @blumintinc/blumint/enforce-dynamic-imports
+import SomeModule from './SomeModule';`,
+      filename: 'example-edl.ts',
+      errors: [
+        {
+          messageId: 'requireDynamicExtension',
+          data: {
+            fileName: 'example-edl.ts',
+            ruleName: '@blumintinc/blumint/enforce-dynamic-imports',
+            extension: '.ts',
+            suggestedName: 'example-edl.dynamic.ts',
           },
         },
       ],
