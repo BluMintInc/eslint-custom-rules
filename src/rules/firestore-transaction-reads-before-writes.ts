@@ -207,7 +207,7 @@ export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
           return `${objectName}.${callee.property.name}`;
         }
 
-      return `${objectName}.unknown`;
+        return `${objectName}[unknown]`;
       }
 
       function formatWriteMethods(writeNodes: TSESTree.Node[]): string {
