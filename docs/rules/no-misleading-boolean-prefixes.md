@@ -1,9 +1,8 @@
-# Reserve boolean-style prefixes (is/has/should) for functions that actually return boolean values (`@blumintinc/blumint/no-misleading-boolean-prefixes`)
+# no-misleading-boolean-prefixes — Reserve boolean-style prefixes for boolean-returning functions (`@blumintinc/blumint/no-misleading-boolean-prefixes`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
-### no-misleading-boolean-prefixes
 
 Reserve boolean-style prefixes like is, has, or should for functions that actually return boolean values. This maintains clarity and sets accurate expectations about a function's return type.
 
@@ -17,6 +16,7 @@ Boolean-style prefixes communicate that a function answers a yes/no question. If
 #### Examples
 
 Bad:
+
 ```javascript
 function isAvailable() {
   return 'yes';
@@ -34,6 +34,7 @@ function isUser() {
 ```
 
 Good:
+
 ```javascript
 function isAvailable() {
   return Math.random() > 0.5;

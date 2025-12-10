@@ -27,6 +27,8 @@ import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 
 Bad:
 
+Inline objects in deps trigger re-renders:
+
 ```tsx
 // Component re-renders whenever `userConfig` reference changes
 const UserProfile: FC<UserProfileProps> = ({ userConfig }) => {
@@ -43,6 +45,8 @@ const UserProfile: FC<UserProfileProps> = ({ userConfig }) => {
 ```
 
 Good:
+
+Use useDeepCompareMemo to stabilize non-primitive deps:
 
 ```tsx
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
@@ -66,10 +70,6 @@ const UserProfile: FC<UserProfileProps> = ({ userConfig }) => {
 - Already memoized: identifiers produced by `useMemo`, `useCallback`, `useLatestCallback`, or `useDeepCompareMemo` are considered stable and won’t trigger
 - Empty dependency arrays: ignored
 - JSX in memo body: rule does not trigger when the memo body contains JSX
-
-### Options
-
-- None
 
 ### When Not To Use It
 

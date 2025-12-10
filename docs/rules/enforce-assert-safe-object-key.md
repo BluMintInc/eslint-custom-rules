@@ -1,4 +1,4 @@
-# Enforce the use of assertSafe(id) when accessing object properties with computed keys that involve string interpolation or explicit string conversion (`@blumintinc/blumint/enforce-assertSafe-object-key`)
+# Enforce the use of assertSafe(id) when accessing object properties with computed keys that involve string interpolation or explicit string conversion (`@blumintinc/blumint/enforce-assert-safe-object-key`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

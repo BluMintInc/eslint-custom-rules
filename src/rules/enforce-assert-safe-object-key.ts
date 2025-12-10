@@ -5,7 +5,7 @@ type MessageIds = 'useAssertSafe';
 type Options = [];
 
 export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
-  name: 'enforce-assertSafe-object-key',
+  name: 'enforce-assert-safe-object-key',
   meta: {
     type: 'problem',
     docs: {

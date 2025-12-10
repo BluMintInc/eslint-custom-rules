@@ -45,6 +45,15 @@ This rule accepts an options object with the following properties:
 <Box margin={2} marginTop={3} />
 ```
 
+### Exceptions / When Not To Use It
+
+You may want to disable this rule for:
+- Third-party layout components that require margin props.
+- Legacy components that do not support the recommended spacing API.
+- Cases where margins are the only viable option.
+
+In such cases, prefer adding an `eslint-disable` comment with a brief explanation.
+
 ### ✅ Correct
 
 ```jsx

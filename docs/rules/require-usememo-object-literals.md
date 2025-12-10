@@ -68,7 +68,3 @@ function Component() {
 ## When Not To Use It
 
 You might disable this rule when prop values intentionally need a fresh reference on each render (for example, to force child effects to re-run) or when working in codebases where React re-render costs are negligible.
-
-## Options
-
-This rule has no configuration options.

@@ -1,7 +1,7 @@
 import { ruleTesterTs } from '../utils/ruleTester';
-import { enforceAssertSafeObjectKey } from '../rules/enforce-assertSafe-object-key';
+import { enforceAssertSafeObjectKey } from '../rules/enforce-assert-safe-object-key';
 
-ruleTesterTs.run('enforce-assertSafe-object-key', enforceAssertSafeObjectKey, {
+ruleTesterTs.run('enforce-assert-safe-object-key', enforceAssertSafeObjectKey, {
   valid: [
     {
       code: `

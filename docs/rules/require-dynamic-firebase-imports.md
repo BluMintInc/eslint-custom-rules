@@ -35,7 +35,3 @@ const firebaseConfig = (await import('../../config/firebase-client')).default;
 // Type-only imports remain static because they do not load runtime code
 import type { FirebaseApp } from 'firebase/app';
 ```
-
-## Options
-
-This rule has no options.

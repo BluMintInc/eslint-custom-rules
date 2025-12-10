@@ -71,16 +71,23 @@ function collectReferencedTypeNames(
       break;
     }
     case AST_NODE_TYPES.TSArrayType: {
-      collectReferencedTypeNames((node as any).elementType, acc);
+      const arr = node as TSESTree.TSArrayType;
+      collectReferencedTypeNames(arr.elementType, acc);
       break;
     }
     case AST_NODE_TYPES.TSTypeOperator: {
-      collectReferencedTypeNames((node as any).typeAnnotation, acc);
+      const op = node as TSESTree.TSTypeOperator;
+      if (op.typeAnnotation) collectReferencedTypeNames(op.typeAnnotation, acc);
       break;
     }
     case AST_NODE_TYPES.TSTupleType: {
-      for (const e of (node as any).elementTypes)
-        collectReferencedTypeNames(e, acc);
+      const tup = node as TSESTree.TSTupleType;
+      for (const e of tup.elementTypes) collectReferencedTypeNames(e, acc);
+      break;
+    }
+    case AST_NODE_TYPES.TSParenthesizedType: {
+      const paren = node as TSESTree.TSParenthesizedType;
+      collectReferencedTypeNames(paren.typeAnnotation, acc);
       break;
     }
     default:
@@ -185,6 +192,7 @@ export const preferTypeAliasOverTypeofConstant: TSESLint.RuleModule<
         'Prefer named type aliases over `typeof` on same-file global constants; ensure types are declared before constants.',
       recommended: 'error',
     },
+    hasSuggestions: false,
     schema: [],
     messages: {
       preferTypeAlias:

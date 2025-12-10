@@ -5,7 +5,7 @@ export const LOG_FILE = join(
   process.cwd(),
   '.cursor/tmp/hooks/agent-change-log.json',
 );
-export const MAX_LOOPS = 10 as const;
+export const MAX_LOOPS = 200 as const;
 export const ACTIVE_THRESHOLD_MS = 10 * 60 * 1000;
 
 export type ConversationMeta = {
