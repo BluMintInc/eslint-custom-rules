@@ -13,6 +13,11 @@ import { noStaleStateAcrossAwait } from '../rules/no-stale-state-across-await';
  * This pattern is discouraged by default but can be used when necessary.
  */
 
+const expectStaleStateError = (setterName: string, boundaryType: string) => ({
+  messageId: 'staleStateAcrossAwait' as const,
+  data: { setterName, boundaryType },
+});
+
 ruleTesterJsx.run('no-stale-state-across-await', noStaleStateAcrossAwait, {
   valid: [
     // Valid: Single update after await (atomic update)
@@ -348,12 +353,7 @@ ruleTesterJsx.run('no-stale-state-across-await', noStaleStateAcrossAwait, {
           return <div>{profile?.name}</div>;
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setProfile' },
-        },
-      ],
+      errors: [expectStaleStateError('setProfile', 'an await boundary')],
     },
 
     // Invalid: Violation with .then()
@@ -374,12 +374,7 @@ ruleTesterJsx.run('no-stale-state-across-await', noStaleStateAcrossAwait, {
           return <div>{profile?.name}</div>;
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setProfile' },
-        },
-      ],
+      errors: [expectStaleStateError('setProfile', 'a .then() callback')],
     },
 
     // Invalid: Violation with yield
@@ -399,12 +394,7 @@ ruleTesterJsx.run('no-stale-state-across-await', noStaleStateAcrossAwait, {
           return <div>{profile?.name}</div>;
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setProfile' },
-        },
-      ],
+      errors: [expectStaleStateError('setProfile', 'a yield boundary')],
     },
 
     // Invalid: Multiple calls before and after
@@ -426,12 +416,7 @@ ruleTesterJsx.run('no-stale-state-across-await', noStaleStateAcrossAwait, {
           return <div>{profile?.name}</div>;
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setProfile' },
-        },
-      ],
+      errors: [expectStaleStateError('setProfile', 'an await boundary')],
     },
 
     // Invalid: Multiple async boundaries with violation
@@ -452,12 +437,7 @@ ruleTesterJsx.run('no-stale-state-across-await', noStaleStateAcrossAwait, {
           return <div>{profile?.name}</div>;
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setProfile' },
-        },
-      ],
+      errors: [expectStaleStateError('setProfile', 'an await boundary')],
     },
 
     // Invalid: Arrow function with violation
@@ -477,12 +457,7 @@ ruleTesterJsx.run('no-stale-state-across-await', noStaleStateAcrossAwait, {
           return <div>{profile?.name}</div>;
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setProfile' },
-        },
-      ],
+      errors: [expectStaleStateError('setProfile', 'an await boundary')],
     },
 
     // Invalid: Function expression with violation
@@ -502,12 +477,7 @@ ruleTesterJsx.run('no-stale-state-across-await', noStaleStateAcrossAwait, {
           return <div>{profile?.name}</div>;
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setProfile' },
-        },
-      ],
+      errors: [expectStaleStateError('setProfile', 'an await boundary')],
     },
 
     // Invalid: Complex control flow with violation
@@ -532,12 +502,7 @@ ruleTesterJsx.run('no-stale-state-across-await', noStaleStateAcrossAwait, {
           return <div>{profile?.name}</div>;
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setProfile' },
-        },
-      ],
+      errors: [expectStaleStateError('setProfile', 'an await boundary')],
     },
 
     // Invalid: Multiple setters both violating
@@ -563,14 +528,8 @@ ruleTesterJsx.run('no-stale-state-across-await', noStaleStateAcrossAwait, {
         }
       `,
       errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setProfile' },
-        },
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setLoading' },
-        },
+        expectStaleStateError('setProfile', 'an await boundary'),
+        expectStaleStateError('setLoading', 'an await boundary'),
       ],
     },
 
@@ -596,12 +555,7 @@ ruleTesterJsx.run('no-stale-state-across-await', noStaleStateAcrossAwait, {
           return <div>{profile?.name}</div>;
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setProfile' },
-        },
-      ],
+      errors: [expectStaleStateError('setProfile', 'an await boundary')],
     },
 
     // Invalid: Promise chain with violation
@@ -625,12 +579,7 @@ ruleTesterJsx.run('no-stale-state-across-await', noStaleStateAcrossAwait, {
           return <div>{profile?.name}</div>;
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setProfile' },
-        },
-      ],
+      errors: [expectStaleStateError('setProfile', 'a .then() callback')],
     },
 
     // Invalid: Generator with violation
@@ -651,12 +600,7 @@ ruleTesterJsx.run('no-stale-state-across-await', noStaleStateAcrossAwait, {
           return <div>{profile?.name}</div>;
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setProfile' },
-        },
-      ],
+      errors: [expectStaleStateError('setProfile', 'a yield boundary')],
     },
 
     // Invalid: Mixed async boundaries
@@ -682,12 +626,7 @@ ruleTesterJsx.run('no-stale-state-across-await', noStaleStateAcrossAwait, {
           return <div>{profile?.name}</div>;
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setProfile' },
-        },
-      ],
+      errors: [expectStaleStateError('setProfile', 'an await boundary')],
     },
 
     // Invalid: Conditional calls still violate
@@ -713,12 +652,7 @@ ruleTesterJsx.run('no-stale-state-across-await', noStaleStateAcrossAwait, {
           return <div>{profile?.name}</div>;
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setProfile' },
-        },
-      ],
+      errors: [expectStaleStateError('setProfile', 'an await boundary')],
     },
 
     // Invalid: Loop with violation
@@ -741,12 +675,7 @@ ruleTesterJsx.run('no-stale-state-across-await', noStaleStateAcrossAwait, {
           return <div>{profile?.name}</div>;
         }
       `,
-      errors: [
-        {
-          messageId: 'staleStateAcrossAwait',
-          data: { setterName: 'setProfile' },
-        },
-      ],
+      errors: [expectStaleStateError('setProfile', 'an await boundary')],
     },
   ],
 });

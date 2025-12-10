@@ -7,12 +7,12 @@ export const preferUseMemoOverUseEffectUseState = createRule({
     type: 'suggestion',
     docs: {
       description:
-        'Prefer useMemo over useEffect + useState for pure computations. Using useEffect to update state with a pure computation causes unnecessary re-renders.',
+        'Prefer useMemo over useEffect + useState for pure computations to avoid extra render cycles and stale derived state.',
       recommended: 'error',
     },
     messages: {
       preferUseMemo:
-        'Prefer useMemo over useEffect + useState for pure computations to avoid unnecessary re-renders',
+        'Derived state "{{stateName}}" is computed inside useEffect and copied into React state even though the value comes from a pure calculation. That extra render cycle and state indirection make components re-render more and risk stale snapshots when dependencies change. Compute the value with useMemo (or inline in render) and read it directly instead of mirroring it into state.',
     },
     schema: [],
   },
@@ -197,6 +197,9 @@ export const preferUseMemoOverUseEffectUseState = createRule({
                   context.report({
                     node,
                     messageId: 'preferUseMemo',
+                    data: {
+                      stateName: stateInfo.stateName,
+                    },
                   });
                 }
               }

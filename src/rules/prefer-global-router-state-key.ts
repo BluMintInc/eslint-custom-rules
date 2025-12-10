@@ -21,13 +21,14 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
     schema: [],
     messages: {
       preferGlobalRouterStateKey:
-        'Router state key must be imported from "@/util/routing/queryKeys" or "src/util/routing/queryKeys". Use a QUERY_KEY_* constant instead of string literals.',
+        'Router state key {{keyValue}} is a string literal. String literals bypass the shared queryKeys.ts QUERY_KEY_* constants, which leads to duplicate router cache entries and makes allowed keys hard to discover. Import the corresponding QUERY_KEY_* constant from "@/util/routing/queryKeys" (or its approved re-export) and pass that to useRouterState instead.',
       invalidQueryKeySource:
-        'Router state key must use a QUERY_KEY_* constant from queryKeys.ts. Variable "{{variableName}}" is not imported from the correct source.',
+        'Router state key variable "{{variableName}}" is not sourced from queryKeys.ts. useRouterState keys must come from QUERY_KEY_* exports so routing cache keys stay stable and traceable. Import the matching constant from "@/util/routing/queryKeys" (or its approved re-export) and use that value here instead of {{variableName}}.',
     },
   },
   defaultOptions: [],
   create(context) {
+    const sourceCode = context.getSourceCode();
     // Track imports from queryKeys.ts
     const queryKeyImports = new Map<
       string,
@@ -301,6 +302,9 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                     context.report({
                       node: keyValue,
                       messageId: 'preferGlobalRouterStateKey',
+                      data: {
+                        keyValue: sourceCode.getText(keyValue),
+                      },
                       fix(fixer) {
                         if (
                           keyValue.type === AST_NODE_TYPES.Literal &&

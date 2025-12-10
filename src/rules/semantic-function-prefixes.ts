@@ -33,13 +33,13 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Enforce semantic function prefixes over generic ones like "get" and "update"',
+        'Require semantic function prefixes instead of generic verbs so callers know whether a function fetches data, transforms input, or mutates state',
       recommended: 'error',
     },
     schema: [],
     messages: {
       avoidGenericPrefix:
-        'Avoid using generic prefix "{{prefix}}". Consider using one of these alternatives: {{alternatives}}',
+        'Function "{{functionName}}" starts with the generic prefix "{{prefix}}", which hides whether it fetches remote data, transforms input, or mutates state. Use a semantic verb such as {{alternatives}} to describe the operation and set caller expectations.',
     },
   },
   defaultOptions: [],
@@ -112,6 +112,7 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
             node: node.key,
             messageId: 'avoidGenericPrefix',
             data: {
+              functionName: methodName,
               prefix,
               alternatives:
                 SUGGESTED_ALTERNATIVES[
@@ -206,6 +207,7 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
             node: node.id || node,
             messageId: 'avoidGenericPrefix',
             data: {
+              functionName,
               prefix,
               alternatives:
                 SUGGESTED_ALTERNATIVES[

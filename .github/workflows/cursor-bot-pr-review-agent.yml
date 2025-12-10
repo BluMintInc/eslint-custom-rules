@@ -1,0 +1,261 @@
+name: Launch Cursor Agent on Bot Checks
+
+'on':
+  check_run:
+    types: [completed]
+  pull_request:
+    types:
+      - labeled
+  status:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  launch_bot_agent:
+    if: >-
+      (github.event_name == 'check_run' && github.event.check_run.pull_requests[0].number) ||
+      (github.event_name == 'pull_request' && github.event.action == 'labeled') ||
+      (github.event_name == 'status' && github.event.state == 'success' && (contains(github.event.context, 'CodeRabbit') || contains(github.event.context, 'coderabbit')))
+    runs-on: ubuntu-latest
+    concurrency:
+      # Prefer PR number to dedupe across check_run/status events; fall back to SHA when PR context is absent
+      group: cursor-bot-review-pr-${{ github.event.pull_request.number || github.event.check_run.pull_requests[0].number || github.event.check_suite.pull_requests[0].number || github.event.workflow_run.pull_requests[0].number || github.event.number || github.event.sha }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955  # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install jq
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y jq
+          fi
+
+      - name: Determine required checks completion
+        id: checks
+        run: |
+          EVENT_NAME="${{ github.event_name }}"
+          echo "Processing event: $EVENT_NAME"
+
+          if [ "$EVENT_NAME" == "check_run" ]; then
+            PR_NUMBER="${{ github.event.check_run.pull_requests[0].number }}"
+            HEAD_SHA="${{ github.event.check_run.pull_requests[0].head.sha }}"
+            HEAD_REF="${{ github.event.check_run.pull_requests[0].head.ref }}"
+          elif [ "$EVENT_NAME" == "pull_request" ]; then
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+            HEAD_REF="${{ github.event.pull_request.head.ref }}"
+          elif [ "$EVENT_NAME" == "status" ]; then
+            HEAD_SHA="${{ github.event.sha }}"
+            echo "Status event for SHA: $HEAD_SHA. Resolving PR..."
+            # Fetch open PRs associated with this commit
+            PR_JSON=$(gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/commits/$HEAD_SHA/pulls" | jq 'map(select(.state=="open")) | .[0]')
+            
+            if [ -z "$PR_JSON" ] || [ "$PR_JSON" == "null" ]; then
+              echo "No open PR found for commit $HEAD_SHA. Skipping."
+              echo "missing_required=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            
+            PR_NUMBER=$(echo "$PR_JSON" | jq -r '.number')
+            HEAD_REF=$(echo "$PR_JSON" | jq -r '.head.ref')
+            echo "Resolved to PR #$PR_NUMBER ($HEAD_REF)"
+          fi
+
+          MANUAL_OVERRIDE="${{ github.event_name == 'pull_request' && github.event.label.name == 'cursor-address-bot-review' }}"
+
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "head_ref=$HEAD_REF" >> "$GITHUB_OUTPUT"
+          echo "manual_override=$MANUAL_OVERRIDE" >> "$GITHUB_OUTPUT"
+
+          if [ "$MANUAL_OVERRIDE" = "true" ]; then
+            echo "Manual override via cursor-address-bot-review label detected; skipping required check gating."
+            echo "missing_required=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Fetch check runs (wider page size) and commit status contexts so we can accept
+          # CodeRabbit whether it reports as a check run or a legacy status context.
+          CHECKS_JSON=$(gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/commits/$HEAD_SHA/check-runs?per_page=100")
+          STATUSES_JSON=$(gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/commits/$HEAD_SHA/status")
+
+          has_cursor_run=$(echo "$CHECKS_JSON" | jq 'any(.check_runs[]; ((.app.slug|ascii_downcase|test("cursor")) or (.name|test("Cursor Bugbot";"i"))) and .status == "completed" and (.conclusion == "success" or .conclusion == "neutral"))')
+          has_coderabbit_run=$(echo "$CHECKS_JSON" | jq 'any(.check_runs[]; ((.app.slug|ascii_downcase|test("coderabbit")) or (.name|test("CodeRabbit";"i"))) and .status == "completed" and (.conclusion == "success" or .conclusion == "neutral"))')
+          has_coderabbit_status=$(echo "$STATUSES_JSON" | jq 'any(.statuses[]?; (.context|test("CodeRabbit";"i")) and (.state == "success" or .state == "neutral"))')
+
+          echo "Cursor check run satisfied: $has_cursor_run"
+          echo "CodeRabbit check run satisfied: $has_coderabbit_run"
+          echo "CodeRabbit status satisfied: $has_coderabbit_status"
+
+          if [ "$has_cursor_run" != "true" ] || { [ "$has_coderabbit_run" != "true" ] && [ "$has_coderabbit_status" != "true" ]; }; then
+            echo "missing_required=true" >> "$GITHUB_OUTPUT"
+            echo "Required bot checks not yet successful (CodeRabbit & Cursor Bugbot). Skipping launch."
+          else
+            echo "missing_required=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip if required checks missing
+        if: steps.checks.outputs.missing_required == 'true'
+        run: echo "Waiting for required bot checks to succeed before launching agent."
+
+      - name: Check for existing agent launch on this commit
+        id: idempotency
+        if: steps.checks.outputs.missing_required == 'false'
+        run: |
+          PR=${{ steps.checks.outputs.pr_number }}
+          HEAD_SHA=${{ steps.checks.outputs.head_sha }}
+
+          echo "Checking for prior agent launch on PR #$PR for commit $HEAD_SHA"
+          HAS_COMMENT=$(gh pr view "$PR" --json comments --jq 'any(.comments[].body; contains("<!-- cursor-bot-agent:'"${HEAD_SHA}"' -->"))' 2>/dev/null || echo "false")
+
+          if [ "$HAS_COMMENT" = "true" ]; then
+            echo "Agent already launched for this commit; skipping."
+            echo "already_launched=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No prior launch detected for this commit."
+            echo "already_launched=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fetch unresolved bot comments
+        id: comments
+        if: steps.checks.outputs.missing_required == 'false' && steps.idempotency.outputs.already_launched != 'true'
+        run: |
+          PR=${{ steps.checks.outputs.pr_number }}
+          COMMENTS=$(./scripts/pr-check-bot-comments.sh --pr="$PR" --limit=5)
+          echo "$COMMENTS" > /tmp/pr-review-comments.md
+
+          COUNT=$(echo "$COMMENTS" | awk '/^[0-9]+\. \[ \] /{c++} END{print c+0}')
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "comments_path=/tmp/pr-review-comments.md" >> "$GITHUB_OUTPUT"
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "no_comments=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no_comments=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Exit if no bot comments
+        if: steps.checks.outputs.missing_required == 'false' && steps.idempotency.outputs.already_launched != 'true' && steps.comments.outputs.no_comments == 'true'
+        run: echo "No unresolved bot comments; skipping agent launch."
+
+      - name: Build bot review context and prompt
+        id: prompt
+        if: steps.checks.outputs.missing_required == 'false' && steps.idempotency.outputs.already_launched != 'true' && steps.comments.outputs.no_comments != 'true'
+        run: |
+          PR=${{ steps.checks.outputs.pr_number }}
+          HEAD_REF='${{ steps.checks.outputs.head_ref }}'
+          COMMENT_COUNT='${{ steps.comments.outputs.count }}'
+
+          PR_JSON=$(gh pr view "$PR" --json number,title,body,headRefName,baseRefName,url)
+
+          jq -n \
+            --arg pr_number "$(echo "$PR_JSON" | jq -r '.number')" \
+            --arg pr_title "$(echo "$PR_JSON" | jq -r '.title')" \
+            --arg pr_body "$(echo "$PR_JSON" | jq -r '.body // ""')" \
+            --arg pr_head "$(echo "$PR_JSON" | jq -r '.headRefName')" \
+            --arg pr_base "$(echo "$PR_JSON" | jq -r '.baseRefName')" \
+            --arg pr_url "$(echo "$PR_JSON" | jq -r '.url')" \
+            --argjson comment_count "$COMMENT_COUNT" \
+            '{
+              pr: {
+                number: ($pr_number|tonumber),
+                title: $pr_title,
+                head_branch: $pr_head,
+                base_branch: $pr_base,
+                description: $pr_body,
+                url: $pr_url
+              },
+              review: {
+                id: 0,
+                author: "CodeRabbit and Cursor bot checks",
+                author_type: "Bot",
+                is_bot: true,
+                comment_count: $comment_count
+              },
+              coderabbit_summary: "(Auto-launched after CodeRabbit and Cursor bot checks succeeded)"
+            }' > /tmp/pr-review-context.json
+
+          npx tsx .github/scripts/build-pr-review-prompt.ts /tmp/pr-review-context.json /tmp/pr-review-comments.md > /tmp/pr-review-prompt.txt
+
+          echo "context_path=/tmp/pr-review-context.json" >> "$GITHUB_OUTPUT"
+          echo "prompt_path=/tmp/pr-review-prompt.txt" >> "$GITHUB_OUTPUT"
+
+      - name: Launch Cursor Background Agent for bot comments
+        id: launch
+        if: steps.checks.outputs.missing_required == 'false' && steps.idempotency.outputs.already_launched != 'true' && steps.comments.outputs.no_comments != 'true'
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          CURSOR_WEBHOOK_SECRET: ${{ secrets.CURSOR_WEBHOOK_SECRET }}
+          CURSOR_WEBHOOK_URL: ${{ secrets.CURSOR_WEBHOOK_URL }}
+        run: |
+          echo "::add-mask::${CURSOR_API_KEY}"
+
+          JSON_PAYLOAD=$(jq -n \
+            --rawfile prompt_text /tmp/pr-review-prompt.txt \
+            --arg repository "https://github.com/${{ github.repository }}" \
+            --arg source_ref "${{ steps.checks.outputs.head_ref }}" \
+            --arg target_branch "${{ steps.checks.outputs.head_ref }}" \
+            --arg webhook_url "${CURSOR_WEBHOOK_URL}" \
+            --arg webhook_secret "${CURSOR_WEBHOOK_SECRET}" \
+            --arg model "gpt-5.1-codex-max-high" \
+            '{
+              model: $model,
+              prompt: { text: $prompt_text },
+              source: { repository: $repository, ref: $source_ref },
+              target: { branchName: $target_branch, autoCreatePr: false, skipReviewerRequest: true }
+            } + (if $webhook_url != "" then { webhook: { url: $webhook_url, secret: $webhook_secret } } else {} end)')
+
+          HTTP_RESPONSE=$(curl --silent --show-error --write-out "HTTPSTATUS:%{http_code}" \
+            --request POST \
+            --url https://api.cursor.com/v0/agents \
+            --header "Authorization: Bearer ${CURSOR_API_KEY}" \
+            --header "Content-Type: application/json" \
+            --data "$JSON_PAYLOAD")
+
+          HTTP_STATUS="${HTTP_RESPONSE##*HTTPSTATUS:}"
+          HTTP_BODY="${HTTP_RESPONSE%HTTPSTATUS:*}"
+
+          echo "Cursor API HTTP status: $HTTP_STATUS"
+          if [[ "$HTTP_STATUS" =~ ^2 ]]; then
+            AGENT_URL=$(echo "$HTTP_BODY" | jq -r '.target.url // empty')
+            SAFE_SUMMARY=$(echo "$HTTP_BODY" | jq '{target: .target, status: "success"}' 2>/dev/null || true)
+            if [ -n "$SAFE_SUMMARY" ]; then
+              echo "Cursor API response (safe): $SAFE_SUMMARY"
+            fi
+
+            echo "agent_url=$AGENT_URL" >> $GITHUB_OUTPUT
+            echo "launched=true" >> $GITHUB_OUTPUT
+          else
+            SAFE_ERROR=$(echo "$HTTP_BODY" | jq '{error: .error, message: .message}' 2>/dev/null || true)
+            if [ -n "$SAFE_ERROR" ]; then
+              echo "Cursor API error (safe): $SAFE_ERROR"
+            else
+              echo "Cursor API response not JSON; body length ${#HTTP_BODY} (redacted)."
+            fi
+
+            echo "::warning::Cursor API returned status $HTTP_STATUS. See response details above."
+            echo "agent_url=" >> $GITHUB_OUTPUT
+            echo "launched=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Comment on PR
+        if: steps.launch.outputs.launched == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          URL='${{ steps.launch.outputs.agent_url }}'
+          PR=${{ steps.checks.outputs.pr_number }}
+          HEAD_SHA='${{ steps.checks.outputs.head_sha }}'
+          gh pr comment "$PR" --body "✅ Launched Cursor agent to address bot review comments after CodeRabbit and Cursor Bugbot checks passed (commit $HEAD_SHA). Agent: $URL. Changes are pushed directly to this PR branch. <!-- cursor-bot-agent:$HEAD_SHA -->"
