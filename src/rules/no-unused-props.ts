@@ -47,19 +47,6 @@ export const noUnusedProps = createRule({
       'ThisType',
     ]);
 
-    const UTILITY_SPREAD_TYPES = new Set([
-      'Pick',
-      'Partial',
-      'Required',
-      'Record',
-      'Exclude',
-      'Extract',
-      'NonNullable',
-      'ReturnType',
-      'InstanceType',
-      'ThisType',
-    ]);
-
     const propsTypes: Map<string, Record<string, TSESTree.Node>> = new Map();
     // Track which spread types have been used in a component
     const usedSpreadTypes: Map<string, Set<string>> = new Map();
@@ -112,10 +99,6 @@ export const noUnusedProps = createRule({
 
       const spreadTypeName = prop.substring(3);
 
-      if (UTILITY_SPREAD_TYPES.has(spreadTypeName)) {
-        return true;
-      }
-
       return isAnyPropFromSpreadTypeUsed(spreadTypeName, used);
     };
 
@@ -145,12 +128,12 @@ export const noUnusedProps = createRule({
         return;
       }
 
+      const hasRestSpread = hasRestSpreadUsage(used, restUsed);
+
       Object.keys(propsType).forEach((prop) => {
         if (!used.has(prop)) {
           // For imported types (props that start with '...'), only report if there's no rest spread operator
           // This allows imported types to be used without being flagged when properly forwarded
-          const hasRestSpread = hasRestSpreadUsage(used, restUsed);
-
           // Don't report unused props if:
           // 1. It's a spread type and there's a rest spread operator, OR
           // 2. It's a property from a spread type and any property from that spread type is used, OR
