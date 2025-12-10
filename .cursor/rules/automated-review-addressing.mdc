@@ -1,8 +1,10 @@
 ---
 description: Automated Review Addressing System — PR review batches launch a Cursor Background Agent to fetch, triage, implement, and resolve feedback
-globs: .github/workflows/cursor-pr-review-agent.yml,.github/workflows/cursor-bot-pr-review-agent.yml,.github/scripts/address-review.ts,.github/scripts/build-pr-review-context.py,.github/scripts/build-pr-review-prompt.ts,scripts/pr-check-comments.sh,scripts/pr-check-bot-comments.sh,scripts/pr-apply-comment-decisions.sh,scripts/pr-resolve-comments.sh,scripts/cursor-hooks/pr-review-check.ts,scripts/cli/git-utils.ts,.cursor/commands/pr-review.md,.cursor/commands/pr-review-ai-bots.md
+globs: .github/workflows/cursor-pr-review-agent.yml,.github/workflows/cursor-bot-pr-review-agent.yml,.github/scripts/address-review.ts,.github/scripts/build-pr-review-context.py,.github/scripts/build-pr-review-prompt.ts,.github/scripts/merge-review.ts,scripts/pr-check-comments.sh,scripts/pr-check-bot-comments.sh,scripts/pr-apply-comment-decisions.sh,scripts/pr-resolve-comments.sh,scripts/cursor-hooks/pr-review-check.ts,scripts/cli/git-utils.ts,scripts/__tests__/merge-review.test.ts,.cursor/commands/pr-review.md,.cursor/commands/pr-review-ai-bots.md
 alwaysApply: false
 ---
+
+# Automated Review Addressing System
 
 ## Introduction
 
@@ -32,7 +34,7 @@ Manual triage of dense review batches slows down delivery and burdens reviewers 
 
 ## Directory Structure
 
-```
+```text
 .github/
 ├── workflows/
 │   ├── cursor-pr-review-agent.yml        # Launches Background Agent on pull_request_review: submitted (human reviews)
@@ -40,7 +42,8 @@ Manual triage of dense review batches slows down delivery and burdens reviewers 
 └── scripts/
     ├── address-review.ts                  # Local CLI to replicate cloud agent setup
     ├── build-pr-review-context.py        # Gathers structured context for agent prompts
-    └── build-pr-review-prompt.ts         # Constructs agent prompt with dynamic task sizing
+    ├── build-pr-review-prompt.ts         # Constructs agent prompt with dynamic task sizing
+    └── merge-review.ts                   # Merges review branches back into base with optional commit message
 
 scripts/
 ├── cursor-hooks/
@@ -65,6 +68,7 @@ scripts/
 - **Fetch Scripts**: `pr-check-comments.sh` and `pr-check-bot-comments.sh` pull unresolved threads (human vs bot) with batching and bot filtering controls.
 - **Cursor Hooks**: `scripts/cursor-hooks/pr-review-check.ts` plus `agent-check.ts` enforce unresolved-comment gating, then run build/lint/test/structure checks before agents can stop.
 - **CLI**: `scripts/address-review.ts` mirrors the cloud flow locally: infers PR, fetches comments, builds prompt, and sets up the working branch.
+- **Merge helper**: `.github/scripts/merge-review.ts` parses review branch names, stages pending changes with an optional or default commit message, checks out the base branch (local or inferred from the PR), and merges the review branch without opening a new PR.
 - **Commands**: `.cursor/commands/pr-review.md` and `.cursor/commands/pr-review-ai-bots.md` provide manual playbooks when automation is skipped or extra guidance is needed.
 
 ## How It Works
@@ -135,6 +139,14 @@ When the agent attempts to stop, the stop hook (`scripts/cursor-hooks/agent-chec
    - Apply decisions: `npm run apply-comment-decisions -- .cursor/tmp/decisions.json [--pr=<PR_NUMBER>]`
 
 **Note**: Automatic mini-PRs are disabled for bot reviews to prevent clutter and reduce costs.
+
+### Merging review branches
+
+Use the merge helper when finishing a review branch that follows the `(<base>)-review-pr-(<pr>)[-(<reviewBatch>)][-(human|bot)]` pattern:
+
+- Run on the review branch: `npm run merge-review -- --message "<optional_commit_message>"`
+- The helper stages all changes, commits with the provided message or `chore: merge review branch for PR #<pr> [(review <reviewBatch>)]`, checks out the base branch (local match or inferred PR head), and merges the review branch.
+- Ensure the branch name matches the pattern so the base branch candidate and PR number resolve correctly.
 
 ### Tips
 
@@ -211,6 +223,7 @@ The agent follows the same workflow as a cloud agent—the stop hook automatical
 | `npm run fetch-unresolved-bot-comments` | Fetch unresolved bot review comments |
 | `npm run resolve-comments` | Resolve review threads by URL |
 | `npm run apply-comment-decisions` | Apply reactions and resolve bot comment threads |
+| `npm run merge-review` | Commit staged changes on a review branch and merge into the inferred base branch |
 
 ## Critical Insights for Maintainers
 
@@ -218,6 +231,7 @@ The agent follows the same workflow as a cloud agent—the stop hook automatical
 - **Batch sizing balances load**: ~7 items for human reviews maximizes throughput with manageable context; ~5 items for bot reviews limits triage overhead because bot feedback often mixes valid and invalid findings.
 - **Direct branch commits reduce friction**: Agents push to the PR head branch (no mini PR) to avoid merge overhead and keep review threads resolvable on the original branch.
 - **Branch detection fallback**: When no `-review-pr-*` suffix exists (direct-branch automation), `pr-review-check.ts` falls back to the open PR for the current branch and still blocks completion until unresolved comments are cleared.
+- **Merge helper expectations**: `merge-review.ts` requires the review branch naming pattern to extract the PR number and base candidate; if the base branch is missing locally it falls back to the PR head name. It stages all working tree changes before merging and uses a generated commit message when none is provided.
 - **Future improvements**: Consider sourcing the required bot check names from repo settings instead of hard-coding CodeRabbit/Cursor, and expose a config flag to change bot batch size when feedback volume is higher.
 
 ## Common Pitfalls
