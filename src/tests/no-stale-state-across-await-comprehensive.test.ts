@@ -15,10 +15,7 @@ import { noStaleStateAcrossAwait } from '../rules/no-stale-state-across-await';
  * 8. Edge cases and complex patterns
  */
 
-const expectStaleStateError = (
-  setterName: string,
-  boundaryType: string,
-) => ({
+const expectStaleStateError = (setterName: string, boundaryType: string) => ({
   messageId: 'staleStateAcrossAwait' as const,
   data: { setterName, boundaryType },
 });
@@ -511,9 +508,7 @@ ruleTesterJsx.run(
           return { data, fetchData };
         }
       `,
-        errors: [
-        expectStaleStateError('setData', 'an await boundary'),
-        ],
+        errors: [expectStaleStateError('setData', 'an await boundary')],
       },
 
       // Invalid: Custom hook with complex violation
@@ -537,8 +532,8 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-        expectStaleStateError('setData', 'an await boundary'),
-        expectStaleStateError('setCache', 'an await boundary'),
+          expectStaleStateError('setData', 'an await boundary'),
+          expectStaleStateError('setCache', 'an await boundary'),
         ],
       },
 
@@ -560,9 +555,7 @@ ruleTesterJsx.run(
           }, []);
         }
       `,
-        errors: [
-        expectStaleStateError('setData', 'an await boundary'),
-        ],
+        errors: [expectStaleStateError('setData', 'an await boundary')],
       },
 
       // Invalid: useEffect with complex async pattern
@@ -587,8 +580,8 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-        expectStaleStateError('setUsers', 'an await boundary'),
-        expectStaleStateError('setLoading', 'an await boundary'),
+          expectStaleStateError('setUsers', 'an await boundary'),
+          expectStaleStateError('setLoading', 'an await boundary'),
         ],
       },
 
@@ -610,9 +603,7 @@ ruleTesterJsx.run(
           }
         }
       `,
-        errors: [
-        expectStaleStateError('setData', 'an await boundary'),
-        ],
+        errors: [expectStaleStateError('setData', 'an await boundary')],
       },
 
       // Invalid: Async iterators with violations
@@ -630,9 +621,7 @@ ruleTesterJsx.run(
           }
         }
       `,
-        errors: [
-        expectStaleStateError('setStatus', 'a yield boundary'),
-        ],
+        errors: [expectStaleStateError('setStatus', 'a yield boundary')],
       },
 
       // Invalid: Complex Promise chains with violations
@@ -652,9 +641,7 @@ ruleTesterJsx.run(
           }
         }
       `,
-        errors: [
-        expectStaleStateError('setData', 'a .then() callback'),
-        ],
+        errors: [expectStaleStateError('setData', 'a .then() callback')],
       },
 
       // Invalid: Nested Promise chains with violations
@@ -676,9 +663,7 @@ ruleTesterJsx.run(
           }
         }
       `,
-        errors: [
-        expectStaleStateError('setData', 'a .then() callback'),
-        ],
+        errors: [expectStaleStateError('setData', 'a .then() callback')],
       },
 
       // Invalid: Generator with violations
@@ -694,9 +679,7 @@ ruleTesterJsx.run(
           }
         }
       `,
-        errors: [
-        expectStaleStateError('setData', 'a yield boundary'),
-        ],
+        errors: [expectStaleStateError('setData', 'a yield boundary')],
       },
 
       // Invalid: Mixed async patterns with violations
@@ -718,9 +701,7 @@ ruleTesterJsx.run(
           }
         }
       `,
-        errors: [
-        expectStaleStateError('setData', 'an await boundary'),
-        ],
+        errors: [expectStaleStateError('setData', 'an await boundary')],
       },
 
       // Invalid: Error handling with violations
@@ -741,9 +722,7 @@ ruleTesterJsx.run(
           }
         }
       `,
-        errors: [
-        expectStaleStateError('setData', 'an await boundary'),
-        ],
+        errors: [expectStaleStateError('setData', 'an await boundary')],
       },
 
       // Invalid: Loop patterns with violations
@@ -764,9 +743,7 @@ ruleTesterJsx.run(
           }
         }
       `,
-        errors: [
-        expectStaleStateError('setItems', 'an await boundary'),
-        ],
+        errors: [expectStaleStateError('setItems', 'an await boundary')],
       },
 
       // Invalid: Conditional async with violations
@@ -785,9 +762,7 @@ ruleTesterJsx.run(
           }
         }
       `,
-        errors: [
-        expectStaleStateError('setData', 'an await boundary'),
-        ],
+        errors: [expectStaleStateError('setData', 'an await boundary')],
       },
 
       // Invalid: Conditional branches with async violation (even with early return)
@@ -807,9 +782,7 @@ ruleTesterJsx.run(
           }
         }
       `,
-        errors: [
-        expectStaleStateError('setData', 'an await boundary'),
-        ],
+        errors: [expectStaleStateError('setData', 'an await boundary')],
       },
 
       // Invalid: Multiple async boundaries with violations
@@ -829,9 +802,7 @@ ruleTesterJsx.run(
           }
         }
       `,
-        errors: [
-        expectStaleStateError('setData', 'an await boundary'),
-        ],
+        errors: [expectStaleStateError('setData', 'an await boundary')],
       },
 
       // Invalid: Arrow function with violation
@@ -847,9 +818,7 @@ ruleTesterJsx.run(
           };
         }
       `,
-        errors: [
-        expectStaleStateError('setData', 'an await boundary'),
-        ],
+        errors: [expectStaleStateError('setData', 'an await boundary')],
       },
 
       // Invalid: Function expression with violation
@@ -865,9 +834,7 @@ ruleTesterJsx.run(
           };
         }
       `,
-        errors: [
-        expectStaleStateError('setData', 'an await boundary'),
-        ],
+        errors: [expectStaleStateError('setData', 'an await boundary')],
       },
 
       // Invalid: Destructured useState with violation
@@ -883,9 +850,7 @@ ruleTesterJsx.run(
           }
         }
       `,
-        errors: [
-        expectStaleStateError('setData', 'an await boundary'),
-        ],
+        errors: [expectStaleStateError('setData', 'an await boundary')],
       },
 
       // Invalid: Complex control flow with violation
@@ -908,9 +873,7 @@ ruleTesterJsx.run(
           }
         }
       `,
-        errors: [
-        expectStaleStateError('setData', 'an await boundary'),
-        ],
+        errors: [expectStaleStateError('setData', 'an await boundary')],
       },
 
       // Invalid: Nested async with violation in outer scope
@@ -931,9 +894,7 @@ ruleTesterJsx.run(
           }
         }
       `,
-        errors: [
-        expectStaleStateError('setData', 'an await boundary'),
-        ],
+        errors: [expectStaleStateError('setData', 'an await boundary')],
       },
 
       // Invalid: Promise race with violation
@@ -954,9 +915,7 @@ ruleTesterJsx.run(
           }
         }
       `,
-        errors: [
-        expectStaleStateError('setData', 'an await boundary'),
-        ],
+        errors: [expectStaleStateError('setData', 'an await boundary')],
       },
 
       // Invalid: Promise.allSettled with violation
@@ -977,9 +936,7 @@ ruleTesterJsx.run(
           }
         }
       `,
-        errors: [
-        expectStaleStateError('setData', 'an await boundary'),
-        ],
+        errors: [expectStaleStateError('setData', 'an await boundary')],
       },
 
       // Invalid: Async generator with multiple violations
@@ -1003,8 +960,8 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-        expectStaleStateError('setStatus', 'a yield boundary'),
-        expectStaleStateError('setProgress', 'a yield boundary'),
+          expectStaleStateError('setStatus', 'a yield boundary'),
+          expectStaleStateError('setProgress', 'a yield boundary'),
         ],
       },
 
@@ -1030,9 +987,7 @@ ruleTesterJsx.run(
           }
         }
       `,
-        errors: [
-        expectStaleStateError('setData', 'an await boundary'),
-        ],
+        errors: [expectStaleStateError('setData', 'an await boundary')],
       },
     ],
   },
