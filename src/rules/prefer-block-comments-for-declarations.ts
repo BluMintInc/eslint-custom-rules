@@ -78,12 +78,11 @@ export const preferBlockCommentsForDeclarations: TSESLint.RuleModule<
 
       if (lastComment && isLineCommentBeforeDeclaration(lastComment, node)) {
         const commentText = lastComment.value.trim();
-        const commentLabel = commentText || 'declaration comment';
 
         context.report({
           loc: lastComment.loc,
           messageId: 'preferBlockComment',
-          data: { commentText: commentLabel },
+          data: { commentText },
           fix: (fixer) => {
             return fixer.replaceText(
               lastComment,
