@@ -14,13 +14,11 @@
 
 ## Rule details
 
-This rule reports explicit return type annotations on functions where TypeScript can infer the return value. It keeps the annotation for cases where the annotation conveys additional meaning:
+This rule reports explicit return type annotations on functions where TypeScript can infer the return value, and the fixer (`--fix`) removes only the return type annotation while keeping the rest of the signature intact. It keeps the annotation for cases where the annotation conveys additional meaning:
 
 - Type predicates (`value is Type`) and assertion functions (`asserts value is Type`) where the return type changes control flow.
 - Recursive functions, overloads, interface method signatures, and abstract methods when those allowances are enabled.
 - `.d.ts` declaration files and `.f.ts` Firestore function files when configured to allow them.
-
-The rule is fixable: `--fix` deletes only the return type annotation and preserves the rest of the signature.
 
 ### Examples of incorrect code
 
