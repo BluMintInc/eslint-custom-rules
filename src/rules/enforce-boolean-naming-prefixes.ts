@@ -1,6 +1,6 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
-import * as pluralize from 'pluralize';
+import pluralize from 'pluralize';
 
 type MessageIds = 'missingBooleanPrefix';
 type Options = [
@@ -9,7 +9,10 @@ type Options = [
   },
 ];
 
-// Default approved boolean prefixes
+// Default approved boolean prefixes. Some less common prefixes (e.g., 'are',
+// 'includes') stay allowed for flexibility even though the user-facing message
+// highlights only the most common ones. Underscore-prefixed names are also
+// intentionally allowed for private/internal fields.
 const DEFAULT_BOOLEAN_PREFIXES = [
   'is',
   'has',
@@ -64,6 +67,20 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
   defaultOptions: [{ prefixes: DEFAULT_BOOLEAN_PREFIXES }],
   create(context, [options]) {
     const approvedPrefixes = options.prefixes || DEFAULT_BOOLEAN_PREFIXES;
+    const importStatusCache = new Map<string, boolean>();
+    const externalApiUsageCache = new Map<string, boolean>();
+
+    function findVariableInScopes(name: string) {
+      let currentScope: any = context.getScope();
+      while (currentScope) {
+        const variable = currentScope.variables.find(
+          (v: any) => v.name === name,
+        );
+        if (variable) return variable;
+        currentScope = currentScope.upper;
+      }
+      return undefined;
+    }
 
     /**
      * Check if a name starts with any of the approved prefixes, their plural forms,
@@ -1088,124 +1105,96 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
      * Check if an identifier is imported from an external module
      */
     function isImportedIdentifier(name: string): boolean {
-      // Try to find the variable in all scopes, starting from current and going up
-      let currentScope: any = context.getScope();
-      let variable: any = undefined;
-
-      while (currentScope && !variable) {
-        variable = currentScope.variables.find((v: any) => v.name === name);
-        if (!variable) {
-          currentScope = currentScope.upper;
-        }
+      if (importStatusCache.has(name)) {
+        const cached = importStatusCache.get(name);
+        if (cached !== undefined) return cached;
       }
 
-      if (!variable) return false;
+      const variable = findVariableInScopes(name);
+      if (!variable) {
+        importStatusCache.set(name, false);
+        return false;
+      }
 
-      // Check if it's an import binding
-      return variable.defs.some((def: any) => def.type === 'ImportBinding');
+      const isImport = variable.defs.some(
+        (def: any) => def.type === 'ImportBinding',
+      );
+      importStatusCache.set(name, isImport);
+      return isImport;
     }
 
     /**
      * Check if a variable is used with an external API
      */
     function isVariableUsedWithExternalApi(variableName: string): boolean {
-      // Try to find the variable in all scopes, starting from current and going up
-      let currentScope: any = context.getScope();
-      let variable: any = undefined;
-
-      while (currentScope && !variable) {
-        variable = currentScope.variables.find(
-          (v: any) => v.name === variableName,
-        );
-        if (!variable) {
-          currentScope = currentScope.upper;
-        }
+      if (externalApiUsageCache.has(variableName)) {
+        const cached = externalApiUsageCache.get(variableName);
+        if (cached !== undefined) return cached;
       }
 
+      const variable = findVariableInScopes(variableName);
       if (!variable) {
+        externalApiUsageCache.set(variableName, false);
         return false;
       }
 
-      // Check all references to this variable
       for (const reference of variable.references) {
-        // Skip the declaration reference
-        if (reference.identifier === variable.identifiers[0]) {
-          continue;
-        }
-
+        if (reference.identifier === variable.identifiers[0]) continue;
         const id = reference.identifier;
 
-        // Check if the variable is used as a property value in an object passed to a function call
+        const markAndReturnTrue = () => {
+          externalApiUsageCache.set(variableName, true);
+          return true;
+        };
+
         if (
           id.parent?.type === AST_NODE_TYPES.Property &&
-          id.parent.parent?.type === AST_NODE_TYPES.ObjectExpression
+          id.parent.parent?.type === AST_NODE_TYPES.ObjectExpression &&
+          id.parent.parent.parent?.type === AST_NODE_TYPES.CallExpression &&
+          id.parent.parent.parent.callee.type === AST_NODE_TYPES.Identifier &&
+          isImportedIdentifier(id.parent.parent.parent.callee.name)
         ) {
-          // Check if this object is passed to a function call
-          if (id.parent.parent.parent?.type === AST_NODE_TYPES.CallExpression) {
-            const callExpression = id.parent.parent.parent;
-
-            // Check if the function being called is imported
-            if (callExpression.callee.type === AST_NODE_TYPES.Identifier) {
-              const calleeName = callExpression.callee.name;
-              if (isImportedIdentifier(calleeName)) {
-                return true;
-              }
-            }
-          }
+          return markAndReturnTrue();
         }
 
-        // Check if the variable is directly passed to a function call
         if (id.parent?.type === AST_NODE_TYPES.CallExpression) {
-          // Handle direct function calls like ExternalLib(config)
-          if (id.parent.callee.type === AST_NODE_TYPES.Identifier) {
-            const calleeName = id.parent.callee.name;
-            if (isImportedIdentifier(calleeName)) {
-              return true;
-            }
+          if (
+            id.parent.callee.type === AST_NODE_TYPES.Identifier &&
+            isImportedIdentifier(id.parent.callee.name)
+          ) {
+            return markAndReturnTrue();
           }
-
-          // Handle member expression calls like ExternalLib.create(config)
-          if (id.parent.callee.type === AST_NODE_TYPES.MemberExpression) {
-            const objectNode = id.parent.callee.object;
-            if (objectNode.type === AST_NODE_TYPES.Identifier) {
-              const objectName = objectNode.name;
-              if (isImportedIdentifier(objectName)) {
-                return true;
-              }
-            }
+          if (
+            id.parent.callee.type === AST_NODE_TYPES.MemberExpression &&
+            id.parent.callee.object.type === AST_NODE_TYPES.Identifier &&
+            isImportedIdentifier(id.parent.callee.object.name)
+          ) {
+            return markAndReturnTrue();
           }
         }
 
-        // Check if the variable is used in JSX attributes
         if (
           id.parent?.type === AST_NODE_TYPES.JSXExpressionContainer &&
           id.parent.parent?.type === AST_NODE_TYPES.JSXAttribute &&
-          id.parent.parent.parent?.type === AST_NODE_TYPES.JSXOpeningElement
+          id.parent.parent.parent?.type === AST_NODE_TYPES.JSXOpeningElement &&
+          id.parent.parent.parent.name.type === AST_NODE_TYPES.JSXIdentifier &&
+          isImportedIdentifier(id.parent.parent.parent.name.name)
         ) {
-          const jsxOpeningElement = id.parent.parent.parent;
-          if (jsxOpeningElement.name.type === AST_NODE_TYPES.JSXIdentifier) {
-            const componentName = jsxOpeningElement.name.name;
-            if (isImportedIdentifier(componentName)) {
-              return true;
-            }
-          }
+          return markAndReturnTrue();
         }
 
-        // Check if the variable is used in JSX spread attributes
         if (
           id.parent?.type === AST_NODE_TYPES.JSXSpreadAttribute &&
-          id.parent.parent?.type === AST_NODE_TYPES.JSXOpeningElement
+          id.parent.parent?.type === AST_NODE_TYPES.JSXOpeningElement &&
+          id.parent.parent.name.type === AST_NODE_TYPES.JSXIdentifier &&
+          isImportedIdentifier(id.parent.parent.name.name)
         ) {
-          const jsxOpeningElement = id.parent.parent;
-          if (jsxOpeningElement.name.type === AST_NODE_TYPES.JSXIdentifier) {
-            const componentName = jsxOpeningElement.name.name;
-            if (isImportedIdentifier(componentName)) {
-              return true;
-            }
-          }
+          return markAndReturnTrue();
         }
+
       }
 
+      externalApiUsageCache.set(variableName, false);
       return false;
     }
 

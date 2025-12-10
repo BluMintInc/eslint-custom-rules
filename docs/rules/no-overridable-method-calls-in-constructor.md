@@ -4,7 +4,7 @@
 
 <!-- end auto-generated rule header -->
 
-This rule aims to prevent a common pitfall in object-oriented programming where an overridable method (a method in a base class that is intended to be implemented or overridden by derived classes) is called from the constructor of the base class.
+This rule helps you avoid a common pitfall in object-oriented programming where an overridable method (a method in a base class that is intended to be implemented or overridden by derived classes) is called from the constructor of the base class.
 
 ## Rule Details
 
@@ -54,6 +54,8 @@ class Car extends Vehicle {
 
 const myCar = new Car(4); // Leads to error or incorrect log because numberOfDoors is undefined during initial displayType call
 ```
+
+> **Note**: Examples focus on construction-order hazards, assuming `strictPropertyInitialization` is disabled or handled elsewhere.
 
 ### Examples of **correct** code for this rule:
 

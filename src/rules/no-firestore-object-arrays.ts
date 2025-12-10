@@ -3,6 +3,13 @@ import { createRule } from '../utils/createRule';
 
 type MessageIds = 'noObjectArrays';
 
+type ParenthesizedTypeNode = TSESTree.TypeNode & {
+  typeAnnotation: TSESTree.TypeNode;
+};
+
+const PAREN_TYPE =
+  (AST_NODE_TYPES as any).TSParenthesizedType ?? 'TSParenthesizedType';
+
 const PRIMITIVE_TYPES = new Set([
   'string',
   'number',
@@ -38,18 +45,17 @@ const isArrayGenericReference = (node: TSESTree.TSTypeReference): boolean => {
 
 const isParenthesizedType = (
   node: TSESTree.TypeNode,
-): node is TSESTree.TypeNode & { typeAnnotation: TSESTree.TypeNode } => {
+): node is ParenthesizedTypeNode => {
   // Use enum if available; fall back to string check for compatibility
-  return (AST_NODE_TYPES as any).TSParenthesizedType
-    ? node.type === (AST_NODE_TYPES as any).TSParenthesizedType
-    : (node as unknown as { type?: string }).type === 'TSParenthesizedType';
+  return (node as { type?: string }).type === PAREN_TYPE;
 };
 
 const unwrapArrayElementType = (node: TSESTree.TypeNode): TSESTree.TypeNode => {
   let current: TSESTree.TypeNode = node;
   // Fixpoint loop: peel wrappers in any order until none remain
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
+  // Cap unwrap iterations to prevent accidental non-terminating edits if new cases are added.
+  // Wrappers are finite; 10 is generous but safe.
+  for (let i = 0; i < 10; i++) {
     if (
       current.type === AST_NODE_TYPES.TSTypeOperator &&
       (current as TSESTree.TSTypeOperator).operator === 'readonly'
@@ -59,8 +65,7 @@ const unwrapArrayElementType = (node: TSESTree.TypeNode): TSESTree.TypeNode => {
       continue;
     }
     if (isParenthesizedType(current)) {
-      current = (current as unknown as { typeAnnotation: TSESTree.TypeNode })
-        .typeAnnotation;
+      current = (current as ParenthesizedTypeNode).typeAnnotation;
       continue;
     }
     if (current.type === AST_NODE_TYPES.TSArrayType) {
@@ -213,8 +218,7 @@ Prefer:
     ): boolean => {
       if (isParenthesizedType(node)) {
         return isPrimitiveLikeTypeNode(
-          (node as unknown as { typeAnnotation: TSESTree.TypeNode })
-            .typeAnnotation,
+          (node as ParenthesizedTypeNode).typeAnnotation,
           depth + 1,
         );
       }
@@ -224,10 +228,11 @@ Prefer:
         case AST_NODE_TYPES.TSBooleanKeyword:
         case AST_NODE_TYPES.TSNullKeyword:
         case AST_NODE_TYPES.TSUndefinedKeyword:
-        case AST_NODE_TYPES.TSAnyKeyword:
-        case AST_NODE_TYPES.TSUnknownKeyword:
         case AST_NODE_TYPES.TSNeverKeyword:
           return true;
+        case AST_NODE_TYPES.TSAnyKeyword:
+        case AST_NODE_TYPES.TSUnknownKeyword:
+          return false;
         case AST_NODE_TYPES.TSLiteralType:
           return true; // string/number/boolean literals
         case AST_NODE_TYPES.TSTypeReference: {
@@ -274,8 +279,7 @@ Prefer:
     const isObjectType = (node: TSESTree.TypeNode): boolean => {
       if (isParenthesizedType(node)) {
         return isObjectType(
-          (node as unknown as { typeAnnotation: TSESTree.TypeNode })
-            .typeAnnotation,
+          (node as ParenthesizedTypeNode).typeAnnotation,
         );
       }
       switch (node.type) {
@@ -325,38 +329,41 @@ Prefer:
           return false;
         case AST_NODE_TYPES.TSAnyKeyword:
         case AST_NODE_TYPES.TSUnknownKeyword:
-          return false;
+          return true;
         default:
           return false;
       }
     };
 
-    const isImmediatelyWrappedByArraySyntax = (
-      node: TSESTree.Node,
-    ): boolean => {
-      let parent = (node as TSESTree.Node).parent as TSESTree.Node | undefined;
-      // Skip non-semantic wrappers (readonly/parens)
-      while (parent) {
+    const skipReadonlyAndParens = (
+      parent: TSESTree.Node | undefined,
+    ): TSESTree.Node | undefined => {
+      let currentParent = parent;
+      while (currentParent) {
         if (
-          parent.type === AST_NODE_TYPES.TSTypeOperator &&
-          (parent as TSESTree.TSTypeOperator).operator === 'readonly'
+          currentParent.type === AST_NODE_TYPES.TSTypeOperator &&
+          (currentParent as TSESTree.TSTypeOperator).operator === 'readonly'
         ) {
-          parent = (parent as unknown as { parent?: TSESTree.Node }).parent as
-            | TSESTree.Node
-            | undefined;
+          currentParent = (currentParent as TSESTree.TSTypeOperator)
+            .parent as TSESTree.Node | undefined;
           continue;
         }
-        if (
-          (AST_NODE_TYPES as any).TSParenthesizedType &&
-          parent.type === (AST_NODE_TYPES as any).TSParenthesizedType
-        ) {
-          parent = (parent as unknown as { parent?: TSESTree.Node }).parent as
-            | TSESTree.Node
-            | undefined;
+        if (isParenthesizedType(currentParent as TSESTree.TypeNode)) {
+          currentParent = (currentParent as ParenthesizedTypeNode)
+            .parent as TSESTree.Node | undefined;
           continue;
         }
         break;
       }
+      return currentParent;
+    };
+
+    const isImmediatelyWrappedByArraySyntax = (
+      node: TSESTree.Node,
+    ): boolean => {
+      const parent = skipReadonlyAndParens(
+        (node as TSESTree.Node).parent as TSESTree.Node | undefined,
+      );
       if (!parent) return false;
       if (parent.type === AST_NODE_TYPES.TSArrayType) return true;
       if (

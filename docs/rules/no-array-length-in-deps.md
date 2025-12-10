@@ -15,6 +15,7 @@
 
 This rule flags any usage of `array.length` in the dependency arrays of `useEffect`, `useCallback`, and `useMemo`.
 It auto-fixes by:
+
 - Inserting a memoized hash variable above the hook call:
   - `const itemsHash = useMemo(() => stableHash(items), [items]);`
 - Adding imports:
@@ -24,6 +25,11 @@ It auto-fixes by:
 - Generating unique variable names by appending `Hash` (e.g., `itemsHash`) or `Hash2`, `Hash3`, etc. on conflict.
 
 This ensures effects re-run whenever array contents change, not just when its length changes. `stableHash` safely stringifies values to produce a stable hash for arrays and objects.
+
+## Options
+
+- `hashImport.source` (default `functions/src/util/hash/stableHash`): module path for the hash helper.
+- `hashImport.importName` (default `stableHash`): import name for the hash helper.
 
 ## Examples
 
@@ -78,11 +84,6 @@ useEffect(() => {}, [itemsHash, usersHash, messagesHash]);
 - Nullable arrays and conditionals: Optional chaining on array references is preserved in both memo and deps (e.g., `s?.users`).
 - Variable naming: Appends `Hash` to the array name or last property (e.g., `listHash`, `usersHash`), adding a numeric suffix on conflict.
 - False positives: If you truly only care about length (e.g., emptiness), temporarily disable: `// eslint-disable-next-line no-array-length-in-deps` on the previous line.
-
-## Configuration
-
-- Recommended: ✅ Enabled in `plugin:@blumintinc/blumint/recommended`
-- Fixable: 🔧 Yes
 
 ## When Not To Use It
 

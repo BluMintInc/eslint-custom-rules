@@ -6,22 +6,30 @@
 
 <!-- end auto-generated rule header -->
 
-Enforces the use of `Fragment` imported from `'react'` over both `<>` and `<React.Fragment>`. This helps maintain consistency and ensures explicit imports in the codebase.
+Using a single fragment style keeps React dependencies explicit and avoids shorthand limitations. This rule replaces `<>` and `<React.Fragment>` with `<Fragment>` imported from `'react'`.
+
+## Why?
+
+- Shorthand fragments cannot receive props such as `key`, so adding keys later forces a rewrite; `<Fragment>` keeps that option available.
+- Mixing shorthand fragments and `React.Fragment` scatters two patterns across the codebase, making refactors and searches harder.
+- An explicit `Fragment` import keeps the dependency visible to bundlers and ensures auto-fixes do not leave `<Fragment>` undefined.
 
 ## Rule Details
 
-This rule aims to enforce consistent usage of React Fragment components by requiring explicit imports and avoiding shorthand syntax.
+- Prefer `<Fragment>...</Fragment>` from `import { Fragment } from 'react';`.
+- Do not use shorthand fragments `<>...</>` or `React.Fragment`.
+- The fixer will add the missing `Fragment` import when needed and replace fragment wrappers.
 
 Examples of **incorrect** code for this rule:
 
 ```jsx
-<>Hello World</>
+const Component = () => <>Hello World</>;
 
-<><ChildComponent /></>
-
-<React.Fragment>Hello World</React.Fragment>
-
-<React.Fragment><ChildComponent /></React.Fragment>
+const Component = () => (
+  <React.Fragment>
+    <ChildComponent />
+  </React.Fragment>
+);
 ```
 
 Examples of **correct** code for this rule:
@@ -29,14 +37,18 @@ Examples of **correct** code for this rule:
 ```jsx
 import { Fragment } from 'react';
 
-<Fragment>Hello World</Fragment>
+const Component = () => <Fragment>Hello World</Fragment>;
 
-<Fragment><ChildComponent /></Fragment>
+const Component = () => (
+  <Fragment>
+    <ChildComponent />
+  </Fragment>
+);
 ```
 
 ## When Not To Use It
 
-If you prefer using the shorthand fragment syntax `<>` or `React.Fragment` for better readability or have specific requirements that favor these syntaxes.
+Skip this rule if your project intentionally mixes fragment styles for brevity and you accept losing fragment props like `key` on shorthand fragments.
 
 ## Version
 

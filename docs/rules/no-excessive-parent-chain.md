@@ -66,20 +66,20 @@ export const regularFunction = async (docRef: DocumentReference) => {
 };
 ```
 
+This rule is not auto-fixable; violations must be corrected manually.
+
 ## Why This Rule Exists
 
 ### Problems with Long Parent Chains
 
-1. **Fragility**: Changes to the Firestore path structure can break multiple chained `.parent` calls
-2. **Readability**: Long chains like `ref.parent.parent.parent.parent` are hard to understand
-3. **Type Safety**: Manual navigation doesn't provide compile-time guarantees about path structure
-4. **Maintainability**: Refactoring path structures requires updating all hardcoded parent chains
+1. **Fragility**: Changes to the Firestore path structure can break multiple chained `.parent` calls.
+2. **Readability**: Long chains like `ref.parent.parent.parent.parent` are hard to understand.
+3. **Type Safety**: Manual navigation doesn't provide compile-time guarantees about path structure.
+4. **Maintainability**: Refactoring path structures requires updating all hardcoded parent chains.
 
 ### Benefits of Using Params
 
 1. **Type Safety**: The `params` object is automatically generated based on the path pattern and provides type-safe access
 2. **Maintainability**: Path changes only require updating the path pattern, not individual handlers
 3. **Clarity**: `params.userId` is much clearer than `ref.parent.parent.parent.id`
-4. **Consistency**: All handlers use the same pattern for accessing path components
-
-
+4. **Consistency**: All handlers use the same pattern for accessing path components.

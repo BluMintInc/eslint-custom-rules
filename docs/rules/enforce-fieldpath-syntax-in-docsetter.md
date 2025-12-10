@@ -15,12 +15,14 @@ Firestore operations like `FieldValue.arrayUnion` and `FieldValue.increment` wor
 ### When This Rule Applies
 
 This rule applies to:
+
 - `DocSetter.set()` method calls
 - `DocSetter.updateIfExists()` method calls
 
 ### When This Rule Does NOT Apply
 
 This rule does not apply to:
+
 - `DocSetter.overwrite()` method calls (since overwrite replaces the entire document)
 - Dynamically constructed objects
 - Array elements (Firestore does not support FieldPath notation within array objects)
@@ -138,6 +140,28 @@ await docSetter.overwrite({
 });
 ```
 
+### Keys requiring quotes
+
+When keys contain characters that are not valid identifiers (like dots), the auto-fixer quotes them:
+
+```javascript
+// Nested key with dot becomes quoted field path
+await docSetter.set({
+  'app.config': { version: 1 } // Becomes 'app.config.version': 1
+});
+```
+
+### Mixed Nesting
+
+You can mix already-flattened paths with nested objects:
+
+```javascript
+await docSetter.set({
+  'profile.name': 'John',
+  settings: { theme: 'dark' } // Becomes 'settings.theme': 'dark'
+});
+```
+
 ## Auto-fix
 
 This rule provides automatic fixes that convert nested object syntax into FieldPath syntax. The auto-fix will:
@@ -150,6 +174,7 @@ This rule provides automatic fixes that convert nested object syntax into FieldP
 ## When Not to Use
 
 You might want to disable this rule if:
+
 - You're working with legacy code that cannot be easily migrated
 - You have specific use cases where nested object syntax is required
 - You're using `DocSetter.overwrite()` exclusively (though the rule already ignores this method)
