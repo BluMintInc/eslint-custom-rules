@@ -13,10 +13,12 @@ This rule forbids `async` predicates passed to `Array.filter()`. The intent is t
 ### How to fix
 
 - Resolve async checks before filtering:
+
   ```ts
   const results = await Promise.all(items.map(checkItem));
   const filtered = items.filter((_, i) => results[i]);
   ```
+
 - Or move the logic to a synchronous predicate (e.g., use cached data or a precomputed lookup).
 
 Examples of **incorrect** code for this rule:
