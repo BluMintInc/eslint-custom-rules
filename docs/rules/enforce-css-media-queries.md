@@ -4,14 +4,14 @@
 
 <!-- end auto-generated rule header -->
 
-This rule keeps responsive breakpoints in CSS instead of runtime JavaScript hooks. JavaScript media detection (for example, `useMediaQuery` or `useMobile`) attaches resize listeners inside React renders, which forces avoidable re-renders and introduces a second, drifting source of truth for breakpoints. CSS is already optimized for media evaluation; letting styles own breakpoints keeps layout logic declarative and consistent.
+You keep responsive breakpoints in CSS instead of runtime JavaScript hooks. When you rely on JavaScript media detection (for example, `useMediaQuery` or `useMobile`), it attaches resize listeners inside React renders, which forces avoidable re-renders and introduces a second, drifting source of truth for breakpoints. CSS is already optimized for media evaluation, so letting styles own breakpoints keeps layout logic declarative and consistent.
 
 ## Rule Details
 
-The rule reports any JavaScript-based viewport detection so that breakpoints live in CSS instead of the render path. It flags:
+You get a report for any JavaScript-based viewport detection so that breakpoints live in CSS instead of the render path. The rule flags:
 - `useMediaQuery` from `@mui/material`
 - Any imports from `react-responsive`
-- The `useMobile` hook from any path containing `hooks/useMobile`
+- Any `useMobile` import or call (including `hooks/useMobile` paths and other sources)
 
 Why this matters:
 - JavaScript breakpoint hooks attach listeners during render and trigger re-renders whenever the viewport changes, even if the component already has CSS that could handle the layout shift.
