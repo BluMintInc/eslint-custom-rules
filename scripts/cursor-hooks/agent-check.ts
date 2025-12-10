@@ -18,6 +18,7 @@ import {
   MAX_LOOPS,
 } from './change-log';
 import type { Input, AgentCheckResult } from './types';
+import { validateRuleStructure } from './validate-rule-structure';
 
 const EXPAND_TESTS_PROMPT = `
 Your implementation looks good so far! Now let's ensure comprehensive test coverage.
@@ -331,6 +332,55 @@ async function performQualityChecks(input: Input) {
   return await checkRegistry.dispatch(checkDispatchMap);
 }
 
+/**
+ * Extract rule name from changed files by looking for src/rules/*.ts patterns.
+ */
+function extractRuleNameFromFiles(files: readonly string[]) {
+  for (const file of files) {
+    const match = /src\/rules\/([^/]+)\.ts$/.exec(file);
+    if (match && match[1] && !match[1].includes('.test')) {
+      return match[1];
+    }
+  }
+  return null;
+}
+
+/**
+ * Validate rule structure for rule implementations.
+ * Returns a followup message if validation fails, null otherwise.
+ */
+function performRuleStructureValidation(changedFiles: readonly string[]) {
+  const ruleName = extractRuleNameFromFiles(changedFiles);
+  if (!ruleName) {
+    return null;
+  }
+
+  const result = validateRuleStructure(ruleName);
+  if (result.isValid) {
+    return null;
+  }
+
+  const issues: string[] = [];
+  if (result.missingFiles.length > 0) {
+    issues.push(
+      `Missing files:\n${result.missingFiles
+        .map((f) => `  - ${f}`)
+        .join('\n')}`,
+    );
+  }
+  if (result.indexIssues.length > 0) {
+    issues.push(
+      `Index issues:\n${result.indexIssues.map((i) => `  - ${i}`).join('\n')}`,
+    );
+  }
+
+  return {
+    followup_message: `Rule structure validation failed for "${ruleName}":\n\n${issues.join(
+      '\n\n',
+    )}\n\nPlease ensure all required files exist and src/index.ts properly exports the rule.`,
+  } as const;
+}
+
 async function performAgentCheckInternal(input: Input) {
   const { conversation_id, generation_id, loop_count = 0, status } = input;
   try {
@@ -354,9 +404,6 @@ async function performAgentCheckInternal(input: Input) {
 
   const hasBeenPromptedBefore = hasCheckWorkBeenPrompted(conversation_id);
   markCheckWorkPrompted(conversation_id);
-
-  // For rule implementations, send expand tests prompt after first check-your-work
-  const isRuleRequest = isRuleRequestConversation(conversation_id);
   if (isRuleRequest && hasBeenPromptedBefore) {
     const hasExpandTestsPrompted = hasExpandTestsBeenPrompted(conversation_id);
     if (!hasExpandTestsPrompted) {
