@@ -78,6 +78,12 @@ import SomeModule from 'firebase/auth';`,
 import SomeModule from 'firebase/auth';`,
       filename: 'example.dynamic.tsx',
     },
+    // Block disable should be allowed with .dynamic extension
+    {
+      code: `// eslint-disable @blumintinc/blumint/require-dynamic-firebase-imports
+import SomeModule from 'firebase/auth';`,
+      filename: 'block.dynamic.ts',
+    },
     // Regular TypeScript file without disable directive
     {
       code: `import React from 'react';`,
@@ -99,6 +105,12 @@ import SomeModule from './SomeModule';`,
       code: `// This is modeled after guidance in @blumintinc/blumint/enforce-dynamic-imports
 const value = 1;`,
       filename: 'note.ts',
+    },
+    // Uppercase directive is ignored (ESLint is case-sensitive)
+    {
+      code: `// ESLINT-DISABLE-NEXT-LINE @blumintinc/blumint/enforce-dynamic-imports
+import SomeModule from './SomeModule';`,
+      filename: 'uppercase.ts',
     },
   ],
   invalid: [
@@ -149,6 +161,23 @@ import SomeModule from './SomeModule';`,
             ruleName: '@blumintinc/blumint/enforce-dynamic-imports',
             extension: '.tsx',
             suggestedName: 'example.dynamic.tsx',
+          },
+        },
+      ],
+    },
+    // Block disable for enforce-dynamic-imports still requires .dynamic extension
+    {
+      code: `// eslint-disable @blumintinc/blumint/enforce-dynamic-imports
+import SomeModule from './SomeModule';`,
+      filename: 'block.ts',
+      errors: [
+        {
+          messageId: 'requireDynamicExtension',
+          data: {
+            fileName: 'block.ts',
+            ruleName: '@blumintinc/blumint/enforce-dynamic-imports',
+            extension: '.ts',
+            suggestedName: 'block.dynamic.ts',
           },
         },
       ],
@@ -260,6 +289,21 @@ console.log('Debugging');`,
           data: {
             fileName: 'example.dynamic.tsx',
             standardName: 'example.tsx',
+          },
+        },
+      ],
+    },
+    // Uppercase block disable should not count, so .dynamic requires directive
+    {
+      code: `// ESLINT-DISABLE @blumintinc/blumint/enforce-dynamic-imports
+import SomeModule from './SomeModule';`,
+      filename: 'uppercase.dynamic.ts',
+      errors: [
+        {
+          messageId: 'requireDisableDirective',
+          data: {
+            fileName: 'uppercase.dynamic.ts',
+            standardName: 'uppercase.ts',
           },
         },
       ],
