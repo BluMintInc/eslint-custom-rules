@@ -14,6 +14,10 @@ This rule reports direct Firestore CRUD calls and reminds you to use the provide
 - Use `DocSetter`, `DocSetterTransaction`, or `BatchManager` for writes and deletes.
 - Realtime Database refs and JavaScript collection methods (`Set`, `Map`, etc.) remain allowed; the rule only targets Firestore access.
 
+## Options
+
+This rule does not have any options.
+
 ### Examples of **incorrect** code for this rule:
 
 ```ts

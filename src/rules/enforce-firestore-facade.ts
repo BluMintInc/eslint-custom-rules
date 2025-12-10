@@ -492,6 +492,24 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
+    const sourceCode = context.getSourceCode();
+    const reportDirectFirestoreCall = (
+      messageId: MessageIds,
+      node: TSESTree.CallExpression,
+      method: string,
+      callee: TSESTree.MemberExpression,
+    ) => {
+      const target = sourceCode.getText(callee.object);
+      context.report({
+        node,
+        messageId,
+        data: {
+          method,
+          target,
+        },
+      });
+    };
+
     // Clear the sets at the beginning of each file analysis
     realtimeDbRefVariables.clear();
     realtimeDbChildVariables.clear();
@@ -522,50 +540,20 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
         if (!isMemberExpression(callee)) return;
         const property = callee.property;
         if (!isIdentifier(property)) return;
-        const sourceCode = context.getSourceCode();
-        const target = sourceCode.getText(callee.object);
 
         // Report appropriate error based on method
         switch (property.name) {
           case 'get':
-            context.report({
-              node,
-              messageId: 'noDirectGet',
-              data: {
-                method: property.name,
-                target,
-              },
-            });
+            reportDirectFirestoreCall('noDirectGet', node, property.name, callee);
             break;
           case 'set':
-            context.report({
-              node,
-              messageId: 'noDirectSet',
-              data: {
-                method: property.name,
-                target,
-              },
-            });
+            reportDirectFirestoreCall('noDirectSet', node, property.name, callee);
             break;
           case 'update':
-            context.report({
-              node,
-              messageId: 'noDirectUpdate',
-              data: {
-                method: property.name,
-                target,
-              },
-            });
+            reportDirectFirestoreCall('noDirectUpdate', node, property.name, callee);
             break;
           case 'delete':
-            context.report({
-              node,
-              messageId: 'noDirectDelete',
-              data: {
-                method: property.name,
-                target,
-              },
-            });
+            reportDirectFirestoreCall('noDirectDelete', node, property.name, callee);
             break;
         }
       },
