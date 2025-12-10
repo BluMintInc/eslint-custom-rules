@@ -13,6 +13,28 @@ const SHORTHAND_DISABLE_LINE = /\bedl\b/;
 const DISABLE_NEXT_LINE_TOKEN = 'eslint-disable-next-line';
 const DISABLE_LINE_TOKEN = 'eslint-disable-line';
 const DISABLE_BLOCK_PATTERN = /\beslint-disable\b(?!-)/;
+const disabledRuleNameFrom = (commentText: string): string | null => {
+  const mentionsEnforceDynamicImports = commentText.includes(
+    ENFORCE_DYNAMIC_IMPORTS_RULE,
+  );
+  const mentionsRequireDynamicFirebaseImports = commentText.includes(
+    REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE,
+  );
+
+  if (mentionsEnforceDynamicImports && mentionsRequireDynamicFirebaseImports) {
+    return DYNAMIC_RULES_LABEL;
+  }
+
+  if (mentionsEnforceDynamicImports) {
+    return ENFORCE_DYNAMIC_IMPORTS_RULE;
+  }
+
+  if (mentionsRequireDynamicFirebaseImports) {
+    return REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE;
+  }
+
+  return null;
+};
 
 export default createRule<
   [],
@@ -57,14 +79,8 @@ export default createRule<
 
         for (const comment of comments) {
           const commentText = comment.value.trim();
-          const disablesEnforceDynamicImports = commentText.includes(
-            ENFORCE_DYNAMIC_IMPORTS_RULE,
-          );
-          const disablesRequireDynamicFirebaseImports = commentText.includes(
-            REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE,
-          );
-          const disablesTargetRule =
-            disablesEnforceDynamicImports || disablesRequireDynamicFirebaseImports;
+          const disabledRuleNameForComment = disabledRuleNameFrom(commentText);
+          const disablesTargetRule = disabledRuleNameForComment !== null;
 
           const inlineDisable =
             (commentText.includes(DISABLE_NEXT_LINE_TOKEN) ||
@@ -78,19 +94,8 @@ export default createRule<
 
           if (inlineDisable || blockDisable) {
             foundDisableDirective = true;
-            if (
-              disablesEnforceDynamicImports &&
-              !disablesRequireDynamicFirebaseImports
-            ) {
-              disabledRuleName = ENFORCE_DYNAMIC_IMPORTS_RULE;
-            } else if (
-              disablesRequireDynamicFirebaseImports &&
-              !disablesEnforceDynamicImports
-            ) {
-              disabledRuleName = REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE;
-            } else {
-              disabledRuleName = DYNAMIC_RULES_LABEL;
-            }
+            disabledRuleName =
+              disabledRuleNameForComment ?? DYNAMIC_RULES_LABEL;
             break;
           }
         }
