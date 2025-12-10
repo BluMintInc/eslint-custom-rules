@@ -6,11 +6,11 @@
 
 <!-- end auto-generated rule header -->
 
-Require tests to use the shared `mockFirestore` from `../../../../../__test-utils__/mockFirestore` instead of declaring ad-hoc mocks. A single, centralized mock keeps Firestore test behavior aligned with real API changes and ensures fixes land in one place rather than being copied across suites.
+You must use the shared `mockFirestore` from `../../../../../__test-utils__/mockFirestore` instead of declaring ad-hoc mocks. When Firestore data shapes or helper APIs change, your local mocks drift and only your suite breaks, while the centralized mock absorbs the change once.
 
 ## Rule Details
 
-Using locally defined `mockFirestore` functions causes tests to diverge from the canonical behavior. When Firestore data shapes or helper APIs change, scattered mocks silently drift and break only in the suites that forgot to update. The centralized mock absorbs these changes once and keeps every test using the same behavior. This rule reports any file that declares, destructures, or references a local `mockFirestore` (including renames and `this.mockFirestore`) instead of importing from the shared path. The fixer rewrites the file to import the shared mock and swaps local references to it.
+If you define a local `mockFirestore`, your tests diverge from the canonical behavior. When Firestore data shapes or helper APIs change, scattered mocks silently drift and break only in the suites that forget to update, while the centralized mock absorbs the change once. This rule reports any file where you declare, destructure, or reference a local `mockFirestore` (including renames and `this.mockFirestore`) instead of importing from the shared path, and the fixer rewrites the file to import the shared mock and swap local references to it.
 
 Examples of **incorrect** code for this rule:
 
@@ -71,7 +71,7 @@ beforeEach(() => {
 
 ## When Not To Use It
 
-Disable this rule only when a suite must intentionally exercise a different Firestore mock. Prefer extending the centralized mock to cover that behavior so the team benefits from a single source of truth.
+You should disable this rule only when your suite must intentionally exercise a different Firestore mock. Prefer extending the centralized mock to cover that behavior so the team benefits from a single source of truth.
 
 ## Further Reading
 
