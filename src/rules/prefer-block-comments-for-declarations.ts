@@ -85,7 +85,10 @@ export const preferBlockCommentsForDeclarations: TSESLint.RuleModule<
           messageId: 'preferBlockComment',
           data: { commentText: commentLabel },
           fix: (fixer) => {
-            return fixer.replaceText(lastComment, `/** ${commentLabel} */`);
+            return fixer.replaceText(
+              lastComment,
+              commentText ? `/** ${commentText} */` : '/** */',
+            );
           },
         });
       }

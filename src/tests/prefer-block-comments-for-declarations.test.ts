@@ -239,7 +239,7 @@ ruleTesterTs.run(
             data: { commentText: 'declaration comment' },
           },
         ],
-        output: `/** declaration comment */
+        output: `/** */
       const EMPTY = true;`,
       },
     ],
