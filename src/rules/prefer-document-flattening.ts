@@ -39,6 +39,7 @@ const isProperty = (node: TSESTree.Node): node is TSESTree.Property => {
  * Tracks DocSetter instances that don't have shouldFlatten option
  */
 interface DocSetterInstance {
+  className: string;
   name: string;
   node: TSESTree.NewExpression;
   hasShouldFlatten: boolean;
@@ -94,7 +95,7 @@ export const preferDocumentFlattening = createRule<[], MessageIds>({
     schema: [],
     messages: {
       preferDocumentFlattening:
-        'Use the shouldFlatten option when creating DocSetter or DocSetterTransaction instances that set nested objects',
+        '{{className}} instance "{{instanceName}}" sets nested Firestore data without enabling shouldFlatten. Nested object writes overwrite sibling fields and require read-modify-write cycles, which increases contention and hides field-level query paths. Add shouldFlatten: true in the {{className}} options or pass flattened field paths (for example, "profile.settings.theme") so nested updates stay atomic and queryable.',
     },
   },
   defaultOptions: [],
@@ -150,6 +151,7 @@ export const preferDocumentFlattening = createRule<[], MessageIds>({
 
         if (instanceName && !hasShouldFlatten) {
           docSetterInstances.push({
+            className,
             name: instanceName,
             node,
             hasShouldFlatten,
@@ -209,6 +211,10 @@ export const preferDocumentFlattening = createRule<[], MessageIds>({
             context.report({
               node: instance.node,
               messageId: 'preferDocumentFlattening',
+              data: {
+                className: instance.className,
+                instanceName: instance.name,
+              },
             });
           }
         }

@@ -129,6 +129,7 @@ import { noArrayLengthInDeps } from './rules/no-array-length-in-deps';
 import { preferUseDeepCompareMemo } from './rules/prefer-use-deep-compare-memo';
 import { noCircularReferences } from './rules/no-circular-references';
 import { noPassthroughGetters } from './rules/no-passthrough-getters';
+import { noTryCatchAlreadyExistsInTransaction } from './rules/no-try-catch-already-exists-in-transaction';
 
 module.exports = {
   meta: {
@@ -274,6 +275,8 @@ module.exports = {
         '@blumintinc/blumint/no-array-length-in-deps': 'error',
         '@blumintinc/blumint/prefer-use-deep-compare-memo': 'error',
         '@blumintinc/blumint/no-circular-references': 'error',
+        '@blumintinc/blumint/no-try-catch-already-exists-in-transaction':
+          'error',
         '@blumintinc/blumint/no-passthrough-getters': 'error',
       },
     },
@@ -417,6 +420,8 @@ module.exports = {
     'no-array-length-in-deps': noArrayLengthInDeps,
     'prefer-use-deep-compare-memo': preferUseDeepCompareMemo,
     'no-circular-references': noCircularReferences,
+    'no-try-catch-already-exists-in-transaction':
+      noTryCatchAlreadyExistsInTransaction,
     'no-passthrough-getters': noPassthroughGetters,
   },
 };

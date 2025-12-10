@@ -481,17 +481,35 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
     schema: [],
     messages: {
       noDirectGet:
-        'Use FirestoreFetcher or FirestoreDocFetcher instead of direct .get() calls',
+        'Direct Firestore "{{method}}" on {{target}} skips the Firestore fetcher facades that enforce typed deserialization, shared caching, and consistent error handling. Route reads through FirestoreFetcher or FirestoreDocFetcher so Firestore access stays observable and applies the shared safeguards.',
       noDirectSet:
-        'Use DocSetter or DocSetterTransaction instead of direct .set() calls',
+        'Direct Firestore "{{method}}" on {{target}} bypasses DocSetter and DocSetterTransaction, which apply validation, merge semantics, and centralized retry/metrics. Send writes through DocSetter or DocSetterTransaction to keep Firestore writes consistent, auditable, and safer under load.',
       noDirectUpdate:
-        'Use DocSetter or DocSetterTransaction instead of direct .update() calls',
+        'Direct Firestore "{{method}}" on {{target}} bypasses DocSetter and DocSetterTransaction, which guard partial updates with validation and shared retry/metrics. Use the setter facades for updates so field-level changes stay consistent with our Firestore write contract.',
       noDirectDelete:
-        'Use DocSetter or DocSetterTransaction instead of direct .delete() calls',
+        'Direct Firestore "{{method}}" on {{target}} bypasses DocSetter and DocSetterTransaction, which coordinate deletes with validation, retries, and any soft-delete policies. Perform deletes through the setter facades to avoid silent data loss and keep write telemetry intact.',
     },
   },
   defaultOptions: [],
   create(context) {
+    const sourceCode = context.getSourceCode();
+    const reportDirectFirestoreCall = (
+      messageId: MessageIds,
+      node: TSESTree.CallExpression,
+      method: string,
+      callee: TSESTree.MemberExpression,
+    ) => {
+      const target = sourceCode.getText(callee.object);
+      context.report({
+        node,
+        messageId,
+        data: {
+          method,
+          target,
+        },
+      });
+    };
+
     // Clear the sets at the beginning of each file analysis
     realtimeDbRefVariables.clear();
     realtimeDbChildVariables.clear();
@@ -526,28 +544,16 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
         // Report appropriate error based on method
         switch (property.name) {
           case 'get':
-            context.report({
-              node,
-              messageId: 'noDirectGet',
-            });
+            reportDirectFirestoreCall('noDirectGet', node, property.name, callee);
             break;
           case 'set':
-            context.report({
-              node,
-              messageId: 'noDirectSet',
-            });
+            reportDirectFirestoreCall('noDirectSet', node, property.name, callee);
             break;
           case 'update':
-            context.report({
-              node,
-              messageId: 'noDirectUpdate',
-            });
+            reportDirectFirestoreCall('noDirectUpdate', node, property.name, callee);
             break;
           case 'delete':
-            context.report({
-              node,
-              messageId: 'noDirectDelete',
-            });
+            reportDirectFirestoreCall('noDirectDelete', node, property.name, callee);
             break;
         }
       },
