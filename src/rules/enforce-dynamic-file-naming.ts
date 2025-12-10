@@ -94,8 +94,7 @@ export default createRule<
 
           if (inlineDisable || blockDisable) {
             foundDisableDirective = true;
-            disabledRuleName =
-              disabledRuleNameForComment ?? DYNAMIC_RULES_LABEL;
+            disabledRuleName = disabledRuleNameForComment;
             break;
           }
         }
