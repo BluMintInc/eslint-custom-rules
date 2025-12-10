@@ -78,17 +78,15 @@ import SomeModule from 'firebase/auth';`,
 import SomeModule from 'firebase/auth';`,
       filename: 'example.dynamic.tsx',
     },
-    // Ignore files with other extensions
+    // Regular TypeScript file without disable directive
     {
-      code: `// ednl @blumintinc/blumint/enforce-dynamic-imports
-import SomeModule from './SomeModule';`,
+      code: `import React from 'react';`,
       filename: 'example.test.ts',
     },
-    // Ignore files with other extensions
     {
       code: `// ednl @blumintinc/blumint/enforce-dynamic-imports
 import SomeModule from './SomeModule';`,
-      filename: 'example.deprecated.ts',
+      filename: 'example.client.dynamic.tsx',
     },
     // Ignore non-TypeScript files
     {
@@ -151,6 +149,40 @@ import SomeModule from './SomeModule';`,
             ruleName: '@blumintinc/blumint/enforce-dynamic-imports',
             extension: '.tsx',
             suggestedName: 'example.dynamic.tsx',
+          },
+        },
+      ],
+    },
+    // Multi-dot TypeScript file without .dynamic.ts extension but with enforce-dynamic-imports disable directive
+    {
+      code: `// eslint-disable-next-line @blumintinc/blumint/enforce-dynamic-imports
+import SomeModule from './SomeModule';`,
+      filename: 'example.test.ts',
+      errors: [
+        {
+          messageId: 'requireDynamicExtension',
+          data: {
+            fileName: 'example.test.ts',
+            ruleName: '@blumintinc/blumint/enforce-dynamic-imports',
+            extension: '.ts',
+            suggestedName: 'example.test.dynamic.ts',
+          },
+        },
+      ],
+    },
+    // Multi-dot TypeScript file without .dynamic.tsx extension but with enforce-dynamic-imports disable directive
+    {
+      code: `// ednl @blumintinc/blumint/enforce-dynamic-imports
+import SomeModule from './SomeModule';`,
+      filename: 'index.client.tsx',
+      errors: [
+        {
+          messageId: 'requireDynamicExtension',
+          data: {
+            fileName: 'index.client.tsx',
+            ruleName: '@blumintinc/blumint/enforce-dynamic-imports',
+            extension: '.tsx',
+            suggestedName: 'index.client.dynamic.tsx',
           },
         },
       ],

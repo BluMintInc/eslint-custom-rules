@@ -11,7 +11,7 @@ Why it matters:
 
 ## Rule Details
 
-The rule applies to `.ts` and `.tsx` files. It ignores other filename patterns (for example `*.test.ts`, `*.deprecated.ts`).
+The rule applies to any `.ts` or `.tsx` file, including multi-dot names such as `*.test.ts` or `index.client.tsx`. Files with other extensions are ignored.
 
 - If you disable `@blumintinc/blumint/enforce-dynamic-imports` or `@blumintinc/blumint/require-dynamic-firebase-imports`, name the file `*.dynamic.ts` or `*.dynamic.tsx`.
 - If you name a file `*.dynamic.ts` or `*.dynamic.tsx`, include a disable directive for one of the two rules above.

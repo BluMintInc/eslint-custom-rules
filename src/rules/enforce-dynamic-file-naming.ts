@@ -38,7 +38,8 @@ export default createRule<
     const filePath = context.getFilename();
     const fileName = path.basename(filePath);
 
-    const isTypeScriptFile = /^[^.]+\.tsx?$/.test(fileName);
+    const isTypeScriptFile =
+      fileName.endsWith('.ts') || fileName.endsWith('.tsx');
 
     const hasDynamicExtension = /\.dynamic\.tsx?$/.test(fileName);
 
