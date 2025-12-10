@@ -219,6 +219,22 @@ ruleTesterTs.run('global-const-style', rule, {
       ],
       output: 'const COLORS = { primary: "#000", secondary: "#fff" } as const;',
     },
+    // Nested assertions still report the literal kind
+    {
+      code: 'const COLORS = ({ primary: "#000" } as ThemeA) as ThemeB;',
+      filename: 'test.ts',
+      errors: [
+        {
+          messageId: 'asConst',
+          data: {
+            name: 'COLORS',
+            valueKind: 'an object literal',
+          },
+        },
+      ],
+      output:
+        'const COLORS = ({ primary: "#000" } as ThemeA) as ThemeB as const;',
+    },
     // Object with Record type annotation missing UPPER_SNAKE_CASE (no as const error)
     {
       code: 'const displayableNotificationModes: Record<NotificationMode, string> = { sms: "SMS", email: "Email", push: "Push" };',

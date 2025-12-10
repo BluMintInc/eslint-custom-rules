@@ -32,11 +32,14 @@ export default createRule<[], MessageIds>({
       context.getFilename().endsWith('.tsx');
 
     const describeValueKind = (node: TSESTree.Node): string => {
-      const target =
-        node.type === AST_NODE_TYPES.TSTypeAssertion ||
-        node.type === AST_NODE_TYPES.TSAsExpression
-          ? node.expression
-          : node;
+      let target = node;
+
+      while (
+        target.type === AST_NODE_TYPES.TSTypeAssertion ||
+        target.type === AST_NODE_TYPES.TSAsExpression
+      ) {
+        target = target.expression;
+      }
 
       if (target.type === AST_NODE_TYPES.ArrayExpression) {
         return 'an array literal';
