@@ -276,5 +276,42 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         sourceType: 'module',
       },
     },
+    {
+      code: `
+        type FooProps = { used: string; unused: string };
+
+        const helper = ({ used }: FooProps) => {
+          return used.toUpperCase();
+        };
+
+        const Component = ({ used }: FooProps) => {
+          return <span>{used}</span>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'mixed.tsx',
+      settings: {
+        'no-unused-props': {
+          reactLikeExtensions: [],
+        },
+      },
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+        jsx: true,
+      },
+    },
   ],
 });
