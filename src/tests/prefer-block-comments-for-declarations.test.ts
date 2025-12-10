@@ -229,17 +229,17 @@ ruleTesterTs.run(
       }`,
       },
 
-      // Empty line comment should fix to empty block comment but message uses label
+      // Empty line comment falls back to a placeholder label
       {
         code: `//
       const EMPTY = true;`,
         errors: [
           {
             messageId: 'preferBlockComment',
-            data: { commentText: '' },
+            data: { commentText: 'declaration comment' },
           },
         ],
-        output: `/** */
+        output: `/** declaration comment */
       const EMPTY = true;`,
       },
     ],
