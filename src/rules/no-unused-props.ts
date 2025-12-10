@@ -76,18 +76,36 @@ export const noUnusedProps = createRule({
     const isGenericTypeSpread = (prop: string) =>
       prop.startsWith('...') && prop.length === 4 && /^\.\.\.[A-Z]$/.test(prop);
 
-    const hasRestSpreadUsage = (used: Set<string>, restUsed: boolean) =>
-      restUsed || Array.from(used).some((usedProp) => usedProp.startsWith('...'));
+    const hasRestSpreadUsage = (used: Set<string>, restUsed: boolean) => {
+      if (restUsed) {
+        return true;
+      }
+
+      for (const usedProp of used) {
+        if (usedProp.startsWith('...')) {
+          return true;
+        }
+      }
+
+      return false;
+    };
 
     const isAnyPropFromSpreadTypeUsed = (
       spreadTypeName: string,
       used: Set<string>,
     ) => {
       const spreadTypeProps = usedSpreadTypes.get(spreadTypeName);
-      return (
-        !!spreadTypeProps &&
-        Array.from(spreadTypeProps).some((spreadProp) => used.has(spreadProp))
-      );
+      if (!spreadTypeProps) {
+        return false;
+      }
+
+      for (const spreadProp of spreadTypeProps) {
+        if (used.has(spreadProp)) {
+          return true;
+        }
+      }
+
+      return false;
     };
 
     const shouldSkipSpreadType = (
