@@ -8,9 +8,9 @@ Exported functions and React components must rely on exported types so consumers
 
 ## Rule Details
 
-- Flags type aliases or interfaces used in parameters of exported functions when the type is not exported.
-- Flags non-exported type aliases or interfaces used as return types of exported functions.
-- Flags non-exported props types used by exported React components.
+ - Detects parameters of exported functions that reference non-exported type aliases or interfaces.
+ - Also reports exported functions whose return types rely on non-exported aliases or interfaces.
+ - Warns when exported React components use props types that are defined but not exported.
 - Allows built-in/standard library types, imported types, generic parameters, and inline literal types.
 
 If the type is kept private while the function/component is exported, callers duplicate the shape or fall back to `any`, causing type drift and maintenance bugs. Exporting the shared contract keeps implementations and consumers aligned.
