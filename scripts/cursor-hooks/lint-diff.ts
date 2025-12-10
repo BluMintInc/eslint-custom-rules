@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { fetchChangedFiles } from './change-log';
 
 function filterLintableFiles(files: readonly string[]) {
@@ -8,7 +9,8 @@ function filterLintableFiles(files: readonly string[]) {
       /\.(ts|tsx|js|jsx)$/.test(file) &&
       existsSync(file) &&
       !file.includes('node_modules') &&
-      !file.includes('.cursor/tmp/')
+      !file.includes('.cursor/tmp/') &&
+      !/\.(test|spec)\.(ts|tsx|js|jsx)$/.test(file)
     );
   });
 }
@@ -68,9 +70,6 @@ function executeMain() {
   performLintDiff({ conversationId, generationId });
 }
 
-const isDirectExecution =
-  process.argv[1] && process.argv[1].includes('lint-diff');
-
-if (isDirectExecution) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   executeMain();
 }
