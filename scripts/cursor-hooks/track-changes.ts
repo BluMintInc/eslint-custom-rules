@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { modifyHeartbeat } from './change-log';
 
 /** Redefine to avoid complex dependencies */
@@ -35,16 +36,21 @@ function readInput() {
 }
 
 function ensureLogStructure(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   log: any,
   {
     conversationIdKey,
     generationIdKey,
   }: { conversationIdKey: string; generationIdKey: string },
 ) {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
   if (!log[conversationIdKey]) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     log[conversationIdKey] = {};
   }
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
   if (!log[conversationIdKey][generationIdKey]) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     log[conversationIdKey][generationIdKey] = [];
   }
 }
@@ -78,6 +84,7 @@ export function trackChanges(input: Input, logPath: string = LOG_FILE_PATH) {
     mkdirSync(dir, { recursive: true });
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let log: any = {};
   if (existsSync(logPath)) {
     try {
@@ -95,7 +102,9 @@ export function trackChanges(input: Input, logPath: string = LOG_FILE_PATH) {
     generationIdKey: String(generationIdKey),
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
   if (!log[conversationIdKey][generationIdKey].includes(file_path)) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
     log[conversationIdKey][generationIdKey].push(file_path);
     writeFileSync(logPath, JSON.stringify(log, null, 2));
   }
@@ -108,9 +117,6 @@ function executeMain() {
   }
 }
 
-const isDirectExecution =
-  process.argv[1] && process.argv[1].includes('track-changes');
-
-if (isDirectExecution) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   executeMain();
 }
