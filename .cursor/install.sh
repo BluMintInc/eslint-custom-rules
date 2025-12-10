@@ -51,8 +51,13 @@ if ! require_cmd npm; then
   exit 1
 fi
 
-echo "Installing Node dependencies..."
-npm install
+echo "Installing Node dependencies (ignoring lifecycle scripts)..."
+npm install --ignore-scripts
+
+echo "Running prepare (best-effort; continuing on failure)..."
+if ! npm run prepare --if-present; then
+  echo "prepare failed (likely due to build). Continuing environment setup." >&2
+fi
 
 echo "Environment setup complete."
 
