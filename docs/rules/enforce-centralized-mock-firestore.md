@@ -6,7 +6,7 @@
 
 <!-- end auto-generated rule header -->
 
-You must use the shared `mockFirestore` from `../../../../../__test-utils__/mockFirestore` instead of declaring ad-hoc mocks. When Firestore data shapes or helper APIs change, your local mocks drift and only your suite breaks, while the centralized mock absorbs the change once.
+If a file defines or re-exports a local `mockFirestore` instead of importing it from `../../../../../__test-utils__/mockFirestore`, that mock drifts away from the canonical behavior and hides API changes. Import the centralized mock so fixes land in one place and every suite stays aligned.
 
 ## Rule Details
 
