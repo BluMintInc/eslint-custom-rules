@@ -13,6 +13,7 @@ Enforces the use of block comments (`/** */`) instead of single-line comments (`
 Line comments placed directly above a declaration look like documentation but TypeScript and IDEs ignore them for hovers, signature help, and generated docs. Converting them to block comments keeps the text attached to the declaration so refactors and API exploration still show the intent.
 
 - Reports line comments immediately before declarations (functions, variables, types, interfaces, classes, properties, enums) except inside function bodies.
+- Leaves existing block comments untouched, including block ESLint directives.
 - Ignores ESLint directive comments so configuration comments remain untouched.
 - Auto-fix rewrites `//` comments into `/** ... */` while preserving the text.
 
@@ -33,8 +34,13 @@ interface User {
   // Name of user
   name: string;
 }
+```
 
-// ESLint directive comments stay allowed
+### Exceptions
+
+ESLint directive comments are ignored by this rule so configuration stays intact.
+
+```ts
 // eslint-disable-next-line no-unused-vars
 const ignored = true;
 ```
@@ -57,7 +63,7 @@ interface User {
   name: string;
 }
 
-/* Block ESLint directives remain valid and are ignored by the rule */
+/* Block comments of any kind are not checked by this rule */
 /* eslint-disable no-console */
 function log() {
   console.log('safe');
