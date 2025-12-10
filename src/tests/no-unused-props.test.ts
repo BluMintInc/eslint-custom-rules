@@ -182,6 +182,23 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         sourceType: 'module',
       },
     },
+    {
+      code: `
+        import { ImportedProps } from './external';
+
+        const ForwardRefComponent = ({ label, ...rest }: Props) => (
+          <div {...rest}>{label}</div>
+        );
+
+        type Props = { label: string } & ImportedProps;
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
   ],
   invalid: [
     {

@@ -36,10 +36,18 @@ export const noUnusedProps = createRule({
     const propsTypes: Map<string, Record<string, TSESTree.Node>> = new Map();
     // Track which spread types have been used in a component
     const usedSpreadTypes: Map<string, Set<string>> = new Map();
-    const componentsToCheck: Array<{ typeName: string; used: Set<string> }> =
-      [];
+    const componentsToCheck: Array<{
+      typeName: string;
+      used: Set<string>;
+      restUsed: boolean;
+    }> = [];
     let currentComponent:
-      | { node: TSESTree.Node; typeName: string; used: Set<string> }
+      | {
+          node: TSESTree.Node;
+          typeName: string;
+          used: Set<string>;
+          restUsed: boolean;
+        }
       | null = null;
 
     const clearState = () => {
@@ -49,7 +57,11 @@ export const noUnusedProps = createRule({
       currentComponent = null;
     };
 
-    const reportUnusedProps = (typeName: string, used: Set<string>) => {
+    const reportUnusedProps = (
+      typeName: string,
+      used: Set<string>,
+      restUsed: boolean,
+    ) => {
       const propsType = propsTypes.get(typeName);
 
       if (!propsType) {
@@ -60,9 +72,11 @@ export const noUnusedProps = createRule({
         if (!used.has(prop)) {
           // For imported types (props that start with '...'), only report if there's no rest spread operator
           // This allows imported types to be used without being flagged when properly forwarded
-          const hasRestSpread = Array.from(used.values()).some((usedProp) =>
-            usedProp.startsWith('...'),
-          );
+          const hasRestSpread =
+            restUsed ||
+            Array.from(used.values()).some((usedProp) =>
+              usedProp.startsWith('...'),
+            );
 
           // Don't report unused props if:
           // 1. It's a spread type and there's a rest spread operator, OR
@@ -572,6 +586,7 @@ export const noUnusedProps = createRule({
                 param.typeAnnotation.typeAnnotation.typeName.name;
               if (typeName.endsWith('Props')) {
                 const used = new Set<string>();
+                let restUsed = false;
                 param.properties.forEach((prop) => {
                   if (
                     prop.type === AST_NODE_TYPES.Property &&
@@ -584,6 +599,7 @@ export const noUnusedProps = createRule({
                   ) {
                     // Handle rest spread operator {...rest}
                     // When a rest operator is used, all remaining props are considered used
+                    restUsed = true;
                     const propsType = propsTypes.get(typeName);
                     if (propsType) {
                       Object.keys(propsType).forEach((key) => {
@@ -594,7 +610,7 @@ export const noUnusedProps = createRule({
                     }
                   }
                 });
-                currentComponent = { node, typeName, used };
+                currentComponent = { node, typeName, used, restUsed };
               }
             }
           }
@@ -603,8 +619,8 @@ export const noUnusedProps = createRule({
 
       'VariableDeclaration:exit'(node) {
         if (currentComponent?.node === node) {
-          const { typeName, used } = currentComponent;
-          componentsToCheck.push({ typeName, used });
+          const { typeName, used, restUsed } = currentComponent;
+          componentsToCheck.push({ typeName, used, restUsed });
           currentComponent = null;
         }
       },
@@ -623,8 +639,8 @@ export const noUnusedProps = createRule({
           return;
         }
 
-        componentsToCheck.forEach(({ typeName, used }) =>
-          reportUnusedProps(typeName, used),
+        componentsToCheck.forEach(({ typeName, used, restUsed }) =>
+          reportUnusedProps(typeName, used, restUsed),
         );
 
         clearState();
