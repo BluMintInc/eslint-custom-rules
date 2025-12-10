@@ -231,6 +231,28 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
         };
       `,
     },
+    // Function named exactly 'handle' should be renamed with descriptive action
+    {
+      code: `
+        const Component = () => {
+          const handle = () => {
+            console.log('do stuff');
+          };
+
+          return <button onClick={handle}>Click</button>;
+        };
+      `,
+      errors: [withMessage(handleMessage('handle', 'describeAction'))],
+      output: `
+        const Component = () => {
+          const describeAction = () => {
+            console.log('do stuff');
+          };
+
+          return <button onClick={describeAction}>Click</button>;
+        };
+      `,
+    },
     // Object method with 'handle' prefix
     {
       code: `
@@ -356,6 +378,24 @@ ruleTesterJsx.run('consistent-callback-naming', rule, {
 
           event(event: Event) {
             this.handler(event);
+          }
+        }
+      `,
+    },
+    // Class method named 'handle' should use descriptive action name
+    {
+      code: `
+        class Handler {
+          handle() {
+            return true;
+          }
+        }
+      `,
+      errors: [withMessage(handleMessage('handle', 'describeAction'))],
+      output: `
+        class Handler {
+          describeAction() {
+            return true;
           }
         }
       `,

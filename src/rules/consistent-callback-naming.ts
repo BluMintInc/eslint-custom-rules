@@ -287,10 +287,7 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
               suggestedName: getHandleSuggestedName(functionName),
             },
             fix(fixer) {
-              // Remove 'handle' prefix and convert first character to lowercase
-              const newName =
-                functionName.slice(6).charAt(0).toLowerCase() +
-                functionName.slice(7);
+              const newName = getHandleSuggestedName(functionName);
 
               // Fix the declaration and all references
               const fixes: Array<
@@ -353,9 +350,7 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
               suggestedName: getHandleSuggestedName(name),
             },
             fix(fixer) {
-              // Remove 'handle' prefix and convert first character to lowercase
-              const newName =
-                name.slice(6).charAt(0).toLowerCase() + name.slice(7);
+              const newName = getHandleSuggestedName(name);
               return fixer.replaceText(node.key, newName);
             },
           });
