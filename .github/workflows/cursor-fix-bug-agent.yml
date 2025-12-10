@@ -62,6 +62,7 @@ jobs:
           ---
 
           When complete, open a PR targeting the \`develop\` branch.
+          When you open the GitHub pull request for this work, do not open it as a draft. Create an open, ready-for-review PR.
           PROMPT_ISSUE
 
           echo "source_ref=$DEFAULT_REF" >> "$GITHUB_OUTPUT"
