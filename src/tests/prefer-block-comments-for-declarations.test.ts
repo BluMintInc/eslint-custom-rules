@@ -228,6 +228,20 @@ ruleTesterTs.run(
         USER
       }`,
       },
+
+      // Empty line comment should fix to empty block comment but message uses label
+      {
+        code: `//
+      const EMPTY = true;`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'declaration comment' },
+          },
+        ],
+        output: `/** */
+      const EMPTY = true;`,
+      },
     ],
   },
 );
