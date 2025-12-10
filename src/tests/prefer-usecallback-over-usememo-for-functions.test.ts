@@ -12,6 +12,9 @@ const ruleTester = new ESLintUtils.RuleTester({
   },
 });
 
+const callbackDescription = (callbackName: string) =>
+  `the callback "${callbackName}"`;
+
 ruleTester.run(
   'prefer-usecallback-over-usememo-for-functions',
   preferUseCallbackOverUseMemoForFunctions,
@@ -134,7 +137,12 @@ ruleTester.run(
           return <button onClick={handleClick}>Click me</button>;
         }
       `,
-        errors: [{ messageId: 'preferUseCallback' }],
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('handleClick') },
+          },
+        ],
         output: `
         function Component() {
           const handleClick = useCallback(() => {
@@ -152,7 +160,12 @@ ruleTester.run(
           return <button onClick={handleClick}>Click me</button>;
         }
       `,
-        errors: [{ messageId: 'preferUseCallback' }],
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('handleClick') },
+          },
+        ],
         output: `
         function Component() {
           const handleClick = useCallback(() => console.log('Button clicked'), []);
@@ -173,7 +186,12 @@ ruleTester.run(
           return <button onClick={fetchData}>Fetch</button>;
         }
       `,
-        errors: [{ messageId: 'preferUseCallback' }],
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('fetchData') },
+          },
+        ],
         output: `
         function Component({ id }) {
           const fetchData = useCallback(async () => {
@@ -196,7 +214,12 @@ ruleTester.run(
           return <button onClick={() => handler('123')}>Process</button>;
         }
       `,
-        errors: [{ messageId: 'preferUseCallback' }],
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('handler') },
+          },
+        ],
         output: `
         function Component() {
           const handler = useCallback<(id: string) => void>((id) => {
@@ -215,7 +238,12 @@ ruleTester.run(
         }
       `,
         options: [{ allowFunctionFactories: false }],
-        errors: [{ messageId: 'preferUseCallback' }],
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('handler') },
+          },
+        ],
         output: `
         function Component() {
           const handler = useCallback(() => console.log('Simple function'), []);
@@ -235,7 +263,12 @@ ruleTester.run(
           return <button onClick={handleClick}>Click me</button>;
         }
       `,
-        errors: [{ messageId: 'preferUseCallback' }],
+        errors: [
+          {
+            messageId: 'preferUseCallback',
+            data: { callbackDescription: callbackDescription('handleClick') },
+          },
+        ],
         output: `
         function Component({ id }) {
           const handleClick = useCallback(() => {

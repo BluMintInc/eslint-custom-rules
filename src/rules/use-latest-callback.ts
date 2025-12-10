@@ -16,7 +16,7 @@ export const useLatestCallback = createRule<[], MessageIds>({
     schema: [],
     messages: {
       useLatestCallback:
-        'Use useLatestCallback from use-latest-callback instead of useCallback from react',
+        'Replace {{currentHook}} with {{recommendedHook}} from "use-latest-callback" so the callback keeps a stable reference while still reading the latest props/state. useCallback recreates functions whenever dependencies change, which can trigger needless renders and stale closures. Drop the dependency array when switching to {{recommendedHook}}.',
     },
   },
   defaultOptions: [],
@@ -122,28 +122,24 @@ export const useLatestCallback = createRule<[], MessageIds>({
             jsxReturningCallbacks.add(node);
           } else {
             hasNonJsxUseCallbacks = true;
+            const currentCallbackName = (node.callee as TSESTree.Identifier)
+              .name;
+            const replacementName = hasUseLatestCallbackImport
+              ? useLatestCallbackImportName
+              : currentCallbackName === 'useCallback'
+              ? 'useLatestCallback'
+              : currentCallbackName;
             // Report the useCallback call for replacement
             context.report({
               node,
               messageId: 'useLatestCallback',
+              data: {
+                currentHook: currentCallbackName,
+                recommendedHook: replacementName,
+              },
               fix(fixer) {
                 const sourceCode = context.getSourceCode();
                 const callbackText = sourceCode.getText(node.arguments[0]);
-
-                // Use the renamed import name if useLatestCallback is already imported,
-                // otherwise use 'useLatestCallback' for standard imports or the renamed name for renamed imports
-                const currentCallbackName = (node.callee as TSESTree.Identifier)
-                  .name;
-                let replacementName: string;
-
-                if (hasUseLatestCallbackImport) {
-                  replacementName = useLatestCallbackImportName;
-                } else if (currentCallbackName === 'useCallback') {
-                  replacementName = 'useLatestCallback';
-                } else {
-                  // For renamed imports like 'useCallback as useStableCallback'
-                  replacementName = currentCallbackName;
-                }
 
                 // Replace useCallback with useLatestCallback and remove the dependency array
                 return fixer.replaceText(
@@ -179,9 +175,20 @@ export const useLatestCallback = createRule<[], MessageIds>({
             );
 
             if (specifiers.length > 0) {
+              const useCallbackLocalName = specifiers[0].local.name;
+              const recommendedHook = hasUseLatestCallbackImport
+                ? useLatestCallbackImportName
+                : useCallbackLocalName === 'useCallback'
+                ? 'useLatestCallback'
+                : useCallbackLocalName;
+
               context.report({
                 node: statement,
                 messageId: 'useLatestCallback',
+                data: {
+                  currentHook: useCallbackLocalName,
+                  recommendedHook,
+                },
                 fix(fixer) {
                   // If there are other imports from react, keep them
                   const otherSpecifiers = statement.specifiers.filter(
@@ -190,9 +197,6 @@ export const useLatestCallback = createRule<[], MessageIds>({
                       (specifier.imported.type === AST_NODE_TYPES.Identifier &&
                         specifier.imported.name !== 'useCallback'),
                   );
-
-                  // Get the local name of useCallback (in case it's renamed)
-                  const useCallbackLocalName = specifiers[0].local.name;
 
                   // If we need to add the useLatestCallback import and modify the react import
                   if (!hasUseLatestCallbackImport) {

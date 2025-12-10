@@ -188,9 +188,9 @@ export const preferTypeAliasOverTypeofConstant: TSESLint.RuleModule<
     schema: [],
     messages: {
       preferTypeAlias:
-        'Use a named type alias instead of `typeof {{constName}}` for global constants. Suggested alias: {{suggested}}.',
+        'Type derived from same-file constant "{{constName}}" couples the type to its runtime value and scatters literal unions across the file. Create a named alias such as "{{suggested}}" and reference that alias instead of `typeof {{constName}}` so the type stays stable even if the value changes.',
       defineTypeBeforeConstant:
-        'Declare the type alias {{typeName}} before the constant {{constName}}.',
+        'Type alias "{{typeName}}" appears after constant "{{constName}}", which hides the shape from readers and risks using an undeclared alias. Declare "{{typeName}}" before "{{constName}}" so the type is visible where it is consumed and can be reused consistently.',
     },
   },
   defaultOptions: [],
