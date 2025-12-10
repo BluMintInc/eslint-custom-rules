@@ -35,9 +35,7 @@ function isCallbackFunctionNode(node: TSESTree.Node): boolean {
 }
 
 function isTypeLikeNode(node: TSESTree.Node): boolean {
-  return (
-    node.type.startsWith('TS') || node.type.endsWith('TypeAnnotation')
-  );
+  return node.type.startsWith('TS') || node.type.endsWith('TypeAnnotation');
 }
 
 type MessageIds = 'assertShouldThrow' | 'shouldBeAssertPrefixed';
@@ -48,7 +46,7 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
     type: 'problem',
     docs: {
       description:
-        "Enforce that functions with an assert prefix must throw an error or call process.exit(1), and functions that call assert-prefixed methods should themselves be assert-prefixed",
+        'Enforce that functions with an assert prefix must throw an error or call process.exit(1), and functions that call assert-prefixed methods should themselves be assert-prefixed',
       recommended: 'error',
     },
     schema: [],

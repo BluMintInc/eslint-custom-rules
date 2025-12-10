@@ -13,11 +13,13 @@ const KNOWN_FIRESTORE_ROOTS = new Set(['db', 'firestore']);
 
 const isMemberExpression = (
   node: TSESTree.Node,
-): node is TSESTree.MemberExpression => node.type === AST_NODE_TYPES.MemberExpression;
+): node is TSESTree.MemberExpression =>
+  node.type === AST_NODE_TYPES.MemberExpression;
 
 const isCallExpression = (
   node: TSESTree.Node,
-): node is TSESTree.CallExpression => node.type === AST_NODE_TYPES.CallExpression;
+): node is TSESTree.CallExpression =>
+  node.type === AST_NODE_TYPES.CallExpression;
 
 const isIdentifier = (node: TSESTree.Node): node is TSESTree.Identifier =>
   node.type === AST_NODE_TYPES.Identifier;
@@ -32,7 +34,9 @@ const unwrapTSAsExpression = (node: TSESTree.Node): TSESTree.Node => {
 const getLeftmostIdentifier = (
   node: TSESTree.Node | null | undefined,
 ): TSESTree.Identifier | null => {
-  let current: TSESTree.Node | null | undefined = node ? unwrapTSAsExpression(node) : null;
+  let current: TSESTree.Node | null | undefined = node
+    ? unwrapTSAsExpression(node)
+    : null;
   while (current) {
     if (isIdentifier(current)) {
       return current;
@@ -75,7 +79,10 @@ const isFirestoreRoot = (
     node.callee.property.name === 'firestore'
   ) {
     const innerBase = getLeftmostIdentifier(node.callee.object);
-    if (innerBase && (innerBase.name === 'app' || KNOWN_FIRESTORE_ROOTS.has(innerBase.name))) {
+    if (
+      innerBase &&
+      (innerBase.name === 'app' || KNOWN_FIRESTORE_ROOTS.has(innerBase.name))
+    ) {
       return true;
     }
   }
@@ -86,7 +93,10 @@ const isFirestoreRoot = (
     node.property.name === 'firestore'
   ) {
     const innerBase = getLeftmostIdentifier(node.object);
-    if (innerBase && (innerBase.name === 'app' || KNOWN_FIRESTORE_ROOTS.has(innerBase.name))) {
+    if (
+      innerBase &&
+      (innerBase.name === 'app' || KNOWN_FIRESTORE_ROOTS.has(innerBase.name))
+    ) {
       return true;
     }
   }
@@ -144,8 +154,14 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
       const target = unwrapTSAsExpression(expression);
 
       if (target.type === AST_NODE_TYPES.ConditionalExpression) {
-        const matchedConsequent = recordFirestoreVariable(varName, target.consequent);
-        const matchedAlternate = recordFirestoreVariable(varName, target.alternate);
+        const matchedConsequent = recordFirestoreVariable(
+          varName,
+          target.consequent,
+        );
+        const matchedAlternate = recordFirestoreVariable(
+          varName,
+          target.alternate,
+        );
         return matchedConsequent || matchedAlternate;
       }
 
@@ -237,7 +253,8 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
       if (!isCallExpression(candidate)) return false;
       if (!isMemberExpression(candidate.callee)) return false;
       const property = candidate.callee.property;
-      if (!isIdentifier(property) || property.name !== 'collection') return false;
+      if (!isIdentifier(property) || property.name !== 'collection')
+        return false;
 
       return isFirestoreRoot(
         candidate.callee.object,
@@ -251,7 +268,8 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
       if (!isCallExpression(candidate)) return false;
       if (!isMemberExpression(candidate.callee)) return false;
       const docProperty = candidate.callee.property;
-      if (!isIdentifier(docProperty) || docProperty.name !== 'doc') return false;
+      if (!isIdentifier(docProperty) || docProperty.name !== 'doc')
+        return false;
 
       const collectionCall = candidate.callee.object;
       if (!isFirestoreCollectionCall(collectionCall)) {
@@ -519,16 +537,36 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
 
         switch (property.name) {
           case 'get':
-            reportDirectFirestoreCall('noDirectGet', node, property.name, callee);
+            reportDirectFirestoreCall(
+              'noDirectGet',
+              node,
+              property.name,
+              callee,
+            );
             break;
           case 'set':
-            reportDirectFirestoreCall('noDirectSet', node, property.name, callee);
+            reportDirectFirestoreCall(
+              'noDirectSet',
+              node,
+              property.name,
+              callee,
+            );
             break;
           case 'update':
-            reportDirectFirestoreCall('noDirectUpdate', node, property.name, callee);
+            reportDirectFirestoreCall(
+              'noDirectUpdate',
+              node,
+              property.name,
+              callee,
+            );
             break;
           case 'delete':
-            reportDirectFirestoreCall('noDirectDelete', node, property.name, callee);
+            reportDirectFirestoreCall(
+              'noDirectDelete',
+              node,
+              property.name,
+              callee,
+            );
             break;
         }
       },

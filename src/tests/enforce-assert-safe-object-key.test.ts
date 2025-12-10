@@ -5,9 +5,7 @@ import { enforceAssertSafeObjectKey } from '../rules/enforce-assert-safe-object-
 const buildMessage = (key: string) =>
   `Dynamic object key "${key}" is used without assertSafe() validation. Unvalidated keys can resolve to unexpected properties (including prototype fields) and make lookups fragile or unsafe. Wrap the key with assertSafe(${key}) before accessing the object.`;
 
-const lintError = (
-  key: string,
-): TSESLint.TestCaseError<'useAssertSafe'> =>
+const lintError = (key: string): TSESLint.TestCaseError<'useAssertSafe'> =>
   ({
     message: buildMessage(key),
   } as unknown as TSESLint.TestCaseError<'useAssertSafe'>);
