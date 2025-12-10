@@ -10,7 +10,7 @@ alwaysApply: false
 
 ### Purpose
 
-The Automated Review Addressing System streamlines pull request reviews by automatically launching a Cursor Background Agent after feedback lands and pushing fixes directly to the PR's head branch. Human reviews trigger on submission; bot reviews trigger once CodeRabbit and Cursor Bugbot checks both succeed. Agents iterate on feedback in small batches and resolve review threads via repository-provided scripts, so developers do not have to merge mini PRs.
+The Automated Review Addressing System streamlines pull request reviews by automatically launching a Cursor Background Agent after feedback lands and pushing fixes directly to the PR's head branch. Human reviews trigger on submission; bot reviews trigger after CodeRabbit and Cursor Bugbot checks succeed or when maintainers add the `cursor-address-bot-review` label to force a run. Agents iterate on feedback in small batches and resolve review threads via repository-provided scripts, so developers do not have to merge mini PRs.
 
 ### Definitions
 
@@ -18,8 +18,9 @@ The Automated Review Addressing System streamlines pull request reviews by autom
 - **Review Batch**: A single GitHub review submission (human or AI bot) that may contain multiple inline comments.
 - **Direct Branch Update**: The agent pushes commits to the PR head branch; no mini PR is opened.
 - **Human Review Flow**: Automatically triggered for human review submissions; processes about seven comments per pass to keep context focused.
-- **AI Bot Review Flow**: Automatically triggered after CodeRabbit and Cursor Bugbot checks succeed; processes about five comments per pass and triages validity before applying updates.
+- **AI Bot Review Flow**: Automatically triggered after CodeRabbit and Cursor Bugbot checks succeed or when the `cursor-address-bot-review` label is applied; processes about five comments per pass and triages validity before applying updates.
 - **Review Batch ID**: The numeric GitHub review identifier; used for context building and, when present, scoping human review fetches.
+- **Manual Bot Trigger Label**: `cursor-address-bot-review` on a PR signals an intentional bot run even if required checks have not completed.
 
 ## Why Automated Review Addressing Exists
 
@@ -30,7 +31,7 @@ Manual triage of dense review batches slows down delivery and burdens reviewers 
 - **Faster review turnaround**: For human reviews, an agent begins addressing comments immediately upon review submission.
 - **Reduced toil**: Repetitive fetch/triage/resolve steps are automated using in-repo scripts and rules.
 - **Direct branch updates**: Agents push fixes to the PR head branch; no mini PR needs to be merged.
-- **Bot coverage without manual steps**: Bot reviews auto-launch after CodeRabbit and Cursor Bugbot checks finish so automated feedback is handled in one pass. Manual `/pr-review-ai-bots` remains available when explicit instructions are needed.
+- **Bot coverage without manual steps**: Bot reviews auto-launch after CodeRabbit and Cursor Bugbot checks finish so automated feedback is handled in one pass. Manual `/pr-review-ai-bots` and the `cursor-address-bot-review` label remain available when explicit instructions or overrides are needed.
 
 ## Directory Structure
 
@@ -63,7 +64,7 @@ scripts/
 
 ## Core Components
 
-- **Workflows**: `cursor-pr-review-agent.yml` launches on `pull_request_review: submitted` for human reviews; `cursor-bot-pr-review-agent.yml` launches after CodeRabbit and Cursor Bugbot check runs succeed.
+- **Workflows**: `cursor-pr-review-agent.yml` launches on `pull_request_review: submitted` for human reviews; `cursor-bot-pr-review-agent.yml` launches after CodeRabbit and Cursor Bugbot check runs succeed or when the `cursor-address-bot-review` label is applied to a PR.
 - **Context Builders**: `build-pr-review-context.py` and `build-pr-review-prompt.ts` assemble PR metadata, review/bot context, and unresolved comments into the agent prompt.
 - **Fetch Scripts**: `pr-check-comments.sh` and `pr-check-bot-comments.sh` pull unresolved threads (human vs bot) with batching and bot filtering controls.
 - **Cursor Hooks**: `scripts/cursor-hooks/pr-review-check.ts` plus `agent-check.ts` enforce unresolved-comment gating, then run build/lint/test/structure checks before agents can stop.
@@ -86,9 +87,9 @@ When a review is submitted on a PR, `.github/workflows/cursor-pr-review-agent.ym
 
 ### 1b) Launch on Bot Checks
 
-When CodeRabbit and Cursor Bugbot checks both succeed for a PR head SHA, `.github/workflows/cursor-bot-pr-review-agent.yml` executes:
+When CodeRabbit and Cursor Bugbot checks both succeed for a PR head SHA, `.github/workflows/cursor-bot-pr-review-agent.yml` executes. The same workflow also runs when a maintainer applies the `cursor-address-bot-review` label to a PR, which serves as a manual override and skips the required-check gate:
 
-- Confirms both check runs (by app slug/name) have `conclusion: success` on the PR head SHA.
+- Confirms both check runs (by app slug/name) have `conclusion: success` on the PR head SHA unless the manual override label is present.
 - Fetches unresolved bot comments (limit 5) and builds a synthetic bot review context plus prompt.
 - Launches a Cursor Background Agent on the PR head branch (`autoCreatePr: false`).
 - Posts a PR comment with the agent link.
@@ -145,13 +146,13 @@ When the agent attempts to stop, the stop hook (`scripts/cursor-hooks/agent-chec
 Use the merge helper when finishing a review branch that follows the `(<base>)-review-pr-(<pr>)[-(<reviewBatch>)][-(human|bot)]` pattern:
 
 - Run on the review branch: `npm run merge-review -- --message "<optional_commit_message>"`
-- The helper stages all changes, commits with the provided message or `chore: merge review branch for PR #<pr> [(review <reviewBatch>)]`, checks out the base branch (local match or inferred PR head), and merges the review branch.
+- The helper stages all changes, commits with the provided message or `chore: merge review branch for PR #<pr> [(review <reviewBatch>)]`, checks out the base branch (local match or inferred from the PR), and merges the review branch.
 - Ensure the branch name matches the pattern so the base branch candidate and PR number resolve correctly.
 
 ### Tips
 
 - **For bot reviews**: Before using `/pr-review-ai-bots`, mark invalid comments with a 👎 reaction and resolve them. This prevents the agent from fetching them.
-- Bot automation runs after CodeRabbit and Cursor Bugbot checks succeed; ensure those checks are green before expecting the agent to appear.
+- Bot automation runs after CodeRabbit and Cursor Bugbot checks succeed; the `cursor-address-bot-review` label can force a launch when those checks are not yet green.
 - Agents push directly to the PR branch; watch the PR commits tab for updates.
 - You can still use `.cursor/commands/pr-review.md` or `.cursor/commands/pr-review-ai-bots.md` manually in Cursor Chat for follow-ups.
 
@@ -227,7 +228,7 @@ The agent follows the same workflow as a cloud agent—the stop hook automatical
 
 ## Critical Insights for Maintainers
 
-- **Bot gating is deliberate**: Bot agents launch only after both CodeRabbit and Cursor Bugbot checks succeed to ensure all automated feedback is present and avoid redundant runs; `/pr-review-ai-bots` stays available for explicit human direction.
+- **Bot gating is deliberate**: Bot agents launch only after both CodeRabbit and Cursor Bugbot checks succeed to ensure all automated feedback is present and avoid redundant runs; `/pr-review-ai-bots` and the `cursor-address-bot-review` label are available when a manual launch is intentional.
 - **Batch sizing balances load**: ~7 items for human reviews maximizes throughput with manageable context; ~5 items for bot reviews limits triage overhead because bot feedback often mixes valid and invalid findings.
 - **Direct branch commits reduce friction**: Agents push to the PR head branch (no mini PR) to avoid merge overhead and keep review threads resolvable on the original branch.
 - **Branch detection fallback**: When no `-review-pr-*` suffix exists (direct-branch automation), `pr-review-check.ts` falls back to the open PR for the current branch and still blocks completion until unresolved comments are cleared.
@@ -237,6 +238,7 @@ The agent follows the same workflow as a cloud agent—the stop hook automatical
 ## Common Pitfalls
 
 - Bot automation waits for both CodeRabbit and Cursor Bugbot checks to finish successfully; if one is missing, the bot agent will not launch.
+- The manual override label bypasses required-check gating; apply it only when a forced bot pass is desired and when unresolved bot feedback is present.
 - The CLI review scripts require both `gh` and `jq` in the execution environment.
 - The agent does not need to fetch comments manually; the stop hook handles this automatically.
 - For manual runs, you can still use `.cursor/commands/pr-review.md` or `.cursor/commands/pr-review-ai-bots.md` in Cursor Chat.
