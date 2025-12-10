@@ -538,6 +538,31 @@ ruleTesterTs.run(
 });
       `,
       },
+      // Dot-notation key with nested object should not drive topLevelKey
+      {
+        code: `
+        const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
+        await docSetter.set({
+          id: tournamentId,
+          'metadata.version': { major: '1.0' },
+          metadata: { description: 'desc' },
+        });
+      `,
+        errors: [
+          {
+            messageId: 'enforceFieldPathSyntax',
+            data: buildData('set()', 'metadata', 'metadata.description'),
+          },
+        ],
+        output: `
+        const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
+        await docSetter.set({
+  id: tournamentId,
+  'metadata.version.major': '1.0',
+  'metadata.description': 'desc',
+});
+      `,
+      },
       // Multiple levels of nesting with mixed types
       {
         code: `

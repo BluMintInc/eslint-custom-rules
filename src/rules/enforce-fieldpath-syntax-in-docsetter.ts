@@ -60,8 +60,11 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       );
     }
 
-    // Helper function to check if an object has nested objects (excluding arrays)
-    function hasNestedObjects(node: TSESTree.ObjectExpression): boolean {
+    function getFirstNestedObjectProperty(
+      node: TSESTree.ObjectExpression,
+    ):
+      | (TSESTree.Property & { value: TSESTree.ObjectExpression })
+      | undefined {
       for (const property of node.properties) {
         // Skip spread elements
         if (property.type === AST_NODE_TYPES.SpreadElement) {
@@ -93,11 +96,13 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
           // Skip nested objects that contain spread elements or computed properties
           const hasSpreadOrComputed = value.properties.some(isSpreadOrComputed);
           if (!hasSpreadOrComputed) {
-            return true;
+            return property as TSESTree.Property & {
+              value: TSESTree.ObjectExpression;
+            };
           }
         }
       }
-      return false;
+      return undefined;
     }
 
     // Helper function to flatten nested objects into FieldPath syntax
@@ -247,30 +252,42 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
         // Check if the first argument is an object literal
         const firstArg = node.arguments[0];
         if (
-          firstArg?.type !== AST_NODE_TYPES.ObjectExpression ||
-          !hasNestedObjects(firstArg)
+          firstArg?.type !== AST_NODE_TYPES.ObjectExpression
         ) {
           return;
         }
 
+        const firstNestedProperty = getFirstNestedObjectProperty(firstArg);
+        if (!firstNestedProperty) {
+          return;
+        }
+
+        const sourceCode = context.getSourceCode();
         const flattenedProperties = flattenObject(
           firstArg,
-          context.getSourceCode(),
+          sourceCode,
         );
+        const propertyKeyText = getPropertyKeyText(firstNestedProperty);
+        const exampleFieldPathFromProperty =
+          propertyKeyText &&
+          flattenObject(
+            firstNestedProperty.value,
+            sourceCode,
+            propertyKeyText,
+          );
         const exampleFieldPath =
+          (exampleFieldPathFromProperty &&
+            Object.keys(exampleFieldPathFromProperty).find((key) =>
+              key.includes('.'),
+            )) ??
+          (propertyKeyText &&
+            Object.keys(flattenedProperties).find((key) =>
+              key.startsWith(`${propertyKeyText}.`),
+            )) ??
           Object.keys(flattenedProperties).find((key) => key.includes('.')) ??
           'field.nested';
 
-        const firstNestedProperty = firstArg.properties.find(
-          (prop): prop is TSESTree.Property =>
-            prop.type === AST_NODE_TYPES.Property &&
-            !prop.computed &&
-            prop.value.type === AST_NODE_TYPES.ObjectExpression,
-        );
-
-        const topLevelKey =
-          (firstNestedProperty && getPropertyKeyText(firstNestedProperty)) ??
-          'nested field';
+        const topLevelKey = propertyKeyText ?? 'nested field';
 
         // Report and fix the issue
         context.report({
@@ -284,7 +301,7 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
           fix(fixer) {
             const newText = convertToFieldPathSyntax(
               firstArg,
-              context.getSourceCode(),
+              sourceCode,
             );
             return fixer.replaceText(firstArg, newText);
           },
