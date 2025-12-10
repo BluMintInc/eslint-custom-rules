@@ -6,6 +6,7 @@ name: Launch Cursor Agent on Bot Checks
   pull_request:
     types:
       - labeled
+  status:
 
 permissions:
   contents: read
@@ -17,10 +18,14 @@ env:
 
 jobs:
   launch_bot_agent:
-    if: ${{ github.event.check_run.pull_requests[0].number }}
+    if: >-
+      (github.event_name == 'check_run' && github.event.check_run.pull_requests[0].number) ||
+      (github.event_name == 'pull_request' && github.event.action == 'labeled') ||
+      (github.event_name == 'status' && github.event.state == 'success' && (contains(github.event.context, 'CodeRabbit') || contains(github.event.context, 'coderabbit')))
     runs-on: ubuntu-latest
     concurrency:
-      group: cursor-bot-review-${{ github.event_name == 'check_run' && github.event.check_run.pull_requests[0].number || github.event.pull_request.number || github.run_id }}
+      # Group by commit SHA to prevent race conditions between check_run and status events for the same code
+      group: cursor-bot-review-${{ github.event.check_run.head_sha || github.event.pull_request.head.sha || github.event.sha }}
       cancel-in-progress: false
     steps:
       - name: Checkout
@@ -40,9 +45,34 @@ jobs:
       - name: Determine required checks completion
         id: checks
         run: |
-          PR_NUMBER="${{ github.event_name == 'check_run' && github.event.check_run.pull_requests[0].number || github.event.pull_request.number }}"
-          HEAD_SHA="${{ github.event_name == 'check_run' && github.event.check_run.pull_requests[0].head.sha || github.event.pull_request.head.sha }}"
-          HEAD_REF="${{ github.event_name == 'check_run' && github.event.check_run.pull_requests[0].head.ref || github.event.pull_request.head.ref }}"
+          EVENT_NAME="${{ github.event_name }}"
+          echo "Processing event: $EVENT_NAME"
+
+          if [ "$EVENT_NAME" == "check_run" ]; then
+            PR_NUMBER="${{ github.event.check_run.pull_requests[0].number }}"
+            HEAD_SHA="${{ github.event.check_run.pull_requests[0].head.sha }}"
+            HEAD_REF="${{ github.event.check_run.pull_requests[0].head.ref }}"
+          elif [ "$EVENT_NAME" == "pull_request" ]; then
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+            HEAD_REF="${{ github.event.pull_request.head.ref }}"
+          elif [ "$EVENT_NAME" == "status" ]; then
+            HEAD_SHA="${{ github.event.sha }}"
+            echo "Status event for SHA: $HEAD_SHA. Resolving PR..."
+            # Fetch open PRs associated with this commit
+            PR_JSON=$(gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/commits/$HEAD_SHA/pulls" | jq 'map(select(.state=="open")) | .[0]')
+            
+            if [ -z "$PR_JSON" ] || [ "$PR_JSON" == "null" ]; then
+              echo "No open PR found for commit $HEAD_SHA. Skipping."
+              echo "missing_required=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            
+            PR_NUMBER=$(echo "$PR_JSON" | jq -r '.number')
+            HEAD_REF=$(echo "$PR_JSON" | jq -r '.head.ref')
+            echo "Resolved to PR #$PR_NUMBER ($HEAD_REF)"
+          fi
+
           MANUAL_OVERRIDE="${{ github.event_name == 'pull_request' && github.event.label.name == 'cursor-address-bot-review' }}"
 
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
@@ -166,9 +196,8 @@ jobs:
               model: $model,
               prompt: { text: $prompt_text },
               source: { repository: $repository, ref: $source_ref },
-              target: { branchName: $target_branch, autoCreatePr: false, skipReviewerRequest: true },
-              webhook: { url: $webhook_url, secret: $webhook_secret }
-            }')
+              target: { branchName: $target_branch, autoCreatePr: false, skipReviewerRequest: true }
+            } + (if $webhook_url != "" then { webhook: { url: $webhook_url, secret: $webhook_secret } } else {} end)')
 
           HTTP_RESPONSE=$(curl --silent --show-error --write-out "HTTPSTATUS:%{http_code}" \
             --request POST \

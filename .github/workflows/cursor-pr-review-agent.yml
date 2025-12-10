@@ -209,9 +209,8 @@ jobs:
               model: $model,
               prompt: { text: $prompt_text },
               source: { repository: $repository, ref: $source_ref },
-              target: { branchName: $target_branch, autoCreatePr: false, skipReviewerRequest: true },
-              webhook: { url: $webhook_url, secret: $webhook_secret }
-            }')
+              target: { branchName: $target_branch, autoCreatePr: false, skipReviewerRequest: true }
+            } + (if $webhook_url != "" then { webhook: { url: $webhook_url, secret: $webhook_secret } } else {} end)')
           
           # Send request and capture response body and HTTP status (do not fail on non-2xx)
           HTTP_RESPONSE=$(curl --silent --show-error --write-out "HTTPSTATUS:%{http_code}" \
