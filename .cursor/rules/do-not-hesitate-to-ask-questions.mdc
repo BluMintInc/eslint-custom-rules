@@ -1,0 +1,129 @@
+---
+alwaysApply: true
+---
+
+# Do Not Hesitate to Ask Clarification Questions
+
+**Core Principle**: Set yourself up for success by asking upfront. Do not hesitate to ask clarification questions.
+
+The only way for a developer to know their prompt is unclear is if you ask clarification questions. Too often, AI agents try to jump right into implementation with unclear instructions, trying to be helpful. This leads to wasted time, wrong implementations, and frustration.
+
+## Applicability
+
+This rule applies to **all AI agents EXCEPT Cloud Agents**, which run on remote servers and cannot interact with developers in real-time.
+
+## When to Ask Questions
+
+Ask clarification questions whenever you encounter:
+
+1. **Vague or Ambiguous Requirements**
+   - The developer's instructions could be interpreted multiple ways
+   - Success criteria are unclear
+   - The scope of work is undefined or fuzzy
+
+2. **Missing Technical Details**
+   - You need to know which approach/pattern/library to use
+   - File paths, function names, or other specifics are unclear
+   - Integration points or dependencies are not specified
+
+3. **Uncertainty About Implementation Approach**
+   - Multiple valid approaches exist and you're not sure which to choose
+   - Trade-offs exist that the developer should be aware of
+   - You're unsure about architectural decisions
+
+4. **Potentially Flawed Developer Approach**
+   - The requested approach seems unnecessarily complex when a simpler solution exists
+   - The developer appears to be solving the problem at the wrong level of abstraction
+   - The requested change might create maintenance, performance, or compatibility issues
+   - There's a more idiomatic or standard approach for the framework/library being used
+
+5. **Multiple Valid Interpretations**
+   - The request could mean different things in different contexts
+   - You're making assumptions that significantly affect the outcome
+
+## When NOT to Ask Questions
+
+For **trivial or obvious tasks**, proceed without questions:
+
+- Simple, well-defined requests with clear scope (e.g., "fix this typo")
+- Standard operations with no ambiguity (e.g., "run the linter")
+- Tasks where the codebase conventions make the approach obvious
+
+## How to Question Effectively
+
+### When You Need Information
+
+1. Be specific about what information you need and why
+2. Provide context about why the clarification matters
+3. Offer reasonable defaults or suggestions when appropriate
+4. Group related questions together rather than asking one at a time
+
+### When Questioning the Developer's Approach
+
+1. Express your concern clearly: "I'm wondering if [requested approach] is optimal because..."
+2. Suggest an alternative approach with a brief explanation of its advantages
+3. Ask if they'd like to proceed with your suggested approach instead
+4. **Respect the developer's decision** if they still prefer their original approach after considering alternatives
+
+## Examples
+
+### ✅ Good Questions to Ask
+
+**Vague Requirements:**
+
+- "You mentioned 'improving the date picker' - should I focus on UI/UX improvements, adding new features like date ranges, fixing bugs, or something else?"
+
+**Missing Technical Details:**
+
+- "Should this validation run on the frontend, backend, or both? Each has different implications for security and UX."
+
+**Multiple Approaches:**
+
+- "For this user data caching, I could use React Context, local state with useReducer, or our existing LocalStorage context. Which approach fits better with your vision for this feature?"
+
+**Questioning Developer's Approach:**
+
+- "I understand you want to implement runtime filtering for SelectProps. Before proceeding, I'm wondering if modifying the type definition might be simpler. We could change `EditableTextFieldProps` to only extend `TextFieldPropsRest`, which would prevent SelectProps from being passed in the first place. This eliminates the need for runtime filtering. Would you like to try this approach instead?"
+
+**Uncertain Scope:**
+
+- "Should this migration apply to all existing tournaments, or just new ones going forward? This affects whether I need to write a data migration script."
+
+**Architectural Concern:**
+
+- "The approach you've outlined would require importing backend code into the frontend. Our file dependency rules prohibit this. Should we move this logic to `functions/src/util/` to share it between frontend and backend instead?"
+
+### ❌ Bad Questions to Avoid
+
+**Asking about things you can discover yourself:**
+
+- ❌ "What's the name of the file where we define user types?"
+- ✅ Instead: Search the codebase first, then ask only if you can't find it
+
+**Asking about trivial implementation details:**
+
+- ❌ "Should I use `const` or `let` for this variable?"
+- ✅ Instead: Follow standard best practices
+
+**Asking questions already answered in the codebase or documentation:**
+
+- ❌ "How do we handle Firestore updates?"
+- ✅ Instead: Check the Firestore Facade guide first, then ask only if still unclear
+
+**Asking without providing context:**
+
+- ❌ "What should I do here?"
+- ✅ Instead: "For this date validation, should I use our existing Validator system or create a custom validator? The existing system covers most cases but might be overkill for a simple date range check."
+
+**Over-asking on obvious tasks:**
+
+- ❌ "You want me to add a comment explaining this function. Should I use `//` or `/* */` style comments?"
+- ✅ Instead: Just proceed with standard conventions
+
+## Remember
+
+- **Asking questions is a sign of professionalism, not weakness**
+- **Better to ask upfront than to implement the wrong thing**
+- **Questions save time and prevent rework**
+- **Your questions help developers clarify their own thinking**
+- **After questioning, respect the developer's final decision**
