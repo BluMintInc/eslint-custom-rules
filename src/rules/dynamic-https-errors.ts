@@ -1,5 +1,5 @@
 import { createRule } from '../utils/createRule';
-import { TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 
 const isHttpsErrorCall = (callee: TSESTree.LeftHandSideExpression): boolean => {
   if (callee.type === 'MemberExpression') {
@@ -48,17 +48,56 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
               node,
               messageId: 'missingThirdArgument',
             });
+            return;
           }
 
           // Check for dynamic content in second argument (existing functionality)
           const secondArg = node.arguments[1];
-          if (secondArg && secondArg.type === 'TemplateLiteral') {
-            if (secondArg.expressions.length > 0) {
-              context.report({
-                node: secondArg,
-                messageId: 'dynamicHttpsErrors',
-              });
-            }
+          if (!secondArg) return;
+
+          if (
+            secondArg.type === AST_NODE_TYPES.TemplateLiteral &&
+            secondArg.expressions.length > 0
+          ) {
+            context.report({
+              node: secondArg,
+              messageId: 'dynamicHttpsErrors',
+            });
+            return;
+          }
+
+          const isDynamicBinaryExpression = (
+            expression: TSESTree.BinaryExpression,
+          ): boolean => {
+            if (expression.operator !== '+') return true;
+
+            const isStaticLiteral = (expr: TSESTree.Node): boolean =>
+              expr.type === AST_NODE_TYPES.Literal &&
+              typeof expr.value === 'string';
+
+            const isSafe = (
+              expr: TSESTree.Expression | TSESTree.PrivateIdentifier,
+            ): boolean => {
+              if (expr.type === AST_NODE_TYPES.PrivateIdentifier) {
+                return false;
+              }
+              if (expr.type === AST_NODE_TYPES.BinaryExpression) {
+                return !isDynamicBinaryExpression(expr);
+              }
+              return isStaticLiteral(expr);
+            };
+
+            return !(isSafe(expression.left) && isSafe(expression.right));
+          };
+
+          if (
+            secondArg.type === AST_NODE_TYPES.BinaryExpression &&
+            isDynamicBinaryExpression(secondArg)
+          ) {
+            context.report({
+              node: secondArg,
+              messageId: 'dynamicHttpsErrors',
+            });
           }
         }
       };

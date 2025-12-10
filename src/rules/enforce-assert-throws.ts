@@ -1,6 +1,43 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
+function isCallbackFunctionNode(node: TSESTree.Node): boolean {
+  if (
+    node.type !== AST_NODE_TYPES.FunctionExpression &&
+    node.type !== AST_NODE_TYPES.ArrowFunctionExpression
+  ) {
+    return false;
+  }
+
+  const parent = node.parent;
+  if (!parent) return false;
+
+  if (parent.type === AST_NODE_TYPES.CallExpression) {
+    const grandParent = parent.parent;
+    if (
+      grandParent &&
+      (grandParent.type === AST_NODE_TYPES.ConditionalExpression ||
+        grandParent.type === AST_NODE_TYPES.LogicalExpression)
+    ) {
+      return true;
+    }
+    return parent.arguments.includes(node as any) || parent.callee === node;
+  }
+
+  if (
+    parent.type === AST_NODE_TYPES.ConditionalExpression ||
+    parent.type === AST_NODE_TYPES.LogicalExpression
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function isTypeLikeNode(node: TSESTree.Node): boolean {
+  return node.type.startsWith('TS') || node.type.endsWith('TypeAnnotation');
+}
+
 type MessageIds = 'assertShouldThrow' | 'shouldBeAssertPrefixed';
 
 export const enforceAssertThrows = createRule<[], MessageIds>({
@@ -9,15 +46,15 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
     type: 'problem',
     docs: {
       description:
-        'Enforce that functions with assert- prefix must throw an error or call process.exit(1), and functions that call assert- prefixed methods should be prefixed with assert- themselves',
+        'Enforce that functions with an assert prefix must throw an error or call process.exit(1), and functions that call assert-prefixed methods should themselves be assert-prefixed',
       recommended: 'error',
     },
     schema: [],
     messages: {
       assertShouldThrow:
-        'Functions with assert- prefix must throw an error or call process.exit(1). Either rename the function or add a throw/exit statement.',
+        'Assert helper "{{functionName}}" does not throw, exit, or delegate to another assert helper. Assert-prefixed functions are fail-fast guards; letting them return normally hides failed checks and allows callers to continue with invalid state. Throw an error, call process.exit(1), or rename the function if it should not halt execution.',
       shouldBeAssertPrefixed:
-        'Functions that call assert- prefixed methods should be prefixed with assert- themselves. Either rename the function to start with assert- or avoid calling assert- methods.',
+        'Function "{{functionName}}" calls an assert-prefixed helper but is not assert-prefixed itself. The assert- prefix signals that the function terminates on failed checks; without it, callers may assume it returns safely and keep running after an assertion aborts. Rename the function to start with "assert" or avoid calling assert helpers from non-assert functions.',
     },
   },
   defaultOptions: [],
@@ -25,47 +62,9 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
     function callsAssertMethod(node: TSESTree.Node): boolean {
       let hasAssertCall = false;
 
-      // Helper function to check if a function is a callback function or IIFE
-      function isCallbackFunction(node: TSESTree.Node): boolean {
-        if (
-          node.type !== AST_NODE_TYPES.FunctionExpression &&
-          node.type !== AST_NODE_TYPES.ArrowFunctionExpression
-        ) {
-          return false;
-        }
-
-        const parent = node.parent;
-        if (!parent) return false;
-
-        // Check if it's an argument to a function call or the callee (IIFE)
-        if (parent.type === AST_NODE_TYPES.CallExpression) {
-          // Check if the CallExpression itself is part of a ternary or logical expression
-          const grandParent = parent.parent;
-          if (
-            grandParent &&
-            (grandParent.type === AST_NODE_TYPES.ConditionalExpression ||
-              grandParent.type === AST_NODE_TYPES.LogicalExpression)
-          ) {
-            return true;
-          }
-          return (
-            parent.arguments.includes(node as any) || parent.callee === node
-          );
-        }
-
-        // Check if it's part of a ternary or logical expression
-        if (
-          parent.type === AST_NODE_TYPES.ConditionalExpression ||
-          parent.type === AST_NODE_TYPES.LogicalExpression
-        ) {
-          return true;
-        }
-
-        return false;
-      }
-
       function walk(node: TSESTree.Node): void {
         if (hasAssertCall) return; // Early exit if we found an assert call
+        if (isTypeLikeNode(node)) return;
 
         if (node.type === AST_NODE_TYPES.CallExpression) {
           const callee = node.callee;
@@ -94,7 +93,7 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
         ) {
           if (node !== currentFunction) {
             // Allow traversing into callback functions
-            if (!isCallbackFunction(node)) {
+            if (!isCallbackFunctionNode(node)) {
               return;
             }
           }
@@ -145,7 +144,7 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
           case AST_NODE_TYPES.FunctionExpression:
           case AST_NODE_TYPES.ArrowFunctionExpression:
             // For callback functions, walk their body
-            if (isCallbackFunction(node)) {
+            if (isCallbackFunctionNode(node)) {
               if (node.body.type === AST_NODE_TYPES.BlockStatement) {
                 walk(node.body);
               } else {
@@ -191,14 +190,20 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
               const value = node[key as keyof typeof node];
               if (Array.isArray(value)) {
                 value.forEach((item) => {
-                  if (item && typeof item === 'object' && 'type' in item) {
+                  if (
+                    item &&
+                    typeof item === 'object' &&
+                    'type' in item &&
+                    !isTypeLikeNode(item as TSESTree.Node)
+                  ) {
                     walk(item as TSESTree.Node);
                   }
                 });
               } else if (
                 value &&
                 typeof value === 'object' &&
-                'type' in value
+                'type' in value &&
+                !isTypeLikeNode(value as TSESTree.Node)
               ) {
                 walk(value as TSESTree.Node);
               }
@@ -531,47 +536,9 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
       const functionBody =
         node.type === AST_NODE_TYPES.BlockStatement ? node : null;
 
-      // Helper function to check if a function is a callback function or IIFE
-      function isCallbackFunction(node: TSESTree.Node): boolean {
-        if (
-          node.type !== AST_NODE_TYPES.FunctionExpression &&
-          node.type !== AST_NODE_TYPES.ArrowFunctionExpression
-        ) {
-          return false;
-        }
-
-        const parent = node.parent;
-        if (!parent) return false;
-
-        // Check if it's an argument to a function call or the callee (IIFE)
-        if (parent.type === AST_NODE_TYPES.CallExpression) {
-          // Check if the CallExpression itself is part of a ternary or logical expression
-          const grandParent = parent.parent;
-          if (
-            grandParent &&
-            (grandParent.type === AST_NODE_TYPES.ConditionalExpression ||
-              grandParent.type === AST_NODE_TYPES.LogicalExpression)
-          ) {
-            return true;
-          }
-          return (
-            parent.arguments.includes(node as any) || parent.callee === node
-          );
-        }
-
-        // Check if it's part of a ternary or logical expression
-        if (
-          parent.type === AST_NODE_TYPES.ConditionalExpression ||
-          parent.type === AST_NODE_TYPES.LogicalExpression
-        ) {
-          return true;
-        }
-
-        return false;
-      }
-
       function walk(node: TSESTree.Node): void {
         if (hasThrow) return; // Early exit if we already found a throw
+        if (isTypeLikeNode(node)) return;
 
         if (node.type === AST_NODE_TYPES.ThrowStatement) {
           hasThrow = true;
@@ -612,7 +579,7 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
         ) {
           if (node !== currentFunction) {
             // Allow traversing into callback functions
-            if (!isCallbackFunction(node)) {
+            if (!isCallbackFunctionNode(node)) {
               return;
             }
           }
@@ -709,7 +676,7 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
           case AST_NODE_TYPES.FunctionExpression:
           case AST_NODE_TYPES.ArrowFunctionExpression:
             // For callback functions, walk their body
-            if (isCallbackFunction(node)) {
+            if (isCallbackFunctionNode(node)) {
               if (node.body.type === AST_NODE_TYPES.BlockStatement) {
                 walk(node.body);
               } else {
@@ -741,14 +708,20 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
               const value = node[key as keyof typeof node];
               if (Array.isArray(value)) {
                 value.forEach((item) => {
-                  if (item && typeof item === 'object' && 'type' in item) {
+                  if (
+                    item &&
+                    typeof item === 'object' &&
+                    'type' in item &&
+                    !isTypeLikeNode(item as TSESTree.Node)
+                  ) {
                     walk(item as TSESTree.Node);
                   }
                 });
               } else if (
                 value &&
                 typeof value === 'object' &&
-                'type' in value
+                'type' in value &&
+                !isTypeLikeNode(value as TSESTree.Node)
               ) {
                 walk(value as TSESTree.Node);
               }
@@ -790,6 +763,8 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
         }
       }
 
+      const displayName = functionName || 'this function';
+
       currentFunction = node;
       const functionBody =
         node.type === AST_NODE_TYPES.MethodDefinition
@@ -797,19 +772,21 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
           : node.body;
 
       if (functionName.toLowerCase().startsWith('assert')) {
-        // Check that assert- prefixed functions throw or call other assert functions
+        // Check that assert-prefixed functions throw or call other assert functions
         if (functionBody && !hasThrowStatement(functionBody)) {
           context.report({
             node,
             messageId: 'assertShouldThrow',
+            data: { functionName: displayName },
           });
         }
       } else if (functionName && functionBody) {
-        // Check that functions calling assert- methods are themselves prefixed with assert-
+        // Check that functions calling assert-prefixed methods are themselves prefixed with assert
         if (callsAssertMethod(functionBody)) {
           context.report({
             node,
             messageId: 'shouldBeAssertPrefixed',
+            data: { functionName: displayName },
           });
         }
       }

@@ -87,13 +87,28 @@ const Component = dynamic(
 - **Incorrect dynamic usage**: The fixer ensures an async loader and `{ ssr: false }` option are applied.
 - **Multiple declarators**: Safely replaces only the matching declarator in comma-separated declarations.
 
+  Before:
+
+  ```ts
+  const { Picker }, other = useDynamic(import('@emoji-mart/react')), something = 1;
+  ```
+
+  After:
+
+  ```ts
+  const Picker = dynamic(
+    async () => {
+      const mod = await import('@emoji-mart/react');
+      return mod.Picker;
+    },
+    { ssr: false },
+  );
+  const something = 1;
+  ```
+
 ### When not to use
 
 - Projects not using Next.js or intentionally using a custom dynamic wrapper should disable this rule.
-
-### Configuration
-
-No options.
 
 ```json
 {

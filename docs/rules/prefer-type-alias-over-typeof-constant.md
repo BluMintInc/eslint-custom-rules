@@ -4,16 +4,18 @@
 
 <!-- end auto-generated rule header -->
 
-Enforce defining and using named type aliases instead of `typeof` on same-file global constants. Also ensures the type alias is declared before constants using it.
+Use named type aliases instead of `typeof` on same-file top-level constants, and declare the alias before any constant that relies on it.
 
-- Why: Using `typeof CONST` couples types to value declarations and spreads literal types around the codebase. Defining a named type (e.g., `type StatusExceeding = 'exceeding'`) and reusing it improves readability, reusability, and avoids accidental drift.
-- Scope: Applies only to constants defined in the same file. Imported values are ignored. `keyof typeof` patterns are allowed.
+- Why: `typeof CONST` couples types to runtime values and spreads literal unions around. Define a named alias (e.g., `type StatusExceeding = 'exceeding'`) and reuse it to keep types stable and readable.
+- Why ordering: Declare the alias first so readers see the type before the value that uses it.
+- Scope: Applies only to same-file top-level `const` values with constant-like initializers. Imported values are ignored. `keyof typeof` patterns are allowed.
 
 ## Rule Details
 
-This rule reports when a `typeof CONST_NAME` type reference is used and `CONST_NAME` is a same-file top-level `const` initialized with a constant-like value (literal, object literal, array literal, possibly with `as const`). Use a named type alias instead, e.g., `StatusExceeding`.
+The rule reports in two situations:
 
-The rule also reports when a constant’s explicit type annotation refers to a type alias that is declared later in the file. Declare the type alias first, then the constant.
+1. You use `typeof CONST_NAME` on a same-file top-level `const` initialized with a constant-like value (literal, object literal, array literal, possibly with `as const`). Create a named alias (for example, `type StatusExceeding = 'exceeding'`) and reuse it instead of deriving the type from the value.
+2. A constant’s explicit type annotation points to an alias declared later in the file. Declare the alias first so the type is visible before the value that depends on it.
 
 ### Incorrect
 
@@ -58,7 +60,7 @@ function checkStatus(status: StatusToCheck) {}
 
 ## Options
 
-This rule does not have options.
+This rule has no options and is not auto-fixable.
 
 ## When Not To Use It
 

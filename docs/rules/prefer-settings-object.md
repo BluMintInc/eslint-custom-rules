@@ -6,35 +6,72 @@
 
 <!-- end auto-generated rule header -->
 
-## Options
+## Rule details
 
-This rule accepts an options object with the following properties:
+Positional argument lists stop conveying meaning once they grow or repeat types. Swapping two values of the same type compiles but produces subtle bugs, and long lists force callers to remember the exact order instead of naming what each value represents. Passing a single settings object keeps call sites self-documenting, allows optional fields, and makes it safer to evolve a function signature without breaking every usage.
+
+The rule reports when a function:
+- Exceeds the configured parameter limit (defaults to 3).
+- Accepts multiple parameters of the same type, which encourages accidental swaps.
+
+Use a settings object so each argument is labeled and harder to mis-order.
+
+### Examples
+
+#### ❌ Incorrect
 
 ```ts
-{
-  // Minimum number of parameters before requiring a settings object
-  minimumParameters?: number;
-  // Check for multiple parameters of the same type
-  checkSameTypeParameters?: boolean;
-  // Ignore bound methods (e.g., class methods)
-  ignoreBoundMethods?: boolean;
-  // Ignore functions with rest parameters
-  ignoreVariadicFunctions?: boolean;
+function createUser(name: string, age: number, isAdmin: boolean) {
+  return { name, age, isAdmin };
+}
+
+function sendEmail(to: string, from: string) {
+  return mailer.send({ to, from });
 }
 ```
 
-### `minimumParameters`
+#### ✅ Correct
 
-The minimum number of parameters a function can have before requiring a settings object. Defaults to `3`. Must be at least `2`.
+```ts
+type CreateUserOptions = { name: string; age: number; isAdmin: boolean };
+function createUser({ name, age, isAdmin }: CreateUserOptions) {
+  return { name, age, isAdmin };
+}
 
-### `checkSameTypeParameters`
+type SendEmailOptions = { to: string; from: string };
+function sendEmail({ to, from }: SendEmailOptions) {
+  return mailer.send({ to, from });
+}
+```
 
-When set to `true` (default), checks for functions that have multiple parameters of the same type. This helps identify cases where parameter order might be confusing and a settings object would provide better clarity.
+## Options
 
-### `ignoreBoundMethods`
+This rule accepts an options object:
 
-When set to `true` (default), ignores bound methods (like class methods). This is useful when you want to maintain method chaining or when the method parameters are part of a well-defined interface.
+```ts
+{
+  /**
+   * Minimum number of parameters before requiring a settings object.
+   * Defaults to 3 and must be at least 2.
+   */
+  minimumParameters?: number;
 
-### `ignoreVariadicFunctions`
+  /**
+   * When true (default), flag functions that accept multiple parameters
+   * of the same type because those call sites are easy to swap.
+   */
+  checkSameTypeParameters?: boolean;
 
-When set to `true` (default), ignores functions that use rest parameters. This is useful for functions that need to accept a variable number of arguments.
+  /**
+   * When true (default), ignore bound methods such as Express handlers
+   * where the signature is dictated by the framework.
+   */
+  ignoreBoundMethods?: boolean;
+
+  /**
+   * When true (default), ignore variadic functions that legitimately
+   * accept flexible argument counts.
+   */
+  ignoreVariadicFunctions?: boolean;
+}
+```

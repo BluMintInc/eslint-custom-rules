@@ -36,7 +36,7 @@ Examples of **incorrect** code with this rule:
 const disallowedObject = { disallowedProperty: 'value' };
 const value = disallowedObject.disallowedProperty; // Error: Disallowed object property: 'disallowedObject.disallowedProperty'
 
-/* eslint @blumintinc/blumint/no-restricted-properties-fix: ["error", [{ "property": "push", "allowObjects": ["router", "history"] }]] */
+/* eslint @blumintinc/blumint/no-restricted-properties-fix: ["error", [{ "property": "push" }]] */
 const myArray = [1, 2, 3];
 myArray.push(4); // Error: Disallowed object property: 'myArray.push'
 ```

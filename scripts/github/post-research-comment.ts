@@ -110,13 +110,14 @@ function escapeForShell(text: string): string {
     .replace(/\$/g, '\\$'); // Escape dollar signs
 }
 
-// Build comment body
-const commentBody = `## 🔍 ESLint Rule Research Results
+// Build comment body without duplicating the heading if it already exists
+const HEADING = '## 🔍 ESLint Rule Research Results';
+const researchResultsTrimmed = researchResults.trimStart();
+const resultsWithHeading = researchResultsTrimmed.startsWith(HEADING)
+  ? researchResultsTrimmed
+  : `${HEADING}\n\n${researchResultsTrimmed}`;
 
-${researchResults}
-
----
-*Research performed by Cursor Background Agent*`;
+const commentBody = `${resultsWithHeading.trimEnd()}`;
 
 // Post research results as a comment
 console.log(`Posting research results to issue #${ISSUE_NUMBER}...`);
@@ -136,14 +137,14 @@ try {
 console.log('Updating issue labels...');
 
 try {
-  // Remove research-needed label
+  // Remove cursor-research label
   gh(
-    `issue edit ${ISSUE_NUMBER} --repo ${GITHUB_REPOSITORY} --remove-label "research-needed"`,
+    `issue edit ${ISSUE_NUMBER} --repo ${GITHUB_REPOSITORY} --remove-label "cursor-research"`,
   );
-  console.log('Removed research-needed label');
+  console.log('Removed cursor-research label');
 } catch {
   // Label might not exist, continue
-  console.log('Note: research-needed label may not have been present');
+  console.log('Note: cursor-research label may not have been present');
 }
 
 try {
