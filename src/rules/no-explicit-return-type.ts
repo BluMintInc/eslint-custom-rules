@@ -23,80 +23,111 @@ const defaultOptions: Options[0] = {
   allowFirestoreFunctionFiles: true,
 };
 
-function describeFunctionKind(node: TSESTree.Node): string {
-  if (
-    node.type === AST_NODE_TYPES.MethodDefinition &&
-    (node.key.type === AST_NODE_TYPES.Identifier ||
-      (node.key.type === AST_NODE_TYPES.Literal &&
-        typeof node.key.value === 'string'))
-  ) {
-    const name =
-      node.key.type === AST_NODE_TYPES.Identifier
-        ? node.key.name
-        : node.key.value;
-    return `class method "${name}"`;
+function getNameFromIdentifierOrLiteral(
+  key: TSESTree.Identifier | TSESTree.Literal,
+): string | undefined {
+  if (key.type === AST_NODE_TYPES.Identifier) {
+    return key.name;
   }
 
-  if (
-    node.type === AST_NODE_TYPES.TSMethodSignature &&
-    (node.key.type === AST_NODE_TYPES.Identifier ||
-      (node.key.type === AST_NODE_TYPES.Literal &&
-        typeof node.key.value === 'string'))
-  ) {
-    const name =
-      node.key.type === AST_NODE_TYPES.Identifier
-        ? node.key.name
-        : node.key.value;
-    return `interface method "${name}"`;
+  if (typeof key.value === 'string') {
+    return key.value;
   }
 
+  return undefined;
+}
+
+function describeMethodDefinition(node: TSESTree.MethodDefinition): string {
   if (
-    node.type === AST_NODE_TYPES.FunctionDeclaration &&
-    node.id?.name
+    node.key.type === AST_NODE_TYPES.Identifier ||
+    (node.key.type === AST_NODE_TYPES.Literal &&
+      typeof node.key.value === 'string')
   ) {
+    const name = getNameFromIdentifierOrLiteral(node.key);
+    if (name) {
+      return `class method "${name}"`;
+    }
+  }
+
+  return 'class method';
+}
+
+function describeMethodSignature(node: TSESTree.TSMethodSignature): string {
+  if (
+    node.key.type === AST_NODE_TYPES.Identifier ||
+    (node.key.type === AST_NODE_TYPES.Literal &&
+      typeof node.key.value === 'string')
+  ) {
+    const name = getNameFromIdentifierOrLiteral(node.key);
+    if (name) {
+      return `interface method "${name}"`;
+    }
+  }
+
+  return 'interface method';
+}
+
+function describeFunctionDeclaration(node: TSESTree.FunctionDeclaration): string {
+  if (node.id?.name) {
     return `function "${node.id.name}"`;
   }
 
-  if (node.type === AST_NODE_TYPES.FunctionExpression) {
-    if (node.id?.name) {
-      return `function "${node.id.name}"`;
-    }
+  return 'function';
+}
 
-    if (
-      node.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
-      node.parent.id.type === AST_NODE_TYPES.Identifier
-    ) {
-      return `function "${node.parent.id.name}"`;
-    }
+function describeFunctionExpression(node: TSESTree.FunctionExpression): string {
+  if (node.id?.name) {
+    return `function "${node.id.name}"`;
+  }
 
-    if (
-      node.parent?.type === AST_NODE_TYPES.Property &&
-      (node.parent.key.type === AST_NODE_TYPES.Identifier ||
-        (node.parent.key.type === AST_NODE_TYPES.Literal &&
-          typeof node.parent.key.value === 'string'))
-    ) {
-      const name =
-        node.parent.key.type === AST_NODE_TYPES.Identifier
-          ? node.parent.key.name
-          : node.parent.key.value;
+  if (
+    node.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+    node.parent.id.type === AST_NODE_TYPES.Identifier
+  ) {
+    return `function "${node.parent.id.name}"`;
+  }
+
+  if (
+    node.parent?.type === AST_NODE_TYPES.Property &&
+    (node.parent.key.type === AST_NODE_TYPES.Identifier ||
+      (node.parent.key.type === AST_NODE_TYPES.Literal &&
+        typeof node.parent.key.value === 'string'))
+  ) {
+    const name = getNameFromIdentifierOrLiteral(node.parent.key);
+    if (name) {
       return `object method "${name}"`;
     }
-
-    return 'function expression';
   }
 
-  if (node.type === AST_NODE_TYPES.ArrowFunctionExpression) {
-    if (
-      node.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
-      node.parent.id.type === AST_NODE_TYPES.Identifier
-    ) {
-      return `arrow function "${node.parent.id.name}"`;
-    }
+  return 'function expression';
+}
 
-    return 'arrow function';
+function describeArrowFunction(node: TSESTree.ArrowFunctionExpression): string {
+  if (
+    node.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+    node.parent.id.type === AST_NODE_TYPES.Identifier
+  ) {
+    return `arrow function "${node.parent.id.name}"`;
   }
 
-  return 'function';
+  return 'arrow function';
+}
+
+function describeFunctionKind(node: TSESTree.Node): string {
+  switch (node.type) {
+    case AST_NODE_TYPES.MethodDefinition:
+      return describeMethodDefinition(node);
+    case AST_NODE_TYPES.TSMethodSignature:
+      return describeMethodSignature(node);
+    case AST_NODE_TYPES.FunctionDeclaration:
+      return describeFunctionDeclaration(node);
+    case AST_NODE_TYPES.FunctionExpression:
+      return describeFunctionExpression(node);
+    case AST_NODE_TYPES.ArrowFunctionExpression:
+      return describeArrowFunction(node);
+    default:
+      return 'function';
+  }
 }
 
 function isRecursiveFunction(node: TSESTree.FunctionLike): boolean {
