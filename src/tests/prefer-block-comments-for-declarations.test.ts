@@ -242,6 +242,19 @@ ruleTesterTs.run(
         output: `/** declaration comment */
       const EMPTY = true;`,
       },
+
+      // Line comment containing closing token should not be auto-fixed
+      {
+        code: `// closes */ comment
+      const value = 1;`,
+        errors: [
+          {
+            messageId: 'preferBlockComment',
+            data: { commentText: 'closes */ comment' },
+          },
+        ],
+        output: null,
+      },
     ],
   },
 );

@@ -15,7 +15,7 @@ Line comments placed directly above a declaration look like documentation but Ty
 - Reports line comments immediately before declarations (functions, variables, types, interfaces, classes, properties, enums) except inside function bodies.
 - Leaves existing block comments untouched, including block ESLint directives.
 - Ignores ESLint directive comments so configuration comments remain untouched.
-- Auto-fix rewrites `//` comments into `/** ... */` while preserving the text; whitespace-only comments become `/** declaration comment */` to avoid dropping doc text.
+- Auto-fix rewrites `//` comments into `/** ... */` while preserving the text; whitespace-only comments become `/** declaration comment */` as a generic label so the declaration still has a visible doc stub.
 
 ### ❌ Incorrect
 
