@@ -2,8 +2,6 @@
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
-
 <!-- end auto-generated rule header -->
 
 ## Why this rule exists
@@ -21,7 +19,7 @@ Generic `utils/` directories attract unrelated helpers, which turns them into du
 
 ### ❌ Incorrect
 
-```
+```text
 /src/utils/helper.ts
 /src/components/utils/format.ts
 /src/Utils/math.ts
@@ -29,7 +27,7 @@ Generic `utils/` directories attract unrelated helpers, which turns them into du
 
 ### ✅ Correct
 
-```
+```text
 /src/util/helper.ts
 /src/components/util/date/format.ts
 /src/util/string/capitalize.ts

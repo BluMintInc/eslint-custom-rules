@@ -12,7 +12,6 @@ export const avoidUtilsDirectory = createRule<[], MessageIds>({
       description: 'Enforce using util/ instead of utils/ directory',
       recommended: 'error',
     },
-    fixable: 'code',
     schema: [],
     messages: {
       avoidUtils:
