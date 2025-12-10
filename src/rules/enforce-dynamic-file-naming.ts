@@ -10,8 +10,8 @@ const REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE =
 const DYNAMIC_RULES_LABEL = `${ENFORCE_DYNAMIC_IMPORTS_RULE} or ${REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE}`;
 const SHORTHAND_DISABLE_NEXT_LINE = /\bednl\b/;
 const SHORTHAND_DISABLE_LINE = /\bedl\b/;
-const DISABLE_NEXT_LINE_TOKENS = ['eslint-disable-next-line'];
-const DISABLE_LINE_TOKENS = ['eslint-disable-line'];
+const DISABLE_NEXT_LINE_TOKEN = 'eslint-disable-next-line';
+const DISABLE_LINE_TOKEN = 'eslint-disable-line';
 const DISABLE_BLOCK_TOKEN = 'eslint-disable';
 
 export default createRule<
@@ -67,14 +67,10 @@ export default createRule<
             disablesEnforceDynamicImports || disablesRequireDynamicFirebaseImports;
 
           const inlineDisable =
-            (DISABLE_NEXT_LINE_TOKENS.some((token) =>
-              normalizedCommentText.includes(token),
-            ) ||
-            DISABLE_LINE_TOKENS.some((token) =>
-              normalizedCommentText.includes(token),
-            ) ||
-            SHORTHAND_DISABLE_NEXT_LINE.test(normalizedCommentText) ||
-            SHORTHAND_DISABLE_LINE.test(normalizedCommentText)) &&
+            (normalizedCommentText.includes(DISABLE_NEXT_LINE_TOKEN) ||
+              normalizedCommentText.includes(DISABLE_LINE_TOKEN) ||
+              SHORTHAND_DISABLE_NEXT_LINE.test(normalizedCommentText) ||
+              SHORTHAND_DISABLE_LINE.test(normalizedCommentText)) &&
             disablesTargetRule;
           const blockDisable =
             normalizedCommentText.includes(DISABLE_BLOCK_TOKEN) &&
