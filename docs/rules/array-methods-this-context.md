@@ -20,6 +20,7 @@ Use an inline arrow callback to keep `this` intact and make the dependency on th
 ```typescript
 ['a', 'b', 'c'].map(this.processItem)
 ['a', 'b', 'c'].map(this.processItem, otherArgument)
+['a', 'b', 'c'].map(this['processItem'])
 ['a', 'b', 'c'].filter(this.checkItem)
 ['a', 'b', 'c'].forEach(this.printItem)
 ['a', 'b', 'c'].some(this.testItem)

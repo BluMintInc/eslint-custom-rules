@@ -26,6 +26,7 @@ ruleTesterTs.run('array-method-this-content', arrayMethodsThisContext, {
     ].map((testCase) => {
       const arrayMethod = testCase.match(/\.(\w+)\(/)?.[1] ?? '';
       const methodName = testCase.match(/this\.(\w+)/)?.[1] ?? '';
+      const methodAccessor = `.${methodName}`;
 
       return {
         code: testCase,
@@ -34,12 +35,26 @@ ruleTesterTs.run('array-method-this-content', arrayMethodsThisContext, {
             messageId: 'unexpected' as const,
             data: {
               arrayMethod,
-              methodName,
+              methodAccessor,
+              methodReference: `this${methodAccessor}`,
             },
           },
         ],
       };
     }),
+    {
+      code: "['a', 'b', 'c'].map(this['processItem'])",
+      errors: [
+        {
+          messageId: 'unexpected' as const,
+          data: {
+            arrayMethod: 'map',
+            methodAccessor: "['processItem']",
+            methodReference: "this['processItem']",
+          },
+        },
+      ],
+    },
     {
       code: "['a', 'b', 'c'].map(function(item) { return this.processItem(item) }.bind(this))",
       errors: [

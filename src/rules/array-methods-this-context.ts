@@ -27,17 +27,24 @@ export const arrayMethodsThisContext: TSESLint.RuleModule<
           node.arguments[0].type === 'MemberExpression' &&
           node.arguments[0].object.type === 'ThisExpression'
         ) {
-          const methodName =
-            node.arguments[0].property.type === 'Identifier'
-              ? node.arguments[0].property.name
-              : sourceCode.getText(node.arguments[0].property);
+          const methodProperty = node.arguments[0].property;
+          const methodAccessor = node.arguments[0].computed
+            ? `[${sourceCode.getText(methodProperty)}]`
+            : methodProperty.type === 'Identifier'
+              ? `.${methodProperty.name}`
+              : methodProperty.type === 'PrivateIdentifier'
+                ? `.#${methodProperty.name}`
+                : `.${sourceCode.getText(methodProperty)}`;
+
+          const methodReference = `this${methodAccessor}`;
 
           context.report({
             node: node.arguments[0],
             messageId: 'unexpected',
             data: {
               arrayMethod: node.callee.property.name,
-              methodName,
+              methodAccessor,
+              methodReference,
             },
           });
         }
@@ -78,7 +85,7 @@ export const arrayMethodsThisContext: TSESLint.RuleModule<
     schema: [],
     messages: {
       unexpected:
-        'Array method "{{arrayMethod}}" receives the class method "{{methodName}}" by reference, which strips its "this" binding when the callback runs. Use an arrow callback so the class instance remains available, e.g. {{arrayMethod}}((item) => this.{{methodName}}(item)).',
+        'Array method "{{arrayMethod}}" receives the class method reference {{methodReference}}, which strips its "this" binding when the callback runs. Use an arrow callback so the class instance remains available, e.g. {{arrayMethod}}((item) => this{{methodAccessor}}(item)).',
       preferArrow:
         'Array method "{{arrayMethod}}" binds a callback with ".bind(this)", which allocates a new function and hides that the code depends on the class instance. Prefer an arrow callback that captures "this" without rebinding, e.g. {{arrayMethod}}((item) => this.handleItem(item)).',
     },
