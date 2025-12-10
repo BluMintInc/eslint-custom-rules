@@ -37,25 +37,34 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
     function findVariableInScopeChain(
       identifier: TSESTree.Identifier,
     ): TSESLint.Scope.Variable | undefined {
+      // Use scopeManager to resolve variable from the identifier's reference
       const scopeManager = sourceCode.scopeManager;
       if (!scopeManager) return undefined;
 
-      let currentNode: TSESTree.Node | null = identifier;
+      // Find the scope for this identifier
       let scope: TSESLint.Scope.Scope | null = null;
+      let currentNode: TSESTree.Node | undefined = identifier;
 
-      while (currentNode && !scope) {
-        scope = scopeManager.acquire(currentNode, true);
-        currentNode = currentNode.parent as TSESTree.Node | null;
+      while (currentNode) {
+        scope = scopeManager.acquire(currentNode, true) || null;
+        if (scope) break;
+        currentNode = currentNode.parent;
       }
 
       if (!scope) {
-        scope = scopeManager.globalScope ?? null;
+        scope = scopeManager.globalScope;
       }
 
-      while (scope) {
-        const variable = scope.variables.find((v) => v.name === identifier.name);
+      if (!scope) return undefined;
+
+      // Look up variable in the scope chain
+      let currentScope: TSESLint.Scope.Scope | null = scope;
+      while (currentScope) {
+        const variable = currentScope.variables.find(
+          (v) => v.name === identifier.name,
+        );
         if (variable) return variable;
-        scope = scope.upper;
+        currentScope = currentScope.upper;
       }
 
       return undefined;
@@ -99,8 +108,8 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
 
       // All references must be strictly of the form <id>.length, except the variable's own declaration
       return variable.references.every((reference) => {
-        const idNode = reference.identifier as TSESTree.Identifier;
-        const parent = idNode.parent as TSESTree.Node | undefined;
+        const idNode = reference.identifier;
+        const parent = idNode.parent;
         if (!parent) return false;
 
         // Allow the declaration id (not considered a read)
@@ -140,7 +149,7 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
         return { viaIdentifier: false };
       }
 
-      const obj = member.object as TSESTree.Node;
+      const obj = member.object;
       if (
         obj.type === AST_NODE_TYPES.CallExpression &&
         obj.callee.type === AST_NODE_TYPES.Identifier &&
@@ -285,7 +294,7 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
      * Get the indentation at the start of the current line for a node
      */
     function getLineBaseIndent(node: TSESTree.Node): string {
-      const text = sourceCode.text as string;
+      const text = sourceCode.text;
       const start = node.range ? node.range[0] : 0;
       const lineStart = text.lastIndexOf('\n', start - 1) + 1;
       let i = lineStart;
@@ -331,6 +340,7 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
         const microdiffImport = importDeclarations.find(
           (node) => node.source.value === 'microdiff',
         );
+
         if (microdiffImport) {
           fixes.push(
             fixer.insertTextAfter(
@@ -374,6 +384,7 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
           defNode.parent.type === AST_NODE_TYPES.VariableDeclaration
         ) {
           const declaration = defNode.parent;
+          // Only remove if it's the only declaration in the const/let statement
           if (declaration.declarations.length === 1) {
             fixes.push(fixer.remove(declaration));
           }
@@ -511,10 +522,9 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
           node: node.argument,
           messageId: 'useFastDeepEqual',
           fix(fixer) {
-            // We already checked that node.argument is not null above
             return createFix(
               fixer,
-              node.argument as TSESTree.Node,
+              node.argument,
               diffCall,
               isEquality,
             );

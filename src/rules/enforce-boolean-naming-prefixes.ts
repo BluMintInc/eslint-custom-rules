@@ -1192,21 +1192,6 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           return markAndReturnTrue();
         }
 
-        if (
-          id.parent?.type === AST_NODE_TYPES.LogicalExpression &&
-          id.parent.operator === '&&'
-        ) {
-          return markAndReturnTrue();
-        }
-
-        if (
-          id.parent?.type === AST_NODE_TYPES.BinaryExpression &&
-          ['===', '!==', '==', '!=', '>', '<', '>=', '<='].includes(
-            id.parent.operator,
-          )
-        ) {
-          return markAndReturnTrue();
-        }
       }
 
       externalApiUsageCache.set(variableName, false);
