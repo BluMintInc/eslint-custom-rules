@@ -18,7 +18,7 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
     schema: [],
     messages: {
       useCentralizedMockFirestore:
-        'Use the centralized mockFirestore from the predefined location instead of creating a new mock',
+        'This file defines or re-exports a local mockFirestore instead of importing the shared one from "{{requiredPath}}". Local mocks drift from the canonical behavior and hide API changes across suites. To fix this, import mockFirestore from the centralized test util so fixes happen in one place.',
     },
   },
   defaultOptions: [],
@@ -190,6 +190,9 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
           context.report({
             node: Array.from(mockFirestoreNodes)[0],
             messageId: 'useCentralizedMockFirestore',
+            data: {
+              requiredPath: MOCK_FIRESTORE_PATH,
+            },
             fix(fixer) {
               // Instead of trying to modify the code incrementally, we'll generate the entire fixed code
               const originalText = sourceCode.getText();
