@@ -118,6 +118,58 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       output: 'const obj = { method(a: number) { return a; } };',
     },
 
+    // Computed class method should not use computed identifier name
+    {
+      code: `
+        const key = 'value';
+        class Example {
+          [key](): number {
+            return 1;
+          }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'noExplicitReturnType',
+          data: { functionKind: 'class method' },
+        },
+      ],
+      output: `
+        const key = 'value';
+        class Example {
+          [key]() {
+            return 1;
+          }
+        }
+      `,
+    },
+
+    // Computed object method should fall back to generic description
+    {
+      code: `
+        const key = 'value';
+        const obj = {
+          [key]: function (a: number): number {
+            return a;
+          },
+        };
+      `,
+      errors: [
+        {
+          messageId: 'noExplicitReturnType',
+          data: { functionKind: 'function expression' },
+        },
+      ],
+      output: `
+        const key = 'value';
+        const obj = {
+          [key]: function (a: number) {
+            return a;
+          },
+        };
+      `,
+    },
+
     // Async function with explicit return type
     {
       code: 'async function getData(): Promise<string> { return "data"; }',

@@ -39,9 +39,10 @@ function getNameFromIdentifierOrLiteral(
 
 function describeMethodDefinition(node: TSESTree.MethodDefinition): string {
   if (
-    node.key.type === AST_NODE_TYPES.Identifier ||
-    (node.key.type === AST_NODE_TYPES.Literal &&
-      typeof node.key.value === 'string')
+    !node.computed &&
+    (node.key.type === AST_NODE_TYPES.Identifier ||
+      (node.key.type === AST_NODE_TYPES.Literal &&
+        typeof node.key.value === 'string'))
   ) {
     const name = getNameFromIdentifierOrLiteral(node.key);
     if (name) {
@@ -54,9 +55,10 @@ function describeMethodDefinition(node: TSESTree.MethodDefinition): string {
 
 function describeMethodSignature(node: TSESTree.TSMethodSignature): string {
   if (
-    node.key.type === AST_NODE_TYPES.Identifier ||
-    (node.key.type === AST_NODE_TYPES.Literal &&
-      typeof node.key.value === 'string')
+    !node.computed &&
+    (node.key.type === AST_NODE_TYPES.Identifier ||
+      (node.key.type === AST_NODE_TYPES.Literal &&
+        typeof node.key.value === 'string'))
   ) {
     const name = getNameFromIdentifierOrLiteral(node.key);
     if (name) {
@@ -89,6 +91,7 @@ function describeFunctionExpression(node: TSESTree.FunctionExpression): string {
 
   if (
     node.parent?.type === AST_NODE_TYPES.Property &&
+    !node.parent.computed &&
     (node.parent.key.type === AST_NODE_TYPES.Identifier ||
       (node.parent.key.type === AST_NODE_TYPES.Literal &&
         typeof node.parent.key.value === 'string'))
