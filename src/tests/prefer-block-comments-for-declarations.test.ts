@@ -236,7 +236,7 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'preferBlockComment',
-            data: { commentText: 'declaration comment' },
+            data: { commentText: 'empty declaration comment' },
           },
         ],
         output: `/** */

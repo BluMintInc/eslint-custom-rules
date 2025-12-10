@@ -78,10 +78,13 @@ export const preferBlockCommentsForDeclarations: TSESLint.RuleModule<
 
       if (lastComment && isLineCommentBeforeDeclaration(lastComment, node)) {
         const commentText = lastComment.value.trim();
-        const commentLabel = commentText || 'declaration comment';
-        const blockCommentText = commentText
-          ? `/** ${commentText} */`
-          : '/** */';
+        const isEmptyComment = commentText.length === 0;
+        const commentLabel = isEmptyComment
+          ? 'empty declaration comment'
+          : commentText;
+        const blockCommentText = isEmptyComment
+          ? '/** */'
+          : `/** ${commentText} */`;
 
         context.report({
           loc: lastComment.loc,
