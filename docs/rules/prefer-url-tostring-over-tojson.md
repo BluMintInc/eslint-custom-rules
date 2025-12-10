@@ -54,7 +54,7 @@ console.log(new URL('https://e.com').toString());
 
 ## When Not To Use It
 
-- If your project intentionally prefers `toJSON()` to signal JSON-only usage even outside of `JSON.stringify`. This is uncommon and discouraged due to redundancy with `toString()` on `URL`.
+- If your project intentionally prefers `toJSON()` to signal JSON-only usage even outside `JSON.stringify`. This is uncommon and discouraged due to redundancy with `toString()` on `URL`.
 
 ## Implementation Notes
 

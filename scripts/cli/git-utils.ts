@@ -14,8 +14,26 @@ export function runCommand(command: string, suppressOutput = false): string {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     // eslint-disable-next-line no-restricted-syntax
-    throw new Error(`Command failed: ${command}\n${message}`);
+    throw new Error(`Command failed: ${command}\n${message}`, {
+      cause: error instanceof Error ? error : undefined,
+    });
   }
+}
+
+const BRANCH_NAME_PATTERN =
+  /^(?!\/)(?!.*\/\/)(?!.*\/$)(?!-)(?!refs\/)[A-Za-z0-9._/-]+$/;
+
+function assertValidBranchName(branch: string) {
+  if (!branch || !BRANCH_NAME_PATTERN.test(branch)) {
+    throw new Error(`Invalid branch name: "${branch}"`);
+  }
+}
+
+function exitWithError(...lines: string[]): never {
+  for (const line of lines) {
+    console.error(line);
+  }
+  process.exit(1);
 }
 
 /**
@@ -23,11 +41,14 @@ export function runCommand(command: string, suppressOutput = false): string {
  */
 export function ensureDependency(tool: string) {
   try {
-    runCommand(`command -v ${tool}`, true);
-  } catch {
-    console.error(`Error: ${tool} is not installed or not in PATH.`);
-    console.error(`Please install ${tool} and try again.`);
-    process.exit(1);
+    runCommand(`command -v "${tool}"`, true);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    exitWithError(
+      `Error: ${tool} is not installed or not in PATH.`,
+      'Please install the dependency and try again.',
+      message,
+    );
   }
 }
 
@@ -36,14 +57,17 @@ export function ensureDependency(tool: string) {
  */
 export function ensureGitClean() {
   try {
-    runCommand('git diff --quiet', true);
-    runCommand('git diff --cached --quiet', true);
-  } catch {
-    console.error('Error: You have uncommitted changes.');
-    console.error(
-      'Please commit or stash your changes before running the script.',
-    );
-    process.exit(1);
+    const status = runCommand('git status --porcelain', true);
+    if (status.trim().length > 0) {
+      exitWithError(
+        'Error: You have uncommitted or untracked changes.',
+        status.trim(),
+        'Please commit or stash your changes before running the script.',
+      );
+    }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    exitWithError('Error: Failed to check git status.', message);
   }
 }
 
@@ -53,9 +77,9 @@ export function ensureGitClean() {
 export function retrieveCurrentBranch(): string {
   try {
     return runCommand('git rev-parse --abbrev-ref HEAD', true);
-  } catch {
-    console.error('Error: Could not determine current branch.');
-    process.exit(1);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    exitWithError('Error: Could not determine current branch.', message);
   }
 }
 
@@ -64,6 +88,9 @@ export function retrieveCurrentBranch(): string {
  */
 export function inferPrFromBranch(branch: string): number | undefined {
   try {
+    assertValidBranchName(branch);
+    runCommand(`git check-ref-format --branch "${branch}"`, true);
+
     const result = runCommand(
       `gh pr list --head "${branch}" --state open --json number --jq '.[0].number'`,
       true,
@@ -72,7 +99,11 @@ export function inferPrFromBranch(branch: string): number | undefined {
       return undefined;
     }
     return Number.parseInt(result, 10);
-  } catch {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(
+      `Failed to infer PR from branch "${branch}": ${message}`,
+    );
     return undefined;
   }
 }
@@ -87,8 +118,11 @@ export function inferBranchFromPr(prId: number): string {
       true,
     );
     return result;
-  } catch {
-    console.error(`Error: Could not fetch branch name for PR #${prId}`);
-    process.exit(1);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    exitWithError(
+      `Error: Could not fetch branch name for PR #${prId}`,
+      message,
+    );
   }
 }

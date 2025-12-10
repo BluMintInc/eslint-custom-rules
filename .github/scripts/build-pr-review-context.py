@@ -15,12 +15,27 @@ import subprocess
 import sys
 
 
+class CommandError(Exception):
+    """Raised when a shell command fails."""
+
+
 def run_command(cmd):
     """Run a shell command and return stdout."""
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        raise Exception(f"Command failed: {' '.join(cmd)}\n{result.stderr}")
+        raise CommandError(
+            f"Command failed (code {result.returncode}): {' '.join(cmd)}\n{result.stderr}"
+        )
     return result.stdout.strip()
+
+
+def fetch_optional(fetch_fn, fallback_value, error_prefix="Warning"):
+    """Fetch optional data with error logging and fallback."""
+    try:
+        return fetch_fn()
+    except Exception as e:
+        print(f"{error_prefix}: {e}", file=sys.stderr)
+        return fallback_value
 
 
 def fetch_pr_details(pr_number):
@@ -31,24 +46,21 @@ def fetch_pr_details(pr_number):
             "--json", "number,title,body,headRefName,baseRefName,url"
         ])
         return json.loads(result)
-    except Exception as e:
+    except (CommandError, subprocess.CalledProcessError, json.JSONDecodeError, KeyError) as e:
         print(f"Error fetching PR details: {e}", file=sys.stderr)
         return None
 
 
 def fetch_coderabbit_summary(pr_number):
     """Fetch the first CodeRabbit comment on the PR."""
-    try:
-        result = run_command([
-            "gh", "pr", "view", pr_number,
-            "--json", "comments",
-            "--jq", '.comments[] | select(.author.login == "coderabbitai") | .body'
-        ])
-        # Take first 100 lines
-        lines = result.split('\n')[:100]
-        return '\n'.join(lines) if lines else "(No CodeRabbit summary found)"
-    except Exception:
-        return "(No CodeRabbit summary found)"
+    result = run_command([
+        "gh", "pr", "view", pr_number,
+        "--json", "comments",
+        "--jq", '.comments[] | select(.author.login == "coderabbitai") | .body'
+    ])
+    # Take first 100 lines
+    lines = result.split('\n')[:100]
+    return '\n'.join(lines) if lines else "(No CodeRabbit summary found)"
 
 
 def determine_bot_status(author_login: str, author_type: str) -> bool:
@@ -74,25 +86,19 @@ def fetch_review_comment_count(pr_number: str, review_id: str) -> int:
     """
     Fetch the number of inline comments in a review using GitHub GraphQL API.
     """
-    try:
-        repo = os.environ.get("GITHUB_REPOSITORY", "").split("/")
-        if len(repo) != 2:
-            return 0
-        
-        owner, name = repo
-        
-        # Use REST API to get review comment count
-        # GitHub's review ID in webhooks is numeric and works directly with REST API
-        rest_result = run_command([
-            "gh", "api",
-            f"/repos/{owner}/{name}/pulls/{pr_number}/reviews/{review_id}/comments",
-            "--jq", "length"
-        ])
-        
-        return int(rest_result)
-    except Exception as e:
-        print(f"Warning: Could not fetch review comment count: {e}", file=sys.stderr)
+    repo = os.environ.get("GITHUB_REPOSITORY", "").split("/")
+    if len(repo) != 2:
         return 0
+    
+    owner, name = repo
+    
+    rest_result = run_command([
+        "gh", "api",
+        f"/repos/{owner}/{name}/pulls/{pr_number}/reviews/{review_id}/comments",
+        "--jq", "length"
+    ])
+    
+    return int(rest_result)
 
 
 def main():
@@ -128,13 +134,21 @@ def main():
     repo_slug = os.environ.get("GITHUB_REPOSITORY", "BluMintInc/eslint-custom-rules")
     
     # Fetch CodeRabbit summary
-    coderabbit_summary = fetch_coderabbit_summary(pr_number)
+    coderabbit_summary = fetch_optional(
+        lambda: fetch_coderabbit_summary(pr_number),
+        "(No CodeRabbit summary found)",
+        "Could not fetch CodeRabbit summary"
+    )
     
     # Determine if this is a bot review
     is_bot = determine_bot_status(review_author_login, review_author_type)
     
     # Fetch review comment count
-    comment_count = fetch_review_comment_count(pr_number, review_id)
+    comment_count = fetch_optional(
+        lambda: fetch_review_comment_count(pr_number, review_id),
+        0,
+        "Could not fetch review comment count"
+    )
     
     # Build structured output
     output = {

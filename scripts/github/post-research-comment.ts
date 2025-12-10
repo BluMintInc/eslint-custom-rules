@@ -99,15 +99,16 @@ function gh(args: string): string {
   }
 }
 
-/**
- * Escape special characters for shell command body parameter.
- */
-function escapeForShell(text: string): string {
-  return text
-    .replace(/\\/g, '\\\\') // Escape backslashes first
-    .replace(/"/g, '\\"') // Escape double quotes
-    .replace(/`/g, '\\`') // Escape backticks
-    .replace(/\$/g, '\\$'); // Escape dollar signs
+function postIssueComment(body: string) {
+  const payload = JSON.stringify({ body });
+  execSync(
+    `gh api repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments --input -`,
+    {
+      input: payload,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    },
+  );
 }
 
 // Build comment body without duplicating the heading if it already exists
@@ -121,15 +122,15 @@ const commentBody = `${resultsWithHeading.trimEnd()}`;
 
 // Post research results as a comment
 console.log(`Posting research results to issue #${ISSUE_NUMBER}...`);
-const escapedBody = escapeForShell(commentBody);
-
 try {
-  gh(
-    `api repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments -f body="${escapedBody}"`,
-  );
+  postIssueComment(commentBody);
   console.log('Research comment posted successfully');
-} catch {
+} catch (error) {
   console.error('Failed to post research comment');
+  console.error(
+    error instanceof Error ? error.message : 'Unknown error posting comment',
+  );
+  console.error('Exiting: research comment is required for workflow');
   process.exit(1);
 }
 
@@ -174,11 +175,8 @@ if (isNoMatch) {
   const matchType = isExactMatch ? 'EXACT MATCH' : 'PARTIAL MATCH';
   console.log(`${matchType} detected - tagging @dev for review`);
   try {
-    const reviewComment = escapeForShell(
+    postIssueComment(
       '@dev Please review the research findings above. An existing rule may satisfy this requirement.',
-    );
-    gh(
-      `api repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments -f body="${reviewComment}"`,
     );
     console.log('Posted review request comment');
   } catch {
@@ -191,11 +189,8 @@ if (isNoMatch) {
   );
   console.log('Manual review of research results is recommended');
   try {
-    const warningComment = escapeForShell(
+    postIssueComment(
       '⚠️ **Automated Review Notice**: The research results do not contain a clear recommendation. Please manually review the findings above and determine the next steps.',
-    );
-    gh(
-      `api repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments -f body="${warningComment}"`,
     );
   } catch {
     console.error('Failed to post warning comment');

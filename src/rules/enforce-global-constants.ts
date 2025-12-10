@@ -162,9 +162,7 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
     }
 
     function hasIdentifiers(node: TSESTree.Expression | null): boolean {
-      return ASTHelpers.declarationIncludesIdentifier(
-        node as unknown as TSESTree.Node,
-      );
+      return !!node && ASTHelpers.declarationIncludesIdentifier(node);
     }
 
     function alreadyHasConst(
@@ -250,13 +248,46 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
 
           if (declLines.length > 0) {
             const program = sourceCode.ast;
-            const block = `\n${declLines.join('\n\n')}\n\n\n`;
+            const constSection =
+              declLines.length === 1
+                ? declLines[0]
+                : `${declLines[0]}\n\n${declLines.slice(1).join('\n')}`;
+            const text = sourceCode.text;
+            const findNextNonWhitespace = (start: number): number => {
+              let idx = start;
+              while (idx < text.length && /\s/.test(text[idx])) {
+                idx += 1;
+              }
+              return idx;
+            };
+            const buildBlock = (
+              extraSpacing: boolean,
+              insertPos: number,
+              nextPos: number,
+            ): string => {
+              const whitespace = text.slice(insertPos, nextPos);
+              const lastNewline = whitespace.lastIndexOf('\n');
+              const nextIndentRaw =
+                lastNewline === -1
+                  ? ''
+                  : whitespace.slice(lastNewline + 1).replace(/[^\t ]/g, '');
+              const separator = extraSpacing ? '\n\n\n' : '\n\n';
+              const nextIndent = extraSpacing ? nextIndentRaw : '';
+              return `\n${constSection}${separator}${nextIndent}`;
+            };
             const imports = program.body.filter(
               (s) => s.type === AST_NODE_TYPES.ImportDeclaration,
             );
             if (imports.length > 0) {
               const lastImport = imports[imports.length - 1];
-              fixes.push(fixer.insertTextAfter(lastImport, block));
+              const insertPos = lastImport.range![1];
+              const nextPos = findNextNonWhitespace(insertPos);
+              fixes.push(
+                fixer.replaceTextRange(
+                  [insertPos, nextPos],
+                  buildBlock(false, insertPos, nextPos),
+                ),
+              );
             } else {
               const body = program.body;
               let insertPos = 0;
@@ -276,7 +307,13 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
               if (afterDirectiveIdx >= 0) {
                 insertPos = body[afterDirectiveIdx].range![1];
               }
-              fixes.push(fixer.insertTextBeforeRange([insertPos, insertPos], block));
+              const nextPos = findNextNonWhitespace(insertPos);
+              fixes.push(
+                fixer.replaceTextRange(
+                  [insertPos, nextPos],
+                  buildBlock(afterDirectiveIdx < 0, insertPos, nextPos),
+                ),
+              );
             }
           }
 

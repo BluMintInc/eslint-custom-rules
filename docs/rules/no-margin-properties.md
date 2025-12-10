@@ -6,13 +6,13 @@
 
 ## Rule Details
 
-This rule discourages the use of margin properties in MUI components to promote more predictable layouts. Instead of using margin properties, prefer using padding, gap, or the spacing prop.
+This rule discourages the use of margin-related props in MUI components to promote more predictable layouts. Prefer padding, `gap`, or explicit spacing APIs (Stack’s `spacing` or `theme.spacing()`/`sx` spacing helpers) instead.
 
 ## Options
 
 This rule accepts an options object with the following properties:
 
-- `autofix` (boolean, default: `false`): Controls whether the rule should provide automatic fixes. Currently, no autofix functionality is implemented, but this option is available for future use.
+- `autofix` (boolean, default: `false`): Reserved for future automatic fixes. No fixer is implemented yet; toggling this option currently has no effect (experimental).
 
 ### Default Configuration
 
@@ -48,6 +48,7 @@ This rule accepts an options object with the following properties:
 ### Exceptions / When Not To Use It
 
 You may want to disable this rule for:
+
 - Third-party layout components that require margin props.
 - Legacy components that do not support the recommended spacing API.
 - Cases where margins are the only viable option.
@@ -66,3 +67,7 @@ In such cases, prefer adding an `eslint-disable` comment with a brief explanatio
 // Using gap for layout
 <Box sx={{ display: 'flex', gap: 2 }} />
 ```
+
+## Further Reading
+
+- MUI spacing primitives: Stack’s `spacing` prop and the `theme.spacing()` utility.

@@ -3,6 +3,14 @@ import { createRule } from '../utils/createRule';
 
 type MessageIds = 'useMemoShouldBeComponent';
 
+const ARRAY_RETURNING_METHODS = new Set([
+  'map',
+  'flatMap',
+  'filter',
+  'concat',
+  'slice',
+]);
+
 /**
  * Checks if a node is a JSX element or fragment
  */
@@ -317,15 +325,7 @@ const containsJsxInFunction = (
       body.callee.type === AST_NODE_TYPES.MemberExpression &&
       body.callee.property.type === AST_NODE_TYPES.Identifier
     ) {
-      const arrayReturningMethods = new Set([
-        'map',
-        'flatMap',
-        'filter',
-        'reduce',
-        'concat',
-        'slice',
-      ]);
-      if (arrayReturningMethods.has(body.callee.property.name)) {
+      if (ARRAY_RETURNING_METHODS.has(body.callee.property.name)) {
         // Returning an array (even if its elements are JSX) should not be flagged
         return false;
       }
@@ -419,15 +419,7 @@ const containsJsxInExpression = (node: TSESTree.Expression): boolean => {
         node.callee.type === AST_NODE_TYPES.MemberExpression &&
         node.callee.property.type === AST_NODE_TYPES.Identifier
       ) {
-        const arrayReturningMethods = new Set([
-          'map',
-          'flatMap',
-          'filter',
-          'reduce',
-          'concat',
-          'slice',
-        ]);
-        if (arrayReturningMethods.has(node.callee.property.name)) {
+      if (ARRAY_RETURNING_METHODS.has(node.callee.property.name)) {
           return false;
         }
       }

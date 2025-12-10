@@ -56,7 +56,10 @@ function executeMain() {
       modifyConversationLastActive(input.conversation_id);
     } catch (error) {
       // Ignore errors, don't block the user
-      console.error('Error tracking prompt:', error);
+      console.error('Error tracking prompt:', {
+        error,
+        conversationId: input.conversation_id,
+      });
     }
   }
 

@@ -1,6 +1,6 @@
 name: Link PR to Source Issue
 
-on:
+'on':
   pull_request:
     types: [opened]
 
@@ -25,12 +25,11 @@ jobs:
       - name: Prepend "Closes <issue-number>" (and second-order) to PR body based on branch name
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BRANCH: ${{ github.head_ref }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          PR_NUMBER='${{ github.event.pull_request.number }}'
-          BRANCH='${{ github.head_ref }}'
-          REPO='${{ github.repository }}'
-
           # Extract the issue number from agent branch patterns "develop-implement-rule-<ISSUE_NUMBER>" or "develop-fix-bug-<ISSUE_NUMBER>"
           ISSUE_NUMBER=$(echo "$BRANCH" | sed -nE 's/.*-(implement-rule|fix-bug)-([0-9]+).*/\2/p') || true
           if [ -z "${ISSUE_NUMBER:-}" ]; then
@@ -120,4 +119,3 @@ jobs:
             "repos/${REPO}/pulls/${PR_NUMBER}" \
             -X PATCH \
             -f body="$NEW_BODY"
-

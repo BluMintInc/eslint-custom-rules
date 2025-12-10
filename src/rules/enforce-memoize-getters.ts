@@ -140,12 +140,14 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
               scheduledImportFix = true;
             }
 
-            // Insert decorator above the getter, preserving indentation and existing decorators order
+            // Insert decorator above the getter (or before the first decorator), preserving indentation
+            const indent = ' '.repeat(node.loc.start.column);
+            const target =
+              node.decorators && node.decorators.length > 0
+                ? node.decorators[0]
+                : node;
             fixes.push(
-              fixer.insertTextBefore(
-                node,
-                `@${memoizeAlias}()\n${' '.repeat(node.loc.start.column)}`,
-              ),
+              fixer.insertTextBefore(target, `${indent}@${memoizeAlias}()\n`),
             );
 
             return fixes;

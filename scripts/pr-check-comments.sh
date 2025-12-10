@@ -9,6 +9,8 @@ LIMIT=""
 PR_OVERRIDE=""
 BOTS_REGEX="(coderabbit|graphite|cursor|bugbot)"
 REVIEW_BATCH=""
+# Default limit for unresolved comments shown per run
+DEFAULT_LIMIT=7
 for arg in "$@"; do
   case "$arg" in
     --bots-only) BOTS_ONLY=true ;;
@@ -179,8 +181,6 @@ def line_suffix(l): if l then ":" + (l|tostring) else "" end;
     )
   end
 '
-# shellcheck enable=SC2016
-
 ALL_THREADS_FILE="$TMP_DIR/review_threads.json"
 PAGE_FILE="$TMP_DIR/review_threads_page.json"
 TMP_FILE="$TMP_DIR/review_threads_tmp.json"
@@ -209,7 +209,7 @@ done
 # NOTE: We have to use -F capitalized for the number parameter otherwise it will crash.
 if [ "$BOTS_ONLY" = true ]; then BOTS_ONLY_JSON=true; else BOTS_ONLY_JSON=false; fi
 if [ "$INCLUDE_BOTS" = true ]; then INCLUDE_BOTS_JSON=true; else INCLUDE_BOTS_JSON=false; fi
-if [ -n "$LIMIT" ]; then LIMIT_JSON=$LIMIT; else LIMIT_JSON=7; fi
+if [ -n "$LIMIT" ]; then LIMIT_JSON=$LIMIT; else LIMIT_JSON=$DEFAULT_LIMIT; fi
 
 UNRESOLVED_COMMENTS=$(cat "$ALL_THREADS_FILE" | jq -r \
   --argjson botsOnly "$BOTS_ONLY_JSON" \

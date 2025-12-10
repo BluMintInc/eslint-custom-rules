@@ -25,9 +25,11 @@ if [ -f ".cursor/rules/do-not-hesitate-to-ask-questions.mdc" ]; then
   
   # Add to .gitignore so the deletion won't appear in PRs
   if ! grep -q "do-not-hesitate-to-ask-questions.mdc" .gitignore 2>/dev/null; then
-    echo "" >> .gitignore
-    echo "# Cloud Agent: deleted rule file (asking questions blocks async agents)" >> .gitignore
-    echo ".cursor/rules/do-not-hesitate-to-ask-questions.mdc" >> .gitignore
+    {
+      echo ""
+      echo "# Cloud Agent: deleted rule file (asking questions blocks async agents)"
+      echo ".cursor/rules/do-not-hesitate-to-ask-questions.mdc"
+    } >> .gitignore
   fi
   
   rm -f ".cursor/rules/do-not-hesitate-to-ask-questions.mdc"
