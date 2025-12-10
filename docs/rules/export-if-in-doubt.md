@@ -1,6 +1,6 @@
 # All top-level const definitions, type definitions, and functions should be exported (`@blumintinc/blumint/export-if-in-doubt`)
 
-💼 This rule is enabled in the ✅ `recommended` config.
+✅ Enabled in the `recommended` config.
 
 <!-- end auto-generated rule header -->
 
