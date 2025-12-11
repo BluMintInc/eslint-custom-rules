@@ -96,6 +96,47 @@ function collectUsedIdentifiers(
   }
 }
 
+function collectPatternDependencies(
+  pattern: TSESTree.BindingName | TSESTree.RestElement | TSESTree.AssignmentPattern,
+  names: Set<string>,
+): void {
+  switch (pattern.type) {
+    case AST_NODE_TYPES.Identifier:
+      return;
+    case AST_NODE_TYPES.RestElement:
+      collectPatternDependencies(pattern.argument as TSESTree.BindingName, names);
+      return;
+    case AST_NODE_TYPES.AssignmentPattern:
+      collectUsedIdentifiers(pattern.right as TSESTree.Expression, names, { skipFunctions: true });
+      collectPatternDependencies(pattern.left as TSESTree.BindingName, names);
+      return;
+    case AST_NODE_TYPES.ArrayPattern:
+      pattern.elements.forEach((element) => {
+        if (element) {
+          collectPatternDependencies(element as TSESTree.BindingName, names);
+        }
+      });
+      return;
+    case AST_NODE_TYPES.ObjectPattern:
+      pattern.properties.forEach((prop) => {
+        if (prop.type === AST_NODE_TYPES.Property) {
+          if (prop.computed && ASTHelpers.isNode(prop.key)) {
+            collectUsedIdentifiers(prop.key, names, { skipFunctions: true });
+          }
+          collectPatternDependencies(
+            prop.value as TSESTree.BindingName | TSESTree.AssignmentPattern,
+            names,
+          );
+        } else if (prop.type === AST_NODE_TYPES.RestElement) {
+          collectPatternDependencies(prop.argument as TSESTree.BindingName, names);
+        }
+      });
+      return;
+    default:
+      return;
+  }
+}
+
 function processIdentifier(identifier: TSESTree.Identifier, names: Set<string>): void {
   const parent = identifier.parent as TSESTree.Node | undefined;
   if (shouldSkipIdentifier(identifier, parent)) {
@@ -350,6 +391,7 @@ function initializerIsSafe(
   expression: TSESTree.Expression | TSESTree.PrivateIdentifier,
   { allowHooks }: { allowHooks: boolean },
 ): boolean {
+  // Hook calls are treated as impure so we never reorder React hook execution unless a callsite explicitly opts in.
   switch (expression.type) {
     case AST_NODE_TYPES.Literal:
     case AST_NODE_TYPES.Identifier:
@@ -449,6 +491,30 @@ function statementDeclaresAny(statement: TSESTree.Statement, names: Set<string>)
     }
   }
   return false;
+}
+
+function findEarliestSafeIndex(
+  body: TSESTree.Statement[],
+  startIndex: number,
+  dependencies: Set<string>,
+  { allowHooks }: { allowHooks: boolean },
+): number {
+  // Reuse the backward scan so guard/side-effect movers stop before impure work or any declaration/reference of tracked dependencies.
+  let targetIndex = startIndex;
+  for (let cursor = startIndex - 1; cursor >= 0; cursor -= 1) {
+    const candidate = body[cursor];
+    if (!isPureDeclaration(candidate, { allowHooks })) {
+      break;
+    }
+    if (statementDeclaresAny(candidate, dependencies)) {
+      break;
+    }
+    if (statementReferencesAny(candidate, dependencies)) {
+      break;
+    }
+    targetIndex = cursor;
+  }
+  return targetIndex;
 }
 
 function getStartWithComments(statement: TSESTree.Statement, sourceCode: TSESLint.SourceCode): number {
@@ -572,6 +638,7 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
       context.report({ node: statement, messageId, data, fix });
     }
 
+    // Hoist guard clauses only across pure declarations that neither mention nor redefine guard inputs so early exits do not skip newly introduced work.
     function handleGuardHoists(body: TSESTree.Statement[], parent: BlockLike): void {
       body.forEach((statement, index) => {
         if (!isGuardIfStatement(statement)) {
@@ -582,20 +649,9 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
         collectUsedIdentifiers(statement.test, guardDependencies, { skipFunctions: true });
         collectUsedIdentifiers(statement.consequent, guardDependencies, { skipFunctions: true });
 
-        let targetIndex = index;
-        for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
-          const candidate = body[cursor];
-          if (!isPureDeclaration(candidate, { allowHooks: false })) {
-            break;
-          }
-          if (statementReferencesAny(candidate, guardDependencies)) {
-            break;
-          }
-          if (statementDeclaresAny(candidate, guardDependencies)) {
-            break;
-          }
-          targetIndex = cursor;
-        }
+        const targetIndex = findEarliestSafeIndex(body, index, guardDependencies, {
+          allowHooks: false,
+        });
 
         if (targetIndex === index) {
           return;
@@ -610,6 +666,7 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
       });
     }
 
+    // Keep derived declarations adjacent to their inputs while stopping before anything impure or dependency-touching to avoid changing evaluation order.
     function handleDerivedGrouping(body: TSESTree.Statement[], parent: BlockLike): void {
       const declaredIndices = new Map<string, number>();
 
@@ -617,6 +674,10 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
         if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
           const dependencies = new Set<string>();
           statement.declarations.forEach((declarator) => {
+            collectPatternDependencies(
+              declarator.id as TSESTree.BindingName | TSESTree.AssignmentPattern,
+              dependencies,
+            );
             if (declarator.init) {
               collectUsedIdentifiers(declarator.init, dependencies, { skipFunctions: true });
             }
@@ -633,6 +694,7 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
             if (lastDependencyIndex < index - 1) {
               const declaredNames = getDeclaredNames(statement);
               const priorDependencySet = new Set(priorDependencies);
+              // Avoid moving derived declarations across any impure or dependency-touching statement to keep evaluation order stable.
               const blockerExists = body
                 .slice(lastDependencyIndex + 1, index)
                 .some(
@@ -673,6 +735,7 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
       });
     }
 
+    // Only move placeholder declarations with trivial initializers so we do not shift computed or side-effectful bindings whose evaluation timing matters.
     function handleLateDeclarations(body: TSESTree.Statement[], parent: BlockLike): void {
       body.forEach((statement, index) => {
         if (
@@ -696,23 +759,26 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
           dependencies.add(declarator.init.name);
         }
 
+        const nameSet = new Set([name]);
         let usageIndex = -1;
         for (let cursor = index + 1; cursor < body.length; cursor += 1) {
-          if (statementReferencesAny(body[cursor], new Set([name]))) {
+          if (statementReferencesAny(body[cursor], nameSet)) {
             usageIndex = cursor;
             break;
           }
         }
 
-        if (usageIndex <= index + 1 || usageIndex === -1) {
+        if (usageIndex === -1 || usageIndex <= index + 1) {
           return;
         }
 
         const intervening = body.slice(index + 1, usageIndex);
+        // Bail when intervening code declares or touches the initializer dependency so we do not cross redefinitions or TDZ hazards.
         const touchesDependencies =
           dependencies.size > 0 &&
           intervening.some(
             (stmt) =>
+              statementDeclaresAny(stmt, dependencies) ||
               statementReferencesAny(stmt, dependencies) ||
               statementMutatesAny(stmt, dependencies),
           );
@@ -729,7 +795,7 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
       });
     }
 
-    function getCallFromExpression(
+    function extractCallExpression(
       expression: TSESTree.Expression,
     ): TSESTree.CallExpression | null {
       if (expression.type === AST_NODE_TYPES.CallExpression) {
@@ -750,9 +816,10 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
       if (statement.type !== AST_NODE_TYPES.ExpressionStatement) {
         return false;
       }
-      return Boolean(getCallFromExpression(statement.expression));
+      return Boolean(extractCallExpression(statement.expression));
     }
 
+    // Lift observable side effects above unrelated setup while never crossing hook calls or dependency declarations to preserve execution order.
     function handleSideEffects(body: TSESTree.Statement[], parent: BlockLike): void {
       body.forEach((statement, index) => {
         if (!isSideEffectExpression(statement)) {
@@ -760,7 +827,7 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
         }
 
         const expression = statement.expression;
-        const callExpression = getCallFromExpression(expression);
+        const callExpression = extractCallExpression(expression);
         if (!callExpression) {
           return;
         }
@@ -771,20 +838,7 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
         const dependencies = new Set<string>();
         collectUsedIdentifiers(expression, dependencies, { skipFunctions: true });
 
-        let targetIndex = index;
-        for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
-          const candidate = body[cursor];
-          if (!isPureDeclaration(candidate, { allowHooks: false })) {
-            break;
-          }
-          if (statementDeclaresAny(candidate, dependencies)) {
-            break;
-          }
-          if (statementReferencesAny(candidate, dependencies)) {
-            break;
-          }
-          targetIndex = cursor;
-        }
+        const targetIndex = findEarliestSafeIndex(body, index, dependencies, { allowHooks: false });
 
         if (targetIndex === index) {
           return;

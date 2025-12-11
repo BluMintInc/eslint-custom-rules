@@ -102,6 +102,26 @@ let copy = state;
 processState(state);
 use(copy);
     `,
+    `
+function f() {
+  var x = y;
+  var y = 2;
+  console.log(x, y);
+}
+    `,
+    `
+function g() {
+  let x = y;
+  let y = 1;
+  return x + y;
+}
+    `,
+    `
+const source = getSource();
+const fallback = 1;
+const { value = fallback } = source;
+use(value, fallback);
+    `,
   ],
   invalid: [
     {
