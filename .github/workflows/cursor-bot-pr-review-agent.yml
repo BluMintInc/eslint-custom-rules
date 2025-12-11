@@ -12,6 +12,7 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  statuses: write
 
 env:
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -120,9 +121,31 @@ jobs:
           HEAD_SHA=${{ steps.checks.outputs.head_sha }}
 
           echo "Checking for prior agent launch on PR #$PR for commit $HEAD_SHA"
-          HAS_COMMENT=$(gh pr view "$PR" --json comments --jq 'any(.comments[].body; contains("<!-- cursor-bot-agent:'"${HEAD_SHA}"' -->"))' 2>/dev/null || echo "false")
+          HAS_STATUS=$(
+            gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/commits/$HEAD_SHA/status" 2>/dev/null \
+              | jq 'any(.statuses[]?; .context == "cursor-bot-agent" and (.state == "success" or .state == "neutral"))' \
+              || echo "false"
+          )
 
-          if [ "$HAS_COMMENT" = "true" ]; then
+          MARKER="<!-- cursor-bot-agent:${HEAD_SHA} -->"
+          HAS_COMMENT="false"
+          if [ "$HAS_STATUS" != "true" ]; then
+            # PRs can have a large number of comments; paginate to avoid missing the marker.
+            for PAGE in $(seq 1 10); do
+              COMMENTS_PAGE=$(gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/issues/$PR/comments?per_page=100&page=$PAGE" 2>/dev/null || echo "[]")
+              FOUND=$(echo "$COMMENTS_PAGE" | jq --arg marker "$MARKER" 'any(.[]?.body; contains($marker))')
+              if [ "$FOUND" = "true" ]; then
+                HAS_COMMENT="true"
+                break
+              fi
+              COUNT=$(echo "$COMMENTS_PAGE" | jq 'length')
+              if [ "$COUNT" -lt 100 ]; then
+                break
+              fi
+            done
+          fi
+
+          if [ "$HAS_STATUS" = "true" ] || [ "$HAS_COMMENT" = "true" ]; then
             echo "Agent already launched for this commit; skipping."
             echo "already_launched=true" >> "$GITHUB_OUTPUT"
           else
@@ -250,6 +273,18 @@ jobs:
             echo "agent_url=" >> $GITHUB_OUTPUT
             echo "launched=false" >> $GITHUB_OUTPUT
           fi
+
+      - name: Mark agent launch in commit status (idempotency fallback)
+        if: steps.launch.outputs.launched == 'true'
+        run: |
+          HEAD_SHA='${{ steps.checks.outputs.head_sha }}'
+          URL='${{ steps.launch.outputs.agent_url }}'
+          gh api -X POST -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/statuses/$HEAD_SHA" \
+            -f state=success \
+            -f context="cursor-bot-agent" \
+            -f target_url="$URL" \
+            -f description="Cursor agent launched to address bot review comments" \
+            >/dev/null || echo "::warning::Failed to set commit status marker for $HEAD_SHA; idempotency relies on the PR comment marker."
 
       - name: Comment on PR
         if: steps.launch.outputs.launched == 'true'
