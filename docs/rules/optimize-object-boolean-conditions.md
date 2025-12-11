@@ -105,6 +105,11 @@ The rule proposes boolean names following common conventions (feel free to renam
 - `hasData` for existence checks
 - `hasItems` for key count checks
 - `hasUser` for complex conditions
+- `isEmptyData` / `isEmptyItems` when explicitly modeling absence
+- `hasNonEmptyData` / `hasNonEmptyItems` when a positive form reads cleaner
+- `isNotEmpty` / `hasNoItems` to mirror existing naming in the surrounding codebase
+
+Choose `isEmpty*` variants when callers gate logic on the lack of data, and prefer `hasNonEmpty*` when dependencies should emphasize the positive case to keep dependency arrays and render conditions consistent.
 
 ### When Not To Use It
 

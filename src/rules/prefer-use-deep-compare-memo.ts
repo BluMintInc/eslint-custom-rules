@@ -210,6 +210,62 @@ function ensureDeepCompareImportFixes(
   return fixes;
 }
 
+function findVariableInScope(scope: any, name: string): any | null {
+  if (!scope) return null;
+  const found = scope.variables?.find((v: any) => v.name === name);
+  if (found) return found;
+  if (Array.isArray(scope.childScopes)) {
+    for (const child of scope.childScopes) {
+      const v = findVariableInScope(child, name);
+      if (v) return v;
+    }
+  }
+  return null;
+}
+
+function isIdentifierReferenced(
+  sourceCode: TSESLint.SourceCode,
+  name: string,
+): boolean {
+  const scope = sourceCode.scopeManager?.globalScope;
+  if (!scope) return true;
+  const variable = findVariableInScope(scope, name);
+  if (!variable) return false;
+  return variable.references.some(
+    (ref: any) => ref.identifier && ref.identifier.name === name,
+  );
+}
+
+function removeImportSpecifierFixes(
+  sourceCode: TSESLint.SourceCode,
+  fixer: TSESLint.RuleFixer,
+  importDecl: TSESTree.ImportDeclaration,
+  specifier: TSESTree.ImportSpecifier | TSESTree.ImportDefaultSpecifier,
+): TSESLint.RuleFix[] {
+  const fixes: TSESLint.RuleFix[] = [];
+  if (importDecl.specifiers.length === 1) {
+    fixes.push(fixer.remove(importDecl));
+    return fixes;
+  }
+
+  const tokenAfter = sourceCode.getTokenAfter(specifier);
+  const tokenBefore = sourceCode.getTokenBefore(specifier);
+
+  if (tokenAfter && tokenAfter.value === ',') {
+    fixes.push(
+      fixer.removeRange([specifier.range[0], tokenAfter.range![1]]),
+    );
+  } else if (tokenBefore && tokenBefore.value === ',') {
+    fixes.push(
+      fixer.removeRange([tokenBefore.range![0], specifier.range[1]]),
+    );
+  } else {
+    fixes.push(fixer.remove(specifier));
+  }
+
+  return fixes;
+}
+
 function isImportedIdentifier(
   context: TSESLint.RuleContext<'preferUseDeepCompareMemo', []>,
   name: string,
@@ -419,6 +475,55 @@ export const preferUseDeepCompareMemo = createRule<[], MessageIds>({
 
             // Ensure import exists
             fixes.push(...ensureDeepCompareImportFixes(context, fixer));
+
+            // Clean up now-unused React/useMemo imports if safe
+            const sourceCode = context.getSourceCode();
+            const program = sourceCode.ast;
+            const reactImport = program.body.find(
+              (n): n is TSESTree.ImportDeclaration =>
+                n.type === AST_NODE_TYPES.ImportDeclaration &&
+                n.source.value === 'react',
+            );
+            if (reactImport) {
+              // remove named useMemo if unused
+              const useMemoSpec = reactImport.specifiers.find(
+                (s): s is TSESTree.ImportSpecifier =>
+                  s.type === AST_NODE_TYPES.ImportSpecifier &&
+                  s.imported.type === AST_NODE_TYPES.Identifier &&
+                  s.imported.name === 'useMemo',
+              );
+              if (
+                useMemoSpec &&
+                !isIdentifierReferenced(sourceCode, useMemoSpec.local.name)
+              ) {
+                fixes.push(
+                  ...removeImportSpecifierFixes(
+                    sourceCode,
+                    fixer,
+                    reactImport,
+                    useMemoSpec,
+                  ),
+                );
+              }
+
+              const defaultSpec = reactImport.specifiers.find(
+                (s): s is TSESTree.ImportDefaultSpecifier =>
+                  s.type === AST_NODE_TYPES.ImportDefaultSpecifier,
+              );
+              if (
+                defaultSpec &&
+                !isIdentifierReferenced(sourceCode, defaultSpec.local.name)
+              ) {
+                fixes.push(
+                  ...removeImportSpecifierFixes(
+                    sourceCode,
+                    fixer,
+                    reactImport,
+                    defaultSpec,
+                  ),
+                );
+              }
+            }
 
             return fixes;
           },

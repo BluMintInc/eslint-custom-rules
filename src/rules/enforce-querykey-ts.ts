@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'enforceQueryKeyImport' | 'enforceQueryKeyConstant';
@@ -21,7 +21,7 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
     schema: [],
     messages: {
       enforceQueryKeyImport:
-        'Router state key must be imported from "@/util/routing/queryKeys" or "src/util/routing/queryKeys". Use a QUERY_KEY_* constant instead of string literals.',
+        'Router state key must come from queryKeys.ts (e.g., "@/util/routing/queryKeys", "src/util/routing/queryKeys", or a relative path ending in "/util/routing/queryKeys"). Use a QUERY_KEY_* constant instead of string literals.',
       enforceQueryKeyConstant:
         'Router state key must use a QUERY_KEY_* constant from queryKeys.ts. Variable "{{variableName}}" is not imported from the correct source.',
     },
@@ -33,15 +33,24 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
       string,
       { source: string; imported: string }
     >();
+    const localUseRouterStateNames = new Set<string>(['useRouterState']);
     const validQueryKeySources = new Set([
       '@/util/routing/queryKeys',
       'src/util/routing/queryKeys',
-      './util/routing/queryKeys',
-      '../util/routing/queryKeys',
-      '../../util/routing/queryKeys',
-      '../../../util/routing/queryKeys',
-      '../../../../util/routing/queryKeys',
     ]);
+
+    const allowedQueryKeyFactories = new Set(['makeQueryKey', 'getQueryKey']);
+
+    /**
+     * Ensure a suggested constant is imported from queryKeys.ts and return combined fixes
+     */
+    function buildImportFixes(
+      fixer: TSESLint.RuleFixer,
+      keyNode: TSESTree.Literal,
+      suggestedConstant: string,
+    ) {
+      return [fixer.replaceText(keyNode, suggestedConstant)];
+    }
 
     /**
      * Check if a source path refers to queryKeys.ts
@@ -84,22 +93,39 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
 
       // Allow member expressions accessing query key constants
       if (node.type === AST_NODE_TYPES.MemberExpression) {
-        if (node.object.type === AST_NODE_TYPES.Identifier) {
-          const importInfo = queryKeyImports.get(node.object.name);
+        const member = node;
+        if (
+          member.object.type === AST_NODE_TYPES.Identifier &&
+          !member.computed &&
+          member.property.type === AST_NODE_TYPES.Identifier
+        ) {
+          const importInfo = queryKeyImports.get(member.object.name);
           if (importInfo && isQueryKeysSource(importInfo.source)) {
-            return true;
+            if (importInfo.imported === '*') {
+              return isValidQueryKeyConstant(member.property.name);
+            }
+            return isValidQueryKeyConstant(member.property.name);
           }
         }
       }
 
-      // Allow template literals if they use valid query keys
+      // Allow template literals only when they contain no static content and all expressions are valid
       if (node.type === AST_NODE_TYPES.TemplateLiteral) {
-        // If there are expressions, at least one should be a valid query key
-        if (node.expressions.length > 0) {
-          return node.expressions.some((expr) => isValidQueryKeyUsage(expr));
+        const hasSignificantStaticPart = node.quasis.some((quasi) => {
+          const content = quasi.value.raw.trim();
+          return content.length > 0 && !/^[-_:/.]+$/.test(content);
+        });
+
+        if (node.expressions.length === 0) {
+          // Pure static template acts like a string literal
+          return false;
         }
-        // If no expressions, it's just a static template literal (should be invalid)
-        return false;
+
+        if (hasSignificantStaticPart) {
+          return false;
+        }
+
+        return node.expressions.some((expr) => isValidQueryKeyUsage(expr));
       }
 
       if (
@@ -121,9 +147,18 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
 
       // Allow function calls that might return query keys
       if (node.type === AST_NODE_TYPES.CallExpression) {
-        // This is a more permissive approach - we assume function calls might be valid
-        // In a real implementation, you might want to be more strict
-        return true;
+        const callee = node.callee;
+        if (callee.type === AST_NODE_TYPES.Identifier) {
+          return allowedQueryKeyFactories.has(callee.name);
+        }
+        if (
+          callee.type === AST_NODE_TYPES.MemberExpression &&
+          !callee.computed &&
+          callee.property.type === AST_NODE_TYPES.Identifier
+        ) {
+          return allowedQueryKeyFactories.has(callee.property.name);
+        }
+        return false;
       }
 
       return false;
@@ -160,16 +195,25 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
         );
       }
 
-      // Template literal with static parts (but allow if it uses query key variables)
+      // Template literal handling
       if (node.type === AST_NODE_TYPES.TemplateLiteral) {
         const hasSignificantStaticPart = node.quasis.some((quasi) => {
           const content = quasi.value.raw.trim();
           return content.length > 0 && !/^[-_:/.]+$/.test(content);
         });
-        if (hasSignificantStaticPart) {
-          // Check if expressions use valid query keys
-          return !node.expressions.every((expr) => isValidQueryKeyUsage(expr));
+
+        if (node.expressions.length === 0) {
+          // Pure static template behaves like a string literal
+          return hasSignificantStaticPart;
         }
+
+        // Any meaningful static content makes this invalid regardless of expressions
+        if (hasSignificantStaticPart) {
+          return true;
+        }
+
+        // Only dynamic parts remain; all expressions must be valid query key usages
+        return !node.expressions.every((expr) => isValidQueryKeyUsage(expr));
       }
 
       return false;
@@ -203,9 +247,24 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
                 const imported = spec.imported.name;
                 const local = spec.local.name;
                 queryKeyImports.set(local, { source, imported });
+              } else if (
+                spec.type === AST_NODE_TYPES.ImportNamespaceSpecifier
+              ) {
+                const local = spec.local.name;
+                queryKeyImports.set(local, { source, imported: '*' });
               }
             });
           }
+
+          node.specifiers.forEach((spec) => {
+            if (
+              spec.type === AST_NODE_TYPES.ImportSpecifier &&
+              spec.imported.type === AST_NODE_TYPES.Identifier &&
+              spec.imported.name === 'useRouterState'
+            ) {
+              localUseRouterStateNames.add(spec.local.name);
+            }
+          });
         }
       },
 
@@ -216,12 +275,18 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
         }
       },
 
+      AssignmentExpression(node: TSESTree.AssignmentExpression) {
+        if (node.left.type === AST_NODE_TYPES.Identifier && node.right) {
+          variableAssignments.set(node.left.name, node.right);
+        }
+      },
+
       // Check useRouterState calls
       CallExpression(node: TSESTree.CallExpression) {
         // Check if this is a call to useRouterState
         if (
           node.callee.type === AST_NODE_TYPES.Identifier &&
-          node.callee.name === 'useRouterState'
+          localUseRouterStateNames.has(node.callee.name)
         ) {
           // Check if there are arguments
           if (node.arguments.length > 0) {
@@ -258,7 +323,8 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
                             keyValue.value,
                           );
                           if (suggestedConstant) {
-                            return fixer.replaceText(
+                            return buildImportFixes(
+                              fixer,
                               keyValue,
                               suggestedConstant,
                             );

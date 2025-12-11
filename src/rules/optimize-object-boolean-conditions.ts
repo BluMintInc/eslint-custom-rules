@@ -6,7 +6,7 @@ type MessageIds = 'extractBooleanCondition';
 const HOOK_NAMES = new Set(['useEffect', 'useCallback', 'useMemo']);
 
 interface BooleanConditionPattern {
-  type: 'existence' | 'keyCount' | 'property' | 'complex';
+  type: 'existence' | 'keyCount' | 'complex';
   objectName: string;
   expression: string;
   suggestedName: string;
@@ -16,27 +16,30 @@ interface BooleanConditionPattern {
 function isHookCall(node: TSESTree.CallExpression): boolean {
   const callee = node.callee;
   return (
-    callee.type === AST_NODE_TYPES.Identifier && HOOK_NAMES.has(callee.name)
+    (callee.type === AST_NODE_TYPES.Identifier && HOOK_NAMES.has(callee.name)) ||
+    (callee.type === AST_NODE_TYPES.MemberExpression &&
+      !callee.computed &&
+      callee.object.type === AST_NODE_TYPES.Identifier &&
+      callee.object.name === 'React' &&
+      callee.property.type === AST_NODE_TYPES.Identifier &&
+      HOOK_NAMES.has(callee.property.name))
   );
 }
 
 function generateBooleanVariableName(
   objectName: string,
-  conditionType: string,
+  conditionType: 'existence' | 'keyCount' | 'complex',
+  isNegated: boolean,
 ): string {
-  // Generate appropriate boolean variable names based on the condition type
-  switch (conditionType) {
-    case 'existence':
-      return `has${capitalize(objectName)}`;
-    case 'keyCount':
-      return `has${capitalize(objectName)}`;
-    case 'property':
-      return `has${capitalize(objectName)}`;
-    case 'complex':
-      return `has${capitalize(objectName)}`;
-    default:
-      return `has${capitalize(objectName)}`;
+  const base = capitalize(objectName);
+  if (conditionType === 'existence') {
+    return isNegated ? `is${base}Missing` : `has${base}`;
   }
+  if (conditionType === 'keyCount') {
+    return isNegated ? `is${base}Empty` : `has${base}`;
+  }
+  // complex: default to hasX to avoid over-guessing semantics
+  return `has${base}`;
 }
 
 function capitalize(str: string): string {
@@ -46,9 +49,19 @@ function capitalize(str: string): string {
 function isObjectExistenceCheck(node: TSESTree.Node): boolean {
   // Check for patterns like !obj
   if (node.type === AST_NODE_TYPES.UnaryExpression) {
-    return (
-      node.operator === '!' && node.argument.type === AST_NODE_TYPES.Identifier
-    );
+    // !obj
+    if (node.operator === '!' && node.argument.type === AST_NODE_TYPES.Identifier) {
+      return true;
+    }
+    // !!obj
+    if (
+      node.operator === '!' &&
+      node.argument.type === AST_NODE_TYPES.UnaryExpression &&
+      node.argument.operator === '!' &&
+      node.argument.argument.type === AST_NODE_TYPES.Identifier
+    ) {
+      return true;
+    }
   }
   return false;
 }
@@ -146,22 +159,41 @@ function analyzeBooleanCondition(
   if (isObjectExistenceCheck(node)) {
     const objectName = extractObjectName(node);
     if (objectName) {
+      const isNegated =
+        node.type === AST_NODE_TYPES.UnaryExpression &&
+        node.operator === '!' &&
+        !(
+          node.argument.type === AST_NODE_TYPES.UnaryExpression &&
+          node.argument.operator === '!'
+        );
+
       return {
         type: 'existence',
         objectName,
         expression,
-        suggestedName: generateBooleanVariableName(objectName, 'existence'),
+        suggestedName: generateBooleanVariableName(
+          objectName,
+          'existence',
+          isNegated,
+        ),
         node,
       };
     }
   } else if (isObjectKeyCountCheck(node)) {
     const objectName = extractObjectName(node);
     if (objectName) {
+      const isNegated =
+        expression.includes('=== 0') || expression.includes('<= 0');
+
       return {
         type: 'keyCount',
         objectName,
         expression,
-        suggestedName: generateBooleanVariableName(objectName, 'keyCount'),
+        suggestedName: generateBooleanVariableName(
+          objectName,
+          'keyCount',
+          isNegated,
+        ),
         node,
       };
     }
@@ -172,7 +204,7 @@ function analyzeBooleanCondition(
         type: 'complex',
         objectName,
         expression,
-        suggestedName: generateBooleanVariableName(objectName, 'complex'),
+        suggestedName: generateBooleanVariableName(objectName, 'complex', false),
         node,
       };
     }
