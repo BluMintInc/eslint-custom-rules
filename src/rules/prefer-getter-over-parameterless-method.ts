@@ -51,16 +51,6 @@ const DEFAULT_IGNORED_METHODS = [
   'stringify',
 ];
 
-const BOOLEAN_PREFIXES = new Set([
-  'is',
-  'has',
-  'can',
-  'should',
-  'will',
-  'did',
-  'was',
-]);
-
 const SIDE_EFFECT_TAGS = ['sideEffect', 'sideEffects', 'mutates'];
 
 const DEFAULT_OPTIONS: Required<OptionShape> = {
@@ -100,6 +90,37 @@ function lowerFirst(text: string): string {
 
 function computeBodyLineCount(body: TSESTree.BlockStatement): number {
   return Math.max(0, body.loc.end.line - body.loc.start.line - 1);
+}
+
+function hasNameCollision(
+  node: MethodLikeDefinition,
+  newName: string,
+): boolean {
+  const classBody = node.parent;
+  if (!classBody || classBody.type !== AST_NODE_TYPES.ClassBody) {
+    return false;
+  }
+
+  return classBody.body.some((member) => {
+    if ((member as unknown as MethodLikeDefinition) === node) {
+      return false;
+    }
+
+    const key = (member as { key?: TSESTree.PropertyName }).key;
+    if (!key || member.type === AST_NODE_TYPES.StaticBlock) {
+      return false;
+    }
+
+    if ((member as { computed?: boolean }).computed) {
+      return false;
+    }
+
+    if (key.type === AST_NODE_TYPES.Identifier && key.name === newName) {
+      return true;
+    }
+
+    return false;
+  });
 }
 
 export const preferGetterOverParameterlessMethod = createRule<
@@ -197,7 +218,7 @@ export const preferGetterOverParameterlessMethod = createRule<
         /@returns?[^@]*mutat/i.test(value);
     }
 
-    function detectSideEffect(body: TSESTree.BlockStatement): string | null {
+    function analyzeMutations(body: TSESTree.BlockStatement): string | null {
       const stack: TSESTree.Node[] = [...body.body];
 
       while (stack.length) {
@@ -298,16 +319,55 @@ export const preferGetterOverParameterlessMethod = createRule<
           /[A-Z_]/.test(name[prefix.length])
         ) {
           const remainder = name.slice(prefix.length);
-          if (BOOLEAN_PREFIXES.has(remainder) || BOOLEAN_PREFIXES.has(lowerFirst(remainder))) {
-            return lowerFirst(remainder);
-          }
           return lowerFirst(remainder);
         }
       }
       return name;
     }
 
+    function trackMemberCall(
+      member: TSESTree.MemberExpression,
+      callUsedNames: Set<string>,
+    ) {
+      if (member.computed || member.property.type !== AST_NODE_TYPES.Identifier) {
+        return;
+      }
+
+      const propName = member.property.name;
+
+      if (propName === 'call' || propName === 'apply' || propName === 'bind') {
+        const target = member.object;
+        if (target.type === AST_NODE_TYPES.MemberExpression) {
+          if (!target.computed && target.property.type === AST_NODE_TYPES.Identifier) {
+            callUsedNames.add(target.property.name);
+          }
+        }
+        return;
+      }
+
+      callUsedNames.add(propName);
+    }
+
+    const callUsedNames = new Set<string>();
+    const candidates: Array<{
+      node: MethodLikeDefinition;
+      sideEffectReason: string | null;
+      suggestedName: string;
+    }> = [];
+
     return {
+      CallExpression(node: TSESTree.CallExpression) {
+        const callee = node.callee as TSESTree.Node;
+
+        if (callee.type === AST_NODE_TYPES.MemberExpression) {
+          trackMemberCall(callee, callUsedNames);
+        } else if (callee.type === AST_NODE_TYPES.ChainExpression) {
+          const expression = (callee as TSESTree.ChainExpression).expression;
+          if (expression.type === AST_NODE_TYPES.MemberExpression) {
+            trackMemberCall(expression, callUsedNames);
+          }
+        }
+      },
       'MethodDefinition, TSAbstractMethodDefinition'(
         node: MethodLikeDefinition,
       ) {
@@ -339,37 +399,51 @@ export const preferGetterOverParameterlessMethod = createRule<
         if (!returnsValue(node)) return;
         if (config.respectJsDocSideEffects && hasSideEffectTag(node)) return;
 
-        const sideEffectReason = detectSideEffect(body);
+        const sideEffectReason = analyzeMutations(body);
         const suggestedName = suggestName(name);
 
-        const leftParen = sourceCode.getTokenAfter(node.key, {
-          filter: (token) => token.value === '(',
-        });
-        const rightParen = leftParen
-          ? sourceCode.getTokenAfter(leftParen, {
-              filter: (token) => token.value === ')',
-            })
-          : null;
+        candidates.push({ node, sideEffectReason, suggestedName });
+      },
+      'Program:exit'() {
+        for (const { node, sideEffectReason, suggestedName } of candidates) {
+          const name = (node.key as TSESTree.Identifier).name;
 
-        context.report({
-          node: node.key,
-          messageId: sideEffectReason
-            ? 'preferGetterSideEffect'
-            : 'preferGetter',
-          data: {
-            name,
-            suggestedName,
-            reason: sideEffectReason ?? 'it returns a value',
-          },
-          fix:
-            sideEffectReason || !leftParen || !rightParen
-              ? null
-              : (fixer) =>
-                  fixer.replaceTextRange(
-                    [node.key.range[0], rightParen.range[1]],
-                    `get ${suggestedName}()`,
-                  ),
-        });
+          const leftParen = sourceCode.getTokenAfter(node.key, {
+            filter: (token) => token.value === '(',
+          });
+          const rightParen = leftParen
+            ? sourceCode.getTokenAfter(leftParen, {
+                filter: (token) => token.value === ')',
+              })
+            : null;
+
+          const hasCollision = hasNameCollision(node, suggestedName);
+          const isCallUsed = callUsedNames.has(name);
+
+          context.report({
+            node: node.key,
+            messageId: sideEffectReason
+              ? 'preferGetterSideEffect'
+              : 'preferGetter',
+            data: {
+              name,
+              suggestedName,
+              reason: sideEffectReason ?? 'it returns a value',
+            },
+            fix:
+              sideEffectReason ||
+              !leftParen ||
+              !rightParen ||
+              hasCollision ||
+              isCallUsed
+                ? null
+                : (fixer) =>
+                    fixer.replaceTextRange(
+                      [node.key.range[0], rightParen.range[1]],
+                      `get ${suggestedName}()`,
+                    ),
+          });
+        }
       },
     };
   },

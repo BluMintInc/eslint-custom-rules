@@ -11,7 +11,7 @@ This rule reports parameterless, non-abstract, synchronous methods that return a
 - Stripping configurable verb prefixes (for example, `getUser()` → `get user()`)
 - Keeping boolean prefixes intact (`isValid()` → `get isValid()`)
 
-The fixer is withheld when mutations are detected (assignments, `++/--`, or obvious mutating array calls) so teams can keep intentional side-effect methods as-is.
+The fixer is withheld when mutations are detected (assignments, `++/--`, or obvious mutating array calls), when the method name is used as a callable (for example `instance.method()`, `instance.method.call(...)`, `bind`, `apply`), or when the suggested getter name would collide with an existing class member. In these cases the rule still reports but leaves the change to the developer to avoid breaking call sites or creating duplicate identifiers.
 
 ### Default Options
 

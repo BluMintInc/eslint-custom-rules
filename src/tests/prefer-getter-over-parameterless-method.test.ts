@@ -314,6 +314,49 @@ ruleTesterTs.run(
         `,
         errors: [{ messageId: 'preferGetter' }],
       },
+      {
+        code: `
+        class Reporter {
+          name() {
+            return this.display;
+          }
+
+          describe() {
+            return this.name();
+          }
+        }
+        `,
+        errors: [{ messageId: 'preferGetter' }],
+        output: null,
+      },
+      {
+        code: `
+        class Worker {
+          getResult() {
+            return this.value;
+          }
+
+          bindResult() {
+            return this.getResult.bind(this);
+          }
+        }
+        `,
+        errors: [{ messageId: 'preferGetter', data: { suggestedName: 'result' } }],
+        output: null,
+      },
+      {
+        code: `
+        class UserProfile {
+          name = 'alex';
+
+          getName() {
+            return this.name;
+          }
+        }
+        `,
+        errors: [{ messageId: 'preferGetter', data: { suggestedName: 'name' } }],
+        output: null,
+      },
     ],
   },
 );
