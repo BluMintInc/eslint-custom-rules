@@ -22,13 +22,24 @@ export const preferBlockCommentsForDeclarations: TSESLint.RuleModule<
         return false;
       }
 
-      // Ignore ESLint directive comments
+      // Ignore ESLint & TypeScript directive comments
       const commentText = comment.value.trim();
-      const isDirective =
-        /^(?:eslint(?:-disable(?:-next-line)?|-enable|-env)\b|eslint(?:\s|$)|globals?\b|exported\b)/.test(
-          commentText,
-        );
-      if (isDirective) {
+      if (
+        // ESLint
+        commentText.startsWith('eslint-disable') ||
+        commentText.startsWith('eslint-enable') ||
+        commentText.startsWith('eslint-env') ||
+        commentText.startsWith('eslint ') ||
+        commentText.startsWith('global ') ||
+        commentText.startsWith('globals ') ||
+        commentText.startsWith('exported ') ||
+        // TypeScript line directives (keep as line comments)
+        /^@ts-(ignore|expect-error|check|nocheck)\b/.test(commentText) ||
+        // TypeScript triple-slash directives (value of a 'Line' comment that started with '///')
+        commentText.startsWith('/ <reference') ||
+        commentText.startsWith('/ <amd-') ||
+        commentText.startsWith('/ <jsxImportSource')
+      ) {
         return false;
       }
 

@@ -15,7 +15,7 @@ export const useCustomLink = createRule<Options, MessageIds>({
     schema: [],
     messages: {
       useCustomLink:
-        'Import Link from src/components/Link instead of next/link',
+        'Import "{{localName}}" from src/components/Link instead of next/link. The custom Link wraps Next.js navigation with design system defaults and analytics hooks; importing next/link bypasses those wrappers and leads to inconsistent styling and missing instrumentation. Replace the import source with src/components/Link so routing uses the shared wrapper.',
     },
   },
   defaultOptions: [],
@@ -40,6 +40,12 @@ export const useCustomLink = createRule<Options, MessageIds>({
             context.report({
               node,
               messageId: 'useCustomLink',
+              data: {
+                localName:
+                  defaultSpecifier?.local?.name ||
+                  defaultAsSpecifier?.local?.name ||
+                  'Link',
+              },
               fix(fixer) {
                 // Get the local name of the imported Link component
                 const localName =
