@@ -5,7 +5,7 @@ import { enforceFirebaseImports } from '../rules/enforce-dynamic-firebase-import
 const ruleTester = ruleTesterTs;
 
 const errorMessage = (importPath: string) =>
-  `Static import from firebaseCloud path "${importPath}" eagerly bundles Firebase handlers into the initial client chunk, which inflates startup time and prevents lazy loading. Replace it with an awaited dynamic import so the code only loads when invoked (e.g., \`const module = await import('${importPath}')\` or destructure the exports you need).`;
+  `Static import from firebaseCloud path "${importPath}" eagerly bundles Firebase code into the initial client chunk, which inflates startup time and prevents lazy loading. Replace it with an awaited dynamic import so the code only loads when invoked (e.g., \`const module = await import('${importPath}')\` or destructure the exports you need).`;
 
 type ErrorWithData = Pick<
   TSESLint.TestCaseError<'noDynamicImport'>,
