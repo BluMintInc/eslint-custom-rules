@@ -243,6 +243,23 @@ ruleTesterTs.run('enforce-memoize-getters', enforceMemoizeGetters, {
         }
       `,
     },
+    // Namespace import should be reused without adding a new import
+    {
+      code: `
+        import * as Memo from '@blumintinc/typescript-memoize';
+        class Example {
+          private get fetcher() { return {}; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import * as Memo from '@blumintinc/typescript-memoize';
+        class Example {
+          @Memo.Memoize()
+          private get fetcher() { return {}; }
+        }
+      `,
+    },
     // Computed property name
     {
       code: `
@@ -315,6 +332,23 @@ ruleTesterTs.run('enforce-memoize-getters', enforceMemoizeGetters, {
         export class Example {
           @Memoize()
           private get node() { return <span/>; }
+        }
+      `,
+    },
+    // Default import should be reused as the decorator identifier
+    {
+      code: `
+        import Memoize from 'typescript-memoize';
+        class Example {
+          private get fetcher() { return {}; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import Memoize from 'typescript-memoize';
+        class Example {
+          @Memoize()
+          private get fetcher() { return {}; }
         }
       `,
     },

@@ -54,7 +54,7 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
     schema: [],
     messages: {
       requireMemoizeGetter:
-        'Private getters should be decorated with @Memoize() to preserve instance state and avoid redundant instantiation. Import Memoize from "@blumintinc/typescript-memoize".',
+        'Private getter "{{name}}" should use @Memoize() so repeated accesses reuse the same instance instead of re-instantiating and losing internal state. Add @Memoize() and import Memoize from "@blumintinc/typescript-memoize" to avoid redundant setup work.',
     },
   },
   defaultOptions: [],
@@ -62,25 +62,39 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
     // Only apply in TS/TSX files to avoid JS environments without decorators
     const filename = context.getFilename();
     if (!/\.tsx?$/i.test(filename)) {
-      return {} as any;
+      return {} as unknown as TSESLint.RuleListener;
     }
 
+    const sourceCode = context.getSourceCode();
     let hasMemoizeImport = false;
     let memoizeAlias = 'Memoize';
+    let memoizeNamespace: string | null = null;
+    let hasNamedImport = false;
     let scheduledImportFix = false;
 
     return {
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
         if (MEMOIZE_MODULES.has(String(node.source.value))) {
-          const spec = node.specifiers.find(
-            (s) =>
-              s.type === AST_NODE_TYPES.ImportSpecifier &&
-              s.imported.name === 'Memoize',
-          ) as TSESTree.ImportSpecifier | undefined;
-          if (spec) {
-            hasMemoizeImport = true;
-            memoizeAlias = spec.local?.name ?? 'Memoize';
-          }
+          node.specifiers.forEach((spec) => {
+            if (
+              spec.type === AST_NODE_TYPES.ImportSpecifier &&
+              spec.imported.name === 'Memoize'
+            ) {
+              hasMemoizeImport = true;
+              hasNamedImport = true;
+              memoizeAlias = spec.local?.name ?? memoizeAlias;
+            } else if (spec.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
+              hasMemoizeImport = true;
+              if (!hasNamedImport) {
+                memoizeNamespace = spec.local.name;
+              }
+            } else if (spec.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
+              hasMemoizeImport = true;
+              if (!hasNamedImport) {
+                memoizeAlias = spec.local.name;
+              }
+            }
+          });
         }
       },
 
@@ -92,18 +106,27 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
         // enforce only "private" accessibility (undefined => public)
         if (node.accessibility !== 'private') return;
 
-        // Already memoized?
-        const hasDecorator = node.decorators?.some((d) =>
-          isMemoizeDecorator(d, memoizeAlias),
+        const decoratorAliases = new Set<string>(['Memoize', memoizeAlias]);
+        const hasDecorator = node.decorators?.some((decorator) =>
+          Array.from(decoratorAliases).some((alias) =>
+            isMemoizeDecorator(decorator, alias),
+          ),
         );
         if (hasDecorator) return;
+
+        const propertyName = sourceCode.getText(node.key);
 
         context.report({
           node,
           messageId: 'requireMemoizeGetter',
+          data: { name: propertyName },
           fix(fixer) {
             const fixes: TSESLint.RuleFix[] = [];
-            const sourceCode = context.getSourceCode();
+            const decoratorIdent = hasNamedImport
+              ? memoizeAlias
+              : memoizeNamespace
+              ? `${memoizeNamespace}.Memoize`
+              : memoizeAlias;
 
             // Insert import if needed, at the top alongside other imports
             if (!hasMemoizeImport && !scheduledImportFix) {
@@ -141,15 +164,19 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
             }
 
             // Insert decorator above the getter (or before the first decorator), preserving indentation
-            const indent = ' '.repeat(node.loc.start.column);
-            const lineStart = node.range
-              ? sourceCode.text.lastIndexOf('\n', node.range[0] - 1) + 1
-              : 0;
-            const insertPosition = Math.max(0, lineStart);
+            const insertionTarget = node.decorators?.[0] ?? node;
+            const insertionStart = insertionTarget.range
+              ? insertionTarget.range[0]
+              : node.range?.[0] ?? 0;
+            const text = sourceCode.text;
+            const lineStart = text.lastIndexOf('\n', insertionStart - 1) + 1;
+            const leadingWhitespace =
+              text.slice(lineStart, insertionStart).match(/^[ \t]*/)?.[0] ??
+              '';
             fixes.push(
               fixer.insertTextBeforeRange(
-                [insertPosition, insertPosition],
-                `${indent}@${memoizeAlias}()\n`,
+                [lineStart, lineStart],
+                `${leadingWhitespace}@${decoratorIdent}()\n`,
               ),
             );
 
