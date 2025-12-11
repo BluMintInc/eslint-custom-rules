@@ -18,6 +18,19 @@ const App = () => <EmojiPicker/>;`,
 const someUtility = useDynamic(import('../utils/someUtility'));
 function fn(){ console.log(someUtility); }`,
     },
+    // useDynamic from an unapproved source should be ignored
+    {
+      code: `import { useDynamic } from 'some-library';
+const Widget = useDynamic(import('widget'));
+const App = () => <Widget/>;`,
+    },
+    // Custom allowed sources should disable default paths
+    {
+      code: `import { useDynamic } from '../../hooks/useDynamic';
+const EmojiPicker = useDynamic(import('@emoji-mart/react'));
+const App = () => <EmojiPicker/>;`,
+      options: [{ useDynamicSources: ['@org/useDynamic'] }],
+    },
   ],
   invalid: [
     // Basic bad case: default export
@@ -174,6 +187,23 @@ const EmojiPicker = dynamic(
 );
 const App = () => <EmojiPicker/>;`,
     },
+    // Reuse existing dynamic alias when already imported
+    {
+      code: `import dyn from 'next/dynamic';
+import { useDynamic } from '../../hooks/useDynamic';
+const EmojiPicker = useDynamic(import('@emoji-mart/react'));
+const App = () => <EmojiPicker/>;`,
+      errors: [{ messageId: 'preferNextDynamic' }],
+      output: `import dyn from 'next/dynamic';
+const EmojiPicker = dyn(
+  async () => {
+    const mod = await import('@emoji-mart/react');
+    return mod.default;
+  },
+  { ssr: false }
+);
+const App = () => <EmojiPicker/>;`,
+    },
     // Preserve let/var kind
     {
       code: `import { useDynamic } from '../../hooks/useDynamic';
@@ -188,6 +218,24 @@ const App = () => <EmojiPicker/>;`,
       output: `import dynamic from 'next/dynamic';
 
 let EmojiPicker = dynamic(
+  async () => {
+    const mod = await import('@emoji-mart/react');
+    return mod.default;
+  },
+  { ssr: false }
+);
+const App = () => <EmojiPicker/>;`,
+    },
+    // Respect custom allowed sources option
+    {
+      code: `import { useDynamic } from '@org/useDynamic';
+const EmojiPicker = useDynamic(import('@emoji-mart/react'));
+const App = () => <EmojiPicker/>;`,
+      options: [{ useDynamicSources: ['@org/useDynamic'] }],
+      errors: [{ messageId: 'preferNextDynamic' }],
+      output: `import dynamic from 'next/dynamic';
+
+const EmojiPicker = dynamic(
   async () => {
     const mod = await import('@emoji-mart/react');
     return mod.default;
