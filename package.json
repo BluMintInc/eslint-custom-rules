@@ -13,12 +13,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/BluMintInc/custom-eslint-rules.git"
+    "url": "git+https://github.com/BluMintInc/eslint-custom-rules.git"
   },
   "bugs": {
-    "url": "https://github.com/BluMintInc/custom-eslint-rules/issues"
+    "url": "https://github.com/BluMintInc/eslint-custom-rules/issues"
   },
-  "homepage": "https://github.com/BluMintInc/custom-eslint-rules#readme",
+  "homepage": "https://github.com/BluMintInc/eslint-custom-rules#readme",
   "keywords": [
     "eslint",
     "eslintplugin",
