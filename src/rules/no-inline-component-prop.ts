@@ -30,8 +30,8 @@ function isPascalCase(name: string): boolean {
 function matchesPattern(name: string, pattern: string): boolean {
   if (pattern === '*') return true;
   if (pattern.includes('*')) {
-    const wildcardCount = (pattern.match(/\*/g) || []).length;
-    if (wildcardCount > 2) {
+    const patternComplexity = (pattern.match(/\*/g) || []).length;
+    if (patternComplexity > 2) {
       return false;
     }
     const escaped = pattern
