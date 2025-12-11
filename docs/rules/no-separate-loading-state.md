@@ -26,6 +26,10 @@ Booleans whose names do not match the patterns (for example `isModalOpen`) are a
 
 Not provided – switching to a sentinel or discriminated union requires manual type updates and consumer changes.
 
+### Options
+
+- `patterns` (`string[]`, optional): Custom regex strings for detecting loading-state variable names. Defaults to `['^is.*Loading$', '^isLoading.+']`.
+
 ## Examples
 
 ### ❌ Incorrect
@@ -88,7 +92,7 @@ function toggleModal() {
 Disable `react/no-stale-state-across-await` when intentionally double updating:
 
 ```tsx
-// eslint-disable-next-line react/no-stale-state-across-await
+// eslint-disable-next-line @blumintinc/blumint/no-stale-state-across-await
 setProfile('loading');
 ```
 

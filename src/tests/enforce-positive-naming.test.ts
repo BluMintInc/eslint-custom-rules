@@ -31,6 +31,16 @@ ruleTesterTs.run('enforce-positive-naming', enforcePositiveNaming, {
     'const isValid = !hasErrors;',
     'const canProceed = !isBlocked && !isPaused;',
     'const isAvailable = !isReserved && !isDeleted;',
+    `
+    // Regression: integer check should not be treated as negative naming
+    type Validate<T> = (value: T) => true | string;
+    export const isInteger: Validate<number> = (value) => {
+      if (value !== undefined && !Number.isInteger(value)) {
+        return 'Value must be an integer';
+      }
+      return true;
+    };
+    `,
 
     // Non-boolean variables should not be flagged
     'const errorMessage = "Something went wrong";',
@@ -93,6 +103,18 @@ ruleTesterTs.run('enforce-positive-naming', enforcePositiveNaming, {
           data: {
             name: 'isNotVerified',
             alternatives: 'isVerified',
+          },
+        },
+      ],
+    },
+    {
+      code: 'const isInvalid = !input;',
+      errors: [
+        {
+          messageId: 'avoidNegativeNaming',
+          data: {
+            name: 'isInvalid',
+            alternatives: 'isValid',
           },
         },
       ],
