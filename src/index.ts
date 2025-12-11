@@ -92,7 +92,6 @@ import { preferGlobalRouterStateKey } from './rules/prefer-global-router-state-k
 import { preferUseMemoOverUseEffectUseState } from './rules/prefer-usememo-over-useeffect-usestate';
 import enforceDynamicImports from './rules/enforce-dynamic-imports';
 import { ensurePointerEventsNone } from './rules/ensure-pointer-events-none';
-import { noInlineComponentProp } from './rules/no-inline-component-prop';
 import { noObjectValuesOnStrings } from './rules/no-object-values-on-strings';
 import { keyOnlyOutermostElement } from './rules/key-only-outermost-element';
 import { noUnnecessaryDestructuring } from './rules/no-unnecessary-destructuring';
@@ -214,7 +213,6 @@ module.exports = {
         '@blumintinc/blumint/no-memoize-on-static': 'error',
         '@blumintinc/blumint/no-unsafe-firestore-spread': 'error',
         '@blumintinc/blumint/no-jsx-in-hooks': 'error',
-        '@blumintinc/blumint/no-inline-component-prop': 'error',
         '@blumintinc/blumint/enforce-assert-throws': 'error',
         '@blumintinc/blumint/prefer-batch-operations': 'error',
         '@blumintinc/blumint/no-complex-cloud-params': 'error',
@@ -358,7 +356,6 @@ module.exports = {
     'no-memoize-on-static': noMemoizeOnStatic,
     'no-unsafe-firestore-spread': noUnsafeFirestoreSpread,
     'no-jsx-in-hooks': noJsxInHooks,
-    'no-inline-component-prop': noInlineComponentProp,
     'enforce-assert-throws': enforceAssertThrows,
     'prefer-batch-operations': preferBatchOperations,
     'no-complex-cloud-params': noComplexCloudParams,
