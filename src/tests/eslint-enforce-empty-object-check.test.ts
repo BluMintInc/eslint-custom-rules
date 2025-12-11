@@ -360,6 +360,36 @@ ruleTesterTs.run(
       },
       {
         code: `
+        const payload = getPayload();
+        if (!payload || Object.keys(payload).length < 0) {
+          handle(payload);
+        }
+        `,
+        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } }],
+        output: `
+        const payload = getPayload();
+        if ((!payload || Object.keys(payload).length === 0) || Object.keys(payload).length < 0) {
+          handle(payload);
+        }
+        `,
+      },
+      {
+        code: `
+        const payload = getPayload();
+        if (!payload || 0 > Object.keys(payload).length) {
+          handle(payload);
+        }
+        `,
+        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } }],
+        output: `
+        const payload = getPayload();
+        if ((!payload || Object.keys(payload).length === 0) || 0 > Object.keys(payload).length) {
+          handle(payload);
+        }
+        `,
+      },
+      {
+        code: `
         const config = load();
         if (!config || Object.keys(config).length === 10) {
           return config;
