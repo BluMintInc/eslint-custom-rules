@@ -15,7 +15,7 @@ Enforce using `useDeepCompareMemo` instead of React's `useMemo` when the depende
   - Targets `useMemo` calls whose dependency array contains at least one non-primitive value (object, array, function)
   - Ignores cases where those non-primitives are already memoized above (e.g., via `useMemo`, `useCallback`, `useLatestCallback`, or `useDeepCompareMemo`)
   - Ignores empty dependency arrays
-  - Ignores cases where the `useMemo` returns JSX (covered by separate rules)
+  - Ignores cases where the `useMemo` returns JSX (see `@blumintinc/blumint/react-usememo-should-be-component`)
 
 This rule is auto-fixable: it replaces `useMemo` with `useDeepCompareMemo` and adds an import:
 
@@ -69,7 +69,7 @@ const UserProfile: FC<UserProfileProps> = ({ userConfig }) => {
 - Primitives only: dependency arrays with only primitives are ignored
 - Already memoized: identifiers produced by `useMemo`, `useCallback`, `useLatestCallback`, or `useDeepCompareMemo` are considered stable and won’t trigger
 - Empty dependency arrays: ignored
-- JSX in memo body: rule does not trigger when the memo body contains JSX
+- JSX in memo body: rule does not trigger when the memo body contains JSX (handled by `@blumintinc/blumint/react-usememo-should-be-component`)
 
 ### When Not To Use It
 

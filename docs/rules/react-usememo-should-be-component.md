@@ -92,8 +92,8 @@ export const LivestreamInfo = ({ streamer, title, description }) => {
 
 You might consider disabling this rule if:
 
-1. You are working in a legacy codebase where extracting components is infeasible.
-2. You have a benchmarked performance requirement that is only satisfied by memoizing JSX inside `useMemo` (this is rare; prefer `React.memo` first).
+1. Legacy code makes component extraction infeasible and the churn risk outweighs the benefit.
+2. Only a benchmarked hotspot is satisfied by memoizing JSX inside `useMemo` (this is rare; prefer `React.memo` first).
 
 ## Rule Exceptions
 

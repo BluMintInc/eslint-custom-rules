@@ -1,26 +1,10 @@
 /* eslint-disable max-lines */
-import { execSync } from 'node:child_process';
+import { executeCommand } from './agent-check';
 import type { Input } from './types';
 
 const BOT_NAME_PATTERN = /(coderabbit|graphite|cursor|bugbot)/i;
 const SUCCESS_PATTERN = /✅ All .* are resolved/;
 const NO_PR_PATTERN = /No open pull request found/i;
-
-function executeCommand(command: string) {
-  try {
-    const output = execSync(command, { encoding: 'utf-8', stdio: 'pipe' });
-    return { isSuccess: true, output } as const;
-  } catch (error: unknown) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const stdout = (error as any).stdout ? String((error as any).stdout) : null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const stderr = (error as any).stderr ? String((error as any).stderr) : null;
-    return {
-      isSuccess: false,
-      output: `${stdout ?? ''}\n${stderr ?? ''}`,
-    } as const;
-  }
-}
 
 export function extractPrReviewContext(branchName: string) {
   // Pattern: .*-review-pr-(\d+)-(\d+)(?:[/-]|$)
@@ -44,7 +28,7 @@ function fetchAllReviews(prNumber: number) {
       repository(owner: "${
         process.env.GITHUB_REPOSITORY?.split('/')[0] || 'BluMintInc'
       }", name: "${
-    process.env.GITHUB_REPOSITORY?.split('/')[1] || 'custom-eslint-rules'
+    process.env.GITHUB_REPOSITORY?.split('/')[1] || 'eslint-custom-rules'
   }") {
         pullRequest(number: ${prNumber}) {
           reviews(first: 100) {
@@ -66,7 +50,12 @@ function fetchAllReviews(prNumber: number) {
     return null;
   }
 
-  return JSON.parse(result.output);
+  try {
+    return JSON.parse(result.output);
+  } catch (error) {
+    console.error('Failed to parse review list response:', error);
+    return null;
+  }
 }
 
 export function determineBotReview(params: {
@@ -294,7 +283,9 @@ ${botSection}
 ${humanSection}`;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+/**
+ * _input reserved for future context-aware checks (e.g., branching on task type).
+ */
 export function performPrReviewCheck(_input: Input) {
   try {
     // Extract branch name from git

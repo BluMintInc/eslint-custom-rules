@@ -274,4 +274,3 @@ jobs:
           gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews \
             -f event=COMMENT \
             -f body="✅ Launched Cursor agent to address review ${{ steps.context.outputs.review_id }} (${{ steps.comments.outputs.count }} comment(s)). View agent: $URL. The agent pushes fixes directly to this PR branch. (Note: Could not anchor to a diff line to make this resolvable.)"
-

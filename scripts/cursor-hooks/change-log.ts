@@ -42,14 +42,16 @@ export type MutableChangeLog = {
   [conversationId: string]: MutableConversationEntry;
 };
 
-export function loadLogFile() {
-  if (!existsSync(LOG_FILE)) return {} as const;
+export function loadLogFile(): MutableChangeLog {
+  if (!existsSync(LOG_FILE)) return {};
   try {
     const content = JSON.parse(readFileSync(LOG_FILE, 'utf-8'));
-    const log: MutableChangeLog = content;
-    return log;
+    if (content && typeof content === 'object') {
+      return content as MutableChangeLog;
+    }
+    return {};
   } catch {
-    return {} as const;
+    return {};
   }
 }
 
@@ -64,10 +66,11 @@ function applyEntryModification(
   modifier: (entry: MutableConversationEntry) => void,
 ) {
   const log = loadLogFile();
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-  const logEntry = log[conversationId] || {};
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-  if (!logEntry._metadata) logEntry._metadata = {};
+  const logEntry: MutableConversationEntry =
+    log[conversationId] ?? { _metadata: {} };
+  if (!logEntry._metadata) {
+    logEntry._metadata = {};
+  }
   modifier(logEntry);
   log[conversationId] = logEntry;
   saveLogFile(log);

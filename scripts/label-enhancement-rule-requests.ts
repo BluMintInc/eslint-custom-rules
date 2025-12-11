@@ -216,11 +216,34 @@ async function main() {
     batchIndex += 1;
     console.log(`Starting batch ${batchIndex} (${batch.length} issues)...`);
 
-    await Promise.all(
+    const results = await Promise.allSettled(
       batch.map(async (issue) => {
         await addLabels(issue);
+        return issue.number;
       }),
     );
+
+    const failures = results
+      .map((result, idx) => ({ result, issue: batch[idx] }))
+      .filter(
+        (
+          outcome,
+        ): outcome is {
+          result: PromiseRejectedResult;
+          issue: IssueSearchItem;
+        } => {
+          return outcome.result.status === 'rejected';
+        },
+      );
+
+    for (const failure of failures) {
+      const reason = failure.result.reason;
+      const message =
+        reason instanceof Error ? reason.message : String(reason ?? 'unknown');
+      console.error(
+        `Failed to add labels for issue #${failure.issue.number}: ${message}`,
+      );
+    }
 
     index += batch.length;
     const remaining = issues.length - index;

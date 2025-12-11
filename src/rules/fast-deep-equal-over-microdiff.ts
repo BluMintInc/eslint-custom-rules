@@ -31,6 +31,33 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
     const reportedNodes = new Set<TSESTree.Node>();
     let plannedFastDeepEqualImport = false;
 
+    const isChainExpression = (
+      node: TSESTree.Node,
+    ): node is TSESTree.ChainExpression =>
+      node.type === AST_NODE_TYPES.ChainExpression;
+
+    function isMicrodiffCallee(
+      callee: TSESTree.LeftHandSideExpression,
+    ): boolean {
+      if (
+        callee.type === AST_NODE_TYPES.Identifier &&
+        callee.name === microdiffImportName
+      ) {
+        return true;
+      }
+      if (
+        callee.type === AST_NODE_TYPES.MemberExpression &&
+        !callee.computed &&
+        callee.object.type === AST_NODE_TYPES.Identifier &&
+        callee.object.name === microdiffImportName &&
+        callee.property.type === AST_NODE_TYPES.Identifier &&
+        (callee.property.name === 'diff' || callee.property.name === 'default')
+      ) {
+        return true;
+      }
+      return false;
+    }
+
     /**
      * Resolve an identifier to its variable and return the initializer CallExpression if it's a microdiff call.
      */
@@ -131,6 +158,17 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
         ) {
           return true;
         }
+        // Accept optional chaining: identifier?.length represented as ChainExpression
+        if (
+          parent.type === AST_NODE_TYPES.ChainExpression &&
+          parent.expression.type === AST_NODE_TYPES.MemberExpression &&
+          parent.expression.object === idNode &&
+          !parent.expression.computed &&
+          parent.expression.property.type === AST_NODE_TYPES.Identifier &&
+          parent.expression.property.name === 'length'
+        ) {
+          return true;
+        }
         return false;
       });
     }
@@ -142,6 +180,7 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
     function getMicrodiffCallFromLengthAccess(
       member: TSESTree.MemberExpression,
     ): { diffCall?: TSESTree.CallExpression; viaIdentifier: boolean } {
+      if (!hasMicrodiffImport) return { viaIdentifier: false };
       if (
         member.property.type !== AST_NODE_TYPES.Identifier ||
         member.property.name !== 'length'
@@ -152,8 +191,7 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
       const obj = member.object;
       if (
         obj.type === AST_NODE_TYPES.CallExpression &&
-        obj.callee.type === AST_NODE_TYPES.Identifier &&
-        obj.callee.name === microdiffImportName
+        isMicrodiffCallee(obj.callee)
       ) {
         return { diffCall: obj, viaIdentifier: false };
       }
@@ -226,13 +264,17 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
         }
       }
 
-      // Check for unary expressions like !diff(a, b).length or !changes.length
+      // Check for unary expressions like !diff(a, b).length or !changes.length (including optional chaining)
       if (
         node.type === AST_NODE_TYPES.UnaryExpression &&
         node.operator === '!'
       ) {
-        if (node.argument.type === AST_NODE_TYPES.MemberExpression) {
-          const { diffCall } = getMicrodiffCallFromLengthAccess(node.argument);
+        const argumentNode = node.argument as TSESTree.Node;
+        const target = isChainExpression(argumentNode)
+          ? argumentNode.expression
+          : argumentNode;
+        if (target.type === AST_NODE_TYPES.MemberExpression) {
+          const { diffCall } = getMicrodiffCallFromLengthAccess(target);
           if (diffCall) {
             return {
               isEquality: true, // !<expr>.length is equivalent to <expr>.length === 0
@@ -295,7 +337,8 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
      */
     function getLineBaseIndent(node: TSESTree.Node): string {
       const text = sourceCode.text;
-      const start = node.range ? node.range[0] : 0;
+      const start =
+        node.range?.[0] ?? sourceCode.getIndexFromLoc(node.loc.start);
       const lineStart = text.lastIndexOf('\n', start - 1) + 1;
       let i = lineStart;
       let indent = '';
@@ -386,7 +429,13 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
           const declaration = defNode.parent;
           // Only remove if it's the only declaration in the const/let statement
           if (declaration.declarations.length === 1) {
-            fixes.push(fixer.remove(declaration));
+            const text = sourceCode.text;
+            const startOfLine =
+              text.lastIndexOf('\n', declaration.range[0] - 1) + 1;
+            const nextNewline = text.indexOf('\n', declaration.range[1]);
+            const endOfLine =
+              nextNewline === -1 ? declaration.range[1] : nextNewline + 1;
+            fixes.push(fixer.removeRange([startOfLine, endOfLine]));
           }
         }
       }
@@ -496,12 +545,7 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
           node: node.test,
           messageId: 'useFastDeepEqual',
           fix(fixer) {
-            return createFix(
-              fixer,
-              node.test,
-              diffCall,
-              isEquality,
-            );
+            return createFix(fixer, node.test, diffCall, isEquality);
           },
         });
       },
@@ -510,24 +554,20 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
       ReturnStatement(node) {
         if (!hasMicrodiffImport) return;
         // Skip if we've already reported this node or if there's no argument
-        if (!node.argument || reportedNodes.has(node.argument)) {
+        const argument = node.argument;
+        if (!argument || reportedNodes.has(argument)) {
           return;
         }
 
-        const result = isMicrodiffEqualityCheck(node.argument);
+        const result = isMicrodiffEqualityCheck(argument);
         const { diffCall, isEquality } = result;
         if (!diffCall) return;
-        reportedNodes.add(node.argument);
+        reportedNodes.add(argument);
         context.report({
-          node: node.argument,
+          node: argument,
           messageId: 'useFastDeepEqual',
           fix(fixer) {
-            return createFix(
-              fixer,
-              node.argument,
-              diffCall,
-              isEquality,
-            );
+            return createFix(fixer, argument, diffCall, isEquality);
           },
         });
       },

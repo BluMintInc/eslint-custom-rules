@@ -177,6 +177,14 @@ scripts/
 8. **Check-Your-Work Prompt**: Self-review prompt
 9. **Expand Tests Prompt**: For rule implementations only (requires 20+ tests)
 
+#### Critical Insights for Maintainers
+
+- Order is fail-fast by design: stop on build errors before lint/test to avoid long runs when TypeScript cannot compile.
+- Common pain points: flaky tests or slow lint/test runs can loop; rerun locally with the same commands in stop.sh and scope to changed files when possible.
+- Rule structure validation loops if required files are missing or src/index.ts exports are incomplete; ensure all items in the checklist above exist before reruns.
+- MAX_LOOPS in change-log.ts (surfaced via .cursor/hooks.json) prevents infinite prompting; increase only when intentionally allowing longer runs.
+- Hook side-effects cascade: PR review checks can short-circuit quality checks, and change-log updates influence later prompts; watch the console output to see which stage stopped the run.
+
 ### Rule Request Detection
 
 The `<!-- rule-request -->` flag in the first prompt marks conversations as rule implementations:

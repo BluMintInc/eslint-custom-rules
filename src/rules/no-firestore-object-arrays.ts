@@ -3,12 +3,7 @@ import { createRule } from '../utils/createRule';
 
 type MessageIds = 'noObjectArrays';
 
-type ParenthesizedTypeNode = TSESTree.TypeNode & {
-  typeAnnotation: TSESTree.TypeNode;
-};
-
-const PAREN_TYPE =
-  (AST_NODE_TYPES as any).TSParenthesizedType ?? 'TSParenthesizedType';
+type ParenthesizedTypeNode = TSESTree.TSParenthesizedType;
 
 const PRIMITIVE_TYPES = new Set([
   'string',
@@ -22,18 +17,24 @@ const PRIMITIVE_TYPES = new Set([
 ]);
 
 const isInFirestoreTypesDirectory = (filename: string): boolean => {
+  if (!filename || filename === '<input>') return false;
   const normalized = filename.replace(/\\/g, '/');
-  // Match typical monorepo layouts
-  return normalized.includes('/types/firestore');
+  if (normalized.includes('/node_modules/') || normalized.includes('/dist/')) {
+    return false;
+  }
+  // Match typical mono/multi-repo layouts
+  return normalized.includes('/types/firestore/');
 };
 
 const getRightmostIdentifierName = (
   name: TSESTree.TSQualifiedName | TSESTree.Identifier,
 ): string => {
-  if (name.type === AST_NODE_TYPES.Identifier) {
-    return name.name;
+  let cur: TSESTree.TSQualifiedName | TSESTree.Identifier = name;
+  // Walk rightwards until we reach an Identifier
+  while (cur.type !== AST_NODE_TYPES.Identifier) {
+    cur = cur.right;
   }
-  return getRightmostIdentifierName(name.right);
+  return cur.name;
 };
 
 const isArrayGenericReference = (node: TSESTree.TSTypeReference): boolean => {
@@ -46,8 +47,7 @@ const isArrayGenericReference = (node: TSESTree.TSTypeReference): boolean => {
 const isParenthesizedType = (
   node: TSESTree.TypeNode,
 ): node is ParenthesizedTypeNode => {
-  // Use enum if available; fall back to string check for compatibility
-  return (node as { type?: string }).type === PAREN_TYPE;
+  return node.type === AST_NODE_TYPES.TSParenthesizedType;
 };
 
 const unwrapArrayElementType = (node: TSESTree.TypeNode): TSESTree.TypeNode => {
@@ -175,6 +175,18 @@ Prefer:
             visitNode(n.declaration as unknown as TSESTree.Node);
           break;
         }
+        case AST_NODE_TYPES.ExportDefaultDeclaration: {
+          if (n.declaration) {
+            visitNode(n.declaration as unknown as TSESTree.Node);
+          }
+          break;
+        }
+        case AST_NODE_TYPES.TSExportAssignment: {
+          if (n.expression) {
+            visitNode(n.expression as unknown as TSESTree.Node);
+          }
+          break;
+        }
         case AST_NODE_TYPES.TSModuleDeclaration: {
           const body = (n.body as any) || null;
           if (body && body.type === AST_NODE_TYPES.TSModuleBlock) {
@@ -198,28 +210,47 @@ Prefer:
     }
 
     const seenAlias = new Set<string>();
+    const visitingAliases = new Set<string>();
 
-    const isPrimitiveLikeAlias = (name: string, depth = 0): boolean => {
-      if (depth > 5) return false; // guard against cycles
+    const isPrimitiveLikeAlias = (
+      name: string,
+      recursionDepth: number,
+    ): boolean => {
+      if (seenAlias.has(name)) return true;
+      if (recursionDepth > 50) return false;
       if (PRIMITIVE_TYPES.has(name)) return true;
       if (enumNames.has(name)) return true; // enums are non-object primitives for our purposes
       const aliased = aliasNameToType.get(name);
       if (!aliased) return false;
+      if (visitingAliases.has(name)) {
+        return false;
+      }
+      visitingAliases.add(name);
+      seenAlias.add(name);
       // Determine if the alias ultimately resolves to only primitive-like/literal types
       const node = aliased as TSESTree.TypeNode;
-      const result = isPrimitiveLikeTypeNode(node, depth + 1);
-      if (result) seenAlias.add(name);
+      const result = isPrimitiveLikeTypeNode(node, recursionDepth + 1);
+      visitingAliases.delete(name);
+      if (result) {
+        seenAlias.add(name);
+      } else {
+        // Remove optimistic marking when resolution fails
+        seenAlias.delete(name);
+      }
       return result;
     };
 
     const isPrimitiveLikeTypeNode = (
       node: TSESTree.TypeNode,
-      depth = 0,
+      recursionDepth = 0,
     ): boolean => {
+      if (recursionDepth > 25) {
+        return false;
+      }
       if (isParenthesizedType(node)) {
         return isPrimitiveLikeTypeNode(
           (node as ParenthesizedTypeNode).typeAnnotation,
-          depth + 1,
+          recursionDepth + 1,
         );
       }
       switch (node.type) {
@@ -242,19 +273,19 @@ Prefer:
             const name = ref.typeName.name;
             if (PRIMITIVE_TYPES.has(name) || enumNames.has(name)) return true;
             if (seenAlias.has(name)) return true;
-            return isPrimitiveLikeAlias(name, depth + 1);
+            return isPrimitiveLikeAlias(name, recursionDepth + 1);
           }
           if (ref.typeName.type === AST_NODE_TYPES.TSQualifiedName) {
             const name = getRightmostIdentifierName(ref.typeName);
             if (PRIMITIVE_TYPES.has(name) || enumNames.has(name)) return true;
             if (seenAlias.has(name)) return true;
-            return isPrimitiveLikeAlias(name, depth + 1);
+            return isPrimitiveLikeAlias(name, recursionDepth + 1);
           }
           return false;
         }
         case AST_NODE_TYPES.TSUnionType: {
           return (node.types as TSESTree.TypeNode[]).every((t) =>
-            isPrimitiveLikeTypeNode(t, depth + 1),
+            isPrimitiveLikeTypeNode(t, recursionDepth + 1),
           );
         }
         case AST_NODE_TYPES.TSTypeOperator: {
@@ -264,7 +295,7 @@ Prefer:
           return isPrimitiveLikeTypeNode(
             (node as TSESTree.TSTypeOperator)
               .typeAnnotation as TSESTree.TypeNode,
-            depth + 1,
+            recursionDepth + 1,
           );
         }
         case (AST_NODE_TYPES as any).TSTemplateLiteralType as any: {
@@ -306,7 +337,7 @@ Prefer:
           if (interfaceNames.has(refName)) return true;
           if (enumNames.has(refName)) return false;
           if (aliasNameToType.has(refName)) {
-            return !isPrimitiveLikeAlias(refName);
+            return !isPrimitiveLikeAlias(refName, 0);
           }
           // Unknown reference: do not assume object to avoid false positives
           return false;

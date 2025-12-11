@@ -123,7 +123,7 @@ function fetchCodeRabbitSummary(prNumber: number): string {
       true
     );
     const sanitized = sanitizeCodeRabbitSummary(result ?? '');
-    return sanitized ?? '(No CodeRabbit summary found)';
+    return sanitized || '(No CodeRabbit summary found)';
   } catch {
     return '(No CodeRabbit summary found)';
   }
@@ -172,6 +172,17 @@ export function buildReviewContext(prNumber: number, reviewBatch: number | undef
         author_type: isBot ? 'Bot' : 'User',
         is_bot: isBot,
         comment_count: 0, // Will be updated after fetching comments
+      };
+    }
+
+    if (!review) {
+      // Fallback: provide a placeholder review to keep downstream tooling stable
+      review = {
+        id: 0,
+        author: '(Review author)',
+        author_type: 'User',
+        is_bot: false,
+        comment_count: 0,
       };
     }
 
@@ -379,13 +390,8 @@ async function main(): Promise<void> {
   );
   console.log('✓ Review context built\n');
 
-  // Determine if bot review: flags override context-derived detection
-  const isBot =
-    options.forceBot === true
-      ? true
-      : options.forceHuman === true
-        ? false
-        : context.review?.is_bot ?? false;
+  // Determine if bot review (value already resolved in context)
+  const isBot = context.review?.is_bot ?? false;
   console.log(`Review type: ${isBot ? 'AI Bot' : 'Human'}`);
 
   // Fetch unresolved comments
@@ -401,10 +407,17 @@ async function main(): Promise<void> {
   }
   console.log(`✓ Found ${commentCount} unresolved comment(s)\n`);
 
-  // Update context with actual comment count if review was synthetic (created from force flags)
-  if (context.review && context.review.comment_count === 0 && (options.forceBot || options.forceHuman) && options.reviewBatch === undefined) {
-    context.review.comment_count = commentCount;
-  }
+  // Build final context without mutating the original
+  const finalContext: ReviewContext =
+    context.review &&
+    context.review.comment_count === 0 &&
+    (options.forceBot || options.forceHuman) &&
+    options.reviewBatch === undefined
+      ? {
+          ...context,
+          review: { ...context.review, comment_count: commentCount },
+        }
+      : context;
 
   // Write context and comments to temp files
   const repoRoot = runCommand('git rev-parse --show-toplevel', true);
@@ -414,7 +427,7 @@ async function main(): Promise<void> {
   const contextPath = path.join(tmpDir, 'pr-review-context.json');
   const commentsPath = path.join(tmpDir, 'pr-review-comments.md');
 
-  fs.writeFileSync(contextPath, JSON.stringify(context, null, 2));
+  fs.writeFileSync(contextPath, JSON.stringify(finalContext, null, 2));
   fs.writeFileSync(commentsPath, comments);
 
   // Build prompt using existing prompt builder
@@ -436,33 +449,23 @@ async function main(): Promise<void> {
 }
 
 // Check if this file is being run directly (not imported)
-/** Conditional to avoid Jest parsing issues */
 const isDirectExecution = () => {
-  // Check if we're in a test environment first (Jest sets NODE_ENV or we can detect Jest globals)
-  // This check happens before any import.meta access to avoid parse errors in CommonJS
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const isTestEnv = process.env.NODE_ENV === 'test' || typeof (globalThis as any).jest !== 'undefined';
-  
-  if (isTestEnv) {
-    // In test environment (CommonJS), use endsWith pattern as fallback
-    // This avoids parse-time evaluation of import.meta which causes syntax errors
-    return process.argv[1]?.endsWith('address-review.ts') ?? false;
-  }
-  
-  // In ESM context (tsx), use import.meta.url comparison for robust detection
-  // Use Function constructor to defer evaluation until runtime, avoiding parse errors
+  const scriptPath = process.argv[1];
+  if (!scriptPath) return false;
+
   try {
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    const getMetaUrl = new Function('return (typeof import !== "undefined" && import.meta && import.meta.url) ? import.meta.url : null')();
-    if (getMetaUrl) {
-      return process.argv[1] === fileURLToPath(getMetaUrl);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const metaUrl = (typeof import.meta !== 'undefined'
+      ? (import.meta as any)?.url
+      : null) as string | null;
+    if (metaUrl) {
+      return scriptPath === fileURLToPath(metaUrl);
     }
   } catch {
-    // Fall through to fallback
+    /* ignore and fall back */
   }
-  
-  // Fallback if import.meta is not available
-  return process.argv[1]?.endsWith('address-review.ts') ?? false;
+
+  return scriptPath.endsWith('address-review.ts');
 };
 
 // Run main function only if executed directly

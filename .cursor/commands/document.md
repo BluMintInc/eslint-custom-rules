@@ -91,6 +91,7 @@ If context is unclear, use Interactive MCP tools to ask the user for clarificati
 Create the new `.mdc` file following the template from `system-documentation.mdc`:
 
 #### Frontmatter
+
 ```markdown
 ---
 description: [One-line description of the system]
