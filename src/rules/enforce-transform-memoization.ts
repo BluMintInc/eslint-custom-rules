@@ -48,7 +48,10 @@ export const enforceTransformMemoization = createRule<[], MessageIds>({
       if (key.type === AST_NODE_TYPES.Identifier) {
         return key.name;
       }
-      if (key.type === AST_NODE_TYPES.Literal && typeof key.value === 'string') {
+      if (
+        key.type === AST_NODE_TYPES.Literal &&
+        typeof key.value === 'string'
+      ) {
         return key.value;
       }
       return null;
@@ -56,9 +59,7 @@ export const enforceTransformMemoization = createRule<[], MessageIds>({
 
     const isFunctionExpression = (
       node: TSESTree.Node,
-    ): node is
-      | TSESTree.ArrowFunctionExpression
-      | TSESTree.FunctionExpression =>
+    ): node is TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression =>
       node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
       node.type === AST_NODE_TYPES.FunctionExpression;
 
@@ -143,9 +144,7 @@ export const enforceTransformMemoization = createRule<[], MessageIds>({
     };
 
     const collectExternalDependencies = (
-      callback:
-        | TSESTree.ArrowFunctionExpression
-        | TSESTree.FunctionExpression,
+      callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
     ): Set<string> => {
       const deps = new Set<string>();
       if (!scopeManager) return deps;
@@ -209,7 +208,9 @@ export const enforceTransformMemoization = createRule<[], MessageIds>({
       for (const element of depsArg.elements) {
         if (!element) continue;
         if (element.type === AST_NODE_TYPES.SpreadElement) continue;
-        addName(extractFromExpression(element as unknown as TSESTree.Expression));
+        addName(
+          extractFromExpression(element as unknown as TSESTree.Expression),
+        );
       }
 
       return dependencyNames;
@@ -272,7 +273,11 @@ export const enforceTransformMemoization = createRule<[], MessageIds>({
         const variable = findVariableInScopeChain(unwrapped);
         const init = variable ? getVariableInitializer(variable) : null;
         if (init) {
-          return resolveValueForKey(init as TSESTree.Expression, key, depth + 1);
+          return resolveValueForKey(
+            init as TSESTree.Expression,
+            key,
+            depth + 1,
+          );
         }
       }
 
@@ -479,7 +484,12 @@ export const enforceTransformMemoization = createRule<[], MessageIds>({
           };
         }
 
-        return analyzeMemoization(init, propName, expectedHook, seenIdentifiers);
+        return analyzeMemoization(
+          init,
+          propName,
+          expectedHook,
+          seenIdentifiers,
+        );
       }
 
       return {
@@ -496,7 +506,12 @@ export const enforceTransformMemoization = createRule<[], MessageIds>({
       propName: 'transformValue' | 'transformOnChange',
       expectedHook: MemoHook,
     ) => {
-      const result = analyzeMemoization(node, propName, expectedHook, new Set());
+      const result = analyzeMemoization(
+        node,
+        propName,
+        expectedHook,
+        new Set(),
+      );
       if (result.ok) return;
 
       context.report({

@@ -107,6 +107,41 @@ class AlreadyDecorated {
   }
 }`,
     },
+    {
+      filename: 'file.tsx',
+      code: `class SequenceIgnoresInitialJsx {
+  get value() {
+    return (<span />, null);
+  }
+}`,
+    },
+    {
+      filename: 'file.tsx',
+      code: `function logComponent(component: JSX.Element) {
+  console.log(component);
+  return null;
+}
+
+class UsesJsxArgumentOnly {
+  get handler() {
+    return () => logComponent(<div />);
+  }
+}`,
+    },
+    {
+      filename: 'file.tsx',
+      code: `class MutuallyRecursiveLocals {
+  get handler() {
+    function a() {
+      return b();
+    }
+    function b() {
+      return a();
+    }
+    return a;
+  }
+}`,
+    },
   ],
   invalid: [
     {
@@ -316,6 +351,62 @@ class Multi {
   @Memoize()
   methodTwo() {
     return () => <span>Two</span>;
+  }
+}`,
+    },
+    {
+      filename: 'file.tsx',
+      code: `class NestedReturn {
+  get Renderer() {
+    if (shouldRender) {
+      return () => <div>Nested</div>;
+    }
+    return () => null;
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `import { Memoize } from '@blumintinc/typescript-memoize';
+class NestedReturn {
+  @Memoize()
+  get Renderer() {
+    if (shouldRender) {
+      return () => <div>Nested</div>;
+    }
+    return () => null;
+  }
+}`,
+    },
+    {
+      filename: 'file.tsx',
+      code: `class SequenceLastJsx {
+  render() {
+    return (doSomething(), <section />);
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `import { Memoize } from '@blumintinc/typescript-memoize';
+class SequenceLastJsx {
+  @Memoize()
+  render() {
+    return (doSomething(), <section />);
+  }
+}`,
+    },
+    {
+      filename: 'file.tsx',
+      code: `class WrongDecorator {
+  @foo.Memoize()
+  get Component() {
+    return () => <div />;
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `import { Memoize } from '@blumintinc/typescript-memoize';
+class WrongDecorator {
+  @Memoize()
+  @foo.Memoize()
+  get Component() {
+    return () => <div />;
   }
 }`,
     },

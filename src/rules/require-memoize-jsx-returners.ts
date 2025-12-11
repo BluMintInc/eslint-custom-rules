@@ -9,6 +9,7 @@ const MEMOIZE_MODULES = new Set([
   MEMOIZE_PREFERRED_MODULE,
   'typescript-memoize',
 ]);
+const JSX_FACTORY_CALLEES = new Set(['memo']);
 
 type FunctionLike =
   | TSESTree.ArrowFunctionExpression
@@ -25,9 +26,7 @@ function isMemoizeDecorator(
   const matchesAliasIdentifier = (node: TSESTree.Node | null): boolean =>
     !!node && node.type === AST_NODE_TYPES.Identifier && node.name === alias;
 
-  const matchesNamespaceMember = (
-    node: TSESTree.MemberExpression,
-  ): boolean => {
+  const matchesNamespaceMember = (node: TSESTree.MemberExpression): boolean => {
     if (node.computed) return false;
     if (node.property.type !== AST_NODE_TYPES.Identifier) return false;
     if (node.property.name !== 'Memoize') return false;
@@ -41,9 +40,8 @@ function isMemoizeDecorator(
   if (expression.type === AST_NODE_TYPES.CallExpression) {
     const { callee } = expression;
     if (
-      matchesAliasIdentifier(
-        callee.type === AST_NODE_TYPES.MemberExpression ? callee.property : callee,
-      )
+      callee.type === AST_NODE_TYPES.Identifier &&
+      matchesAliasIdentifier(callee)
     ) {
       return true;
     }
@@ -171,23 +169,25 @@ function expressionReturnsJSX(
         }
         if (callee.object.type === AST_NODE_TYPES.Identifier) {
           const targetFn = knownFunctions.get(callee.object.name);
-          if (
-            targetFn &&
-            functionReturnsJSX(targetFn, knownFunctions, cache)
-          ) {
+          if (targetFn && functionReturnsJSX(targetFn, knownFunctions, cache)) {
             return true;
           }
         }
       }
 
       if (
-        expression.arguments.some(
-          (arg) =>
-            arg.type !== AST_NODE_TYPES.SpreadElement &&
-            expressionReturnsJSX(arg as TSESTree.Expression, knownFunctions, cache),
-        )
+        callee.type === AST_NODE_TYPES.Identifier &&
+        JSX_FACTORY_CALLEES.has(callee.name)
       ) {
-        return true;
+        const firstNonSpread = expression.arguments.find(
+          (arg) => arg.type !== AST_NODE_TYPES.SpreadElement,
+        ) as TSESTree.Expression | undefined;
+        if (
+          firstNonSpread &&
+          expressionReturnsJSX(firstNonSpread, knownFunctions, cache)
+        ) {
+          return true;
+        }
       }
 
       return false;
@@ -206,9 +206,13 @@ function expressionReturnsJSX(
       );
 
     case AST_NODE_TYPES.SequenceExpression:
-      return expression.expressions.some((exp) =>
-        expressionReturnsJSX(exp, knownFunctions, cache),
-      );
+      return expression.expressions.length > 0
+        ? expressionReturnsJSX(
+            expression.expressions[expression.expressions.length - 1],
+            knownFunctions,
+            cache,
+          )
+        : false;
 
     case AST_NODE_TYPES.TSAsExpression:
     case AST_NODE_TYPES.TSTypeAssertion:
@@ -224,6 +228,61 @@ function expressionReturnsJSX(
   }
 }
 
+function statementReturnsJSX(
+  statement: TSESTree.Statement,
+  knownFunctions: Map<string, FunctionLike>,
+  cache: WeakMap<FunctionLike, boolean>,
+): boolean {
+  switch (statement.type) {
+    case AST_NODE_TYPES.ReturnStatement:
+      return expressionReturnsJSX(statement.argument, knownFunctions, cache);
+    case AST_NODE_TYPES.BlockStatement:
+      return statement.body.some((child) =>
+        statementReturnsJSX(child, knownFunctions, cache),
+      );
+    case AST_NODE_TYPES.IfStatement:
+      return (
+        statementReturnsJSX(statement.consequent, knownFunctions, cache) ||
+        (statement.alternate
+          ? statementReturnsJSX(statement.alternate, knownFunctions, cache)
+          : false)
+      );
+    case AST_NODE_TYPES.SwitchStatement:
+      return statement.cases.some((caseNode) =>
+        caseNode.consequent.some((consequent) =>
+          statementReturnsJSX(consequent, knownFunctions, cache),
+        ),
+      );
+    case AST_NODE_TYPES.TryStatement:
+      if (statementReturnsJSX(statement.block, knownFunctions, cache)) {
+        return true;
+      }
+      if (
+        statement.handler &&
+        statementReturnsJSX(statement.handler.body, knownFunctions, cache)
+      ) {
+        return true;
+      }
+      if (
+        statement.finalizer &&
+        statementReturnsJSX(statement.finalizer, knownFunctions, cache)
+      ) {
+        return true;
+      }
+      return false;
+    case AST_NODE_TYPES.ForStatement:
+    case AST_NODE_TYPES.ForInStatement:
+    case AST_NODE_TYPES.ForOfStatement:
+    case AST_NODE_TYPES.WhileStatement:
+    case AST_NODE_TYPES.DoWhileStatement:
+    case AST_NODE_TYPES.LabeledStatement:
+    case AST_NODE_TYPES.WithStatement:
+      return statementReturnsJSX(statement.body, knownFunctions, cache);
+    default:
+      return false;
+  }
+}
+
 function functionReturnsJSX(
   fn: FunctionLike,
   knownFunctions: Map<string, FunctionLike>,
@@ -233,6 +292,8 @@ function functionReturnsJSX(
   if (cached !== undefined) {
     return cached;
   }
+
+  cache.set(fn, false);
 
   const extendedFunctions = new Map(knownFunctions);
   if (
@@ -259,16 +320,7 @@ function functionReturnsJSX(
   }
 
   if (fn.body.type === AST_NODE_TYPES.BlockStatement) {
-    for (const statement of fn.body.body) {
-      if (statement.type === AST_NODE_TYPES.ReturnStatement) {
-        if (
-          expressionReturnsJSX(statement.argument, extendedFunctions, cache)
-        ) {
-          returnsJSX = true;
-          break;
-        }
-      }
-    }
+    returnsJSX = statementReturnsJSX(fn.body, extendedFunctions, cache);
   } else if (expressionReturnsJSX(fn.body, extendedFunctions, cache)) {
     returnsJSX = true;
   }
@@ -318,7 +370,9 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
               hasMemoizeImport = true;
               memoizeAlias = specifier.local?.name ?? memoizeAlias;
             }
-          } else if (specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
+          } else if (
+            specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier
+          ) {
             hasMemoizeImport = true;
             memoizeNamespace = specifier.local.name;
           } else if (specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
@@ -373,7 +427,8 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
             if (!hasMemoizeImport && !scheduledImportFix) {
               const programBody = (sourceCode.ast as TSESTree.Program).body;
               const firstImport = programBody.find(
-                (statement) => statement.type === AST_NODE_TYPES.ImportDeclaration,
+                (statement) =>
+                  statement.type === AST_NODE_TYPES.ImportDeclaration,
               );
               const anchorNode = (firstImport ?? programBody[0]) as
                 | TSESTree.Node
@@ -381,13 +436,17 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
 
               if (anchorNode) {
                 const text = sourceCode.text;
-                const anchorStart = anchorNode.range![0];
+                const anchorStart = anchorNode.range?.[0] ?? 0;
                 const lineStart = text.lastIndexOf('\n', anchorStart - 1) + 1;
                 const leadingWhitespace =
-                  text.slice(lineStart, anchorStart).match(/^[ \t]*/)?.[0] ?? '';
+                  text.slice(lineStart, anchorStart).match(/^[ \t]*/)?.[0] ??
+                  '';
                 const importLine = `${leadingWhitespace}import { Memoize } from '${MEMOIZE_PREFERRED_MODULE}';\n`;
                 fixes.push(
-                  fixer.insertTextBeforeRange([lineStart, lineStart], importLine),
+                  fixer.insertTextBeforeRange(
+                    [lineStart, lineStart],
+                    importLine,
+                  ),
                 );
               } else {
                 fixes.push(
