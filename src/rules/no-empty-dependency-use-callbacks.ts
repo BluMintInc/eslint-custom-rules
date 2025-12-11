@@ -76,10 +76,82 @@ function isPropertyKey(
   if (
     parent.type === AST_NODE_TYPES.Property &&
     parent.key === identifier &&
-    !parent.computed
+    !parent.computed &&
+    !parent.shorthand
   ) {
     return true;
   }
+  return false;
+}
+
+function collectNearestBlockTypeBindings(
+  node: TSESTree.Node,
+): Set<string> {
+  let current: TSESTree.Node | undefined = node.parent ?? undefined;
+  while (current) {
+    if (current.type === AST_NODE_TYPES.BlockStatement) {
+      const localTypes = new Set<string>();
+      for (const statement of current.body) {
+        if (
+          statement.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
+          statement.type === AST_NODE_TYPES.TSInterfaceDeclaration
+        ) {
+          localTypes.add(statement.id.name);
+        }
+      }
+      return localTypes;
+    }
+    if (current.type === AST_NODE_TYPES.Program) {
+      break;
+    }
+    current = current.parent ?? undefined;
+  }
+  return new Set<string>();
+}
+
+function usesLocalTypeBindings(
+  typeRoots: TSESTree.Node[],
+  localTypes: Set<string>,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+): boolean {
+  if (!typeRoots.length || localTypes.size === 0) {
+    return false;
+  }
+  const visitorKeys = sourceCode.visitorKeys;
+  const stack = [...typeRoots];
+
+  while (stack.length) {
+    const current = stack.pop() as TSESTree.Node;
+    if (current.type === AST_NODE_TYPES.Identifier && localTypes.has(current.name)) {
+      return true;
+    }
+    if (current.type === AST_NODE_TYPES.TSQualifiedName) {
+      let left: TSESTree.EntityName = current.left;
+      while (left.type === AST_NODE_TYPES.TSQualifiedName) {
+        left = left.left;
+      }
+      if (left.type === AST_NODE_TYPES.Identifier && localTypes.has(left.name)) {
+        return true;
+      }
+      stack.push(current.right);
+      continue;
+    }
+    const keys = visitorKeys[current.type];
+    if (!keys) continue;
+    for (const key of keys) {
+      const value = (current as unknown as Record<string, unknown>)[key];
+      if (Array.isArray(value)) {
+        for (const element of value) {
+          if (element && typeof (element as TSESTree.Node).type === 'string') {
+            stack.push(element as TSESTree.Node);
+          }
+        }
+      } else if (value && typeof (value as TSESTree.Node).type === 'string') {
+        stack.push(value as TSESTree.Node);
+      }
+    }
+  }
+
   return false;
 }
 
@@ -134,11 +206,11 @@ function analyzeExternalReferences(
 ): { hasComponentScopeRef: boolean } {
   const scopeManager = context.getSourceCode().scopeManager;
   if (!scopeManager) {
-    return { hasComponentScopeRef: false };
+    return { hasComponentScopeRef: true };
   }
-  const scope = scopeManager.acquire(fn, true);
+  const scope = scopeManager.acquire(fn, true) ?? scopeManager.acquire(fn);
   if (!scope) {
-    return { hasComponentScopeRef: false };
+    return { hasComponentScopeRef: true };
   }
 
   let hasComponentScopeRef = false;
@@ -162,6 +234,32 @@ function analyzeExternalReferences(
     if (!isImport && !isModuleOrGlobal) {
       hasComponentScopeRef = true;
       break;
+    }
+  }
+
+  if (!hasComponentScopeRef) {
+    const localTypes = collectNearestBlockTypeBindings(fn);
+    const typeRoots: TSESTree.Node[] = [];
+    if (fn.returnType) {
+      typeRoots.push(fn.returnType.typeAnnotation);
+    }
+    if (fn.typeParameters) {
+      typeRoots.push(fn.typeParameters);
+    }
+    for (const param of fn.params) {
+      if ('typeAnnotation' in param && param.typeAnnotation) {
+        typeRoots.push(param.typeAnnotation.typeAnnotation);
+      } else if (
+        param.type === AST_NODE_TYPES.AssignmentPattern &&
+        'typeAnnotation' in param.left &&
+        param.left.typeAnnotation
+      ) {
+        typeRoots.push(param.left.typeAnnotation.typeAnnotation);
+      }
+    }
+
+    if (usesLocalTypeBindings(typeRoots, localTypes, context.getSourceCode())) {
+      hasComponentScopeRef = true;
     }
   }
 

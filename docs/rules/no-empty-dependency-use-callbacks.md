@@ -131,6 +131,15 @@ function Component() {
 }
 ```
 
+```tsx
+// Allowed when callback depends on a component-scoped type alias
+function Component() {
+  type HandlerEvent = { value: string };
+  const handler = useCallback((event: HandlerEvent) => event.value.length, []);
+  return <div>{handler({ value: 'a' })}</div>;
+}
+```
+
 ## Invalid
 
 ```tsx
@@ -168,3 +177,4 @@ function Component() {
 ```
 
 Callbacks that reference component scope, return JSX, or are declared in multi-variable statements are reported without an auto-fix to avoid unsafe refactors. If a callback must stay for memoization or HMR reasons, add an `eslint-disable-next-line @blumintinc/blumint/no-empty-dependency-use-callbacks` comment with a short justification.
+Callbacks that rely on component-scoped type aliases or interfaces are treated as component-bound and will not be hoisted.

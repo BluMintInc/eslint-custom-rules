@@ -64,6 +64,22 @@ function Component() {
     ],
   },
   `
+import { useCallback, useId } from 'react';
+function Component() {
+  const componentId = useId();
+  const buildPayload = useCallback(() => ({ componentId }), []);
+  return <div data-id={buildPayload().componentId} />;
+}
+`,
+  `
+import { useCallback } from 'react';
+function Component() {
+  type HandlerEvent = { value: string };
+  const handler = useCallback((event: HandlerEvent) => event.value.length, []);
+  return <div>{handler({ value: 'a' })}</div>;
+}
+`,
+  `
 import { useCallback } from 'react';
 function Component({ formatter }) {
   const formatPrice = useCallback((price) => formatter(price), [formatter]);
