@@ -33,6 +33,8 @@
     "test": "jest --passWithNoTests --reporters=default --reporters=jest-junit",
     "test:ci": "jest --ci --passWithNoTests --reporters=default --reporters=jest-junit",
     "address-review": "tsx ./.github/scripts/address-review.ts",
+    "address-merge-conflicts": "tsx ./.github/scripts/address-merge-conflicts.ts",
+    "check-merge-conflicts": "bash ./scripts/check-merge-conflicts.sh",
     "merge-review": "tsx ./.github/scripts/merge-review.ts",
     "fetch-unresolved-comments": "./scripts/pr-check-comments.sh",
     "fetch-unresolved-bot-comments": "./scripts/pr-check-bot-comments.sh",
