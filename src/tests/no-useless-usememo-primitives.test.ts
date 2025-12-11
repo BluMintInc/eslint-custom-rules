@@ -32,6 +32,18 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
     },
     {
       code: `
+        const promised = useMemo(async () => 42, []);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+    },
+    {
+      code: `
+        const promisedBlock = useMemo(async () => { return 42; }, []);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+    },
+    {
+      code: `
         const checksum = useMemo(() => computeChecksum(largeData), [largeData]);
       `,
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },

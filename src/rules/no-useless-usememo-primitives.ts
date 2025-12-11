@@ -503,6 +503,10 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
           return;
         }
 
+        if (callback.async) {
+          return;
+        }
+
         const returnedExpression = getReturnedExpression(callback);
         if (!returnedExpression) {
           return;
