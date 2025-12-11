@@ -99,15 +99,22 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
      * Check if a name starts with any of the approved prefixes, their plural forms,
      * or if it starts with an underscore (which indicates a private/internal property)
      */
-    function hasApprovedPrefix(name: string): boolean {
+    function hasApprovedPrefix(
+      name: string,
+      options?: { treatLeadingUnderscoreAsApproved?: boolean },
+    ): boolean {
+      const treatLeadingUnderscoreAsApproved =
+        options?.treatLeadingUnderscoreAsApproved ?? true;
+      const normalizedName = name.startsWith('_') ? name.slice(1) : name;
+
       // Skip checking properties that start with an underscore (private/internal properties)
-      if (name.startsWith('_')) {
+      if (treatLeadingUnderscoreAsApproved && name.startsWith('_')) {
         return true;
       }
 
       return approvedPrefixes.some((prefix) => {
         // Check for exact prefix match
-        if (name.toLowerCase().startsWith(prefix.toLowerCase())) {
+        if (normalizedName.toLowerCase().startsWith(prefix.toLowerCase())) {
           return true;
         }
 
@@ -115,7 +122,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         // Only apply pluralization to certain prefixes that have meaningful plural forms
         if (['is', 'has', 'does', 'was', 'had', 'did'].includes(prefix)) {
           const pluralPrefix = pluralize.plural(prefix);
-          return name.toLowerCase().startsWith(pluralPrefix.toLowerCase());
+          return normalizedName
+            .toLowerCase()
+            .startsWith(pluralPrefix.toLowerCase());
         }
 
         return false;
@@ -123,7 +132,8 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     }
 
     function nameSuggestsBoolean(name: string): boolean {
-      const lowerName = name.toLowerCase();
+      const normalizedName = name.startsWith('_') ? name.slice(1) : name;
+      const lowerName = normalizedName.toLowerCase();
       const suffixKeywords = [
         'active',
         'inactive',
@@ -138,7 +148,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       ];
 
       return (
-        hasApprovedPrefix(name) ||
+        hasApprovedPrefix(normalizedName, {
+          treatLeadingUnderscoreAsApproved: false,
+        }) ||
         suffixKeywords.some((keyword) => lowerName.endsWith(keyword))
       );
     }
@@ -237,7 +249,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         // Check for logical expressions that typically return boolean
         if (
           node.init.type === AST_NODE_TYPES.BinaryExpression &&
-          ['===', '!==', '==', '!=', '>', '<', '>=', '<='].includes(
+          ['===', '!==', '==', '!=', '>', '<', '>=', '<=', 'in', 'instanceof'].includes(
             node.init.operator,
           )
         ) {
@@ -498,7 +510,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         }
         if (
           node.body.type === AST_NODE_TYPES.BinaryExpression &&
-          ['===', '!==', '==', '!=', '>', '<', '>=', '<='].includes(
+          ['===', '!==', '==', '!=', '>', '<', '>=', '<=', 'in', 'instanceof'].includes(
             node.body.operator,
           )
         ) {
@@ -715,9 +727,18 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
 
       if (currentExpression.type === AST_NODE_TYPES.BinaryExpression) {
         if (
-          ['===', '!==', '==', '!=', '>', '<', '>=', '<='].includes(
-            currentExpression.operator,
-          )
+          [
+            '===',
+            '!==',
+            '==',
+            '!=',
+            '>',
+            '<',
+            '>=',
+            '<=',
+            'in',
+            'instanceof',
+          ].includes(currentExpression.operator)
         ) {
           return 'boolean';
         }
@@ -1345,11 +1366,10 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       if (
         ignoreOverriddenGetters &&
         isGetter &&
-        (((node as { override?: boolean }).override ||
+        ((node as { override?: boolean }).override ||
           (node as { abstract?: boolean }).abstract ||
           !node.value?.body ||
-          node.type === AST_NODE_TYPES.TSAbstractMethodDefinition) ??
-          false)
+          node.type === AST_NODE_TYPES.TSAbstractMethodDefinition)
       ) {
         return;
       }

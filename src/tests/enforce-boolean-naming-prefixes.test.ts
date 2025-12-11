@@ -110,6 +110,15 @@ ruleTesterTs.run(
     }
     `,
 
+      // Getter returning private non-boolean field should not imply boolean
+      `
+    class PrivateState {
+      get name() {
+        return this._name;
+      }
+    }
+    `,
+
       // Getters with mixed return types are ignored
       `
     class UserWithStatus {
@@ -543,6 +552,52 @@ ruleTesterTs.run(
               type: 'getter',
               name: 'active',
               capitalizedName: 'Active',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+            },
+          },
+        ],
+      },
+      {
+        code: `
+      class Dictionary {
+        map = {};
+
+        get keyPresent() {
+          return 'key' in this.map;
+        }
+      }
+      `,
+        errors: [
+          {
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'getter',
+              name: 'keyPresent',
+              capitalizedName: 'KeyPresent',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+            },
+          },
+        ],
+      },
+      {
+        code: `
+      class Checker {
+        value: unknown;
+
+        get instance() {
+          return this.value instanceof Error;
+        }
+      }
+      `,
+        errors: [
+          {
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'getter',
+              name: 'instance',
+              capitalizedName: 'Instance',
               prefixes:
                 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },

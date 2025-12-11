@@ -169,7 +169,9 @@ const isNumber = (val: any): val is number => typeof val === "number";
 
 - Getters must follow boolean prefixes when they either declare a `boolean` return type or when every return statement evaluates to a boolean expression (comparisons, logical operators, negations, or identifiers/calls with boolean-style prefixes).
 - Getters are skipped when any branch returns a non-boolean value or mixes boolean and non-boolean returns to avoid false positives on computed property accessors.
+- Boolean inference covers comparison operators including `in` and `instanceof`, so getters like `return 'key' in store` or `return value instanceof Error` are treated as boolean-returning.
 - If inheritance contracts prevent renaming, set `ignoreOverriddenGetters: true` to skip abstract or `override` getters.
+- Accessing underscore-prefixed members (e.g., `this._name`) does not imply a boolean return on its own; those are treated as neutral private fields unless their names match a boolean prefix or suffix.
 
 #### Private/Internal Properties with Underscore Prefix
 
