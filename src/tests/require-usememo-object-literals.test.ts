@@ -96,7 +96,16 @@ ruleTester.run(
           }]} />;
         }
       `,
-        errors: [{ messageId: 'requireUseMemo' }],
+        errors: [
+          {
+            messageId: 'requireUseMemo',
+            data: {
+              literalType: 'array',
+              componentName: 'DialogActions',
+              propName: 'buttons',
+            },
+          },
+        ],
       },
       // Invalid case: inline object literal in prop
       {
@@ -105,7 +114,16 @@ ruleTester.run(
           return <MyComponent config={{ foo: 'bar', baz: 42 }} />;
         }
       `,
-        errors: [{ messageId: 'requireUseMemo' }],
+        errors: [
+          {
+            messageId: 'requireUseMemo',
+            data: {
+              literalType: 'object',
+              componentName: 'MyComponent',
+              propName: 'config',
+            },
+          },
+        ],
       },
       // Invalid case: inline array literal
       {
@@ -114,7 +132,16 @@ ruleTester.run(
           return <MyList items={['a', 'b', 'c']} />;
         }
       `,
-        errors: [{ messageId: 'requireUseMemo' }],
+        errors: [
+          {
+            messageId: 'requireUseMemo',
+            data: {
+              literalType: 'array',
+              componentName: 'MyList',
+              propName: 'items',
+            },
+          },
+        ],
       },
     ],
   },

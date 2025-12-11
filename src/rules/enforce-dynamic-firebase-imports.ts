@@ -7,20 +7,27 @@ export const enforceFirebaseImports = createRule({
     type: 'problem',
     docs: {
       description:
-        'Enforce dynamic importing for modules within the firebaseCloud directory to optimize initial bundle size. This ensures Firebase-related code is only loaded when needed, improving application startup time and reducing the main bundle size.',
+        'Require firebaseCloud modules to be loaded via dynamic import so Firebase code stays out of the initial bundle and only loads when needed.',
       recommended: 'error',
     },
     fixable: 'code',
+    hasSuggestions: true,
     schema: [],
     messages: {
       noDynamicImport:
-        'Static imports from firebaseCloud directory are not allowed to reduce initial bundle size. Instead of `import { func } from "./firebaseCloud/module"`, use dynamic import: `const { func } = await import("./firebaseCloud/module")`.',
+        'Static import from firebaseCloud path "{{importPath}}" eagerly bundles Firebase code into the initial client chunk, which inflates startup time and prevents lazy loading. Replace it with an awaited dynamic import so the code only loads when invoked (e.g., `const module = await import(\'{{importPath}}\')` or destructure the exports you need).',
     },
   },
   defaultOptions: [],
   create(context) {
     return {
       ImportDeclaration(node) {
+        // Skip third-party files
+        const filename = context.getFilename?.();
+        if (filename && /(^|[\\/])node_modules([\\/]|$)/.test(filename)) {
+          return;
+        }
+
         // Skip type-only import declarations
         if (node.importKind === 'type') {
           return;
@@ -61,92 +68,116 @@ export const enforceFirebaseImports = createRule({
           return;
         }
 
-        context.report({
-          node,
-          messageId: 'noDynamicImport',
-          fix(fixer) {
-            const statements: string[] = [];
+        const buildTypeNames = (): string =>
+          typeOnlySpecifiers
+            .map((spec) =>
+              spec.imported.name === spec.local.name
+                ? spec.imported.name
+                : `${spec.imported.name} as ${spec.local.name}`,
+            )
+            .join(', ');
 
-            // Preserve type-only specifiers by keeping a type import
-            if (typeOnlySpecifiers.length > 0) {
-              const typeNames = typeOnlySpecifiers
-                .map((spec) => {
-                  const importedName = spec.imported.name;
-                  const localName = spec.local.name;
-                  return importedName === localName
-                    ? importedName
-                    : `${importedName} as ${localName}`;
-                })
-                .join(', ');
-              statements.push(
-                `import type { ${typeNames} } from '${importPath}';`,
-              );
-            }
+        const buildReplacement = (
+          options: {
+            allowSideEffectFix?: boolean;
+          } = {},
+        ): string | null => {
+          const statements: string[] = [];
 
-            // When namespace import exists
-            if (namespaceSpecifier) {
-              const nsLocal = namespaceSpecifier.local.name;
-              statements.push(
-                `const ${nsLocal} = await import('${importPath}');`,
-              );
-              // If default is also requested, assign from namespace
-              if (defaultSpecifier) {
-                const defLocal = defaultSpecifier.local.name;
-                statements.push(`const ${defLocal} = ${nsLocal}.default;`);
-              }
-              // If named value specifiers also exist, destructure from namespace
-              if (namedSpecifiers.length > 0) {
-                const destructureParts = namedSpecifiers.map((spec) => {
-                  const imported = spec.imported.name;
-                  const local = spec.local.name;
-                  return imported === local
-                    ? imported
-                    : `${imported}: ${local}`;
-                });
-                statements.push(
-                  `const { ${destructureParts.join(', ')} } = ${nsLocal};`,
-                );
-              }
+          if (typeOnlySpecifiers.length > 0) {
+            statements.push(
+              `import type { ${buildTypeNames()} } from '${importPath}';`,
+            );
+          }
 
-              // Return the combined replacement
-              return fixer.replaceText(node, statements.join(' '));
-            }
-
-            // Build destructuring-based dynamic import when default or named imports exist
-            const destructureParts: string[] = [];
+          if (namespaceSpecifier) {
+            const nsLocal = namespaceSpecifier.local.name;
+            statements.push(
+              `const ${nsLocal} = await import('${importPath}');`,
+            );
 
             if (defaultSpecifier) {
               const defLocal = defaultSpecifier.local.name;
-              destructureParts.push(`default: ${defLocal}`);
+              statements.push(`const ${defLocal} = ${nsLocal}.default;`);
             }
 
+            const destructureFromNamespace: string[] = [];
             if (namedSpecifiers.length > 0) {
-              for (const spec of namedSpecifiers) {
+              const destructureParts = namedSpecifiers.map((spec) => {
                 const imported = spec.imported.name;
                 const local = spec.local.name;
-                destructureParts.push(
-                  imported === local ? imported : `${imported}: ${local}`,
-                );
-              }
+                return imported === local ? imported : `${imported}: ${local}`;
+              });
+              destructureFromNamespace.push(...destructureParts);
             }
 
-            if (destructureParts.length > 0) {
+            if (destructureFromNamespace.length > 0) {
               statements.push(
-                `const { ${destructureParts.join(
+                `const { ${destructureFromNamespace.join(
                   ', ',
-                )} } = await import('${importPath}');`,
+                )} } = ${nsLocal};`,
               );
-              return fixer.replaceText(node, statements.join(' '));
             }
 
-            // Side-effect import (no specifiers): convert to awaited dynamic import
-            if (node.specifiers.length === 0) {
-              return fixer.replaceText(node, `await import('${importPath}');`);
-            }
+            return statements.join(' ');
+          }
 
-            // If nothing can be fixed safely, do not provide a fix
-            return null;
+          const destructureParts: string[] = [];
+
+          if (defaultSpecifier) {
+            const defLocal = defaultSpecifier.local.name;
+            destructureParts.push(`default: ${defLocal}`);
+          }
+
+          if (namedSpecifiers.length > 0) {
+            for (const spec of namedSpecifiers) {
+              const imported = spec.imported.name;
+              const local = spec.local.name;
+              destructureParts.push(
+                imported === local ? imported : `${imported}: ${local}`,
+              );
+            }
+          }
+
+          if (destructureParts.length > 0) {
+            statements.push(
+              `const { ${destructureParts.join(
+                ', ',
+              )} } = await import('${importPath}');`,
+            );
+            return statements.join(' ');
+          }
+
+          if (node.specifiers.length === 0) {
+            return options.allowSideEffectFix !== false
+              ? `await import('${importPath}');`
+              : null;
+          }
+
+          return null;
+        };
+
+        context.report({
+          node,
+          messageId: 'noDynamicImport',
+          data: { importPath },
+          fix(fixer) {
+            const replacement = buildReplacement();
+            return replacement ? fixer.replaceText(node, replacement) : null;
           },
+          suggest: [
+            {
+              messageId: 'noDynamicImport',
+              fix(fixer) {
+                const replacement = buildReplacement({
+                  allowSideEffectFix: true,
+                });
+                return replacement
+                  ? fixer.replaceText(node, replacement)
+                  : null;
+              },
+            },
+          ],
         });
       },
     };
