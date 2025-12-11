@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'preferDestructuring';
@@ -242,31 +242,36 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
     /**
      * Look up a variable by name within a scope.
      */
-    function findVariableInScope(scope: any, name: string) {
-      return scope?.variables.find((variable: any) => variable.name === name);
+    function findVariableInScope(
+      scope: TSESLint.Scope.Scope | null,
+      name: string,
+    ): TSESLint.Scope.Variable | undefined {
+      return scope?.variables.find((variable) => variable.name === name);
     }
 
     /**
      * Check whether a variable definition originates from a parameter.
      */
-    function isParameterDefinition(variable: any): boolean {
-      return Array.isArray(variable?.defs)
-        ? variable.defs.some(
-            (definition: any) => definition.type === 'Parameter',
-          )
-        : false;
+    function isParameterDefinition(
+      variable: TSESLint.Scope.Variable | undefined,
+    ): boolean {
+      if (!variable || !Array.isArray(variable.defs)) {
+        return false;
+      }
+
+      return variable.defs.some((definition) => definition.type === 'Parameter');
     }
 
     /**
      * Determine whether an identifier refers to a function or method parameter.
      */
     function isFunctionParameter(identifier: TSESTree.Identifier): boolean {
-      let scope: any = context.getScope();
+      let scope: TSESLint.Scope.Scope | null = context.getScope();
 
       while (scope) {
         const variable = findVariableInScope(scope, identifier.name);
-        if (variable && isParameterDefinition(variable)) {
-          return true;
+        if (variable) {
+          return isParameterDefinition(variable);
         }
 
         scope = scope.upper;

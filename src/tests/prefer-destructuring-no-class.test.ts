@@ -93,6 +93,19 @@ ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
         }
       }
     `,
+    // Shadowed parameter name should not be treated as a parameter
+    `
+      class Example {
+        private value: number;
+
+        constructor(props: { value: number }) {
+          if (props) {
+            const props = { value: 2 };
+            this.value = props.value;
+          }
+        }
+      }
+    `,
   ],
   invalid: [
     // Basic object property access
