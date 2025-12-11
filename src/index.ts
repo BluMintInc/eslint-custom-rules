@@ -130,6 +130,7 @@ import { preferUseDeepCompareMemo } from './rules/prefer-use-deep-compare-memo';
 import { noCircularReferences } from './rules/no-circular-references';
 import { noPassthroughGetters } from './rules/no-passthrough-getters';
 import { noTryCatchAlreadyExistsInTransaction } from './rules/no-try-catch-already-exists-in-transaction';
+import { jsdocAboveField } from './rules/jsdoc-above-field';
 
 module.exports = {
   meta: {
@@ -271,6 +272,7 @@ module.exports = {
         '@blumintinc/blumint/no-misleading-boolean-prefixes': 'error',
         '@blumintinc/blumint/prefer-url-tostring-over-tojson': 'error',
         '@blumintinc/blumint/prefer-next-dynamic': 'error',
+        '@blumintinc/blumint/jsdoc-above-field': 'error',
         '@blumintinc/blumint/no-redundant-usecallback-wrapper': 'error',
         '@blumintinc/blumint/no-array-length-in-deps': 'error',
         '@blumintinc/blumint/prefer-use-deep-compare-memo': 'error',
@@ -416,6 +418,7 @@ module.exports = {
     'no-misleading-boolean-prefixes': noMisleadingBooleanPrefixes,
     'prefer-url-tostring-over-tojson': preferUrlToStringOverToJson,
     'prefer-next-dynamic': preferNextDynamic,
+    'jsdoc-above-field': jsdocAboveField,
     'no-redundant-usecallback-wrapper': noRedundantUseCallbackWrapper,
     'no-array-length-in-deps': noArrayLengthInDeps,
     'prefer-use-deep-compare-memo': preferUseDeepCompareMemo,
