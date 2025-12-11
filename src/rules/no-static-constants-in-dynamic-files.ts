@@ -169,15 +169,17 @@ export default createRule<[], MessageIds>({
           const { id } = declarator;
           const identifiers = collectBindingIdentifiers(id);
 
-          identifiers
-            .filter((identifier) => isScreamingSnakeCase(identifier.name))
-            .forEach((identifier) => {
-              context.report({
-                node: identifier,
-                messageId: 'noStaticConstantInDynamicFile',
-                data: { name: identifier.name },
-              });
+          for (const identifier of identifiers) {
+            if (!isScreamingSnakeCase(identifier.name)) {
+              continue;
+            }
+
+            context.report({
+              node: identifier,
+              messageId: 'noStaticConstantInDynamicFile',
+              data: { name: identifier.name },
             });
+          }
         });
       },
     };
