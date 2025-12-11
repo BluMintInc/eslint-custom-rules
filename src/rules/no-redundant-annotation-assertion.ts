@@ -91,33 +91,50 @@ function unwrapAlias(type: ts.Type, checker: ts.TypeChecker): ts.Type {
   return type;
 }
 
-function structuralKey(type: ts.Type, checker: ts.TypeChecker): string {
-  const normalized = normalizeType(type, checker);
-  const properties = checker
-    .getPropertiesOfType(normalized)
-    .map((prop) => {
-      const declaration =
-        prop.valueDeclaration ??
-        prop.declarations?.[0] ??
-        normalized.symbol?.valueDeclaration ??
-        normalized.symbol?.declarations?.[0];
-      if (!declaration) return null;
+function formatPropertySignature(
+  prop: ts.Symbol,
+  parentType: ts.Type,
+  checker: ts.TypeChecker,
+): string | null {
+  const declaration =
+    prop.valueDeclaration ??
+    prop.declarations?.[0] ??
+    parentType.symbol?.valueDeclaration ??
+    parentType.symbol?.declarations?.[0];
+  if (!declaration) return null;
 
-      const propType = checker.getTypeOfSymbolAtLocation(
-        prop,
-        declaration,
-      );
-      const text = typeText(unwrapAlias(propType, checker), checker);
-      const isOptional = (prop.getFlags() & ts.SymbolFlags.Optional) !== 0;
-      return `${prop.getName()}${isOptional ? '?' : ''}:${text}`;
-    })
+  const propType = checker.getTypeOfSymbolAtLocation(prop, declaration);
+  const text = typeText(unwrapAlias(propType, checker), checker);
+  const isOptional = (prop.getFlags() & ts.SymbolFlags.Optional) !== 0;
+
+  return `${prop.getName()}${isOptional ? '?' : ''}:${text}`;
+}
+
+function getFormattedTypeProperties(
+  type: ts.Type,
+  checker: ts.TypeChecker,
+): string[] {
+  return checker
+    .getPropertiesOfType(type)
+    .map((prop) => formatPropertySignature(prop, type, checker))
     .filter((entry): entry is string => Boolean(entry))
     .sort();
+}
 
-  const signatures = checker
-    .getSignaturesOfType(normalized, ts.SignatureKind.Call)
+function getFormattedCallSignatures(
+  type: ts.Type,
+  checker: ts.TypeChecker,
+): string[] {
+  return checker
+    .getSignaturesOfType(type, ts.SignatureKind.Call)
     .map((sig) => checker.signatureToString(sig, undefined, TYPE_FORMAT_FLAGS))
     .sort();
+}
+
+function structuralKey(type: ts.Type, checker: ts.TypeChecker): string {
+  const normalized = normalizeType(type, checker);
+  const properties = getFormattedTypeProperties(normalized, checker);
+  const signatures = getFormattedCallSignatures(normalized, checker);
 
   return `${properties.join('|')}::${signatures.join('|')}`;
 }
