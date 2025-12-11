@@ -371,6 +371,27 @@ export const noUnnecessaryDestructuringRename = createRule<[], MessageIds>({
       return resolvedCandidates;
     }
 
+    function removeScopeConflicts(
+      resolvedCandidates: ResolvedCandidate[],
+    ): ResolvedCandidate[] {
+      const countsByScope = new Map<TSESLint.Scope.Scope, Map<string, number>>();
+
+      for (const candidate of resolvedCandidates) {
+        const scope = candidate.variable.scope;
+        const scopeCounts = countsByScope.get(scope) ?? new Map<string, number>();
+        scopeCounts.set(
+          candidate.originalName,
+          (scopeCounts.get(candidate.originalName) ?? 0) + 1,
+        );
+        countsByScope.set(scope, scopeCounts);
+      }
+
+      return resolvedCandidates.filter((candidate) => {
+        const scopeCounts = countsByScope.get(candidate.variable.scope);
+        return (scopeCounts?.get(candidate.originalName) ?? 0) === 1;
+      });
+    }
+
     function groupCandidatesByPattern(
       resolvedCandidates: ResolvedCandidate[],
     ): Map<TSESTree.ObjectPattern, ResolvedCandidate[]> {
@@ -450,7 +471,8 @@ export const noUnnecessaryDestructuringRename = createRule<[], MessageIds>({
 
       'Program:exit'() {
         const resolvedCandidates = resolveValidCandidates();
-        const candidatesByPattern = groupCandidatesByPattern(resolvedCandidates);
+        const conflictFreeCandidates = removeScopeConflicts(resolvedCandidates);
+        const candidatesByPattern = groupCandidatesByPattern(conflictFreeCandidates);
         reportAndFixCandidates(candidatesByPattern);
       },
     };

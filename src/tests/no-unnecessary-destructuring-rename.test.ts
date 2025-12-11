@@ -92,6 +92,14 @@ ruleTester.run(
       const { class: className } = input;
       const payload = { class: className };
       `,
+
+      // Multiple destructures of the same key in a scope require aliases
+      `
+      const { id: firstId } = primary;
+      const first = { id: firstId };
+      const { id: secondId } = secondary;
+      const second = { id: secondId };
+      `,
     ],
     invalid: [
       // Basic pattern from the issue
