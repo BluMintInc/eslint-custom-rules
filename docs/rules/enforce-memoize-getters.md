@@ -33,7 +33,8 @@ class Example {
 ```
 
 ## Notes
-- Applies only to private instance getters (`get` accessors with `private` accessibility`).
+
+- Applies only to private instance getters (`get` accessors with `private` accessibility).
 - Ignores static getters.
 - Recognizes `@Memoize`, `@Memoize()`, and namespaced forms like `@ns.Memoize()`.
 - Auto-fix adds `@Memoize()` and imports `Memoize` from `@blumintinc/typescript-memoize` if missing, without duplicating existing imports or aliases.
