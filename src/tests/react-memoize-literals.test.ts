@@ -1,0 +1,398 @@
+import { ruleTesterJsx } from '../utils/ruleTester';
+import { reactMemoizeLiterals } from '../rules/react-memoize-literals';
+
+ruleTesterJsx.run('react-memoize-literals', reactMemoizeLiterals, {
+  valid: [
+    // Memoized references for objects, arrays, and functions
+    {
+      code: `
+const EMPTY_ARRAY: string[] = [];
+
+function UserProfile({ userId }) {
+  const queryFn = useCallback(() => fetchUser(userId), [userId]);
+  const queryKey = useMemo(() => ['user', userId], [userId]);
+  const cacheOptions = useMemo(
+    () => ({
+      ttl: 60000,
+      storage: { type: 'memory' },
+    }),
+    [],
+  );
+  const queryOptions = useMemo(
+    () => ({
+      staleTime: 5000,
+      cacheOptions,
+    }),
+    [cacheOptions],
+  );
+  const userData = useQuery({
+    queryKey,
+    queryFn,
+    options: queryOptions,
+  });
+  const [searchResults] = useState(EMPTY_ARRAY);
+  return <ProfileDisplay data={userData} results={searchResults} />;
+}
+      `,
+    },
+    // Top-level hook arguments with primitives are allowed
+    {
+      code: `
+function Component({ resolver }) {
+  useForm({ mode: 'onBlur', resolver });
+  return null;
+}
+      `,
+    },
+    // useState with top-level array literal (allowed)
+    {
+      code: `
+function Component() {
+  const [items] = useState([]);
+  return <List items={items} />;
+}
+      `,
+    },
+    // useEffect callback literals are ignored
+    {
+      code: `
+function Component({ dep }) {
+  useEffect(() => {
+    const settings = { enabled: true };
+    return () => console.log(dep, settings.enabled);
+  }, [dep]);
+}
+      `,
+    },
+    // Custom hook returning memoized value
+    {
+      code: `
+function useSettings() {
+  return useMemo(() => ({ theme: 'dark' }), []);
+}
+      `,
+    },
+    // Non-component function is out of scope
+    {
+      code: `
+function helper() {
+  const defaults = { enabled: true };
+  return defaults.enabled;
+}
+      `,
+    },
+    // Object literal inside useMemo callback should be skipped
+    {
+      code: `
+function Component({ value }) {
+  const memoized = useMemo(() => ({ value }), [value]);
+  return <div>{memoized.value}</div>;
+}
+      `,
+    },
+    // Custom hook returning identifier
+    {
+      code: `
+function useFeatureToggle(enabled) {
+  const state = useMemo(() => ({ enabled }), [enabled]);
+  return state;
+}
+      `,
+    },
+    // Module-level constant usage
+    {
+      code: `
+const DEFAULT_CONFIG = { mode: 'read-only' };
+function Component() {
+  const [config] = useState(DEFAULT_CONFIG);
+  return <pre>{config.mode}</pre>;
+}
+      `,
+    },
+    // Hook argument uses identifiers only
+    {
+      code: `
+function Component({ queryKey, resolver }) {
+  useQuery({ queryKey, resolver });
+  return null;
+}
+      `,
+    },
+    // Inline JSX props handled by other rules; should not trigger here
+    {
+      code: `
+function Component({ onClick }) {
+  const handler = useCallback(() => onClick(), [onClick]);
+  return <button onClick={handler}>Click</button>;
+}
+      `,
+    },
+  ],
+  invalid: [
+    // Component-level object literal
+    {
+      code: `
+function UserProfile() {
+  const defaultConfig = { enabled: true };
+  return <div>{defaultConfig.enabled ? 'Enabled' : 'Disabled'}</div>;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'object literal',
+            context: 'component "UserProfile"',
+            memoHook: 'useMemo',
+          },
+        },
+      ],
+    },
+    // Component-level array literal
+    {
+      code: `
+const Component = () => {
+  const items = [];
+  return <List items={items} />;
+};
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'array literal',
+            context: 'component "Component"',
+            memoHook: 'useMemo',
+          },
+        },
+      ],
+    },
+    // Component-level inline function
+    {
+      code: `
+function Dashboard({ userId }) {
+  const load = () => fetchUser(userId);
+  return <button onClick={load}>Load</button>;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'component "Dashboard"',
+            memoHook: 'useCallback',
+          },
+        },
+      ],
+    },
+    // Non-hook literal used only for computation still flags
+    {
+      code: `
+function Component({ condition }) {
+  const defaults = { enabled: true };
+  const isEnabled = defaults.enabled && condition;
+  return <div>{isEnabled ? 'On' : 'Off'}</div>;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'object literal',
+            context: 'component "Component"',
+            memoHook: 'useMemo',
+          },
+        },
+      ],
+    },
+    // Nested objects in hook argument
+    {
+      code: `
+function Component() {
+  const userKey = getUserKey();
+  const queryKey = userKey;
+  useQuery({
+    queryKey,
+    options: {
+      staleTime: 5000,
+      storage: { type: 'memory' },
+    },
+  });
+}
+      `,
+      errors: [
+        {
+          messageId: 'nestedHookLiteral',
+          data: {
+            literalType: 'object literal',
+            hookName: 'useQuery',
+          },
+        },
+        {
+          messageId: 'nestedHookLiteral',
+          data: {
+            literalType: 'object literal',
+            hookName: 'useQuery',
+          },
+        },
+      ],
+    },
+    // Nested function in hook argument
+    {
+      code: `
+function Component({ userId }) {
+  const queryKey = buildQueryKey(userId);
+  useQuery({
+    queryKey,
+    queryFn: () => fetchUser(userId),
+  });
+}
+      `,
+      errors: [
+        {
+          messageId: 'nestedHookLiteral',
+          data: {
+            literalType: 'inline function',
+            hookName: 'useQuery',
+          },
+        },
+      ],
+    },
+    // Nested array in hook argument
+    {
+      code: `
+function Component() {
+  useData({
+    defaults: [1, 2, 3],
+  });
+}
+      `,
+      errors: [
+        {
+          messageId: 'nestedHookLiteral',
+          data: {
+            literalType: 'array literal',
+            hookName: 'useData',
+          },
+        },
+      ],
+    },
+    // Custom hook returning object literal
+    {
+      code: `
+function useUserSettings() {
+  return { theme: 'dark' };
+}
+      `,
+      errors: [
+        {
+          messageId: 'hookReturnLiteral',
+          data: {
+            literalType: 'object literal',
+            hookName: 'useUserSettings',
+          },
+        },
+      ],
+    },
+    // Custom hook returning array literal
+    {
+      code: `
+const useIds = () => [1, 2, 3];
+      `,
+      errors: [
+        {
+          messageId: 'hookReturnLiteral',
+          data: {
+            literalType: 'array literal',
+            hookName: 'useIds',
+          },
+        },
+      ],
+    },
+    // Custom hook returning object with nested function
+    {
+      code: `
+function useActions() {
+  return {
+    onSave: () => persist(),
+  };
+}
+      `,
+      errors: [
+        {
+          messageId: 'hookReturnLiteral',
+          data: {
+            literalType: 'object literal',
+            hookName: 'useActions',
+          },
+        },
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'hook "useActions"',
+            memoHook: 'useCallback',
+          },
+        },
+      ],
+    },
+    // Inline function argument in component body
+    {
+      code: `
+function Component({ logger }) {
+  logEvent(() => logger('clicked'));
+  return null;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'component "Component"',
+            memoHook: 'useCallback',
+          },
+        },
+      ],
+    },
+    // Nested literals under hook with multiple layers
+    {
+      code: `
+function Component() {
+  useForm({
+    defaultValues: {
+      settings: {
+        notifications: { email: true },
+      },
+    },
+  });
+}
+      `,
+      errors: [
+        {
+          messageId: 'nestedHookLiteral',
+          data: {
+            literalType: 'object literal',
+            hookName: 'useForm',
+          },
+        },
+        {
+          messageId: 'nestedHookLiteral',
+          data: {
+            literalType: 'object literal',
+            hookName: 'useForm',
+          },
+        },
+        {
+          messageId: 'nestedHookLiteral',
+          data: {
+            literalType: 'object literal',
+            hookName: 'useForm',
+          },
+        },
+      ],
+    },
+  ],
+});
+

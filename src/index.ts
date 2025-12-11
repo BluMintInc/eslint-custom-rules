@@ -5,6 +5,7 @@ import { parallelizeAsyncOperations } from './rules/parallelize-async-operations
 import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
 import { enforceIdentifiableFirestoreType } from './rules/enforce-identifiable-firestore-type';
 import { default as enforceCallbackMemo } from './rules/enforce-callback-memo';
+import { reactMemoizeLiterals } from './rules/react-memoize-literals';
 import { enforceCallableTypes } from './rules/enforce-callable-types';
 import { enforceConsoleError } from './rules/enforce-console-error';
 import { enforceFirebaseImports } from './rules/enforce-dynamic-firebase-imports';
@@ -162,6 +163,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-mui-rounded-icons': 'error',
         '@blumintinc/blumint/enforce-identifiable-firestore-type': 'error',
         '@blumintinc/blumint/enforce-callback-memo': 'error',
+        '@blumintinc/blumint/react-memoize-literals': 'error',
         '@blumintinc/blumint/enforce-callable-types': 'error',
         '@blumintinc/blumint/enforce-console-error': 'error',
         '@blumintinc/blumint/enforce-dynamic-firebase-imports': 'error',
@@ -299,6 +301,7 @@ module.exports = {
     'dynamic-https-errors': dynamicHttpsErrors,
     'enforce-identifiable-firestore-type': enforceIdentifiableFirestoreType,
     'enforce-callback-memo': enforceCallbackMemo,
+    'react-memoize-literals': reactMemoizeLiterals,
     'enforce-react-type-naming': enforceReactTypeNaming,
     'enforce-firestore-rules-get-access': enforceFirestoreRulesGetAccess,
     'enforce-callable-types': enforceCallableTypes,
