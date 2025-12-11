@@ -376,7 +376,12 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
         return;
       }
 
-      const { expression } = node.value;
+      const rawExpression = node.value.expression;
+      if (rawExpression.type === AST_NODE_TYPES.JSXEmptyExpression) {
+        return;
+      }
+
+      const expression = unwrapExpression(rawExpression);
       const propName = getPropName(node.name);
 
       if (expression.type === AST_NODE_TYPES.ObjectExpression) {

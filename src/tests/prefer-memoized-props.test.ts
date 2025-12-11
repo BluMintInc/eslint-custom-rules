@@ -122,6 +122,15 @@ ruleTesterJsx.run('prefer-memoized-props', preferMemoizedProps, {
     {
       code: `
         import { memo } from 'react';
+        const AssertedInlineObject = memo(() => (
+          <Child config={{ enabled: true } as const} />
+        ));
+      `,
+      errors: [{ messageId: 'memoizeReferenceProp' }],
+    },
+    {
+      code: `
+        import { memo } from 'react';
         const InlineArray = memo(() => <Chart data={[1, 2, 3]} />);
       `,
       errors: [{ messageId: 'memoizeReferenceProp' }],
