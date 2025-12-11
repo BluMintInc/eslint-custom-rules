@@ -49,6 +49,7 @@ export const noSeparateLoadingState = createRule<Options, MessageIds>({
       declarator: TSESTree.VariableDeclarator;
       setterVar: TSESLint.Scope.Variable;
       usage: { truthy: boolean; falsy: boolean };
+      stateName: string;
     }> = [];
 
     function isLoadingPattern(name: string): boolean {
@@ -86,21 +87,6 @@ export const noSeparateLoadingState = createRule<Options, MessageIds>({
       return false;
     }
 
-    function getSetterName(
-      declarator: TSESTree.VariableDeclarator,
-    ): string | null {
-      if (
-        declarator.id.type === AST_NODE_TYPES.ArrayPattern &&
-        declarator.id.elements.length >= 2
-      ) {
-        const setterElement = declarator.id.elements[1];
-        if (setterElement?.type === AST_NODE_TYPES.Identifier) {
-          return setterElement.name;
-        }
-      }
-      return null;
-    }
-
     return {
       VariableDeclarator(node) {
         // Check for useState destructuring patterns
@@ -129,6 +115,7 @@ export const noSeparateLoadingState = createRule<Options, MessageIds>({
                 declarator: node,
                 setterVar,
                 usage: { truthy: false, falsy: false },
+                stateName: stateElement.name,
               });
             }
           }
@@ -161,9 +148,7 @@ export const noSeparateLoadingState = createRule<Options, MessageIds>({
             }
           }
 
-          const { declarator, usage } = tracker;
-          const setterName = getSetterName(declarator);
-          if (!setterName) continue;
+          const { declarator, usage, stateName } = tracker;
 
           // If we have both truthy and falsy setter calls, it's likely a loading state pattern
           if (usage.truthy && usage.falsy) {
