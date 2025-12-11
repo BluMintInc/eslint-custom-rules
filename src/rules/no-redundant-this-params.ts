@@ -121,6 +121,16 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
         return member.value.params;
       }
 
+      const annotation = member.typeAnnotation?.typeAnnotation;
+      if (
+        !member.value &&
+        member.optional &&
+        annotation &&
+        annotation.type === AST_NODE_TYPES.TSFunctionType
+      ) {
+        return annotation.params;
+      }
+
       return [];
     }
 
@@ -155,17 +165,19 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
 
           if (
             !methodName ||
-            member.static ||
-            !member.value ||
-            (member.value.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
-              member.value.type !== AST_NODE_TYPES.FunctionExpression)
+            member.static
           ) {
             continue;
           }
 
+          const params = getPropertyMethodParams(member);
+          if (params.length === 0) {
+            continue;
+          }
+
           methods.set(methodName, {
-            params: getPropertyMethodParams(member),
-            isStatic: Boolean(member.static),
+            params,
+            isStatic: false,
             isAbstract: false,
           });
         }
@@ -276,7 +288,7 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
     }
 
     function getMemberText(propertyName: string): string {
-      return `this.${propertyName.replace(/^#/, '#')}`;
+      return `this.${propertyName}`;
     }
 
     function collectThisAccesses(
@@ -351,7 +363,6 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
             return;
           case AST_NODE_TYPES.CallExpression:
           case AST_NODE_TYPES.NewExpression:
-            visit(node.callee, true);
             for (const arg of node.arguments) {
               if (arg) {
                 visit(arg as TSESTree.Node, true);

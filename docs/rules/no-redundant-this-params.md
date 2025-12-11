@@ -68,9 +68,9 @@ class CoinflowProcessorPropsExtractor {
 
 ## What the rule allows
 
-- Calls to parent methods (`super.method(...)`).
-- Calls to methods not declared on the current class (inherited/external utilities).
-- Calls inside callbacks or nested functions (e.g. within `map`/`reduce` lambdas).
+- Parent method calls (`super.method(...)`).
+- Methods not declared on the current class (inherited/external utilities).
+- Invocations inside callbacks or nested functions (e.g. within `map`/`reduce` lambdas).
 - Computed member access (`this[key]`) and other dynamic lookups.
 - Passing `this` members to external libraries or static methods.
 
