@@ -12,7 +12,7 @@ export const requireUseMemoObjectLiterals = createRule({
     },
     messages: {
       requireUseMemo:
-        'Inline object/array literals in JSX props should be wrapped in useMemo to prevent unnecessary re-renders',
+        'Inline {{literalType}} literal passed to {{componentName}} prop "{{propName}}" is recreated on every render, producing a new reference that forces child components to re-render even when values stay the same. Wrap the literal in useMemo (or hoist a memoized constant) so the prop reference remains stable between renders.',
     },
     schema: [],
   },
@@ -59,9 +59,16 @@ export const requireUseMemoObjectLiterals = createRule({
               : '';
 
           if (elementName && /^[A-Z]/.test(elementName)) {
+            const literalType =
+              expression.type === 'ObjectExpression' ? 'object' : 'array';
             context.report({
               node: expression,
               messageId: 'requireUseMemo',
+              data: {
+                literalType,
+                propName: typeof propName === 'string' ? propName : 'prop',
+                componentName: elementName,
+              },
             });
           }
         }
