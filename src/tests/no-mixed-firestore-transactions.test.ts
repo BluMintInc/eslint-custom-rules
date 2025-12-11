@@ -183,6 +183,19 @@ ruleTesterTs.run(
         });
       `,
       },
+      // Valid: Fetcher reused across nested transactions with options
+      {
+        code: `
+        await db.runTransaction(async (outerTx) => {
+          const fetcher = new FirestoreDocFetcher(ref);
+          await fetcher.fetch({ transaction: outerTx });
+
+          await db.runTransaction(async (innerTx) => {
+            await fetcher.fetch({ transaction: innerTx });
+          });
+        });
+      `,
+      },
       // Valid: Fetcher assigned via reassignment with transaction option
       {
         code: `
@@ -490,6 +503,48 @@ ruleTesterTs.run(
             data: {
               className: 'FirestoreDocFetcher',
               transactionalClass: 'FirestoreDocFetcherTransaction',
+            },
+          },
+        ],
+      },
+      // Invalid: Fetcher reused across nested transactions without inner transaction
+      {
+        code: `
+        await db.runTransaction(async (outerTx) => {
+          const fetcher = new FirestoreFetcher(ref);
+          await fetcher.fetch({ transaction: outerTx });
+
+          await db.runTransaction(async () => {
+            await fetcher.fetch();
+          });
+        });
+      `,
+        errors: [
+          {
+            messageId: 'noMixedTransactions',
+            data: {
+              className: 'FirestoreFetcher',
+              transactionalClass: 'FirestoreFetcherTransaction',
+            },
+          },
+        ],
+      },
+      // Invalid: Reassignment should retain earlier violation
+      {
+        code: `
+        await db.runTransaction(async (tx) => {
+          let fetcher = new FirestoreFetcher(ref);
+          await fetcher.fetch();
+          fetcher = new FirestoreFetcher(ref);
+          await fetcher.fetch({ transaction: tx });
+        });
+      `,
+        errors: [
+          {
+            messageId: 'noMixedTransactions',
+            data: {
+              className: 'FirestoreFetcher',
+              transactionalClass: 'FirestoreFetcherTransaction',
             },
           },
         ],

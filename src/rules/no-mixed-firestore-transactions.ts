@@ -37,7 +37,10 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     const transactionScopes = new Set<TSESTree.Node>();
-    const fetcherInstances = new Map<TSESTree.Node, Map<string, FetcherInstance>>();
+    const fetcherInstances = new Map<
+      TSESTree.Node,
+      Map<string, FetcherInstance[]>
+    >();
 
     function getTransactionalClassName(className: string): string {
       if (className === 'DocSetter') return 'DocSetterTransaction';
@@ -98,20 +101,30 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       );
     }
 
-    function getTransactionScope(node: TSESTree.Node): TSESTree.Node | null {
+    function getTransactionScopeChain(node: TSESTree.Node): TSESTree.Node[] {
+      const scopes: TSESTree.Node[] = [];
       let current: TSESTree.Node | undefined = node;
       while (current) {
+        let scope: TSESTree.Node | null = null;
         if (transactionScopes.has(current)) {
-          return current;
+          scope = current;
         }
 
         if (isFunctionLike(current) && current.params.some(isTransactionParameter)) {
-          return current.body ?? current;
+          scope = current.body ?? current;
+        }
+
+        if (scope && scopes[scopes.length - 1] !== scope) {
+          scopes.push(scope);
         }
 
         current = current.parent;
       }
-      return null;
+      return scopes;
+    }
+
+    function getTransactionScope(node: TSESTree.Node): TSESTree.Node | null {
+      return getTransactionScopeChain(node)[0] ?? null;
     }
 
     function getVariableName(node: TSESTree.NewExpression): string | null {
@@ -164,12 +177,38 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
 
     function ensureFetcherScope(
       scope: TSESTree.Node,
-    ): Map<string, FetcherInstance> {
+    ): Map<string, FetcherInstance[]> {
       if (!fetcherInstances.has(scope)) {
         fetcherInstances.set(scope, new Map());
       }
 
       return fetcherInstances.get(scope)!;
+    }
+
+    function addFetcherInstance(
+      scope: TSESTree.Node,
+      variableName: string,
+      instance: FetcherInstance,
+    ): void {
+      const scopeMap = ensureFetcherScope(scope);
+      if (!scopeMap.has(variableName)) {
+        scopeMap.set(variableName, []);
+      }
+      scopeMap.get(variableName)!.push(instance);
+    }
+
+    function findFetcherInstance(
+      scopes: TSESTree.Node[],
+      variableName: string,
+    ): FetcherInstance | null {
+      for (const scope of scopes) {
+        const scopeInstances = fetcherInstances.get(scope);
+        const instances = scopeInstances?.get(variableName);
+        if (instances?.length) {
+          return instances[instances.length - 1];
+        }
+      }
+      return null;
     }
 
     function shouldReportFetcher(instance: FetcherInstance): boolean {
@@ -184,6 +223,76 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
         callee.property.type === AST_NODE_TYPES.Identifier &&
         callee.property.name === 'fetch'
       );
+    }
+
+    function trackTransactionScope(node: TSESTree.CallExpression): void {
+      if (!isFirestoreTransaction(node)) return;
+      const callback = node.arguments[0];
+      if (
+        callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+        callback.type === AST_NODE_TYPES.FunctionExpression
+      ) {
+        transactionScopes.add(callback.body);
+      }
+    }
+
+    function handleIdentifierFetchCall(
+      identifier: TSESTree.Identifier,
+      transactionScopesForCall: TSESTree.Node[],
+      callHasTransaction: boolean,
+    ): void {
+      const instance = findFetcherInstance(transactionScopesForCall, identifier.name);
+      if (!instance) return;
+
+      if (callHasTransaction || instance.constructorHasTransaction) {
+        instance.hasTransactionCall =
+          instance.hasTransactionCall || callHasTransaction;
+      } else {
+        instance.hasCallWithoutTransaction = true;
+      }
+    }
+
+    function handleInlineNewFetchCall(
+      object: TSESTree.NewExpression,
+      callHasTransaction: boolean,
+    ): void {
+      const constructorHasTransaction = hasTransactionOption(object.arguments);
+
+      if (constructorHasTransaction || callHasTransaction) {
+        return;
+      }
+
+      const className = (object.callee as TSESTree.Identifier).name;
+      context.report({
+        node: object,
+        messageId: 'noMixedTransactions',
+        data: {
+          className,
+          transactionalClass: getTransactionalClassName(className),
+        },
+      });
+    }
+
+    function handleFetchCall(
+      node: TSESTree.CallExpression,
+      callee: TSESTree.MemberExpression,
+    ): void {
+      const transactionScopesForCall = getTransactionScopeChain(node);
+      const transactionScope = transactionScopesForCall[0];
+      if (!transactionScope) return;
+
+      const callHasTransaction = hasTransactionOption(node.arguments);
+      const object = callee.object;
+
+      if (object.type === AST_NODE_TYPES.Identifier) {
+        handleIdentifierFetchCall(object, transactionScopesForCall, callHasTransaction);
+      } else if (
+        object.type === AST_NODE_TYPES.NewExpression &&
+        object.callee.type === AST_NODE_TYPES.Identifier &&
+        isFetcherClass(object.callee.name)
+      ) {
+        handleInlineNewFetchCall(object, callHasTransaction);
+      }
     }
 
     return {
@@ -233,8 +342,7 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
           return;
         }
 
-        const scope = ensureFetcherScope(transactionScope);
-        scope.set(variableName, {
+        addFetcherInstance(transactionScope, variableName, {
           node,
           className,
           constructorHasTransaction,
@@ -251,57 +359,11 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
         }
 
         if (!isFetchCall(callee)) {
-          if (isFirestoreTransaction(node)) {
-            const callback = node.arguments[0];
-            if (
-              callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-              callback.type === AST_NODE_TYPES.FunctionExpression
-            ) {
-              transactionScopes.add(callback.body);
-            }
-          }
+          trackTransactionScope(node);
           return;
         }
 
-        const transactionScope = getTransactionScope(node);
-        if (!transactionScope) return;
-
-        const callHasTransaction = hasTransactionOption(node.arguments);
-        const object = callee.object;
-
-        if (object.type === AST_NODE_TYPES.Identifier) {
-          const scope = fetcherInstances.get(transactionScope);
-          const instance = scope?.get(object.name);
-
-          if (!instance) return;
-
-          if (callHasTransaction || instance.constructorHasTransaction) {
-            instance.hasTransactionCall =
-              instance.hasTransactionCall || callHasTransaction;
-          } else {
-            instance.hasCallWithoutTransaction = true;
-          }
-        } else if (
-          object.type === AST_NODE_TYPES.NewExpression &&
-          object.callee.type === AST_NODE_TYPES.Identifier &&
-          isFetcherClass(object.callee.name)
-        ) {
-          const constructorHasTransaction = hasTransactionOption(
-            object.arguments,
-          );
-
-          if (!(constructorHasTransaction || callHasTransaction)) {
-            const className = object.callee.name;
-            context.report({
-              node: object,
-              messageId: 'noMixedTransactions',
-              data: {
-                className,
-                transactionalClass: getTransactionalClassName(className),
-              },
-            });
-          }
-        }
+        handleFetchCall(node, callee);
       },
 
       'CallExpression[callee.property.name="runTransaction"]:exit'(
@@ -318,19 +380,21 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
 
       'Program:exit'() {
         for (const scope of fetcherInstances.values()) {
-          for (const instance of scope.values()) {
-            if (!shouldReportFetcher(instance)) continue;
+          for (const instances of scope.values()) {
+            for (const instance of instances) {
+              if (!shouldReportFetcher(instance)) continue;
 
-            context.report({
-              node: instance.node,
-              messageId: 'noMixedTransactions',
-              data: {
-                className: instance.className,
-                transactionalClass: getTransactionalClassName(
-                  instance.className,
-                ),
-              },
-            });
+              context.report({
+                node: instance.node,
+                messageId: 'noMixedTransactions',
+                data: {
+                  className: instance.className,
+                  transactionalClass: getTransactionalClassName(
+                    instance.className,
+                  ),
+                },
+              });
+            }
           }
         }
       },
