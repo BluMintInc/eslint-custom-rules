@@ -97,6 +97,25 @@ ruleTesterTs.run('no-handler-suffix', noHandlerSuffix, {
       filename: 'src/pages/api/users.ts',
       options: [{ allowFilePatterns: ['**/pages/api/**'] }],
     },
+    // Computed object property should not be flagged
+    `
+      const keyHandler = 'doSomething';
+      const callbacks = { [keyHandler]: () => {} };
+    `,
+    // Computed class method should not be flagged
+    `
+      const handlerKey = 'run';
+      class Runner {
+        [handlerKey]() {}
+      }
+    `,
+    // Computed class field should not be flagged
+    `
+      const handlerKey = 'run';
+      class Runner {
+        [handlerKey] = () => {};
+      }
+    `,
     // Object methods without handler suffix stay valid
     `const callbacks = { onUserClick: () => {}, onUserClose: () => {} };`,
     // Non-function bindings ending with handler are ignored

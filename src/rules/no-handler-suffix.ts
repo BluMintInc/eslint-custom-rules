@@ -195,6 +195,7 @@ export const noHandlerSuffix = createRule<Options, MessageIds>({
       if (
         (node.type === AST_NODE_TYPES.MethodDefinition ||
           node.type === AST_NODE_TYPES.PropertyDefinition) &&
+        !node.computed &&
         (node.key.type === AST_NODE_TYPES.Identifier ||
           node.key.type === AST_NODE_TYPES.PrivateIdentifier)
       ) {
@@ -221,14 +222,36 @@ export const noHandlerSuffix = createRule<Options, MessageIds>({
         if (
           annotationName &&
           (interfaceAllowlist.has(annotationName) ||
-            (resolvedOptions.ignoreInterfaceImplementations &&
-              annotationName.length > 0))
+            resolvedOptions.ignoreInterfaceImplementations)
         ) {
           return true;
         }
       }
 
       return false;
+    }
+
+    function getParentName(parent: TSESTree.Node | undefined): string | null {
+      if (!parent) return null;
+
+      if (
+        parent.type === AST_NODE_TYPES.VariableDeclarator &&
+        parent.id.type === AST_NODE_TYPES.Identifier
+      ) {
+        return parent.id.name;
+      }
+
+      if (
+        (parent.type === AST_NODE_TYPES.Property ||
+          parent.type === AST_NODE_TYPES.MethodDefinition ||
+          parent.type === AST_NODE_TYPES.PropertyDefinition) &&
+        !parent.computed &&
+        parent.key.type === AST_NODE_TYPES.Identifier
+      ) {
+        return parent.key.name;
+      }
+
+      return null;
     }
 
     function reportIfHandlerName(
@@ -297,12 +320,13 @@ export const noHandlerSuffix = createRule<Options, MessageIds>({
         }
       },
       MethodDefinition(node) {
-        if (node.key.type === AST_NODE_TYPES.Identifier) {
+        if (!node.computed && node.key.type === AST_NODE_TYPES.Identifier) {
           reportIfHandlerName(node.key.name, node.key, node);
         }
       },
       PropertyDefinition(node) {
         if (
+          !node.computed &&
           node.key.type === AST_NODE_TYPES.Identifier &&
           (node.value?.type === AST_NODE_TYPES.FunctionExpression ||
             node.value?.type === AST_NODE_TYPES.ArrowFunctionExpression)
@@ -312,6 +336,7 @@ export const noHandlerSuffix = createRule<Options, MessageIds>({
       },
       Property(node) {
         if (
+          !node.computed &&
           node.key.type === AST_NODE_TYPES.Identifier &&
           (node.value.type === AST_NODE_TYPES.FunctionExpression ||
             node.value.type === AST_NODE_TYPES.ArrowFunctionExpression)
@@ -323,29 +348,9 @@ export const noHandlerSuffix = createRule<Options, MessageIds>({
         if (!node.id) return;
 
         // Avoid double-reporting when the parent already names the function
-        const parent = node.parent;
-        const parentNames =
-          parent &&
-          (parent.type === AST_NODE_TYPES.VariableDeclarator ||
-            parent.type === AST_NODE_TYPES.Property ||
-            parent.type === AST_NODE_TYPES.MethodDefinition ||
-            parent.type === AST_NODE_TYPES.PropertyDefinition)
-            ? parent.type === AST_NODE_TYPES.VariableDeclarator &&
-              parent.id.type === AST_NODE_TYPES.Identifier
-              ? parent.id.name
-              : parent.type === AST_NODE_TYPES.Property &&
-                  parent.key.type === AST_NODE_TYPES.Identifier
-                ? parent.key.name
-                : parent.type === AST_NODE_TYPES.MethodDefinition &&
-                    parent.key.type === AST_NODE_TYPES.Identifier
-                  ? parent.key.name
-                  : parent.type === AST_NODE_TYPES.PropertyDefinition &&
-                      parent.key.type === AST_NODE_TYPES.Identifier
-                    ? parent.key.name
-                    : null
-            : null;
+        const parentName = getParentName(node.parent);
 
-        if (parentNames && parentNames === node.id.name) {
+        if (parentName && parentName === node.id.name) {
           return;
         }
 
