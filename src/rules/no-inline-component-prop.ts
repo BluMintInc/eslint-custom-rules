@@ -30,6 +30,10 @@ function isPascalCase(name: string): boolean {
 function matchesPattern(name: string, pattern: string): boolean {
   if (pattern === '*') return true;
   if (pattern.includes('*')) {
+    const wildcardCount = (pattern.match(/\*/g) || []).length;
+    if (wildcardCount > 2) {
+      return false;
+    }
     const escaped = pattern
       .replace(/[-/\\^$+?.()|[\]{}]/g, '\\$&')
       .replace(/\*/g, '.*');
@@ -257,7 +261,11 @@ function findVariableInScopes(
   context: Readonly<TSESLint.RuleContext<MessageIds, Options>>,
   identifier: TSESTree.Identifier,
 ): TSESLint.Scope.Variable | undefined {
-  let scope: TSESLint.Scope.Scope | null = context.getScope();
+  const sourceCode = context.getSourceCode() as TSESLint.SourceCode & {
+    getScope?: (node: TSESTree.Node) => TSESLint.Scope.Scope | null;
+  };
+  let scope: TSESLint.Scope.Scope | null =
+    sourceCode.getScope?.(identifier) ?? context.getScope();
   while (scope) {
     const variable = scope.variables.find((v) => v.name === identifier.name);
     if (variable) return variable;
@@ -376,10 +384,13 @@ export const noInlineComponentProp = createRule<Options, MessageIds>({
       );
       const looksComponent =
         isPascalCase(name) || name.endsWith('Wrapper') || name.endsWith('Component');
-      if (patternMatch && looksComponent) {
+      if (patternMatch) {
         return true;
       }
-      return isComponentTypeByTypeInfo(attribute);
+      if (looksComponent) {
+        return isComponentTypeByTypeInfo(attribute);
+      }
+      return false;
     }
 
     function shouldReportDefinition(
@@ -460,7 +471,15 @@ export const noInlineComponentProp = createRule<Options, MessageIds>({
 
       const variable = findVariableInScopes(context, objectId);
       if (!variable) return;
-      const definition = variable.defs[0];
+      const definition = variable.defs.find(
+        (def) =>
+          def.node.type === AST_NODE_TYPES.VariableDeclarator &&
+          def.node.id.type === AST_NODE_TYPES.Identifier &&
+          def.node.id.name === objectId.name &&
+          def.type !== 'ImportBinding' &&
+          def.type !== 'Parameter' &&
+          def.type !== 'Type',
+      );
       if (
         !definition ||
         definition.type === 'ImportBinding' ||
@@ -572,5 +591,3 @@ export const noInlineComponentProp = createRule<Options, MessageIds>({
     };
   },
 });
-
-export default noInlineComponentProp;

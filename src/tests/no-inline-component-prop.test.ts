@@ -82,6 +82,18 @@ ruleTesterJsx.run('no-inline-component-prop', noInlineComponentProp, {
       return <List renderComponent={(row) => <Row row={row} />} />;
     }
     `,
+    {
+      code: `
+      function Page() {
+        return (
+          <Layout
+            custom={(props: { children: JSX.Element }) => <div {...props} />}
+          />
+        );
+      }
+      `,
+      options: [{ props: ['*a*b*c*'] }],
+    },
   ],
   invalid: [
     {
@@ -225,6 +237,19 @@ ruleTesterJsx.run('no-inline-component-prop', noInlineComponentProp, {
         );
       }
       `,
+      errors: [{ messageId: 'inlineComponentProp' }],
+    },
+    {
+      code: `
+      function Page() {
+        return (
+          <Widget
+            customProp={(props: { value: string }) => <div>{props.value}</div>}
+          />
+        );
+      }
+      `,
+      options: [{ props: ['customProp'] }],
       errors: [{ messageId: 'inlineComponentProp' }],
     },
   ],
