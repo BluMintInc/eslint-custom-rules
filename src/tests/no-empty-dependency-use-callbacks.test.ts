@@ -303,6 +303,26 @@ function Outer() {
 }
     `,
   },
+  {
+    code: `
+import { useCallback } from 'react';
+const base = 1;
+function Component() {
+  const marker = 'ok';const handler = useCallback(() => base + 1, []);
+  return <div data-id={marker}>{handler()}</div>;
+}
+    `,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+import { useCallback } from 'react';
+const base = 1;
+const handler = () => base + 1;
+function Component() {
+  const marker = 'ok';
+  return <div data-id={marker}>{handler()}</div>;
+}
+    `,
+  },
 ];
 
 ruleTesterJsx.run(

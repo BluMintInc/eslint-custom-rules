@@ -131,25 +131,23 @@ function isTestFile(
 function analyzeExternalReferences(
   context: Readonly<TSESLint.RuleContext<MessageIds, Options>>,
   fn: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
-): { hasComponentScopeRef: boolean; hasExternalRefs: boolean } {
+): { hasComponentScopeRef: boolean } {
   const scopeManager = context.getSourceCode().scopeManager;
   if (!scopeManager) {
-    return { hasComponentScopeRef: false, hasExternalRefs: false };
+    return { hasComponentScopeRef: false };
   }
   const scope = scopeManager.acquire(fn, true);
   if (!scope) {
-    return { hasComponentScopeRef: false, hasExternalRefs: false };
+    return { hasComponentScopeRef: false };
   }
 
   let hasComponentScopeRef = false;
-  let hasExternalRefs = false;
 
   for (const ref of scope.through) {
     const identifier = ref.identifier;
     if (isPropertyKey(identifier.parent, identifier)) {
       continue;
     }
-    hasExternalRefs = true;
     const resolved = ref.resolved;
     if (!resolved) {
       continue;
@@ -167,7 +165,7 @@ function analyzeExternalReferences(
     }
   }
 
-  return { hasComponentScopeRef, hasExternalRefs };
+  return { hasComponentScopeRef };
 }
 
 function buildHoistFixes(
@@ -210,19 +208,24 @@ function buildHoistFixes(
   const hoisted = `const ${declarator.id.name} = ${functionText};\n`;
   const fileText = sourceCode.getText();
   let removeStart = varDecl.range[0];
-
-  while (removeStart > 0) {
-    const char = fileText[removeStart - 1];
-    if (char === '\n' || char === '\r') break;
-    removeStart -= 1;
+  const lineStart = fileText.lastIndexOf('\n', removeStart - 1) + 1;
+  const leadingSegment = fileText.slice(lineStart, removeStart);
+  const hasOnlyIndentBefore = /^[ \t]*$/.test(leadingSegment);
+  if (hasOnlyIndentBefore) {
+    removeStart = lineStart;
   }
 
   let removeEnd = varDecl.range[1];
-  while (removeEnd < fileText.length && fileText[removeEnd] !== '\n') {
-    removeEnd += 1;
+  const lineEnd = fileText.indexOf('\n', removeEnd);
+  const segmentEnd = lineEnd === -1 ? fileText.length : lineEnd;
+  const trailingSegment = fileText.slice(removeEnd, segmentEnd);
+  const hasOnlyWhitespaceAfter = /^[ \t]*$/.test(trailingSegment);
+  if (hasOnlyWhitespaceAfter) {
+    removeEnd = segmentEnd;
   }
-  if (removeEnd < fileText.length) {
-    removeEnd += 1;
+
+  if (hasOnlyIndentBefore && hasOnlyWhitespaceAfter && lineEnd !== -1) {
+    removeEnd = lineEnd + 1;
   }
 
   return (fixer) => [
