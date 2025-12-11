@@ -247,6 +247,22 @@ class Provider {
     },
     {
       filename: 'file.tsx',
+      code: `class NamespacedMemo {
+  get Component() {
+    return React.memo(() => <div>Namespaced</div>);
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `import { Memoize } from '@blumintinc/typescript-memoize';
+class NamespacedMemo {
+  @Memoize()
+  get Component() {
+    return React.memo(() => <div>Namespaced</div>);
+  }
+}`,
+    },
+    {
+      filename: 'file.tsx',
       code: `class ListRenderer {
   render() {
     const renderRow = () => <li>Row</li>;

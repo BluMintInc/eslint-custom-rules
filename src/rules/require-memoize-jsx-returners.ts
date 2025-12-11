@@ -151,9 +151,21 @@ function expressionReturnsJSX(
 
     case AST_NODE_TYPES.CallExpression: {
       const { callee } = expression;
+      const firstNonSpreadArgument = expression.arguments.find(
+        (arg) => arg.type !== AST_NODE_TYPES.SpreadElement,
+      ) as TSESTree.Expression | undefined;
+
       if (callee.type === AST_NODE_TYPES.Identifier) {
         const targetFn = knownFunctions.get(callee.name);
         if (targetFn && functionReturnsJSX(targetFn, knownFunctions, cache)) {
+          return true;
+        }
+
+        if (
+          JSX_FACTORY_CALLEES.has(callee.name) &&
+          firstNonSpreadArgument &&
+          expressionReturnsJSX(firstNonSpreadArgument, knownFunctions, cache)
+        ) {
           return true;
         }
       }
@@ -163,13 +175,23 @@ function expressionReturnsJSX(
         !callee.computed &&
         callee.property.type === AST_NODE_TYPES.Identifier
       ) {
+        const propertyName = callee.property.name;
+
         // Treat React.createElement style calls as JSX-producing
-        if (callee.property.name === 'createElement') {
+        if (propertyName === 'createElement') {
           return true;
         }
+
         if (
-          (callee.property.name === 'call' ||
-            callee.property.name === 'apply') &&
+          JSX_FACTORY_CALLEES.has(propertyName) &&
+          firstNonSpreadArgument &&
+          expressionReturnsJSX(firstNonSpreadArgument, knownFunctions, cache)
+        ) {
+          return true;
+        }
+
+        if (
+          (propertyName === 'call' || propertyName === 'apply') &&
           callee.object.type === AST_NODE_TYPES.Identifier
         ) {
           const targetFn = knownFunctions.get(callee.object.name);
@@ -178,21 +200,6 @@ function expressionReturnsJSX(
           }
         }
         return false;
-      }
-
-      if (
-        callee.type === AST_NODE_TYPES.Identifier &&
-        JSX_FACTORY_CALLEES.has(callee.name)
-      ) {
-        const firstNonSpread = expression.arguments.find(
-          (arg) => arg.type !== AST_NODE_TYPES.SpreadElement,
-        ) as TSESTree.Expression | undefined;
-        if (
-          firstNonSpread &&
-          expressionReturnsJSX(firstNonSpread, knownFunctions, cache)
-        ) {
-          return true;
-        }
       }
 
       return false;
