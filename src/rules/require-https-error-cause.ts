@@ -1,0 +1,191 @@
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { createRule } from '../utils/createRule';
+
+type MessageIds = 'missingCause' | 'causeNotCatchBinding';
+type Options = [];
+
+type CatchFrame = {
+  paramName: string | null;
+  node: TSESTree.CatchClause;
+};
+
+const isHttpsErrorCallee = (
+  callee: TSESTree.LeftHandSideExpression,
+): boolean => {
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    return callee.name === 'HttpsError';
+  }
+
+  if (callee.type === AST_NODE_TYPES.MemberExpression) {
+    return (
+      callee.object.type === AST_NODE_TYPES.Identifier &&
+      callee.property.type === AST_NODE_TYPES.Identifier &&
+      callee.property.name === 'HttpsError'
+    );
+  }
+
+  return false;
+};
+
+const findVariableInScopeChain = (
+  scope: TSESLint.Scope.Scope | null,
+  name: string,
+): TSESLint.Scope.Variable | null => {
+  let currentScope: TSESLint.Scope.Scope | null = scope;
+
+  while (currentScope) {
+    const variable = currentScope.variables.find((item) => item.name === name);
+    if (variable) {
+      return variable;
+    }
+    currentScope = currentScope.upper;
+  }
+
+  return null;
+};
+
+export const requireHttpsErrorCause = createRule<Options, MessageIds>({
+  name: 'require-https-error-cause',
+  meta: {
+    type: 'problem',
+    docs: {
+      description:
+        'Ensure HttpsError calls inside catch blocks pass the caught error as the fourth "cause" argument to preserve stack traces for monitoring.',
+      recommended: 'error',
+    },
+    schema: [],
+    messages: {
+      missingCause:
+        'HttpsError inside a catch block must pass the caught error as the fourth "cause" argument. Without the original error, the stack is lost and monitoring fingerprints degrade. Add {{catchName}} as the cause argument after the optional details parameter.',
+      causeNotCatchBinding:
+        'The fourth HttpsError argument should be the catch binding {{catchName}} so the original error stack is preserved for monitoring. Pass the catch variable instead of {{actual}}.',
+    },
+  },
+  defaultOptions: [],
+  create(context, _options) {
+    const sourceCode = context.getSourceCode();
+    const catchStack: CatchFrame[] = [];
+
+    const getScopeForNode = (node: TSESTree.Node) => {
+      const sourceCodeWithScope = sourceCode as unknown as {
+        getScope?: (
+          currentNode?: TSESTree.Node,
+        ) => TSESLint.Scope.Scope | null;
+      };
+
+      if (typeof sourceCodeWithScope.getScope === 'function') {
+        return sourceCodeWithScope.getScope(node);
+      }
+
+      return context.getScope();
+    };
+
+    const reportMissingCause = (
+      node: TSESTree.NewExpression,
+      catchName: string,
+    ) => {
+      context.report({
+        node,
+        messageId: 'missingCause',
+        data: {
+          catchName,
+        },
+      });
+    };
+
+    const reportWrongCause = (
+      node: TSESTree.Node,
+      catchName: string,
+      actual: string,
+    ) => {
+      context.report({
+        node,
+        messageId: 'causeNotCatchBinding',
+        data: {
+          catchName,
+          actual,
+        },
+      });
+    };
+
+    const isCatchBindingReference = (
+      identifier: TSESTree.Identifier,
+      frame: CatchFrame,
+    ): boolean => {
+      if (!frame.paramName || identifier.name !== frame.paramName) {
+        return false;
+      }
+
+      const variable = findVariableInScopeChain(
+        getScopeForNode(identifier),
+        identifier.name,
+      );
+
+      return (
+        variable?.defs.some(
+          (definition) =>
+            definition.type === 'CatchClause' && definition.node === frame.node,
+        ) ?? false
+      );
+    };
+
+    const validateHttpsError = (node: TSESTree.NewExpression) => {
+      if (!catchStack.length) {
+        return;
+      }
+
+      if (!isHttpsErrorCallee(node.callee)) {
+        return;
+      }
+
+      const activeCatch = catchStack[catchStack.length - 1];
+      const catchName = activeCatch.paramName ?? 'the caught error';
+
+      if (node.arguments.length < 4) {
+        reportMissingCause(node, catchName);
+        return;
+      }
+
+      const causeArg = node.arguments[3];
+
+      if (!activeCatch.paramName) {
+        reportMissingCause(node, catchName);
+        return;
+      }
+
+      if (!causeArg || causeArg.type !== AST_NODE_TYPES.Identifier) {
+        reportWrongCause(
+          causeArg ?? node,
+          catchName,
+          causeArg ? sourceCode.getText(causeArg) : 'the missing cause argument',
+        );
+        return;
+      }
+
+      if (!isCatchBindingReference(causeArg, activeCatch)) {
+        reportWrongCause(
+          causeArg,
+          catchName,
+          sourceCode.getText(causeArg),
+        );
+      }
+    };
+
+    return {
+      CatchClause(node: TSESTree.CatchClause) {
+        if (node.param?.type === AST_NODE_TYPES.Identifier) {
+          catchStack.push({ paramName: node.param.name, node });
+          return;
+        }
+
+        catchStack.push({ paramName: null, node });
+      },
+      'CatchClause:exit'() {
+        catchStack.pop();
+      },
+      NewExpression(node: TSESTree.NewExpression) {
+        validateHttpsError(node);
+      },
+    };
+  },
+});
