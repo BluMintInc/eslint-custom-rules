@@ -302,7 +302,7 @@ function buildImportRemovalFix(
   sourceCode: Readonly<TSESLint.SourceCode>,
   fixer: TSESLint.RuleFixer,
 ): TSESLint.RuleFix | null {
-  const importDeclaration = specifier.parent?.parent;
+  const importDeclaration = specifier.parent;
   if (!importDeclaration || importDeclaration.type !== AST_NODE_TYPES.ImportDeclaration) {
     return null;
   }
@@ -312,7 +312,30 @@ function buildImportRemovalFix(
   );
 
   if (remainingSpecifiers.length === 0) {
-    return fixer.remove(importDeclaration);
+    const text = sourceCode.getText();
+    let [start, end] = importDeclaration.range;
+
+    while (start > 0 && (text[start - 1] === ' ' || text[start - 1] === '\t')) {
+      start -= 1;
+    }
+    if (start > 0 && text[start - 1] === '\n') {
+      start -= 1;
+    }
+
+    while (end < text.length && (text[end] === ' ' || text[end] === '\t')) {
+      end += 1;
+    }
+    if (end < text.length && text[end] === '\n') {
+      end += 1;
+      while (end < text.length && (text[end] === ' ' || text[end] === '\t')) {
+        end += 1;
+      }
+      if (end < text.length && text[end] === '\n') {
+        end += 1;
+      }
+    }
+
+    return fixer.removeRange([start, end]);
   }
 
   const defaultSpecifier = remainingSpecifiers.find(
@@ -551,6 +574,7 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
           analyzeReturnedValue(expression.alternate, currentContext);
           return;
         case AST_NODE_TYPES.LogicalExpression:
+      analyzeReturnedValue(expression.left, currentContext);
           analyzeReturnedValue(expression.right, currentContext);
           return;
         case AST_NODE_TYPES.SequenceExpression: {
