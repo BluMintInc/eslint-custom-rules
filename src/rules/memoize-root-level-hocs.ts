@@ -201,6 +201,13 @@ const findHocName = (
   return null;
 };
 
+/**
+ * Detects chained HOC calls where an inner call is immediately invoked by
+ * another call (for example, withHoc(Component)()). We only treat calls as
+ * part of the same chain when the current CallExpression is the callee of its
+ * parent and both resolve to the same HOC name, which prevents duplicate
+ * reports for patterns like withHoc(Component)(props).
+ */
 const getParentCallExpression = (
   callExpr: TSESTree.CallExpression,
 ): TSESTree.CallExpression | null =>
