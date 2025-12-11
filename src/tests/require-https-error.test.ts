@@ -121,5 +121,61 @@ throw new HttpsError("failed-precondition", "test error");
         ),
       ],
     },
+    // Should track sources separately when multiple HttpsError imports exist
+    {
+      code: `
+import { HttpsError as AdminHttpsError } from "firebase-admin";
+import { HttpsError as FunctionsHttpsError } from "firebase-admin/lib/https-error";
+throw new AdminHttpsError("failed-precondition", "test error");
+throw new FunctionsHttpsError("failed-precondition", "test error");
+      `,
+      filename: 'functions/src/test.ts',
+      errors: [
+        expectMessage(proprietaryMessage('AdminHttpsError', 'firebase-admin')),
+        expectMessage(
+          proprietaryMessage(
+            'FunctionsHttpsError',
+            'firebase-admin/lib/https-error',
+          ),
+        ),
+        expectMessage(proprietaryMessage('AdminHttpsError', 'firebase-admin')),
+        expectMessage(
+          proprietaryMessage(
+            'FunctionsHttpsError',
+            'firebase-admin/lib/https-error',
+          ),
+        ),
+      ],
+    },
+    // Should track sources separately for multiple https imports
+    {
+      code: `
+import { https as adminHttps } from "firebase-admin";
+import { https as functionsHttps } from "firebase-admin/lib/https-error";
+throw new adminHttps.HttpsError("failed-precondition", "test error");
+throw new functionsHttps.HttpsError("failed-precondition", "test error");
+      `,
+      filename: 'functions/src/test.ts',
+      errors: [
+        expectMessage(
+          proprietaryMessage('adminHttps.HttpsError', 'firebase-admin'),
+        ),
+        expectMessage(
+          proprietaryMessage(
+            'functionsHttps.HttpsError',
+            'firebase-admin/lib/https-error',
+          ),
+        ),
+        expectMessage(
+          proprietaryMessage('adminHttps.HttpsError', 'firebase-admin'),
+        ),
+        expectMessage(
+          proprietaryMessage(
+            'functionsHttps.HttpsError',
+            'firebase-admin/lib/https-error',
+          ),
+        ),
+      ],
+    },
   ],
 });
