@@ -48,7 +48,6 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
               node,
               messageId: 'missingThirdArgument',
             });
-            return;
           }
 
           // Check for dynamic content in second argument (existing functionality)

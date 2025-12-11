@@ -102,8 +102,7 @@ const validCases = [
   "throw new HttpsError('foo', 'bar', [1, 2, 3].map(x => x * 2));",
   "throw new HttpsError('foo', 'bar', condition && { conditionalData: true });",
 
-  // String concatenation and other expressions in second argument (currently allowed - testing current behavior)
-  "throw new HttpsError('foo', 'Error: ' + variable, 'context');",
+// Other expressions in second argument (currently allowed - testing current behavior)
   "throw new HttpsError('foo', getMessage(), 'context');",
   "throw new HttpsError('foo', obj.message, 'context');",
   "throw new HttpsError('foo', condition ? 'msg1' : 'msg2', 'context');",
@@ -140,6 +139,10 @@ const invalidCases: InvalidCase[] = [
   },
   {
     code: "throw new HttpsError('foo', `Error: ${bar}`, 'baz');",
+    errors: [{ messageId: 'dynamicHttpsErrors' }],
+  },
+  {
+    code: "throw new HttpsError('foo', 'Error: ' + variable, 'context');",
     errors: [{ messageId: 'dynamicHttpsErrors' }],
   },
 
