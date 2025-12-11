@@ -17,7 +17,7 @@ Disallow inline function components created inside a render scope from being pas
 ## Rule Details
 
 The rule flags render-scoped components (arrow/function expressions, `useCallback`, `useMemo`, `React.memo`, `forwardRef`) when they are passed to props that look like component-type props (`CatalogWrapper`, names ending in `Wrapper`/`Component`, or configured names).
-Configured `props` patterns are always honored even if the prop name is not PascalCase; glob patterns support up to two `*` wildcards to avoid overly complex regular expressions.
+Configured `props` patterns are honored for non-render-prop names even if the prop name is not PascalCase; when `allowRenderProps` is true, render-prop names such as `children` or `render*` are skipped even if they match a pattern. Glob patterns support up to two `*` wildcards to avoid overly complex regular expressions.
 
 ❌ Inline wrapper recreated per render:
 
