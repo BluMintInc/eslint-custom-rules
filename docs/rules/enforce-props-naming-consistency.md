@@ -1,4 +1,4 @@
-# Enforce naming parameters "props" when their type ends with "Props" (`@blumintinc/blumint/enforce-props-naming-consistency`)
+# Prefer naming single "Props"-typed parameters as "props"; enforcement defers to enforce-props-argument-name for multi-Props cases (`@blumintinc/blumint/enforce-props-naming-consistency`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
