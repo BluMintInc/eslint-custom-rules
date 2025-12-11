@@ -112,6 +112,26 @@ ruleTesterTs.run(
         `,
         parserOptions,
       },
+      {
+        code: `
+          import onRequest from 'functions/src/v2/https/onRequest';
+
+          function handler(req, res) {
+            res.status(200).send('ok');
+          }
+
+          function makeLocalHelper() {
+            function handler(req, res) {
+              res.status(500).send('not the onRequest handler');
+            }
+            return handler;
+          }
+
+          makeLocalHelper();
+          export default onRequest(handler);
+        `,
+        parserOptions,
+      },
     ],
     invalid: [
       {

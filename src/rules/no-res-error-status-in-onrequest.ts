@@ -39,31 +39,6 @@ const isIdentifierWithName = (
 ): node is TSESTree.Identifier =>
   !!node && node.type === AST_NODE_TYPES.Identifier && node.name === name;
 
-const getFunctionName = (node: FunctionNode): string | null => {
-  if (node.type === AST_NODE_TYPES.FunctionDeclaration && node.id) {
-    return node.id.name;
-  }
-
-  if (
-    node.parent &&
-    node.parent.type === AST_NODE_TYPES.VariableDeclarator &&
-    node.parent.id.type === AST_NODE_TYPES.Identifier
-  ) {
-    return node.parent.id.name;
-  }
-
-  if (
-    node.parent &&
-    node.parent.type === AST_NODE_TYPES.Property &&
-    !node.parent.computed &&
-    node.parent.key.type === AST_NODE_TYPES.Identifier
-  ) {
-    return node.parent.key.name;
-  }
-
-  return null;
-};
-
 const getResponseParamNames = (node: FunctionNode): string[] => {
   const extractName = (param: TSESTree.Parameter): string | null => {
     if (param.type === AST_NODE_TYPES.Identifier) {
@@ -313,21 +288,61 @@ export const requireHttpsErrorInOnRequestHandlers: TSESLint.RuleModule<
   create(context) {
     const onRequestIdentifiers = new Set<string>();
     const onRequestNamespaces = new Set<string>();
-    const handlerNames = new Set<string>();
-    const inlineHandlers = new Set<FunctionNode>();
-    const functionNames = new Map<FunctionNode, string | null>();
+    const handlerFunctions = new Set<FunctionNode>();
     const responseNamesByFunction = new Map<FunctionNode, string[]>();
     const pendingViolations: PotentialViolation[] = [];
 
     const recordFunction = (node: FunctionNode) => {
-      functionNames.set(node, getFunctionName(node));
       responseNamesByFunction.set(node, getResponseParamNames(node));
     };
 
+    const extractFunctionFromDefinition = (
+      def: TSESLint.Scope.Definition,
+    ): FunctionNode | null => {
+      const defNode = def.node as TSESTree.Node;
+
+      if (isFunctionLike(defNode)) {
+        return defNode;
+      }
+
+      if (
+        defNode.type === AST_NODE_TYPES.VariableDeclarator &&
+        defNode.init &&
+        isFunctionLike(defNode.init)
+      ) {
+        return defNode.init;
+      }
+
+      return null;
+    };
+
+    const resolveFunctionFromIdentifier = (
+      identifier: TSESTree.Identifier,
+    ): FunctionNode | null => {
+      let scope: TSESLint.Scope.Scope | null = context.getScope();
+
+      while (scope) {
+        const variable =
+          scope.set.get(identifier.name) ??
+          scope.variables.find((candidate) => candidate.name === identifier.name);
+
+        if (variable) {
+          for (const def of variable.defs) {
+            const fn = extractFunctionFromDefinition(def);
+            if (fn) {
+              return fn;
+            }
+          }
+        }
+
+        scope = scope.upper;
+      }
+
+      return null;
+    };
+
     const isDirectOnRequestHandler = (fn: FunctionNode): boolean => {
-      if (inlineHandlers.has(fn)) return true;
-      const name = functionNames.get(fn);
-      return !!name && handlerNames.has(name);
+      return handlerFunctions.has(fn);
     };
 
     const isWithinOnRequest = (fn: FunctionNode): boolean => {
@@ -458,14 +473,22 @@ export const requireHttpsErrorInOnRequestHandlers: TSESLint.RuleModule<
 
           if (handlerArg) {
             if (isFunctionLike(handlerArg)) {
-              inlineHandlers.add(handlerArg);
+              handlerFunctions.add(handlerArg);
             } else if (handlerArg.type === AST_NODE_TYPES.Identifier) {
-              handlerNames.add(handlerArg.name);
+              const resolvedHandler = resolveFunctionFromIdentifier(handlerArg);
+              if (resolvedHandler) {
+                handlerFunctions.add(resolvedHandler);
+              }
             } else if (handlerArg.type === AST_NODE_TYPES.TSAsExpression) {
               if (isFunctionLike(handlerArg.expression)) {
-                inlineHandlers.add(handlerArg.expression);
+                handlerFunctions.add(handlerArg.expression);
               } else if (handlerArg.expression.type === AST_NODE_TYPES.Identifier) {
-                handlerNames.add(handlerArg.expression.name);
+                const resolvedHandler = resolveFunctionFromIdentifier(
+                  handlerArg.expression,
+                );
+                if (resolvedHandler) {
+                  handlerFunctions.add(resolvedHandler);
+                }
               }
             }
           }
