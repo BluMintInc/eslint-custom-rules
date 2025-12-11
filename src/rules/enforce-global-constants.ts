@@ -27,7 +27,7 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
     const sourceCode = context.getSourceCode();
 
     function isHookName(name: string): boolean {
-      return name.startsWith('use') && name[3]?.toUpperCase() === name[3];
+      return /^use[A-Z]/.test(name);
     }
 
     function isComponentOrHookFunction(
@@ -162,9 +162,7 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
     }
 
     function hasIdentifiers(node: TSESTree.Expression | null): boolean {
-      return ASTHelpers.declarationIncludesIdentifier(
-        node as unknown as TSESTree.Node,
-      );
+      return !!node && ASTHelpers.declarationIncludesIdentifier(node);
     }
 
     function alreadyHasConst(
@@ -194,10 +192,134 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
       initText: string,
     ): string {
       const needsAsConst =
-        /^(?:true|false|\d|\[|\{|[`'"])/.test(initText) &&
+        /^(?:true|false|-?\d|\[|\{|[`'"])/.test(initText) &&
         !/\bas const\b/.test(initText);
       const initializer = needsAsConst ? `${initText} as const` : initText;
       return `const ${constName} = ${initializer};`;
+    }
+
+    function reportStaticDefaults(
+      patterns: Array<TSESTree.ObjectPattern | TSESTree.ArrayPattern>,
+      enclosingFn:
+        | TSESTree.FunctionDeclaration
+        | TSESTree.FunctionExpression
+        | TSESTree.ArrowFunctionExpression
+        | null,
+      nodeForReport: TSESTree.Node,
+    ) {
+      if (!enclosingFn || !isComponentOrHookFunction(enclosingFn)) return;
+
+      const defaults: Array<{
+        assignment: TSESTree.AssignmentPattern;
+        localName: string;
+      }> = [];
+      for (const pattern of patterns) {
+        defaults.push(...collectAssignmentDefaultsFromPattern(pattern));
+      }
+      if (defaults.length === 0) return;
+
+      const staticDefaults = defaults.filter((def) => {
+        const right = def.assignment.right as TSESTree.Expression | null;
+        return right && !hasIdentifiers(right);
+      });
+      if (staticDefaults.length === 0) return;
+
+      context.report({
+        node: nodeForReport,
+        messageId: 'extractDefaultToGlobalConstant',
+        fix(fixer) {
+          const fixes: TSESLint.RuleFix[] = [];
+
+          const programNode = sourceCode.ast;
+          const declLines: string[] = [];
+
+          for (const def of staticDefaults) {
+            const { assignment, localName } = def;
+            const right = assignment.right as TSESTree.Expression;
+            const rightText = sourceCode.getText(right);
+            const constName = `DEFAULT_${toUpperSnakeCase(localName)}`;
+
+            if (!alreadyHasConst(programNode, constName)) {
+              declLines.push(buildConstDeclarationLine(constName, rightText));
+            }
+
+            fixes.push(fixer.replaceText(right, constName));
+          }
+
+          if (declLines.length > 0) {
+            const program = sourceCode.ast;
+            const constSection =
+              declLines.length === 1
+                ? declLines[0]
+                : `${declLines[0]}\n\n${declLines.slice(1).join('\n')}`;
+            const text = sourceCode.text;
+            const findNextNonWhitespace = (start: number): number => {
+              let idx = start;
+              while (idx < text.length && /\s/.test(text[idx])) {
+                idx += 1;
+              }
+              return idx;
+            };
+            const buildBlock = (
+              extraSpacing: boolean,
+              insertPos: number,
+              nextPos: number,
+            ): string => {
+              const whitespace = text.slice(insertPos, nextPos);
+              const lastNewline = whitespace.lastIndexOf('\n');
+              const nextIndentRaw =
+                lastNewline === -1
+                  ? ''
+                  : whitespace.slice(lastNewline + 1).replace(/[^\t ]/g, '');
+              const separator = extraSpacing ? '\n\n\n' : '\n\n';
+              const nextIndent = extraSpacing ? nextIndentRaw : '';
+              return `\n${constSection}${separator}${nextIndent}`;
+            };
+            const imports = program.body.filter(
+              (s) => s.type === AST_NODE_TYPES.ImportDeclaration,
+            );
+            if (imports.length > 0) {
+              const lastImport = imports[imports.length - 1];
+              const insertPos = lastImport.range![1];
+              const nextPos = findNextNonWhitespace(insertPos);
+              fixes.push(
+                fixer.replaceTextRange(
+                  [insertPos, nextPos],
+                  buildBlock(false, insertPos, nextPos),
+                ),
+              );
+            } else {
+              const body = program.body;
+              let insertPos = 0;
+              let afterDirectiveIdx = -1;
+              for (let i = 0; i < body.length; i++) {
+                const stmt = body[i];
+                if (
+                  stmt.type === AST_NODE_TYPES.ExpressionStatement &&
+                  stmt.expression.type === AST_NODE_TYPES.Literal &&
+                  typeof stmt.expression.value === 'string'
+                ) {
+                  afterDirectiveIdx = i;
+                } else {
+                  break;
+                }
+              }
+              if (afterDirectiveIdx >= 0) {
+                insertPos = body[afterDirectiveIdx].range![1];
+              }
+              const nextPos = findNextNonWhitespace(insertPos);
+              fixes.push(
+                fixer.replaceTextRange(
+                  [insertPos, nextPos],
+                  buildBlock(afterDirectiveIdx < 0, insertPos, nextPos),
+                ),
+              );
+            }
+          }
+
+          return fixes;
+        },
+      });
     }
 
     return {
@@ -222,7 +344,10 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
         }
 
         const callback = node.arguments[0];
-        if (callback.type !== AST_NODE_TYPES.ArrowFunctionExpression) {
+        if (
+          callback.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
+          callback.type !== AST_NODE_TYPES.FunctionExpression
+        ) {
           return;
         }
 
@@ -272,115 +397,43 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
         if (relevantDeclarators.length === 0) return;
 
         const enclosingFn = getEnclosingFunction(node);
-        if (!enclosingFn || !isComponentOrHookFunction(enclosingFn)) return;
-
-        const defaults: Array<{
-          assignment: TSESTree.AssignmentPattern;
-          localName: string;
-        }> = [];
-        for (const d of relevantDeclarators) {
-          defaults.push(
-            ...collectAssignmentDefaultsFromPattern(
-              d.id as TSESTree.ObjectPattern | TSESTree.ArrayPattern,
-            ),
-          );
-        }
-        if (defaults.length === 0) return;
-
-        const staticDefaults = defaults.filter((def) => {
-          const right = def.assignment.right as TSESTree.Expression | null;
-          return right && !hasIdentifiers(right);
-        });
-        if (staticDefaults.length === 0) return;
-
-        context.report({
+        reportStaticDefaults(
+          relevantDeclarators.map(
+            (d) => d.id as TSESTree.ObjectPattern | TSESTree.ArrayPattern,
+          ),
+          enclosingFn,
           node,
-          messageId: 'extractDefaultToGlobalConstant',
-          fix(fixer) {
-            const fixes: TSESLint.RuleFix[] = [];
+        );
+      },
 
-            const programNode = sourceCode.ast;
-            const declLines: string[] = [];
+      FunctionDeclaration(node) {
+        const patterns = node.params.filter(
+          (p): p is TSESTree.ObjectPattern | TSESTree.ArrayPattern =>
+            p.type === AST_NODE_TYPES.ObjectPattern ||
+            p.type === AST_NODE_TYPES.ArrayPattern,
+        );
+        if (patterns.length === 0) return;
+        reportStaticDefaults(patterns, node, node);
+      },
 
-            for (const def of staticDefaults) {
-              const { assignment, localName } = def;
-              const right = assignment.right as TSESTree.Expression;
-              const rightText = sourceCode.getText(right);
-              const constName = `DEFAULT_${toUpperSnakeCase(localName)}`;
+      FunctionExpression(node) {
+        const patterns = node.params.filter(
+          (p): p is TSESTree.ObjectPattern | TSESTree.ArrayPattern =>
+            p.type === AST_NODE_TYPES.ObjectPattern ||
+            p.type === AST_NODE_TYPES.ArrayPattern,
+        );
+        if (patterns.length === 0) return;
+        reportStaticDefaults(patterns, node, node);
+      },
 
-              if (!alreadyHasConst(programNode, constName)) {
-                declLines.push(buildConstDeclarationLine(constName, rightText));
-              }
-
-              fixes.push(fixer.replaceText(right, constName));
-            }
-
-            if (declLines.length > 0) {
-              const program = sourceCode.ast;
-              const imports = program.body.filter(
-                (s) => s.type === AST_NODE_TYPES.ImportDeclaration,
-              );
-              if (imports.length > 0) {
-                const lastImport = imports[imports.length - 1];
-                const rest = declLines.slice(1).join('\n');
-                const block = `\n${declLines[0]}\n\n${
-                  rest ? rest + '\n\n' : ''
-                }`;
-
-                // Remove whitespace after the last import up to the next node (if any)
-                const body = program.body;
-                const idx = body.findIndex((s) => s === lastImport);
-                const next = body[idx + 1];
-                if (next) {
-                  fixes.unshift(
-                    fixer.replaceTextRange(
-                      [lastImport.range[1], next.range[0]],
-                      '',
-                    ),
-                  );
-                }
-                fixes.unshift(fixer.insertTextAfter(lastImport, block));
-              } else {
-                // No imports. If a directive prologue exists (e.g., 'use client'), insert after it; otherwise insert at file start.
-                const body = program.body;
-                let directiveEnd = 0;
-                for (let i = 0; i < body.length; i++) {
-                  const stmt = body[i];
-                  if (
-                    stmt.type === AST_NODE_TYPES.ExpressionStatement &&
-                    stmt.expression.type === AST_NODE_TYPES.Literal &&
-                    typeof stmt.expression.value === 'string'
-                  ) {
-                    directiveEnd = i + 1;
-                  } else {
-                    break;
-                  }
-                }
-                const rest = declLines.slice(1).join('\n');
-                const block = `\n${declLines[0]}\n\n${
-                  rest ? rest + '\n\n' : ''
-                }`;
-                if (directiveEnd > 0) {
-                  const lastDirective = body[directiveEnd - 1];
-                  const nextNode = body[directiveEnd];
-                  if (nextNode) {
-                    fixes.unshift(
-                      fixer.replaceTextRange(
-                        [lastDirective.range[1], nextNode.range[0]],
-                        '',
-                      ),
-                    );
-                  }
-                  fixes.unshift(fixer.insertTextAfter(lastDirective, block));
-                } else {
-                  fixes.unshift(fixer.insertTextBeforeRange([0, 0], block));
-                }
-              }
-            }
-
-            return fixes;
-          },
-        });
+      ArrowFunctionExpression(node) {
+        const patterns = node.params.filter(
+          (p): p is TSESTree.ObjectPattern | TSESTree.ArrayPattern =>
+            p.type === AST_NODE_TYPES.ObjectPattern ||
+            p.type === AST_NODE_TYPES.ArrayPattern,
+        );
+        if (patterns.length === 0) return;
+        reportStaticDefaults(patterns, node, node);
       },
     };
   },

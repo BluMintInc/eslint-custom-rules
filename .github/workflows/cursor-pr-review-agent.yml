@@ -1,0 +1,280 @@
+name: Launch Cursor Agent on PR Review
+
+on:
+  pull_request_review:
+    types: ['submitted']
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  launch_cursor_agent:
+    if: ${{ github.event.review.user.login != 'github-actions[bot]' && !contains(github.event.pull_request.head.ref, '-review-') && !contains(github.event.pull_request.labels.*.name, 'no-cursor') && (!(
+       (github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.ref == 'develop') ||
+       (github.event.pull_request.base.ref == 'develop' && github.event.pull_request.head.ref == 'main')
+       )) }}
+    runs-on: ubuntu-latest
+    concurrency:
+      # Prevent overlapping agents for the same PR branch
+      group: cursor-pr-review-${{ github.event.pull_request.number || github.event.pull_request.head.ref }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955  # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Gather Inline Review Comment Count
+        id: comments
+        run: |
+          COUNT=$(gh api \
+            repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews/${{ github.event.review.id }}/comments \
+            --jq 'length')
+          echo "count=$COUNT" >> $GITHUB_OUTPUT
+
+      - name: Exit if no inline comments
+        if: steps.comments.outputs.count == '0'
+        run: echo "No inline comments; skipping" && exit 0
+
+      - name: Build context for PR Review agent
+        id: context
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REVIEW_ID: ${{ github.event.review.id }}
+          REVIEW_AUTHOR_LOGIN: ${{ github.event.review.user.login }}
+          REVIEW_AUTHOR_TYPE: ${{ github.event.review.user.type }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          # Run Python context builder and save output
+          CONTEXT_JSON=$(python3 .github/scripts/build-pr-review-context.py)
+          echo "$CONTEXT_JSON" > /tmp/pr-review-context.json
+          
+          # Extract fields for workflow
+          PR_NUMBER=$(echo "$CONTEXT_JSON" | jq -r '.pr.number')
+          PR_TITLE=$(echo "$CONTEXT_JSON" | jq -r '.pr.title')
+          REVIEW_ID=$(echo "$CONTEXT_JSON" | jq -r '.review.id')
+          IS_BOT=$(echo "$CONTEXT_JSON" | jq -r '.review.is_bot')
+          
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "pr_title=$PR_TITLE" >> $GITHUB_OUTPUT
+          echo "review_id=$REVIEW_ID" >> $GITHUB_OUTPUT
+          echo "is_bot=$IS_BOT" >> $GITHUB_OUTPUT
+          echo "context_path=/tmp/pr-review-context.json" >> $GITHUB_OUTPUT
+
+      - name: Fetch Initial Unresolved Comments
+        id: fetch_comments
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.context.outputs.pr_number }}
+          REVIEW_ID: ${{ steps.context.outputs.review_id }}
+          IS_BOT: ${{ steps.context.outputs.is_bot }}
+        run: |
+          # Determine which script to run based on bot status
+          if [ "$IS_BOT" = "true" ]; then
+            # Bot review: use pr-check-bot-comments.sh
+            # Limit to 5 to match batch size logic
+            COMMENTS=$(./scripts/pr-check-bot-comments.sh --pr="$PR_NUMBER" --review-batch="$REVIEW_ID" --limit=5)
+          else
+            # Human review: use pr-check-comments.sh
+            # Limit to 7 to match batch size logic
+            COMMENTS=$(./scripts/pr-check-comments.sh --pr="$PR_NUMBER" --review-batch="$REVIEW_ID" --limit=7)
+          fi
+          
+          # Save comments to a temporary file to avoid issues with multiline strings in env vars or args
+          echo "$COMMENTS" > /tmp/pr-review-comments.md
+          echo "comments_path=/tmp/pr-review-comments.md" >> $GITHUB_OUTPUT
+
+      - name: Compute variables
+        id: vars
+        env:
+          IS_BOT: ${{ steps.context.outputs.is_bot }}
+        run: |
+          SOURCE_REF='${{ github.event.pull_request.head.ref }}'
+          REVIEW_ID='${{ steps.context.outputs.review_id }}'
+          PR_NUMBER='${{ steps.context.outputs.pr_number }}'
+          echo "source_ref=$SOURCE_REF" >> $GITHUB_OUTPUT
+          echo "target_branch=$SOURCE_REF" >> $GITHUB_OUTPUT
+
+      - name: Build agent prompt
+        id: prompt
+        if: steps.comments.outputs.count != '0' && steps.context.outputs.is_bot != 'true'
+        run: |
+          # Build prompt using TypeScript script
+          # Pass the context JSON path AND the comments markdown file path
+          npx tsx ".github/scripts/build-pr-review-prompt.ts" "/tmp/pr-review-context.json" "/tmp/pr-review-comments.md" > /tmp/pr-review-prompt.txt
+          
+          echo "prompt_path=/tmp/pr-review-prompt.txt" >> $GITHUB_OUTPUT
+
+      - name: Select anchor file and line from PR diff
+        id: anchor
+        if: steps.comments.outputs.count != '0' && steps.context.outputs.is_bot != 'true'
+        run: |
+          # Ensure jq is available
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y jq
+          fi
+
+          FILES_JSON=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files?per_page=100)
+          # Pick the first file that has a textual patch
+          ANCHOR_PATH=$(echo "$FILES_JSON" | jq -r '[.[] | select(.patch != null)][0].filename // empty')
+          if [ -z "$ANCHOR_PATH" ]; then
+            echo "No suitable text diff found to anchor a resolvable thread. Falling back to non-resolvable review comment." >&2
+            echo "has_anchor=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          PATCH=$(echo "$FILES_JSON" | jq -r '[.[] | select(.patch != null)][0].patch')
+
+          # Parse the unified diff to compute the first valid head-side line number we can comment on
+          # Prefer an added ('+') line; otherwise, fall back to a context (' ') line.
+          HEAD_LINE=$(echo "$PATCH" | awk '
+            BEGIN{ headStart=-1; headLine=-1; found=0; }
+            /^@@ / {
+              # Extract +c from @@ -a,b +c,d @@
+              match($0, /\+([0-9]+)/, m);
+              headStart = m[1];
+              headLine = headStart;
+              next;
+            }
+            {
+              if (headStart < 0) next; # not inside a hunk yet
+              first = substr($0,1,1);
+              if (first == "+") { print headLine; exit; }
+              if (first == " ") { if (ctx == 0) ctx = headLine; }
+              if (first == "+" || first == " ") headLine++;
+              # '-' lines do not advance head side
+              next;
+            }
+            END{ if (!NR) exit 1; if (ctx) print ctx; }
+          ')
+
+          # Sanitize HEAD_LINE to a single numeric value without whitespace/CRLF
+          HEAD_LINE="$(printf '%s' "$HEAD_LINE" | tr -d '\r' | head -n1 | sed -E 's/^[[:space:]]+|[[:space:]]+$//g')"
+
+          if [ -z "$HEAD_LINE" ] || ! [[ "$HEAD_LINE" =~ ^[0-9]+$ ]]; then
+            echo "Could not compute a head-side line from patch; falling back." >&2
+            echo "has_anchor=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          {
+            echo "has_anchor=true"
+            echo "path<<EOF"
+            echo "$ANCHOR_PATH"
+            echo "EOF"
+            echo "line<<EOF"
+            echo "$HEAD_LINE"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Skip bot reviews (manual workflow only)
+        if: steps.comments.outputs.count != '0' && steps.context.outputs.is_bot == 'true'
+        run: |
+          echo "::notice::Skipping automatic agent launch for bot review. Use '/pr-review-ai-bots' command manually in Cursor Chat to address bot comments with explicit instructions."
+
+      - name: Launch Cursor Background Agent
+        id: launch
+        if: steps.comments.outputs.count != '0' && steps.context.outputs.is_bot != 'true'
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          CURSOR_WEBHOOK_SECRET: ${{ secrets.CURSOR_WEBHOOK_SECRET }}
+          CURSOR_WEBHOOK_URL: ${{ secrets.CURSOR_WEBHOOK_URL }}
+        run: |
+          # Ensure jq is available
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y jq
+          fi
+
+          echo "::add-mask::${CURSOR_API_KEY}"
+
+          # Build JSON safely using --rawfile for prompt
+          JSON_PAYLOAD=$(jq -n \
+            --rawfile prompt_text /tmp/pr-review-prompt.txt \
+            --arg repository "https://github.com/${{ github.repository }}" \
+            --arg source_ref "${{ steps.vars.outputs.source_ref }}" \
+            --arg target_branch "${{ steps.vars.outputs.target_branch }}" \
+            --arg webhook_url "${CURSOR_WEBHOOK_URL}" \
+            --arg webhook_secret "${CURSOR_WEBHOOK_SECRET}" \
+            --arg model "gpt-5.1-codex-max-high" \
+            '{
+              model: $model,
+              prompt: { text: $prompt_text },
+              source: { repository: $repository, ref: $source_ref },
+              target: { branchName: $target_branch, autoCreatePr: false, skipReviewerRequest: true }
+            } + (if $webhook_url != "" then { webhook: { url: $webhook_url, secret: $webhook_secret } } else {} end)')
+          
+          # Send request and capture response body and HTTP status (do not fail on non-2xx)
+          HTTP_RESPONSE=$(curl --silent --show-error --write-out "HTTPSTATUS:%{http_code}" \
+            --request POST \
+            --url https://api.cursor.com/v0/agents \
+            --header "Authorization: Bearer ${CURSOR_API_KEY}" \
+            --header "Content-Type: application/json" \
+            --data "$JSON_PAYLOAD")
+
+          # Split body and status
+          HTTP_STATUS="${HTTP_RESPONSE##*HTTPSTATUS:}"
+          HTTP_BODY="${HTTP_RESPONSE%HTTPSTATUS:*}"
+
+          echo "Cursor API HTTP status: $HTTP_STATUS"
+          echo "Cursor API response body (raw):"
+          if ! echo "$HTTP_BODY" | jq '.'; then
+            # Not JSON; print as-is
+            echo "$HTTP_BODY"
+          fi
+
+          if [[ "$HTTP_STATUS" =~ ^2 ]]; then
+            # Success: extract URL and mark launched
+            AGENT_URL=$(echo "$HTTP_BODY" | jq -r '.target.url // empty')
+            echo "agent_url=$AGENT_URL" >> $GITHUB_OUTPUT
+            echo "launched=true" >> $GITHUB_OUTPUT
+          else
+            # Non-2xx: warn but do not fail the job (common when PR closed mid-run)
+            echo "::warning::Cursor API returned status $HTTP_STATUS. This may happen if the PR was closed while the workflow was running. See response body above for details."
+            echo "agent_url=" >> $GITHUB_OUTPUT
+            echo "launched=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create resolvable review thread with CTA
+        id: create_resolvable
+        if: steps.comments.outputs.count != '0' && steps.anchor.outputs.has_anchor == 'true' && steps.launch.outputs.launched == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          URL='${{ steps.launch.outputs.agent_url }}'
+          HEAD_SHA='${{ github.event.pull_request.head.sha }}'
+          BODY="✅ Launched Cursor agent to address review ${{ steps.context.outputs.review_id }} (${{ steps.comments.outputs.count }} comment(s)). View agent: $URL. The agent pushes fixes directly to this PR branch."
+
+          # Create a pending inline review comment on the PR's head commit
+          if gh api -X POST repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments \
+            -f body="$BODY" \
+            -f commit_id="$HEAD_SHA" \
+            -f path='${{ steps.anchor.outputs.path }}' \
+            -F side=RIGHT \
+            -F line='${{ steps.anchor.outputs.line }}' >/dev/null; then
+            echo "created_thread=true" >> $GITHUB_OUTPUT
+          else
+            echo "created_thread=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Fallback — non-resolvable review comment
+        if: steps.comments.outputs.count != '0' && (steps.anchor.outputs.has_anchor != 'true' || steps.create_resolvable.outputs.created_thread != 'true') && steps.launch.outputs.launched == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          URL='${{ steps.launch.outputs.agent_url }}'
+          gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews \
+            -f event=COMMENT \
+            -f body="✅ Launched Cursor agent to address review ${{ steps.context.outputs.review_id }} (${{ steps.comments.outputs.count }} comment(s)). View agent: $URL. The agent pushes fixes directly to this PR branch. (Note: Could not anchor to a diff line to make this resolvable.)"
