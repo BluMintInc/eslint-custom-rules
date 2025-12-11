@@ -99,8 +99,4 @@ When you significantly refactor or extend an existing code system that already h
 - **Updating**: Apply this rule **after a code system with existing documentation has been significantly refactored or extended**. This is a mandatory step before considering the task complete, as outlined in the "Agent Task Completion Standards".
 
 ### Common Pitfalls
-- **Avoid mentioning the past. Use A-temporal phrasing**: Avoid time-coupled phrasing (e.g., "now", "currently", "recently", "new", "old", "temporary"). When you change the documentation, avoid mentioning history or the past. E.g. avoid statements like "Refactored from using the new v2 API to using the new v3 API".
-
-
-
-
+- **Use A-temporal phrasing**: Avoid time-coupled language (for example: "now", "currently", "recently", "new", "old", "temporary"); when editing documentation, do not refer to past states (e.g., avoid "Refactored from v2 to v3").

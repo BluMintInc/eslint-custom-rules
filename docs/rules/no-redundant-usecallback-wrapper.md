@@ -6,6 +6,8 @@
 
 <!-- end auto-generated rule header -->
 
+💭 This rule does not require type information.
+
 Prevent wrapping already memoized callbacks from hooks/contexts with an extra `useCallback`.
 
 ## Why
@@ -52,15 +54,15 @@ function SignInButton() {
   "@blumintinc/blumint/no-redundant-usecallback-wrapper": [
     "error",
     {
-      "memoizedHookNames": ["useAuthSubmit", "useLoadingWrapper", "useSomething"],
+      "memoizedHookNames": ["useAuthSubmit", "useLoadingWrapper"],
       "assumeAllUseAreMemoized": false
     }
   ]
 }
 ```
 
-- `memoizedHookNames`: additional hook names to treat as returning memoized/stable callbacks.
-- `assumeAllUseAreMemoized` (default `false`): when `true`, treat any callee starting with `use` as memoized/stable. Leave `false` to opt-in only via `memoizedHookNames`.
+- `memoizedHookNames` (default `[]`): additional hook names to treat as returning memoized/stable callbacks.
+- `assumeAllUseAreMemoized` (default `false`): when `true`, treat any callee starting with `use` as memoized/stable. Keep `false` to opt in via `memoizedHookNames`.
 
 ## Valid
 
@@ -115,15 +117,15 @@ const onClick = useCallback(() => svc.handle(), [svc]);
 
 ## Fixes
 
-Where safe, the rule auto-fixes to pass the memoized function directly (removing `useCallback`).
+Where safe, the rule removes the redundant `useCallback` wrapper and passes the memoized function directly.
 
-- If the wrapper simply returns an identifier function (e.g., `signIn`) with no arguments, it auto-fixes to that identifier.
-- If the wrapper targets a member function (e.g., `svc.handle()`), it reports without an auto-fix to avoid breaking `this` binding.
-- If the wrapper supplies any arguments (literals, closures, or derived values), it is treated as non-redundant and not reported.
+- When the wrapper simply returns an identifier function (for example, `signIn`) with no arguments, the fixer replaces the wrapper with that identifier.
+- Member calls (for example, `svc.handle()`) are reported without an auto-fix to avoid breaking `this` binding.
+- Wrappers that supply any arguments—literals, closures, or derived values—are considered non-redundant and are not reported.
 
 ## Edge Cases Handled
 
-- Identifies callbacks destructured from hook results
-- Allows substantial logic in wrappers
-- Allows wrappers that transform parameters or supply arguments
-- Detects object member calls from hook results and avoids unsafe auto-fixes
+- Identifies callbacks destructured from hook results.
+- Allows substantial logic in wrappers.
+- Allows wrappers that transform parameters or supply arguments.
+- Detects object member calls from hook results and avoids unsafe auto-fixes.
