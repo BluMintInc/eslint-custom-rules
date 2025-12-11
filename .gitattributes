@@ -1,4 +1,2 @@
 # Ensure shell scripts use LF line endings (critical for Unix compatibility)
 *.sh text eol=lf
-.cursor/hooks/*.sh text eol=lf
-scripts/*.sh text eol=lf

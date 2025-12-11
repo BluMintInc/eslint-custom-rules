@@ -53,8 +53,6 @@ const ALLOWED_COMPOUND_NOUNS = ['PhoneNumber', 'EmailAddress', 'PostalCode'];
 
 // Common built-in JavaScript prototype methods
 const BUILT_IN_METHODS = new Set([
-  // Whitelisted methods
-  'toArr',
   // String methods
   'charAt',
   'charCodeAt',
@@ -247,7 +245,8 @@ export const noHungarian = createRule<[], MessageIds>({
             return true;
           }
 
-          // Otherwise, it's a valid use of the compound noun
+          // Otherwise treat the compound noun as an allowed descriptive phrase
+          // (e.g., userPhoneNumber is acceptable even though it contains "Number")
           return false;
         }
       }
@@ -321,9 +320,12 @@ export const noHungarian = createRule<[], MessageIds>({
         if (
           normalizedVarName.endsWith(normalizedMarker) &&
           normalizedVarName.length > normalizedMarker.length &&
-          /[A-Z0-9]/.test(
+          (/[A-Z0-9]/.test(
             variableName[variableName.length - normalizedMarker.length - 1],
-          )
+          ) ||
+            /[A-Z]/.test(
+              variableName[variableName.length - normalizedMarker.length],
+            ))
         ) {
           return true;
         }
@@ -335,9 +337,10 @@ export const noHungarian = createRule<[], MessageIds>({
           return false;
         }
 
-        const markerPrefix = variableName.at(markerIndex);
-        const preMarkerPrefix = variableName.at(markerIndex - 1);
-        const suffix = variableName.at(markerIndex + normalizedMarker.length);
+        const preMarkerPrefix =
+          markerIndex > 0 ? variableName[markerIndex - 1] : '';
+        const suffix =
+          variableName[markerIndex + normalizedMarker.length] ?? '';
 
         // Ensure we have proper word boundaries
         // A word boundary is defined by:
@@ -346,11 +349,12 @@ export const noHungarian = createRule<[], MessageIds>({
         const hasStartBoundary =
           markerIndex === 0 ||
           preMarkerPrefix === '_' ||
-          /[A-Z]/.test(markerPrefix || '');
+          /[A-Z]/.test(preMarkerPrefix) ||
+          /[A-Z]/.test(variableName[markerIndex]);
         const hasEndBoundary =
           markerIndex + normalizedMarker.length === normalizedVarName.length ||
           suffix === '_' ||
-          /[A-Z]/.test(suffix || '');
+          /[A-Z]/.test(suffix);
 
         return hasStartBoundary && hasEndBoundary;
       });
