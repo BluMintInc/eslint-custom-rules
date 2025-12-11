@@ -214,6 +214,107 @@ function statementReferencesAny(statement: TSESTree.Statement, names: Set<string
   return false;
 }
 
+function collectAssignedNamesFromPattern(target: TSESTree.Node, names: Set<string>): void {
+  switch (target.type) {
+    case AST_NODE_TYPES.Identifier:
+      names.add(target.name);
+      return;
+    case AST_NODE_TYPES.MemberExpression:
+      if (target.object.type === AST_NODE_TYPES.Identifier) {
+        names.add(target.object.name);
+      }
+      return;
+    case AST_NODE_TYPES.AssignmentPattern:
+      collectAssignedNamesFromPattern(target.left as TSESTree.Node, names);
+      return;
+    case AST_NODE_TYPES.RestElement:
+      collectAssignedNamesFromPattern(target.argument as TSESTree.Node, names);
+      return;
+    case AST_NODE_TYPES.ArrayPattern:
+      target.elements.forEach((element) => {
+        if (element) {
+          collectAssignedNamesFromPattern(element as TSESTree.Node, names);
+        }
+      });
+      return;
+    case AST_NODE_TYPES.ObjectPattern:
+      target.properties.forEach((prop) => {
+        if (prop.type === AST_NODE_TYPES.Property) {
+          collectAssignedNamesFromPattern(prop.value as TSESTree.Node, names);
+        } else if (prop.type === AST_NODE_TYPES.RestElement) {
+          collectAssignedNamesFromPattern(prop.argument as TSESTree.Node, names);
+        }
+      });
+      return;
+    default:
+      return;
+  }
+}
+
+function collectMutatedIdentifiers(
+  node: TSESTree.Node,
+  names: Set<string>,
+  { skipFunctions }: { skipFunctions: boolean },
+): void {
+  const stack: Array<TSESTree.Node> = [node];
+
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+
+    if (current.type === AST_NODE_TYPES.AssignmentExpression) {
+      collectAssignedNamesFromPattern(current.left as TSESTree.Node, names);
+      if (isNode(current.right)) {
+        stack.push(current.right);
+      }
+      continue;
+    }
+
+    if (current.type === AST_NODE_TYPES.UpdateExpression) {
+      collectAssignedNamesFromPattern(current.argument as TSESTree.Node, names);
+      continue;
+    }
+
+    if (
+      skipFunctions &&
+      (current.type === AST_NODE_TYPES.FunctionDeclaration ||
+        current.type === AST_NODE_TYPES.FunctionExpression ||
+        current.type === AST_NODE_TYPES.ArrowFunctionExpression)
+    ) {
+      continue;
+    }
+
+    for (const key of Object.keys(current)) {
+      if (key === 'parent') {
+        continue;
+      }
+      const value = (current as unknown as Record<string, unknown>)[key];
+      if (Array.isArray(value)) {
+        for (const element of value) {
+          if (isNode(element)) {
+            stack.push(element);
+          }
+        }
+      } else if (isNode(value)) {
+        stack.push(value);
+      }
+    }
+  }
+}
+
+function statementMutatesAny(statement: TSESTree.Statement, names: Set<string>): boolean {
+  if (names.size === 0) {
+    return false;
+  }
+  const mutated = new Set<string>();
+  collectMutatedIdentifiers(statement, mutated, { skipFunctions: true });
+  for (const name of names) {
+    if (mutated.has(name)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function initializerIsSafe(
   expression: TSESTree.Expression | TSESTree.PrivateIdentifier,
   { allowHooks }: { allowHooks: boolean },
@@ -389,7 +490,7 @@ function isGuardIfStatement(statement: TSESTree.Statement): statement is TSESTre
   return false;
 }
 
-export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, []> = createRule({
+export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]> = createRule({
   name: 'logical-top-to-bottom-grouping',
   meta: {
     type: 'suggestion',
@@ -437,6 +538,7 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, []> = c
 
         const guardDependencies = new Set<string>();
         collectUsedIdentifiers(statement.test, guardDependencies, { skipFunctions: true });
+        collectUsedIdentifiers(statement.consequent, guardDependencies, { skipFunctions: true });
 
         let targetIndex = index;
         for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
@@ -544,10 +646,11 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, []> = c
         ) {
           return;
         }
-        if (declarator.init && declarator.init.type !== AST_NODE_TYPES.Identifier) {
-          return;
-        }
         const name = declarator.id.name;
+        const dependencies = new Set<string>();
+        if (declarator.init && declarator.init.type === AST_NODE_TYPES.Identifier) {
+          dependencies.add(declarator.init.name);
+        }
 
         let usageIndex = -1;
         for (let cursor = index + 1; cursor < body.length; cursor += 1) {
@@ -564,6 +667,12 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, []> = c
         const intervening = body.slice(index + 1, usageIndex);
         const usesName = intervening.some((stmt) => statementReferencesAny(stmt, new Set([name])));
         if (usesName) {
+          return;
+        }
+        const mutatesDependencies =
+          dependencies.size > 0 &&
+          intervening.some((stmt) => statementMutatesAny(stmt, dependencies));
+        if (mutatesDependencies) {
           return;
         }
 
@@ -648,11 +757,11 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, []> = c
     }
 
     function handleBlock(node: BlockLike): void {
-      const body = node.type === AST_NODE_TYPES.Program ? node.body : node.body;
-      handleGuardHoists(body, node);
-      handleDerivedGrouping(body, node);
-      handleLateDeclarations(body, node);
-      handleSideEffects(body, node);
+      const statements = node.body;
+      handleGuardHoists(statements, node);
+      handleDerivedGrouping(statements, node);
+      handleLateDeclarations(statements, node);
+      handleSideEffects(statements, node);
     }
 
     return {

@@ -29,11 +29,6 @@ logGroup(group);
 const { id } = group || {};
     `,
     `
-const value = 1;
-let total;
-total = value + 1;
-    `,
-    `
 const message = buildMessage();
 console.log(message);
     `,
@@ -57,6 +52,20 @@ if (!value) {
   return;
 }
 use(value);
+    `,
+    `
+const ready = getReady();
+const result = 1;
+if (!ready) {
+  return result;
+}
+use(result);
+    `,
+    `
+let source = 1;
+const copy = source;
+source = 2;
+use(copy);
     `,
   ],
   invalid: [
@@ -145,8 +154,7 @@ const unrelated = 1;
     },
     {
       code: `
-const first = 1;
-const second = 2;
+const first = 1, second = 2;
 if (shouldStop) {
   return null;
 }
@@ -156,8 +164,7 @@ const combined = first + second;
 if (shouldStop) {
   return null;
 }
-const first = 1;
-const second = 2;
+const first = 1, second = 2;
 const combined = first + second;
 `,
       errors: [{ messageId: 'moveGuardUp' }],
@@ -165,13 +172,11 @@ const combined = first + second;
     {
       code: `
 let counter;
-const start = 0;
-const end = 1;
+const start = 0, end = 1;
 counter = start + end;
 `,
       output: `
-const start = 0;
-const end = 1;
+const start = 0, end = 1;
 let counter;
 counter = start + end;
 `,
@@ -207,18 +212,23 @@ const router = useGroupRouter();
       code: `
 const base = createBase();
 const helper = another();
-const count = 1;
+const count = getCount();
 const later = 2;
 const derived = base.value * count;
       `,
       output: `
 const base = createBase();
 const helper = another();
-const count = 1;
+const count = getCount();
 const derived = base.value * count;
 const later = 2;
 `,
       errors: [{ messageId: 'groupDerived' }],
+    },
+    {
+      code: '\nlet counter = 0;\nconst mid = doMid();\nlog(mid);\nconsole.log(counter);\n',
+      output: '\nconst mid = doMid();\nlog(mid);\nlet counter = 0;\nconsole.log(counter);\n',
+      errors: [{ messageId: 'moveDeclarationCloser' }],
     },
   ],
 });
