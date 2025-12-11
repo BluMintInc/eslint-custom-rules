@@ -137,6 +137,40 @@ ruleTesterTs.run('no-redundant-this-params', noRedundantThisParams, {
       }
     }
     `,
+    `
+    class ApiClient {
+      constructor(
+        private readonly apiKey: string,
+        private readonly baseUrl: string,
+      ) {}
+
+      private request(options: { url: string; headers: Record<string, string> }) {
+        return options;
+      }
+
+      fetch(endpoint: string) {
+        return this.request({
+          url: \`\${this.baseUrl}\${endpoint}\`,
+          headers: {
+            Authorization: \`Bearer \${this.apiKey}\`,
+          },
+        });
+      }
+    }
+    `,
+    `
+    class Transformer {
+      private config!: Config;
+
+      private consume(payload: string) {
+        return payload.length;
+      }
+
+      run() {
+        return this.consume(JSON.stringify(this.config));
+      }
+    }
+    `,
   ],
   invalid: [
     {
@@ -213,51 +247,6 @@ ruleTesterTs.run('no-redundant-this-params', noRedundantThisParams, {
     },
     {
       code: `
-      class ApiClient {
-        constructor(
-          private readonly apiKey: string,
-          private readonly baseUrl: string,
-        ) {}
-
-        private request(options: { url: string; headers: Record<string, string> }) {
-          return options;
-        }
-
-        fetch(endpoint: string) {
-          return this.request({
-            url: \`\${this.baseUrl}\${endpoint}\`,
-            headers: {
-              Authorization: \`Bearer \${this.apiKey}\`,
-            },
-          });
-        }
-      }
-      `,
-      errors: [
-        { messageId: 'redundantInstanceValueInObject' },
-        { messageId: 'redundantInstanceValueInObject' },
-      ],
-    },
-    {
-      code: `
-      class DynamicKeys {
-        private key = 'id';
-
-        private send(payload: Record<string, unknown>) {
-          return payload;
-        }
-
-        run() {
-          return this.send({
-            [this.key]: 1,
-          });
-        }
-      }
-      `,
-      errors: [{ messageId: 'redundantInstanceValueInObject' }],
-    },
-    {
-      code: `
       abstract class BaseProcessor {
         constructor(protected readonly config: Config) {}
 
@@ -330,6 +319,24 @@ ruleTesterTs.run('no-redundant-this-params', noRedundantThisParams, {
     },
     {
       code: `
+      class DynamicKeys {
+        private key = 'id';
+
+        private send(payload: Record<string, unknown>) {
+          return payload;
+        }
+
+        run() {
+          return this.send({
+            [this.key]: 1,
+          });
+        }
+      }
+      `,
+      errors: [{ messageId: 'redundantInstanceValueInObject' }],
+    },
+    {
+      code: `
       class Reporter {
         private ids: string[] = [];
 
@@ -371,6 +378,26 @@ ruleTesterTs.run('no-redundant-this-params', noRedundantThisParams, {
 
         run() {
           return this.consume(this.#token);
+        }
+      }
+      `,
+      errors: [{ messageId: 'redundantInstanceArg' }],
+    },
+    {
+      code: `
+      class MixedMethodShapes {
+        private value = 1;
+
+        process(value: number) {
+          return value;
+        }
+
+        static process(value: number) {
+          return value * 2;
+        }
+
+        run() {
+          return this.process(this.value);
         }
       }
       `,

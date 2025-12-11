@@ -17,6 +17,7 @@ type ThisAccess = {
   node: TSESTree.MemberExpression | TSESTree.PrivateIdentifier;
   propertyName: string;
   nested: boolean;
+  transformed: boolean;
 };
 
 export const noRedundantThisParams = createRule<[], MessageIds>({
@@ -142,6 +143,26 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
     ): void {
       const methods = new Map<string, MethodMeta>();
 
+      function setMethod(methodName: string, meta: MethodMeta): void {
+        const existing = methods.get(methodName);
+
+        if (!existing) {
+          methods.set(methodName, meta);
+          return;
+        }
+
+        if (existing.isStatic && !meta.isStatic) {
+          methods.set(methodName, meta);
+          return;
+        }
+
+        if (!existing.isStatic && meta.isStatic) {
+          return;
+        }
+
+        methods.set(methodName, meta);
+      }
+
       for (const member of node.body.body) {
         if (
           member.type === AST_NODE_TYPES.MethodDefinition ||
@@ -156,7 +177,7 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
             continue;
           }
 
-          methods.set(methodName, {
+          setMethod(methodName, {
             params: getMethodParams(member),
             isStatic: Boolean(member.static),
             isAbstract: member.type === AST_NODE_TYPES.TSAbstractMethodDefinition,
@@ -178,7 +199,7 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
             continue;
           }
 
-          methods.set(methodName, {
+          setMethod(methodName, {
             params,
             isStatic: false,
             isAbstract: false,
@@ -294,17 +315,45 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
       return `this.${propertyName}`;
     }
 
+    function isTransformingNode(node: TSESTree.Node): boolean {
+      switch (node.type) {
+        case AST_NODE_TYPES.CallExpression:
+        case AST_NODE_TYPES.NewExpression:
+        case AST_NODE_TYPES.TaggedTemplateExpression:
+        case AST_NODE_TYPES.TemplateLiteral:
+        case AST_NODE_TYPES.BinaryExpression:
+        case AST_NODE_TYPES.LogicalExpression:
+        case AST_NODE_TYPES.ConditionalExpression:
+        case AST_NODE_TYPES.SequenceExpression:
+        case AST_NODE_TYPES.UnaryExpression:
+        case AST_NODE_TYPES.UpdateExpression:
+        case AST_NODE_TYPES.AwaitExpression:
+        case AST_NODE_TYPES.YieldExpression:
+        case AST_NODE_TYPES.AssignmentExpression:
+          return true;
+        default:
+          return false;
+      }
+    }
+
     function collectThisAccesses(
       expression: TSESTree.Node,
     ): ThisAccess[] {
       const normalized = unwrapExpression(expression);
       const results: ThisAccess[] = [];
 
-      function visit(node: TSESTree.Node, nested: boolean): void {
+      function visit(
+        node: TSESTree.Node,
+        nested: boolean,
+        transformed: boolean,
+      ): void {
         if ((node as { type?: string }).type === 'ParenthesizedExpression') {
-          visit((node as any).expression, nested || node !== normalized);
+          visit((node as any).expression, nested || node !== normalized, transformed);
           return;
         }
+
+        const nextNested = nested || node !== normalized;
+        const nextTransformed = transformed || isTransformingNode(node);
 
         switch (node.type) {
           case AST_NODE_TYPES.MemberExpression: {
@@ -315,34 +364,35 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
                 node.property.type === AST_NODE_TYPES.PrivateIdentifier)
             ) {
               const propertyName = getNameFromPropertyName(node.property);
-              if (propertyName) {
+              if (propertyName && !nextTransformed) {
                 results.push({
                   node,
                   propertyName,
-                  nested: nested || node !== normalized,
+                  nested: nextNested,
+                  transformed: nextTransformed,
                 });
                 return;
               }
             }
 
-            visit(node.object, true);
+            visit(node.object, true, nextTransformed);
             if (node.computed) {
-              visit(node.property, true);
+              visit(node.property, true, nextTransformed);
             }
             return;
           }
           case AST_NODE_TYPES.ChainExpression:
-            visit(node.expression, nested || node !== normalized);
+            visit(node.expression, nextNested, nextTransformed);
             return;
           case AST_NODE_TYPES.ObjectExpression:
             for (const prop of node.properties) {
               if (prop.type === AST_NODE_TYPES.Property) {
                 if (prop.computed) {
-                  visit(prop.key, true);
+                  visit(prop.key, true, nextTransformed);
                 }
-                visit(prop.value, true);
+                visit(prop.value, true, nextTransformed);
               } else if (prop.type === AST_NODE_TYPES.SpreadElement) {
-                visit(prop.argument, true);
+                visit(prop.argument, true, nextTransformed);
               }
             }
             return;
@@ -353,64 +403,64 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
               }
 
               if (element.type === AST_NODE_TYPES.SpreadElement) {
-                visit(element.argument, true);
+                visit(element.argument, true, nextTransformed);
                 continue;
               }
 
-              visit(element, true);
+              visit(element, true, nextTransformed);
             }
             return;
           case AST_NODE_TYPES.CallExpression:
           case AST_NODE_TYPES.NewExpression:
             for (const arg of node.arguments) {
               if (arg) {
-                visit(arg as TSESTree.Node, true);
+                visit(arg as TSESTree.Node, true, true);
               }
             }
             return;
           case AST_NODE_TYPES.SpreadElement:
-            visit(node.argument, true);
+            visit(node.argument, true, nextTransformed);
             return;
           case AST_NODE_TYPES.BinaryExpression:
           case AST_NODE_TYPES.LogicalExpression:
-            visit(node.left, true);
-            visit(node.right, true);
+            visit(node.left, true, true);
+            visit(node.right, true, true);
             return;
           case AST_NODE_TYPES.ConditionalExpression:
-            visit(node.test, true);
-            visit(node.consequent, true);
-            visit(node.alternate, true);
+            visit(node.test, true, true);
+            visit(node.consequent, true, true);
+            visit(node.alternate, true, true);
             return;
           case AST_NODE_TYPES.TemplateLiteral:
-            node.expressions.forEach((expr) => visit(expr, true));
+            node.expressions.forEach((expr) => visit(expr, true, true));
             return;
           case AST_NODE_TYPES.TaggedTemplateExpression:
-            visit(node.tag, true);
-            visit(node.quasi, true);
+            visit(node.tag, true, true);
+            visit(node.quasi, true, true);
             return;
           case AST_NODE_TYPES.SequenceExpression:
-            node.expressions.forEach((expr) => visit(expr, true));
+            node.expressions.forEach((expr) => visit(expr, true, true));
             return;
           case AST_NODE_TYPES.UnaryExpression:
           case AST_NODE_TYPES.UpdateExpression:
           case AST_NODE_TYPES.AwaitExpression:
           case AST_NODE_TYPES.YieldExpression:
             if (node.argument) {
-              visit(node.argument, true);
+              visit(node.argument, true, true);
             }
             return;
           case AST_NODE_TYPES.AssignmentExpression:
-            visit(node.left as TSESTree.Node, true);
-            visit(node.right, true);
+            visit(node.left as TSESTree.Node, true, true);
+            visit(node.right, true, true);
             return;
           case AST_NODE_TYPES.TSAsExpression:
           case AST_NODE_TYPES.TSTypeAssertion:
           case AST_NODE_TYPES.TSNonNullExpression:
           case AST_NODE_TYPES.TSSatisfiesExpression:
-            visit(node.expression, nested || node !== normalized);
+            visit(node.expression, nextNested, transformed);
             return;
           case AST_NODE_TYPES.TSInstantiationExpression:
-            visit(node.expression, true);
+            visit(node.expression, true, nextTransformed);
             return;
           default:
             if (isFunctionLike(node)) {
@@ -419,7 +469,7 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
         }
       }
 
-      visit(normalized, false);
+      visit(normalized, false, false);
       return results;
     }
 

@@ -73,6 +73,7 @@ class CoinflowProcessorPropsExtractor {
 - Invocations inside callbacks or nested functions (e.g. within `map`/`reduce` lambdas).
 - Computed member access (`this[key]`) and other dynamic lookups.
 - Passing `this` members to external libraries or static methods.
+- Passing transformed values derived from `this` members (e.g. `JSON.stringify(this.config)`), since the method receives the derived value rather than the raw instance state.
 
 ## Notes
 
