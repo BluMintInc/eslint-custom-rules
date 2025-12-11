@@ -130,6 +130,7 @@ import { preferUseDeepCompareMemo } from './rules/prefer-use-deep-compare-memo';
 import { noCircularReferences } from './rules/no-circular-references';
 import { noPassthroughGetters } from './rules/no-passthrough-getters';
 import { noTryCatchAlreadyExistsInTransaction } from './rules/no-try-catch-already-exists-in-transaction';
+import { verticallyGroupRelatedFunctions } from './rules/vertically-group-related-functions';
 
 module.exports = {
   meta: {
@@ -278,6 +279,7 @@ module.exports = {
         '@blumintinc/blumint/no-try-catch-already-exists-in-transaction':
           'error',
         '@blumintinc/blumint/no-passthrough-getters': 'error',
+        '@blumintinc/blumint/vertically-group-related-functions': 'error',
       },
     },
   },
@@ -423,5 +425,6 @@ module.exports = {
     'no-try-catch-already-exists-in-transaction':
       noTryCatchAlreadyExistsInTransaction,
     'no-passthrough-getters': noPassthroughGetters,
+    'vertically-group-related-functions': verticallyGroupRelatedFunctions,
   },
 };
