@@ -6,6 +6,8 @@
 
 This repository contains custom ESLint rules for BluMint. When contributing, follow these guidelines to maintain consistency and quality.
 
+For repository maintenance workflows (triage, automated agents, troubleshooting), see [.cursor/rules/repo-maintenance.mdc](.cursor/rules/repo-maintenance.mdc).
+
 ## Repository Purpose
 
 This ESLint plugin provides **100+ custom rules** for BluMint's TypeScript/React codebase. The rules enforce coding standards, prevent common mistakes, and maintain code quality across BluMint's projects.
@@ -599,6 +601,15 @@ Write comments that explain **why**, not **how**:
 ## Acceptance Criteria
 
 All new rules must meet these criteria:
+
+### File Structure (Strict Enforcement)
+* The following files must be created/updated for every new rule:
+  - `src/index.ts` (Rule export, rules object, recommended config)
+  - `src/rules/new-rule.ts`
+  - `src/tests/new-rule.test.ts`
+  - `docs/rules/new-rule.md`
+  - `README.md`
+* **Note:** Stop Hooks will block completion if any of these are missing.
 
 ### Code Quality
 * Rule adheres to ESLint plugin guidelines
