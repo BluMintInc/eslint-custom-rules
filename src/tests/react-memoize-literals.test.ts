@@ -352,6 +352,34 @@ const Memoized = memo(function MyComponent({ onClick }) {
         },
       ],
     },
+    // Anonymous component wrapped in HOC should still be detected
+    {
+      code: `
+const Memoized = memo(() => {
+  const handler = () => doWork();
+  const options = { debounce: 50 };
+  return <button onClick={handler}>{options.debounce}</button>;
+});
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'component "Memoized"',
+            memoHook: 'useCallback',
+          },
+        },
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'object literal',
+            context: 'component "Memoized"',
+            memoHook: 'useMemo',
+          },
+        },
+      ],
+    },
     // Custom hook returning array literal
     {
       code: `

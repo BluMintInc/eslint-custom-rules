@@ -67,6 +67,43 @@ function getFunctionName(
     return parent.key.name;
   }
 
+  let current: TSESTree.Node | null = parent ?? null;
+  while (current) {
+    if (
+      current.type === AST_NODE_TYPES.VariableDeclarator &&
+      current.id.type === AST_NODE_TYPES.Identifier
+    ) {
+      return current.id.name;
+    }
+
+    if (
+      current.type === AST_NODE_TYPES.AssignmentExpression &&
+      current.left.type === AST_NODE_TYPES.Identifier
+    ) {
+      return current.left.name;
+    }
+
+    if (
+      current.type === AST_NODE_TYPES.Property &&
+      current.key.type === AST_NODE_TYPES.Identifier
+    ) {
+      return current.key.name;
+    }
+
+    if (
+      current.type === AST_NODE_TYPES.CallExpression ||
+      current.type === AST_NODE_TYPES.MemberExpression ||
+      current.type === AST_NODE_TYPES.ChainExpression ||
+      current.type === AST_NODE_TYPES.TSAsExpression ||
+      current.type === AST_NODE_TYPES.TSTypeAssertion
+    ) {
+      current = current.parent as TSESTree.Node | null;
+      continue;
+    }
+
+    break;
+  }
+
   return null;
 }
 
