@@ -353,6 +353,7 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
         return;
       }
 
+      // No fixer here because destructuring parameters changes the function signature and must stay manual.
       context.report({
         node,
         messageId: 'preferDestructuring',
