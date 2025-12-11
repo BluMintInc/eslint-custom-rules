@@ -76,12 +76,13 @@ export class MatchAdmin {
     return this.settings.otherResults || [];
   }
 
-  // Getter with type assertion - allowed
+  // Getter with type assertion - allowed (provides a safer, narrowed API surface)
   private get typedResults(): ValidResult[] {
     return this.settings.otherResults as ValidResult[];
   }
 
   // Getter accessing parent class property - allowed
+  // (override for access control or to normalize/validate parent value)
   private get parentProperty() {
     return super.parentProperty;
   }
