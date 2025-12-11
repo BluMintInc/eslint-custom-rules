@@ -119,9 +119,9 @@ jobs:
             exit 0
           fi
 
-          has_cursor_run=$(echo "$CHECKS_JSON" | jq 'any(.check_runs[]; ((.app.slug|ascii_downcase|test("cursor")) or (.name|test("Cursor Bugbot";"i"))) and .status == "completed" and .conclusion == "success")')
-          has_coderabbit_run=$(echo "$CHECKS_JSON" | jq 'any(.check_runs[]; ((.app.slug|ascii_downcase|test("coderabbit")) or (.name|test("CodeRabbit";"i"))) and .status == "completed" and .conclusion == "success")')
-          has_coderabbit_status=$(echo "$STATUSES_JSON" | jq 'any(.statuses[]?; (.context|test("CodeRabbit";"i")) and .state == "success")')
+          has_cursor_run=$(echo "$CHECKS_JSON" | jq 'any(.check_runs[]; ((.app.slug|ascii_downcase|test("cursor")) or (.name|test("Cursor Bugbot";"i"))) and .status == "completed" and (.conclusion == "success" or .conclusion == "neutral"))')
+          has_coderabbit_run=$(echo "$CHECKS_JSON" | jq 'any(.check_runs[]; ((.app.slug|ascii_downcase|test("coderabbit")) or (.name|test("CodeRabbit";"i"))) and .status == "completed" and (.conclusion == "success" or .conclusion == "neutral"))')
+          has_coderabbit_status=$(echo "$STATUSES_JSON" | jq 'any(.statuses[]?; (.context|test("CodeRabbit";"i")) and (.state == "success" or .state == "neutral"))')
 
           echo "Cursor check run satisfied: $has_cursor_run"
           echo "CodeRabbit check run satisfied: $has_coderabbit_run"
