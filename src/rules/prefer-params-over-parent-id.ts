@@ -21,14 +21,14 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Enforce the use of event.params over .ref.parent.id in Firebase change handlers',
+        'Prefer handler params for parent IDs instead of traversing ref.parent.id so Firebase triggers stay aligned with path templates and type-safe.',
       recommended: 'error',
     },
     fixable: 'code',
     schema: [],
     messages: {
       preferParams:
-        'Avoid using .ref.parent.id to access parent document IDs. Use the params object from the event instead: `const { params: { {{paramName}} } } = event;`',
+        'Accessing parent IDs through `ref.parent.id` bypasses the handler params and breaks when collection nesting changes. Use the params object for stable, typed IDs instead (destructure `const { params: { {{paramName}} } } = event` or read `params.{{paramName}}`).',
     },
   },
   defaultOptions: [],
@@ -120,29 +120,38 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
         return { isMatch: false, depth: 0 };
       }
 
+      const chain: string[] = [];
       let current = node.object;
-      let foundParent = false;
-      let foundRef = false;
-      let depth = 0;
 
-      // Traverse up the member expression chain
       while (current && current.type === AST_NODE_TYPES.MemberExpression) {
-        if (current.property.type === AST_NODE_TYPES.Identifier) {
-          if (current.property.name === 'parent') {
-            foundParent = true;
-            depth++;
-          } else if (current.property.name === 'ref' && foundParent) {
-            foundRef = true;
-            break;
-          } else if (current.property.name !== 'parent') {
-            // If we encounter a property that's not 'parent' or 'ref', this isn't our pattern
-            break;
-          }
+        if (current.property.type !== AST_NODE_TYPES.Identifier) {
+          return { isMatch: false, depth: 0 };
         }
+        chain.unshift(current.property.name);
         current = current.object;
       }
 
-      return { isMatch: foundRef && foundParent, depth };
+      if (chain.length < 2) {
+        return { isMatch: false, depth: 0 };
+      }
+
+      const refIndex = chain.indexOf('ref');
+      if (refIndex === -1) {
+        return { isMatch: false, depth: 0 };
+      }
+
+      const parentSegment = chain.slice(refIndex + 1);
+      if (parentSegment.length === 0) {
+        return { isMatch: false, depth: 0 };
+      }
+
+      const invalidParent = parentSegment.some((segment) => segment !== 'parent');
+      if (invalidParent) {
+        return { isMatch: false, depth: 0 };
+      }
+
+      const depth = parentSegment.length;
+      return { isMatch: depth > 0, depth };
     }
 
     function findHandlerFunction(node: TSESTree.Node): TSESTree.Node | null {
@@ -253,8 +262,13 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
             const hasOptional = hasOptionalChaining(node);
             const paramsInScope = isParamsInScope(handlerNode);
             // Suggest different parameter names based on depth
+            // Note: These conventions may vary by data model; adjust if needed
             const paramSuggestion =
-              parentAccess.depth === 1 ? 'userId' : 'parentId';
+              parentAccess.depth === 1
+                ? 'userId'
+                : parentAccess.depth === 2
+                  ? 'parentId'
+                  : `parent${parentAccess.depth}Id`;
 
             context.report({
               node,
