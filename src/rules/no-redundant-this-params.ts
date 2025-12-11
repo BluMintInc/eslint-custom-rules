@@ -337,6 +337,9 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
           case AST_NODE_TYPES.ObjectExpression:
             for (const prop of node.properties) {
               if (prop.type === AST_NODE_TYPES.Property) {
+                if (prop.computed) {
+                  visit(prop.key, true);
+                }
                 visit(prop.value, true);
               } else if (prop.type === AST_NODE_TYPES.SpreadElement) {
                 visit(prop.argument, true);

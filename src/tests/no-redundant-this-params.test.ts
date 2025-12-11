@@ -240,6 +240,24 @@ ruleTesterTs.run('no-redundant-this-params', noRedundantThisParams, {
     },
     {
       code: `
+      class DynamicKeys {
+        private key = 'id';
+
+        private send(payload: Record<string, unknown>) {
+          return payload;
+        }
+
+        run() {
+          return this.send({
+            [this.key]: 1,
+          });
+        }
+      }
+      `,
+      errors: [{ messageId: 'redundantInstanceValueInObject' }],
+    },
+    {
+      code: `
       abstract class BaseProcessor {
         constructor(protected readonly config: Config) {}
 
