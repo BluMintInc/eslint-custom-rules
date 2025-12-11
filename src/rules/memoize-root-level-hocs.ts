@@ -144,78 +144,6 @@ const isComponentOrHook = (
   return { contextLabel: `component${name ? ` ${name}` : ''}` };
 };
 
-const isUseMemoCallee = (
-  callee: TSESTree.LeftHandSideExpression,
-): boolean => {
-  if (
-    callee.type === AST_NODE_TYPES.Identifier &&
-    callee.name === 'useMemo'
-  ) {
-    return true;
-  }
-
-  if (
-    callee.type === AST_NODE_TYPES.MemberExpression &&
-    !callee.computed &&
-    callee.property.type === AST_NODE_TYPES.Identifier &&
-    callee.property.name === 'useMemo'
-  ) {
-    return true;
-  }
-
-  const maybeChain = callee as unknown as TSESTree.ChainExpression;
-  if (maybeChain.type === AST_NODE_TYPES.ChainExpression) {
-    return isUseMemoCallee(
-      maybeChain.expression as TSESTree.LeftHandSideExpression,
-    );
-  }
-
-  return false;
-};
-
-const isDescendantOf = (
-  target: TSESTree.Node,
-  ancestor: TSESTree.Node,
-): boolean => {
-  let current: TSESTree.Node | undefined = target;
-  while (current && current !== ancestor) {
-    current = current.parent as TSESTree.Node | undefined;
-  }
-  return current === ancestor;
-};
-
-const isInsideUseMemoFactory = (
-  node: TSESTree.Node,
-  boundary: TSESTree.Node,
-): boolean => {
-  let current: TSESTree.Node | undefined = node;
-
-  while (current && current !== boundary) {
-    const parent = current.parent as TSESTree.Node | undefined;
-    if (!parent) break;
-
-    if (
-      parent.type === AST_NODE_TYPES.CallExpression &&
-      isUseMemoCallee(parent.callee)
-    ) {
-      const factory = parent.arguments[0];
-      if (
-        factory &&
-        factory.type !== AST_NODE_TYPES.SpreadElement &&
-        (factory.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-          factory.type === AST_NODE_TYPES.FunctionExpression) &&
-        isDescendantOf(current, factory)
-      ) {
-        return true;
-      }
-    }
-
-    current = parent;
-  }
-
-  return false;
-};
-
 const getCallableIdentifierName = (
   callee: TSESTree.LeftHandSideExpression,
 ): string | null => {
@@ -336,57 +264,49 @@ export const memoizeRootLevelHocs = createRule<Options, MessageIds>({
 
     const checkHocCall = (
       callExpr: TSESTree.CallExpression,
-      functionNode: FunctionNode,
       contextInfo: { contextLabel: string },
     ) => {
       const hocName = findHocName(callExpr, additionalHocs);
       const parentCall = getParentCallExpression(callExpr);
-      const parentHocName = parentCall && findHocName(parentCall, additionalHocs);
+      const parentHocName =
+        parentCall && findHocName(parentCall, additionalHocs);
 
-      if (
-        hocName &&
-        !isPartOfHocChain(hocName, parentHocName) &&
-        !isInsideUseMemoFactory(callExpr, functionNode)
-      ) {
+      if (hocName && !isPartOfHocChain(hocName, parentHocName)) {
         reportUnmemoizedHoc(callExpr, hocName, contextInfo);
       }
-    };
-
-    const visitNode = (
-      current: TSESTree.Node,
-      functionNode: FunctionNode,
-      contextInfo: { contextLabel: string },
-    ) => {
-      if (isFunctionNode(current) && current !== functionNode) {
-        return;
-      }
-
-      if (current.type === AST_NODE_TYPES.CallExpression) {
-        checkHocCall(current, functionNode, contextInfo);
-      }
-
-      forEachChildNode(current, (child) => {
-        visitNode(child, functionNode, contextInfo);
-        return false;
-      });
     };
 
     const traverseFunctionBody = (
       node: FunctionNode,
       contextInfo: { contextLabel: string },
     ) => {
+      const visitNode = (current: TSESTree.Node) => {
+        if (isFunctionNode(current) && current !== node) {
+          return;
+        }
+
+        if (current.type === AST_NODE_TYPES.CallExpression) {
+          checkHocCall(current, contextInfo);
+        }
+
+        forEachChildNode(current, (child) => {
+          visitNode(child);
+          return false;
+        });
+      };
+
       if (!node.body) {
         return;
       }
 
       if (node.body.type === AST_NODE_TYPES.BlockStatement) {
         for (const statement of node.body.body) {
-          visitNode(statement, node, contextInfo);
+          visitNode(statement);
         }
         return;
       }
 
-      visitNode(node.body, node, contextInfo);
+      visitNode(node.body);
     };
 
     const analyzeFunction = (node: FunctionNode) => {
