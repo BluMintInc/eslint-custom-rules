@@ -77,6 +77,21 @@ ruleTesterTs.run('enforce-storage-context', enforceStorageContext, {
       const storageHook = useSessionStorage();
       const value = storageHook.getItem('session-key');
     `,
+    `
+      const localStorage = createMockStorage();
+      localStorage.setItem('mock', 'value');
+    `,
+    `
+      function save(localStorage: Storage) {
+        localStorage.setItem('k', 'v');
+      }
+    `,
+    `
+      if (featureFlag) {
+        const sessionStorage = createMockStorage();
+        sessionStorage.getItem('k');
+      }
+    `,
   ],
   invalid: [
     {
@@ -149,6 +164,20 @@ ruleTesterTs.run('enforce-storage-context', enforceStorageContext, {
     },
     {
       code: `
+        const storage = localStorage;
+        function inner() {
+          const storage = createStorage();
+          return storage;
+        }
+        storage.setItem('k', 'v');
+      `,
+      errors: [
+        { messageId: 'useStorageContext' },
+        { messageId: 'useStorageContext' },
+      ],
+    },
+    {
+      code: `
         typeof window !== 'undefined' && localStorage.getItem('k');
       `,
       errors: [{ messageId: 'useStorageContext' }],
@@ -183,6 +212,12 @@ ruleTesterTs.run('enforce-storage-context', enforceStorageContext, {
         { messageId: 'useStorageContext' },
         { messageId: 'useStorageContext' },
       ],
+    },
+    {
+      code: `
+        const obj = { localStorage };
+      `,
+      errors: [{ messageId: 'useStorageContext' }],
     },
     {
       code: `

@@ -13,12 +13,20 @@ type RuleOptions = [
 ];
 
 type MessageIds = 'useStorageContext';
+type AliasEntry = StorageKind | 'shadowed';
+type AliasStack = Array<Map<string, AliasEntry>>;
 
 const STORAGE_NAMES = new Set<StorageKind>(['localStorage', 'sessionStorage']);
 const GLOBAL_NAMES = new Set(['window', 'global', 'globalThis']);
 const CONTEXT_BASENAMES = new Set(['LocalStorage.tsx', 'SessionStorage.tsx']);
 const TEST_FILE_REGEX = /\.(test|spec)\.[jt]sx?$/i;
 
+/**
+ * Unwraps TypeScript-only wrappers and parentheses to expose the runtime
+ * expression. Storage checks need the underlying value even when the code uses
+ * TS assertions, satisfies expressions, non-null assertions, optional chaining,
+ * or parentheses that do not change runtime behavior (e.g., `(localStorage as Storage)?.getItem()`).
+ */
 const unwrapExpression = (expression: TSESTree.Expression): TSESTree.Expression => {
   let current: TSESTree.Expression = expression;
 
@@ -109,17 +117,38 @@ const isGlobalLike = (node: TSESTree.Expression): boolean => {
   return !!base && GLOBAL_NAMES.has(base.name);
 };
 
+const getAliasFromStack = (
+  aliases: AliasStack,
+  name: string,
+): AliasEntry | null => {
+  for (let i = aliases.length - 1; i >= 0; i -= 1) {
+    const value = aliases[i].get(name);
+    if (value !== undefined) return value;
+  }
+  return null;
+};
+
+/**
+ * Resolves an expression to a storage kind when it ultimately refers to
+ * localStorage/sessionStorage. Follows aliases through member access,
+ * conditionals, and logical expressions so indirect access like
+ * `const s = window?.localStorage` is still caught. Ignores identifiers that are
+ * explicitly shadowed within the current lexical scope.
+ */
 const resolveStorageObject = (
   expression: TSESTree.Expression,
-  aliases: Map<string, StorageKind>,
+  aliases: AliasStack,
 ): StorageKind | null => {
   const target = unwrapExpression(expression);
 
   if (target.type === AST_NODE_TYPES.Identifier) {
+    const alias = getAliasFromStack(aliases, target.name);
+    if (alias === 'shadowed') return null;
+    if (alias) return alias;
     if (STORAGE_NAMES.has(target.name as StorageKind)) {
       return target.name as StorageKind;
     }
-    return aliases.get(target.name) ?? null;
+    return null;
   }
 
   if (target.type === AST_NODE_TYPES.MemberExpression) {
@@ -158,6 +187,12 @@ const resolveStorageObject = (
   return null;
 };
 
+/**
+ * Distinguishes declaration sites (bindings) from usage sites. The rule reports
+ * reads of storage, not the act of declaring a variable/property/parameter, so
+ * declarations across destructuring, params, imports, class members, and
+ * assignment targets must be ignored.
+ */
 const identifierRepresentsDeclaration = (node: TSESTree.Identifier): boolean => {
   const parent = node.parent;
   if (!parent) return false;
@@ -214,9 +249,17 @@ const identifierRepresentsDeclaration = (node: TSESTree.Identifier): boolean => 
   if (parent.type === AST_NODE_TYPES.TSInterfaceDeclaration && parent.id === node) {
     return true;
   }
+  if (parent.type === AST_NODE_TYPES.Property) {
+    if (parent.parent && parent.parent.type === AST_NODE_TYPES.ObjectPattern) {
+      return true;
+    }
+    // For object literals, shorthand properties are runtime reads; non-shorthand
+    // keys are just property names and should not be treated as storage usage.
+    if (parent.shorthand) return false;
+    if (parent.key === node) return true;
+  }
   if (
-    (parent.type === AST_NODE_TYPES.Property ||
-      parent.type === AST_NODE_TYPES.MethodDefinition ||
+    (parent.type === AST_NODE_TYPES.MethodDefinition ||
       parent.type === AST_NODE_TYPES.PropertyDefinition) &&
     parent.key === node
   ) {
@@ -243,7 +286,7 @@ const isMemberExpressionObject = (node: TSESTree.Identifier): boolean => {
 
 const isStorageContainerSource = (
   init: TSESTree.Expression,
-  aliases: Map<string, StorageKind>,
+  aliases: AliasStack,
 ): boolean => {
   const source = unwrapExpression(init);
 
@@ -257,10 +300,16 @@ const isStorageContainerSource = (
   return false;
 };
 
+/**
+ * Registers aliases introduced via object destructuring of storage containers
+ * (e.g., `const { localStorage: store } = window`). The callback fires at the
+ * destructuring site so violations point to the extraction point. Aliases are
+ * stored on the current lexical scope to avoid leaking across nested scopes.
+ */
 const recordAliasFromPattern = (
   pattern: TSESTree.ObjectPattern,
   init: TSESTree.Expression | null,
-  aliases: Map<string, StorageKind>,
+  aliases: AliasStack,
   handleStorageProperty?: (
     node: TSESTree.Node,
     storageKind: StorageKind,
@@ -284,12 +333,12 @@ const recordAliasFromPattern = (
     );
 
     if (prop.value.type === AST_NODE_TYPES.Identifier) {
-      aliases.set(prop.value.name, keyName as StorageKind);
+      aliases[aliases.length - 1].set(prop.value.name, keyName as StorageKind);
     } else if (
       prop.value.type === AST_NODE_TYPES.AssignmentPattern &&
       prop.value.left.type === AST_NODE_TYPES.Identifier
     ) {
-      aliases.set(prop.value.left.name, keyName as StorageKind);
+      aliases[aliases.length - 1].set(prop.value.left.name, keyName as StorageKind);
     }
   }
 };
@@ -339,7 +388,7 @@ export const enforceStorageContext = createRule<RuleOptions, MessageIds>({
     ],
     messages: {
       useStorageContext:
-        'Direct {{storage}} {{accessType}} bypasses the storage context providers that keep reads reactive, handle SSR checks, and centralize error handling. Use {{hook}}() helpers (getItem/setItem/removeItem/clear) so storage changes stay in sync with React state.',
+        'Direct {{storage}} {{accessType}} bypasses the storage context provider and causes three failures: (1) UI will not re-render when storage changes because React state is never updated, (2) code can crash during server-side rendering when `window` is undefined, and (3) storage errors go unhandled and break user flows. Call {{hook}}() at the component top level and use its returned methods (getItem, setItem, removeItem, clear) to keep storage access reactive and safe.',
     },
   },
   defaultOptions: [{}],
@@ -354,13 +403,36 @@ export const enforceStorageContext = createRule<RuleOptions, MessageIds>({
       return {};
     }
 
-    const storageAliases = new Map<string, StorageKind>();
+    const storageAliases: AliasStack = [new Map()];
+    const reportedNodes = new WeakSet<TSESTree.Node>();
+    const reportedLocations = new Set<string>();
+
+    const currentScope = () => storageAliases[storageAliases.length - 1];
+    const pushScope = () => {
+      storageAliases.push(new Map());
+    };
+    const popScope = () => {
+      if (storageAliases.length > 1) {
+        storageAliases.pop();
+      }
+    };
+    const setAlias = (name: string, value: AliasEntry) => {
+      currentScope().set(name, value);
+    };
+    const markShadowed = (name: string) => setAlias(name, 'shadowed');
 
     const reportUsage = (
       node: TSESTree.Node,
       storage: StorageKind,
       accessType: string,
     ) => {
+      const locationKey = node.range
+        ? `${node.range[0]}:${node.range[1]}`
+        : null;
+      if (locationKey && reportedLocations.has(locationKey)) return;
+      if (locationKey) reportedLocations.add(locationKey);
+      if (reportedNodes.has(node)) return;
+      reportedNodes.add(node);
       const hook =
         storage === 'localStorage' ? 'useLocalStorage' : 'useSessionStorage';
       context.report({
@@ -375,9 +447,14 @@ export const enforceStorageContext = createRule<RuleOptions, MessageIds>({
     };
 
     const handleIdentifier = (node: TSESTree.Identifier): void => {
+      if (identifierRepresentsDeclaration(node)) {
+        if (STORAGE_NAMES.has(node.name as StorageKind)) {
+          markShadowed(node.name);
+        }
+        return;
+      }
       const storageKind = resolveStorageObject(node, storageAliases);
       if (!storageKind) return;
-      if (identifierRepresentsDeclaration(node)) return;
       if (isMemberExpressionObject(node)) return;
       if (
         node.parent &&
@@ -458,22 +535,20 @@ export const enforceStorageContext = createRule<RuleOptions, MessageIds>({
     const handleVariableDeclarator = (
       node: TSESTree.VariableDeclarator,
     ): void => {
-      if (!node.init) return;
-
       if (node.id.type === AST_NODE_TYPES.Identifier) {
-        const storageKind = resolveStorageObject(
-          node.init as TSESTree.Expression,
-          storageAliases,
-        );
+        const storageKind = node.init
+          ? resolveStorageObject(node.init as TSESTree.Expression, storageAliases)
+          : null;
         if (storageKind) {
-          storageAliases.set(node.id.name, storageKind);
+          setAlias(node.id.name, storageKind);
         } else {
-          storageAliases.delete(node.id.name);
+          markShadowed(node.id.name);
         }
       } else if (node.id.type === AST_NODE_TYPES.ObjectPattern) {
+        const initExpr = (node.init as TSESTree.Expression | null) ?? null;
         recordAliasFromPattern(
           node.id,
-          node.init as TSESTree.Expression,
+          initExpr,
           storageAliases,
           (propertyNode, storageKind, accessType) => {
             reportUsage(propertyNode, storageKind, accessType);
@@ -489,9 +564,9 @@ export const enforceStorageContext = createRule<RuleOptions, MessageIds>({
         const right = node.right as TSESTree.Expression;
         const storageKind = resolveStorageObject(right, storageAliases);
         if (storageKind) {
-          storageAliases.set(node.left.name, storageKind);
+          setAlias(node.left.name, storageKind);
         } else {
-          storageAliases.delete(node.left.name);
+          markShadowed(node.left.name);
         }
       } else if (node.left.type === AST_NODE_TYPES.ObjectPattern) {
         recordAliasFromPattern(
@@ -505,7 +580,40 @@ export const enforceStorageContext = createRule<RuleOptions, MessageIds>({
       }
     };
 
+    const resetProgramScope = (_node: TSESTree.Program) => {
+      storageAliases.length = 1;
+      storageAliases[0].clear();
+    };
+
+    const enterScope = () => {
+      pushScope();
+    };
+
+    const exitScope = () => {
+      popScope();
+    };
+
     return {
+      Program: resetProgramScope,
+      BlockStatement: (_node: TSESTree.BlockStatement) => enterScope(),
+      'BlockStatement:exit': exitScope,
+      SwitchStatement: (_node: TSESTree.SwitchStatement) => enterScope(),
+      'SwitchStatement:exit': exitScope,
+      ForStatement: (_node: TSESTree.ForStatement) => enterScope(),
+      'ForStatement:exit': exitScope,
+      ForInStatement: (_node: TSESTree.ForInStatement) => enterScope(),
+      'ForInStatement:exit': exitScope,
+      ForOfStatement: (_node: TSESTree.ForOfStatement) => enterScope(),
+      'ForOfStatement:exit': exitScope,
+      CatchClause: (_node: TSESTree.CatchClause) => enterScope(),
+      'CatchClause:exit': exitScope,
+      FunctionDeclaration: (_node: TSESTree.FunctionDeclaration) => enterScope(),
+      'FunctionDeclaration:exit': exitScope,
+      FunctionExpression: (_node: TSESTree.FunctionExpression) => enterScope(),
+      'FunctionExpression:exit': exitScope,
+      ArrowFunctionExpression: (_node: TSESTree.ArrowFunctionExpression) =>
+        enterScope(),
+      'ArrowFunctionExpression:exit': exitScope,
       Identifier: handleIdentifier,
       MemberExpression: handleMemberExpression,
       CallExpression: handleCallExpression,
