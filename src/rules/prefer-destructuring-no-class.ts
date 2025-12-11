@@ -178,6 +178,10 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
       node: TSESTree.MemberExpression,
       leftNode: TSESTree.Node,
     ): boolean {
+      if (leftNode.type !== AST_NODE_TYPES.Identifier) {
+        return false;
+      }
+
       // Skip if this is a class instance or static class member
       if (
         isClassInstance(node, context) ||
@@ -201,9 +205,58 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
         }
 
         // Only suggest destructuring when property name matches variable name
-        if (leftNode.type === AST_NODE_TYPES.Identifier) {
-          return isMatchingPropertyName(node.property, leftNode.name);
+        return isMatchingPropertyName(node.property, leftNode.name);
+      }
+
+      return false;
+    }
+
+    /**
+     * Extracts the property name from a MemberExpression when it can be safely compared.
+     */
+    function getMemberExpressionPropertyName(
+      memberExpression: TSESTree.MemberExpression,
+    ): string | null {
+      if (memberExpression.property.type === AST_NODE_TYPES.PrivateIdentifier) {
+        return null;
+      }
+
+      if (!memberExpression.computed) {
+        if (memberExpression.property.type === AST_NODE_TYPES.Identifier) {
+          return memberExpression.property.name;
         }
+
+        return null;
+      }
+
+      if (
+        memberExpression.property.type === AST_NODE_TYPES.Literal &&
+        typeof memberExpression.property.value === 'string'
+      ) {
+        return memberExpression.property.value;
+      }
+
+      return null;
+    }
+
+    /**
+     * Determine whether an identifier refers to a function or method parameter.
+     */
+    function isFunctionParameter(identifier: TSESTree.Identifier): boolean {
+      let scope: any = context.getScope();
+
+      while (scope) {
+        const variable = scope.variables.find(
+          (variable: any) => variable.name === identifier.name,
+        );
+
+        if (variable) {
+          return variable.defs.some(
+            (definition: any) => definition.type === 'Parameter',
+          );
+        }
+
+        scope = scope.upper;
       }
 
       return false;
@@ -263,43 +316,89 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
 
       AssignmentExpression(node) {
         if (
-          node.operator === '=' &&
-          node.right.type === AST_NODE_TYPES.MemberExpression
+          node.operator !== '=' ||
+          node.right.type !== AST_NODE_TYPES.MemberExpression
         ) {
-          if (shouldUseDestructuring(node.right, node.left)) {
-            const sourceCode = context.getSourceCode();
-            const objectText = sourceCode.getText(node.right.object);
-            const propertyText = getPropertyText(
-              node.right.property,
-              node.right.computed,
-              sourceCode,
-            );
+          return;
+        }
 
-            context.report({
-              node,
-              messageId: 'preferDestructuring',
-              fix(fixer) {
-                // Handle renamed properties
-                if (
-                  options.enforceForRenamedProperties &&
-                  node.left.type === AST_NODE_TYPES.Identifier &&
-                  node.right.type === AST_NODE_TYPES.MemberExpression &&
-                  !isMatchingPropertyName(node.right.property, node.left.name)
-                ) {
-                  return fixer.replaceText(
-                    node,
-                    `({ ${propertyText}: ${node.left.name} } = ${objectText})`,
-                  );
-                }
+        if (shouldUseDestructuring(node.right, node.left)) {
+          const sourceCode = context.getSourceCode();
+          const objectText = sourceCode.getText(node.right.object);
+          const propertyText = getPropertyText(
+            node.right.property,
+            node.right.computed,
+            sourceCode,
+          );
 
+          context.report({
+            node,
+            messageId: 'preferDestructuring',
+            fix(fixer) {
+              // Handle renamed properties
+              if (
+                options.enforceForRenamedProperties &&
+                node.left.type === AST_NODE_TYPES.Identifier &&
+                node.right.type === AST_NODE_TYPES.MemberExpression &&
+                !isMatchingPropertyName(node.right.property, node.left.name)
+              ) {
                 return fixer.replaceText(
                   node,
-                  `({ ${propertyText} } = ${objectText})`,
+                  `({ ${propertyText}: ${node.left.name} } = ${objectText})`,
                 );
-              },
-            });
-          }
+              }
+
+              return fixer.replaceText(
+                node,
+                `({ ${propertyText} } = ${objectText})`,
+              );
+            },
+          });
+          return;
         }
+
+        if (
+          !options.object ||
+          node.left.type !== AST_NODE_TYPES.MemberExpression ||
+          node.left.object.type !== AST_NODE_TYPES.ThisExpression
+        ) {
+          return;
+        }
+
+        const rightObject = node.right.object;
+
+        if (
+          rightObject.type !== AST_NODE_TYPES.Identifier ||
+          !isFunctionParameter(rightObject)
+        ) {
+          return;
+        }
+
+        const leftPropertyName = getMemberExpressionPropertyName(node.left);
+        const rightPropertyName = getMemberExpressionPropertyName(node.right);
+
+        if (!leftPropertyName || !rightPropertyName) {
+          return;
+        }
+
+        if (
+          !options.enforceForRenamedProperties &&
+          leftPropertyName !== rightPropertyName
+        ) {
+          return;
+        }
+
+        if (
+          isClassInstance(node.right, context) ||
+          isStaticClassMember(node.right, context)
+        ) {
+          return;
+        }
+
+        context.report({
+          node,
+          messageId: 'preferDestructuring',
+        });
       },
     };
   },

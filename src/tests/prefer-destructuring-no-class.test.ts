@@ -85,6 +85,14 @@ ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
         }
       }
     `,
+    // Renamed properties should stay valid when enforceForRenamedProperties is false
+    `
+      class Example {
+        constructor(props: { value: string; renamed: string }) {
+          this.value = props.renamed;
+        }
+      }
+    `,
   ],
   invalid: [
     // Basic object property access
@@ -161,6 +169,36 @@ ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
         const obj = { foo: 123 };
         const { foo: bar } = obj;
       `,
+    },
+    // Constructor parameter properties assigned to class fields should be destructured
+    {
+      code: `
+        class Example {
+          private x: string;
+          private y: number;
+
+          constructor(props: { x: string; y: number }) {
+            this.x = props.x;
+            this.y = props.y;
+          }
+        }
+      `,
+      errors: [
+        { messageId: 'preferDestructuring' },
+        { messageId: 'preferDestructuring' },
+      ],
+    },
+    // Renamed constructor property access should be reported when enforced
+    {
+      code: `
+        class Example {
+          constructor(props: { value: string }) {
+            this.displayValue = props.value;
+          }
+        }
+      `,
+      options: [{ enforceForRenamedProperties: true }],
+      errors: [{ messageId: 'preferDestructuring' }],
     },
   ],
 });
