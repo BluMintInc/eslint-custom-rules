@@ -10,9 +10,10 @@
 
 ## Rule Details
 
-This rule overrides the behavior of `@typescript-eslint/prefer-nullish-coalescing` to only suggest using the nullish coalescing operator (`??`) when checking for null/undefined, not when intentionally checking for all falsy values.
+This rule is a configuration shim that disables `@typescript-eslint/prefer-nullish-coalescing` and intentionally does not report diagnostics. It documents our preference: use `??` only for null/undefined checks, and keep `||` for truthiness checks.
 
 The nullish coalescing operator (`??`) and logical OR operator (`||`) serve different purposes:
+
 - `??` only checks for `null` or `undefined`
 - `||` checks for any falsy value (`false`, `0`, `''`, `null`, `undefined`, `NaN`)
 
@@ -46,6 +47,17 @@ This rule doesn't report any issues itself. It's meant to override the `@typescr
 ## When Not To Use It
 
 If you want to strictly enforce using the nullish coalescing operator in all cases, you should use the original `@typescript-eslint/prefer-nullish-coalescing` rule instead.
+
+### Setup Example
+
+```jsonc
+{
+  "rules": {
+    "@typescript-eslint/prefer-nullish-coalescing": "off",
+    "@blumintinc/blumint/prefer-nullish-coalescing-override": "warn"
+  }
+}
+```
 
 ## Further Reading
 

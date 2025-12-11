@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'usePropsName';
@@ -10,8 +10,8 @@ export const enforcePropsNamingConsistency = createRule<Options, MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Enforce naming parameters "props" when their type ends with "Props"',
-      recommended: 'error',
+        'Prefer naming single "Props"-typed parameters as "props"; enforcement defers to enforce-props-argument-name for multi-Props cases',
+      recommended: 'warn',
     },
     fixable: 'code',
     schema: [],
@@ -63,7 +63,10 @@ export const enforcePropsNamingConsistency = createRule<Options, MessageIds>({
     }
 
     // Fix parameter name to "props"
-    function fixParameterName(fixer: any, param: TSESTree.Identifier): any {
+    function fixParameterName(
+      fixer: TSESLint.RuleFixer,
+      param: TSESTree.Identifier,
+    ): TSESLint.RuleFix {
       return fixer.replaceText(param, 'props');
     }
 
@@ -162,12 +165,11 @@ export const enforcePropsNamingConsistency = createRule<Options, MessageIds>({
             node: param.parameter,
             messageId: 'usePropsName',
             data: { paramName: param.parameter.name },
-            fix: (fixer) => {
-              if (param.parameter.type === AST_NODE_TYPES.Identifier) {
-                return fixParameterName(fixer, param.parameter);
-              }
-              return null;
-            },
+            fix: (fixer) =>
+              fixParameterName(
+                fixer,
+                param.parameter as TSESTree.Identifier,
+              ),
           });
         }
       }

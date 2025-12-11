@@ -1,3 +1,81 @@
+## [1.12.6](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.12.5...v1.12.6) (2025-03-22)
+
+
+### Reverts
+
+* Revert "chore(release): 1.12.5 [skip ci]" ([539df6b](https://github.com/BluMintInc/eslint-custom-rules/commit/539df6be6d586f3556fa3706f0bc9f7853f4c53d))
+
+## [1.12.4](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.12.3...v1.12.4) (2025-03-20)
+
+
+### Bug Fixes
+
+* force update ([ece6878](https://github.com/BluMintInc/eslint-custom-rules/commit/ece6878fa391978d7df2aa695dec8cb3dcdc0d35))
+
+## [1.12.3](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.12.2...v1.12.3) (2025-03-20)
+
+
+### Bug Fixes
+
+* **.cursorrules:** force patch version update ([140507e](https://github.com/BluMintInc/eslint-custom-rules/commit/140507e9fac48a51252c9ca082ae0a8abe86f487))
+
+## [1.12.2](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.12.1...v1.12.2) (2025-03-13)
+
+
+### Bug Fixes
+
+* **.cursorrules:** force patch version upgrade in semvar release ([d5f9375](https://github.com/BluMintInc/eslint-custom-rules/commit/d5f9375dffb3e15c40b0ad11dbdeb648378836a5))
+
+## [1.12.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.12.0...v1.12.1) (2025-03-12)
+
+
+### Bug Fixes
+
+* force update ([b06cdb0](https://github.com/BluMintInc/eslint-custom-rules/commit/b06cdb041d10cf7fef777b54e2e99d14d249c204))
+
+# [1.12.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.11.1...v1.12.0) (2025-03-10)
+
+
+### Bug Fixes
+
+* **enforce-positive-naming.ts:** add include ([f20f149](https://github.com/BluMintInc/eslint-custom-rules/commit/f20f1499d44e626603d6072c52358206df9ab8cd))
+* **src/tests/external-api-bug.ts:** delete Claude3.7 phantom file ([5c7aeac](https://github.com/BluMintInc/eslint-custom-rules/commit/5c7aeac1f579adf41524333f3f71bf96f20bc42f))
+
+
+### Features
+
+* **enforce-boolean-naming-prefixes:** Improve handling of boolean properties in parameter type annotations ([d6c1bb6](https://github.com/BluMintInc/eslint-custom-rules/commit/d6c1bb62c2f4c943964bc140bd19fdf4116f84af))
+* **enforce-positive-naming:** Enhance word splitting and negative prefix detection ([eadc89c](https://github.com/BluMintInc/eslint-custom-rules/commit/eadc89ca6273076ac23ca73e573270d720011bb3))
+* **enforce-positive-naming:** Expand exception lists for negative prefixes ([4b150b7](https://github.com/BluMintInc/eslint-custom-rules/commit/4b150b792bfdd61020cce1a338678aba66f30ad1))
+
+## [1.11.1](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.11.0...v1.11.1) (2025-03-10)
+
+
+### Bug Fixes
+
+* **no-hungarian.ts:** remove "Type" ([854b749](https://github.com/BluMintInc/eslint-custom-rules/commit/854b749bce08f705acdfd0acc47fb47b89cfdaef))
+
+# [1.11.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.10.0...v1.11.0) (2025-03-08)
+
+
+### Bug Fixes
+
+* **no-entire-object-hook-deps:** Improve object usage detection and add specific test case ([029792b](https://github.com/BluMintInc/eslint-custom-rules/commit/029792b79c243982ecbeae9db84ea2937d8bb7e7))
+* **no-hungarian:** Remove 'Date' from common types to reduce false positives ([c9ac748](https://github.com/BluMintInc/eslint-custom-rules/commit/c9ac748fd51016e4e45fe3dc8cc373c8fccd5da1))
+* **no-unnecessary-verb-suffix.test.ts:** remove prepositions that could be nouns ([f3d7c8c](https://github.com/BluMintInc/eslint-custom-rules/commit/f3d7c8cb51ebfac98be67fa77e35f4cc077e1b05))
+* **no-unnecessary-verb-suffix.ts:** remove prepositions that could be nouns ([f9158f2](https://github.com/BluMintInc/eslint-custom-rules/commit/f9158f2c37c0418696e116cdd5a076416890683d))
+* **openhands-resolver.yml:** revert to main. Issue was lib/ pushed in ([68532f1](https://github.com/BluMintInc/eslint-custom-rules/commit/68532f1539f90ca636f111e8865f71e6ca0d5c0a))
+* **openhands-resolver.yml:** rollback further ([92f04ea](https://github.com/BluMintInc/eslint-custom-rules/commit/92f04eaa8af45d06407b136c78233155a3bd5cf7))
+* **openhands-resolver.yml:** rollback to 3/3/25 until token limit error is resolved ([e6f8811](https://github.com/BluMintInc/eslint-custom-rules/commit/e6f88112b0cd9b99f7cb14825de91b3654be7e68))
+* **src/rules/no-always-true-false-conditions.ts:** remove excessive shortcircuit ([11b5d5a](https://github.com/BluMintInc/eslint-custom-rules/commit/11b5d5a196fc90f1fac61bb7aa8f2b3e8d34d23b))
+* **test-case/simple-test.ts:** delete claude3.7 phantom file ([35f9e80](https://github.com/BluMintInc/eslint-custom-rules/commit/35f9e80e2def8f8a0e6a8a1126909ff9f77efcc3))
+* **test-case/test.ts:** remove claude3.7 phantom code ([9a91ebb](https://github.com/BluMintInc/eslint-custom-rules/commit/9a91ebb50e22b93e5d65cee47a236344a087b0c4))
+
+
+### Features
+
+* **docs:** Enhance rule documentation with improved headers and metadata ([fa251ce](https://github.com/BluMintInc/eslint-custom-rules/commit/fa251cecdf8344b4c827cd0cd33e03763aba87e1))
+
 # [1.10.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.9.1...v1.10.0) (2025-03-05)
 
 

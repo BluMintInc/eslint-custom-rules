@@ -6,7 +6,7 @@
 
 ## Rule Details
 
-This rule detects boolean conditions formed over objects in React hook dependency arrays and suggests extracting them into separate variables. This optimization helps reduce unnecessary re-computations when objects change frequently but the boolean condition result changes less frequently.
+This rule targets hooks that take dependency arrays—`useMemo`, `useCallback`, `useEffect`, and custom hooks that mirror their behavior. It flags boolean conditions formed over objects (for example `!!obj`, `Object.keys(obj).length === 0`, `obj === other`) when those conditions are placed directly in dependency arrays. Extract these expressions into stable boolean variables or memoized helpers so dependency arrays track primitives instead of churny object references.
 
 The rule addresses a common React performance anti-pattern where `useMemo`, `useCallback`, and `useEffect` hooks re-run unnecessarily because they depend on entire objects when they only care about specific boolean conditions derived from those objects.
 
@@ -103,6 +103,11 @@ The rule suggests boolean variable names following common conventions:
 - `hasData` for existence checks
 - `hasItems` for key count checks
 - `hasUser` for complex conditions
+- `isEmptyData` / `isEmptyItems` when explicitly modeling absence
+- `hasNonEmptyData` / `hasNonEmptyItems` when a positive form reads cleaner
+- `isNotEmpty` / `hasNoItems` to mirror existing naming in the surrounding codebase
+
+Choose `isEmpty*` variants when callers gate logic on the lack of data, and prefer `hasNonEmpty*` when dependencies should emphasize the positive case to keep dependency arrays and render conditions consistent.
 
 ### When Not To Use It
 
