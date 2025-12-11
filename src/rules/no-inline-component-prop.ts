@@ -480,14 +480,7 @@ export const noInlineComponentProp = createRule<Options, MessageIds>({
           def.type !== 'Parameter' &&
           def.type !== 'Type',
       );
-      if (
-        !definition ||
-        definition.type === 'ImportBinding' ||
-        definition.type === 'Parameter' ||
-        definition.type === 'Type'
-      ) {
-        return;
-      }
+      if (!definition) return;
       const defNode = definition.node;
       if (
         !defNode ||
