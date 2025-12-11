@@ -95,7 +95,8 @@ function collectNearestBlockTypeBindings(
       for (const statement of current.body) {
         if (
           statement.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
-          statement.type === AST_NODE_TYPES.TSInterfaceDeclaration
+          statement.type === AST_NODE_TYPES.TSInterfaceDeclaration ||
+          statement.type === AST_NODE_TYPES.ClassDeclaration
         ) {
           localTypes.add(statement.id.name);
         }

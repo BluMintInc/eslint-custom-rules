@@ -101,6 +101,19 @@ function Component() {
   return <div>{handler('x')}</div>;
 }
 `,
+  `
+import { useCallback } from 'react';
+function Component() {
+  class LocalClass {
+    value: string;
+    constructor(value: string) {
+      this.value = value;
+    }
+  }
+  const handler = useCallback((instance: LocalClass) => instance.value.length, []);
+  return <div>{handler(new LocalClass('a'))}</div>;
+}
+`,
 {
   filename: 'component.ts',
   code: `
