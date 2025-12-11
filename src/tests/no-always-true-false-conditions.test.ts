@@ -554,6 +554,18 @@ switch ("a") {
 `,
     errors: [expectAlwaysFalse('value')],
   },
+  // Switch case comparison flagged when identifier holds null literal
+  {
+    code: `
+const value = null;
+switch (null) {
+  case value:
+    doSomething();
+    break;
+}
+`,
+    errors: [expectAlwaysTrue('value')],
+  },
 ];
 
 const invalidRest = [

@@ -92,7 +92,7 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
       const initializer = definition.node.init;
 
       if (initializer?.type === AST_NODE_TYPES.Literal) {
-        return initializer.value ?? undefined;
+        return initializer.value;
       }
 
       return undefined;
