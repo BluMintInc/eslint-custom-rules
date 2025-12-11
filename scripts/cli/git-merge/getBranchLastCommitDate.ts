@@ -11,7 +11,10 @@ export function retrieveBranchLastCommitDate(params: {
 }) {
   const { ref, file } = params;
   try {
-    const output = runCommand(`git log -1 --format='%aI' ${ref} -- "${file}"`, true);
+    const output = runCommand(
+      `git log -1 --format='%aI' ${ref} -- "${file}"`,
+      true,
+    );
     return output || null;
   } catch {
     return null;

@@ -10,9 +10,8 @@ jest.mock('../cli/git-merge/buildMergeContext');
 jest.mock('../../.github/scripts/build-merge-prompt');
 
 const mockExecSync = execSync as jest.MockedFunction<typeof execSync>;
-const mockIsInMergeConflictState = isInMergeConflictState as jest.MockedFunction<
-  typeof isInMergeConflictState
->;
+const mockIsInMergeConflictState =
+  isInMergeConflictState as jest.MockedFunction<typeof isInMergeConflictState>;
 const mockBuildMergeContext = buildMergeContext as jest.MockedFunction<
   typeof buildMergeContext
 >;
