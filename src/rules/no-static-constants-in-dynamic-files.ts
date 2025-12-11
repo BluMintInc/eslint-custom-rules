@@ -142,6 +142,7 @@ export default createRule<[], MessageIds>({
         'Disallow exporting SCREAMING_SNAKE_CASE constants from .dynamic.ts/.dynamic.tsx files; move static constants to non-dynamic modules instead.',
       recommended: 'error',
     },
+    fixable: undefined,
     schema: [],
     messages: {
       noStaticConstantInDynamicFile:
