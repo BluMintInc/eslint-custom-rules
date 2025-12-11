@@ -12,7 +12,7 @@ Parameters typed with a `*Props` type are shared conventions across our React co
 
 ## Examples
 
-#### ❌ Incorrect
+### ❌ Incorrect
 
 ```typescript
 function Button(options: ButtonProps) {
@@ -24,7 +24,7 @@ const Modal = function (config: ModalProps) {
 };
 ```
 
-#### ✅ Correct
+### ✅ Correct
 
 ```typescript
 function Button(props: ButtonProps) {

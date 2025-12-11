@@ -20,13 +20,11 @@ export function runCommand(command: string, suppressOutput = false): string {
   }
 }
 
-const BRANCH_NAME_PATTERN =
-  /^(?!\/)(?!.*\/\/)(?!.*\/$)(?!-)(?!refs\/)[A-Za-z0-9._/-]+$/;
-
 function assertValidBranchName(branch: string) {
-  if (!branch || !BRANCH_NAME_PATTERN.test(branch)) {
-    throw new Error(`Invalid branch name: "${branch}"`);
+  if (!branch) {
+    throw new Error('Branch name cannot be empty.');
   }
+  runCommand(`git check-ref-format --branch "${branch}"`, true);
 }
 
 function exitWithError(...lines: string[]): never {
@@ -41,7 +39,11 @@ function exitWithError(...lines: string[]): never {
  */
 export function ensureDependency(tool: string) {
   try {
-    runCommand(`command -v "${tool}"`, true);
+    if (process.platform === 'win32') {
+      runCommand(`where "${tool}"`, true);
+    } else {
+      runCommand(`command -v "${tool}"`, true);
+    }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     exitWithError(
@@ -89,7 +91,6 @@ export function retrieveCurrentBranch(): string {
 export function inferPrFromBranch(branch: string): number | undefined {
   try {
     assertValidBranchName(branch);
-    runCommand(`git check-ref-format --branch "${branch}"`, true);
 
     const result = runCommand(
       `gh pr list --head "${branch}" --state open --json number --jq '.[0].number'`,

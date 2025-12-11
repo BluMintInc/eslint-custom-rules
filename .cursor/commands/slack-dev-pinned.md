@@ -52,7 +52,7 @@ Transform technical GitHub PR comments or development concepts into clear, conci
 1. **One Concept Per Post**: Each post should explain exactly one practice or concept
 2. **Code Over Theory**: Use relevant code examples from our actual codebase when possible
 3. **Actionable Guidance**: Always include what developers should do differently
-4. **Context Matters**: Explain why this practice matters for our specific application
+4. **Context Matters**: Explain why this practice is relevant to our codebase
 5. **Accessibility**: Write for developers at all experience levels on the team
 
 ## Common Topics

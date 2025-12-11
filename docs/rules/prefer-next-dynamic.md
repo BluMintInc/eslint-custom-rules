@@ -108,12 +108,10 @@ const Component = dynamic(
   ```
 
 ### Options
-
 - `useDynamicSources` (string[], optional): additional module specifiers to treat as `useDynamic` sources. Defaults to `["useDynamic","./useDynamic","../hooks/useDynamic","../../hooks/useDynamic"]`.
-
 The fixer always passes `{ ssr: false }` to `dynamic()`; configuring other options (loading components, suspense, etc.) is not supported by this rule.
 
-### Configuration
+#### Example configuration
 
 ```json
 {

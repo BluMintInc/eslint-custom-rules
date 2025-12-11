@@ -25,10 +25,7 @@ import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 
 ### Examples
 
-Bad:
-
-Inline objects in deps trigger re-renders:
-
+Bad: useMemo with unmemoized object dependency:
 ```tsx
 // Component re-renders whenever `userConfig` reference changes
 const UserProfile: FC<UserProfileProps> = ({ userConfig }) => {
@@ -44,10 +41,7 @@ const UserProfile: FC<UserProfileProps> = ({ userConfig }) => {
 };
 ```
 
-Good:
-
-Use useDeepCompareMemo to stabilize non-primitive deps:
-
+Good: useDeepCompareMemo with structurally identical objects:
 ```tsx
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 
