@@ -8,7 +8,12 @@
 
 Firestore transactions must complete every read before performing any writes so the callback runs against a consistent snapshot. If a read happens after a write, the Firestore SDK can throw (`All reads must be before any writes`) or retry the transaction with stale data, reapplying writes that were computed from outdated snapshots. This rule reports reads that occur after writes inside the same transaction callback.
 
-When the rule fires, it names the read and the earlier writes so you know what to reorder. Example message:
+Reading after writing can lead to:
+
+- Unexpected behavior
+- Transaction failures
+- Infinite retry loops
+- Inconsistent data states
 
 - `Read operation "transaction.get" runs after transaction writes (transaction.set). Firestore transactions must collect every read before any write to keep a consistent snapshot and avoid Firestore retries that reapply writes with stale data. Move this read before the first write in the same transaction callback.`
 
@@ -43,12 +48,22 @@ await firestore.runTransaction(async (tx) => {
 ```
 
 ```typescript
-const methodName = 'get';
+// Computed property access after a write (still a read)
 await firestore.runTransaction(async (transaction) => {
   transaction.set(docRef, { status: 'processing' });
 
-  const docSnapshot = await transaction[methodName](otherDocRef); // ❌ Computed read after write
+  const method = 'get';
+  const docSnapshot = await transaction[method](otherDocRef); // ❌ Error
+
   return docSnapshot.data();
+});
+```
+
+```typescript
+// Different transaction object names
+await firestore.runTransaction(async (t) => {
+  t.set(docRef, { field: 'value' });
+  const doc = await t.get(otherRef); // ❌ Error
 });
 ```
 
@@ -95,14 +110,47 @@ await runTransaction(getFirestore(), async (transaction) => {
 });
 ```
 
+```typescript
+// Computed property access is safe when reads happen first
+await firestore.runTransaction(async (transaction) => {
+  const method = 'get';
+  const doc = await transaction[method](docRef); // Read first, before writes
+
+  transaction.set(docRef, { status: 'processing' });
+  return doc.data();
+});
+```
+
 ## Edge Cases Handled
 
-- Transaction parameters named `transaction`, `tx`, or `t`.
-- Reads that follow any combination of `set`, `update`, or `delete` writes.
-- Computed property access such as `transaction[methodName]` when writes already occurred.
-- Differentiating transaction calls from direct document reads (`docRef.get()` is ignored).
+### 1. Conditional Write Operations
 
-## When Not To Use
+The rule tracks control flow to identify reads that could potentially occur after writes, even in conditional branches.
+
+### 2. Different Transaction Object Names
+
+The rule identifies transaction parameters regardless of their name (e.g., `transaction`, `tx`, `t`) and tracks their methods.
+
+### 3. Multiple SDK Versions
+
+The rule recognizes various Firebase SDK imports and patterns:
+- Web v9 SDK (modular)
+- Web v8 SDK (namespaced)
+- Admin SDK
+
+### 4. Transaction vs. Direct Methods
+
+The rule distinguishes between transaction methods (`transaction.get()`) and direct Firestore methods (`docRef.get()`), only flagging transaction operations.
+
+### 5. Nested Function Calls
+
+The rule attempts to track transaction objects passed to other functions and analyzes their usage across function boundaries when possible.
+
+### 6. Computed Transaction Method Access
+
+Computed property access (e.g., `transaction['get']`) is treated conservatively. Reads after writes are reported even when the method name is computed, and reported data includes the method name when it can be determined.
+
+## When Not To Use It
 
 Keep this rule enabled wherever you use Firestore transactions. Consider disabling only if:
 
