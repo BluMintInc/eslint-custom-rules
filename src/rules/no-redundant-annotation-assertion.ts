@@ -36,11 +36,27 @@ function removeTypeAnnotation(
   sourceCode: TSESLint.SourceCode,
 ): TSESLint.RuleFix {
   const start = typeAnnotation.range[0];
-  const hasQuestionMark =
-    start > 0 && sourceCode.getText().charAt(start - 1) === '?';
-  const removalStart = hasQuestionMark ? start - 1 : start;
+  const end = typeAnnotation.range[1];
+  const text = sourceCode.getText();
 
-  return fixer.removeRange([removalStart, typeAnnotation.range[1]]);
+  let removalStart = start;
+
+  for (let i = start - 1; i >= 0; i -= 1) {
+    const char = text.charAt(i);
+
+    if (char === '\n' || char === '\r') break;
+    if (char === '?' || char === '!') {
+      removalStart = i + 1;
+      break;
+    }
+    if (!/\s/.test(char)) {
+      removalStart = i + 1;
+      break;
+    }
+    removalStart = i;
+  }
+
+  return fixer.removeRange([removalStart, end]);
 }
 
 function normalizeType(type: ts.Type, checker: ts.TypeChecker): ts.Type {
@@ -53,9 +69,23 @@ function typeText(type: ts.Type, checker: ts.TypeChecker): string {
 
 function unwrapAlias(type: ts.Type, checker: ts.TypeChecker): ts.Type {
   const aliasSymbol = (type as ts.Type & { aliasSymbol?: ts.Symbol }).aliasSymbol;
-  if (aliasSymbol && (aliasSymbol.flags & ts.SymbolFlags.Alias) !== 0) {
+  if (!aliasSymbol) return type;
+
+  if ((aliasSymbol.flags & ts.SymbolFlags.Alias) !== 0) {
     const target = checker.getAliasedSymbol(aliasSymbol);
     return checker.getDeclaredTypeOfSymbol(target);
+  }
+
+  if ((aliasSymbol.flags & ts.SymbolFlags.TypeAlias) !== 0) {
+    const aliasTypeArguments = (
+      type as ts.Type & { aliasTypeArguments?: ts.Type[] }
+    ).aliasTypeArguments;
+
+    if (aliasTypeArguments?.length) {
+      return checker.getApparentType(type);
+    }
+
+    return checker.getDeclaredTypeOfSymbol(aliasSymbol);
   }
 
   return type;
@@ -110,6 +140,113 @@ function getComparableType(
   return normalizeType(unwrapped, checker);
 }
 
+type TypeRepresentations = {
+  annotationText: string;
+  assertionText: string;
+  annotationCanonical: string;
+  assertionCanonical: string;
+  annotationExpanded: string;
+  assertionExpanded: string;
+  annotationStructural: string;
+  assertionStructural: string;
+};
+
+function getTypeRepresentations(
+  annotationType: ts.Type,
+  assertionType: ts.Type,
+  checker: ts.TypeChecker,
+): TypeRepresentations {
+  return {
+    annotationText: typeText(annotationType, checker),
+    assertionText: typeText(assertionType, checker),
+    annotationCanonical: checker.typeToString(
+      normalizeType(annotationType, checker),
+      undefined,
+      TYPE_FORMAT_FLAGS | ts.TypeFormatFlags.NoTypeReduction,
+    ),
+    assertionCanonical: checker.typeToString(
+      normalizeType(assertionType, checker),
+      undefined,
+      TYPE_FORMAT_FLAGS | ts.TypeFormatFlags.NoTypeReduction,
+    ),
+    annotationExpanded: typeText(
+      checker.getBaseTypeOfLiteralType(annotationType),
+      checker,
+    ),
+    assertionExpanded: typeText(
+      checker.getBaseTypeOfLiteralType(assertionType),
+      checker,
+    ),
+    annotationStructural: structuralKey(annotationType, checker),
+    assertionStructural: structuralKey(assertionType, checker),
+  };
+}
+
+function areTypesIdentical(
+  annotationType: ts.Type,
+  assertionType: ts.Type,
+  checker: ts.TypeChecker,
+): boolean {
+  return (
+    annotationType === assertionType ||
+    (checker as { isTypeIdenticalTo?: (a: ts.Type, b: ts.Type) => boolean })
+      .isTypeIdenticalTo?.(annotationType, assertionType) === true
+  );
+}
+
+function areTypesAssignableBothWays(
+  annotationType: ts.Type,
+  assertionType: ts.Type,
+  checker: ts.TypeChecker,
+): boolean {
+  const assignable =
+    (checker as ts.TypeChecker & {
+      isTypeAssignableTo?: (a: ts.Type, b: ts.Type) => boolean;
+    }).isTypeAssignableTo;
+
+  if (!assignable) return false;
+
+  return (
+    assignable(annotationType, assertionType) &&
+    assignable(assertionType, annotationType)
+  );
+}
+
+function doTypeTextsMatch(representations: TypeRepresentations): boolean {
+  const {
+    annotationText,
+    assertionText,
+    annotationExpanded,
+    assertionExpanded,
+    annotationCanonical,
+    assertionCanonical,
+    annotationStructural,
+    assertionStructural,
+  } = representations;
+
+  return (
+    annotationText === assertionText ||
+    annotationExpanded === assertionExpanded ||
+    annotationText === assertionExpanded ||
+    assertionText === annotationExpanded ||
+    annotationCanonical === assertionCanonical ||
+    annotationStructural === assertionStructural
+  );
+}
+
+function selectMatchingTypeRepresentation(
+  representations: TypeRepresentations,
+): string {
+  const { annotationText, assertionText, annotationExpanded, assertionExpanded } =
+    representations;
+
+  if (annotationText === assertionText) return annotationText;
+  if (annotationExpanded === assertionExpanded) return annotationExpanded;
+  return annotationText;
+}
+
+// Compare annotation and assertion types across identity, assignability, and
+// multiple textual forms so equivalent aliases still count as redundant.
 function haveMatchingTypes(
   annotation: TSESTree.TypeNode,
   assertion: TSESTree.TypeNode,
@@ -121,57 +258,25 @@ function haveMatchingTypes(
 
   if (!annotationType || !assertionType) return null;
 
-  const annotationText = typeText(annotationType, checker);
-  const assertionText = typeText(assertionType, checker);
-  const annotationCanonical = checker.typeToString(
-    normalizeType(annotationType, checker),
-    undefined,
-    TYPE_FORMAT_FLAGS | ts.TypeFormatFlags.NoTypeReduction,
-  );
-  const assertionCanonical = checker.typeToString(
-    normalizeType(assertionType, checker),
-    undefined,
-    TYPE_FORMAT_FLAGS | ts.TypeFormatFlags.NoTypeReduction,
-  );
-  const annotationExpanded = typeText(
-    checker.getBaseTypeOfLiteralType(annotationType),
-    checker,
-  );
-  const assertionExpanded = typeText(
-    checker.getBaseTypeOfLiteralType(assertionType),
+  const representations = getTypeRepresentations(
+    annotationType,
+    assertionType,
     checker,
   );
 
-  const assignableBothWays =
-    checker.isTypeAssignableTo(annotationType, assertionType) &&
-    checker.isTypeAssignableTo(assertionType, annotationType);
-
-  const identical =
-    annotationType === assertionType ||
-    (checker as { isTypeIdenticalTo?: (a: ts.Type, b: ts.Type) => boolean })
-      .isTypeIdenticalTo?.(annotationType, assertionType);
-
-  const textMatches =
-    annotationText === assertionText ||
-    annotationExpanded === assertionExpanded ||
-    annotationText === assertionExpanded ||
-    assertionText === annotationExpanded ||
-    annotationCanonical === assertionCanonical ||
-    structuralKey(annotationType, checker) === structuralKey(assertionType, checker);
+  const identical = areTypesIdentical(annotationType, assertionType, checker);
+  const assignableBothWays = areTypesAssignableBothWays(
+    annotationType,
+    assertionType,
+    checker,
+  );
+  const textMatches = doTypeTextsMatch(representations);
 
   if (!identical && (!assignableBothWays || !textMatches)) {
     return null;
   }
 
-  if (annotationText === assertionText) {
-    return annotationText;
-  }
-
-  if (annotationExpanded === assertionExpanded) {
-    return annotationExpanded;
-  }
-
-  return annotationText;
+  return selectMatchingTypeRepresentation(representations);
 }
 
 function getReturnAssertion(

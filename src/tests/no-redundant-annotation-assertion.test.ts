@@ -268,6 +268,40 @@ class Repo {
       },
       {
         code: `
+type UserRef = { id: string };
+declare function read(): UserRef | undefined;
+class Repo {
+  ref?: UserRef = read() as UserRef;
+}
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type UserRef = { id: string };
+declare function read(): UserRef | undefined;
+class Repo {
+  ref? = read() as UserRef;
+}
+        `,
+      },
+      {
+        code: `
+type UserRef = { id: string };
+declare function read(): UserRef | undefined;
+class Repo {
+  ref? : UserRef = read() as UserRef;
+}
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type UserRef = { id: string };
+declare function read(): UserRef | undefined;
+class Repo {
+  ref? = read() as UserRef;
+}
+        `,
+      },
+      {
+        code: `
 type User = { id: string };
 declare function fetchUser(): User;
 const getUser = (): User => (fetchUser() as User);
@@ -290,6 +324,23 @@ const handler = function process(value: number): number {
 const handler = function process(value: number) {
   return (value + 1) as number;
 };
+        `,
+      },
+      {
+        code: `
+type Payload = { id: string; name: string };
+type Alias = Payload;
+type Exported = Alias;
+declare function load(): Payload;
+const result: Exported = load() as Alias;
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type Payload = { id: string; name: string };
+type Alias = Payload;
+type Exported = Alias;
+declare function load(): Payload;
+const result = load() as Alias;
         `,
       },
     ],
