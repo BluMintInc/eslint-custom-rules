@@ -1,7 +1,16 @@
+import type { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterTs } from '../utils/ruleTester';
-import { enforceAssertSafeObjectKey } from '../rules/enforce-assertSafe-object-key';
+import { enforceAssertSafeObjectKey } from '../rules/enforce-assert-safe-object-key';
 
-ruleTesterTs.run('enforce-assertSafe-object-key', enforceAssertSafeObjectKey, {
+const buildMessage = (key: string) =>
+  `Dynamic object key "${key}" is used without assertSafe() validation. Unvalidated keys can resolve to unexpected properties (including prototype fields) and make lookups fragile or unsafe. Wrap the key with assertSafe(${key}) before accessing the object.`;
+
+const lintError = (key: string): TSESLint.TestCaseError<'useAssertSafe'> =>
+  ({
+    message: buildMessage(key),
+  } as unknown as TSESLint.TestCaseError<'useAssertSafe'>);
+
+ruleTesterTs.run('enforce-assert-safe-object-key', enforceAssertSafeObjectKey, {
   valid: [
     {
       code: `
@@ -84,7 +93,7 @@ const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[String(id)]);
       `,
-      errors: [{ messageId: 'useAssertSafe' }],
+      errors: [lintError('id')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
@@ -98,7 +107,7 @@ const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[\`\${id}\`]);
       `,
-      errors: [{ messageId: 'useAssertSafe' }],
+      errors: [lintError('id')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
@@ -113,7 +122,7 @@ const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[String(id)]);
       `,
-      errors: [{ messageId: 'useAssertSafe' }],
+      errors: [lintError('id')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
@@ -128,7 +137,7 @@ const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[\`\${id}\`]);
       `,
-      errors: [{ messageId: 'useAssertSafe' }],
+      errors: [lintError('id')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
@@ -143,7 +152,7 @@ const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 const value = obj[String(id)];
       `,
-      errors: [{ messageId: 'useAssertSafe' }],
+      errors: [lintError('id')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 import something from 'other-module';
@@ -159,7 +168,7 @@ const id = 'key1';
 const value1 = obj[String(id)];
 const value2 = obj[\`\${id}\`];
       `,
-      errors: [{ messageId: 'useAssertSafe' }, { messageId: 'useAssertSafe' }],
+      errors: [lintError('id'), lintError('id')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
@@ -176,7 +185,7 @@ function process(id) {
   return obj[String(id)];
 }
       `,
-      errors: [{ messageId: 'useAssertSafe' }],
+      errors: [lintError('id')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
@@ -192,7 +201,7 @@ const id = 'key1';
 const nested = { obj };
 console.log(nested.obj[String(id)]);
       `,
-      errors: [{ messageId: 'useAssertSafe' }],
+      errors: [lintError('id')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
@@ -207,7 +216,7 @@ const data = { users: { user1: { name: 'John' } } };
 const userId = 'user1';
 console.log(data.users[String(userId)].name);
       `,
-      errors: [{ messageId: 'useAssertSafe' }],
+      errors: [lintError('userId')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const data = { users: { user1: { name: 'John' } } };
@@ -227,7 +236,7 @@ class DataStore {
   }
 }
       `,
-      errors: [{ messageId: 'useAssertSafe' }],
+      errors: [lintError('id')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 class DataStore {
@@ -248,7 +257,7 @@ const id = 'key1';
 const prop = \`\${id}\`;
 console.log(obj[prop]);
       `,
-      errors: [{ messageId: 'useAssertSafe' }],
+      errors: [lintError('prop')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
@@ -263,7 +272,7 @@ const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 obj[String(id)] = 'new value';
       `,
-      errors: [{ messageId: 'useAssertSafe' }],
+      errors: [lintError('id')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
@@ -277,7 +286,7 @@ const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 delete obj[String(id)];
       `,
-      errors: [{ messageId: 'useAssertSafe' }],
+      errors: [lintError('id')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
@@ -291,7 +300,7 @@ const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 const hasKey = String(id) in obj;
       `,
-      errors: [{ messageId: 'useAssertSafe' }],
+      errors: [lintError('id')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
@@ -305,7 +314,7 @@ const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 const { [String(id)]: value } = obj;
       `,
-      errors: [{ messageId: 'useAssertSafe' }],
+      errors: [lintError('id')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
@@ -321,7 +330,7 @@ const id = 'key1';
 console.log(obj[String(id)]); // Redundant string conversion
 console.log(obj[\`\${id}\`]); // Unnecessary template literal usage
       `,
-      errors: [{ messageId: 'useAssertSafe' }, { messageId: 'useAssertSafe' }],
+      errors: [lintError('id'), lintError('id')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
@@ -337,7 +346,7 @@ const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 console.log(obj[id]);
       `,
-      errors: [{ messageId: 'useAssertSafe' }],
+      errors: [lintError('id')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
@@ -352,7 +361,7 @@ const obj = { true: 'value1', false: 'value2' };
 const condition = true;
 console.log(obj[condition]);
       `,
-      errors: [{ messageId: 'useAssertSafe' }],
+      errors: [lintError('condition')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { true: 'value1', false: 'value2' };
@@ -367,7 +376,7 @@ const obj = { key1: 'value1', key2: 'value2' };
 const getId = () => 'key1';
 console.log(obj[getId()]);
       `,
-      errors: [{ messageId: 'useAssertSafe' }],
+      errors: [lintError('getId()')],
       output: `
 import { assertSafe } from 'functions/src/util/assertSafe';
 const obj = { key1: 'value1', key2: 'value2' };
