@@ -201,5 +201,27 @@ const C = ({ items }) => {
 };
 `,
     },
+    {
+      code: `
+const C = ({ items }) => {
+  useEffect(() => {}, [items.length]);
+  return null;
+};
+`,
+      options: [
+        { hashImport: { source: 'shared/hash', importName: 'makeHash' } },
+      ],
+      errors: [{ messageId: 'noArrayLengthInDeps' }],
+      output: `import { useMemo } from 'react';
+import { makeHash } from 'shared/hash';
+
+const itemsHash = useMemo(() => makeHash(items), [items]);
+
+const C = ({ items }) => {
+  useEffect(() => {}, [itemsHash]);
+  return null;
+};
+`,
+    },
   ],
 });
