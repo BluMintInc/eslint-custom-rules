@@ -37,7 +37,7 @@ async function handle(letter: string) {
       errors: [
         {
           messageId: 'noAsyncForEach',
-          data: { callbackLabel: 'function "handle"' },
+          data: { callbackLabel: 'function "{{handle}}"' },
         },
       ],
     },
@@ -52,7 +52,7 @@ const handle = async (letter: string) => {
       errors: [
         {
           messageId: 'noAsyncForEach',
-          data: { callbackLabel: 'function "handle"' },
+          data: { callbackLabel: 'arrow function "{{handle}}"' },
         },
       ],
     },

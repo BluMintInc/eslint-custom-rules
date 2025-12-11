@@ -9,18 +9,24 @@ const getCallbackLabel = (
   node: AsyncCallbackNode,
   fallbackName?: string,
 ): string => {
-  const functionName =
+  const declaredName =
     (node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression') &&
     node.id?.name
       ? node.id.name
-      : fallbackName;
+      : null;
+
+  const functionName =
+    declaredName ??
+    (node.type !== 'ArrowFunctionExpression' ? fallbackName : undefined);
 
   if (functionName) {
-    return `function "${functionName}"`;
+    return `function "{{${functionName}}}"`;
   }
 
   if (node.type === 'ArrowFunctionExpression') {
-    return 'arrow function';
+    return fallbackName
+      ? `arrow function "{{${fallbackName}}}"`
+      : 'arrow function';
   }
 
   return 'function expression';
