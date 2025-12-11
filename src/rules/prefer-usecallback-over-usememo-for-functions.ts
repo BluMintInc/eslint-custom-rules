@@ -40,7 +40,7 @@ export const preferUseCallbackOverUseMemoForFunctions = createRule<
     ],
     messages: {
       preferUseCallback:
-        'Use useCallback instead of useMemo for memoizing functions',
+        'useMemo returns {{callbackDescription}}, which hides that you are memoizing a callback. useCallback is built to keep function identities stable and signals intent to other hook consumers. Replace useMemo with useCallback and keep the same dependency array so props relying on stable references do not re-render unnecessarily.',
     },
   },
   defaultOptions: [{ allowComplexBodies: false, allowFunctionFactories: true }],
@@ -189,6 +189,41 @@ export const preferUseCallbackOverUseMemoForFunctions = createRule<
   },
 });
 
+function getMemoizedFunctionDescription(node) {
+  const parent = node.parent;
+
+  if (
+    parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+    parent.id.type === AST_NODE_TYPES.Identifier
+  ) {
+    return `the callback "${parent.id.name}"`;
+  }
+
+  if (
+    parent?.type === AST_NODE_TYPES.AssignmentExpression &&
+    parent.left.type === AST_NODE_TYPES.Identifier
+  ) {
+    return `the callback "${parent.left.name}"`;
+  }
+
+  if (
+    parent?.type === AST_NODE_TYPES.Property &&
+    parent.key.type === AST_NODE_TYPES.Identifier
+  ) {
+    return `the "${parent.key.name}" property callback`;
+  }
+
+  if (
+    parent?.type === AST_NODE_TYPES.JSXExpressionContainer &&
+    parent.parent?.type === AST_NODE_TYPES.JSXAttribute &&
+    parent.parent.name.type === AST_NODE_TYPES.JSXIdentifier
+  ) {
+    return `the "${parent.parent.name.name}" prop callback`;
+  }
+
+  return 'this callback value';
+}
+
 function reportAndFix(node, context) {
   const sourceCode = context.getSourceCode();
   const useMemoCallback = node.arguments[0];
@@ -216,9 +251,12 @@ function reportAndFix(node, context) {
     ? sourceCode.getText(node.typeParameters)
     : '';
 
+  const callbackDescription = getMemoizedFunctionDescription(node);
+
   context.report({
     node,
     messageId: 'preferUseCallback',
+    data: { callbackDescription },
     fix: (fixer) => {
       return fixer.replaceText(
         node,

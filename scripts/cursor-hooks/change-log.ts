@@ -1,11 +1,20 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 
+export const TMP_DIR_SEGMENT = '.cursor/tmp/';
 export const LOG_FILE = join(
   process.cwd(),
-  '.cursor/tmp/hooks/agent-change-log.json',
+  `${TMP_DIR_SEGMENT}hooks/agent-change-log.json`,
 );
-export const MAX_LOOPS = 10 as const;
+export const MAX_LOOPS = 200 as const;
 export const ACTIVE_THRESHOLD_MS = 10 * 60 * 1000;
 
 export type ConversationMeta = {
@@ -19,7 +28,11 @@ export type ConversationMeta = {
 
 export type ConversationEntry = {
   readonly _metadata?: ConversationMeta;
-} & { readonly [generationId: string]: readonly string[] };
+  readonly [generationId: string]:
+    | readonly string[]
+    | ConversationMeta
+    | undefined;
+};
 
 export type ChangeLog = {
   readonly [conversationId: string]: ConversationEntry;
@@ -36,27 +49,45 @@ export type MutableConversationMeta = {
 
 export type MutableConversationEntry = {
   _metadata?: MutableConversationMeta;
-} & { [generationId: string]: readonly string[] | undefined };
+  [generationId: string]:
+    | readonly string[]
+    | MutableConversationMeta
+    | undefined;
+};
 
 export type MutableChangeLog = {
   [conversationId: string]: MutableConversationEntry;
 };
 
-export function loadLogFile() {
-  if (!existsSync(LOG_FILE)) return {} as const;
+export function loadLogFile(): MutableChangeLog {
+  if (!existsSync(LOG_FILE)) return {};
   try {
     const content = JSON.parse(readFileSync(LOG_FILE, 'utf-8'));
-    const log: MutableChangeLog = content;
-    return log;
+    if (content && typeof content === 'object') {
+      return content as MutableChangeLog;
+    }
+    return {};
   } catch {
-    return {} as const;
+    return {};
   }
 }
 
 export function saveLogFile(log: MutableChangeLog) {
   const dir = dirname(LOG_FILE);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(LOG_FILE, JSON.stringify(log, null, 2));
+  const tmpFile = join(
+    dir,
+    `agent-change-log.${process.pid}.${Date.now()}.${randomUUID()}.tmp`,
+  );
+  const payload = JSON.stringify(log, null, 2);
+
+  try {
+    writeFileSync(tmpFile, payload, { flag: 'w' });
+    renameSync(tmpFile, LOG_FILE);
+  } catch (error) {
+    rmSync(tmpFile, { force: true });
+    throw error;
+  }
 }
 
 function applyEntryModification(
@@ -64,8 +95,12 @@ function applyEntryModification(
   modifier: (entry: MutableConversationEntry) => void,
 ) {
   const log = loadLogFile();
-  const logEntry = log[conversationId] || {};
-  if (!logEntry._metadata) logEntry._metadata = {};
+  const logEntry: MutableConversationEntry = log[conversationId] ?? {
+    _metadata: {},
+  };
+  if (!logEntry._metadata) {
+    logEntry._metadata = {};
+  }
   modifier(logEntry);
   log[conversationId] = logEntry;
   saveLogFile(log);
@@ -74,6 +109,7 @@ function applyEntryModification(
 
 export function fetchLastUserMessage(conversationId: string) {
   const log = loadLogFile();
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
   return log[conversationId]?._metadata?.lastUserMessage || null;
 }
 
@@ -85,6 +121,7 @@ export function setLastUserMessage({
   readonly message: string;
 }) {
   applyEntryModification(conversationId, (entry) => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     if (entry._metadata) {
       entry._metadata.lastUserMessage = message;
       entry._metadata.lastActivityTimestamp = Date.now();
@@ -95,6 +132,7 @@ export function setLastUserMessage({
 export function modifyConversationLastActive(conversationId: string) {
   applyEntryModification(conversationId, (entry) => {
     const now = Date.now();
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     if (entry._metadata) {
       entry._metadata.endTimestamp = undefined;
       entry._metadata.lastActivityTimestamp = now;
@@ -106,12 +144,14 @@ export function modifyConversationEnd(conversationId: string) {
   try {
     applyEntryModification(conversationId, (entry) => {
       const now = Date.now();
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       if (entry._metadata) {
         entry._metadata.endTimestamp = now;
         entry._metadata.lastActivityTimestamp = now;
       }
     });
   } catch (error) {
+    // Log error but don't throw - we don't want to break the hook execution
     console.error(
       `Error in modifyConversationEnd for ${conversationId}:`,
       error,
@@ -121,6 +161,7 @@ export function modifyConversationEnd(conversationId: string) {
 
 export function modifyHeartbeat(conversationId: string) {
   applyEntryModification(conversationId, (entry) => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     if (entry._metadata) {
       entry._metadata.lastActivityTimestamp = Date.now();
     }
@@ -130,8 +171,10 @@ export function modifyHeartbeat(conversationId: string) {
 export function detectConcurrentConversations(currentConversationId: string) {
   const log = loadLogFile();
   const now = Date.now();
+  // eslint-disable-next-line no-restricted-properties
   return Object.entries(log).some(([id, entry]) => {
     if (id === currentConversationId) return false;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     const metadata = entry._metadata;
     if (!metadata) return false;
     const { endTimestamp, lastActivityTimestamp } = metadata;
@@ -143,11 +186,13 @@ export function detectConcurrentConversations(currentConversationId: string) {
 
 export function hasCheckWorkBeenPrompted(conversationId: string) {
   const log = loadLogFile();
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
   return log[conversationId]?._metadata?.hasCheckWorkPrompted === true;
 }
 
 export function markCheckWorkPrompted(conversationId: string) {
   applyEntryModification(conversationId, (entry) => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     if (entry._metadata) {
       entry._metadata.hasCheckWorkPrompted = true;
       entry._metadata.lastActivityTimestamp = Date.now();
@@ -157,11 +202,13 @@ export function markCheckWorkPrompted(conversationId: string) {
 
 export function hasExpandTestsBeenPrompted(conversationId: string) {
   const log = loadLogFile();
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
   return log[conversationId]?._metadata?.hasExpandTestsPrompted === true;
 }
 
 export function markExpandTestsPrompted(conversationId: string) {
   applyEntryModification(conversationId, (entry) => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     if (entry._metadata) {
       entry._metadata.hasExpandTestsPrompted = true;
       entry._metadata.lastActivityTimestamp = Date.now();
@@ -171,13 +218,16 @@ export function markExpandTestsPrompted(conversationId: string) {
 
 export function isRuleRequestConversation(conversationId: string) {
   const log = loadLogFile();
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
   return log[conversationId]?._metadata?.isRuleRequest === true;
 }
 
 export function markAsRuleRequest(conversationId: string) {
   applyEntryModification(conversationId, (entry) => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     if (entry._metadata) {
       entry._metadata.isRuleRequest = true;
+      entry._metadata.lastActivityTimestamp = Date.now();
     }
   });
 }
@@ -188,7 +238,7 @@ function collectFilesExcludingTmp(
 ) {
   for (const file of files) {
     // Filter out files in .cursor/tmp/ directory
-    if (file.includes('.cursor/tmp/')) continue;
+    if (file.includes(TMP_DIR_SEGMENT)) continue;
     allFiles.add(file);
   }
 }
@@ -197,6 +247,7 @@ function extractFilesFromEntry(
   conversationEntry: ConversationEntry | MutableConversationEntry,
 ) {
   const allFiles = new Set<string>();
+  // eslint-disable-next-line no-restricted-properties
   for (const [key, value] of Object.entries(conversationEntry)) {
     if (key === '_metadata') continue;
     if (!Array.isArray(value)) continue;
@@ -209,8 +260,9 @@ export function fetchAllConversationFiles({
   conversationId,
 }: {
   readonly conversationId: string;
-}) {
+}): readonly string[] {
   const log = loadLogFile();
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
   const conversationEntry = log[conversationId];
   if (!conversationEntry) return [] as const;
   return extractFilesFromEntry(conversationEntry);
@@ -222,13 +274,13 @@ export function fetchChangedFiles({
 }: {
   readonly conversationId: string;
   readonly generationId: string;
-}) {
+}): readonly string[] {
   const log = loadLogFile();
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
   const conversationEntry = log[conversationId];
   if (!conversationEntry) return [] as const;
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
   const files = conversationEntry[generationId];
   if (!Array.isArray(files)) return [] as const;
-  return files.filter((file) => {
-    return !file.includes('.cursor/tmp/');
-  });
+  return files.filter((file) => !file.includes(TMP_DIR_SEGMENT));
 }

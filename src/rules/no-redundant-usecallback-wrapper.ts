@@ -64,36 +64,49 @@ function isPreventDefaultCall(
 function getParams(
   node: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
 ): string[] {
-  const names: string[] = [];
+  const names = new Set<string>();
   for (const p of node.params) {
-    if (p.type === AST_NODE_TYPES.Identifier) names.push(p.name);
+    if (p.type === AST_NODE_TYPES.Identifier) {
+      names.add(p.name);
+    }
     else if (p.type === AST_NODE_TYPES.ObjectPattern) {
       for (const prop of p.properties) {
         if (prop.type === AST_NODE_TYPES.Property) {
-          if (prop.key.type === AST_NODE_TYPES.Identifier) {
-            // Shorthand collects key name
-            if ((prop as any).shorthand) {
-              names.push(prop.key.name);
-            }
-          }
           // Collect bound identifier names (aliases/defaults)
           if (prop.value.type === AST_NODE_TYPES.Identifier) {
-            names.push(prop.value.name);
+            names.add(prop.value.name);
           } else if (
             prop.value.type === AST_NODE_TYPES.AssignmentPattern &&
             prop.value.left.type === AST_NODE_TYPES.Identifier
           ) {
-            names.push(prop.value.left.name);
+            names.add(prop.value.left.name);
           }
         } else if (prop.type === AST_NODE_TYPES.RestElement) {
           if (prop.argument.type === AST_NODE_TYPES.Identifier) {
-            names.push(prop.argument.name);
+            names.add(prop.argument.name);
           }
+        }
+      }
+    } else if (p.type === AST_NODE_TYPES.ArrayPattern) {
+      for (const element of p.elements) {
+        if (!element) continue;
+        if (element.type === AST_NODE_TYPES.Identifier) {
+          names.add(element.name);
+        } else if (
+          element.type === AST_NODE_TYPES.AssignmentPattern &&
+          element.left.type === AST_NODE_TYPES.Identifier
+        ) {
+          names.add(element.left.name);
+        } else if (
+          element.type === AST_NODE_TYPES.RestElement &&
+          element.argument.type === AST_NODE_TYPES.Identifier
+        ) {
+          names.add(element.argument.name);
         }
       }
     }
   }
-  return names;
+  return Array.from(names);
 }
 
 function isIdentifierOrMemberOn(
@@ -170,9 +183,17 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
 
     return {
       VariableDeclarator(node) {
-        if (!node.init || node.init.type !== AST_NODE_TYPES.CallExpression)
+        if (!node.init) return;
+        const initCall = unwrapChainExpression<TSESTree.CallExpression>(
+          node.init as unknown as TSESTree.Node,
+        );
+        if (!initCall || initCall.type !== AST_NODE_TYPES.CallExpression) {
           return;
-        const callee = node.init.callee;
+        }
+        const callee = unwrapChainExpression<TSESTree.LeftHandSideExpression>(
+          initCall.callee as TSESTree.Node,
+        );
+        if (!callee) return;
         if (!isKnownHookCallee(callee, knownHooks, assumeAllUseAreMemoized))
           return;
 
@@ -200,7 +221,10 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
 
       CallExpression(node) {
         // Detect useCallback wrappers (including React.useCallback)
-        const calleeNode = node.callee;
+        const calleeNode = unwrapChainExpression<TSESTree.LeftHandSideExpression>(
+          node.callee as TSESTree.Node,
+        );
+        if (!calleeNode) return;
         const isUseCallback =
           (calleeNode.type === AST_NODE_TYPES.Identifier &&
             calleeNode.name === 'useCallback') ||
