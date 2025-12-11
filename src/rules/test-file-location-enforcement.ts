@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import type { TSESTree } from '@typescript-eslint/utils';
 
 import { createRule } from '../utils/createRule';
 
@@ -26,7 +27,7 @@ export const testFileLocationEnforcement = createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     return {
-      Program(node) {
+      Program(node: TSESTree.Program) {
         const filename = context.getFilename();
 
         if (
