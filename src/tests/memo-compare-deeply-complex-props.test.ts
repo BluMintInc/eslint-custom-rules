@@ -121,6 +121,18 @@ import { memo } from 'react';
 export const Wrapped = memo(() => <div>hi</div>);
 `,
       },
+      {
+        filename: 'src/components/ExternalMemo.tsx',
+        code: `
+declare module 'some-other-lib' {
+  export function memo<T>(component: T, comparator?: (a: T, b: T) => boolean): T;
+}
+import { memo } from 'some-other-lib';
+type Props = { config: { theme: string } };
+const Comp = ({ config }: Props) => <div>{config.theme}</div>;
+export const Wrapped = memo(Comp);
+`,
+      },
     ],
     invalid: [
       {
@@ -380,6 +392,23 @@ import { memo } from 'react';
 type Props = { ids: readonly string[] };
 const Comp = ({ ids }: Props) => <div>{ids.length}</div>;
 export const Wrapped = memo(Comp, compareDeeply('ids'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      {
+        filename: 'src/components/UndefinedComparator.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { config: { theme: string } };
+const Comp = ({ config }: Props) => <div>{config.theme}</div>;
+export const Wrapped = memo(Comp, undefined);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Props = { config: { theme: string } };
+const Comp = ({ config }: Props) => <div>{config.theme}</div>;
+export const Wrapped = memo(Comp, compareDeeply('config'));
 `,
         errors: [{ messageId: 'useCompareDeeply' }],
       },

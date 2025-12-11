@@ -29,6 +29,38 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
     const memoNamespaces = new Map<string, string>();
     const sourceCode = context.getSourceCode();
 
+    function isNullishComparatorArgument(
+      arg: TSESTree.CallExpressionArgument,
+    ): boolean {
+      if (
+        arg.type === AST_NODE_TYPES.Identifier &&
+        arg.name === 'undefined'
+      ) {
+        return true;
+      }
+
+      if (
+        arg.type === AST_NODE_TYPES.Literal &&
+        (arg.value === null || typeof arg.value === 'undefined')
+      ) {
+        return true;
+      }
+
+      if (arg.type === AST_NODE_TYPES.UnaryExpression && arg.operator === 'void') {
+        return true;
+      }
+
+      return false;
+    }
+
+    function isComparatorProvided(
+      arg: TSESTree.CallExpressionArgument | undefined,
+    ): boolean {
+      if (!arg) return false;
+      if (arg.type === AST_NODE_TYPES.SpreadElement) return true;
+      return !isNullishComparatorArgument(arg);
+    }
+
     function recordImport(node: TSESTree.ImportDeclaration): void {
       if (typeof node.source.value !== 'string') return;
       const importPath = node.source.value;
@@ -37,7 +69,8 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
         if (
           specifier.type === AST_NODE_TYPES.ImportSpecifier &&
           specifier.imported.type === AST_NODE_TYPES.Identifier &&
-          specifier.imported.name === 'memo'
+          specifier.imported.name === 'memo' &&
+          (importPath === 'react' || isMemoUtilityImportPath(importPath))
         ) {
           memoIdentifiers.set(specifier.local.name, importPath);
         }
@@ -288,9 +321,12 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
         const memoCall = isMemoCall(node);
         if (!memoCall) return;
         if (node.arguments.length === 0) return;
-        if (node.arguments.length >= 2) return;
+
+        if (node.arguments.length > 2) return;
 
         const componentArg = node.arguments[0];
+        const comparatorArg = node.arguments[1];
+
         if (
           componentArg.type !== AST_NODE_TYPES.Identifier &&
           componentArg.type !== AST_NODE_TYPES.FunctionExpression &&
@@ -298,6 +334,8 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
         ) {
           return;
         }
+
+        if (isComparatorProvided(comparatorArg)) return;
 
         const complexProps = collectComplexProps(componentArg);
         if (complexProps.length === 0) return;
@@ -329,12 +367,25 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
               fixer,
               memoCall.source,
             );
-            fixes.push(
-              fixer.insertTextAfter(
-                componentArg,
-                `, ${importResult.localName}(${propsCall})`,
-              ),
-            );
+            if (
+              comparatorArg &&
+              comparatorArg.type !== AST_NODE_TYPES.SpreadElement &&
+              isNullishComparatorArgument(comparatorArg)
+            ) {
+              fixes.push(
+                fixer.replaceText(
+                  comparatorArg,
+                  `${importResult.localName}(${propsCall})`,
+                ),
+              );
+            } else {
+              fixes.push(
+                fixer.insertTextAfter(
+                  componentArg,
+                  `, ${importResult.localName}(${propsCall})`,
+                ),
+              );
+            }
             fixes.push(...importResult.fixes);
             return fixes;
           },
