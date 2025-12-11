@@ -132,6 +132,16 @@ ruleTesterTs.run(
         `,
         parserOptions,
       },
+      {
+        code: `
+          import onRequest from 'functions/src/v2/https/onRequest';
+
+          export default onRequest(((req, res) => {
+            res.status(200).send('ok');
+          }) satisfies (req: unknown, res: { status: (code: number) => { send: (body: string) => void } }) => void);
+        `,
+        parserOptions,
+      },
     ],
     invalid: [
       {
@@ -255,6 +265,30 @@ ruleTesterTs.run(
             const reply = () => res.sendStatus(500);
             reply();
           });
+        `,
+        parserOptions,
+        errors: [{ messageId: 'useHttpsErrorForStatus' }],
+      },
+      {
+        code: `
+          import onRequest from 'functions/src/v2/https/onRequest';
+
+          const handler = ((req, res) => {
+            res.status(500).send('boom');
+          }) satisfies (req: unknown, res: { status: (code: number) => { send: (body: string) => void } }) => void;
+
+          export default onRequest(handler);
+        `,
+        parserOptions,
+        errors: [{ messageId: 'useHttpsErrorForStatus' }],
+      },
+      {
+        code: `
+          import onRequest from 'functions/src/v2/https/onRequest';
+
+          export default onRequest(((req, res) => {
+            res.sendStatus(404);
+          }) satisfies (req: unknown, res: { sendStatus: (code: number) => void }) => void);
         `,
         parserOptions,
         errors: [{ messageId: 'useHttpsErrorForStatus' }],

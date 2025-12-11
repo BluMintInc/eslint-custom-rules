@@ -39,6 +39,19 @@ const isIdentifierWithName = (
 ): node is TSESTree.Identifier =>
   !!node && node.type === AST_NODE_TYPES.Identifier && node.name === name;
 
+const unwrapTypedExpression = (
+  expression: TSESTree.Expression,
+): TSESTree.Expression => {
+  if (
+    expression.type === AST_NODE_TYPES.TSAsExpression ||
+    expression.type === AST_NODE_TYPES.TSSatisfiesExpression
+  ) {
+    return expression.expression;
+  }
+
+  return expression;
+};
+
 const getResponseParamNames = (node: FunctionNode): string[] => {
   const extractName = (param: TSESTree.Parameter): string | null => {
     if (param.type === AST_NODE_TYPES.Identifier) {
@@ -307,10 +320,12 @@ export const requireHttpsErrorInOnRequestHandlers: TSESLint.RuleModule<
 
       if (
         defNode.type === AST_NODE_TYPES.VariableDeclarator &&
-        defNode.init &&
-        isFunctionLike(defNode.init)
+        defNode.init
       ) {
-        return defNode.init;
+        const initializer = unwrapTypedExpression(defNode.init);
+        if (isFunctionLike(initializer)) {
+          return initializer;
+        }
       }
 
       return null;
@@ -464,11 +479,13 @@ export const requireHttpsErrorInOnRequestHandlers: TSESLint.RuleModule<
                 | TSESTree.ArrowFunctionExpression
                 | TSESTree.FunctionExpression
                 | TSESTree.Identifier
-                | TSESTree.TSAsExpression =>
+                | TSESTree.TSAsExpression
+                | TSESTree.TSSatisfiesExpression =>
                 arg.type === AST_NODE_TYPES.ArrowFunctionExpression ||
                 arg.type === AST_NODE_TYPES.FunctionExpression ||
                 arg.type === AST_NODE_TYPES.Identifier ||
-                arg.type === AST_NODE_TYPES.TSAsExpression,
+                arg.type === AST_NODE_TYPES.TSAsExpression ||
+                arg.type === AST_NODE_TYPES.TSSatisfiesExpression,
             );
 
           if (handlerArg) {
@@ -479,13 +496,15 @@ export const requireHttpsErrorInOnRequestHandlers: TSESLint.RuleModule<
               if (resolvedHandler) {
                 handlerFunctions.add(resolvedHandler);
               }
-            } else if (handlerArg.type === AST_NODE_TYPES.TSAsExpression) {
-              if (isFunctionLike(handlerArg.expression)) {
-                handlerFunctions.add(handlerArg.expression);
-              } else if (handlerArg.expression.type === AST_NODE_TYPES.Identifier) {
-                const resolvedHandler = resolveFunctionFromIdentifier(
-                  handlerArg.expression,
-                );
+            } else if (
+              handlerArg.type === AST_NODE_TYPES.TSAsExpression ||
+              handlerArg.type === AST_NODE_TYPES.TSSatisfiesExpression
+            ) {
+              const expression = unwrapTypedExpression(handlerArg);
+              if (isFunctionLike(expression)) {
+                handlerFunctions.add(expression);
+              } else if (expression.type === AST_NODE_TYPES.Identifier) {
+                const resolvedHandler = resolveFunctionFromIdentifier(expression);
                 if (resolvedHandler) {
                   handlerFunctions.add(resolvedHandler);
                 }
