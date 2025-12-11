@@ -1,0 +1,362 @@
+import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { createRule } from '../utils/createRule';
+
+type Options = [
+  {
+    additionalHocNames?: string[];
+  },
+];
+
+type MessageIds = 'wrapHocInUseMemo';
+
+const defaultOptions: Options = [{ additionalHocNames: [] }];
+
+type FunctionNode =
+  | TSESTree.FunctionDeclaration
+  | TSESTree.FunctionExpression
+  | TSESTree.ArrowFunctionExpression;
+
+const isFunctionNode = (node: TSESTree.Node): node is FunctionNode =>
+  node.type === AST_NODE_TYPES.FunctionDeclaration ||
+  node.type === AST_NODE_TYPES.FunctionExpression ||
+  node.type === AST_NODE_TYPES.ArrowFunctionExpression;
+
+const isHookName = (name: string): boolean => /^use[A-Z0-9]/.test(name);
+const isComponentName = (name: string): boolean => /^[A-Z]/.test(name);
+
+const getFunctionName = (node: FunctionNode): string | null => {
+  if (node.type === AST_NODE_TYPES.FunctionDeclaration && node.id) {
+    return node.id.name;
+  }
+
+  if (
+    node.type === AST_NODE_TYPES.FunctionExpression ||
+    node.type === AST_NODE_TYPES.ArrowFunctionExpression
+  ) {
+    const parent = node.parent;
+    if (
+      parent &&
+      parent.type === AST_NODE_TYPES.VariableDeclarator &&
+      parent.id.type === AST_NODE_TYPES.Identifier
+    ) {
+      return parent.id.name;
+    }
+
+    if (
+      parent &&
+      parent.type === AST_NODE_TYPES.Property &&
+      parent.key.type === AST_NODE_TYPES.Identifier
+    ) {
+      return parent.key.name;
+    }
+  }
+
+  return null;
+};
+
+const containsJsx = (node: TSESTree.Node | null): boolean => {
+  if (!node) return false;
+
+  if (
+    node.type === AST_NODE_TYPES.JSXElement ||
+    node.type === AST_NODE_TYPES.JSXFragment
+  ) {
+    return true;
+  }
+
+  for (const key of Object.keys(node) as (keyof typeof node)[]) {
+    if (key === 'parent') continue;
+    const value = (node as any)[key];
+    if (!value) continue;
+
+    if (Array.isArray(value)) {
+      for (const child of value) {
+        if (child && typeof child.type === 'string' && containsJsx(child)) {
+          return true;
+        }
+      }
+    } else if (value && typeof value.type === 'string' && containsJsx(value)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const hasFunctionParent = (node: TSESTree.Node): boolean => {
+  let current = node.parent as TSESTree.Node | undefined;
+  while (current) {
+    if (isFunctionNode(current)) {
+      return true;
+    }
+    current = current.parent as TSESTree.Node | undefined;
+  }
+  return false;
+};
+
+const isComponentOrHook = (
+  node: FunctionNode,
+): { contextLabel: string } | null => {
+  const name = getFunctionName(node);
+  const hook = name ? isHookName(name) : false;
+  const component = name ? isComponentName(name) : false;
+  const nestedFunction = hasFunctionParent(node);
+  const jsxBody = containsJsx(
+    node.type === AST_NODE_TYPES.FunctionDeclaration ||
+      node.type === AST_NODE_TYPES.FunctionExpression
+      ? node.body
+      : node.body && node.body.type !== AST_NODE_TYPES.BlockStatement
+        ? node.body
+        : (node.body as TSESTree.Node),
+  );
+
+  if (!hook && !component && nestedFunction) {
+    return null;
+  }
+
+  if (!hook && !component && !jsxBody) {
+    return null;
+  }
+
+  if (hook) {
+    return { contextLabel: `hook${name ? ` ${name}` : ''}` };
+  }
+
+  return { contextLabel: `component${name ? ` ${name}` : ''}` };
+};
+
+const isUseMemoCallee = (
+  callee: TSESTree.LeftHandSideExpression,
+): boolean => {
+  if (
+    callee.type === AST_NODE_TYPES.Identifier &&
+    callee.name === 'useMemo'
+  ) {
+    return true;
+  }
+
+  if (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.property.type === AST_NODE_TYPES.Identifier &&
+    callee.property.name === 'useMemo'
+  ) {
+    return true;
+  }
+
+  const maybeChain = callee as unknown as TSESTree.ChainExpression;
+  if (maybeChain.type === AST_NODE_TYPES.ChainExpression) {
+    return isUseMemoCallee(
+      maybeChain.expression as TSESTree.LeftHandSideExpression,
+    );
+  }
+
+  return false;
+};
+
+const isDescendantOf = (
+  target: TSESTree.Node,
+  ancestor: TSESTree.Node,
+): boolean => {
+  let current: TSESTree.Node | undefined = target;
+  while (current && current !== ancestor) {
+    current = current.parent as TSESTree.Node | undefined;
+  }
+  return current === ancestor;
+};
+
+const isInsideUseMemoFactory = (
+  node: TSESTree.Node,
+  boundary: TSESTree.Node,
+): boolean => {
+  let current: TSESTree.Node | undefined = node;
+
+  while (current && current !== boundary) {
+    const parent = current.parent as TSESTree.Node | undefined;
+    if (!parent) break;
+
+    if (
+      parent.type === AST_NODE_TYPES.CallExpression &&
+      isUseMemoCallee(parent.callee)
+    ) {
+      const factory = parent.arguments[0];
+      if (
+        factory &&
+        factory.type !== AST_NODE_TYPES.SpreadElement &&
+        (factory.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+          factory.type === AST_NODE_TYPES.FunctionExpression) &&
+        isDescendantOf(current, factory)
+      ) {
+        return true;
+      }
+    }
+
+    current = parent;
+  }
+
+  return false;
+};
+
+const getCallableIdentifierName = (
+  callee: TSESTree.LeftHandSideExpression,
+): string | null => {
+  const maybeChain = callee as unknown as TSESTree.ChainExpression;
+  if (maybeChain.type === AST_NODE_TYPES.ChainExpression) {
+    return getCallableIdentifierName(
+      maybeChain.expression as TSESTree.LeftHandSideExpression,
+    );
+  }
+
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    return callee.name;
+  }
+
+  if (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.property.type === AST_NODE_TYPES.Identifier
+  ) {
+    return callee.property.name;
+  }
+
+  return null;
+};
+
+const isHocIdentifier = (
+  name: string,
+  additionalHocs: Set<string>,
+): boolean => {
+  if (additionalHocs.has(name)) {
+    return true;
+  }
+
+  if (!name.startsWith('with')) {
+    return false;
+  }
+
+  const suffix = name.charAt(4);
+  return Boolean(suffix) && suffix === suffix.toUpperCase();
+};
+
+const findHocName = (
+  node: TSESTree.CallExpression,
+  additionalHocs: Set<string>,
+): string | null => {
+  const identifier = getCallableIdentifierName(node.callee);
+  if (identifier && isHocIdentifier(identifier, additionalHocs)) {
+    return identifier;
+  }
+
+  if (node.callee.type === AST_NODE_TYPES.CallExpression) {
+    return findHocName(node.callee, additionalHocs);
+  }
+
+  return null;
+};
+
+export const memoizeRootLevelHocs = createRule<Options, MessageIds>({
+  name: 'memoize-root-level-hocs',
+  meta: {
+    type: 'problem',
+    docs: {
+      description:
+        'Prevent creating Higher-Order Components at the root level of React components/hooks without wrapping them in useMemo to keep wrapped component identities stable across renders.',
+      recommended: 'error',
+    },
+    fixable: undefined,
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          additionalHocNames: {
+            type: 'array',
+            items: { type: 'string' },
+            default: [],
+          },
+        },
+        additionalProperties: false,
+      },
+    ],
+    messages: {
+      wrapHocInUseMemo:
+        'HOC "{{hocName}}" is created inside {{contextLabel}} during render, producing a new wrapped component on every render and forcing downstream re-renders. Wrap the HOC creation in useMemo (with the right dependencies) or hoist it so the component identity stays stable.',
+    },
+  },
+  defaultOptions,
+  create(context, [options]) {
+    const additionalHocs = new Set(options?.additionalHocNames ?? []);
+
+    const analyzeFunction = (node: FunctionNode) => {
+      const contextInfo = isComponentOrHook(node);
+      if (!contextInfo) {
+        return;
+      }
+
+      const visit = (current: TSESTree.Node) => {
+        if (isFunctionNode(current) && current !== node) {
+          return;
+        }
+
+        if (current.type === AST_NODE_TYPES.CallExpression) {
+          const hocName = findHocName(current, additionalHocs);
+          const parentCall =
+            current.parent &&
+            current.parent.type === AST_NODE_TYPES.CallExpression &&
+            current.parent.callee === current
+              ? current.parent
+              : null;
+          const parentHocName =
+            parentCall && findHocName(parentCall, additionalHocs);
+
+          if (
+            hocName &&
+            !(parentHocName && parentHocName === hocName) &&
+            !isInsideUseMemoFactory(current, node) &&
+            !isInsideUseMemoFactory(current.callee, node)
+          ) {
+            context.report({
+              node: current,
+              messageId: 'wrapHocInUseMemo',
+              data: {
+                hocName,
+                contextLabel: contextInfo.contextLabel,
+              },
+            });
+          }
+        }
+
+        for (const key of Object.keys(current) as (keyof typeof current)[]) {
+          if (key === 'parent') continue;
+          const value = (current as any)[key];
+          if (!value) continue;
+
+          if (Array.isArray(value)) {
+            for (const child of value) {
+              if (child && typeof child.type === 'string') {
+                visit(child);
+              }
+            }
+          } else if (value && typeof value.type === 'string') {
+            visit(value as TSESTree.Node);
+          }
+        }
+      };
+
+      if (node.body) {
+        if (node.body.type === AST_NODE_TYPES.BlockStatement) {
+          for (const statement of node.body.body) {
+            visit(statement);
+          }
+        } else {
+          visit(node.body);
+        }
+      }
+    };
+
+    return {
+      FunctionDeclaration: analyzeFunction,
+      FunctionExpression: analyzeFunction,
+      ArrowFunctionExpression: analyzeFunction,
+    };
+  },
+});
