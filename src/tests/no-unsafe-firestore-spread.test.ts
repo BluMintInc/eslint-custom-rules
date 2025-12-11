@@ -1,6 +1,9 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noUnsafeFirestoreSpread } from '../rules/no-unsafe-firestore-spread';
 
+const pathLabel = (path?: string) => (path ? path : 'the merge payload');
+const errorData = (path?: string) => ({ path: pathLabel(path) });
+
 ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
   valid: [
     // Valid: Non-Firestore set methods
@@ -245,7 +248,7 @@ ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
           { merge: true }
         );
       `,
-      errors: [{ messageId: 'unsafeObjectSpread' }],
+      errors: [{ messageId: 'unsafeObjectSpread', data: errorData('hidden') }],
     },
     // Invalid: Array spread in merge update
     {
@@ -257,7 +260,7 @@ ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
           { merge: true }
         );
       `,
-      errors: [{ messageId: 'unsafeArraySpread' }],
+      errors: [{ messageId: 'unsafeArraySpread', data: errorData('myIds') }],
     },
     // Invalid: Multiple spreads in merge update
     {
@@ -274,8 +277,8 @@ ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
         );
       `,
       errors: [
-        { messageId: 'unsafeObjectSpread' },
-        { messageId: 'unsafeArraySpread' },
+        { messageId: 'unsafeObjectSpread', data: errorData('hidden') },
+        { messageId: 'unsafeArraySpread', data: errorData('myIds') },
       ],
     },
     // Invalid: Nested object spread
@@ -293,7 +296,12 @@ ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
           { merge: true }
         );
       `,
-      errors: [{ messageId: 'unsafeObjectSpread' }],
+      errors: [
+        {
+          messageId: 'unsafeObjectSpread',
+          data: errorData('settings.preferences'),
+        },
+      ],
     },
     // Invalid: Dynamic object construction with spread
     {
@@ -309,7 +317,9 @@ ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
           { merge: true }
         );
       `,
-      errors: [{ messageId: 'unsafeObjectSpread' }],
+      errors: [
+        { messageId: 'unsafeObjectSpread', data: errorData('settings') },
+      ],
     },
     // Invalid: Spread in array methods
     {
@@ -321,7 +331,7 @@ ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
           { merge: true }
         );
       `,
-      errors: [{ messageId: 'unsafeArraySpread' }],
+      errors: [{ messageId: 'unsafeArraySpread', data: errorData('tags') }],
     },
     // Invalid: Spread in computed property
     {
@@ -337,7 +347,7 @@ ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
           { merge: true }
         );
       `,
-      errors: [{ messageId: 'unsafeObjectSpread' }],
+      errors: [{ messageId: 'unsafeObjectSpread', data: errorData() }],
     },
     // Invalid: Spread in transaction
     {
@@ -351,7 +361,7 @@ ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
           }, { merge: true });
         });
       `,
-      errors: [{ messageId: 'unsafeObjectSpread' }],
+      errors: [{ messageId: 'unsafeObjectSpread', data: errorData('data') }],
     },
     // Invalid: Spread in batch operation
     {
@@ -364,7 +374,9 @@ ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
           },
         }, { merge: true });
       `,
-      errors: [{ messageId: 'unsafeObjectSpread' }],
+      errors: [
+        { messageId: 'unsafeObjectSpread', data: errorData('settings') },
+      ],
     },
     // Invalid: Conditional spread
     {
@@ -379,7 +391,9 @@ ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
           { merge: true }
         );
       `,
-      errors: [{ messageId: 'unsafeObjectSpread' }],
+      errors: [
+        { messageId: 'unsafeObjectSpread', data: errorData('preferences') },
+      ],
     },
     // Invalid: Spread in array with FieldValue
     {
@@ -391,7 +405,7 @@ ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
           { merge: true }
         );
       `,
-      errors: [{ messageId: 'unsafeArraySpread' }],
+      errors: [{ messageId: 'unsafeArraySpread', data: errorData('tags') }],
     },
     // Invalid: Multiple nested spreads
     {
@@ -413,9 +427,12 @@ ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
         );
       `,
       errors: [
-        { messageId: 'unsafeObjectSpread' },
-        { messageId: 'unsafeObjectSpread' },
-        { messageId: 'unsafeArraySpread' },
+        { messageId: 'unsafeObjectSpread', data: errorData('user.profile') },
+        {
+          messageId: 'unsafeObjectSpread',
+          data: errorData('user.profile.settings'),
+        },
+        { messageId: 'unsafeArraySpread', data: errorData('user.preferences') },
       ],
     },
     // Add frontend SDK invalid cases
@@ -430,7 +447,7 @@ ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
           }
         }, { merge: true });
       `,
-      errors: [{ messageId: 'unsafeObjectSpread' }],
+      errors: [{ messageId: 'unsafeObjectSpread', data: errorData('profile') }],
     },
     {
       code: `
@@ -442,7 +459,7 @@ ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
           }, { merge: true });
         });
       `,
-      errors: [{ messageId: 'unsafeArraySpread' }],
+      errors: [{ messageId: 'unsafeArraySpread', data: errorData('tags') }],
     },
     {
       code: `
@@ -460,8 +477,11 @@ ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
         }, { merge: true });
       `,
       errors: [
-        { messageId: 'unsafeObjectSpread' },
-        { messageId: 'unsafeObjectSpread' },
+        { messageId: 'unsafeObjectSpread', data: errorData('settings') },
+        {
+          messageId: 'unsafeObjectSpread',
+          data: errorData('settings.notifications'),
+        },
       ],
     },
     {
@@ -476,8 +496,11 @@ ruleTesterTs.run('no-unsafe-firestore-spread', noUnsafeFirestoreSpread, {
         }, { merge: true });
       `,
       errors: [
-        { messageId: 'unsafeObjectSpread' },
-        { messageId: 'unsafeArraySpread' },
+        { messageId: 'unsafeObjectSpread', data: errorData('profile') },
+        {
+          messageId: 'unsafeArraySpread',
+          data: errorData('profile.preferences'),
+        },
       ],
     },
   ],
