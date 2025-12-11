@@ -190,30 +190,56 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
       scopedFunctions.delete(node);
     }
 
-    function classifyInitializer(
-      init: TSESTree.Expression | null,
-    ): BindingKind | null {
+    function unwrapExpression(
+      expression: TSESTree.Expression,
+    ): TSESTree.Expression {
+      let current = expression;
+
+      while (true) {
+        if (
+          current.type === AST_NODE_TYPES.TSAsExpression ||
+          current.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+          current.type === AST_NODE_TYPES.TSTypeAssertion
+        ) {
+          current = current.expression as TSESTree.Expression;
+          continue;
+        }
+
+        if (current.type === AST_NODE_TYPES.TSNonNullExpression) {
+          current = current.expression;
+          continue;
+        }
+
+        break;
+      }
+
+      return current;
+    }
+
+    function classifyInitializer(init: TSESTree.Expression | null): BindingKind | null {
       if (!init) {
         return null;
       }
 
+      const unwrapped = unwrapExpression(init);
+
       if (
-        init.type === AST_NODE_TYPES.CallExpression &&
-        ((init.callee.type === AST_NODE_TYPES.Identifier &&
-          HOOK_NAMES.has(init.callee.name)) ||
-          (init.callee.type === AST_NODE_TYPES.MemberExpression &&
-            !init.callee.computed &&
-            init.callee.property.type === AST_NODE_TYPES.Identifier &&
-            HOOK_NAMES.has(init.callee.property.name)))
+        unwrapped.type === AST_NODE_TYPES.CallExpression &&
+        ((unwrapped.callee.type === AST_NODE_TYPES.Identifier &&
+          HOOK_NAMES.has(unwrapped.callee.name)) ||
+          (unwrapped.callee.type === AST_NODE_TYPES.MemberExpression &&
+            !unwrapped.callee.computed &&
+            unwrapped.callee.property.type === AST_NODE_TYPES.Identifier &&
+            HOOK_NAMES.has(unwrapped.callee.property.name)))
       ) {
         return null;
       }
 
-      if (init.type === AST_NODE_TYPES.ObjectExpression) return 'object';
-      if (init.type === AST_NODE_TYPES.ArrayExpression) return 'array';
+      if (unwrapped.type === AST_NODE_TYPES.ObjectExpression) return 'object';
+      if (unwrapped.type === AST_NODE_TYPES.ArrayExpression) return 'array';
       if (
-        init.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-        init.type === AST_NODE_TYPES.FunctionExpression
+        unwrapped.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+        unwrapped.type === AST_NODE_TYPES.FunctionExpression
       ) {
         return 'function';
       }
@@ -228,12 +254,13 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
         return;
       }
 
+      const initializer = unwrapExpression(node.init);
       const aliasKind =
-        node.init.type === AST_NODE_TYPES.Identifier
-          ? findBindingKind(node.init.name)
+        initializer.type === AST_NODE_TYPES.Identifier
+          ? findBindingKind(initializer.name)
           : null;
 
-      const kind = aliasKind ?? classifyInitializer(node.init);
+      const kind = aliasKind ?? classifyInitializer(initializer);
       if (kind) scope.set(node.id.name, kind);
     }
 
@@ -272,19 +299,19 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
       });
     }
 
-    function isPassThroughPrimitive(
-      expression: TSESTree.Expression,
-    ): boolean {
-      if (expression.type === AST_NODE_TYPES.Literal) return true;
-      if (expression.type === AST_NODE_TYPES.TemplateLiteral) return true;
+    function isStableReference(expression: TSESTree.Expression): boolean {
+      const unwrapped = unwrapExpression(expression);
 
-      if (expression.type === AST_NODE_TYPES.Identifier) return true;
+      if (unwrapped.type === AST_NODE_TYPES.Literal) return true;
+      if (unwrapped.type === AST_NODE_TYPES.TemplateLiteral) return true;
 
-      if (expression.type === AST_NODE_TYPES.MemberExpression) return true;
+      if (unwrapped.type === AST_NODE_TYPES.Identifier) return true;
+
+      if (unwrapped.type === AST_NODE_TYPES.MemberExpression) return true;
 
       if (
-        expression.type === AST_NODE_TYPES.ChainExpression &&
-        expression.expression.type === AST_NODE_TYPES.MemberExpression
+        unwrapped.type === AST_NODE_TYPES.ChainExpression &&
+        unwrapped.expression.type === AST_NODE_TYPES.MemberExpression
       ) {
         return true;
       }
@@ -330,7 +357,7 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
       const returnExpression = extractReturnExpression(callback);
       if (!returnExpression) return;
 
-      if (isPassThroughPrimitive(returnExpression)) {
+      if (isStableReference(returnExpression)) {
         const valueText = sourceCode.getText(returnExpression).slice(0, 80);
         context.report({
           node,

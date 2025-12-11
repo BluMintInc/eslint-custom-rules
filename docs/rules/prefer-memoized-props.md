@@ -11,6 +11,7 @@ Memoized React components rely on stable prop references. Inline objects, arrays
 - Flags inline object/array literals and function expressions used as JSX props inside components wrapped with `React.memo`.
 - Flags identifiers bound to objects, arrays, or functions declared inside a memoized component unless they come from `useMemo`/`useCallback`.
 - Reports `useMemo` calls that simply return a primitive or pass-through value without creating a new reference.
+- Unwraps TypeScript assertions (`as`, `satisfies`, non-null) before analysis so reference props stay flagged even when annotated.
 
 ### Examples of incorrect code
 

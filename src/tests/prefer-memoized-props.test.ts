@@ -269,6 +269,26 @@ ruleTesterJsx.run('prefer-memoized-props', preferMemoizedProps, {
     {
       code: `
         import { memo } from 'react';
+        const AssertedPayload = memo(() => {
+          const payload = { id: '1' } as const;
+          return <Item payload={payload} />;
+        });
+      `,
+      errors: [{ messageId: 'memoizeReferenceProp' }],
+    },
+    {
+      code: `
+        import { memo } from 'react';
+        const SatisfiesArray = memo(() => {
+          const items = [1, 2, 3] satisfies number[];
+          return <List items={items} />;
+        });
+      `,
+      errors: [{ messageId: 'memoizeReferenceProp' }],
+    },
+    {
+      code: `
+        import { memo } from 'react';
         const DeclaredHandler = memo(({ save }) => {
           function handleSave() {
             save();
