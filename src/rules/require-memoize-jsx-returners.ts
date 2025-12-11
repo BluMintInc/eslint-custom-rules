@@ -167,12 +167,17 @@ function expressionReturnsJSX(
         if (callee.property.name === 'createElement') {
           return true;
         }
-        if (callee.object.type === AST_NODE_TYPES.Identifier) {
+        if (
+          (callee.property.name === 'call' ||
+            callee.property.name === 'apply') &&
+          callee.object.type === AST_NODE_TYPES.Identifier
+        ) {
           const targetFn = knownFunctions.get(callee.object.name);
           if (targetFn && functionReturnsJSX(targetFn, knownFunctions, cache)) {
             return true;
           }
         }
+        return false;
       }
 
       if (

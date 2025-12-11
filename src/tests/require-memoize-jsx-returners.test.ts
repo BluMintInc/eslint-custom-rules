@@ -142,6 +142,15 @@ class UsesJsxArgumentOnly {
   }
 }`,
     },
+    {
+      filename: 'file.tsx',
+      code: `class FunctionMethodCall {
+  render() {
+    const makeComponent = () => () => <div />;
+    return makeComponent.version();
+  }
+}`,
+    },
   ],
   invalid: [
     {
@@ -157,6 +166,24 @@ class ExampleProvider {
   @Memoize()
   public get Component() {
     return () => <div>Expensive Component</div>;
+  }
+}`,
+    },
+    {
+      filename: 'file.tsx',
+      code: `class CallInvoke {
+  render() {
+    const makeComponent = () => <div />;
+    return makeComponent.call(this);
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `import { Memoize } from '@blumintinc/typescript-memoize';
+class CallInvoke {
+  @Memoize()
+  render() {
+    const makeComponent = () => <div />;
+    return makeComponent.call(this);
   }
 }`,
     },
