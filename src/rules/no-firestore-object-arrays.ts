@@ -105,7 +105,12 @@ const getFieldName = (node: TSESTree.Node): string | null => {
     if (current.type === AST_NODE_TYPES.TSPropertySignature) {
       const key = current.key;
       if (key.type === AST_NODE_TYPES.Identifier) return key.name;
-      if (key.type === AST_NODE_TYPES.Literal && typeof key.value === 'string') {
+      if (
+        key.type === AST_NODE_TYPES.Literal &&
+        (typeof key.value === 'string' ||
+          typeof key.value === 'number' ||
+          typeof key.value === 'bigint')
+      ) {
         return String(key.value);
       }
     }

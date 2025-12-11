@@ -191,6 +191,26 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
         },
       ],
     },
+    // Test: Numeric literal property keys preserve field name
+    {
+      code: `
+        export type NumericKeys = {
+          123: { name: string }[];
+          0x1f: Array<{ value: number }>;
+        };
+      `,
+      filename: 'functions/src/types/firestore/numeric.ts',
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: '123' },
+        },
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: '31' },
+        },
+      ],
+    },
     // Test: Array of type alias
     {
       code: `
