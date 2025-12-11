@@ -32,6 +32,25 @@ const COMPARISON_OPERATORS = new Set([
   'in',
 ]);
 
+function isStringLikeWithoutTypes(expr: TSESTree.Expression): boolean {
+  switch (expr.type) {
+    case AST_NODE_TYPES.Literal:
+      return typeof expr.value === 'string';
+    case AST_NODE_TYPES.TemplateLiteral:
+      return true;
+    case AST_NODE_TYPES.UnaryExpression:
+      return expr.operator === 'typeof';
+    case AST_NODE_TYPES.BinaryExpression:
+      return (
+        expr.operator === '+' &&
+        (isStringLikeWithoutTypes(expr.left as TSESTree.Expression) ||
+          isStringLikeWithoutTypes(expr.right as TSESTree.Expression))
+      );
+    default:
+      return false;
+  }
+}
+
 function isUseMemoCallee(callee: TSESTree.LeftHandSideExpression): boolean {
   if (callee.type === AST_NODE_TYPES.Identifier) {
     return callee.name === 'useMemo';
@@ -191,21 +210,11 @@ function describePrimitiveExpression(expr: TSESTree.Expression): string {
       /* istanbul ignore next -- other unary operators are treated as primitives */
       return 'primitive value';
     case AST_NODE_TYPES.BinaryExpression:
-      if (
-        [
-          '==',
-          '===',
-          '!=',
-          '!==',
-          '<',
-          '<=',
-          '>',
-          '>=',
-          'instanceof',
-          'in',
-        ].includes(expr.operator)
-      ) {
+      if (COMPARISON_OPERATORS.has(expr.operator)) {
         return 'boolean condition';
+      }
+      if (expr.operator === '+' && isStringLikeWithoutTypes(expr)) {
+        return 'string value';
       }
       return 'number value';
     case AST_NODE_TYPES.LogicalExpression:

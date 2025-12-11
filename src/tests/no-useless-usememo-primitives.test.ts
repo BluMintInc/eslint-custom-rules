@@ -244,6 +244,16 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
     },
     {
       code: `
+        const combined = useMemo(() => 'a' + 'b', []);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      errors: [{ messageId: 'uselessUseMemoPrimitive', data: { valueKind: 'string value' } }],
+      output: `
+        const combined = ('a' + 'b');
+      `,
+    },
+    {
+      code: `
         const alwaysTrue = useMemo(() => true, []);
       `,
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
