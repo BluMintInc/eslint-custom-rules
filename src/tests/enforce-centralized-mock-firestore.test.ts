@@ -1,6 +1,13 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceCentralizedMockFirestore } from '../rules/enforce-centralized-mock-firestore';
 
+const ERROR = {
+  messageId: 'useCentralizedMockFirestore' as const,
+  data: {
+    requiredPath: '../../../../../__test-utils__/mockFirestore',
+  },
+};
+
 ruleTesterTs.run(
   'enforce-centralized-mock-firestore',
   enforceCentralizedMockFirestore,
@@ -108,7 +115,7 @@ ruleTesterTs.run(
           });
         });
       `,
-        errors: [{ messageId: 'useCentralizedMockFirestore' }],
+        errors: [ERROR],
         output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
@@ -131,7 +138,7 @@ ruleTesterTs.run(
           });
         });
       `,
-        errors: [{ messageId: 'useCentralizedMockFirestore' }],
+        errors: [ERROR],
         output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
@@ -155,7 +162,7 @@ ruleTesterTs.run(
           });
         });
       `,
-        errors: [{ messageId: 'useCentralizedMockFirestore' }],
+        errors: [ERROR],
         output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
@@ -179,7 +186,7 @@ ruleTesterTs.run(
           });
         });
       `,
-        errors: [{ messageId: 'useCentralizedMockFirestore' }],
+        errors: [ERROR],
         output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
@@ -204,7 +211,7 @@ ruleTesterTs.run(
           }
         }
       `,
-        errors: [{ messageId: 'useCentralizedMockFirestore' }],
+        errors: [ERROR],
         output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
@@ -231,7 +238,7 @@ ruleTesterTs.run(
           });
         });
       `,
-        errors: [{ messageId: 'useCentralizedMockFirestore' }],
+        errors: [ERROR],
         output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
@@ -258,7 +265,7 @@ ruleTesterTs.run(
           });
         }
       `,
-        errors: [{ messageId: 'useCentralizedMockFirestore' }],
+        errors: [ERROR],
         output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
@@ -287,7 +294,7 @@ ruleTesterTs.run(
           });
         });
       `,
-        errors: [{ messageId: 'useCentralizedMockFirestore' }],
+        errors: [ERROR],
         output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
@@ -322,7 +329,7 @@ ruleTesterTs.run(
           });
         });
       `,
-        errors: [{ messageId: 'useCentralizedMockFirestore' }],
+        errors: [ERROR],
         output: `
         import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
 
