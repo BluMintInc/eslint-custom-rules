@@ -1,5 +1,7 @@
 # Enforce using the shouldFlatten option when setting deeply nested objects in Firestore documents (`@blumintinc/blumint/prefer-document-flattening`)
 
+💡 This rule is manually fixable by [editor suggestions](https://eslint.org/docs/latest/use/core-concepts#rule-suggestions).
+
 <!-- end auto-generated rule header -->
 
 Require DocSetter and DocSetterTransaction instances to flatten nested Firestore writes so nested updates stay atomic, queryable, and conflict-resistant.

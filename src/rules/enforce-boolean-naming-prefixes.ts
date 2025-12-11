@@ -7,6 +7,7 @@ type MessageIds = 'missingBooleanPrefix';
 type Options = [
   {
     prefixes?: string[];
+    ignoreOverriddenGetters?: boolean;
   },
 ];
 
@@ -34,6 +35,11 @@ const DEFAULT_BOOLEAN_PREFIXES = [
   'are', // Adding 'are' as an approved prefix (plural form of 'is')
 ];
 
+const DEFAULT_OPTIONS: Required<Options[0]> = {
+  prefixes: DEFAULT_BOOLEAN_PREFIXES,
+  ignoreOverriddenGetters: false,
+};
+
 export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
   name: 'enforce-boolean-naming-prefixes',
   meta: {
@@ -54,6 +60,10 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
               type: 'string',
             },
           },
+          ignoreOverriddenGetters: {
+            type: 'boolean',
+            default: false,
+          },
         },
         additionalProperties: false,
       },
@@ -65,9 +75,11 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         'This improves readability at call sites: `if (user.{{name}})` is ambiguous, but `if (user.is{{capitalizedName}})` clearly signals a boolean check.',
     },
   },
-  defaultOptions: [{ prefixes: DEFAULT_BOOLEAN_PREFIXES }],
+  defaultOptions: [DEFAULT_OPTIONS],
   create(context, [options]) {
-    const approvedPrefixes = options.prefixes || DEFAULT_BOOLEAN_PREFIXES;
+    const approvedPrefixes = options.prefixes || DEFAULT_OPTIONS.prefixes;
+    const ignoreOverriddenGetters =
+      options.ignoreOverriddenGetters ?? DEFAULT_OPTIONS.ignoreOverriddenGetters;
     const importStatusCache = new Map<string, boolean>();
     const externalApiUsageCache = new Map<string, boolean>();
 
@@ -87,15 +99,22 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
      * Check if a name starts with any of the approved prefixes, their plural forms,
      * or if it starts with an underscore (which indicates a private/internal property)
      */
-    function hasApprovedPrefix(name: string): boolean {
+    function hasApprovedPrefix(
+      name: string,
+      options?: { treatLeadingUnderscoreAsApproved?: boolean },
+    ): boolean {
+      const treatLeadingUnderscoreAsApproved =
+        options?.treatLeadingUnderscoreAsApproved ?? true;
+      const normalizedName = name.startsWith('_') ? name.slice(1) : name;
+
       // Skip checking properties that start with an underscore (private/internal properties)
-      if (name.startsWith('_')) {
+      if (treatLeadingUnderscoreAsApproved && name.startsWith('_')) {
         return true;
       }
 
       return approvedPrefixes.some((prefix) => {
         // Check for exact prefix match
-        if (name.toLowerCase().startsWith(prefix.toLowerCase())) {
+        if (normalizedName.toLowerCase().startsWith(prefix.toLowerCase())) {
           return true;
         }
 
@@ -103,11 +122,37 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         // Only apply pluralization to certain prefixes that have meaningful plural forms
         if (['is', 'has', 'does', 'was', 'had', 'did'].includes(prefix)) {
           const pluralPrefix = pluralize.plural(prefix);
-          return name.toLowerCase().startsWith(pluralPrefix.toLowerCase());
+          return normalizedName
+            .toLowerCase()
+            .startsWith(pluralPrefix.toLowerCase());
         }
 
         return false;
       });
+    }
+
+    function nameSuggestsBoolean(name: string): boolean {
+      const normalizedName = name.startsWith('_') ? name.slice(1) : name;
+      const lowerName = normalizedName.toLowerCase();
+      const suffixKeywords = [
+        'active',
+        'inactive',
+        'enabled',
+        'disabled',
+        'visible',
+        'ready',
+        'valid',
+        'verified',
+        'authenticated',
+        'authorized',
+      ];
+
+      return (
+        hasApprovedPrefix(normalizedName, {
+          treatLeadingUnderscoreAsApproved: false,
+        }) ||
+        suffixKeywords.some((keyword) => lowerName.endsWith(keyword))
+      );
     }
 
     /**
@@ -204,7 +249,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         // Check for logical expressions that typically return boolean
         if (
           node.init.type === AST_NODE_TYPES.BinaryExpression &&
-          ['===', '!==', '==', '!=', '>', '<', '>=', '<='].includes(
+          ['===', '!==', '==', '!=', '>', '<', '>=', '<=', 'in', 'instanceof'].includes(
             node.init.operator,
           )
         ) {
@@ -465,7 +510,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         }
         if (
           node.body.type === AST_NODE_TYPES.BinaryExpression &&
-          ['===', '!==', '==', '!=', '>', '<', '>=', '<='].includes(
+          ['===', '!==', '==', '!=', '>', '<', '>=', '<=', 'in', 'instanceof'].includes(
             node.body.operator,
           )
         ) {
@@ -498,6 +543,249 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       }
 
       return false;
+    }
+
+    type BooleanEvaluation = 'boolean' | 'nonBoolean' | 'unknown';
+
+    function identifierIsBoolean(identifier: TSESTree.Identifier): boolean {
+      if (nameSuggestsBoolean(identifier.name)) {
+        return true;
+      }
+
+      const variable = findVariableInScopes(identifier.name);
+      if (!variable) return false;
+
+      for (const def of variable.defs) {
+        if (def.type === 'Variable' && def.node) {
+          const declarator = def.node as unknown as TSESTree.VariableDeclarator;
+          if (
+            declarator.id.type === AST_NODE_TYPES.Identifier &&
+            (hasBooleanTypeAnnotation(declarator.id) ||
+              hasInitialBooleanValue(declarator))
+          ) {
+            return true;
+          }
+        }
+
+        if (
+          def.type === 'Parameter' &&
+          def.name?.type === AST_NODE_TYPES.Identifier &&
+          hasBooleanTypeAnnotation(def.name)
+        ) {
+          return true;
+        }
+
+        if (
+          def.type === 'FunctionName' &&
+          def.node &&
+          returnsBooleanValue(def.node as unknown as TSESTree.FunctionLike)
+        ) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    function callExpressionLooksBoolean(
+      callExpression: TSESTree.CallExpression,
+    ): BooleanEvaluation {
+      if (callExpression.callee.type === AST_NODE_TYPES.Identifier) {
+        const calleeName = callExpression.callee.name;
+        const lowerCallee = calleeName.toLowerCase();
+
+        if (lowerCallee.startsWith('assert')) {
+          return identifierReturnsBoolean(calleeName)
+            ? 'boolean'
+            : 'unknown';
+        }
+
+        const matchesPrefix = approvedPrefixes.some(
+          (prefix) =>
+            prefix !== 'asserts' &&
+            lowerCallee.startsWith(prefix.toLowerCase()),
+        );
+
+        if (
+          matchesPrefix ||
+          lowerCallee.includes('boolean') ||
+          lowerCallee.includes('enabled') ||
+          lowerCallee.includes('auth') ||
+          lowerCallee.includes('valid') ||
+          lowerCallee.includes('check')
+        ) {
+          return 'boolean';
+        }
+
+        if (
+          lowerCallee.startsWith('get') ||
+          lowerCallee.startsWith('fetch') ||
+          lowerCallee.startsWith('retrieve') ||
+          lowerCallee.startsWith('load') ||
+          lowerCallee.startsWith('read')
+        ) {
+          return 'unknown';
+        }
+      }
+
+      if (
+        callExpression.callee.type === AST_NODE_TYPES.MemberExpression &&
+        callExpression.callee.property.type === AST_NODE_TYPES.Identifier
+      ) {
+        const methodName = callExpression.callee.property.name;
+        const lowerMethodName = methodName.toLowerCase();
+
+        if (lowerMethodName.startsWith('assert')) {
+          return 'unknown';
+        }
+
+        const matchesPrefix = approvedPrefixes.some(
+          (prefix) =>
+            prefix !== 'asserts' &&
+            lowerMethodName.startsWith(prefix.toLowerCase()),
+        );
+
+        if (
+          matchesPrefix ||
+          lowerMethodName.includes('boolean') ||
+          lowerMethodName.includes('enabled') ||
+          lowerMethodName.includes('auth') ||
+          lowerMethodName.includes('valid') ||
+          lowerMethodName.includes('check')
+        ) {
+          return 'boolean';
+        }
+      }
+
+      return 'unknown';
+    }
+
+    function evaluateBooleanishExpression(
+      expression: TSESTree.Expression | null | undefined,
+    ): BooleanEvaluation {
+      if (!expression) return 'nonBoolean';
+
+      let currentExpression: TSESTree.Expression = expression;
+
+      if (
+        currentExpression.type === AST_NODE_TYPES.TSAsExpression ||
+        currentExpression.type === AST_NODE_TYPES.TSTypeAssertion ||
+        currentExpression.type === AST_NODE_TYPES.TSSatisfiesExpression
+      ) {
+        if (
+          currentExpression.typeAnnotation?.type ===
+          AST_NODE_TYPES.TSBooleanKeyword
+        ) {
+          return 'boolean';
+        }
+
+        currentExpression = currentExpression.expression as TSESTree.Expression;
+      }
+
+      if (currentExpression.type === AST_NODE_TYPES.ChainExpression) {
+        currentExpression = currentExpression.expression;
+      }
+
+      if (
+        (currentExpression as { type: string }).type ===
+        'ParenthesizedExpression'
+      ) {
+        return evaluateBooleanishExpression(
+          (currentExpression as { expression: TSESTree.Expression }).expression,
+        );
+      }
+
+      if (currentExpression.type === AST_NODE_TYPES.TSNonNullExpression) {
+        return evaluateBooleanishExpression(
+          currentExpression.expression as TSESTree.Expression,
+        );
+      }
+
+      if (
+        currentExpression.type === AST_NODE_TYPES.Literal &&
+        typeof currentExpression.value === 'boolean'
+      ) {
+        return 'boolean';
+      }
+
+      if (currentExpression.type === AST_NODE_TYPES.Identifier) {
+        return identifierIsBoolean(currentExpression) ? 'boolean' : 'unknown';
+      }
+
+      if (
+        currentExpression.type === AST_NODE_TYPES.MemberExpression &&
+        currentExpression.property.type === AST_NODE_TYPES.Identifier
+      ) {
+        return nameSuggestsBoolean(currentExpression.property.name)
+          ? 'boolean'
+          : 'unknown';
+      }
+
+      if (currentExpression.type === AST_NODE_TYPES.CallExpression) {
+        return callExpressionLooksBoolean(currentExpression);
+      }
+
+      if (currentExpression.type === AST_NODE_TYPES.BinaryExpression) {
+        if (
+          [
+            '===',
+            '!==',
+            '==',
+            '!=',
+            '>',
+            '<',
+            '>=',
+            '<=',
+            'in',
+            'instanceof',
+          ].includes(currentExpression.operator)
+        ) {
+          return 'boolean';
+        }
+      }
+
+      if (
+        currentExpression.type === AST_NODE_TYPES.UnaryExpression &&
+        currentExpression.operator === '!'
+      ) {
+        return 'boolean';
+      }
+
+      if (currentExpression.type === AST_NODE_TYPES.LogicalExpression) {
+        const left = evaluateBooleanishExpression(currentExpression.left);
+        const right = evaluateBooleanishExpression(currentExpression.right);
+
+        if (left === 'nonBoolean' || right === 'nonBoolean') {
+          return 'nonBoolean';
+        }
+
+        if (left === 'boolean' && right === 'boolean') {
+          return 'boolean';
+        }
+
+        return 'unknown';
+      }
+
+      if (currentExpression.type === AST_NODE_TYPES.ConditionalExpression) {
+        const consequent = evaluateBooleanishExpression(
+          currentExpression.consequent,
+        );
+        const alternate = evaluateBooleanishExpression(
+          currentExpression.alternate,
+        );
+
+        if (consequent === 'nonBoolean' || alternate === 'nonBoolean') {
+          return 'nonBoolean';
+        }
+
+        if (consequent === 'boolean' && alternate === 'boolean') {
+          return 'boolean';
+        }
+
+        return 'unknown';
+      }
+
+      return 'unknown';
     }
 
     /**
@@ -721,6 +1009,54 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       return false;
     }
 
+    function collectReturnArguments(
+      root: TSESTree.Node,
+    ): Array<TSESTree.Expression | null> {
+      const results: Array<TSESTree.Expression | null> = [];
+
+      function walk(node: TSESTree.Node) {
+        if (node.type === AST_NODE_TYPES.ReturnStatement) {
+          results.push(node.argument ?? null);
+          return;
+        }
+
+        if (
+          node !== root &&
+          (node.type === AST_NODE_TYPES.FunctionDeclaration ||
+            node.type === AST_NODE_TYPES.FunctionExpression ||
+            node.type === AST_NODE_TYPES.ArrowFunctionExpression)
+        ) {
+          return;
+        }
+
+        for (const key in node) {
+          if (isTraversalMetadataKey(key)) continue;
+
+          const value = (node as unknown as Record<string, unknown>)[key];
+          if (Array.isArray(value)) {
+            for (const child of value) {
+              if (
+                child &&
+                typeof child === 'object' &&
+                (child as { type?: unknown }).type
+              ) {
+                walk(child as TSESTree.Node);
+              }
+            }
+          } else if (
+            value &&
+            typeof value === 'object' &&
+            (value as { type?: unknown }).type
+          ) {
+            walk(value as TSESTree.Node);
+          }
+        }
+      }
+
+      walk(root);
+      return results;
+    }
+
     /**
      * Check if a variable is used in a while loop condition
      * This searches the scope for while loops that use the variable in their condition
@@ -863,6 +1199,48 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       return false;
     }
 
+    function getterReturnsBoolean(
+      node: TSESTree.MethodDefinition | TSESTree.TSAbstractMethodDefinition,
+    ): boolean {
+      if (node.kind !== 'get') {
+        return false;
+      }
+
+      const functionLike = node.value;
+      const returnAnnotation =
+        functionLike?.returnType?.typeAnnotation ||
+        (node as { returnType?: TSESTree.TSTypeAnnotation }).returnType
+          ?.typeAnnotation;
+
+      if (
+        returnAnnotation &&
+        returnAnnotation.type === (AST_NODE_TYPES.TSBooleanKeyword as any)
+      ) {
+        return true;
+      }
+
+      if (
+        !functionLike?.body ||
+        functionLike.body.type !== AST_NODE_TYPES.BlockStatement
+      ) {
+        return false;
+      }
+
+      const returnArguments = collectReturnArguments(functionLike.body);
+      if (returnArguments.length === 0) {
+        return false;
+      }
+
+      for (const argument of returnArguments) {
+        const evaluation = evaluateBooleanishExpression(argument);
+        if (evaluation !== 'boolean') {
+          return false;
+        }
+      }
+
+      return true;
+    }
+
     /**
      * Check variable declarations for boolean naming
      */
@@ -972,32 +1350,49 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     /**
      * Check method definitions for boolean return values
      */
-    function checkMethodDefinition(node: TSESTree.MethodDefinition) {
+    function checkMethodDefinition(
+      node: TSESTree.MethodDefinition | TSESTree.TSAbstractMethodDefinition,
+    ) {
       if (node.key.type !== AST_NODE_TYPES.Identifier) return;
 
       const methodName = node.key.name;
+      const isGetter = node.kind === 'get';
 
-      // Skip checking if it's a type predicate
+      const returnAnnotation =
+        node.value?.returnType?.typeAnnotation ||
+        (node as { returnType?: TSESTree.TSTypeAnnotation }).returnType
+          ?.typeAnnotation;
+
       if (
-        node.value.returnType?.typeAnnotation &&
-        node.value.returnType.typeAnnotation.type ===
-          (AST_NODE_TYPES.TSTypePredicate as any)
+        ignoreOverriddenGetters &&
+        isGetter &&
+        ((node as { override?: boolean }).override ||
+          (node as { abstract?: boolean }).abstract ||
+          !node.value?.body ||
+          node.type === AST_NODE_TYPES.TSAbstractMethodDefinition)
       ) {
         return;
       }
 
-      // Check if it returns a boolean
+      // Skip checking if it's a type predicate
       if (
-        node.value.returnType?.typeAnnotation &&
-        node.value.returnType.typeAnnotation.type ===
-          (AST_NODE_TYPES.TSBooleanKeyword as any) &&
-        !hasApprovedPrefix(methodName)
+        returnAnnotation &&
+        returnAnnotation.type === (AST_NODE_TYPES.TSTypePredicate as any)
       ) {
+        return;
+      }
+
+      const returnsBoolean =
+        (returnAnnotation &&
+          returnAnnotation.type === (AST_NODE_TYPES.TSBooleanKeyword as any)) ||
+        (isGetter && getterReturnsBoolean(node));
+
+      if (returnsBoolean && !hasApprovedPrefix(methodName)) {
         context.report({
           node: node.key,
           messageId: 'missingBooleanPrefix',
           data: {
-            type: 'method',
+            type: isGetter ? 'getter' : 'method',
             name: methodName,
             capitalizedName: capitalizeFirst(methodName),
             prefixes: formatPrefixes(),
@@ -1486,6 +1881,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         }
       },
       MethodDefinition: checkMethodDefinition,
+      TSAbstractMethodDefinition: checkMethodDefinition,
       Property: checkProperty,
       ClassProperty: checkClassProperty,
       PropertyDefinition: checkClassPropertyDeclaration, // For TypeScript class properties
