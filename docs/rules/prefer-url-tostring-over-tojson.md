@@ -22,6 +22,7 @@ Enforce the use of `toString()` over `toJSON()` when working with `URL` objects 
 This keeps URL serialization explicit, avoids redundant calls, and prevents readers from assuming a different JSON-specific payload.
 
 ### Incorrect
+
 ```javascript
 const url = new URL('https://example.com/path');
 console.log(url.toJSON()); // Redundant hop; same output as toString()
@@ -43,6 +44,7 @@ u?.toJSON(); // Optional chaining still adds the redundant call
 ```
 
 ### Correct
+
 ```javascript
 const url = new URL('https://example.com/path');
 console.log(url.toString()); // Clearer and more direct
@@ -57,9 +59,10 @@ const payload = JSON.stringify({ link: url }); // `toJSON` called automatically 
 console.log(new URL('https://e.com').toString());
 ```
 
-## Options
-
-This rule does not have any options.
+```javascript
+const maybeUrl = Math.random() > 0.5 ? new URL('https://e.com') : undefined;
+console.log(maybeUrl?.toString());
+```
 
 ## When Not To Use It
 
@@ -72,3 +75,4 @@ This rule does not have any options.
   - General case: `foo.toJSON()` → `foo.toString()`
   - Inside `JSON.stringify(...)`: `foo.toJSON()` → `foo` (drop the method call)
   - Optional chaining calls like `foo?.toJSON()` are fixed to `foo?.toString()` (the call is not dropped to preserve semantics).
+
