@@ -156,6 +156,45 @@ function usesLocalTypeBindings(
   return false;
 }
 
+function collectBodyTypeAnnotations(
+  node: TSESTree.Node,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+): TSESTree.Node[] {
+  const typeNodes: TSESTree.Node[] = [];
+  const visitorKeys = sourceCode.visitorKeys;
+  const stack = [node];
+
+  while (stack.length) {
+    const current = stack.pop() as TSESTree.Node;
+
+    if (
+      current.type === AST_NODE_TYPES.TSAsExpression ||
+      current.type === AST_NODE_TYPES.TSSatisfiesExpression
+    ) {
+      typeNodes.push(current.typeAnnotation);
+    } else if (current.type === AST_NODE_TYPES.TSTypeAssertion) {
+      typeNodes.push(current.typeAnnotation);
+    }
+
+    const keys = visitorKeys[current.type];
+    if (!keys) continue;
+    for (const key of keys) {
+      const value = (current as unknown as Record<string, unknown>)[key];
+      if (Array.isArray(value)) {
+        for (const element of value) {
+          if (element && typeof (element as TSESTree.Node).type === 'string') {
+            stack.push(element as TSESTree.Node);
+          }
+        }
+      } else if (value && typeof (value as TSESTree.Node).type === 'string') {
+        stack.push(value as TSESTree.Node);
+      }
+    }
+  }
+
+  return typeNodes;
+}
+
 function findHoistTarget(node: TSESTree.Node): TSESTree.Node | null {
   let current: TSESTree.Node | undefined = node;
 
@@ -205,7 +244,8 @@ function analyzeExternalReferences(
   context: Readonly<TSESLint.RuleContext<MessageIds, Options>>,
   fn: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
 ): { hasComponentScopeRef: boolean } {
-  const scopeManager = context.getSourceCode().scopeManager;
+  const sourceCode = context.getSourceCode();
+  const scopeManager = sourceCode.scopeManager;
   if (!scopeManager) {
     return { hasComponentScopeRef: true };
   }
@@ -240,27 +280,31 @@ function analyzeExternalReferences(
 
   if (!hasComponentScopeRef) {
     const localTypes = collectNearestBlockTypeBindings(fn);
-    const typeRoots: TSESTree.Node[] = [];
-    if (fn.returnType) {
-      typeRoots.push(fn.returnType.typeAnnotation);
-    }
-    if (fn.typeParameters) {
-      typeRoots.push(fn.typeParameters);
-    }
-    for (const param of fn.params) {
-      if ('typeAnnotation' in param && param.typeAnnotation) {
-        typeRoots.push(param.typeAnnotation.typeAnnotation);
-      } else if (
-        param.type === AST_NODE_TYPES.AssignmentPattern &&
-        'typeAnnotation' in param.left &&
-        param.left.typeAnnotation
-      ) {
-        typeRoots.push(param.left.typeAnnotation.typeAnnotation);
+    if (localTypes.size > 0) {
+      const typeRoots: TSESTree.Node[] = [];
+      if (fn.returnType) {
+        typeRoots.push(fn.returnType.typeAnnotation);
       }
-    }
+      if (fn.typeParameters) {
+        typeRoots.push(fn.typeParameters);
+      }
+      for (const param of fn.params) {
+        if ('typeAnnotation' in param && param.typeAnnotation) {
+          typeRoots.push(param.typeAnnotation.typeAnnotation);
+        } else if (
+          param.type === AST_NODE_TYPES.AssignmentPattern &&
+          'typeAnnotation' in param.left &&
+          param.left.typeAnnotation
+        ) {
+          typeRoots.push(param.left.typeAnnotation.typeAnnotation);
+        }
+      }
 
-    if (usesLocalTypeBindings(typeRoots, localTypes, context.getSourceCode())) {
-      hasComponentScopeRef = true;
+      typeRoots.push(...collectBodyTypeAnnotations(fn.body, sourceCode));
+
+      if (usesLocalTypeBindings(typeRoots, localTypes, sourceCode)) {
+        hasComponentScopeRef = true;
+      }
     }
   }
 

@@ -90,6 +90,31 @@ function Outer() {
   return <Inner />;
 }
 `,
+`
+import { useCallback } from 'react';
+function Component() {
+  type LocalType = { value: string };
+  const handler = useCallback((input: string) => {
+    const coerced = ({ value: input } as LocalType);
+    return coerced.value.length;
+  }, []);
+  return <div>{handler('x')}</div>;
+}
+`,
+{
+  filename: 'component.ts',
+  code: `
+import { useCallback } from 'react';
+function buildHandler() {
+  type LocalType = { id: number };
+  const handler = useCallback((input: number) => {
+    const coerced = { id: input } satisfies LocalType;
+    return coerced.id;
+  }, []);
+  return handler(1);
+}
+  `,
+},
   `
 import { useCallback } from 'react';
 function Component({ formatter }) {
