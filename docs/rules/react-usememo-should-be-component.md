@@ -4,24 +4,28 @@
 
 <!-- end auto-generated rule header -->
 
-> Enforce that useMemo hooks returning React nodes should be abstracted into separate React components
+> Enforce that useMemo hooks returning React nodes are extracted into real components instead of memoized values.
 
 - ⚙️ This rule is enabled in the ✅ `recommended` config.
 
+## Why useMemo should not return JSX
+
+- JSX inside `useMemo` has no component identity, so React cannot track props, state, or errors the way it does for components.
+- Memoizing JSX hides a component boundary inside another component, which makes debugging, testing, and reuse harder.
+- `React.memo` already provides memoization for components while keeping the component boundary visible to React DevTools and to callers.
+
 ## Rule Details
 
-This rule enforces that useMemo hooks returning React nodes should be abstracted into separate React components. The goal is to improve code maintainability and reusability by discouraging the use of useMemo for defining component structures inline.
+The rule reports when a `useMemo` callback returns JSX/ReactNode and the memoized value is not:
 
-Using useMemo to memoize JSX elements is an anti-pattern because:
+- reused multiple times inside the same component (where memoization avoids duplication), or
+- forwarded as a prop/spread value into other components (treated as component content).
 
-1. It makes the code harder to read and maintain
-2. It hides component logic inside another component
-3. It prevents proper component reuse
-4. React already provides a better mechanism for this: React.memo()
+When reported, move the JSX into a dedicated component and, if stability is required, wrap that component with `React.memo`.
 
 ### Examples
 
-❌ **Incorrect** code:
+❌ **Incorrect**: useMemo hides a component inside another component
 
 ```jsx
 const LivestreamInfo = ({ streamer, title, description }) => {
@@ -54,7 +58,7 @@ const LivestreamInfo = ({ streamer, title, description }) => {
 };
 ```
 
-✅ **Correct** code:
+✅ **Correct**: extract components and memoize with `React.memo`
 
 ```jsx
 // UserAvatar.tsx
@@ -88,14 +92,15 @@ export const LivestreamInfo = ({ streamer, title, description }) => {
 
 You might consider disabling this rule if:
 
-1. You're working with a legacy codebase that heavily uses this pattern and refactoring would be too time-consuming
-2. You have specific performance requirements that necessitate this pattern (though this is rare)
+1. Legacy code makes component extraction infeasible and the churn risk outweighs the benefit.
+2. Only a benchmarked hotspot is satisfied by memoizing JSX inside `useMemo` (this is rare; prefer `React.memo` first).
 
 ## Rule Exceptions
 
-This rule automatically allows the following exceptions:
+This rule automatically allows:
 
-1. When the memoized JSX element is used multiple times within the same component. In this case, extracting it as a separate component could lead to unnecessary code duplication or require passing additional props.
+1. Memoized JSX that is reused multiple times within the same component (to avoid duplication).
+2. Memoized JSX that is passed through as a prop or spread attribute to other components.
 
 Example of allowed usage (memoized JSX used multiple times):
 

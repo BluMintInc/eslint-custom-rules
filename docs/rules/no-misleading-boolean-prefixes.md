@@ -3,20 +3,20 @@
 💼 This rule is enabled in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
-### no-misleading-boolean-prefixes
 
 Reserve boolean-style prefixes like is, has, or should for functions that actually return boolean values. This maintains clarity and sets accurate expectations about a function's return type.
 
 - **Type**: problem
 - **Recommended**: error
 
-#### Why
+## Why
 
 Boolean-style prefixes communicate that a function answers a yes/no question. If such functions return non-boolean values (like numbers, strings, or objects), it misleads readers and makes call sites harder to understand.
 
-#### Examples
+## Examples
 
 Bad:
+
 ```javascript
 function isAvailable() {
   return 'yes';
@@ -34,6 +34,7 @@ function isUser() {
 ```
 
 Good:
+
 ```javascript
 function isAvailable() {
   return Math.random() > 0.5;
@@ -51,13 +52,13 @@ function getUser() {
 }
 ```
 
-#### Allowed patterns
+## Allowed patterns
 
 - Type predicates (e.g., `function isUser(u): u is User { ... }`)
 - Explicit `boolean` return types or `Promise<boolean>` (and unions with `null`/`undefined`/`void`)
 - Obvious boolean expressions: comparisons (`>`, `===`), negations (`!x`, `!!x`), or `Boolean(x)`
 
-#### Options
+## Options
 
 ```json
 {

@@ -12,6 +12,11 @@ import { noStaleStateAcrossAwait } from '../rules/no-stale-state-across-await';
  * 5. Advanced async patterns (Promise.all, async iterators)
  */
 
+const expectStaleStateError = (setterName: string, boundaryType: string) => ({
+  messageId: 'staleStateAcrossAwait' as const,
+  data: { setterName, boundaryType },
+});
+
 ruleTesterJsx.run(
   'no-stale-state-across-await-feedback-patterns',
   noStaleStateAcrossAwait,
@@ -259,12 +264,7 @@ ruleTesterJsx.run(
           return { data, fetchData };
         }
       `,
-        errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
-        ],
+        errors: [expectStaleStateError('setData', 'an await boundary')],
       },
 
       // Invalid: Custom hook with complex violation
@@ -290,14 +290,8 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setError' },
-          },
+          expectStaleStateError('setData', 'an await boundary'),
+          expectStaleStateError('setError', 'an await boundary'),
         ],
       },
 
@@ -321,12 +315,7 @@ ruleTesterJsx.run(
           return { data, loading, fetchData };
         }
       `,
-        errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setLoading' },
-          },
-        ],
+        errors: [expectStaleStateError('setLoading', 'an await boundary')],
       },
 
       // ===== 4. useEffect PATTERNS =====
@@ -347,12 +336,7 @@ ruleTesterJsx.run(
           }, []);
         }
       `,
-        errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
-        ],
+        errors: [expectStaleStateError('setData', 'an await boundary')],
       },
 
       // Invalid: useEffect with complex async pattern
@@ -378,14 +362,8 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setUsers' },
-          },
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setPosts' },
-          },
+          expectStaleStateError('setUsers', 'an await boundary'),
+          expectStaleStateError('setPosts', 'an await boundary'),
         ],
       },
 
@@ -410,12 +388,7 @@ ruleTesterJsx.run(
           }, []);
         }
       `,
-        errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setLoading' },
-          },
-        ],
+        errors: [expectStaleStateError('setLoading', 'an await boundary')],
       },
 
       // ===== 5. ADVANCED ASYNC PATTERNS =====
@@ -436,12 +409,7 @@ ruleTesterJsx.run(
           }
         }
       `,
-        errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
-        ],
+        errors: [expectStaleStateError('setData', 'an await boundary')],
       },
 
       // Invalid: Promise.all with complex violations
@@ -469,18 +437,9 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setUsers' },
-          },
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setPosts' },
-          },
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setLoading' },
-          },
+          expectStaleStateError('setUsers', 'an await boundary'),
+          expectStaleStateError('setPosts', 'an await boundary'),
+          expectStaleStateError('setLoading', 'an await boundary'),
         ],
       },
 
@@ -499,12 +458,7 @@ ruleTesterJsx.run(
           }
         }
       `,
-        errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setStatus' },
-          },
-        ],
+        errors: [expectStaleStateError('setStatus', 'a yield boundary')],
       },
 
       // Invalid: Complex async iterator with multiple violations
@@ -531,18 +485,9 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setStatus' },
-          },
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setProgress' },
-          },
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setResults' },
-          },
+          expectStaleStateError('setStatus', 'a yield boundary'),
+          expectStaleStateError('setProgress', 'a yield boundary'),
+          expectStaleStateError('setResults', 'a yield boundary'),
         ],
       },
 
@@ -564,12 +509,7 @@ ruleTesterJsx.run(
           }
         }
       `,
-        errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
-        ],
+        errors: [expectStaleStateError('setData', 'an await boundary')],
       },
 
       // Invalid: Promise.allSettled with violations
@@ -591,12 +531,7 @@ ruleTesterJsx.run(
           }
         }
       `,
-        errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setResults' },
-          },
-        ],
+        errors: [expectStaleStateError('setResults', 'an await boundary')],
       },
 
       // Invalid: Mixed Promise patterns with violations
@@ -622,14 +557,8 @@ ruleTesterJsx.run(
         }
       `,
         errors: [
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setData' },
-          },
-          {
-            messageId: 'staleStateAcrossAwait',
-            data: { setterName: 'setStatus' },
-          },
+          expectStaleStateError('setData', 'an await boundary'),
+          expectStaleStateError('setStatus', 'an await boundary'),
         ],
       },
     ],
