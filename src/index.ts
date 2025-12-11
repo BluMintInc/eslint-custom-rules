@@ -61,6 +61,7 @@ import { noFirestoreObjectArrays } from './rules/no-firestore-object-arrays';
 import { noMemoizeOnStatic } from './rules/no-memoize-on-static';
 import { noUnsafeFirestoreSpread } from './rules/no-unsafe-firestore-spread';
 import { noJsxInHooks } from './rules/no-jsx-in-hooks';
+import { noUnmemoizedMemoWithoutProps } from './rules/no-unmemoized-memo-without-props';
 import { enforceAssertThrows } from './rules/enforce-assert-throws';
 import { preferBatchOperations } from './rules/prefer-batch-operations';
 import { noComplexCloudParams } from './rules/no-complex-cloud-params';
@@ -185,6 +186,7 @@ module.exports = {
         '@blumintinc/blumint/prefer-type-over-interface': 'error',
         '@blumintinc/blumint/prefer-type-alias-over-typeof-constant': 'error',
         '@blumintinc/blumint/require-memo': 'error',
+        '@blumintinc/blumint/no-unmemoized-memo-without-props': 'error',
         '@blumintinc/blumint/require-dynamic-firebase-imports': 'error',
         '@blumintinc/blumint/require-https-error': 'error',
         '@blumintinc/blumint/use-custom-router': 'error',
@@ -325,6 +327,7 @@ module.exports = {
     'prefer-type-over-interface': preferTypeOverInterface,
     'prefer-type-alias-over-typeof-constant': preferTypeAliasOverTypeofConstant,
     'require-memo': requireMemo,
+    'no-unmemoized-memo-without-props': noUnmemoizedMemoWithoutProps,
     'no-jsx-whitespace-literal': noJsxWhitespaceLiteral,
     'require-dynamic-firebase-imports': requireDynamicFirebaseImports,
     'require-https-error': requireHttpsError,
