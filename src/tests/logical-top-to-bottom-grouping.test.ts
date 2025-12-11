@@ -67,23 +67,34 @@ const copy = source;
 source = 2;
 use(copy);
     `,
+    `
+const group = useGroupDoc();
+const { groupTabState } = useGroupRouter();
+const { id } = group || {};
+    `,
+    `
+const state = useState(0);
+console.log('ready');
+state[1](state[0] + 1);
+    `,
+    `
+const value = source[getIndex()];
+if (!shouldContinue()) {
+  return;
+}
+use(value);
+    `,
+    `
+const record = { [computeKey()]: value };
+if (!ok()) {
+  return;
+}
+use(record);
+    `,
   ],
   invalid: [
     {
       code: `
-const group = useGroupDoc();
-const { groupTabState } = useGroupRouter();
-const { id } = group || {};
-      `,
-      output: `
-const group = useGroupDoc();
-const { id } = group || {};
-const { groupTabState } = useGroupRouter();
-`,
-      errors: [{ messageId: 'groupDerived' }],
-    },
-    {
-      code: `
 const { a } = props.group;
 if (id !== null) {
   return null;
@@ -194,19 +205,6 @@ const prefix = 'a';
 const suffix = 'b';
 `,
       errors: [{ messageId: 'moveSideEffect' }],
-    },
-    {
-      code: `
-const group = useGroupDoc();
-const router = useGroupRouter();
-const id = group.id;
-      `,
-      output: `
-const group = useGroupDoc();
-const id = group.id;
-const router = useGroupRouter();
-`,
-      errors: [{ messageId: 'groupDerived' }],
     },
     {
       code: `

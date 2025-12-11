@@ -1,4 +1,5 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
 
 type MessageIds =
@@ -8,10 +9,6 @@ type MessageIds =
   | 'moveSideEffect';
 
 type BlockLike = TSESTree.BlockStatement | TSESTree.Program;
-
-function isNode(value: unknown): value is TSESTree.Node {
-  return Boolean(value && typeof value === 'object' && 'type' in (value as object));
-}
 
 function isHookLikeName(name: string): boolean {
   return /^use[A-Z0-9]/.test(name);
@@ -120,11 +117,11 @@ function collectUsedIdentifiers(
       const value = (current as unknown as Record<string, unknown>)[key];
       if (Array.isArray(value)) {
         for (const element of value) {
-          if (isNode(element)) {
+          if (ASTHelpers.isNode(element)) {
             stack.push(element);
           }
         }
-      } else if (isNode(value)) {
+      } else if (ASTHelpers.isNode(value)) {
         stack.push(value);
       }
     }
@@ -263,7 +260,7 @@ function collectMutatedIdentifiers(
 
     if (current.type === AST_NODE_TYPES.AssignmentExpression) {
       collectAssignedNamesFromPattern(current.left as TSESTree.Node, names);
-      if (isNode(current.right)) {
+      if (ASTHelpers.isNode(current.right)) {
         stack.push(current.right);
       }
       continue;
@@ -290,11 +287,11 @@ function collectMutatedIdentifiers(
       const value = (current as unknown as Record<string, unknown>)[key];
       if (Array.isArray(value)) {
         for (const element of value) {
-          if (isNode(element)) {
+          if (ASTHelpers.isNode(element)) {
             stack.push(element);
           }
         }
-      } else if (isNode(value)) {
+      } else if (ASTHelpers.isNode(value)) {
         stack.push(value);
       }
     }
@@ -330,6 +327,12 @@ function initializerIsSafe(
         initializerIsSafe(exp as TSESTree.Expression, { allowHooks }),
       );
     case AST_NODE_TYPES.MemberExpression:
+      if (expression.computed) {
+        return (
+          initializerIsSafe(expression.property as TSESTree.Expression, { allowHooks }) &&
+          initializerIsSafe(expression.object as TSESTree.Expression, { allowHooks })
+        );
+      }
       return initializerIsSafe(expression.object as TSESTree.Expression, { allowHooks });
     case AST_NODE_TYPES.ArrayExpression:
       return expression.elements.every((element) => {
@@ -345,6 +348,11 @@ function initializerIsSafe(
       return expression.properties.every((prop) => {
         if (prop.type !== AST_NODE_TYPES.Property) {
           return false;
+        }
+        if (prop.computed) {
+          if (!initializerIsSafe(prop.key as TSESTree.Expression, { allowHooks })) {
+            return false;
+          }
         }
         return initializerIsSafe(prop.value as TSESTree.Expression, { allowHooks });
       });
@@ -365,7 +373,7 @@ function initializerIsSafe(
     case AST_NODE_TYPES.CallExpression: {
       if (allowHooks && isHookCallee(expression.callee)) {
         return expression.arguments.every((arg) => {
-          if (!isNode(arg)) {
+          if (!ASTHelpers.isNode(arg)) {
             return true;
           }
           if (arg.type === AST_NODE_TYPES.SpreadElement) {
@@ -460,7 +468,7 @@ function buildMoveFix(
   return fixer.replaceTextRange([segmentStart, segmentEnd], newText);
 }
 
-function truncate(text: string, max = 60): string {
+function truncateWithEllipsis(text: string, max = 60): string {
   return text.length <= max ? text : `${text.slice(0, max)}…`;
 }
 
@@ -562,7 +570,7 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
         reportOnce(
           statement,
           'moveGuardUp',
-          { guard: truncate(sourceCode.getText(statement.test)) },
+          { guard: truncateWithEllipsis(sourceCode.getText(statement.test)) },
           (fixer) => buildMoveFix(body, index, targetIndex, parent, sourceCode, fixer),
         );
       });
@@ -593,7 +601,7 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
                 .slice(lastDependencyIndex + 1, index)
                 .some(
                   (between) =>
-                    !isPureDeclaration(between, { allowHooks: true }) ||
+                    !isPureDeclaration(between, { allowHooks: false }) ||
                     statementDeclaresAny(between, new Set(priorDependencies)) ||
                     statementReferencesAny(between, new Set(priorDependencies)),
                 );
@@ -665,10 +673,6 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
         }
 
         const intervening = body.slice(index + 1, usageIndex);
-        const usesName = intervening.some((stmt) => statementReferencesAny(stmt, new Set([name])));
-        if (usesName) {
-          return;
-        }
         const mutatesDependencies =
           dependencies.size > 0 &&
           intervening.some((stmt) => statementMutatesAny(stmt, dependencies));
@@ -730,7 +734,7 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
         let targetIndex = index;
         for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
           const candidate = body[cursor];
-          if (!isPureDeclaration(candidate, { allowHooks: true })) {
+          if (!isPureDeclaration(candidate, { allowHooks: false })) {
             break;
           }
           if (statementDeclaresAny(candidate, dependencies)) {
@@ -746,7 +750,7 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
           return;
         }
 
-        const effectText = truncate(sourceCode.getText(statement).trim());
+        const effectText = truncateWithEllipsis(sourceCode.getText(statement).trim());
         reportOnce(
           statement,
           'moveSideEffect',
