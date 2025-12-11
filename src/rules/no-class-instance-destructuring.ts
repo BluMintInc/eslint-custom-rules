@@ -27,6 +27,10 @@ export const noClassInstanceDestructuring = createRule<[], MessageIds>({
       prop: TSESTree.ObjectPattern['properties'][number],
     ): string {
       if (prop.type === AST_NODE_TYPES.Property) {
+        if (prop.computed) {
+          const keyText = sourceCode.getText(prop.key);
+          return `[${keyText}]`;
+        }
         if (prop.key.type === AST_NODE_TYPES.Identifier) {
           return prop.key.name;
         }
@@ -125,25 +129,20 @@ export const noClassInstanceDestructuring = createRule<[], MessageIds>({
 
               // Skip if there's no init expression
               if (!node.init) return null;
+              const initValueText = sourceCode.getText(node.init as TSESTree.Node);
 
               // For single property, use simple replacement
               if (properties.length === 1) {
                 const prop = properties[0];
                 if (prop.type === AST_NODE_TYPES.Property) {
-                  const key =
-                    prop.key.type === AST_NODE_TYPES.Identifier
-                      ? prop.key.name
-                      : sourceCode.getText(prop.key);
                   const value =
                     prop.value.type === AST_NODE_TYPES.Identifier
                       ? prop.value.name
                       : sourceCode.getText(prop.value);
-                  const initText = sourceCode.getText(
-                    node.init as TSESTree.Node,
-                  );
+                  const accessPath = buildAccessPath(initValueText, prop);
                   return fixer.replaceText(
                     node,
-                    `${value} = ${initText}.${key}`,
+                    `${value} = ${accessPath}`,
                   );
                 }
                 return null;
@@ -156,18 +155,12 @@ export const noClassInstanceDestructuring = createRule<[], MessageIds>({
                     prop.type === AST_NODE_TYPES.Property,
                 )
                 .map((prop) => {
-                  const key =
-                    prop.key.type === AST_NODE_TYPES.Identifier
-                      ? prop.key.name
-                      : sourceCode.getText(prop.key);
                   const value =
                     prop.value.type === AST_NODE_TYPES.Identifier
                       ? prop.value.name
                       : sourceCode.getText(prop.value);
-                  const initText = sourceCode.getText(
-                    node.init as TSESTree.Node,
-                  );
-                  return `${value} = ${initText}.${key}`;
+                  const accessPath = buildAccessPath(initValueText, prop);
+                  return `${value} = ${accessPath}`;
                 })
                 .join(';\nconst ');
 

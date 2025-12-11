@@ -68,6 +68,38 @@ ruleTesterTs.run(
       },
       {
         code: `
+        class Example {
+          constructor(map) {
+            this.map = map;
+          }
+        }
+        const key = 'value';
+        const example = new Example({ value: 1 });
+        const { [key]: selected } = example;
+      `,
+        errors: [
+          {
+            messageId: 'noClassInstanceDestructuring',
+            data: {
+              instance: '`example`',
+              members: '`[key]`',
+              suggestion: '`example[key]`',
+            },
+          },
+        ],
+        output: `
+        class Example {
+          constructor(map) {
+            this.map = map;
+          }
+        }
+        const key = 'value';
+        const example = new Example({ value: 1 });
+        const selected = example[key];
+      `,
+      },
+      {
+        code: `
         class BracketChunker {
           constructor(data) {
             this.data = data;
