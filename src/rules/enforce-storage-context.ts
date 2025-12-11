@@ -160,10 +160,44 @@ const identifierRepresentsDeclaration = (node: TSESTree.Identifier): boolean => 
   const parent = node.parent;
   if (!parent) return false;
 
+  if (
+    parent.type === AST_NODE_TYPES.Property &&
+    parent.value === node &&
+    parent.parent &&
+    parent.parent.type === AST_NODE_TYPES.ObjectPattern
+  ) {
+    return true;
+  }
+  if (
+    parent.type === AST_NODE_TYPES.ObjectPattern ||
+    parent.type === AST_NODE_TYPES.ArrayPattern
+  ) {
+    return true;
+  }
+  if (
+    parent.type === AST_NODE_TYPES.RestElement &&
+    parent.argument === node
+  ) {
+    return true;
+  }
   if (parent.type === AST_NODE_TYPES.VariableDeclarator && parent.id === node) {
     return true;
   }
+  if (
+    parent.type === AST_NODE_TYPES.AssignmentExpression &&
+    parent.left === node
+  ) {
+    return true;
+  }
   if (parent.type === AST_NODE_TYPES.FunctionDeclaration && parent.id === node) {
+    return true;
+  }
+  if (
+    (parent.type === AST_NODE_TYPES.FunctionDeclaration ||
+      parent.type === AST_NODE_TYPES.FunctionExpression ||
+      parent.type === AST_NODE_TYPES.ArrowFunctionExpression) &&
+    parent.params.includes(node)
+  ) {
     return true;
   }
   if (parent.type === AST_NODE_TYPES.ClassDeclaration && parent.id === node) {
@@ -225,6 +259,11 @@ const recordAliasFromPattern = (
   pattern: TSESTree.ObjectPattern,
   init: TSESTree.Expression | null,
   aliases: Map<string, StorageKind>,
+  onStorageProperty?: (
+    node: TSESTree.Node,
+    storageKind: StorageKind,
+    accessType: string,
+  ) => void,
 ): void => {
   if (!init) return;
   if (!isStorageContainerSource(init, aliases)) return;
@@ -235,6 +274,12 @@ const recordAliasFromPattern = (
 
     const keyName = getPropertyName(prop.key);
     if (!keyName || !STORAGE_NAMES.has(keyName as StorageKind)) continue;
+
+    onStorageProperty?.(
+      prop.key,
+      keyName as StorageKind,
+      `property "${keyName}"`,
+    );
 
     if (prop.value.type === AST_NODE_TYPES.Identifier) {
       aliases.set(prop.value.name, keyName as StorageKind);
@@ -421,7 +466,14 @@ export const enforceStorageContext = createRule<RuleOptions, MessageIds>({
           storageAliases.delete(node.id.name);
         }
       } else if (node.id.type === AST_NODE_TYPES.ObjectPattern) {
-        recordAliasFromPattern(node.id, node.init as TSESTree.Expression, storageAliases);
+        recordAliasFromPattern(
+          node.id,
+          node.init as TSESTree.Expression,
+          storageAliases,
+          (propertyNode, storageKind, accessType) => {
+            reportUsage(propertyNode, storageKind, accessType);
+          },
+        );
       }
     };
 
@@ -441,6 +493,9 @@ export const enforceStorageContext = createRule<RuleOptions, MessageIds>({
           node.left,
           node.right as TSESTree.Expression,
           storageAliases,
+          (propertyNode, storageKind, accessType) => {
+            reportUsage(propertyNode, storageKind, accessType);
+          },
         );
       }
     };

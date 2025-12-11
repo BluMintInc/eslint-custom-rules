@@ -176,10 +176,13 @@ ruleTesterTs.run('enforce-storage-context', enforceStorageContext, {
     {
       code: `
         let store;
-        ({ localStorage: store } = window);
-        store.setItem('k', 'v');
+({ localStorage: store } = window);
+store.setItem('k', 'v');
       `,
-      errors: [{ messageId: 'useStorageContext' }, { messageId: 'useStorageContext' }],
+      errors: [
+        { messageId: 'useStorageContext', line: 3, column: 4 },
+        { messageId: 'useStorageContext', line: 4, column: 7 },
+      ],
     },
   ],
 });
