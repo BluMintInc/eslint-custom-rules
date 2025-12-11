@@ -13,18 +13,35 @@ ruleTesterTs.run('generic-starts-with-t', genericStartsWithT, {
     'type GenericType<T> = T[];',
   ],
   invalid: [
-    // Generic type doesn't start with T
-    'type GenericType<Param> = Param[];',
-
-    // One of multiple generic types doesn't start with T
-    'type GenericType<TParam, Param> = [TParam, Param];',
-
-    // Single letter generic type that isn't T
-    'type GenericType<P> = P[];',
-  ].map((testCase) => {
-    return {
-      code: testCase,
-      errors: [{ messageId: 'genericStartsWithT' }],
-    };
-  }),
+    {
+      // Generic type doesn't start with T
+      code: 'type GenericType<Param> = Param[];',
+      errors: [
+        {
+          messageId: 'genericStartsWithT',
+          data: { name: 'Param', suggestedName: 'TParam' },
+        },
+      ],
+    },
+    {
+      // One of multiple generic types doesn't start with T
+      code: 'type GenericType<TParam, Param> = [TParam, Param];',
+      errors: [
+        {
+          messageId: 'genericStartsWithT',
+          data: { name: 'Param', suggestedName: 'TParam' },
+        },
+      ],
+    },
+    {
+      // Single letter generic type that isn't T
+      code: 'type GenericType<P> = P[];',
+      errors: [
+        {
+          messageId: 'genericStartsWithT',
+          data: { name: 'P', suggestedName: 'TP' },
+        },
+      ],
+    },
+  ],
 });
