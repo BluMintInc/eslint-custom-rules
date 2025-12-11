@@ -12,6 +12,7 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  statuses: write
 
 env:
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -24,8 +25,10 @@ jobs:
       (github.event_name == 'status' && github.event.state == 'success' && (contains(github.event.context, 'CodeRabbit') || contains(github.event.context, 'coderabbit')))
     runs-on: ubuntu-latest
     concurrency:
-      # Prefer PR number to dedupe across check_run/status events; fall back to SHA when PR context is absent
-      group: cursor-bot-review-pr-${{ github.event.pull_request.number || github.event.check_run.pull_requests[0].number || github.event.check_suite.pull_requests[0].number || github.event.workflow_run.pull_requests[0].number || github.event.number || github.event.sha }}
+      # Use the commit SHA as the primary concurrency key so that check_run + status
+      # triggers for the same commit serialize and the idempotency marker can prevent
+      # double-launching Cursor agents.
+      group: cursor-bot-review-${{ github.event.pull_request.head.sha || github.event.check_run.pull_requests[0].head.sha || github.event.check_run.head_sha || github.event.sha }}
       cancel-in-progress: false
     steps:
       - name: Checkout
@@ -80,9 +83,15 @@ jobs:
           echo "head_ref=$HEAD_REF" >> "$GITHUB_OUTPUT"
           echo "manual_override=$MANUAL_OVERRIDE" >> "$GITHUB_OUTPUT"
 
-          if [ "$MANUAL_OVERRIDE" = "true" ]; then
-            echo "Manual override via cursor-address-bot-review label detected; skipping required check gating."
-            echo "missing_required=false" >> "$GITHUB_OUTPUT"
+          # Block bot review automation while the PR is not mergeable due to conflicts.
+          # This keeps the bot agent focused on review feedback only after merge conflicts are resolved.
+          PR_DETAILS=$(gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/pulls/$PR_NUMBER")
+          PR_MERGEABLE_STATE=$(echo "$PR_DETAILS" | jq -r '.mergeable_state // "unknown"')
+          echo "PR mergeable_state: $PR_MERGEABLE_STATE"
+
+          if [ "$PR_MERGEABLE_STATE" = "dirty" ]; then
+            echo "missing_required=true" >> "$GITHUB_OUTPUT"
+            echo "PR has merge conflicts (mergeable_state=dirty). Waiting for merge conflicts to be resolved before launching bot review agent."
             exit 0
           fi
 
@@ -91,9 +100,28 @@ jobs:
           CHECKS_JSON=$(gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/commits/$HEAD_SHA/check-runs?per_page=100")
           STATUSES_JSON=$(gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/commits/$HEAD_SHA/status")
 
-          has_cursor_run=$(echo "$CHECKS_JSON" | jq 'any(.check_runs[]; ((.app.slug|ascii_downcase|test("cursor")) or (.name|test("Cursor Bugbot";"i"))) and .status == "completed" and .conclusion == "success")')
-          has_coderabbit_run=$(echo "$CHECKS_JSON" | jq 'any(.check_runs[]; ((.app.slug|ascii_downcase|test("coderabbit")) or (.name|test("CodeRabbit";"i"))) and .status == "completed" and .conclusion == "success")')
-          has_coderabbit_status=$(echo "$STATUSES_JSON" | jq 'any(.statuses[]?; (.context|test("CodeRabbit";"i")) and .state == "success")')
+          # Require the merge conflict check to be green before launching.
+          # This ensures the bot agent waits for merge conflicts to be resolved even if bot checks are already passing.
+          merge_conflict_check_status=$(echo "$CHECKS_JSON" | jq -r '([.check_runs[] | select((.app.slug|ascii_downcase)=="github-actions") | select(.name=="Merge conflict check")] | sort_by(.id) | last // {}) | .status // ""')
+          merge_conflict_check_conclusion=$(echo "$CHECKS_JSON" | jq -r '([.check_runs[] | select((.app.slug|ascii_downcase)=="github-actions") | select(.name=="Merge conflict check")] | sort_by(.id) | last // {}) | .conclusion // ""')
+          echo "Merge conflict check run status: $merge_conflict_check_status"
+          echo "Merge conflict check run conclusion: $merge_conflict_check_conclusion"
+
+          if [ "$merge_conflict_check_conclusion" != "success" ]; then
+            echo "missing_required=true" >> "$GITHUB_OUTPUT"
+            echo "Merge conflict check is not green yet. Waiting before launching bot review agent."
+            exit 0
+          fi
+
+          if [ "$MANUAL_OVERRIDE" = "true" ]; then
+            echo "Manual override via cursor-address-bot-review label detected; skipping CodeRabbit/Cursor required check gating (merge conflict gating still applies)."
+            echo "missing_required=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          has_cursor_run=$(echo "$CHECKS_JSON" | jq 'any(.check_runs[]; ((.app.slug|ascii_downcase|test("cursor")) or (.name|test("Cursor Bugbot";"i"))) and .status == "completed" and (.conclusion == "success" or .conclusion == "neutral"))')
+          has_coderabbit_run=$(echo "$CHECKS_JSON" | jq 'any(.check_runs[]; ((.app.slug|ascii_downcase|test("coderabbit")) or (.name|test("CodeRabbit";"i"))) and .status == "completed" and (.conclusion == "success" or .conclusion == "neutral"))')
+          has_coderabbit_status=$(echo "$STATUSES_JSON" | jq 'any(.statuses[]?; (.context|test("CodeRabbit";"i")) and (.state == "success" or .state == "neutral"))')
 
           echo "Cursor check run satisfied: $has_cursor_run"
           echo "CodeRabbit check run satisfied: $has_coderabbit_run"
@@ -118,9 +146,31 @@ jobs:
           HEAD_SHA=${{ steps.checks.outputs.head_sha }}
 
           echo "Checking for prior agent launch on PR #$PR for commit $HEAD_SHA"
-          HAS_COMMENT=$(gh pr view "$PR" --json comments --jq 'any(.comments[].body; contains("<!-- cursor-bot-agent:'"${HEAD_SHA}"' -->"))' 2>/dev/null || echo "false")
+          HAS_STATUS=$(
+            gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/commits/$HEAD_SHA/status" 2>/dev/null \
+              | jq 'any(.statuses[]?; .context == "cursor-bot-agent" and (.state == "success" or .state == "neutral"))' \
+              || echo "false"
+          )
 
-          if [ "$HAS_COMMENT" = "true" ]; then
+          MARKER="<!-- cursor-bot-agent:${HEAD_SHA} -->"
+          HAS_COMMENT="false"
+          if [ "$HAS_STATUS" != "true" ]; then
+            # PRs can have a large number of comments; paginate to avoid missing the marker.
+            for PAGE in $(seq 1 10); do
+              COMMENTS_PAGE=$(gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/issues/$PR/comments?per_page=100&page=$PAGE" 2>/dev/null || echo "[]")
+              FOUND=$(echo "$COMMENTS_PAGE" | jq --arg marker "$MARKER" 'any(.[]?.body; contains($marker))')
+              if [ "$FOUND" = "true" ]; then
+                HAS_COMMENT="true"
+                break
+              fi
+              COUNT=$(echo "$COMMENTS_PAGE" | jq 'length')
+              if [ "$COUNT" -lt 100 ]; then
+                break
+              fi
+            done
+          fi
+
+          if [ "$HAS_STATUS" = "true" ] || [ "$HAS_COMMENT" = "true" ]; then
             echo "Agent already launched for this commit; skipping."
             echo "already_launched=true" >> "$GITHUB_OUTPUT"
           else
@@ -248,6 +298,18 @@ jobs:
             echo "agent_url=" >> $GITHUB_OUTPUT
             echo "launched=false" >> $GITHUB_OUTPUT
           fi
+
+      - name: Mark agent launch in commit status (idempotency fallback)
+        if: steps.launch.outputs.launched == 'true'
+        run: |
+          HEAD_SHA='${{ steps.checks.outputs.head_sha }}'
+          URL='${{ steps.launch.outputs.agent_url }}'
+          gh api -X POST -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/statuses/$HEAD_SHA" \
+            -f state=success \
+            -f context="cursor-bot-agent" \
+            -f target_url="$URL" \
+            -f description="Cursor agent launched to address bot review comments" \
+            >/dev/null || echo "::warning::Failed to set commit status marker for $HEAD_SHA; idempotency relies on the PR comment marker."
 
       - name: Comment on PR
         if: steps.launch.outputs.launched == 'true'
