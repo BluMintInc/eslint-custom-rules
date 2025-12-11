@@ -49,6 +49,7 @@ import { enforceFirestoreSetMerge } from './rules/enforce-firestore-set-merge';
 import { enforceVerbNounNaming } from './rules/enforce-verb-noun-naming';
 import { noExplicitReturnType } from './rules/no-explicit-return-type';
 import { useCustomMemo } from './rules/use-custom-memo';
+import { memoizeRootLevelHocs } from './rules/memoize-root-level-hocs';
 import { useCustomLink } from './rules/use-custom-link';
 import { default as enforceSerializableParams } from './rules/enforce-serializable-params';
 import { enforceRealtimedbPathUtils } from './rules/enforce-realtimedb-path-utils';
@@ -191,6 +192,7 @@ module.exports = {
         '@blumintinc/blumint/use-custom-router': 'error',
         '@blumintinc/blumint/require-image-optimized': 'error',
         '@blumintinc/blumint/require-usememo-object-literals': 'error',
+        '@blumintinc/blumint/memoize-root-level-hocs': 'error',
         '@blumintinc/blumint/enforce-safe-stringify': 'error',
         '@blumintinc/blumint/no-entire-object-hook-deps': 'error',
         '@blumintinc/blumint/no-compositing-layer-props': 'error',
@@ -333,6 +335,7 @@ module.exports = {
     'use-custom-router': useCustomRouter,
     'require-image-optimized': requireImageOptimized,
     'require-usememo-object-literals': requireUseMemoObjectLiterals,
+    'memoize-root-level-hocs': memoizeRootLevelHocs,
     'enforce-safe-stringify': enforceStableStringify,
     'avoid-utils-directory': avoidUtilsDirectory,
     'no-entire-object-hook-deps': noEntireObjectHookDeps,
