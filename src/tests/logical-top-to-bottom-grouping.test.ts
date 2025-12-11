@@ -96,6 +96,12 @@ const base = getBase();
 const snapshot = derived;
 var derived = base.value;
     `,
+    `
+const state = getState();
+let copy = state;
+processState(state);
+use(copy);
+    `,
   ],
   invalid: [
     {

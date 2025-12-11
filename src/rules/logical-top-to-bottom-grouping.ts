@@ -84,53 +84,80 @@ function collectUsedIdentifiers(
     const current = stack.pop()!;
 
     if (current.type === AST_NODE_TYPES.Identifier) {
-      const parent = current.parent as TSESTree.Node | undefined;
-      if (isTypeNode(parent) || isDeclarationIdentifier(current, parent)) {
-        continue;
-      }
-      if (
-        parent &&
-        parent.type === AST_NODE_TYPES.MemberExpression &&
-        parent.property === current &&
-        !parent.computed
-      ) {
-        continue;
-      }
-      if (
-        parent &&
-        parent.type === AST_NODE_TYPES.Property &&
-        parent.key === current &&
-        !parent.computed
-      ) {
-        continue;
-      }
-      names.add(current.name);
+      processIdentifier(current, names);
       continue;
     }
 
-    if (
-      skipFunctions &&
-      (current.type === AST_NODE_TYPES.FunctionDeclaration ||
-        current.type === AST_NODE_TYPES.FunctionExpression ||
-        current.type === AST_NODE_TYPES.ArrowFunctionExpression)
-    ) {
+    if (shouldSkipFunction(current, skipFunctions)) {
       continue;
     }
 
-    for (const key of Object.keys(current)) {
-      if (key === 'parent') {
-        continue;
-      }
-      const value = (current as unknown as Record<string, unknown>)[key];
-      if (Array.isArray(value)) {
-        for (const element of value) {
-          if (ASTHelpers.isNode(element)) {
-            stack.push(element);
-          }
+    addChildNodesToStack(current, stack);
+  }
+}
+
+function processIdentifier(identifier: TSESTree.Identifier, names: Set<string>): void {
+  const parent = identifier.parent as TSESTree.Node | undefined;
+  if (shouldSkipIdentifier(identifier, parent)) {
+    return;
+  }
+  names.add(identifier.name);
+}
+
+function shouldSkipIdentifier(
+  identifier: TSESTree.Identifier,
+  parent: TSESTree.Node | undefined,
+): boolean {
+  if (isTypeNode(parent) || isDeclarationIdentifier(identifier, parent)) {
+    return true;
+  }
+
+  if (
+    parent &&
+    parent.type === AST_NODE_TYPES.MemberExpression &&
+    parent.property === identifier &&
+    !parent.computed
+  ) {
+    return true;
+  }
+
+  if (
+    parent &&
+    parent.type === AST_NODE_TYPES.Property &&
+    parent.key === identifier &&
+    !parent.computed
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function shouldSkipFunction(node: TSESTree.Node, skipFunctions: boolean): boolean {
+  return (
+    skipFunctions &&
+    (node.type === AST_NODE_TYPES.FunctionDeclaration ||
+      node.type === AST_NODE_TYPES.FunctionExpression ||
+      node.type === AST_NODE_TYPES.ArrowFunctionExpression)
+  );
+}
+
+function addChildNodesToStack(node: TSESTree.Node, stack: Array<TSESTree.Node>): void {
+  for (const key of Object.keys(node)) {
+    if (key === 'parent') {
+      continue;
+    }
+
+    const value = (node as unknown as Record<string, unknown>)[key];
+
+    if (Array.isArray(value)) {
+      for (const element of value) {
+        if (ASTHelpers.isNode(element)) {
+          stack.push(element);
         }
-      } else if (ASTHelpers.isNode(value)) {
-        stack.push(value);
       }
+    } else if (ASTHelpers.isNode(value)) {
+      stack.push(value);
     }
   }
 }
@@ -682,10 +709,14 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
         }
 
         const intervening = body.slice(index + 1, usageIndex);
-        const mutatesDependencies =
+        const touchesDependencies =
           dependencies.size > 0 &&
-          intervening.some((stmt) => statementMutatesAny(stmt, dependencies));
-        if (mutatesDependencies) {
+          intervening.some(
+            (stmt) =>
+              statementReferencesAny(stmt, dependencies) ||
+              statementMutatesAny(stmt, dependencies),
+          );
+        if (touchesDependencies) {
           return;
         }
 
