@@ -148,6 +148,7 @@ alwaysApply: false
 
 
 #### A-Temporal Phrasing (CRITICAL)
+
 - **Never use time-coupled language**: Avoid words like "now", "currently", "recently", "new", "old", "temporary"
 - **Use present-tense, declarative statements**: Describe what the system does
 - **Example**: Instead of "The system was built to solve X", write "The system solves X"

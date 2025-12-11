@@ -113,7 +113,7 @@ const Component = dynamic(
 
 The fixer always passes `{ ssr: false }` to `dynamic()`; configuring other options (loading components, suspense, etc.) is not supported by this rule.
 
-### Configuration
+#### Example configuration
 
 ```json
 {

@@ -81,6 +81,7 @@ function readInput() {
 }
 
 export function executeCommand(command: string) {
+  // Uses shell execution; callers must validate and quote any interpolated values.
   try {
     const output = execSync(command, { encoding: 'utf-8', stdio: 'pipe' });
     return { isSuccess: true, output } as const;

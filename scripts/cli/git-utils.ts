@@ -20,13 +20,11 @@ export function runCommand(command: string, suppressOutput = false): string {
   }
 }
 
-const BRANCH_NAME_PATTERN =
-  /^(?!\/)(?!.*\/\/)(?!.*\/$)(?!-)(?!refs\/)[A-Za-z0-9._/-]+$/;
-
 function assertValidBranchName(branch: string) {
-  if (!branch || !BRANCH_NAME_PATTERN.test(branch)) {
-    throw new Error(`Invalid branch name: "${branch}"`);
+  if (!branch) {
+    throw new Error('Branch name cannot be empty.');
   }
+  runCommand(`git check-ref-format --branch "${branch}"`, true);
 }
 
 function exitWithError(...lines: string[]): never {
@@ -41,7 +39,11 @@ function exitWithError(...lines: string[]): never {
  */
 export function ensureDependency(tool: string) {
   try {
-    runCommand(`command -v "${tool}"`, true);
+    if (process.platform === 'win32') {
+      runCommand(`where "${tool}"`, true);
+    } else {
+      runCommand(`command -v "${tool}"`, true);
+    }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     exitWithError(
@@ -76,7 +78,14 @@ export function ensureGitClean() {
  */
 export function retrieveCurrentBranch(): string {
   try {
-    return runCommand('git rev-parse --abbrev-ref HEAD', true);
+    const branch = runCommand('git rev-parse --abbrev-ref HEAD', true);
+    if (branch === 'HEAD') {
+      exitWithError(
+        'Error: Detached HEAD detected. Not on a branch.',
+        'Please checkout a branch or specify the ref explicitly.',
+      );
+    }
+    return branch;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     exitWithError('Error: Could not determine current branch.', message);
@@ -89,7 +98,6 @@ export function retrieveCurrentBranch(): string {
 export function inferPrFromBranch(branch: string): number | undefined {
   try {
     assertValidBranchName(branch);
-    runCommand(`git check-ref-format --branch "${branch}"`, true);
 
     const result = runCommand(
       `gh pr list --head "${branch}" --state open --json number --jq '.[0].number'`,
@@ -98,7 +106,14 @@ export function inferPrFromBranch(branch: string): number | undefined {
     if (!result || result === 'null') {
       return undefined;
     }
-    return Number.parseInt(result, 10);
+    const prNumber = Number.parseInt(result, 10);
+    if (!Number.isFinite(prNumber)) {
+      console.error(
+        `Failed to parse PR number for branch "${branch}": ${result}`,
+      );
+      return undefined;
+    }
+    return prNumber;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`Failed to infer PR from branch "${branch}": ${message}`);
