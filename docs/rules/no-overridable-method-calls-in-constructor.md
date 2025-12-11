@@ -4,7 +4,7 @@
 
 <!-- end auto-generated rule header -->
 
-This rule aims to prevent a common pitfall in object-oriented programming where an overridable method (a method in a base class that is intended to be implemented or overridden by derived classes) is called from the constructor of the base class.
+This rule helps you avoid a common pitfall in object-oriented programming where an overridable method (a method in a base class that is intended to be implemented or overridden by derived classes) is called from the constructor of the base class.
 
 ## Rule Details
 
@@ -55,9 +55,11 @@ class Car extends Vehicle {
 const myCar = new Car(4); // Leads to error or incorrect log because numberOfDoors is undefined during initial displayType call
 ```
 
+> **Note**: Examples focus on construction-order hazards, assuming `strictPropertyInitialization` is disabled or handled elsewhere.
+
 ### Examples of **correct** code for this rule:
 
-**Option 1: Use an initialization method**
+#### Option 1: Use an initialization method
 
 ```typescript
 abstract class Vehicle {
@@ -101,7 +103,7 @@ const myCar = new Car(4);
 myCar.initialize(); // Works correctly as Car is fully initialized.
 ```
 
-**Option 2: Pass necessary data to base constructor or methods**
+#### Option 2: Pass necessary data to base constructor or methods
 
 ```typescript
 abstract class Vehicle {
