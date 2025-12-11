@@ -11,6 +11,9 @@ const isDynamicFilename = (filename: string): boolean =>
 const isScreamingSnakeCase = (name: string): boolean =>
   /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$/.test(name);
 
+/**
+ * Records a leaf binding identifier so SCREAMING_SNAKE_CASE exports are checked.
+ */
 const collectFromIdentifier = (
   identifier: TSESTree.Identifier,
   identifiers: TSESTree.Identifier[],
@@ -18,6 +21,10 @@ const collectFromIdentifier = (
   identifiers.push(identifier);
 };
 
+/**
+ * Queues the rest element argument when it is a supported binding pattern so
+ * nested destructuring inside `...` is still inspected for exported constants.
+ */
 const collectFromRestElement = (
   restElement: TSESTree.RestElement,
   queue: TSESTree.BindingName[],
@@ -33,6 +40,10 @@ const collectFromRestElement = (
   }
 };
 
+/**
+ * Walks object destructuring to capture identifiers and queue nested patterns
+ * (including defaults and rest spreads) so every bound name is inspected.
+ */
 const collectFromObjectPattern = (
   pattern: TSESTree.ObjectPattern,
   identifiers: TSESTree.Identifier[],
@@ -58,6 +69,10 @@ const collectFromObjectPattern = (
   }
 };
 
+/**
+ * Walks array destructuring to collect identifiers and queue nested patterns
+ * so array defaults, nesting, and rest elements are not skipped.
+ */
 const collectFromArrayPattern = (
   pattern: TSESTree.ArrayPattern,
   identifiers: TSESTree.Identifier[],
