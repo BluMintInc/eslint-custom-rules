@@ -1,6 +1,23 @@
 import { ruleTesterTs, ruleTesterJsx } from '../utils/ruleTester';
 import { preferSettingsObject } from '../rules/prefer-settings-object';
 
+const tooManyParamsTemplate =
+  "Function accepts {{count}} positional parameters (limit {{minimum}}). Long positional lists hide each argument's meaning and make call sites easy to mis-order. Pass a single settings object so callers name each field and keep the call readable.";
+
+const sameTypeParamsTemplate =
+  'Function receives {{paramCount}} positional parameters including multiple "{{type}}" values. Repeated types in positional arguments invite swapped values and force callers to remember parameter order. Replace the positional list with a settings object so each value is labeled and self-documenting.';
+
+describe('prefer-settings-object messages', () => {
+  it('exposes educational copy', () => {
+    expect(preferSettingsObject.meta.messages.tooManyParams).toBe(
+      tooManyParamsTemplate,
+    );
+    expect(preferSettingsObject.meta.messages.sameTypeParams).toBe(
+      sameTypeParamsTemplate,
+    );
+  });
+});
+
 // Run non-JSX tests
 ruleTesterTs.run('prefer-settings-object', preferSettingsObject, {
   valid: [
@@ -212,17 +229,22 @@ ruleTesterTs.run('prefer-settings-object', preferSettingsObject, {
     // Too many parameters
     {
       code: `function createUser(name: string, age: number, isAdmin: boolean) { return { name, age, isAdmin }; }`,
-      errors: [{ messageId: 'tooManyParams', data: { count: 3 } }],
+      errors: [{ messageId: 'tooManyParams', data: { count: 3, minimum: 3 } }],
     },
     {
       code: `const createUser = (name: string, age: number, isAdmin: boolean) => ({ name, age, isAdmin });`,
-      errors: [{ messageId: 'tooManyParams', data: { count: 3 } }],
+      errors: [{ messageId: 'tooManyParams', data: { count: 3, minimum: 3 } }],
     },
     // Same type parameters
     {
       code: `function sendEmail(to: string, from: string) { console.log(to, from); }`,
       options: [{ checkSameTypeParameters: true }],
-      errors: [{ messageId: 'sameTypeParams' }],
+      errors: [
+        {
+          messageId: 'sameTypeParams',
+          data: { paramCount: 2, type: 'string' },
+        },
+      ],
     },
     // Method signatures
     {
@@ -231,17 +253,17 @@ ruleTesterTs.run('prefer-settings-object', preferSettingsObject, {
           createUser(name: string, age: number, isAdmin: boolean): void;
         }
       `,
-      errors: [{ messageId: 'tooManyParams', data: { count: 3 } }],
+      errors: [{ messageId: 'tooManyParams', data: { count: 3, minimum: 3 } }],
     },
     // Function types
     {
       code: `type CreateUser = (name: string, age: number, isAdmin: boolean) => void;`,
-      errors: [{ messageId: 'tooManyParams', data: { count: 3 } }],
+      errors: [{ messageId: 'tooManyParams', data: { count: 3, minimum: 3 } }],
     },
     // Default parameters
     {
       code: `function configureServer(port: number = 8080, hostname: string = 'localhost', ssl: boolean = false) {}`,
-      errors: [{ messageId: 'tooManyParams', data: { count: 3 } }],
+      errors: [{ messageId: 'tooManyParams', data: { count: 3, minimum: 3 } }],
     },
   ],
 });

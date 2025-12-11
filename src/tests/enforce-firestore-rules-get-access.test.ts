@@ -135,6 +135,20 @@ ruleTesterTs.run(
         output:
           "const rules = \"allow read: if request.resource.data.get('a', null).get('b', null) != null || resource.data.get('x', null) == null;\";",
       },
+      // Bracket string access
+      {
+        code: 'const rules = "allow read: if resource.data[\\"field-x\\"].child != null;";',
+        errors: [{ messageId: 'useGetAccess' }],
+        output:
+          "const rules = \"allow read: if resource.data.get('field-x', null).get('child', null) != null;\";",
+      },
+      // Mixed bracket and dot chain
+      {
+        code: "const rules = \"allow read: if request.resource.data['outer'][\\\"inner\\\"] === null;\";",
+        errors: [{ messageId: 'useGetAccess' }],
+        output:
+          "const rules = \"allow read: if request.resource.data.get('outer', null).get('inner', null) === null;\";",
+      },
     ],
   },
 );

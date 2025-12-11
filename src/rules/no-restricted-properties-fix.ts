@@ -1,5 +1,5 @@
 import { createRule } from '../utils/createRule';
-import { AST_NODE_TYPES } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 
 type MessageIds = 'restrictedProperty';
 
@@ -28,6 +28,7 @@ export const noRestrictedPropertiesFix = createRule<
         'Disallow certain properties on certain objects, with special handling for Object.keys() and Object.values()',
       recommended: 'error',
     },
+    fixable: 'code',
     schema: [
       {
         type: 'array',
@@ -57,35 +58,45 @@ export const noRestrictedPropertiesFix = createRule<
       return {};
     }
 
+    const SAFE_ARRAY_PROPERTIES = new Set([
+      'length',
+      'sort',
+      'filter',
+      'map',
+      'reduce',
+      'forEach',
+      'join',
+      'slice',
+      'concat',
+    ]);
+
     /**
      * Checks if the given node is a result of Object.keys() or Object.values()
      * @param node The node to check
      * @returns True if the node is a result of Object.keys() or Object.values()
      */
-    function isObjectKeysOrValuesResult(node: any): boolean {
-      // Check if the node is a call expression
+    function isObjectKeysOrValuesResult(
+      node: TSESTree.Node,
+    ): node is TSESTree.CallExpression {
       if (node.type !== AST_NODE_TYPES.CallExpression) {
         return false;
       }
 
-      // Check if the callee is a member expression (e.g., Object.keys)
-      if (node.callee.type !== AST_NODE_TYPES.MemberExpression) {
+      const callee = node.callee;
+      if (callee.type !== AST_NODE_TYPES.MemberExpression) {
         return false;
       }
 
-      // Check if the object is 'Object'
       if (
-        node.callee.object.type !== AST_NODE_TYPES.Identifier ||
-        node.callee.object.name !== 'Object'
+        callee.object.type !== AST_NODE_TYPES.Identifier ||
+        callee.object.name !== 'Object'
       ) {
         return false;
       }
 
-      // Check if the property is 'keys' or 'values'
       if (
-        node.callee.property.type !== AST_NODE_TYPES.Identifier ||
-        (node.callee.property.name !== 'keys' &&
-          node.callee.property.name !== 'values')
+        callee.property.type !== AST_NODE_TYPES.Identifier ||
+        (callee.property.name !== 'keys' && callee.property.name !== 'values')
       ) {
         return false;
       }
@@ -97,22 +108,9 @@ export const noRestrictedPropertiesFix = createRule<
       MemberExpression(node) {
         // Skip if the object is a result of Object.keys() or Object.values()
         if (isObjectKeysOrValuesResult(node.object)) {
-          // Allow common array methods and properties
-          const safeArrayProperties = [
-            'length',
-            'sort',
-            'filter',
-            'map',
-            'reduce',
-            'forEach',
-            'join',
-            'slice',
-            'concat',
-          ];
-
           if (
             node.property.type === AST_NODE_TYPES.Identifier &&
-            safeArrayProperties.includes(node.property.name)
+            SAFE_ARRAY_PROPERTIES.has(node.property.name)
           ) {
             return;
           }
@@ -120,12 +118,12 @@ export const noRestrictedPropertiesFix = createRule<
 
         // Apply the original rule logic
         for (const restrictedProp of restrictedProperties) {
-          const objectName =
+          const objectMatches =
             restrictedProp.object &&
             node.object.type === AST_NODE_TYPES.Identifier &&
             node.object.name === restrictedProp.object;
 
-          const propertyName =
+          const propertyMatches =
             restrictedProp.property &&
             ((node.property.type === AST_NODE_TYPES.Identifier &&
               node.property.name === restrictedProp.property) ||
@@ -136,8 +134,8 @@ export const noRestrictedPropertiesFix = createRule<
           if (
             restrictedProp.object &&
             restrictedProp.property &&
-            objectName &&
-            propertyName
+            objectMatches &&
+            propertyMatches
           ) {
             context.report({
               node,
@@ -149,13 +147,14 @@ export const noRestrictedPropertiesFix = createRule<
                   ? `: ${restrictedProp.message}`
                   : '',
               },
+              fix: () => null,
             });
           }
           // If only property is restricted (for any object)
           else if (
             !restrictedProp.object &&
             restrictedProp.property &&
-            propertyName
+            propertyMatches
           ) {
             // Check if the object is in the allowObjects list
             if (
@@ -181,13 +180,14 @@ export const noRestrictedPropertiesFix = createRule<
                   ? `: ${restrictedProp.message}`
                   : '',
               },
+              fix: () => null,
             });
           }
           // If only object is restricted (any property)
           else if (
             restrictedProp.object &&
             !restrictedProp.property &&
-            objectName
+            objectMatches
           ) {
             const propertyName =
               node.property.type === AST_NODE_TYPES.Identifier
@@ -206,6 +206,7 @@ export const noRestrictedPropertiesFix = createRule<
                   ? `: ${restrictedProp.message}`
                   : '',
               },
+              fix: () => null,
             });
           }
         }

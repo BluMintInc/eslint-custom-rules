@@ -14,7 +14,7 @@ As BluMint transitions to centralized router state management with the new query
 
 ### What this rule does:
 
-1. **Targets the `key` property** in objects passed to `useRouterState` hook
+1. **Targets the `key` property** in objects passed to the `useRouterState` hook
 2. **Ensures that key parameters** are imported from `src/util/routing/queryKeys.ts` and use the `QUERY_KEY_*` constants
 3. **Allows for computed values or variables** that are derived from the imported constants
 4. **Provides auto-fix suggestions** when possible to replace string literals with appropriate constant imports
