@@ -173,6 +173,48 @@ ruleTesterTs.run(
           },
         ],
       },
+      {
+        code: `
+        import { Identifiable } from '../../Identifiable';
+
+        export type Guild = Map<Identifiable, string>;
+      `,
+        filename: 'functions/src/types/firestore/Guild/index.ts',
+        errors: [
+          {
+            messageId: 'notExtendingIdentifiable',
+            data: { typeName: 'Guild' },
+          },
+        ],
+      },
+      {
+        code: `
+        import { Identifiable } from '../../Identifiable';
+
+        export type Guild = Array<Identifiable>;
+      `,
+        filename: 'functions/src/types/firestore/Guild/index.ts',
+        errors: [
+          {
+            messageId: 'notExtendingIdentifiable',
+            data: { typeName: 'Guild' },
+          },
+        ],
+      },
+      {
+        code: `
+        type Loop = Readonly<Loop>;
+
+        export type Guild = Resolve<Loop>;
+      `,
+        filename: 'functions/src/types/firestore/Guild/index.ts',
+        errors: [
+          {
+            messageId: 'notExtendingIdentifiable',
+            data: { typeName: 'Guild' },
+          },
+        ],
+      },
     ],
   },
 );

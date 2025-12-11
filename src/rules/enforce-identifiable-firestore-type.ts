@@ -79,14 +79,17 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
               );
               if (variable) {
                 const definition = variable.defs.find(
-                  (def) => def.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration,
+                  (definition) =>
+                    definition.node.type ===
+                    AST_NODE_TYPES.TSTypeAliasDeclaration,
                 );
                 if (
                   definition &&
-                  'typeAnnotation' in definition.node &&
+                  definition.node.type ===
+                    AST_NODE_TYPES.TSTypeAliasDeclaration &&
                   definition.node.typeAnnotation
                 ) {
-                  return definition.node.typeAnnotation;
+                  return definition.node.typeAnnotation as TSESTree.TypeNode;
                 }
               }
               scope = scope.upper as ScopeType | null;
@@ -95,17 +98,22 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
             return null;
           };
 
+          const transparentTypeNames = new Set(['Readonly', 'Resolve']);
+
           const unwrapParenthesized = (
-            maybeType: TSESTree.Node | null | undefined,
+            typeNode: TSESTree.Node | null | undefined,
           ): TSESTree.Node | null | undefined => {
             if (
-              maybeType &&
-              (maybeType as { type: string }).type === 'TSParenthesizedType'
+              typeNode &&
+              (typeNode as { type?: string }).type === 'TSParenthesizedType'
             ) {
-              return (maybeType as { typeAnnotation?: TSESTree.Node }).typeAnnotation;
+              return (
+                (typeNode as { typeAnnotation?: TSESTree.Node | null })
+                  .typeAnnotation ?? null
+              );
             }
 
-            return maybeType;
+            return typeNode;
           };
 
           const findIdentifiable = (
@@ -133,6 +141,7 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
               }
 
               if (
+                transparentTypeNames.has(typeName) &&
                 currentType.typeParameters?.params?.some((param) =>
                   findIdentifiable(param, checkedTypes),
                 )
@@ -166,11 +175,16 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
           // Check if type has id: string field
           const checkIdField = (
             type: TSESTree.Node | null | undefined,
+            visitedTypes = new Set<string>(),
           ): boolean => {
             const currentType = unwrapParenthesized(type);
 
             if (!currentType) {
               return false;
+            }
+
+            if (currentType !== type) {
+              return checkIdField(currentType, visitedTypes);
             }
 
             if (currentType.type === AST_NODE_TYPES.TSTypeLiteral) {
@@ -185,13 +199,15 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
             }
 
             if (currentType.type === AST_NODE_TYPES.TSIntersectionType) {
-              return currentType.types.some(checkIdField);
+              return currentType.types.some((part) =>
+                checkIdField(part, visitedTypes),
+              );
             }
 
             if (currentType.type === AST_NODE_TYPES.TSTypeReference) {
               if (
                 currentType.typeParameters?.params?.some((param) =>
-                  checkIdField(param),
+                  checkIdField(param, visitedTypes),
                 )
               ) {
                 return true;
@@ -201,15 +217,24 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
                 return false;
               }
 
+              if (currentType.typeName.name === 'Identifiable') {
+                return true;
+              }
+
+              if (visitedTypes.has(currentType.typeName.name)) {
+                return false;
+              }
+
+              visitedTypes.add(currentType.typeName.name);
               const referencedType = findTypeAliasAnnotation(
                 currentType.typeName.name,
               );
 
-              return checkIdField(referencedType);
+              return checkIdField(referencedType, visitedTypes);
             }
 
             if (currentType.type === AST_NODE_TYPES.TSTypeOperator) {
-              return checkIdField(currentType.typeAnnotation);
+              return checkIdField(currentType.typeAnnotation, visitedTypes);
             }
 
             return false;
@@ -233,7 +258,10 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
           };
 
           // Recursively check the type and its parameters
-          const checkType = (type: TSESTree.Node | null | undefined): boolean => {
+          const checkType = (
+            type: TSESTree.Node | null | undefined,
+            visitedTypes = new Set<string>(),
+          ): boolean => {
             const currentType = unwrapParenthesized(type);
 
             if (!currentType) {
@@ -241,7 +269,7 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
             }
 
             if (currentType !== type) {
-              return checkType(currentType);
+              return checkType(currentType, visitedTypes);
             }
 
             if (findIdentifiable(currentType)) {
@@ -256,16 +284,30 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
               return true;
             }
 
-            if (currentType.type === AST_NODE_TYPES.TSTypeReference) {
-              return currentType.typeParameters?.params?.some(checkType) ?? false;
+            if (
+              currentType.type === AST_NODE_TYPES.TSTypeReference &&
+              currentType.typeName.type === AST_NODE_TYPES.Identifier
+            ) {
+              const typeName = currentType.typeName.name;
+
+              if (visitedTypes.has(typeName)) {
+                return false;
+              }
+
+              visitedTypes.add(typeName);
+              const aliasAnnotation = findTypeAliasAnnotation(typeName);
+
+              return checkType(aliasAnnotation, visitedTypes);
             }
 
             if (currentType.type === AST_NODE_TYPES.TSIntersectionType) {
-              return currentType.types.some(checkType);
+              return currentType.types.some((part) =>
+                checkType(part, visitedTypes),
+              );
             }
 
             if (currentType.type === AST_NODE_TYPES.TSTypeOperator) {
-              return checkType(currentType.typeAnnotation);
+              return checkType(currentType.typeAnnotation, visitedTypes);
             }
 
             return false;
