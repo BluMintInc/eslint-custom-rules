@@ -130,6 +130,7 @@ import { preferUseDeepCompareMemo } from './rules/prefer-use-deep-compare-memo';
 import { noCircularReferences } from './rules/no-circular-references';
 import { noPassthroughGetters } from './rules/no-passthrough-getters';
 import { noTryCatchAlreadyExistsInTransaction } from './rules/no-try-catch-already-exists-in-transaction';
+import { enforceTransformMemoization } from './rules/enforce-transform-memoization';
 
 module.exports = {
   meta: {
@@ -226,6 +227,7 @@ module.exports = {
         '@blumintinc/blumint/require-hooks-default-params': 'error',
         '@blumintinc/blumint/prefer-destructuring-no-class': 'error',
         '@blumintinc/blumint/enforce-render-hits-memoization': 'error',
+        '@blumintinc/blumint/enforce-transform-memoization': 'error',
         '@blumintinc/blumint/prefer-fragment-component': 'off',
         '@blumintinc/blumint/react-usememo-should-be-component': 'error',
         '@blumintinc/blumint/no-unnecessary-verb-suffix': 'error',
@@ -369,6 +371,7 @@ module.exports = {
     'require-hooks-default-params': requireHooksDefaultParams,
     'prefer-destructuring-no-class': preferDestructuringNoClass,
     'enforce-render-hits-memoization': enforceRenderHitsMemoization,
+    'enforce-transform-memoization': enforceTransformMemoization,
     'prefer-fragment-component': preferFragmentComponent,
     'react-usememo-should-be-component': reactUseMemoShouldBeComponent,
     'no-unnecessary-verb-suffix': noUnnecessaryVerbSuffix,
