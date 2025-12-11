@@ -7,6 +7,20 @@ const HOOK_NAMES = new Set(['useEffect', 'useCallback', 'useMemo']);
 // Name of the rule
 export type MessageIds = 'noArrayLengthInDeps';
 
+type Options = [
+  {
+    hashImport?: {
+      source?: string;
+      importName?: string;
+    };
+  }?,
+];
+
+const DEFAULT_HASH_IMPORT = {
+  source: 'functions/src/util/hash/stableHash',
+  importName: 'stableHash',
+};
+
 function isHookCall(node: TSESTree.CallExpression): boolean {
   const callee = node.callee;
   return (
@@ -84,18 +98,47 @@ function generateUniqueName(base: string, taken: Set<string>): string {
   return `${candidate}${i}`;
 }
 
-function collectAllTakenNames(
-  context: TSESLint.RuleContext<MessageIds, []>,
-): Set<string> {
+function collectAllTakenNames(sourceCode: TSESLint.SourceCode): Set<string> {
   const names = new Set<string>();
-  let scope: any = context.getScope();
-  while (scope) {
+  const scopeManager = sourceCode.scopeManager;
+  const visit = (scope: any) => {
+    if (!scope) return;
     for (const v of scope.variables) {
       names.add(v.name);
     }
-    scope = scope.upper;
-  }
+    if (Array.isArray(scope.childScopes)) {
+      for (const child of scope.childScopes) visit(child);
+    }
+  };
+  visit(scopeManager?.globalScope);
   return names;
+}
+
+function findEnclosingFunction(node: TSESTree.Node): TSESTree.Node | null {
+  let current: TSESTree.Node | null = node;
+  while (current) {
+    if (
+      current.type === AST_NODE_TYPES.FunctionDeclaration ||
+      current.type === AST_NODE_TYPES.FunctionExpression ||
+      current.type === AST_NODE_TYPES.ArrowFunctionExpression
+    ) {
+      return current;
+    }
+    current = current.parent as TSESTree.Node | null;
+  }
+  return null;
+}
+
+function ensureWeakMapEntry<K extends object, V>(
+  map: WeakMap<K, V>,
+  key: K,
+  factory: () => V,
+): V {
+  const existing = map.get(key);
+  if (existing) return existing;
+  const next = factory();
+  map.set(key, next);
+  return next;
 }
 
 function isUseMemoImported(sourceCode: TSESLint.SourceCode): boolean {
@@ -119,18 +162,22 @@ function isUseMemoImported(sourceCode: TSESLint.SourceCode): boolean {
   return false;
 }
 
-function isStableHashImported(sourceCode: TSESLint.SourceCode): boolean {
+function isStableHashImported(
+  sourceCode: TSESLint.SourceCode,
+  hashSource: string,
+  hashImportName: string,
+): boolean {
   const program = sourceCode.ast;
   for (const node of program.body) {
     if (
       node.type === AST_NODE_TYPES.ImportDeclaration &&
-      node.source.value === 'functions/src/util/hash/stableHash'
+      node.source.value === hashSource
     ) {
       for (const spec of node.specifiers) {
         if (
           spec.type === AST_NODE_TYPES.ImportSpecifier &&
           spec.imported.type === AST_NODE_TYPES.Identifier &&
-          spec.imported.name === 'stableHash'
+          spec.imported.name === hashImportName
         ) {
           return true;
         }
@@ -140,7 +187,7 @@ function isStableHashImported(sourceCode: TSESLint.SourceCode): boolean {
   return false;
 }
 
-export const noArrayLengthInDeps = createRule<[], MessageIds>({
+export const noArrayLengthInDeps = createRule<Options, MessageIds>({
   name: 'no-array-length-in-deps',
   meta: {
     type: 'problem',
@@ -150,18 +197,40 @@ export const noArrayLengthInDeps = createRule<[], MessageIds>({
       recommended: 'error',
     },
     fixable: 'code',
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          hashImport: {
+            type: 'object',
+            properties: {
+              source: { type: 'string' },
+              importName: { type: 'string' },
+            },
+            additionalProperties: false,
+          },
+        },
+        additionalProperties: false,
+      },
+    ],
     messages: {
       noArrayLengthInDeps:
         'Avoid using array.length in hook dependency arrays. Use a memoized stableHash(variable) via useMemo and depend on the hash instead.',
     },
   },
-  defaultOptions: [],
+  defaultOptions: [{}],
   create(context) {
+    const [options = {}] = context.options;
+    const { hashImport } = options;
+    const hashImportConfig = {
+      source: hashImport?.source ?? DEFAULT_HASH_IMPORT.source,
+      importName: hashImport?.importName ?? DEFAULT_HASH_IMPORT.importName,
+    };
+
     // Track planned file-wide changes to avoid overlapping fixers
     let importsPlanned = false;
-    const declaredBases = new Set<string>();
-    const globalBaseToVar = new Map<string, string>();
+    const perFuncDeclaredBases = new WeakMap<TSESTree.Node, Set<string>>();
+    const perFuncBaseToVar = new WeakMap<TSESTree.Node, Map<string, string>>();
 
     return {
       CallExpression(node) {
@@ -193,20 +262,32 @@ export const noArrayLengthInDeps = createRule<[], MessageIds>({
           fix(fixer) {
             const sourceCode = context.getSourceCode();
             const fixes: TSESLint.RuleFix[] = [];
+            const hostFn =
+              findEnclosingFunction(node) ?? (sourceCode.ast as TSESTree.Node);
+            const declaredBases = ensureWeakMapEntry(
+              perFuncDeclaredBases,
+              hostFn,
+              () => new Set<string>(),
+            );
+            const baseToVar = ensureWeakMapEntry(
+              perFuncBaseToVar,
+              hostFn,
+              () => new Map<string, string>(),
+            );
 
             // Prepare variable names (consistent across file) and taken names (across all scopes)
-            const allTaken = collectAllTakenNames(context);
-            for (const name of globalBaseToVar.values()) {
+            const allTaken = collectAllTakenNames(sourceCode);
+            for (const name of baseToVar.values()) {
               allTaken.add(name);
             }
 
             for (const { member } of lengthDeps) {
               const baseExpr = getBaseExpression(member);
               const baseText = sourceCode.getText(baseExpr);
-              if (!globalBaseToVar.has(baseText)) {
+              if (!baseToVar.has(baseText)) {
                 const lastPropName = getLastPropertyName(baseExpr) || 'array';
                 const varName = generateUniqueName(lastPropName, allTaken);
-                globalBaseToVar.set(baseText, varName);
+                baseToVar.set(baseText, varName);
                 allTaken.add(varName);
               }
             }
@@ -217,8 +298,8 @@ export const noArrayLengthInDeps = createRule<[], MessageIds>({
               const baseExpr = getBaseExpression(member);
               const baseText = sourceCode.getText(baseExpr);
               if (!declaredBases.has(baseText)) {
-                const varName = globalBaseToVar.get(baseText)!;
-                declText += `const ${varName} = useMemo(() => stableHash(${baseText}), [${baseText}]);\n`;
+                const varName = baseToVar.get(baseText)!;
+                declText += `const ${varName} = useMemo(() => ${hashImportConfig.importName}(${baseText}), [${baseText}]);\n`;
                 declaredBases.add(baseText);
               }
             }
@@ -244,11 +325,15 @@ export const noArrayLengthInDeps = createRule<[], MessageIds>({
 
             let importText = '';
             const needUseMemo = !isUseMemoImported(sourceCode);
-            const needStableHash = !isStableHashImported(sourceCode);
+            const needStableHash = !isStableHashImported(
+              sourceCode,
+              hashImportConfig.source,
+              hashImportConfig.importName,
+            );
             if (needUseMemo)
               importText += `${indent}import { useMemo } from 'react';\n`;
             if (needStableHash)
-              importText += `${indent}import { stableHash } from 'functions/src/util/hash/stableHash';\n`;
+              importText += `${indent}import { ${hashImportConfig.importName} } from '${hashImportConfig.source}';\n`;
 
             if (importDecls.length === 0) {
               // No existing imports. Normalize by removing leading whitespace and inserting at file start with no indentation.
@@ -258,7 +343,7 @@ export const noArrayLengthInDeps = createRule<[], MessageIds>({
                 if (needUseMemo)
                   importTextNoIndent += `import { useMemo } from 'react';\n`;
                 if (needStableHash)
-                  importTextNoIndent += `import { stableHash } from 'functions/src/util/hash/stableHash';\n`;
+                  importTextNoIndent += `import { ${hashImportConfig.importName} } from '${hashImportConfig.source}';\n`;
                 const declNoIndent = declText;
                 const combined = `${importTextNoIndent}${
                   importTextNoIndent && declNoIndent ? '\n' : ''
@@ -292,7 +377,7 @@ export const noArrayLengthInDeps = createRule<[], MessageIds>({
             for (const { element, member } of lengthDeps) {
               const baseExpr = getBaseExpression(member);
               const baseText = sourceCode.getText(baseExpr);
-              const varName = globalBaseToVar.get(baseText)!;
+              const varName = baseToVar.get(baseText)!;
               fixes.push(fixer.replaceText(element, varName));
             }
 

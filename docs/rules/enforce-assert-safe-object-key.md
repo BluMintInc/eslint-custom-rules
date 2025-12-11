@@ -1,4 +1,4 @@
-# Enforce the use of assertSafe(id) when accessing object properties with computed keys that involve string interpolation or explicit string conversion (`@blumintinc/blumint/enforce-assertSafe-object-key`)
+# Enforce the use of assertSafe(id) when accessing object properties with computed keys that involve string interpolation or explicit string conversion (`@blumintinc/blumint/enforce-assert-safe-object-key`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
@@ -10,7 +10,9 @@ This rule enforces the use of `assertSafe(id)` when accessing object properties 
 
 ## Rule Details
 
-This rule aims to prevent potential security risks or unintended behavior caused by unvalidated dynamic keys when accessing object properties. It ensures consistency and readability in object key access and encourages developers to validate inputs before using them as object keys.
+Dynamic keys that come from variables, string conversions, or template literals can point to unintended properties (including `__proto__` and other prototype fields) and make lookups brittle or unsafe. `assertSafe()` validates the key before it is used so property access stays within the allowed surface area.
+
+Use `assertSafe()` whenever you index objects with a non-literal key. The rule auto-fixes by wrapping the key and inserting the import if needed.
 
 ### Examples
 
@@ -20,24 +22,27 @@ This rule aims to prevent potential security risks or unintended behavior caused
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 
-// Using String() for conversion
 console.log(obj[String(id)]);
-
-// Using template literals
 console.log(obj[`${id}`]);
+console.log(obj[id]);
 ```
 
 #### ✅ Correct
 
 ```js
-import { assertSafe } from 'utils/assertions';
+import { assertSafe } from 'functions/src/util/assertSafe';
 
 const obj = { key1: 'value1', key2: 'value2' };
 const id = 'key1';
 
-// Using assertSafe for validation
 console.log(obj[assertSafe(id)]);
+console.log(obj[assertSafe(`${id}_suffix`)]);
+const hasKey = assertSafe(id) in obj;
 ```
+
+## Options
+
+- `assertSafeImportPath` (string, default: `functions/src/util/assertSafe`): override the import path used by the fixer when inserting `assertSafe`. Set this to your local helper path when consuming the plugin outside BluMint.
 
 ## When Not To Use It
 

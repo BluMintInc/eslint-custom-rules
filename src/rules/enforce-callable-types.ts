@@ -19,13 +19,14 @@ export const enforceCallableTypes = createRule<Options, MessageIds>({
     },
     schema: [],
     messages: {
-      missingPropsType: 'Missing Props type export in callable function file',
+      missingPropsType:
+        'Callable functions must export a Props type to describe the request payload. Without Props the callable accepts any data and loses compile-time validation; export `type Props = { ... }` and use it in `CallableRequest<Props>` so request.data stays typed.',
       missingResponseType:
-        'Missing Response type export in callable function file',
+        'Callable functions must export a Response type to document what the function returns. Without Response the callable can return any shape and break clients; export `type Response = ...` and return that shape from the handler.',
       unusedPropsType:
-        'Props type is exported but not used in the callable function',
+        'Props is exported but never used in the onCall handler. An unused Props type lets the request payload drift from the code that reads it; annotate the handler parameter as `CallableRequest<Props>` or remove Props if the callable does not accept data.',
       unusedResponseType:
-        'Response type is exported but not used in the callable function',
+        'Response is exported but never used in the callable return type. Without applying Response, the callable can return any payload and clients lose a stable contract; return Response (or Promise<Response>) from the handler or remove the unused type.',
     },
   },
   defaultOptions: [],
