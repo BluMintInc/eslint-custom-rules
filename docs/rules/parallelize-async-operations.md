@@ -67,6 +67,15 @@ This rule should not be used in the following scenarios:
    }
    ```
 
+   When you still want concurrency but independent error paths, prefer:
+
+   ```typescript
+   const results = await Promise.allSettled([operation1(), operation2()]);
+   for (const r of results) {
+     if (r.status === 'rejected') handle(r.reason);
+   }
+   ```
+
 3. **Operations with Side Effects**: When operations have side effects that affect other operations.
 
    ```typescript
@@ -83,9 +92,17 @@ This rule should not be used in the following scenarios:
    }
    ```
 
-## Rule Options
+   ### ✅ Recommended in loops
 
-This rule has no options.
+   ```typescript
+   // Run all in parallel (be mindful of rate limits)
+   await Promise.all(items.map((item) => processItem(item)));
+
+   // Or, use bounded concurrency if needed
+   import pLimit from 'p-limit';
+   const limit = pLimit(5);
+   await Promise.all(items.map((item) => limit(() => processItem(item))));
+   ```
 
 ## Implementation
 
