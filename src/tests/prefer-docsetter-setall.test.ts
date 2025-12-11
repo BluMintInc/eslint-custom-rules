@@ -67,6 +67,16 @@ ruleTesterTs.run('prefer-docsetter-setall', preferDocSetterSetAll, {
       const writer = () => docSetter.set({ id: '123' });
       writer();
     `,
+    `
+      function maybeCreateSetter() {
+        return {};
+      }
+
+      const existingSetter = maybeCreateSetter();
+      const docSetter = existingSetter;
+
+      ids.forEach((id) => docSetter.set({ id }));
+    `,
   ],
   invalid: [
     {
@@ -227,6 +237,36 @@ ruleTesterTs.run('prefer-docsetter-setall', preferDocSetterSetAll, {
           ids: string[],
         ) {
           ids.forEach((id) => docSetter.set({ id }));
+        }
+      `,
+      errors: [{ messageId: 'preferSetAll' }],
+    },
+    {
+      code: `
+        function getSetter(): DocSetter<User> {
+          return new DocSetter(userCollection);
+        }
+
+        const existingSetter = getSetter();
+        const docSetter: DocSetter<User> = existingSetter;
+        const ids = ['a', 'b'];
+
+        ids.forEach((id) => docSetter.set({ id }));
+      `,
+      errors: [{ messageId: 'preferSetAll' }],
+    },
+    {
+      code: `
+        function createSetter(): DocSetter<User> {
+          return new DocSetter(userCollection);
+        }
+
+        class Writer {
+          private docSetter: DocSetter<User> = createSetter();
+
+          save(ids: string[]) {
+            ids.map((id) => this.docSetter.set({ id }));
+          }
         }
       `,
       errors: [{ messageId: 'preferSetAll' }],

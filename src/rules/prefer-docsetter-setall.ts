@@ -41,15 +41,19 @@ function isDocSetterName(name: string | null): name is DocSetterKind {
 }
 
 function getNewExpressionKind(
-  expression?: TSESTree.NewExpression | null,
+  expression?: TSESTree.Expression | null,
 ): DocSetterKind | null {
+  if (expression?.type !== AST_NODE_TYPES.NewExpression) {
+    return null;
+  }
+
   if (
-    expression &&
     expression.callee.type === AST_NODE_TYPES.Identifier &&
     isDocSetterName(expression.callee.name)
   ) {
     return expression.callee.name;
   }
+
   return null;
 }
 
@@ -71,7 +75,7 @@ function extractKindFromDefinition(
 
   const parent = nameNode.parent;
   if (parent?.type === AST_NODE_TYPES.VariableDeclarator) {
-    const ctorKind = getNewExpressionKind(parent.init as TSESTree.NewExpression);
+    const ctorKind = getNewExpressionKind(parent.init);
     if (ctorKind) return ctorKind;
   }
 
@@ -114,9 +118,7 @@ function resolveDocSetterFromClassProperty(
           element.key.type === AST_NODE_TYPES.Identifier &&
           element.key.name === propertyName
         ) {
-          const ctorKind = getNewExpressionKind(
-            element.value as TSESTree.NewExpression,
-          );
+          const ctorKind = getNewExpressionKind(element.value);
           if (ctorKind) return ctorKind;
 
           const annotationKind = getTypeName(
