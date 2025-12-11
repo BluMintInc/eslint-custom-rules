@@ -352,6 +352,70 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
     },
     {
       code: `
+        import { useCallback, useMemo, memo } from 'react';
+
+        const List = useCallback((items) => {
+          for (const item of items) {
+            if (item.visible) {
+              return <li>{item.label}</li>;
+            }
+          }
+          return null;
+        }, []);
+      `,
+      output: `
+        import { useCallback, useMemo, memo } from 'react';
+
+        const List = useMemo(() => memo((items) => {
+          for (const item of items) {
+            if (item.visible) {
+              return <li>{item.label}</li>;
+            }
+          }
+          return null;
+        }), []);
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'List',
+            hookName: 'useCallback()',
+            replacementHook: 'useMemo()',
+          },
+        },
+      ],
+    },
+    {
+      code: `
+        import React, { useCallback, useMemo } from 'react';
+        import Other from 'other-lib';
+
+        const Inline = useCallback(() => {
+          return <span>inline</span>;
+        }, []);
+      `,
+      output: `
+        import React, { useCallback, useMemo } from 'react';
+        import Other from 'other-lib';
+
+        const Inline = useMemo(() => React.memo(() => {
+          return <span>inline</span>;
+        }), []);
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'Inline',
+            hookName: 'useCallback()',
+            replacementHook: 'useMemo()',
+          },
+        },
+      ],
+    },
+    {
+      code: `
         import { useCallback } from 'react';
 
         const GenericComp = useCallback(<T,>(props: { value: T }) => <div>{props.value}</div>, []);

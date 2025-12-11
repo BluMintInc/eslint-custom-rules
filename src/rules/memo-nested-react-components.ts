@@ -10,7 +10,7 @@ type Options = [
 
 type MessageIds = 'memoizeNestedComponent';
 
-type ComponentMatch = {
+type ComponentDetectionResult = {
   found: true;
   componentIsCallback: boolean;
 };
@@ -43,6 +43,11 @@ const unwrapExpression = (
   if (expression.type === AST_NODE_TYPES.TSNonNullExpression) {
     return unwrapExpression(expression.expression);
   }
+  /**
+   * ParenthesizedExpression appears in the parsed AST even though the type
+   * is missing from AST_NODE_TYPES. This assertion safely unwraps to keep
+   * traversal consistent.
+   */
   if (
     ((expression as TSESTree.Node).type as unknown as string) ===
     'ParenthesizedExpression'
@@ -123,7 +128,7 @@ const isMemoCall = (node: TSESTree.CallExpression): boolean => {
 
 const expressionCreatesComponent = (
   expression: TSESTree.Expression | null,
-): ComponentMatch | null => {
+): ComponentDetectionResult | null => {
   if (!expression) {
     return null;
   }
@@ -194,7 +199,7 @@ const expressionCreatesComponent = (
 
 const statementCreatesComponent = (
   node: TSESTree.Statement,
-): ComponentMatch | null => {
+): ComponentDetectionResult | null => {
   switch (node.type) {
     case AST_NODE_TYPES.ReturnStatement:
       return expressionCreatesComponent(node.argument);
@@ -226,6 +231,16 @@ const statementCreatesComponent = (
     }
     case AST_NODE_TYPES.BlockStatement:
       return blockCreatesComponent(node);
+    case AST_NODE_TYPES.ForStatement:
+    case AST_NODE_TYPES.ForInStatement:
+    case AST_NODE_TYPES.ForOfStatement:
+    case AST_NODE_TYPES.WhileStatement:
+    case AST_NODE_TYPES.DoWhileStatement: {
+      if (node.body.type === AST_NODE_TYPES.BlockStatement) {
+        return blockCreatesComponent(node.body);
+      }
+      return statementCreatesComponent(node.body);
+    }
     case AST_NODE_TYPES.TryStatement: {
       const blockMatch = blockCreatesComponent(node.block);
       if (blockMatch) return blockMatch;
@@ -248,7 +263,7 @@ const statementCreatesComponent = (
 
 const blockCreatesComponent = (
   block: TSESTree.BlockStatement,
-): ComponentMatch | null => {
+): ComponentDetectionResult | null => {
   for (const statement of block.body) {
     const match = statementCreatesComponent(statement);
     if (match) return match;
@@ -261,7 +276,7 @@ const functionCreatesComponent = (
     | TSESTree.ArrowFunctionExpression
     | TSESTree.FunctionExpression
     | TSESTree.FunctionDeclaration,
-): ComponentMatch | null => {
+): ComponentDetectionResult | null => {
   if (node.body.type === AST_NODE_TYPES.BlockStatement) {
     return blockCreatesComponent(node.body);
   }
@@ -293,6 +308,8 @@ const findMemoReference = (
   for (const statement of sourceCode.ast.body) {
     if (statement.type !== AST_NODE_TYPES.ImportDeclaration) continue;
 
+    const isReactImport = statement.source.value === 'react';
+
     for (const specifier of statement.specifiers) {
       if (
         specifier.type === AST_NODE_TYPES.ImportSpecifier &&
@@ -304,16 +321,17 @@ const findMemoReference = (
 
       if (
         specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier &&
-        specifier.local.name === 'memo'
+        specifier.local.name === 'memo' &&
+        isReactImport
       ) {
         return 'memo';
       }
 
-      if (specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
+      if (isReactImport && specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
         reactIdentifier = specifier.local.name;
       }
 
-      if (specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
+      if (isReactImport && specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
         reactIdentifier = specifier.local.name;
       }
     }
