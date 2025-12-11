@@ -56,6 +56,7 @@ import { enforceMemoizeAsync } from './rules/enforce-memoize-async';
 import { enforceExportedFunctionTypes } from './rules/enforce-exported-function-types';
 import { enforceMemoizeGetters } from './rules/enforce-memoize-getters';
 import { noRedundantParamTypes } from './rules/no-redundant-param-types';
+import { noRedundantThisParams } from './rules/no-redundant-this-params';
 import { noClassInstanceDestructuring } from './rules/no-class-instance-destructuring';
 import { noFirestoreObjectArrays } from './rules/no-firestore-object-arrays';
 import { noMemoizeOnStatic } from './rules/no-memoize-on-static';
@@ -272,6 +273,7 @@ module.exports = {
         '@blumintinc/blumint/prefer-url-tostring-over-tojson': 'error',
         '@blumintinc/blumint/prefer-next-dynamic': 'error',
         '@blumintinc/blumint/no-redundant-usecallback-wrapper': 'error',
+        '@blumintinc/blumint/no-redundant-this-params': 'error',
         '@blumintinc/blumint/no-array-length-in-deps': 'error',
         '@blumintinc/blumint/prefer-use-deep-compare-memo': 'error',
         '@blumintinc/blumint/no-circular-references': 'error',
@@ -350,6 +352,7 @@ module.exports = {
     'enforce-memoize-async': enforceMemoizeAsync,
     'enforce-exported-function-types': enforceExportedFunctionTypes,
     'no-redundant-param-types': noRedundantParamTypes,
+    'no-redundant-this-params': noRedundantThisParams,
     'enforce-memoize-getters': enforceMemoizeGetters,
     'no-class-instance-destructuring': noClassInstanceDestructuring,
     'no-firestore-object-arrays': noFirestoreObjectArrays,
