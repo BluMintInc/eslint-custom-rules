@@ -37,7 +37,7 @@ export default createRule<Options, 'dynamicImportRequired'>({
     ],
     messages: {
       dynamicImportRequired:
-        'Static imports from "{{source}}" are not allowed to reduce initial bundle size. Use dynamic imports instead: const Component = useDynamic(() => import("{{source}}").then(mod => mod.Component))',
+        'Static import from "{{source}}" eagerly pulls the entire package into the entry bundle, inflating download size and delaying the first render. Load it lazily with a dynamic import (for example, useDynamic(() => import("{{source}}"))) so the code is fetched only when needed; if you only need types, use a type-only import with allowImportType enabled.',
     },
   },
   defaultOptions: [
