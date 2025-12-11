@@ -362,9 +362,12 @@ export const eslintEnforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Opti
         ...DEFAULT_OBJECT_SUFFIXES,
         ...(objectNamePattern || []),
       ]);
-      const emptyCheckFunctionsSet: Set<string> = new Set(
-        emptyCheckFunctions.length > 0 ? emptyCheckFunctions : DEFAULT_EMPTY_CHECK_FUNCTIONS,
-      );
+      const emptyCheckFunctionsSet: Set<string> = new Set([
+        ...DEFAULT_EMPTY_CHECK_FUNCTIONS,
+        ...(emptyCheckFunctions || []),
+      ]);
+      const processedExpressions = new WeakSet<TSESTree.Expression>();
+      const processedNegations = new WeakSet<TSESTree.UnaryExpression>();
 
       function isLikelyObject(identifier: TSESTree.Identifier): boolean {
         if (checker && parserServices?.esTreeNodeToTSNodeMap) {
@@ -386,6 +389,11 @@ export const eslintEnforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Opti
       }
 
       function reportNegation(node: TSESTree.UnaryExpression, identifier: TSESTree.Identifier) {
+        if (processedNegations.has(node)) {
+          return;
+        }
+        processedNegations.add(node);
+
         if (ignoreInLoops && isInsideLoop(node)) {
           return;
         }
@@ -414,6 +422,11 @@ export const eslintEnforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Opti
       }
 
       function handleTestExpression(expression: TSESTree.Expression) {
+        if (processedExpressions.has(expression)) {
+          return;
+        }
+        processedExpressions.add(expression);
+
         const negations: TSESTree.UnaryExpression[] = [];
         collectNegations(expression, negations);
 

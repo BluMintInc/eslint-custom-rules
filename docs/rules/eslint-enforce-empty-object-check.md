@@ -67,7 +67,7 @@ if (!payload || isEmpty(payload)) {
 
 - `objectNamePattern` (string[], default includes Config/Data/Info/Settings/Options/Props/State/Response/Result/Payload/Map/Record/Object/Obj/Details/Meta/Profile/Request/Params/Context): additional suffixes to treat as object-like when type info is unavailable.
 - `ignoreInLoops` (boolean, default `false`): skip reporting inside loop conditions to avoid extra `Object.keys` calls in hot paths.
-- `emptyCheckFunctions` (string[], default `["isEmpty"]`): functions (identifier or property names) that already perform emptiness checks; presence of these calls suppresses the rule.
+- `emptyCheckFunctions` (string[], default `["isEmpty"]`): additional functions (identifier or property names) that already perform emptiness checks; merged with the default so adding custom helpers keeps recognition of `isEmpty`.
 
 ## When Not To Use It
 

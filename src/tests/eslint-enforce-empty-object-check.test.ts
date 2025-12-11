@@ -98,6 +98,15 @@ ruleTesterTs.run(
         `,
         options: [{ emptyCheckFunctions: ['isEmpty'] }],
       },
+      {
+        code: `
+        const payload = getPayload();
+        if (!payload || isEmpty(payload)) {
+          return;
+        }
+        `,
+        options: [{ emptyCheckFunctions: ['customIsEmpty'] }],
+      },
     ],
     invalid: [
       {
@@ -293,6 +302,19 @@ ruleTesterTs.run(
         const count: Record<string, unknown> | undefined = getCount();
         if ((!count || Object.keys(count).length === 0)) {
           return handle(count);
+        }
+        `,
+      },
+      {
+        code: `
+        if (!payload ? handleEmpty() : handlePayload(payload)) {
+          process();
+        }
+        `,
+        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } }],
+        output: `
+        if ((!payload || Object.keys(payload).length === 0) ? handleEmpty() : handlePayload(payload)) {
+          process();
         }
         `,
       },
