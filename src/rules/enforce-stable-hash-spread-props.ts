@@ -75,13 +75,7 @@ function isProbablyComponent(
     return true;
   }
 
-  const bodyNode =
-    node.type === AST_NODE_TYPES.ArrowFunctionExpression &&
-    node.body.type !== AST_NODE_TYPES.BlockStatement
-      ? node.body
-      : node.body;
-
-  if (bodyNode && ASTHelpers.returnsJSX(bodyNode)) {
+  if (ASTHelpers.returnsJSX(node.body)) {
     return true;
   }
 
@@ -291,12 +285,14 @@ export const enforceStableHashSpreadProps = createRule<Options, MessageIds>({
     ],
     messages: {
       wrapSpreadPropsWithStableHash:
-        'Rest props object "{{name}}" is recreated on every render, so using it directly in a dependency array makes React rerun the hook on every render. Wrap it in stableHash() (or a memoized hash) and depend on that stable value instead to avoid noisy re-renders.',
+        'Rest props object(s) "{{names}}" are recreated on every render, so using them directly in a dependency array makes React rerun the hook on every render. Wrap each in stableHash() (or a memoized hash) and depend on that stable value instead to avoid noisy re-renders.',
     },
   },
   defaultOptions: [{}],
   create(context) {
-    const sourceCode = context.getSourceCode();
+    const sourceCode =
+      (context as unknown as { sourceCode?: TSESLint.SourceCode }).sourceCode ??
+      context.getSourceCode();
     const [options = {}] = context.options;
     const hashImport = {
       source: options.hashImport?.source ?? DEFAULT_HASH_IMPORT.source,
@@ -314,7 +310,7 @@ export const enforceStableHashSpreadProps = createRule<Options, MessageIds>({
     let importPlanned = false;
     const functionStack: FunctionContext[] = [];
 
-    function currentComponentContext():
+    function getCurrentComponentContext():
       | FunctionContext
       | undefined {
       for (let i = functionStack.length - 1; i >= 0; i -= 1) {
@@ -352,7 +348,7 @@ export const enforceStableHashSpreadProps = createRule<Options, MessageIds>({
         functionStack.pop();
       },
       VariableDeclarator(node) {
-        const current = currentComponentContext();
+        const current = getCurrentComponentContext();
         if (!current || !current.isComponent) return;
 
         if (
@@ -365,7 +361,7 @@ export const enforceStableHashSpreadProps = createRule<Options, MessageIds>({
         }
       },
       CallExpression(node) {
-        const current = currentComponentContext();
+        const current = getCurrentComponentContext();
         if (!current || !current.isComponent) return;
         const hookName = getHookName(node);
         if (!hookName || !hookNames.has(hookName)) return;
@@ -401,10 +397,14 @@ export const enforceStableHashSpreadProps = createRule<Options, MessageIds>({
 
         if (offendingElements.length === 0) return;
 
+        const offendingNames = Array.from(
+          new Set(offendingElements.map(({ name }) => name)),
+        );
+
         context.report({
           node: depsArg,
           messageId: 'wrapSpreadPropsWithStableHash',
-          data: { name: offendingElements[0].name },
+          data: { names: offendingNames.join(', ') },
           fix(fixer) {
             const fixes: TSESLint.RuleFix[] = [];
             const seen = new Set<number>();

@@ -278,6 +278,33 @@ const MyComponent = ({ data, ...restProps }) => {
       },
       {
         code: `
+const MyComponent = (props) => {
+  const { kind, ...rest } = props;
+  const { ...otherProps } = props;
+  useEffect(() => {}, [rest, otherProps]);
+  return <Typography {...rest} {...otherProps} />;
+};
+        `,
+        errors: [
+          {
+            messageId: 'wrapSpreadPropsWithStableHash',
+            data: { names: 'rest, otherProps' },
+          },
+        ],
+        output: `import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const MyComponent = (props) => {
+  const { kind, ...rest } = props;
+  const { ...otherProps } = props;
+  useEffect(() => {}, 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [stableHash(rest), stableHash(otherProps)]);
+  return <Typography {...rest} {...otherProps} />;
+};
+        `,
+      },
+      {
+        code: `
 const MyComponent = ({ ...props }) => {
   const memoized = useMemo(() => props, [props]);
   useEffect(() => {

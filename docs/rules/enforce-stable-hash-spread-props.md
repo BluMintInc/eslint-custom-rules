@@ -23,7 +23,7 @@ This rule looks for rest props extracted in function components and used directl
 - Adding `import { stableHash } from 'functions/src/util/hash/stableHash';` if it is missing.
 - Inserting `// eslint-disable-next-line react-hooks/exhaustive-deps` immediately before the dependency array when needed to avoid secondary violations from `react-hooks/exhaustive-deps`.
 
-Rest objects that are already hashed (e.g., `stableHash(restProps)`) or memoized via `useMemo`/`useDeepCompareMemo` are ignored.
+Rest objects that are already hashed (e.g., `stableHash(restProps)`) or memoized with a stable dependency helper (e.g., `useDeepCompareMemo`) are ignored.
 
 ## Options
 
@@ -65,7 +65,10 @@ Already memoized (no report):
 
 ```tsx
 const MyComponent = ({ someProp, ...typographyPropsRaw }: Props) => {
-  const typographyProps = useMemo(() => typographyPropsRaw, [typographyPropsRaw]);
+  const typographyProps = useDeepCompareMemo(
+    () => typographyPropsRaw,
+    [typographyPropsRaw],
+  );
   useEffect(() => {}, [typographyProps]);
   return <Typography {...typographyProps} />;
 };
