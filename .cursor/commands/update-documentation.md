@@ -42,7 +42,7 @@ If no PR is found, ask the user to specify a PR number or ensure they're on a br
 Then collect the following information:
 
 - **PR Diff**: Use `run_terminal_cmd` to execute `gh pr diff <PR_NUMBER> | cat` to get the files changed
-- **PR Description**: Use `run_terminal_cmd` to execute `gh pr view <PR_NUMBER> --json body --jq .body | cat` 
+- **PR Description**: Use `run_terminal_cmd` to execute `gh pr view <PR_NUMBER> --json body --jq .body | cat`
 - **PR Title**: Use `run_terminal_cmd` to execute `gh pr view <PR_NUMBER> --json title --jq .title | cat`
 - **CodeRabbitAI Walkthrough**: Use `run_terminal_cmd` to execute `gh pr view <PR_NUMBER> --json comments --jq '.comments[] | select(.author.login == "coderabbitai") | .body' | cat | head -n 200` to get walkthrough comments (these often contain architectural insights)
 - **All PR Comments**: Use `run_terminal_cmd` to execute `gh pr view <PR_NUMBER> --json comments --jq '.comments[] | {author: .author.login, body: .body}' | cat` to capture design discussions
@@ -109,7 +109,7 @@ Update the target `.mdc` file following these guidelines:
 **Directory Structure**:
 - Update if new directories were added or structure changed
 - Use directory tree diagram syntax with code blocks:
-  ```
+  ```text
   path/to/
   ├── directory1/              # Description
   │   ├── file1.ts            # Description

@@ -8,465 +8,100 @@ type MessageIds =
   | 'noDirectDelete';
 
 const FIRESTORE_METHODS = new Set(['get', 'set', 'update', 'delete']);
+const COLLECTION_CONSTRUCTORS = new Set(['Set', 'Map', 'WeakSet', 'WeakMap']);
+const KNOWN_FIRESTORE_ROOTS = new Set(['db', 'firestore']);
 
 const isMemberExpression = (
   node: TSESTree.Node,
-): node is TSESTree.MemberExpression => {
-  return node.type === AST_NODE_TYPES.MemberExpression;
-};
-
-// Track variables that are assigned realtimeDb references
-const realtimeDbRefVariables = new Set<string>();
-const realtimeDbChildVariables = new Set<string>();
-// Track variables that are JavaScript collection objects (Set, Map, WeakSet, WeakMap)
-const collectionObjectVariables = new Set<string>();
-
-const COLLECTION_CONSTRUCTORS = new Set(['Set', 'Map', 'WeakSet', 'WeakMap']);
-
-const isCollectionObjectAssignment = (node: TSESTree.Node): boolean => {
-  if (node.type !== AST_NODE_TYPES.VariableDeclarator) return false;
-
-  const init = node.init;
-  if (!init) return false;
-
-  // Check for direct collection constructor calls
-  // e.g., const mySet = new Set<string>(); const myMap = new Map<string, any>();
-  if (
-    init.type === AST_NODE_TYPES.NewExpression &&
-    isIdentifier(init.callee) &&
-    COLLECTION_CONSTRUCTORS.has(init.callee.name)
-  ) {
-    if (isIdentifier(node.id)) {
-      collectionObjectVariables.add(node.id.name);
-      return true;
-    }
-  }
-
-  return false;
-};
-
-// Track variables that are assigned to DocumentReferences or Firestore objects
-const firestoreDocRefVariables = new Set<string>();
-const firestoreBatchVariables = new Set<string>();
-const firestoreTransactionVariables = new Set<string>();
-// Track variables that are assigned to DocSetter or DocSetterTransaction instances
-const docSetterVariables = new Set<string>();
-// Track variables that are assigned to BatchManager instances
-const batchManagerVariables = new Set<string>();
-
-const isFirestoreAssignment = (node: TSESTree.Node): boolean => {
-  if (node.type !== AST_NODE_TYPES.VariableDeclarator) return false;
-
-  const init = node.init;
-  if (!init || !isIdentifier(node.id)) return false;
-
-  const varName = node.id.name;
-
-  // Check for DocSetter or DocSetterTransaction assignments
-  // e.g., const setter = new DocSetter<T>(...); const txSetter = new DocSetterTransaction<T>(...);
-  if (
-    init.type === AST_NODE_TYPES.NewExpression &&
-    isIdentifier(init.callee) &&
-    (init.callee.name === 'DocSetter' ||
-      init.callee.name === 'DocSetterTransaction')
-  ) {
-    docSetterVariables.add(varName);
-    return true;
-  }
-
-  // Check for BatchManager assignments
-  // e.g., const batchManager = new BatchManager<T>(); const batch = new BatchManager();
-  if (
-    init.type === AST_NODE_TYPES.NewExpression &&
-    isIdentifier(init.callee) &&
-    init.callee.name === 'BatchManager'
-  ) {
-    batchManagerVariables.add(varName);
-    return true;
-  }
-
-  // Check for Firestore DocumentReference assignments
-  // e.g., const docRef = db.collection('users').doc('user123');
-  if (isFirestoreDocumentReference(init)) {
-    firestoreDocRefVariables.add(varName);
-    return true;
-  }
-
-  // Check for Firestore batch assignments
-  // e.g., const batch = db.batch();
-  if (
-    init.type === AST_NODE_TYPES.CallExpression &&
-    isMemberExpression(init.callee) &&
-    isIdentifier(init.callee.property) &&
-    init.callee.property.name === 'batch' &&
-    isIdentifier(init.callee.object) &&
-    init.callee.object.name === 'db'
-  ) {
-    firestoreBatchVariables.add(varName);
-    return true;
-  }
-
-  // Check for transaction parameter assignments
-  // This is harder to detect statically, but we can check for common patterns
-  if (
-    init.type === AST_NODE_TYPES.Identifier &&
-    (init.name === 'transaction' || init.name.includes('transaction'))
-  ) {
-    firestoreTransactionVariables.add(varName);
-    return true;
-  }
-
-  return false;
-};
-
-const handleAssignmentExpression = (
-  node: TSESTree.AssignmentExpression,
-): void => {
-  // Handle variable reassignments
-  if (isIdentifier(node.left)) {
-    const varName = node.left.name;
-    const right = node.right;
-
-    // Check if reassigning to DocSetter
-    if (
-      right.type === AST_NODE_TYPES.NewExpression &&
-      isIdentifier(right.callee) &&
-      (right.callee.name === 'DocSetter' ||
-        right.callee.name === 'DocSetterTransaction')
-    ) {
-      // Remove from other sets and add to docSetterVariables
-      firestoreDocRefVariables.delete(varName);
-      firestoreBatchVariables.delete(varName);
-      firestoreTransactionVariables.delete(varName);
-      batchManagerVariables.delete(varName);
-      docSetterVariables.add(varName);
-    }
-    // Check if reassigning to BatchManager
-    else if (
-      right.type === AST_NODE_TYPES.NewExpression &&
-      isIdentifier(right.callee) &&
-      right.callee.name === 'BatchManager'
-    ) {
-      // Remove from other sets and add to batchManagerVariables
-      firestoreDocRefVariables.delete(varName);
-      firestoreBatchVariables.delete(varName);
-      firestoreTransactionVariables.delete(varName);
-      docSetterVariables.delete(varName);
-      batchManagerVariables.add(varName);
-    }
-    // Check if reassigning to DocumentReference
-    else if (isFirestoreDocumentReference(right)) {
-      // Remove from other sets and add to firestoreDocRefVariables
-      docSetterVariables.delete(varName);
-      firestoreBatchVariables.delete(varName);
-      firestoreTransactionVariables.delete(varName);
-      batchManagerVariables.delete(varName);
-      firestoreDocRefVariables.add(varName);
-    }
-    // Check if reassigning to batch
-    else if (
-      right.type === AST_NODE_TYPES.CallExpression &&
-      isMemberExpression(right.callee) &&
-      isIdentifier(right.callee.property) &&
-      right.callee.property.name === 'batch' &&
-      isIdentifier(right.callee.object) &&
-      right.callee.object.name === 'db'
-    ) {
-      // Remove from other sets and add to firestoreBatchVariables
-      docSetterVariables.delete(varName);
-      firestoreDocRefVariables.delete(varName);
-      firestoreTransactionVariables.delete(varName);
-      batchManagerVariables.delete(varName);
-      firestoreBatchVariables.add(varName);
-    }
-  }
-};
-
-const isFirestoreDocumentReference = (node: TSESTree.Node): boolean => {
-  // Check if it's a direct db.collection().doc() call
-  if (
-    node.type === AST_NODE_TYPES.CallExpression &&
-    isMemberExpression(node.callee) &&
-    isIdentifier(node.callee.property) &&
-    node.callee.property.name === 'doc'
-  ) {
-    // Check if the object is a collection call
-    const object = node.callee.object;
-    if (
-      object.type === AST_NODE_TYPES.CallExpression &&
-      isMemberExpression(object.callee) &&
-      isIdentifier(object.callee.property) &&
-      object.callee.property.name === 'collection'
-    ) {
-      return true;
-    }
-  }
-
-  // Check if it's a type assertion of a DocumentReference
-  if (node.type === AST_NODE_TYPES.TSAsExpression) {
-    return isFirestoreDocumentReference(node.expression);
-  }
-
-  return false;
-};
-
-const isRealtimeDbRefAssignment = (node: TSESTree.Node): boolean => {
-  if (node.type !== AST_NODE_TYPES.VariableDeclarator) return false;
-
-  const init = node.init;
-  if (!init) return false;
-
-  // Check for direct realtimeDb.ref() assignments
-  // e.g., const ref = realtimeDb.ref(path);
-  if (
-    init.type === AST_NODE_TYPES.CallExpression &&
-    isMemberExpression(init.callee) &&
-    isIdentifier(init.callee.property) &&
-    init.callee.property.name === 'ref' &&
-    isIdentifier(init.callee.object) &&
-    (init.callee.object.name === 'realtimeDb' ||
-      init.callee.object.name.includes('realtimeDb'))
-  ) {
-    if (isIdentifier(node.id)) {
-      realtimeDbRefVariables.add(node.id.name);
-      return true;
-    }
-  }
-
-  // Check for child() method calls on realtimeDb refs
-  // e.g., const childRef = parentRef.child('path');
-  if (
-    init.type === AST_NODE_TYPES.CallExpression &&
-    isMemberExpression(init.callee) &&
-    isIdentifier(init.callee.property) &&
-    init.callee.property.name === 'child' &&
-    isIdentifier(init.callee.object) &&
-    realtimeDbRefVariables.has(init.callee.object.name)
-  ) {
-    if (isIdentifier(node.id)) {
-      realtimeDbChildVariables.add(node.id.name);
-      return true;
-    }
-  }
-
-  return false;
-};
-
-const isRealtimeDbReference = (node: TSESTree.Node): boolean => {
-  // Check if it's a direct realtimeDb.ref() call
-  if (
-    node.type === AST_NODE_TYPES.CallExpression &&
-    isMemberExpression(node.callee) &&
-    isIdentifier(node.callee.property) &&
-    node.callee.property.name === 'ref' &&
-    isIdentifier(node.callee.object) &&
-    (node.callee.object.name === 'realtimeDb' ||
-      node.callee.object.name.includes('realtimeDb'))
-  ) {
-    return true;
-  }
-
-  // Check if it's a variable that holds a realtimeDb reference
-  if (isIdentifier(node)) {
-    return (
-      realtimeDbRefVariables.has(node.name) ||
-      realtimeDbChildVariables.has(node.name)
-    );
-  }
-
-  // Check if it's a child() call on a realtimeDb reference
-  if (
-    node.type === AST_NODE_TYPES.CallExpression &&
-    isMemberExpression(node.callee) &&
-    isIdentifier(node.callee.property) &&
-    node.callee.property.name === 'child' &&
-    isIdentifier(node.callee.object) &&
-    (realtimeDbRefVariables.has(node.callee.object.name) ||
-      realtimeDbChildVariables.has(node.callee.object.name))
-  ) {
-    return true;
-  }
-
-  return false;
-};
-
-const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
-  if (!isMemberExpression(node.callee)) return false;
-  const property = node.callee.property;
-  if (!isIdentifier(property) || !FIRESTORE_METHODS.has(property.name)) {
-    return false;
-  }
-
-  const object = node.callee.object;
-
-  // Handle identifier checks first to avoid TypeScript control flow issues
-  if (isIdentifier(object)) {
-    const name = object.name;
-
-    // Skip if it's a tracked DocSetter instance
-    if (docSetterVariables.has(name)) {
-      return false;
-    }
-
-    // Skip if it's a tracked BatchManager instance
-    if (batchManagerVariables.has(name)) {
-      return false;
-    }
-
-    // Skip if it's a realtimeDb reference variable
-    if (
-      realtimeDbRefVariables.has(name) ||
-      realtimeDbChildVariables.has(name)
-    ) {
-      return false;
-    }
-    // Skip if it's a JavaScript collection object (Set, Map, WeakSet, WeakMap)
-    if (collectionObjectVariables.has(name)) {
-      return false;
-    }
-
-    // Check if this variable is tracked as a Firestore object
-    if (
-      firestoreDocRefVariables.has(name) ||
-      firestoreBatchVariables.has(name) ||
-      firestoreTransactionVariables.has(name)
-    ) {
-      return true;
-    }
-
-    // Fall back to name pattern checking for variables that aren't explicitly tracked
-    // This handles cases where we can't detect the assignment (e.g., function parameters, imports)
-    if (
-      name.includes('Fetcher') ||
-      name.includes('Setter') ||
-      name.includes('Tx')
-    ) {
-      return false;
-    }
-
-    // Check if it's a BatchManager or other custom management class
-    if (name.includes('Manager') || name.includes('BatchManager')) {
-      return false;
-    }
-
-    // Check for basic batch or transaction variables (like 'batch', 'transaction')
-    // but not BatchManager instances
-    if (/^(batch|transaction)$/i.test(name)) {
-      return true;
-    }
-
-    // If the variable name contains 'doc' or 'ref', it's likely a Firestore reference
-    // But exclude realtimeDb references
-    if (
-      (name.toLowerCase().includes('doc') ||
-        name.toLowerCase().includes('ref')) &&
-      !name.includes('realtimeDb') &&
-      !realtimeDbRefVariables.has(name) &&
-      !realtimeDbChildVariables.has(name)
-    ) {
-      return true;
-    }
-
-    // If it's not tracked as a Firestore object, assume it's a custom wrapper/service
-    // and allow it (return false to not flag it)
-    // This handles BatchManager and other custom classes
-    return false;
-  }
-
-  // Check if the method is called on a realtimeDb reference
-  if (isRealtimeDbReference(object)) {
-    return false;
-  }
-
-  // Check if it's a direct Firestore DocumentReference call
-  if (isFirestoreDocumentReference(object)) {
-    return true;
-  }
-
-  // Handle type assertions
-  if (object.type === AST_NODE_TYPES.TSAsExpression) {
-    return isFirestoreMethodCall({
-      ...node,
-      callee: {
-        ...node.callee,
-        object: object.expression,
-      },
-    } as TSESTree.CallExpression);
-  }
-
-  // Handle member expressions (property access)
-  if (isMemberExpression(object)) {
-    // Check if the property access leads to a Firestore DocumentReference
-    // by traversing the member expression to find the root
-    let current: TSESTree.Node = object;
-    while (isMemberExpression(current)) {
-      if (isFirestoreDocumentReference(current)) {
-        return true;
-      }
-      current = current.object;
-    }
-    // Check the final object
-    if (isFirestoreDocumentReference(current)) {
-      return true;
-    }
-  }
-
-  // Handle array access
-  if (
-    object.type === AST_NODE_TYPES.MemberExpression &&
-    object.computed &&
-    object.object.type === AST_NODE_TYPES.Identifier
-  ) {
-    // For array access like refs[0], we can't easily determine the type
-    // but we can check if it's likely a Firestore reference array
-    const arrayName = object.object.name;
-    if (
-      arrayName.toLowerCase().includes('ref') ||
-      arrayName.toLowerCase().includes('doc')
-    ) {
-      return true;
-    }
-  }
-
-  // Handle remaining cases by checking if it's a Firestore reference via AST traversal
-  let current: TSESTree.Node = object;
-  let foundDocOrCollection = false;
-
-  while (current) {
-    if (isCallExpression(current)) {
-      const callee = current.callee;
-      if (isMemberExpression(callee)) {
-        const property = callee.property;
-        if (isIdentifier(property)) {
-          // Check for Firestore methods
-          if (property.name === 'doc' || property.name === 'collection') {
-            foundDocOrCollection = true;
-            break;
-          }
-        }
-      }
-    }
-    if (isMemberExpression(current)) {
-      current = current.object;
-    } else if (current.type === AST_NODE_TYPES.TSAsExpression) {
-      // Handle nested type assertions
-      current = (current as TSESTree.TSAsExpression).expression;
-    } else {
-      break;
-    }
-  }
-
-  return foundDocOrCollection;
-};
+): node is TSESTree.MemberExpression =>
+  node.type === AST_NODE_TYPES.MemberExpression;
 
 const isCallExpression = (
   node: TSESTree.Node,
-): node is TSESTree.CallExpression => {
-  return node.type === AST_NODE_TYPES.CallExpression;
+): node is TSESTree.CallExpression =>
+  node.type === AST_NODE_TYPES.CallExpression;
+
+const isIdentifier = (node: TSESTree.Node): node is TSESTree.Identifier =>
+  node.type === AST_NODE_TYPES.Identifier;
+
+const unwrapTSAsExpression = (node: TSESTree.Node): TSESTree.Node => {
+  if (node.type === AST_NODE_TYPES.TSAsExpression) {
+    return unwrapTSAsExpression(node.expression);
+  }
+  return node;
 };
 
-const isIdentifier = (node: TSESTree.Node): node is TSESTree.Identifier => {
-  return node.type === AST_NODE_TYPES.Identifier;
+const getLeftmostIdentifier = (
+  node: TSESTree.Node | null | undefined,
+): TSESTree.Identifier | null => {
+  let current: TSESTree.Node | null | undefined = node
+    ? unwrapTSAsExpression(node)
+    : null;
+  while (current) {
+    if (isIdentifier(current)) {
+      return current;
+    }
+    if (isMemberExpression(current)) {
+      current = current.object;
+      continue;
+    }
+    if (isCallExpression(current)) {
+      current = current.callee;
+      continue;
+    }
+    return null;
+  }
+  return null;
+};
+
+const isFirestoreRoot = (
+  node: TSESTree.Node,
+  firestoreCollectionVariables: Set<string>,
+  firestoreDocRefVariables: Set<string>,
+): boolean => {
+  const baseIdentifier = getLeftmostIdentifier(node);
+  if (baseIdentifier) {
+    if (KNOWN_FIRESTORE_ROOTS.has(baseIdentifier.name)) {
+      return true;
+    }
+    if (
+      firestoreCollectionVariables.has(baseIdentifier.name) ||
+      firestoreDocRefVariables.has(baseIdentifier.name)
+    ) {
+      return true;
+    }
+  }
+
+  if (
+    isCallExpression(node) &&
+    isMemberExpression(node.callee) &&
+    isIdentifier(node.callee.property) &&
+    node.callee.property.name === 'firestore'
+  ) {
+    const innerBase = getLeftmostIdentifier(node.callee.object);
+    if (
+      innerBase &&
+      (innerBase.name === 'app' || KNOWN_FIRESTORE_ROOTS.has(innerBase.name))
+    ) {
+      return true;
+    }
+  }
+
+  if (
+    isMemberExpression(node) &&
+    isIdentifier(node.property) &&
+    node.property.name === 'firestore'
+  ) {
+    const innerBase = getLeftmostIdentifier(node.object);
+    if (
+      innerBase &&
+      (innerBase.name === 'app' || KNOWN_FIRESTORE_ROOTS.has(innerBase.name))
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 };
 
 export const enforceFirestoreFacade = createRule<[], MessageIds>({
@@ -492,7 +127,380 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
+    const realtimeDbRefVariables = new Set<string>();
+    const realtimeDbChildVariables = new Set<string>();
+    const collectionObjectVariables = new Set<string>();
+    const firestoreCollectionVariables = new Set<string>();
+    const firestoreDocRefVariables = new Set<string>();
+    const firestoreBatchVariables = new Set<string>();
+    const firestoreTransactionVariables = new Set<string>();
+    const docSetterVariables = new Set<string>();
+    const batchManagerVariables = new Set<string>();
     const sourceCode = context.getSourceCode();
+
+    const clearFirestoreTrackingFor = (name: string): void => {
+      firestoreDocRefVariables.delete(name);
+      firestoreCollectionVariables.delete(name);
+      firestoreBatchVariables.delete(name);
+      firestoreTransactionVariables.delete(name);
+      docSetterVariables.delete(name);
+      batchManagerVariables.delete(name);
+    };
+
+    const recordFirestoreVariable = (
+      varName: string,
+      expression: TSESTree.Expression,
+    ): boolean => {
+      const target = unwrapTSAsExpression(expression);
+
+      if (target.type === AST_NODE_TYPES.ConditionalExpression) {
+        const matchedConsequent = recordFirestoreVariable(
+          varName,
+          target.consequent,
+        );
+        const matchedAlternate = recordFirestoreVariable(
+          varName,
+          target.alternate,
+        );
+        return matchedConsequent || matchedAlternate;
+      }
+
+      if (target.type === AST_NODE_TYPES.LogicalExpression) {
+        return (
+          recordFirestoreVariable(varName, target.left) ||
+          recordFirestoreVariable(varName, target.right)
+        );
+      }
+
+      if (target.type === AST_NODE_TYPES.SequenceExpression) {
+        const last = target.expressions[target.expressions.length - 1];
+        return last ? recordFirestoreVariable(varName, last) : false;
+      }
+
+      if (
+        target.type === AST_NODE_TYPES.NewExpression &&
+        isIdentifier(target.callee) &&
+        (target.callee.name === 'DocSetter' ||
+          target.callee.name === 'DocSetterTransaction')
+      ) {
+        docSetterVariables.add(varName);
+        return true;
+      }
+
+      if (
+        target.type === AST_NODE_TYPES.NewExpression &&
+        isIdentifier(target.callee) &&
+        target.callee.name === 'BatchManager'
+      ) {
+        batchManagerVariables.add(varName);
+        return true;
+      }
+
+      if (isFirestoreDocumentReference(target)) {
+        firestoreDocRefVariables.add(varName);
+        return true;
+      }
+
+      if (isFirestoreCollectionCall(target)) {
+        firestoreCollectionVariables.add(varName);
+        return true;
+      }
+
+      if (
+        target.type === AST_NODE_TYPES.CallExpression &&
+        isMemberExpression(target.callee) &&
+        isIdentifier(target.callee.property) &&
+        target.callee.property.name === 'batch' &&
+        isIdentifier(target.callee.object) &&
+        target.callee.object.name === 'db'
+      ) {
+        firestoreBatchVariables.add(varName);
+        return true;
+      }
+
+      if (
+        target.type === AST_NODE_TYPES.Identifier &&
+        (target.name === 'transaction' || target.name === 'tx' || target.name === 't')
+      ) {
+        firestoreTransactionVariables.add(varName);
+        return true;
+      }
+
+      return false;
+    };
+
+    const isCollectionObjectAssignment = (node: TSESTree.Node): boolean => {
+      if (node.type !== AST_NODE_TYPES.VariableDeclarator) return false;
+
+      const init = node.init;
+      if (!init) return false;
+
+      if (
+        init.type === AST_NODE_TYPES.NewExpression &&
+        isIdentifier(init.callee) &&
+        COLLECTION_CONSTRUCTORS.has(init.callee.name) &&
+        isIdentifier(node.id)
+      ) {
+        collectionObjectVariables.add(node.id.name);
+        return true;
+      }
+
+      return false;
+    };
+
+    const isFirestoreCollectionCall = (node: TSESTree.Node): boolean => {
+      const candidate = unwrapTSAsExpression(node);
+      if (!isCallExpression(candidate)) return false;
+      if (!isMemberExpression(candidate.callee)) return false;
+      const property = candidate.callee.property;
+      if (!isIdentifier(property) || property.name !== 'collection')
+        return false;
+
+      return isFirestoreRoot(
+        candidate.callee.object,
+        firestoreCollectionVariables,
+        firestoreDocRefVariables,
+      );
+    };
+
+    const isFirestoreDocumentReference = (node: TSESTree.Node): boolean => {
+      const candidate = unwrapTSAsExpression(node);
+      if (!isCallExpression(candidate)) return false;
+      if (!isMemberExpression(candidate.callee)) return false;
+      const docProperty = candidate.callee.property;
+      if (!isIdentifier(docProperty) || docProperty.name !== 'doc')
+        return false;
+
+      const collectionCall = candidate.callee.object;
+      if (!isFirestoreCollectionCall(collectionCall)) {
+        return false;
+      }
+
+      return true;
+    };
+
+    const isFirestoreAssignment = (node: TSESTree.Node): boolean => {
+      if (node.type !== AST_NODE_TYPES.VariableDeclarator) return false;
+
+      const init = node.init;
+      if (!init || !isIdentifier(node.id)) return false;
+
+      return recordFirestoreVariable(node.id.name, init);
+    };
+
+    const handleAssignmentExpression = (
+      node: TSESTree.AssignmentExpression,
+    ): void => {
+      if (!isIdentifier(node.left)) return;
+
+      const varName = node.left.name;
+      const right = node.right;
+
+      clearFirestoreTrackingFor(varName);
+      recordFirestoreVariable(varName, right);
+    };
+
+    const isRealtimeDbRefAssignment = (node: TSESTree.Node): boolean => {
+      if (node.type !== AST_NODE_TYPES.VariableDeclarator) return false;
+
+      const init = node.init;
+      if (!init) return false;
+
+      if (
+        init.type === AST_NODE_TYPES.CallExpression &&
+        isMemberExpression(init.callee) &&
+        isIdentifier(init.callee.property) &&
+        init.callee.property.name === 'ref' &&
+        isIdentifier(init.callee.object) &&
+        (init.callee.object.name === 'realtimeDb' ||
+          init.callee.object.name.includes('realtimeDb')) &&
+        isIdentifier(node.id)
+      ) {
+        realtimeDbRefVariables.add(node.id.name);
+        return true;
+      }
+
+      if (
+        init.type === AST_NODE_TYPES.CallExpression &&
+        isMemberExpression(init.callee) &&
+        isIdentifier(init.callee.property) &&
+        init.callee.property.name === 'child' &&
+        isIdentifier(init.callee.object) &&
+        realtimeDbRefVariables.has(init.callee.object.name) &&
+        isIdentifier(node.id)
+      ) {
+        realtimeDbChildVariables.add(node.id.name);
+        return true;
+      }
+
+      return false;
+    };
+
+    const isRealtimeDbReference = (node: TSESTree.Node): boolean => {
+      if (
+        node.type === AST_NODE_TYPES.CallExpression &&
+        isMemberExpression(node.callee) &&
+        isIdentifier(node.callee.property) &&
+        node.callee.property.name === 'ref' &&
+        isIdentifier(node.callee.object) &&
+        (node.callee.object.name === 'realtimeDb' ||
+          node.callee.object.name.includes('realtimeDb'))
+      ) {
+        return true;
+      }
+
+      if (isIdentifier(node)) {
+        return (
+          realtimeDbRefVariables.has(node.name) ||
+          realtimeDbChildVariables.has(node.name)
+        );
+      }
+
+      if (
+        node.type === AST_NODE_TYPES.CallExpression &&
+        isMemberExpression(node.callee) &&
+        isIdentifier(node.callee.property) &&
+        node.callee.property.name === 'child' &&
+        isIdentifier(node.callee.object) &&
+        (realtimeDbRefVariables.has(node.callee.object.name) ||
+          realtimeDbChildVariables.has(node.callee.object.name))
+      ) {
+        return true;
+      }
+
+      return false;
+    };
+
+    const isTrackedFirestoreName = (name: string): boolean =>
+      firestoreDocRefVariables.has(name) ||
+      firestoreBatchVariables.has(name) ||
+      firestoreTransactionVariables.has(name) ||
+      firestoreCollectionVariables.has(name);
+
+    const isFirestoreMethodCall = (node: TSESTree.CallExpression): boolean => {
+      if (!isMemberExpression(node.callee)) return false;
+      const property = node.callee.property;
+      if (!isIdentifier(property) || !FIRESTORE_METHODS.has(property.name)) {
+        return false;
+      }
+
+      const object = node.callee.object;
+
+      if (isIdentifier(object)) {
+        const name = object.name;
+
+        if (
+          docSetterVariables.has(name) ||
+          batchManagerVariables.has(name) ||
+          realtimeDbRefVariables.has(name) ||
+          realtimeDbChildVariables.has(name) ||
+          collectionObjectVariables.has(name)
+        ) {
+          return false;
+        }
+
+        if (isTrackedFirestoreName(name)) {
+          return true;
+        }
+
+        if (/^(batch|transaction)$/i.test(name)) {
+          return true;
+        }
+
+        if (
+          (name.toLowerCase().includes('doc') ||
+            name.toLowerCase().includes('ref')) &&
+          !name.includes('realtimeDb') &&
+          !realtimeDbRefVariables.has(name) &&
+          !realtimeDbChildVariables.has(name)
+        ) {
+          return true;
+        }
+
+        return false;
+      }
+
+      if (isRealtimeDbReference(object)) {
+        return false;
+      }
+
+      if (isFirestoreDocumentReference(object)) {
+        return true;
+      }
+
+      if (object.type === AST_NODE_TYPES.TSAsExpression) {
+        return isFirestoreMethodCall({
+          ...node,
+          callee: {
+            ...node.callee,
+            object: object.expression,
+          },
+        } as TSESTree.CallExpression);
+      }
+
+      if (
+        object.type === AST_NODE_TYPES.MemberExpression &&
+        object.computed &&
+        object.object.type === AST_NODE_TYPES.Identifier
+      ) {
+        const arrayName = object.object.name;
+        if (
+          isTrackedFirestoreName(arrayName) ||
+          arrayName.toLowerCase().endsWith('refs')
+        ) {
+          return true;
+        }
+        return false;
+      }
+
+      if (isMemberExpression(object)) {
+        let current: TSESTree.Node = object;
+        while (isMemberExpression(current)) {
+          if (
+            isFirestoreDocumentReference(current) ||
+            isFirestoreCollectionCall(current)
+          ) {
+            return true;
+          }
+          current = current.object;
+        }
+      }
+
+      let current: TSESTree.Node | undefined = object;
+      while (current) {
+        const unwrapped = unwrapTSAsExpression(current);
+        if (
+          isCallExpression(unwrapped) &&
+          isMemberExpression(unwrapped.callee) &&
+          isIdentifier(unwrapped.callee.property)
+        ) {
+          const propName = unwrapped.callee.property.name;
+          if (
+            (propName === 'doc' || propName === 'collection') &&
+            (isFirestoreCollectionCall(unwrapped) ||
+              isFirestoreRoot(
+                unwrapped.callee.object,
+                firestoreCollectionVariables,
+                firestoreDocRefVariables,
+              ))
+          ) {
+            return true;
+          }
+          current = unwrapped.callee.object;
+          continue;
+        }
+
+        if (isMemberExpression(unwrapped)) {
+          current = unwrapped.object;
+          continue;
+        }
+
+        break;
+      }
+
+      return false;
+    };
+
     const reportDirectFirestoreCall = (
       messageId: MessageIds,
       node: TSESTree.CallExpression,
@@ -510,29 +518,15 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
       });
     };
 
-    // Clear the sets at the beginning of each file analysis
-    realtimeDbRefVariables.clear();
-    realtimeDbChildVariables.clear();
-    collectionObjectVariables.clear();
-    firestoreDocRefVariables.clear();
-    firestoreBatchVariables.clear();
-    firestoreTransactionVariables.clear();
-    docSetterVariables.clear();
-    batchManagerVariables.clear();
-
     return {
-      // Track variable declarations that are assigned realtimeDb references, collection objects, or Firestore references
       VariableDeclarator(node) {
         isRealtimeDbRefAssignment(node);
         isCollectionObjectAssignment(node);
         isFirestoreAssignment(node);
       },
-
-      // Track variable reassignments
       AssignmentExpression(node) {
         handleAssignmentExpression(node);
       },
-
       CallExpression(node) {
         if (!isFirestoreMethodCall(node)) return;
 
@@ -541,19 +535,38 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
         const property = callee.property;
         if (!isIdentifier(property)) return;
 
-        // Report appropriate error based on method
         switch (property.name) {
           case 'get':
-            reportDirectFirestoreCall('noDirectGet', node, property.name, callee);
+            reportDirectFirestoreCall(
+              'noDirectGet',
+              node,
+              property.name,
+              callee,
+            );
             break;
           case 'set':
-            reportDirectFirestoreCall('noDirectSet', node, property.name, callee);
+            reportDirectFirestoreCall(
+              'noDirectSet',
+              node,
+              property.name,
+              callee,
+            );
             break;
           case 'update':
-            reportDirectFirestoreCall('noDirectUpdate', node, property.name, callee);
+            reportDirectFirestoreCall(
+              'noDirectUpdate',
+              node,
+              property.name,
+              callee,
+            );
             break;
           case 'delete':
-            reportDirectFirestoreCall('noDirectDelete', node, property.name, callee);
+            reportDirectFirestoreCall(
+              'noDirectDelete',
+              node,
+              property.name,
+              callee,
+            );
             break;
         }
       },

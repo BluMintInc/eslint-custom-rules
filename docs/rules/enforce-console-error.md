@@ -1,4 +1,4 @@
-# Enforce console logging for useAlertDialog by severity (`@blumintinc/blumint/enforce-console-error`)
+# Enforce proper logging for useAlertDialog based on severity. When severity is "error", console.error must be included. When severity is "warning", console.warn must be included. This ensures all user-facing errors and warnings are properly logged to monitoring systems (`@blumintinc/blumint/enforce-console-error`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
@@ -27,10 +27,6 @@ function submit(userId: string) {
   useAlertDialog({ severity: 'error', message: 'Failed' });
 }
 ```
-
-## Options
-
-None.
 
 ## When Not To Use It
 

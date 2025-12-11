@@ -1,39 +1,27 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
-type MessageIds = 'preferDocumentFlattening';
+type MessageIds = 'preferDocumentFlattening' | 'addShouldFlatten';
 
-/**
- * Checks if a node is an identifier
- */
-const isIdentifier = (node: TSESTree.Node): node is TSESTree.Identifier => {
+function isIdentifier(node: TSESTree.Node): node is TSESTree.Identifier {
   return node.type === AST_NODE_TYPES.Identifier;
-};
+}
 
-/**
- * Checks if a node is a member expression
- */
-const isMemberExpression = (
+function isMemberExpression(
   node: TSESTree.Node,
-): node is TSESTree.MemberExpression => {
+): node is TSESTree.MemberExpression {
   return node.type === AST_NODE_TYPES.MemberExpression;
-};
+}
 
-/**
- * Checks if a node is an object expression
- */
-const isObjectExpression = (
+function isObjectExpression(
   node: TSESTree.Node,
-): node is TSESTree.ObjectExpression => {
+): node is TSESTree.ObjectExpression {
   return node.type === AST_NODE_TYPES.ObjectExpression;
-};
+}
 
-/**
- * Checks if a node is a property
- */
-const isProperty = (node: TSESTree.Node): node is TSESTree.Property => {
+function isProperty(node: TSESTree.Node): node is TSESTree.Property {
   return node.type === AST_NODE_TYPES.Property;
-};
+}
 
 /**
  * Tracks DocSetter instances that don't have shouldFlatten option
@@ -87,6 +75,7 @@ export const preferDocumentFlattening = createRule<[], MessageIds>({
   name: 'prefer-document-flattening',
   meta: {
     type: 'suggestion',
+    hasSuggestions: true,
     docs: {
       description:
         'Enforce using the shouldFlatten option when setting deeply nested objects in Firestore documents',
@@ -96,6 +85,7 @@ export const preferDocumentFlattening = createRule<[], MessageIds>({
     messages: {
       preferDocumentFlattening:
         '{{className}} instance "{{instanceName}}" sets nested Firestore data without enabling shouldFlatten. Nested object writes overwrite sibling fields and require read-modify-write cycles, which increases contention and hides field-level query paths. Add shouldFlatten: true in the {{className}} options or pass flattened field paths (for example, "profile.settings.theme") so nested updates stay atomic and queryable.',
+      addShouldFlatten: 'Add shouldFlatten: true to the DocSetter options.',
     },
   },
   defaultOptions: [],
@@ -105,6 +95,45 @@ export const preferDocumentFlattening = createRule<[], MessageIds>({
 
     // Track which DocSetter instances are used to set nested objects
     const docSetterWithNestedObjects = new Set<string>();
+
+    const buildSuggestion = (
+      instance: DocSetterInstance,
+    ): TSESLint.ReportSuggestionArray<MessageIds> => {
+      const newExpr = instance.node;
+      const hasOptionsArg = newExpr.arguments.length >= 2;
+      const optionsArg = hasOptionsArg ? newExpr.arguments[1] : undefined;
+
+      if (optionsArg && isObjectExpression(optionsArg)) {
+        const insertPos =
+          (optionsArg.range?.[1] ?? optionsArg.parent?.range?.[1] ?? 0) - 1;
+        const prefix = optionsArg.properties.length ? ', ' : '';
+        return [
+          {
+            messageId: 'addShouldFlatten',
+            fix(fixer: TSESLint.RuleFixer) {
+              return fixer.insertTextBeforeRange(
+                [insertPos, insertPos],
+                `${prefix}shouldFlatten: true`,
+              );
+            },
+          },
+        ];
+      }
+
+      const endPos =
+        (newExpr.range?.[1] ?? newExpr.parent?.range?.[1] ?? 0) - 1;
+      return [
+        {
+          messageId: 'addShouldFlatten',
+          fix(fixer: TSESLint.RuleFixer) {
+            return fixer.insertTextBeforeRange(
+              [endPos, endPos],
+              `${hasOptionsArg ? '' : ','} { shouldFlatten: true }`,
+            );
+          },
+        },
+      ];
+    };
 
     return {
       // Detect DocSetter and DocSetterTransaction instantiations
@@ -130,7 +159,9 @@ export const preferDocumentFlattening = createRule<[], MessageIds>({
 
               if (
                 isIdentifier(property.key) &&
-                property.key.name === 'shouldFlatten'
+                property.key.name === 'shouldFlatten' &&
+                property.value.type === AST_NODE_TYPES.Literal &&
+                property.value.value === true
               ) {
                 hasShouldFlatten = true;
                 break;
@@ -170,13 +201,49 @@ export const preferDocumentFlattening = createRule<[], MessageIds>({
         if (property.name !== 'set' && property.name !== 'setAll') return;
 
         const object = node.callee.object;
-        if (!isIdentifier(object)) return;
+        let instance: DocSetterInstance | undefined;
 
-        // Check if this is a DocSetter instance we're tracking
-        const instanceName = object.name;
-        const instance = docSetterInstances.find(
-          (i) => i.name === instanceName,
-        );
+        if (isIdentifier(object)) {
+          instance = docSetterInstances.find((i) => i.name === object.name);
+        } else if (
+          object.type === AST_NODE_TYPES.NewExpression &&
+          isIdentifier(object.callee)
+        ) {
+          const className = object.callee.name;
+          if (
+            className === 'DocSetter' ||
+            className === 'DocSetterTransaction'
+          ) {
+            let hasShouldFlatten = false;
+            if (object.arguments.length >= 2) {
+              const optionsArg = object.arguments[1];
+              if (isObjectExpression(optionsArg)) {
+                for (const property of optionsArg.properties) {
+                  if (!isProperty(property)) continue;
+                  if (
+                    isIdentifier(property.key) &&
+                    property.key.name === 'shouldFlatten' &&
+                    property.value.type === AST_NODE_TYPES.Literal &&
+                    property.value.value === true
+                  ) {
+                    hasShouldFlatten = true;
+                    break;
+                  }
+                }
+              }
+            }
+
+            if (!hasShouldFlatten) {
+              instance = {
+                className,
+                name: `(inline-${docSetterInstances.length})`,
+                node: object,
+                hasShouldFlatten,
+              };
+              docSetterInstances.push(instance);
+            }
+          }
+        }
 
         if (!instance) return;
 
@@ -186,20 +253,26 @@ export const preferDocumentFlattening = createRule<[], MessageIds>({
 
           // For set method
           if (isObjectExpression(dataArg) && hasDeepNestedObjects(dataArg)) {
-            docSetterWithNestedObjects.add(instanceName);
+            docSetterWithNestedObjects.add(instance.name);
           }
 
           // For setAll method with array argument
           if (
             dataArg.type === AST_NODE_TYPES.ArrayExpression &&
-            dataArg.elements.some(
-              (element) =>
-                element &&
-                isObjectExpression(element) &&
-                hasDeepNestedObjects(element),
-            )
+            dataArg.elements.some((element) => {
+              if (!element || !isObjectExpression(element)) {
+                return false;
+              }
+              for (const prop of element.properties) {
+                if (!isProperty(prop) || !isIdentifier(prop.key)) continue;
+                if (prop.key.name !== 'data') continue;
+                if (!isObjectExpression(prop.value)) return false;
+                return hasDeepNestedObjects(prop.value);
+              }
+              return false;
+            })
           ) {
-            docSetterWithNestedObjects.add(instanceName);
+            docSetterWithNestedObjects.add(instance.name);
           }
         }
       },
@@ -215,6 +288,7 @@ export const preferDocumentFlattening = createRule<[], MessageIds>({
                 className: instance.className,
                 instanceName: instance.name,
               },
+              suggest: buildSuggestion(instance),
             });
           }
         }

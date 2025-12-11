@@ -91,6 +91,7 @@ If context is unclear, use Interactive MCP tools to ask the user for clarificati
 Create the new `.mdc` file following the template from `system-documentation.mdc`:
 
 #### Frontmatter
+
 ```markdown
 ---
 description: [One-line description of the system]
@@ -145,7 +146,9 @@ alwaysApply: false
 - **Notable assumptions that proved inaccurate**: Document any assumptions you discovered from code analysis or context
 - **Important lessons or improvements**: Provide actionable advice for future maintainers
 
+
 #### A-Temporal Phrasing (CRITICAL)
+
 - **Never use time-coupled language**: Avoid words like "now", "currently", "recently", "new", "old", "temporary"
 - **Use present-tense, declarative statements**: Describe what the system does
 - **Example**: Instead of "The system was built to solve X", write "The system solves X"

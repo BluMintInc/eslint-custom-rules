@@ -1,5 +1,6 @@
 #!/usr/bin/env tsx
 /* eslint-disable no-console */
+import { execFileSync } from 'node:child_process';
 import {
   ensureDependency,
   inferBranchFromPr,
@@ -22,6 +23,14 @@ export type ReviewBranchDetail = {
 const REVIEW_BRANCH_REGEX =
   /^(?<base>[\w.-]+)-review-pr-(?<pr>\d+)(?:-(?<reviewBatch>\d+))?(?:-(?<reviewerType>human|bot))?$/;
 /* eslint-enable security/detect-unsafe-regex */
+const SAFE_BRANCH_PATTERN = /^(?!\/)(?!.*\/\/)(?!.*\/$)[A-Za-z0-9._/-]+$/;
+function assertSafeBranchName(branch: string, label: string) {
+  if (!SAFE_BRANCH_PATTERN.test(branch)) {
+    throw new Error(
+      `invalid-branch: ${label} "${branch}" contains unsupported characters.`,
+    );
+  }
+}
 const consumeMessageValue = (queue: string[], arg: string) => {
   const next = queue.shift();
   if (!next || next.startsWith('-')) {
@@ -86,6 +95,7 @@ export const parseReviewBranchName = (branch: string) => {
 };
 
 export const doesBranchExist = (branch: string) => {
+  assertSafeBranchName(branch, 'branch');
   try {
     runCommand(`git show-ref --verify --quiet refs/heads/${branch}`, true);
     return true;
@@ -100,11 +110,13 @@ export const resolveBaseBranch = (details: ReviewBranchDetail) => {
   }
 
   const inferred = inferBranchFromPr(details.prNumber);
-  if (doesBranchExist(inferred)) {
+  if (inferred && SAFE_BRANCH_PATTERN.test(inferred) && doesBranchExist(inferred)) {
     return inferred;
   }
 
-  return inferred;
+  throw new Error(
+    `Base branch not found for PR #${details.prNumber}. Checked '${details.baseBranchCandidate}'${inferred ? ` and inferred '${inferred}'` : ''}.`,
+  );
 };
 
 const hasStagedChanges = () => {
@@ -120,8 +132,10 @@ const hasStagedChanges = () => {
 const stageAllChanges = () => runCommand('git add -A', true);
 
 const commitStagedChanges = (message: string) => {
-  const escapedMessage = message.replaceAll('"', '\\"');
-  runCommand(`git commit -m "${escapedMessage}"`);
+  const normalizedMessage = message.replace(/\r?\n/g, ' ').trim();
+  execFileSync('git', ['commit', '-m', normalizedMessage], {
+    stdio: 'inherit',
+  });
 };
 export const buildDefaultCommitMessage = (details: ReviewBranchDetail) => {
   const prSuffix = ` for PR #${details.prNumber}`;
@@ -141,6 +155,8 @@ export const mergeReview = (options?: MergeReviewProps) => {
   const currentBranch = retrieveCurrentBranch();
   const details = parseReviewBranchName(currentBranch);
   const baseBranch = resolveBaseBranch(details);
+  assertSafeBranchName(baseBranch, 'base branch');
+  assertSafeBranchName(details.reviewBranch, 'review branch');
   console.log(`Review branch: ${details.reviewBranch}`);
   console.log(`Base branch:   ${baseBranch}`);
 
@@ -160,10 +176,10 @@ export const mergeReview = (options?: MergeReviewProps) => {
   }
 
   console.log(`Checking out ${baseBranch}...`);
-  runCommand(`git checkout ${baseBranch}`);
+  execFileSync('git', ['checkout', '--', baseBranch], { stdio: 'inherit' });
 
   console.log(`Merging ${details.reviewBranch} into ${baseBranch}...`);
-  runCommand(`git merge ${details.reviewBranch}`);
+  execFileSync('git', ['merge', '--', details.reviewBranch], { stdio: 'inherit' });
 
   console.log('✅ Merge complete.');
 };
@@ -197,5 +213,4 @@ export const runMergeReviewCliIfDirect = (
 
 /* istanbul ignore next */
 runMergeReviewCliIfDirect();
-
 

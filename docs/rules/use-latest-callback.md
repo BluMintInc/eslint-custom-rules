@@ -16,11 +16,16 @@ This rule:
 - Flags `useCallback` imports from `react` when the wrapped function does **not** return JSX.
 - Auto-fixes by importing from `use-latest-callback`, replacing the call site, and removing the dependency array.
 - Leaves JSX-returning callbacks and render-prop patterns alone because `useCallback` is the right tool for memoizing rendered output.
+- Skips files in `node_modules` for performance so third-party code is untouched.
+
+### Options
+
+This rule has no options. It is fixable-only.
 
 ### ❌ Incorrect
 
 ```jsx
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 
 function MyComponent({ onAction }) {
   const [count, setCount] = useState(0);
@@ -38,6 +43,7 @@ function MyComponent({ onAction }) {
 
 ```jsx
 import useLatestCallback from 'use-latest-callback';
+import { useState } from 'react';
 
 function MyComponent({ onAction }) {
   const [count, setCount] = useState(0);
@@ -56,7 +62,7 @@ function MyComponent({ onAction }) {
 You should not use this rule when:
 
 1. Your codebase doesn't have access to the `use-latest-callback` package.
-2. You're working with callbacks that return JSX or implement render prop patterns. In these scenarios, `useCallback` is the correct hook to memoize the component/JSX structure itself.
+2. You're working with callbacks that return JSX (render props or components-as-children patterns). In these scenarios, `useCallback` is the correct hook to memoize the component/JSX structure itself.
 3. You need a dependency-aware memoized function identity for advanced React optimization cases where a stable reference is not desired.
 
 ## Further Reading

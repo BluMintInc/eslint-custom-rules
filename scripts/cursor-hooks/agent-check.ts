@@ -44,29 +44,51 @@ Think outside the box. What could go wrong? What edge cases exist in real codeba
 After expanding tests, ensure all tests pass with: npm test
 `;
 
+type ExecError = Error & { stdout?: string | Buffer; stderr?: string | Buffer };
+
+function formatExecError(error: unknown): string {
+  const execError = error as ExecError;
+  const stdout = execError.stdout ? String(execError.stdout) : '';
+  const stderr = execError.stderr ? String(execError.stderr) : '';
+  return [stdout, stderr].filter(Boolean).join('\n');
+}
+
+function isValidInput(value: unknown): value is Input {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const hasConversationId = typeof candidate.conversation_id === 'string';
+  const hasGenerationId = typeof candidate.generation_id === 'string';
+  const hasValidLoopCount =
+    candidate.loop_count === undefined ||
+    typeof candidate.loop_count === 'number';
+
+  return hasConversationId && hasGenerationId && hasValidLoopCount;
+}
+
 function readInput() {
   try {
     if (process.stdin.isTTY) return null;
     const input = readFileSync(0, 'utf-8');
     if (!input) return null;
-    return JSON.parse(input);
+    const parsed: unknown = JSON.parse(input);
+    return isValidInput(parsed) ? parsed : null;
   } catch {
     return null;
   }
 }
 
 export function executeCommand(command: string) {
+  // Uses shell execution; callers must validate and quote any interpolated values.
   try {
     const output = execSync(command, { encoding: 'utf-8', stdio: 'pipe' });
     return { isSuccess: true, output } as const;
   } catch (error: unknown) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const stdout = (error as any).stdout ? String((error as any).stdout) : null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const stderr = (error as any).stderr ? String((error as any).stderr) : null;
     return {
       isSuccess: false,
-      output: `${stdout ?? ''}\n${stderr ?? ''}`,
+      output: formatExecError(error),
     } as const;
   }
 }
@@ -85,13 +107,9 @@ async function executeCommandAsync(command: string) {
       output: `${stdout ?? ''}\n${stderr ?? ''}`,
     } as const;
   } catch (error: unknown) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const stdout = (error as any).stdout ? String((error as any).stdout) : null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const stderr = (error as any).stderr ? String((error as any).stderr) : null;
     return {
       isSuccess: false,
-      output: `${stdout ?? ''}\n${stderr ?? ''}`,
+      output: formatExecError(error),
     } as const;
   }
 }
@@ -394,13 +412,33 @@ async function performAgentCheckInternal(input: Input) {
     return { followup_message: undefined } as const;
   }
 
-  // Priority 0: PR Review Check
+  // Priority 0: Merge Conflict Check - merge conflicts block all other validation
+  const { performMergeConflictCheck } = await import('./merge-conflict-check');
+  const mergeConflictResult = performMergeConflictCheck(input);
+  if (mergeConflictResult) return mergeConflictResult;
+
+  // Priority 1: PR Review Check
   const { performPrReviewCheck } = await import('./pr-review-check');
   const prReviewResult = await performPrReviewCheck(input);
   if (prReviewResult) return prReviewResult;
 
   const qualityCheckResult = await performQualityChecks(input);
   if (qualityCheckResult) return qualityCheckResult;
+
+  const changedFiles = fetchChangedFiles({
+    conversationId: conversation_id,
+    generationId: generation_id,
+  });
+  if (changedFiles.length === 0 || loop_count >= MAX_LOOPS) {
+    modifyConversationEnd(conversation_id);
+    return { followup_message: undefined } as const;
+  }
+
+  const isRuleRequest = isRuleRequestConversation(conversation_id);
+  if (isRuleRequest) {
+    const ruleStructureResult = performRuleStructureValidation(changedFiles);
+    if (ruleStructureResult) return ruleStructureResult;
+  }
 
   const hasBeenPromptedBefore = hasCheckWorkBeenPrompted(conversation_id);
   markCheckWorkPrompted(conversation_id);
@@ -412,15 +450,6 @@ async function performAgentCheckInternal(input: Input) {
     }
   }
 
-  const changedFiles = fetchChangedFiles({
-    conversationId: conversation_id,
-    generationId: generation_id,
-  });
-  if (changedFiles.length === 0 || loop_count >= MAX_LOOPS) {
-    modifyConversationEnd(conversation_id);
-    return { followup_message: undefined } as const;
-  }
-
   const followupMessage = hasBeenPromptedBefore
     ? `Please double check your work again. Reminder: If you need to create temporary files for notetaking or testing during this review, please place them in the \`.cursor/tmp/\` directory so they are ignored by this check.`
     : `Please check your work. It's highly likely you missed something originally requested of you and your solution is incomplete. Now is your chance to construct a new to-do list to run for several more hours, meticulously filling in all remaining gaps in your solution. If your task was to create a plan, diagnosis, or report, make sure that your markdown file is complete, self-consistent, and correct. If your task was to implement a feature, make sure you've implemented the feature completely and correctly, and that you've properly tested your implementation. If your task was to fix a bug, make sure you've fixed the bug without introducing regressions elsewhere, created a test to make sure your fix works, and tested your fix. Please do not stop for a long time, and before you do, make sure you've completely satisfied @.cursor/rules/task-completion-standards.mdc.\n\nNote: If you need to create temporary files for notetaking or testing during this review, please place them in the \`.cursor/tmp/\` directory so they are ignored by our Cursor Hooks.`;
@@ -428,7 +457,7 @@ async function performAgentCheckInternal(input: Input) {
   return { followup_message: followupMessage } as const;
 }
 
-function duplicateMessage({
+function isDuplicateMessage({
   conversationId,
   followupMessage,
 }: {
@@ -452,7 +481,7 @@ export async function performAgentCheck(input: Input) {
   const result = await performAgentCheckInternal(input);
   if (result.followup_message) {
     if (
-      duplicateMessage({
+      isDuplicateMessage({
         conversationId: input.conversation_id,
         followupMessage: result.followup_message,
       })
