@@ -12,6 +12,7 @@ import { readFileSync, existsSync } from 'node:fs';
 const ISSUE_NUMBER = process.env.ISSUE_NUMBER;
 const GITHUB_REPOSITORY =
   process.env.GITHUB_REPOSITORY || 'BluMintInc/eslint-custom-rules';
+const REVIEW_TEAM = process.env.REVIEW_TEAM || '@BluMintInc/core';
 
 if (!ISSUE_NUMBER) {
   console.error('ISSUE_NUMBER environment variable is required');
@@ -36,11 +37,13 @@ const researchResults = readFileSync(resultsPath, 'utf-8');
  *
  * Also accepts bracket format: [EXACT MATCH], [PARTIAL MATCH], [NO MATCH]
  */
-function detectRecommendationType(results: string): {
-  isExactMatch: boolean;
-  isPartialMatch: boolean;
-  isNoMatch: boolean;
-} {
+type RecommendationType =
+  | 'EXACT_MATCH'
+  | 'PARTIAL_MATCH'
+  | 'NO_MATCH'
+  | 'UNKNOWN';
+
+function detectRecommendationType(results: string): RecommendationType {
   // Look for the Summary section and extract recommendation line
   // Pattern matches: **Recommendation**: VALUE or **Recommendation**: [VALUE]
   const recommendationLineMatch = results.match(
@@ -49,11 +52,7 @@ function detectRecommendationType(results: string): {
 
   if (recommendationLineMatch) {
     const recommendation = recommendationLineMatch[1].toUpperCase();
-    return {
-      isExactMatch: recommendation === 'EXACT MATCH',
-      isPartialMatch: recommendation === 'PARTIAL MATCH',
-      isNoMatch: recommendation === 'NO MATCH',
-    };
+    return recommendation.replace(' ', '_') as RecommendationType;
   }
 
   // Fallback: Look for Summary section header followed by recommendation
@@ -63,23 +62,13 @@ function detectRecommendationType(results: string): {
 
   if (summaryMatch) {
     const recommendation = summaryMatch[1].toUpperCase();
-    return {
-      isExactMatch: recommendation === 'EXACT MATCH',
-      isPartialMatch: recommendation === 'PARTIAL MATCH',
-      isNoMatch: recommendation === 'NO MATCH',
-    };
+    return recommendation.replace(' ', '_') as RecommendationType;
   }
 
-  // No clear recommendation found
-  return {
-    isExactMatch: false,
-    isPartialMatch: false,
-    isNoMatch: false,
-  };
+  return 'UNKNOWN';
 }
 
-const { isExactMatch, isPartialMatch, isNoMatch } =
-  detectRecommendationType(researchResults);
+const recommendationType = detectRecommendationType(researchResults);
 
 /**
  * Execute a GitHub CLI command, handling errors gracefully.
@@ -99,36 +88,38 @@ function gh(args: string): string {
   }
 }
 
-/**
- * Escape special characters for shell command body parameter.
- */
-function escapeForShell(text: string): string {
-  return text
-    .replace(/\\/g, '\\\\') // Escape backslashes first
-    .replace(/"/g, '\\"') // Escape double quotes
-    .replace(/`/g, '\\`') // Escape backticks
-    .replace(/\$/g, '\\$'); // Escape dollar signs
+function postIssueComment(body: string) {
+  const payload = JSON.stringify({ body });
+  execSync(
+    `gh api repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments --input -`,
+    {
+      input: payload,
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    },
+  );
 }
 
-// Build comment body
-const commentBody = `## 🔍 ESLint Rule Research Results
+// Build comment body without duplicating the heading if it already exists
+const HEADING = '## 🔍 ESLint Rule Research Results';
+const researchResultsTrimmed = researchResults.trimStart();
+const resultsWithHeading = researchResultsTrimmed.startsWith(HEADING)
+  ? researchResultsTrimmed
+  : `${HEADING}\n\n${researchResultsTrimmed}`;
 
-${researchResults}
-
----
-*Research performed by Cursor Background Agent*`;
+const commentBody = `${resultsWithHeading.trimEnd()}`;
 
 // Post research results as a comment
 console.log(`Posting research results to issue #${ISSUE_NUMBER}...`);
-const escapedBody = escapeForShell(commentBody);
-
 try {
-  gh(
-    `api repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments -f body="${escapedBody}"`,
-  );
+  postIssueComment(commentBody);
   console.log('Research comment posted successfully');
-} catch {
+} catch (error) {
   console.error('Failed to post research comment');
+  console.error(
+    error instanceof Error ? error.message : 'Unknown error posting comment',
+  );
+  console.error('Exiting: research comment is required for workflow');
   process.exit(1);
 }
 
@@ -136,14 +127,14 @@ try {
 console.log('Updating issue labels...');
 
 try {
-  // Remove research-needed label
+  // Remove cursor-research label
   gh(
-    `issue edit ${ISSUE_NUMBER} --repo ${GITHUB_REPOSITORY} --remove-label "research-needed"`,
+    `issue edit ${ISSUE_NUMBER} --repo ${GITHUB_REPOSITORY} --remove-label "cursor-research"`,
   );
-  console.log('Removed research-needed label');
+  console.log('Removed cursor-research label');
 } catch {
   // Label might not exist, continue
-  console.log('Note: research-needed label may not have been present');
+  console.log('Note: cursor-research label may not have been present');
 }
 
 try {
@@ -157,7 +148,7 @@ try {
 }
 
 // Handle recommendation-based actions
-if (isNoMatch) {
+if (recommendationType === 'NO_MATCH') {
   // No existing rule found - automatically trigger implementation
   console.log('NO MATCH detected - triggering implementation workflow');
   try {
@@ -168,16 +159,17 @@ if (isNoMatch) {
   } catch {
     console.error('Failed to add cursor-implement label');
   }
-} else if (isExactMatch || isPartialMatch) {
+} else if (
+  recommendationType === 'EXACT_MATCH' ||
+  recommendationType === 'PARTIAL_MATCH'
+) {
   // Existing rule found - tag dev team for review
-  const matchType = isExactMatch ? 'EXACT MATCH' : 'PARTIAL MATCH';
-  console.log(`${matchType} detected - tagging @dev for review`);
+  const matchType =
+    recommendationType === 'EXACT_MATCH' ? 'EXACT MATCH' : 'PARTIAL MATCH';
+  console.log(`${matchType} detected - tagging ${REVIEW_TEAM} for review`);
   try {
-    const reviewComment = escapeForShell(
-      '@dev Please review the research findings above. An existing rule may satisfy this requirement.',
-    );
-    gh(
-      `api repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments -f body="${reviewComment}"`,
+    postIssueComment(
+      `${REVIEW_TEAM} Please review the research findings above. An existing rule may satisfy this requirement.`,
     );
     console.log('Posted review request comment');
   } catch {
@@ -190,15 +182,12 @@ if (isNoMatch) {
   );
   console.log('Manual review of research results is recommended');
   try {
-    const warningComment = escapeForShell(
+    postIssueComment(
       '⚠️ **Automated Review Notice**: The research results do not contain a clear recommendation. Please manually review the findings above and determine the next steps.',
-    );
-    gh(
-      `api repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments -f body="${warningComment}"`,
     );
   } catch {
     console.error('Failed to post warning comment');
   }
 }
 
-console.log('Research comment posted and labels updated successfully');
+console.log('Research comment workflow completed');

@@ -237,6 +237,45 @@ ruleTesterTs.run(
           }),
         ],
       },
+      {
+        code: `
+        const config = { enabled: true };
+
+        if (config && extraCondition) {
+          doSomething(config);
+        }
+        `,
+        errors: [
+          {
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'property',
+              name: 'enabled',
+              capitalizedName: 'Enabled',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+            },
+          },
+        ],
+      },
+      {
+        code: `
+        const flags = { visible: true };
+        flags === otherConfig;
+        `,
+        errors: [
+          {
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'property',
+              name: 'visible',
+              capitalizedName: 'Visible',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+            },
+          },
+        ],
+      },
 
       // Function declarations returning boolean without approved prefixes
       {
