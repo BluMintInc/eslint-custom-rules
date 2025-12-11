@@ -1,6 +1,8 @@
-# no-try-catch-already-exists-in-transaction
+# Disallow catching ALREADY_EXISTS errors inside Firestore transaction callbacks (`@blumintinc/blumint/no-try-catch-already-exists-in-transaction`)
 
-💼 Enabled in the recommended config.
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 Disallow handling Firestore `ALREADY_EXISTS` errors inside `runTransaction` callbacks. `ALREADY_EXISTS` is permanent; the transaction body is retried on contention, so a catch inside the callback will re-run and can append/mutate state multiple times. Handle the error outside the transaction or via a helper (e.g., `runCreateForgivenessTransaction`) so the handler runs once.
 
