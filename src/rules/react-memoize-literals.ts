@@ -28,6 +28,8 @@ const SAFE_HOOK_ARGUMENTS = new Set([
   'useId',
 ]);
 
+const DEPENDENCY_PLACEHOLDER = '__TODO_ADD_DEPENDENCIES__';
+
 function isHookName(name: string | null | undefined): name is string {
   return !!name && /^use[A-Z]/.test(name);
 }
@@ -292,7 +294,7 @@ function buildMemoSuggestions(
         fix(fixer) {
           return fixer.replaceText(
             node,
-            `${descriptor.memoHook}(${initializerText}, [])`,
+            `${descriptor.memoHook}(${initializerText}, [${DEPENDENCY_PLACEHOLDER}])`,
           );
         },
       },
@@ -309,7 +311,7 @@ function buildMemoSuggestions(
       fix(fixer) {
         return fixer.replaceText(
           node,
-          `${descriptor.memoHook}(() => ${wrappedInitializer}, [])`,
+          `${descriptor.memoHook}(() => ${wrappedInitializer}, [${DEPENDENCY_PLACEHOLDER}])`,
         );
       },
     },
@@ -337,6 +339,8 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
         'Detect object, array, and function literals created in React components or hooks that create new references every render. Prefer memoized values (useMemo/useCallback) or module-level constants to keep referential stability.',
       recommended: 'error',
     },
+    fixable:
+      null as unknown as TSESLint.RuleMetaData<MessageIds>['fixable'],
     hasSuggestions: true,
     schema: [],
     messages: {

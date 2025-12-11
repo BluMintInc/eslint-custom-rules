@@ -148,6 +148,37 @@ function UserProfile() {
         },
       ],
     },
+    // Suggestions wrap literals and include dependency placeholder
+    {
+      code: `
+function Component() {
+  const options = { debounce: 50 };
+  return <div>{options.debounce}</div>;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'object literal',
+            context: 'component "Component"',
+            memoHook: 'useMemo',
+          },
+          suggestions: [
+            {
+              messageId: 'memoizeLiteralSuggestion',
+              output:
+                '\n' +
+                'function Component() {\n' +
+                '  const options = useMemo(() => ({ debounce: 50 }), [__TODO_ADD_DEPENDENCIES__]);\n' +
+                '  return <div>{options.debounce}</div>;\n' +
+                '}\n' +
+                '      ',
+            },
+          ],
+        },
+      ],
+    },
     // Component-level array literal
     {
       code: `
