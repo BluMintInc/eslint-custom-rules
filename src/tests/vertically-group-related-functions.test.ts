@@ -336,6 +336,24 @@ const util = () => doWork();
 function doWork() {}
         `,
       },
+      {
+        code: `
+        function helper() {}
+        // helper comment
+        function main() {
+          return helper();
+        }
+        `,
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: `
+        // helper comment
+        function main() {
+          return helper();
+        }
+
+function helper() {}
+        `,
+      },
     ],
   },
 );

@@ -7,14 +7,16 @@ type DependencyDirection = 'callers-first' | 'callees-first';
 type ExportPlacement = 'top' | 'bottom' | 'ignore';
 
 type Options = [
-  {
-    exportPlacement?: ExportPlacement;
-    dependencyDirection?: DependencyDirection;
-    groupOrder?: GroupName[];
-    eventHandlerPattern?: string;
-    utilityPattern?: string;
-  },
+  Partial<{
+    exportPlacement: ExportPlacement;
+    dependencyDirection: DependencyDirection;
+    groupOrder: GroupName[];
+    eventHandlerPattern: string;
+    utilityPattern: string;
+  }>,
 ];
+
+type NormalizedOptions = Required<Options[0]>;
 
 type MessageIds = 'misorderedFunction';
 
@@ -40,7 +42,7 @@ type FunctionInfo = {
   originalIndex: number;
 };
 
-const DEFAULT_OPTIONS: Required<Options[0]> = {
+const DEFAULT_OPTIONS: NormalizedOptions = {
   exportPlacement: 'ignore',
   dependencyDirection: 'callers-first',
   groupOrder: ['event-handlers', 'other', 'utilities'],
@@ -49,7 +51,12 @@ const DEFAULT_OPTIONS: Required<Options[0]> = {
     '^(get|set|fetch|load|format|compute|transform|build|derive|prepare)',
 };
 
-function resolvePattern(pattern: string | undefined, fallback: string) {
+const DEFAULT_OPTIONS_ARRAY: Options = [DEFAULT_OPTIONS];
+
+function createRegexWithFallback(
+  pattern: string | undefined,
+  fallback: string,
+) {
   try {
     return new RegExp(pattern ?? fallback);
   } catch {
@@ -333,7 +340,7 @@ function dependencyOrder(
 
 function computeExpectedOrder(
   functions: FunctionInfo[],
-  options: Required<Options[0]>,
+  options: NormalizedOptions,
 ): FunctionInfo[] {
   const groupOrder = normalizeGroupOrder(options.groupOrder);
   const dependencySequence = dependencyOrder(
@@ -371,17 +378,41 @@ function computeExpectedOrder(
 function getStatementRangeWithComments(
   statement: FunctionStatementNode,
   sourceCode: Readonly<TSESLint.SourceCode>,
+  consumedComments?: Set<TSESTree.Comment>,
+  nextStatement?: FunctionStatementNode,
 ): [number, number] {
-  const comments = sourceCode.getCommentsBefore(statement) || [];
-  const start = comments.length
-    ? Math.min(statement.range[0], comments[0].range[0])
-    : statement.range[0];
-  const end = comments.length
-    ? Math.max(
-        statement.range[1],
-        comments[comments.length - 1].range[1],
+  const filterComments = (comments: TSESTree.Comment[]) =>
+    (comments || []).filter(
+      (comment) => !consumedComments || !consumedComments.has(comment),
+    );
+
+  const commentsBefore = filterComments(
+    sourceCode.getCommentsBefore(statement) || [],
+  );
+  const nextLeadingComments = nextStatement
+    ? new Set(
+        filterComments(sourceCode.getCommentsBefore(nextStatement) || []),
       )
-    : statement.range[1];
+    : new Set<TSESTree.Comment>();
+  const trailingCandidates = filterComments(
+    sourceCode.getCommentsAfter(statement) || [],
+  ).filter((comment) => !nextLeadingComments.has(comment));
+
+  const start =
+    commentsBefore.length > 0
+      ? Math.min(statement.range[0], commentsBefore[0].range[0])
+      : statement.range[0];
+  const end =
+    trailingCandidates.length > 0
+      ? Math.max(
+          statement.range[1],
+          trailingCandidates[trailingCandidates.length - 1].range[1],
+        )
+      : statement.range[1];
+
+  commentsBefore.forEach((comment) => consumedComments?.add(comment));
+  trailingCandidates.forEach((comment) => consumedComments?.add(comment));
+
   return [start, end];
 }
 
@@ -433,14 +464,17 @@ export const verticallyGroupRelatedFunctions: TSESLint.RuleModule<
         'Function "{{name}}" is out of order: {{reason}}. Move it {{placement}} to keep related call chains grouped so readers can scan the file top-down.',
     },
   },
-  defaultOptions: [DEFAULT_OPTIONS],
+  defaultOptions: DEFAULT_OPTIONS_ARRAY,
   create(context, [options]) {
-    const normalizedOptions = { ...DEFAULT_OPTIONS, ...options };
-    const eventHandlerRegex = resolvePattern(
+    const normalizedOptions: NormalizedOptions = {
+      ...DEFAULT_OPTIONS,
+      ...options,
+    };
+    const eventHandlerRegex = createRegexWithFallback(
       options?.eventHandlerPattern,
       DEFAULT_OPTIONS.eventHandlerPattern,
     );
-    const utilityRegex = resolvePattern(
+    const utilityRegex = createRegexWithFallback(
       options?.utilityPattern,
       DEFAULT_OPTIONS.utilityPattern,
     );
@@ -495,9 +529,13 @@ export const verticallyGroupRelatedFunctions: TSESLint.RuleModule<
 
         const dependencyReason =
           misplacedInfo.dependencies.length > 0
-            ? `it calls ${misplacedInfo.dependencies.join(
-                ', ',
-              )} and callers should sit above the helpers they invoke`
+            ? normalizedOptions.dependencyDirection === 'callees-first'
+              ? `it calls ${misplacedInfo.dependencies.join(
+                  ', ',
+                )} and helpers should precede the callers that depend on them when dependencyDirection is "callees-first"`
+              : `it calls ${misplacedInfo.dependencies.join(
+                  ', ',
+                )} and callers should sit above the helpers they invoke`
             : 'keep related functions adjacent';
 
         const exportReason =
@@ -508,7 +546,7 @@ export const verticallyGroupRelatedFunctions: TSESLint.RuleModule<
               : 'exports stay at the bottom of the file';
 
         const group = classifyGroup(misplacedInfo);
-        const groupOrder = normalizeGroupOrder(options?.groupOrder);
+        const groupOrder = normalizeGroupOrder(normalizedOptions.groupOrder);
         const groupReason =
           groupOrder.indexOf(group) > 0
             ? `${group.replace('-', ' ')} should follow the configured group order`
@@ -526,6 +564,24 @@ export const verticallyGroupRelatedFunctions: TSESLint.RuleModule<
         const functionStatements = new Set(
           functions.map((fn) => fn.statementNode),
         );
+        const sourceOrderedInfos = functions
+          .slice()
+          .sort((a, b) => a.originalIndex - b.originalIndex);
+        const consumedComments = new Set<TSESTree.Comment>();
+        const statementRanges = new Map<
+          FunctionStatementNode,
+          [number, number]
+        >();
+        sourceOrderedInfos.forEach((info, idx) => {
+          const nextInfo = sourceOrderedInfos[idx + 1];
+          const [rangeStart, rangeEnd] = getStatementRangeWithComments(
+            info.statementNode,
+            sourceCode,
+            consumedComments,
+            nextInfo?.statementNode,
+          );
+          statementRanges.set(info.statementNode, [rangeStart, rangeEnd]);
+        });
         const firstFunctionIndex = node.body.findIndex((statement) =>
           functionStatements.has(statement as FunctionStatementNode),
         );
@@ -567,20 +623,27 @@ export const verticallyGroupRelatedFunctions: TSESLint.RuleModule<
               return null;
             }
 
-            const [start] = getStatementRangeWithComments(
-              node.body[firstFunctionIndex] as FunctionStatementNode,
-              sourceCode,
-            );
-            const [, end] = getStatementRangeWithComments(
-              node.body[lastFunctionIndex] as FunctionStatementNode,
-              sourceCode,
-            );
-
-            const textParts = expectedOrderInfos.map((fn) => {
-              const [fnStart, fnEnd] = getStatementRangeWithComments(
-                fn.statementNode,
+            const [start] =
+              statementRanges.get(
+                node.body[firstFunctionIndex] as FunctionStatementNode,
+              ) ||
+              getStatementRangeWithComments(
+                node.body[firstFunctionIndex] as FunctionStatementNode,
                 sourceCode,
               );
+            const [, end] =
+              statementRanges.get(
+                node.body[lastFunctionIndex] as FunctionStatementNode,
+              ) ||
+              getStatementRangeWithComments(
+                node.body[lastFunctionIndex] as FunctionStatementNode,
+                sourceCode,
+              );
+
+            const textParts = expectedOrderInfos.map((fn) => {
+              const [fnStart, fnEnd] =
+                statementRanges.get(fn.statementNode) ||
+                getStatementRangeWithComments(fn.statementNode, sourceCode);
               return sourceCode.text.slice(fnStart, fnEnd);
             });
 
