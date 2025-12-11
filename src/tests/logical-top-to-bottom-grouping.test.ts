@@ -91,6 +91,11 @@ if (!ok()) {
 }
 use(record);
     `,
+    `
+const base = getBase();
+const snapshot = derived;
+var derived = base.value;
+    `,
   ],
   invalid: [
     {
@@ -226,6 +231,23 @@ const later = 2;
     {
       code: '\nlet counter = 0;\nconst mid = doMid();\nlog(mid);\nconsole.log(counter);\n',
       output: '\nconst mid = doMid();\nlog(mid);\nlet counter = 0;\nconsole.log(counter);\n',
+      errors: [{ messageId: 'moveDeclarationCloser' }],
+    },
+    {
+      code: `
+let logger;
+function logAll() {
+  return 1;
+}
+logger = createLogger();
+      `,
+      output: `
+function logAll() {
+  return 1;
+}
+let logger;
+logger = createLogger();
+      `,
       errors: [{ messageId: 'moveDeclarationCloser' }],
     },
   ],

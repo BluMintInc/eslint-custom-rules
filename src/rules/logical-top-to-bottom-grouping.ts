@@ -49,6 +49,13 @@ function isDeclarationIdentifier(
   }
   if (
     (parent.type === AST_NODE_TYPES.FunctionDeclaration ||
+      parent.type === AST_NODE_TYPES.FunctionExpression) &&
+    parent.id === node
+  ) {
+    return true;
+  }
+  if (
+    (parent.type === AST_NODE_TYPES.FunctionDeclaration ||
       parent.type === AST_NODE_TYPES.FunctionExpression ||
       parent.type === AST_NODE_TYPES.ArrowFunctionExpression) &&
     parent.params.includes(node)
@@ -597,17 +604,19 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
             );
 
             if (lastDependencyIndex < index - 1) {
+              const declaredNames = getDeclaredNames(statement);
+              const priorDependencySet = new Set(priorDependencies);
               const blockerExists = body
                 .slice(lastDependencyIndex + 1, index)
                 .some(
                   (between) =>
                     !isPureDeclaration(between, { allowHooks: false }) ||
-                    statementDeclaresAny(between, new Set(priorDependencies)) ||
-                    statementReferencesAny(between, new Set(priorDependencies)),
+                    statementDeclaresAny(between, priorDependencySet) ||
+                    statementReferencesAny(between, priorDependencySet) ||
+                    statementReferencesAny(between, declaredNames),
                 );
 
               if (!blockerExists) {
-                const declaredNames = getDeclaredNames(statement);
                 const dependency = priorDependencies[0];
                 const name = declaredNames.values().next().value ?? 'value';
                 reportOnce(
