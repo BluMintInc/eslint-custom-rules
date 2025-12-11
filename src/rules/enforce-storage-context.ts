@@ -25,6 +25,7 @@ const unwrapExpression = (expression: TSESTree.Expression): TSESTree.Expression 
   while (true) {
     if (
       current.type === AST_NODE_TYPES.TSAsExpression ||
+      current.type === AST_NODE_TYPES.TSSatisfiesExpression ||
       current.type === AST_NODE_TYPES.TSTypeAssertion ||
       current.type === AST_NODE_TYPES.TSNonNullExpression
     ) {
@@ -79,6 +80,7 @@ const leftmostIdentifier = (node: TSESTree.Node | null): TSESTree.Identifier | n
 
     if (
       current.type === AST_NODE_TYPES.TSAsExpression ||
+      current.type === AST_NODE_TYPES.TSSatisfiesExpression ||
       current.type === AST_NODE_TYPES.TSTypeAssertion ||
       current.type === AST_NODE_TYPES.TSNonNullExpression
     ) {
@@ -259,7 +261,7 @@ const recordAliasFromPattern = (
   pattern: TSESTree.ObjectPattern,
   init: TSESTree.Expression | null,
   aliases: Map<string, StorageKind>,
-  onStorageProperty?: (
+  handleStorageProperty?: (
     node: TSESTree.Node,
     storageKind: StorageKind,
     accessType: string,
@@ -275,7 +277,7 @@ const recordAliasFromPattern = (
     const keyName = getPropertyName(prop.key);
     if (!keyName || !STORAGE_NAMES.has(keyName as StorageKind)) continue;
 
-    onStorageProperty?.(
+    handleStorageProperty?.(
       prop.key,
       keyName as StorageKind,
       `property "${keyName}"`,

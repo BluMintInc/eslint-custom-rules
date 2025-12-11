@@ -167,6 +167,25 @@ ruleTesterTs.run('enforce-storage-context', enforceStorageContext, {
     },
     {
       code: `
+        const value = (localStorage satisfies Storage).getItem('k');
+      `,
+      errors: [
+        { messageId: 'useStorageContext' },
+        { messageId: 'useStorageContext' },
+      ],
+    },
+    {
+      code: `
+        const store = (window.sessionStorage satisfies Storage);
+        store.clear();
+      `,
+      errors: [
+        { messageId: 'useStorageContext' },
+        { messageId: 'useStorageContext' },
+      ],
+    },
+    {
+      code: `
         localStorage.setItem('x', 'y');
       `,
       filename: '/workspace/src/components/storage.test.ts',
