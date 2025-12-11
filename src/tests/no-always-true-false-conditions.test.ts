@@ -530,7 +530,7 @@ if (JSON.stringify({a: 1}) === '{"a":2}') {
       expectAlwaysFalse('JSON.stringify({a: 1}) === \'{"a":2}\''),
     ],
   },
-  // Switch case comparison flagged as always false when using identifier
+  // Switch case comparison flagged as always true when identifier matches literal
   {
     code: `
 const value = "a";
@@ -540,7 +540,7 @@ switch ("a") {
     break;
 }
 `,
-    errors: [expectAlwaysFalse('value')],
+    errors: [expectAlwaysTrue('value')],
   },
   // Switch case comparison flagged as always false with different identifier value
   {
