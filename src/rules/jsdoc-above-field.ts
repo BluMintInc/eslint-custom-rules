@@ -135,6 +135,10 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
           return false;
         }
 
+        if (comment.range[0] < node.range[1]) {
+          return false;
+        }
+
         const between = sourceCode.text.slice(node.range[1], comment.range[0]);
 
         return /^[\s;,]*$/.test(between);

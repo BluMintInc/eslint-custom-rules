@@ -27,6 +27,11 @@ ruleTesterTs.run('jsdoc-above-field', jsdocAboveField, {
   count: number; // safe inline comment
 };`,
 
+    // Inline JSDoc placed before the field on the same line should be treated as leading documentation, not trailing
+    `type InlineLeadingDocs = {
+  /** User phone number */ phone?: string;
+};`,
+
     // Inline block comment that is not JSDoc should be allowed
     `type Flags = {
   isEnabled: boolean; /* not a jsdoc */
