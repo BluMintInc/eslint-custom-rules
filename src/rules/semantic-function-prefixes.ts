@@ -27,19 +27,50 @@ const SUGGESTED_ALTERNATIVES = {
   do: ['execute', 'perform', 'apply'],
 };
 
+function extractFirstWord(name: string): string {
+  let firstWord = name;
+  for (let i = 1; i < name.length; i++) {
+    const currentChar = name[i];
+    const prevChar = name[i - 1];
+    // lowercase -> Uppercase (camel/Pascal boundary)
+    if (
+      prevChar >= 'a' &&
+      prevChar <= 'z' &&
+      currentChar >= 'A' &&
+      currentChar <= 'Z'
+    ) {
+      firstWord = name.substring(0, i);
+      break;
+    }
+    // UPPERCASE acronym -> lowercase word start (e.g., XML|Http)
+    if (
+      prevChar >= 'A' &&
+      prevChar <= 'Z' &&
+      currentChar >= 'a' &&
+      currentChar <= 'z'
+    ) {
+      if (i > 1) {
+        firstWord = name.substring(0, i - 1);
+        break;
+      }
+    }
+  }
+  return firstWord;
+}
+
 export const semanticFunctionPrefixes = createRule<[], MessageIds>({
   name: 'semantic-function-prefixes',
   meta: {
     type: 'suggestion',
     docs: {
       description:
-        'Enforce semantic function prefixes over generic ones like "get" and "update"',
+        'Require semantic function prefixes instead of generic verbs so callers know whether a function fetches data, transforms input, or mutates state',
       recommended: 'error',
     },
     schema: [],
     messages: {
       avoidGenericPrefix:
-        'Avoid using generic prefix "{{prefix}}". Consider using one of these alternatives: {{alternatives}}',
+        'Function "{{functionName}}" starts with the generic prefix "{{prefix}}", which hides whether it fetches remote data, transforms input, or mutates state. Use a semantic verb such as {{alternatives}} to describe the operation and set caller expectations.',
     },
   },
   defaultOptions: [],
@@ -61,45 +92,7 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
       if (NEXTJS_DATA_FUNCTIONS.has(methodName)) return;
 
       // Extract first word from PascalCase/camelCase
-      let firstWord = methodName;
-
-      // Handle different casing patterns:
-      // - camelCase: getData -> get
-      // - PascalCase: GetData -> Get
-      // - UPPERCASE: UPDATEUser -> UPDATE
-      // - Mixed: XMLHttpRequest -> XML
-
-      for (let i = 1; i < methodName.length; i++) {
-        const currentChar = methodName[i];
-        const prevChar = methodName[i - 1];
-
-        // Case 1: lowercase followed by uppercase (camelCase boundary)
-        // Example: getData -> break at 'D'
-        if (
-          prevChar >= 'a' &&
-          prevChar <= 'z' &&
-          currentChar >= 'A' &&
-          currentChar <= 'Z'
-        ) {
-          firstWord = methodName.substring(0, i);
-          break;
-        }
-
-        // Case 2: uppercase followed by lowercase (end of acronym)
-        // Example: UPDATEUser -> break at 'U' in "User"
-        if (
-          prevChar >= 'A' &&
-          prevChar <= 'Z' &&
-          currentChar >= 'a' &&
-          currentChar <= 'z'
-        ) {
-          // Check if we have at least 2 uppercase letters before this
-          if (i > 1) {
-            firstWord = methodName.substring(0, i - 1);
-            break;
-          }
-        }
-      }
+      const firstWord = extractFirstWord(methodName);
 
       // Check for disallowed prefixes
       // Only flag if the disallowed word is used as a prefix (not the entire name)
@@ -112,6 +105,7 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
             node: node.key,
             messageId: 'avoidGenericPrefix',
             data: {
+              functionName: methodName,
               prefix,
               alternatives:
                 SUGGESTED_ALTERNATIVES[
@@ -155,45 +149,7 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
       if (NEXTJS_DATA_FUNCTIONS.has(functionName)) return;
 
       // Extract first word from PascalCase/camelCase
-      let firstWord = functionName;
-
-      // Handle different casing patterns:
-      // - camelCase: getData -> get
-      // - PascalCase: GetData -> Get
-      // - UPPERCASE: UPDATEUser -> UPDATE
-      // - Mixed: XMLHttpRequest -> XML
-
-      for (let i = 1; i < functionName.length; i++) {
-        const currentChar = functionName[i];
-        const prevChar = functionName[i - 1];
-
-        // Case 1: lowercase followed by uppercase (camelCase boundary)
-        // Example: getData -> break at 'D'
-        if (
-          prevChar >= 'a' &&
-          prevChar <= 'z' &&
-          currentChar >= 'A' &&
-          currentChar <= 'Z'
-        ) {
-          firstWord = functionName.substring(0, i);
-          break;
-        }
-
-        // Case 2: uppercase followed by lowercase (end of acronym)
-        // Example: UPDATEUser -> break at 'U' in "User"
-        if (
-          prevChar >= 'A' &&
-          prevChar <= 'Z' &&
-          currentChar >= 'a' &&
-          currentChar <= 'z'
-        ) {
-          // Check if we have at least 2 uppercase letters before this
-          if (i > 1) {
-            firstWord = functionName.substring(0, i - 1);
-            break;
-          }
-        }
-      }
+      const firstWord = extractFirstWord(functionName);
 
       // Check for disallowed prefixes
       // Only flag if the disallowed word is used as a prefix (not the entire name)
@@ -206,6 +162,7 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
             node: node.id || node,
             messageId: 'avoidGenericPrefix',
             data: {
+              functionName,
               prefix,
               alternatives:
                 SUGGESTED_ALTERNATIVES[

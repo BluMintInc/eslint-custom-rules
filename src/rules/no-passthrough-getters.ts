@@ -1,5 +1,14 @@
 import { createRule } from '../utils/createRule';
-import { TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+
+const COMPLEX_EXPRESSION_TYPES = new Set<TSESTree.Expression['type']>([
+  AST_NODE_TYPES.CallExpression,
+  AST_NODE_TYPES.TemplateLiteral,
+  AST_NODE_TYPES.NewExpression,
+  AST_NODE_TYPES.BinaryExpression,
+  AST_NODE_TYPES.ArrayExpression,
+  AST_NODE_TYPES.ObjectExpression,
+]);
 
 export const noPassthroughGetters = createRule({
   create(context) {
@@ -88,43 +97,30 @@ export const noPassthroughGetters = createRule({
     function isConstructorParameterAccess(
       node: TSESTree.MemberExpression,
     ): boolean {
-      // We need at least two levels: this.param.property
-      // The base case should be this.constructorParameter
-      if (node.object.type === 'ThisExpression') {
-        // This is just this.property - not a constructor parameter property access
-        return false;
+      let current: TSESTree.MemberExpression['object'] | TSESTree.Expression =
+        node.object;
+      let depth = 0;
+
+      // Walk up member expressions until we reach a base
+      while (current && current.type === 'MemberExpression') {
+        depth += 1;
+        current = current.object as TSESTree.Expression;
       }
 
-      // If the object is another member expression, check if it's this.constructorParameter
-      if (node.object.type === 'MemberExpression') {
-        // Check if this is this.constructorParameter.property (or deeper nesting)
-        if (node.object.object.type === 'ThisExpression') {
-          // This is this.constructorParameter.property - this is what we want to flag
-          return true;
-        }
-
-        // Check for deeper nesting like this.constructorParameter.nested.deep.property
-        return isConstructorParameterAccess(node.object);
-      }
-
-      // Handle static property access like ClassName.staticProperty.value
-      // This should NOT be flagged as it's not a constructor parameter
-      if (node.object.type === 'Identifier') {
-        return false;
-      }
-
-      return false;
+      // Require at least one nesting and a base of `this`
+      return depth >= 1 && current?.type === 'ThisExpression';
     }
 
     /**
      * Check if the node contains a reference to super
      */
     function containsSuper(node: TSESTree.Expression): boolean {
-      if (node.type === 'MemberExpression') {
-        if (node.object.type === 'Super') {
+      let current: TSESTree.Expression | undefined = node;
+      while (current && current.type === 'MemberExpression') {
+        if (current.object.type === 'Super') {
           return true;
         }
-        return containsSuper(node.object);
+        current = current.object as TSESTree.Expression;
       }
       return false;
     }
@@ -174,33 +170,7 @@ export const noPassthroughGetters = createRule({
     function hasComputedPropertyOrFunctionCall(
       node: TSESTree.Expression,
     ): boolean {
-      // Check for call expressions like this.settings.getValue() or this.getPropertyName()
-      if (node.type === 'CallExpression') {
-        return true;
-      }
-
-      // Check for template literals like `id-${this.settings.uid}`
-      if (node.type === 'TemplateLiteral') {
-        return true;
-      }
-
-      // Check for new expressions like new SomeClass(this.settings.data)
-      if (node.type === 'NewExpression') {
-        return true;
-      }
-
-      // Check for binary expressions like this.settings.value + this.settings.other
-      if (node.type === 'BinaryExpression') {
-        return true;
-      }
-
-      // Check for array expressions like [this.settings.value]
-      if (node.type === 'ArrayExpression') {
-        return true;
-      }
-
-      // Check for object expressions like { value: this.settings.value }
-      if (node.type === 'ObjectExpression') {
+      if (COMPLEX_EXPRESSION_TYPES.has(node.type)) {
         return true;
       }
 
