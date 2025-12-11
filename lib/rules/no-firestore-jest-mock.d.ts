@@ -1,1 +1,0 @@
-export declare const noFirestoreJestMock: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"noFirestoreJestMock", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;
