@@ -101,6 +101,7 @@ import { omitIndexHtml } from './rules/omit-index-html';
 import { enforceIdCapitalization } from './rules/enforce-id-capitalization';
 import { noUnusedUseState } from './rules/no-unused-usestate';
 import { noUuidv4Base62AsKey } from './rules/no-uuidv4-base62-as-key';
+import { logicalTopToBottomGrouping } from './rules/logical-top-to-bottom-grouping';
 import enforceDynamicFileNaming from './rules/enforce-dynamic-file-naming';
 import { default as preferUseCallbackOverUseMemoForFunctions } from './rules/prefer-usecallback-over-usememo-for-functions';
 import { noMarginProperties } from './rules/no-margin-properties';
@@ -150,6 +151,7 @@ module.exports = {
         '@blumintinc/blumint/prefer-nullish-coalescing-override': 'error',
         '@blumintinc/blumint/prefer-block-comments-for-declarations': 'error',
         '@blumintinc/blumint/key-only-outermost-element': 'error',
+        '@blumintinc/blumint/logical-top-to-bottom-grouping': 'error',
         '@blumintinc/blumint/parallelize-async-operations': 'error',
         '@blumintinc/blumint/avoid-utils-directory': 'error',
         '@blumintinc/blumint/enforce-firestore-path-utils': 'error',
@@ -292,6 +294,7 @@ module.exports = {
     'prefer-block-comments-for-declarations':
       preferBlockCommentsForDeclarations,
     'key-only-outermost-element': keyOnlyOutermostElement,
+    'logical-top-to-bottom-grouping': logicalTopToBottomGrouping,
     'array-methods-this-context': arrayMethodsThisContext,
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
     'consistent-callback-naming': consistentCallbackNaming,
