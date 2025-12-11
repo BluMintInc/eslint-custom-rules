@@ -334,6 +334,7 @@ const IN_EXCEPTIONS = [
   'insurgents',
   'insurrection',
   'intake',
+  'integer',
   'integers',
   'intel',
   'intellect',
