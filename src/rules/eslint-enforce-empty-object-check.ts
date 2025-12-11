@@ -1,0 +1,459 @@
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import * as ts from 'typescript';
+import { createRule } from '../utils/createRule';
+
+type Options = [
+  {
+    objectNamePattern?: string[];
+    ignoreInLoops?: boolean;
+    emptyCheckFunctions?: string[];
+  },
+];
+
+type MessageIds = 'missingEmptyObjectCheck';
+
+const DEFAULT_OBJECT_SUFFIXES = [
+  'Config',
+  'Configs',
+  'Data',
+  'Info',
+  'Settings',
+  'Options',
+  'Props',
+  'State',
+  'Response',
+  'Result',
+  'Payload',
+  'Map',
+  'Record',
+  'Object',
+  'Obj',
+  'Details',
+  'Meta',
+  'Profile',
+  'Request',
+  'Params',
+  'Context',
+];
+
+const DEFAULT_EMPTY_CHECK_FUNCTIONS = ['isEmpty'];
+
+const BOOLEAN_PREFIXES = ['is', 'has', 'can', 'should', 'was', 'were', 'will', 'did'];
+
+const NON_OBJECT_LIKE_NAMES = [
+  'count',
+  'index',
+  'idx',
+  'length',
+  'size',
+  'total',
+  'flag',
+  'enabled',
+  'ready',
+  'items',
+  'item',
+  'list',
+  'lists',
+  'array',
+  'arr',
+];
+
+function isLoopLike(node: TSESTree.Node): boolean {
+  return (
+    node.type === AST_NODE_TYPES.ForStatement ||
+    node.type === AST_NODE_TYPES.ForInStatement ||
+    node.type === AST_NODE_TYPES.ForOfStatement ||
+    node.type === AST_NODE_TYPES.WhileStatement ||
+    node.type === AST_NODE_TYPES.DoWhileStatement
+  );
+}
+
+function isInsideLoop(node: TSESTree.Node | undefined): boolean {
+  let current: TSESTree.Node | undefined = node;
+  while (current && current.parent) {
+    if (isLoopLike(current.parent)) {
+      return true;
+    }
+    current = current.parent;
+  }
+  return false;
+}
+
+function nameLooksObjectLike(name: string, patterns: Set<string>): boolean {
+  const lower = name.toLowerCase();
+
+  if (BOOLEAN_PREFIXES.some((prefix) => lower.startsWith(prefix))) {
+    return false;
+  }
+
+  if (NON_OBJECT_LIKE_NAMES.includes(lower)) {
+    return false;
+  }
+
+  for (const pattern of patterns) {
+    if (name.endsWith(pattern) || lower.endsWith(pattern.toLowerCase())) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isNullableType(type: ts.Type): boolean {
+  return (
+    (type.flags & ts.TypeFlags.Null) !== 0 ||
+    (type.flags & ts.TypeFlags.Undefined) !== 0 ||
+    (type.flags & ts.TypeFlags.Void) !== 0
+  );
+}
+
+function isNonObjectPrimitive(type: ts.Type): boolean {
+  const flag = type.flags;
+  return (
+    (flag & ts.TypeFlags.StringLike) !== 0 ||
+    (flag & ts.TypeFlags.NumberLike) !== 0 ||
+    (flag & ts.TypeFlags.BooleanLike) !== 0 ||
+    (flag & ts.TypeFlags.BigIntLike) !== 0 ||
+    (flag & ts.TypeFlags.ESSymbolLike) !== 0 ||
+    (flag & ts.TypeFlags.EnumLike) !== 0
+  );
+}
+
+function isAnyOrUnknown(type: ts.Type): boolean {
+  return (type.flags & ts.TypeFlags.Any) !== 0 || (type.flags & ts.TypeFlags.Unknown) !== 0;
+}
+
+function hasRequiredProperties(type: ts.Type, checker: ts.TypeChecker): boolean {
+  const properties = checker.getPropertiesOfType(type);
+  return properties.some((property) => (property.getFlags() & ts.SymbolFlags.Optional) === 0);
+}
+
+function isObjectLikeType(type: ts.Type, checker: ts.TypeChecker): 'object' | 'non-object' | 'unknown' {
+  if (type.isUnion()) {
+    let hasObject = false;
+    for (const part of type.types) {
+      if (isNonObjectPrimitive(part)) {
+        return 'non-object';
+      }
+      if (isNullableType(part)) {
+        continue;
+      }
+
+      const analysis = isObjectLikeType(part, checker);
+      if (analysis === 'non-object') {
+        return 'non-object';
+      }
+      if (analysis === 'object') {
+        hasObject = true;
+      }
+    }
+    return hasObject ? 'object' : 'unknown';
+  }
+
+  if (isAnyOrUnknown(type)) {
+    return 'unknown';
+  }
+
+  if (isNonObjectPrimitive(type) || isNullableType(type)) {
+    return 'non-object';
+  }
+
+  if ((type.flags & ts.TypeFlags.Object) === 0) {
+    return 'non-object';
+  }
+
+  if (checker.isArrayType(type) || checker.isTupleType(type)) {
+    return 'non-object';
+  }
+
+  if (type.getCallSignatures().length > 0) {
+    return 'non-object';
+  }
+
+  if (hasRequiredProperties(type, checker)) {
+    return 'non-object';
+  }
+
+  return 'object';
+}
+
+function isObjectKeysLength(node: TSESTree.Node, name: string): boolean {
+  if (
+    node.type === AST_NODE_TYPES.MemberExpression &&
+    !node.computed &&
+    node.property.type === AST_NODE_TYPES.Identifier &&
+    node.property.name === 'length' &&
+    node.object.type === AST_NODE_TYPES.CallExpression &&
+    node.object.callee.type === AST_NODE_TYPES.MemberExpression &&
+    !node.object.callee.computed &&
+    node.object.callee.object.type === AST_NODE_TYPES.Identifier &&
+    node.object.callee.object.name === 'Object' &&
+    node.object.callee.property.type === AST_NODE_TYPES.Identifier &&
+    node.object.callee.property.name === 'keys' &&
+    node.object.arguments.length === 1 &&
+    node.object.arguments[0].type === AST_NODE_TYPES.Identifier &&
+    node.object.arguments[0].name === name
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function conditionHasEmptyCheck(
+  node: TSESTree.Node | undefined,
+  name: string,
+  emptyCheckFunctions: Set<string>,
+): boolean {
+  if (!node) return false;
+
+  switch (node.type) {
+    case AST_NODE_TYPES.LogicalExpression:
+      return (
+        conditionHasEmptyCheck(node.left, name, emptyCheckFunctions) ||
+        conditionHasEmptyCheck(node.right, name, emptyCheckFunctions)
+      );
+    case AST_NODE_TYPES.BinaryExpression:
+      if (isObjectKeysLength(node.left, name) || isObjectKeysLength(node.right, name)) {
+        return true;
+      }
+      return (
+        conditionHasEmptyCheck(node.left, name, emptyCheckFunctions) ||
+        conditionHasEmptyCheck(node.right, name, emptyCheckFunctions)
+      );
+    case AST_NODE_TYPES.UnaryExpression:
+      if (node.operator === '!' && isObjectKeysLength(node.argument, name)) {
+        return true;
+      }
+      return conditionHasEmptyCheck(node.argument, name, emptyCheckFunctions);
+    case AST_NODE_TYPES.CallExpression: {
+      const callee = node.callee;
+      if (
+        callee.type === AST_NODE_TYPES.Identifier &&
+        emptyCheckFunctions.has(callee.name) &&
+        node.arguments[0] &&
+        node.arguments[0].type === AST_NODE_TYPES.Identifier &&
+        node.arguments[0].name === name
+      ) {
+        return true;
+      }
+      if (
+        callee.type === AST_NODE_TYPES.MemberExpression &&
+        !callee.computed &&
+        callee.property.type === AST_NODE_TYPES.Identifier &&
+        emptyCheckFunctions.has(callee.property.name) &&
+        node.arguments[0] &&
+        node.arguments[0].type === AST_NODE_TYPES.Identifier &&
+        node.arguments[0].name === name
+      ) {
+        return true;
+      }
+
+      return (
+        conditionHasEmptyCheck(callee, name, emptyCheckFunctions) ||
+        node.arguments.some((argument) => conditionHasEmptyCheck(argument, name, emptyCheckFunctions))
+      );
+    }
+    case AST_NODE_TYPES.MemberExpression:
+      return conditionHasEmptyCheck(node.object, name, emptyCheckFunctions);
+    case AST_NODE_TYPES.ConditionalExpression:
+      return (
+        conditionHasEmptyCheck(node.test, name, emptyCheckFunctions) ||
+        conditionHasEmptyCheck(node.consequent, name, emptyCheckFunctions) ||
+        conditionHasEmptyCheck(node.alternate, name, emptyCheckFunctions)
+      );
+    default:
+      return false;
+  }
+}
+
+function collectNegations(
+  node: TSESTree.Expression,
+  results: TSESTree.UnaryExpression[],
+): void {
+  if (node.type === AST_NODE_TYPES.UnaryExpression && node.operator === '!') {
+    results.push(node);
+  } else if (node.type === AST_NODE_TYPES.LogicalExpression) {
+    collectNegations(node.left as TSESTree.Expression, results);
+    collectNegations(node.right as TSESTree.Expression, results);
+  } else if (node.type === AST_NODE_TYPES.ConditionalExpression) {
+    collectNegations(node.test, results);
+  }
+}
+
+function getRootCondition(node: TSESTree.Node): TSESTree.Expression | null {
+  let current: TSESTree.Node | undefined = node;
+  while (current && current.parent) {
+    const parent = current.parent;
+    if (
+      (parent.type === AST_NODE_TYPES.IfStatement && parent.test === current) ||
+      (parent.type === AST_NODE_TYPES.WhileStatement && parent.test === current) ||
+      (parent.type === AST_NODE_TYPES.DoWhileStatement && parent.test === current) ||
+      (parent.type === AST_NODE_TYPES.ForStatement && parent.test === current) ||
+      (parent.type === AST_NODE_TYPES.ConditionalExpression && parent.test === current)
+    ) {
+      return current as TSESTree.Expression;
+    }
+    if (
+      parent.type === AST_NODE_TYPES.LogicalExpression ||
+      parent.type === AST_NODE_TYPES.BinaryExpression ||
+      parent.type === AST_NODE_TYPES.UnaryExpression ||
+      parent.type === AST_NODE_TYPES.ConditionalExpression
+    ) {
+      current = parent;
+      continue;
+    }
+    break;
+  }
+  return null;
+}
+
+export const eslintEnforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Options> =
+  createRule({
+    name: 'eslint-enforce-empty-object-check',
+    meta: {
+      type: 'problem',
+      docs: {
+        description:
+          'Ensure object existence checks also guard against empty objects so that empty payloads are treated like missing data.',
+        recommended: 'error',
+      },
+      fixable: 'code',
+      schema: [
+        {
+          type: 'object',
+          properties: {
+            objectNamePattern: {
+              type: 'array',
+              items: { type: 'string' },
+            },
+            ignoreInLoops: {
+              type: 'boolean',
+            },
+            emptyCheckFunctions: {
+              type: 'array',
+              items: { type: 'string' },
+            },
+          },
+          additionalProperties: false,
+        },
+      ],
+      messages: {
+        missingEmptyObjectCheck:
+          'Object "{{name}}" is only checked for falsiness, so an empty object would pass and execute the guarded branch. Empty API payloads often behave like missing data—also verify Object.keys({{name}}).length === 0 to prevent silent fallthrough.',
+      },
+    },
+    defaultOptions: [{}],
+    create(context) {
+      const sourceCode = context.getSourceCode();
+      const parserServices = sourceCode.parserServices;
+      const checker = parserServices?.program?.getTypeChecker();
+
+      const options: Options[0] = context.options[0] ?? {};
+      const {
+        objectNamePattern = DEFAULT_OBJECT_SUFFIXES,
+        ignoreInLoops = false,
+        emptyCheckFunctions = DEFAULT_EMPTY_CHECK_FUNCTIONS,
+      } = options;
+
+      const patternSet: Set<string> = new Set(
+        objectNamePattern && objectNamePattern.length > 0
+          ? objectNamePattern
+          : DEFAULT_OBJECT_SUFFIXES,
+      );
+      const emptyCheckFunctionsSet: Set<string> = new Set(
+        emptyCheckFunctions.length > 0 ? emptyCheckFunctions : DEFAULT_EMPTY_CHECK_FUNCTIONS,
+      );
+
+      function isLikelyObject(identifier: TSESTree.Identifier): boolean {
+        if (checker && parserServices?.esTreeNodeToTSNodeMap) {
+          try {
+            const tsNode = parserServices.esTreeNodeToTSNodeMap.get(identifier);
+            const type = checker.getTypeAtLocation(tsNode);
+            const analysis = isObjectLikeType(type, checker);
+            if (analysis === 'object') {
+              return true;
+            }
+            if (analysis === 'non-object') {
+              return false;
+            }
+          } catch {
+            // Fall back to naming heuristic when type lookup fails
+          }
+        }
+        return nameLooksObjectLike(identifier.name, patternSet);
+      }
+
+      function reportNegation(node: TSESTree.UnaryExpression, identifier: TSESTree.Identifier) {
+        const lowerName = identifier.name.toLowerCase();
+        if (NON_OBJECT_LIKE_NAMES.includes(lowerName)) {
+          return;
+        }
+
+        if (ignoreInLoops && isInsideLoop(node)) {
+          return;
+        }
+
+        const conditionRoot = getRootCondition(node);
+        if (conditionRoot && conditionHasEmptyCheck(conditionRoot, identifier.name, emptyCheckFunctionsSet)) {
+          return;
+        }
+
+        if (!isLikelyObject(identifier)) {
+          return;
+        }
+
+        context.report({
+          node,
+          messageId: 'missingEmptyObjectCheck',
+          data: {
+            name: identifier.name,
+          },
+          fix(fixer) {
+            const identifierText = sourceCode.getText(identifier);
+            const replacement = `(${node.operator}${identifierText} || Object.keys(${identifierText}).length === 0)`;
+            return fixer.replaceText(node, replacement);
+          },
+        });
+      }
+
+      function handleTestExpression(expression: TSESTree.Expression) {
+        const negations: TSESTree.UnaryExpression[] = [];
+        collectNegations(expression, negations);
+
+        for (const negation of negations) {
+          if (
+            negation.argument.type === AST_NODE_TYPES.Identifier &&
+            negation.operator === '!'
+          ) {
+            reportNegation(negation, negation.argument);
+          }
+        }
+      }
+
+      return {
+        IfStatement(node) {
+          if (node.test) {
+            handleTestExpression(node.test);
+          }
+        },
+        WhileStatement(node) {
+          if (node.test) {
+            handleTestExpression(node.test);
+          }
+        },
+        DoWhileStatement(node) {
+          if (node.test) {
+            handleTestExpression(node.test);
+          }
+        },
+        ForStatement(node) {
+          if (node.test) {
+            handleTestExpression(node.test as TSESTree.Expression);
+          }
+        },
+        ConditionalExpression(node) {
+          handleTestExpression(node.test);
+        },
+      };
+    },
+  });

@@ -3,6 +3,7 @@ import { classMethodsReadTopToBottom } from './rules/class-methods-read-top-to-b
 import { default as consistentCallbackNaming } from './rules/consistent-callback-naming';
 import { parallelizeAsyncOperations } from './rules/parallelize-async-operations';
 import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
+import { eslintEnforceEmptyObjectCheck } from './rules/eslint-enforce-empty-object-check';
 import { enforceIdentifiableFirestoreType } from './rules/enforce-identifiable-firestore-type';
 import { default as enforceCallbackMemo } from './rules/enforce-callback-memo';
 import { enforceCallableTypes } from './rules/enforce-callable-types';
@@ -159,6 +160,7 @@ module.exports = {
         '@blumintinc/blumint/class-methods-read-top-to-bottom': 'error',
         '@blumintinc/blumint/consistent-callback-naming': 'error',
         '@blumintinc/blumint/dynamic-https-errors': 'error',
+        '@blumintinc/blumint/eslint-enforce-empty-object-check': 'error',
         '@blumintinc/blumint/enforce-mui-rounded-icons': 'error',
         '@blumintinc/blumint/enforce-identifiable-firestore-type': 'error',
         '@blumintinc/blumint/enforce-callback-memo': 'error',
@@ -297,6 +299,7 @@ module.exports = {
     'consistent-callback-naming': consistentCallbackNaming,
     'parallelize-async-operations': parallelizeAsyncOperations,
     'dynamic-https-errors': dynamicHttpsErrors,
+    'eslint-enforce-empty-object-check': eslintEnforceEmptyObjectCheck,
     'enforce-identifiable-firestore-type': enforceIdentifiableFirestoreType,
     'enforce-callback-memo': enforceCallbackMemo,
     'enforce-react-type-naming': enforceReactTypeNaming,
