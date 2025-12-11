@@ -73,6 +73,25 @@ const settings = { enabled: true, feature: false };
 
 function authorized(): boolean { return checkAuth(); }
 function userExists(id: string): boolean { /* ... */ }
+
+// Getters returning booleans without prefixes
+class User {
+  get active() {
+    return this.status === 'active';
+  }
+
+  get admin() {
+    return this.role === 'admin';
+  }
+
+  get verified() {
+    return this.emailVerified && this.phoneVerified;
+  }
+
+  get premium() {
+    return this.subscription?.tier === 'premium';
+  }
+}
 ```
 
 ### Examples of **correct** code for this rule
@@ -116,6 +135,25 @@ const settings = { isEnabled: true, hasFeature: false };
 
 function isAuthorized(): boolean { return checkAuth(); }
 function canPerformAction(): boolean { return true; }
+
+// Getters returning booleans with prefixes
+class User {
+  get isActive() {
+    return this.status === 'active';
+  }
+
+  get isAdmin() {
+    return this.role === 'admin';
+  }
+
+  get isVerified() {
+    return this.emailVerified && this.phoneVerified;
+  }
+
+  get hasPremium() {
+    return this.subscription?.tier === 'premium';
+  }
+}
 ```
 
 ### Special Cases
@@ -129,6 +167,14 @@ function isString(value: any): value is string { return typeof value === "string
 function isUser(obj: any): obj is User { return obj && obj.id && obj.name; }
 const isNumber = (val: any): val is number => typeof val === "number";
 ```
+
+#### Boolean getters
+
+- Getters must follow boolean prefixes when they either declare a `boolean` return type or when every return statement evaluates to a boolean expression (comparisons, logical operators, negations, or identifiers/calls with boolean-style prefixes).
+- Getters are skipped when any branch returns a non-boolean value or mixes boolean and non-boolean returns to avoid false positives on computed property accessors.
+- Boolean inference covers comparison operators including `in` and `instanceof`, so getters like `return 'key' in store` or `return value instanceof Error` are treated as boolean-returning.
+- If inheritance contracts prevent renaming, set `ignoreOverriddenGetters: true` to skip abstract or `override` getters.
+- Accessing underscore-prefixed members (e.g., `this._name`) does not imply a boolean return on its own; those are treated as neutral private fields unless their names match a boolean prefix or suffix.
 
 #### Private/Internal Properties with Underscore Prefix
 
@@ -161,7 +207,8 @@ This rule accepts an options object with the following properties:
 
 ```ts
 {
-  "prefixes": string[]
+  "prefixes": string[],
+  "ignoreOverriddenGetters": boolean
 }
 ```
 
@@ -182,6 +229,10 @@ An array of strings that are valid prefixes for boolean names. If not provided, 
 ```
 
 With this configuration, only the prefixes "is", "has", "can", and "should" will be allowed for boolean names.
+
+### `ignoreOverriddenGetters`
+
+When `true`, getters marked `override` or declared as abstract are ignored. Use this when renaming getters would break inheritance contracts or interface compliance. Defaults to `false` so boolean prefixes are enforced on getters unless explicitly opted out.
 
 ## When Not To Use It
 

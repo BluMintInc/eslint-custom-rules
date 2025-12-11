@@ -13,9 +13,16 @@ export const genericStartsWithT: TSESLint.RuleModule<
             typeof param.name.name === 'string' &&
             param.name.name[0] !== 'T'
           ) {
+            const name = param.name.name;
+            const suggestedName = `T${name}`;
+
             context.report({
               node: param,
               messageId: 'genericStartsWithT',
+              data: {
+                name,
+                suggestedName,
+              },
             });
           }
         }
@@ -27,12 +34,14 @@ export const genericStartsWithT: TSESLint.RuleModule<
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce TypeScript generic types to start with T',
+      description:
+        'Enforce TypeScript generic type parameters to start with T so they stand out from runtime values.',
       recommended: 'error',
     },
     schema: [],
     messages: {
-      genericStartsWithT: 'Generic type parameter should start with T.',
+      genericStartsWithT:
+        'Generic type parameter "{{name}}" should start with "T" (e.g., "{{suggestedName}}") so readers immediately recognize it as a generic type rather than a concrete value. T-prefixed generics make type parameters stand out in signatures and prevent confusion with runtime parameters.',
     },
   },
   defaultOptions: [],

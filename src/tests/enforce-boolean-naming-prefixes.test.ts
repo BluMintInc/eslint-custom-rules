@@ -100,6 +100,98 @@ ruleTesterTs.run(
       // Function declarations returning boolean with approved prefixes
       'function isAuthorized(): boolean { return checkAuth(); }',
       'function canPerformAction(): boolean { return true; }',
+
+      // Getters already using boolean prefixes
+      `
+    class User {
+      get isActive() {
+        return this.status === 'active';
+      }
+
+      get isAdmin() {
+        return this.role === 'admin';
+      }
+
+      get isVerified() {
+        return this.emailVerified && this.phoneVerified;
+      }
+
+      get hasPremium() {
+        return this.subscription?.tier === 'premium';
+      }
+    }
+    `,
+
+      // Getters that return non-boolean values should not be flagged
+      `
+    class Profile {
+      get name() {
+        return this.firstName + ' ' + this.lastName;
+      }
+
+      get age() {
+        return this.calculateAge();
+      }
+
+      get profile() {
+        return { name: this.name, age: this.age };
+      }
+    }
+    `,
+
+      // Getter returning private non-boolean field should not imply boolean
+      `
+    class PrivateState {
+      get name() {
+        return this._name;
+      }
+    }
+    `,
+
+      // Getters with mixed return types are ignored
+      `
+    class UserWithStatus {
+      get status() {
+        if (this.isDeleted) return false;
+        if (this.isPending) return 'pending';
+        return this.isActive;
+      }
+    }
+    `,
+
+      // Underscore-prefixed getter is allowed
+      `
+    class FeatureFlags {
+      get _enabled() {
+        return !!this.flags.featureX;
+      }
+    }
+    `,
+
+      // Getter returning boolean but ignored when configured for overrides
+      {
+        code: `
+    abstract class BaseEntity {
+      abstract get active(): boolean;
+    }
+
+    class User extends BaseEntity {
+      override get active() {
+        return this.status === 'active';
+      }
+    }
+    `,
+        options: [{ ignoreOverriddenGetters: true }],
+      },
+
+      // Getter with explicit boolean annotation and prefix
+      `
+    class Account {
+      get isLocked(): boolean {
+        return this.failedAttempts > 3;
+      }
+    }
+    `,
     ],
     invalid: [
       // Variables without proper boolean prefixes
@@ -322,6 +414,215 @@ ruleTesterTs.run(
             capitalizedName: 'Permission',
             prefixes: defaultPrefixes,
           }),
+        ],
+      },
+
+      // Getters returning booleans without prefixes
+      {
+        code: `
+      class User {
+        get active() {
+          return this.status === 'active';
+        }
+
+        get admin() {
+          return this.role === 'admin';
+        }
+
+        get verified() {
+          return this.emailVerified && this.phoneVerified;
+        }
+
+        get premium() {
+          return this.subscription?.tier === 'premium';
+        }
+      }
+      `,
+        errors: [
+          {
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'getter',
+              name: 'active',
+              capitalizedName: 'Active',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+            },
+          },
+          {
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'getter',
+              name: 'admin',
+              capitalizedName: 'Admin',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+            },
+          },
+          {
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'getter',
+              name: 'verified',
+              capitalizedName: 'Verified',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+            },
+          },
+          {
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'getter',
+              name: 'premium',
+              capitalizedName: 'Premium',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+            },
+          },
+        ],
+      },
+      {
+        code: `
+      class FeatureFlags {
+        get enabled() {
+          return true;
+        }
+      }
+      `,
+        errors: [
+          {
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'getter',
+              name: 'enabled',
+              capitalizedName: 'Enabled',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+            },
+          },
+        ],
+      },
+      {
+        code: `
+      class User {
+        get active(): boolean {
+          return this.status === 'active';
+        }
+      }
+      `,
+        errors: [
+          {
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'getter',
+              name: 'active',
+              capitalizedName: 'Active',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+            },
+          },
+        ],
+      },
+      {
+        code: `
+      class Dictionary {
+        map = {};
+
+        get keyPresent() {
+          return 'key' in this.map;
+        }
+      }
+      `,
+        errors: [
+          {
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'getter',
+              name: 'keyPresent',
+              capitalizedName: 'KeyPresent',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+            },
+          },
+        ],
+      },
+      {
+        code: `
+      class Checker {
+        value: unknown;
+
+        get instance() {
+          return this.value instanceof Error;
+        }
+      }
+      `,
+        errors: [
+          {
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'getter',
+              name: 'instance',
+              capitalizedName: 'Instance',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+            },
+          },
+        ],
+      },
+      {
+        code: `
+      class User {
+        get trusted() {
+          return this.isVerified ? this.isAdmin : this.isActive;
+        }
+      }
+      `,
+        errors: [
+          {
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'getter',
+              name: 'trusted',
+              capitalizedName: 'Trusted',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+            },
+          },
+        ],
+      },
+      {
+        code: `
+      abstract class Base {
+        abstract get active(): boolean;
+      }
+
+      class User extends Base {
+        override get active() {
+          return this.status === 'active';
+        }
+      }
+      `,
+        errors: [
+          {
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'getter',
+              name: 'active',
+              capitalizedName: 'Active',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+            },
+          },
+          {
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'getter',
+              name: 'active',
+              capitalizedName: 'Active',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+            },
+          },
         ],
       },
 
