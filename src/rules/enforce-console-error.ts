@@ -27,6 +27,11 @@ export const enforceConsoleError = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
+    type FunctionNode =
+      | TSESTree.FunctionDeclaration
+      | TSESTree.FunctionExpression
+      | TSESTree.ArrowFunctionExpression;
+
     // Track all open calls and console calls in the entire file
     const openCalls: Array<{
       node: TSESTree.CallExpression;
@@ -39,6 +44,7 @@ export const enforceConsoleError = createRule<[], MessageIds>({
       functionScope: TSESTree.Node;
     }> = [];
     let hasUseAlertDialog = false;
+    const functionScopeStack: TSESTree.Node[] = [];
     let currentFunctionScope: TSESTree.Node | null = null;
 
     // Track renamed open functions from useAlertDialog destructuring
@@ -103,22 +109,50 @@ export const enforceConsoleError = createRule<[], MessageIds>({
       return null;
     }
 
+    const enterFunction = (node: FunctionNode) => {
+      functionScopeStack.push(node);
+      currentFunctionScope = functionScopeStack[functionScopeStack.length - 1];
+    };
+
+    const exitFunction = () => {
+      functionScopeStack.pop();
+      currentFunctionScope =
+        functionScopeStack[functionScopeStack.length - 1] ?? null;
+    };
+
     return {
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
         // Track aliased imports of useAlertDialog
-        if (
-          node.source.value === '../useAlertDialog' ||
-          node.source.value === './useAlertDialog'
-        ) {
-          for (const specifier of node.specifiers) {
-            if (
-              specifier.type === AST_NODE_TYPES.ImportSpecifier &&
-              specifier.imported.type === AST_NODE_TYPES.Identifier &&
-              specifier.imported.name === 'useAlertDialog'
-            ) {
-              if (specifier.local.type === AST_NODE_TYPES.Identifier) {
-                useAlertDialogNames.add(specifier.local.name);
-              }
+        const importPath = String(node.source.value);
+        const isAlertDialogImport =
+          importPath === '../useAlertDialog' ||
+          importPath === './useAlertDialog' ||
+          importPath === 'useAlertDialog' ||
+          importPath.endsWith('/useAlertDialog') ||
+          importPath.endsWith('/useAlertDialog/index') ||
+          importPath === '@/hooks/useAlertDialog' ||
+          importPath === 'src/hooks/useAlertDialog';
+
+        if (!isAlertDialogImport) return;
+
+        for (const specifier of node.specifiers) {
+          // Named imports
+          if (
+            specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+            specifier.imported.type === AST_NODE_TYPES.Identifier &&
+            specifier.imported.name === 'useAlertDialog' &&
+            specifier.local.type === AST_NODE_TYPES.Identifier
+          ) {
+            useAlertDialogNames.add(specifier.local.name);
+          }
+
+          // Default or namespace imports still imply useAlertDialog is available via the local name
+          if (
+            specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
+            specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier
+          ) {
+            if (specifier.local.type === AST_NODE_TYPES.Identifier) {
+              useAlertDialogNames.add(specifier.local.name);
             }
           }
         }
@@ -226,24 +260,13 @@ export const enforceConsoleError = createRule<[], MessageIds>({
         });
       },
 
-      'FunctionDeclaration, FunctionExpression, ArrowFunctionExpression'(
-        node:
-          | TSESTree.FunctionDeclaration
-          | TSESTree.FunctionExpression
-          | TSESTree.ArrowFunctionExpression,
-      ) {
-        currentFunctionScope = node;
-      },
+      FunctionDeclaration: enterFunction,
+      FunctionExpression: enterFunction,
+      ArrowFunctionExpression: enterFunction,
 
-      'FunctionDeclaration:exit'() {
-        currentFunctionScope = null;
-      },
-      'FunctionExpression:exit'() {
-        currentFunctionScope = null;
-      },
-      'ArrowFunctionExpression:exit'() {
-        currentFunctionScope = null;
-      },
+      'FunctionDeclaration:exit': exitFunction,
+      'FunctionExpression:exit': exitFunction,
+      'ArrowFunctionExpression:exit': exitFunction,
 
       VariableDeclarator(node: TSESTree.VariableDeclarator) {
         // Track destructuring of open functions from useAlertDialog

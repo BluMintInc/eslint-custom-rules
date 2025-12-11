@@ -14,6 +14,8 @@ export const arrayMethodsThisContext: TSESLint.RuleModule<
   never[]
 > = createRule({
   create(context) {
+    const sourceCode = context.getSourceCode();
+
     return {
       CallExpression(node: TSESTree.CallExpression) {
         // Array method called with a class method reference
@@ -25,9 +27,25 @@ export const arrayMethodsThisContext: TSESLint.RuleModule<
           node.arguments[0].type === 'MemberExpression' &&
           node.arguments[0].object.type === 'ThisExpression'
         ) {
+          const methodProperty = node.arguments[0].property;
+          const methodAccessor = node.arguments[0].computed
+            ? `[${sourceCode.getText(methodProperty)}]`
+            : methodProperty.type === 'Identifier'
+              ? `.${methodProperty.name}`
+              : methodProperty.type === 'PrivateIdentifier'
+                ? `.#${methodProperty.name}`
+                : `.${sourceCode.getText(methodProperty)}`;
+
+          const methodReference = `this${methodAccessor}`;
+
           context.report({
             node: node.arguments[0],
             messageId: 'unexpected',
+            data: {
+              arrayMethod: node.callee.property.name,
+              methodAccessor,
+              methodReference,
+            },
           });
         }
 
@@ -48,6 +66,9 @@ export const arrayMethodsThisContext: TSESLint.RuleModule<
           context.report({
             node: node.arguments[0],
             messageId: 'preferArrow',
+            data: {
+              arrayMethod: node.callee.property.name,
+            },
           });
         }
       },
@@ -64,9 +85,9 @@ export const arrayMethodsThisContext: TSESLint.RuleModule<
     schema: [],
     messages: {
       unexpected:
-        'Use an arrow function to preserve "this" context in array methods. Instead of `array.map(this.method)`, use `array.map((x) => this.method(x))`.',
+        'Array method "{{arrayMethod}}" receives the class method reference {{methodReference}}, which strips its "this" binding when the callback runs. Use an arrow callback so the class instance remains available, e.g. {{arrayMethod}}((item) => this{{methodAccessor}}(item)).',
       preferArrow:
-        'Use an arrow function instead of binding "this". Instead of `array.map(function(x) {}.bind(this))`, use `array.map((x) => {...})`.',
+        'Array method "{{arrayMethod}}" binds a callback with ".bind(this)", which allocates a new function and hides that the code depends on the class instance. Prefer an arrow callback that captures "this" without rebinding, e.g. {{arrayMethod}}((item) => this.handleItem(item)).',
     },
   },
   defaultOptions: [],
