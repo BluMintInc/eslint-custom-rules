@@ -5,6 +5,7 @@ import type { Input } from './types';
 const BOT_NAME_PATTERN = /(coderabbit|graphite|cursor|bugbot)/i;
 const SUCCESS_PATTERN = /✅ All .* are resolved/;
 const NO_PR_PATTERN = /No open pull request found/i;
+const SAFE_BRANCH_PATTERN = /^(?!\/)(?!.*\/\/)(?!.*\/$)[A-Za-z0-9._/-]+$/;
 
 export function extractPrReviewContext(branchName: string) {
   // Pattern: .*-review-pr-(\d+)-(\d+)(?:[/-]|$)
@@ -111,19 +112,12 @@ export function determineBotReview(params: {
   }
 }
 
-export function validateUnresolvedComments(params: {
-  readonly prNumber: number;
-  readonly reviewId?: number;
-  readonly isBot: boolean;
-}) {
-  const { prNumber, reviewId, isBot } = params;
+type CommentCheckResult = {
+  readonly hasComments: boolean;
+  readonly commentsList: string;
+};
 
-  const reviewArg = reviewId !== undefined ? ` --review-batch=${reviewId}` : '';
-
-  const command = isBot
-    ? `npm run fetch-unresolved-bot-comments -- --pr=${prNumber}${reviewArg}`
-    : `npm run fetch-unresolved-comments -- --pr=${prNumber}${reviewArg}`;
-
+function runUnresolvedCommentCheck(command: string): CommentCheckResult {
   const result = executeCommand(command);
 
   if (!result.isSuccess) {
@@ -131,21 +125,59 @@ export function validateUnresolvedComments(params: {
     return {
       hasComments: false,
       commentsList: 'Failed to fetch comments',
-    } as const;
+    };
   }
 
-  // Parse output to detect if comments remain
-  // The script outputs "✅ All ... are resolved" when no comments remain
   const hasComments =
     !SUCCESS_PATTERN.test(result.output) && !NO_PR_PATTERN.test(result.output);
 
   return {
     hasComments,
     commentsList: result.output,
-  } as const;
+  };
+}
+
+export function validateBotUnresolvedComments(params: {
+  readonly prNumber: number;
+  readonly reviewId?: number;
+}): CommentCheckResult {
+  const { prNumber, reviewId } = params;
+  const reviewArg = reviewId !== undefined ? ` --review-batch=${reviewId}` : '';
+  return runUnresolvedCommentCheck(
+    `npm run fetch-unresolved-bot-comments -- --pr=${prNumber}${reviewArg}`,
+  );
+}
+
+export function validateHumanUnresolvedComments(params: {
+  readonly prNumber: number;
+  readonly reviewId?: number;
+}): CommentCheckResult {
+  const { prNumber, reviewId } = params;
+  const reviewArg = reviewId !== undefined ? ` --review-batch=${reviewId}` : '';
+  return runUnresolvedCommentCheck(
+    `npm run fetch-unresolved-comments -- --pr=${prNumber}${reviewArg}`,
+  );
+}
+
+export function validateUnresolvedComments(params: {
+  readonly prNumber: number;
+  readonly reviewId?: number;
+  readonly isBot: boolean;
+}): CommentCheckResult {
+  const { prNumber, reviewId, isBot } = params;
+  return isBot
+    ? validateBotUnresolvedComments({ prNumber, reviewId })
+    : validateHumanUnresolvedComments({ prNumber, reviewId });
 }
 
 function findOpenPrNumberForBranch(branchName: string) {
+  if (!SAFE_BRANCH_PATTERN.test(branchName)) {
+    console.error(
+      `Branch name contains unsupported characters: ${branchName}. Skipping PR lookup.`,
+    );
+    return null;
+  }
+
   const prLookup = executeCommand(
     `gh pr list --head "${branchName}" --state open --json number --jq '.[0].number'`,
   );
@@ -186,14 +218,12 @@ function validateWithoutReviewBatch(branchName: string): ReviewDetection {
     return null;
   }
 
-  const botResult = validateUnresolvedComments({
+  const botResult = validateBotUnresolvedComments({
     prNumber,
-    isBot: true,
   });
 
-  const humanResult = validateUnresolvedComments({
+  const humanResult = validateHumanUnresolvedComments({
     prNumber,
-    isBot: false,
   });
 
   const hasBot = botResult.hasComments;
@@ -295,6 +325,13 @@ export function performPrReviewCheck(_input: Input) {
     }
 
     const branchName = branchResult.output.trim();
+    if (!SAFE_BRANCH_PATTERN.test(branchName)) {
+      console.error(
+        `Branch name contains unsupported characters: ${branchName}. Skipping PR review check.`,
+      );
+      return null;
+    }
+
     const context = extractPrReviewContext(branchName);
 
     if (!context) {
@@ -303,20 +340,18 @@ export function performPrReviewCheck(_input: Input) {
         return null; // Not a PR review branch
       }
 
-      const { prNumber, reviewType } = fallbackResult;
-
       console.error(
-        `Detected unresolved ${reviewType} review comments on PR #${prNumber} for branch ${branchName}`,
+        `Detected unresolved ${fallbackResult.reviewType} review comments on PR #${fallbackResult.prNumber} for branch ${branchName}`,
       );
 
       const followupMessage =
-        reviewType === 'mixed'
+        fallbackResult.reviewType === 'mixed'
           ? constructMixedFollowupMessage({
               botCommentsList: fallbackResult.botCommentsList,
               humanCommentsList: fallbackResult.humanCommentsList,
             })
           : constructFollowupMessage(
-              reviewType === 'bot',
+              fallbackResult.reviewType === 'bot',
               fallbackResult.commentsList,
             );
 
@@ -334,10 +369,9 @@ export function performPrReviewCheck(_input: Input) {
     console.error(`Review type: ${isBot ? 'bot' : 'human'}`);
 
     // Check for unresolved comments
-    const { hasComments, commentsList } = validateUnresolvedComments({
-      ...context,
-      isBot,
-    });
+    const { hasComments, commentsList } = isBot
+      ? validateBotUnresolvedComments(context)
+      : validateHumanUnresolvedComments(context);
 
     if (!hasComments) {
       console.error('No unresolved comments remaining');

@@ -86,6 +86,13 @@ REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 mkdir -p "$REPO_ROOT/.cursor/tmp"
 TMP_DIR="$REPO_ROOT/.cursor/tmp/pr_review"
 mkdir -p "$TMP_DIR"
+ALL_THREADS_FILE="$TMP_DIR/review_threads.json"
+PAGE_FILE="$TMP_DIR/review_threads_page.json"
+TMP_FILE="$TMP_DIR/review_threads_tmp.json"
+
+# Clean up temp files on exit; these live under .cursor/tmp (gitignored) but
+# we remove them to avoid accumulation across runs.
+trap 'rm -f "$ALL_THREADS_FILE" "$PAGE_FILE" "$TMP_FILE"' EXIT
 
 # Owner / repo
 OWNER=$(gh repo view --json owner --jq '.owner.login')
@@ -181,9 +188,6 @@ def line_suffix(l): if l then ":" + (l|tostring) else "" end;
     )
   end
 '
-ALL_THREADS_FILE="$TMP_DIR/review_threads.json"
-PAGE_FILE="$TMP_DIR/review_threads_page.json"
-TMP_FILE="$TMP_DIR/review_threads_tmp.json"
 echo '[]' > "$ALL_THREADS_FILE"
 
 # Paginate through ALL reviewThreads

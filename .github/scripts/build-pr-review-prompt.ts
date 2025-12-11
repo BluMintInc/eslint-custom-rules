@@ -5,7 +5,7 @@ interface ReviewContext {
     is_bot: boolean;
     comment_count: number;
     id: number;
-  } | null;
+  };
   pr: {
     number: number;
     title: string;

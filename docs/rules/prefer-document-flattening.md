@@ -119,9 +119,9 @@ await userSetter.set({
 
 You might consider disabling this rule if:
 
-1. You're working with documents that don't have nested objects.
-2. You have specific performance requirements that benefit from nested object structures.
-3. You're using a different pattern for document updates that doesn't rely on field paths.
+1. The documents you handle do not have nested objects.
+2. Performance needs are better served by nested object structures.
+3. A different document-update pattern avoids field paths entirely.
 
 ## Further Reading
 

@@ -140,7 +140,7 @@ When to use LBYL:
 3.
 ```markdown
 :pushpin: New Hook Alert: `useLatestCallback` :rocket:
-We've added a new npm dependency: `use-latest-callback` (npm link)[https://www.npmjs.com/package/use-latest-callback].
+We've added a new npm dependency: `use-latest-callback` [npm link](https://www.npmjs.com/package/use-latest-callback).
 Moving forward, please prefer `useLatestCallback` instead of `useCallback` wherever possible.
 
 :white_check_mark: Why?

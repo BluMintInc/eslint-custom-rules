@@ -31,62 +31,42 @@ export const enforceCssMediaQueries = createRule<[], MessageIds>({
       });
 
     return {
-      // Check for Material-UI's useMediaQuery and react-responsive imports
+      // Only react-responsive is handled at the declaration level to avoid duplicates.
       ImportDeclaration(node) {
-        // Check for @mui/material useMediaQuery
         if (
-          node.source.value === '@mui/material' &&
-          node.specifiers.some(
-            (specifier) =>
-              specifier.type === AST_NODE_TYPES.ImportSpecifier &&
-              specifier.imported.type === AST_NODE_TYPES.Identifier &&
-              specifier.imported.name === 'useMediaQuery',
-          )
+          node.source.value !== 'react-responsive' &&
+          !node.source.value.includes('react-responsive/')
         ) {
-          reportUsage(node, 'useMediaQuery import from @mui/material');
+          return;
         }
 
-        // Check for react-responsive imports
-        if (
-          node.source.value === 'react-responsive' ||
-          node.source.value.includes('react-responsive/')
-        ) {
-          reportUsage(
-            node,
-            `react-responsive import "${String(node.source.value)}"`,
-          );
-        }
-
-        // Check for useMobile import from hooks/useMobile
-        if (
-          node.source.value.includes('hooks/useMobile') &&
-          node.specifiers.some(
-            (specifier) =>
-              specifier.type === AST_NODE_TYPES.ImportSpecifier &&
-              specifier.imported.type === AST_NODE_TYPES.Identifier &&
-              specifier.imported.name === 'useMobile',
-          )
-        ) {
-          reportUsage(
-            node,
-            `useMobile import from ${String(node.source.value)}`,
-          );
-        }
+        reportUsage(
+          node,
+          `react-responsive import "${String(node.source.value)}"`,
+        );
       },
 
-      // Check for specific import specifiers
+      // Handle specific specifiers to avoid duplicate diagnostics.
       ImportSpecifier(node) {
         if (
-          node.parent &&
-          node.parent.type === AST_NODE_TYPES.ImportDeclaration &&
-          node.imported.type === AST_NODE_TYPES.Identifier &&
-          // Check for useMediaQuery from @mui/material
-          ((node.parent.source.value === '@mui/material' &&
-            node.imported.name === 'useMediaQuery') ||
-            // Check for useMobile from any source
-            node.imported.name === 'useMobile')
+          node.parent?.type === AST_NODE_TYPES.ImportDeclaration &&
+          node.imported.type === AST_NODE_TYPES.Identifier
         ) {
-          reportUsage(node, `${node.imported.name} import`);
+          if (
+            node.parent.source.value === '@mui/material' &&
+            node.imported.name === 'useMediaQuery'
+          ) {
+            reportUsage(node, 'useMediaQuery import from @mui/material');
+            return;
+          }
+
+          if (node.imported.name === 'useMobile') {
+            reportUsage(
+              node,
+              `useMobile import from ${String(node.parent.source.value)}`,
+            );
+            return;
+          }
         }
       },
 

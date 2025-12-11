@@ -66,4 +66,4 @@ export type UserProfile = {
 
 When this rule flags a violation, it provides actionable guidance:
 
-> Arrays of objects are problematic in Firestore: not queryable, destructive updates, and concurrency risks. Prefer `Record<string, T>` keyed by id and include an `index` field for order (use toMap/toArr), or use subcollections/arrays of IDs where appropriate.
+> Arrays of objects are problematic in Firestore: not queryable, destructive updates, and concurrency risks. Prefer `Record<string, T>` keyed by id and include an `index` field for order (e.g., using an array-to-map helper), or use subcollections/arrays of IDs where appropriate.

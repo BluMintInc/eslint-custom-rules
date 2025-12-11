@@ -17,6 +17,7 @@ Boolean-style prefixes communicate that a function answers a yes/no question. If
 
 Bad:
 
+
 ```javascript
 function isAvailable() {
   return 'yes';
@@ -70,3 +71,4 @@ function getUser() {
 ```
 
 - **prefixes**: string[] — prefixes considered boolean-like. Defaults to `["is", "has", "should"]`.
+

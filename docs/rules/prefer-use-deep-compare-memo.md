@@ -83,3 +83,4 @@ const x = useMemo(() => compute(data), [data]);
 ## Version
 
 - Introduced in v1.10.0
+

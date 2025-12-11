@@ -14,10 +14,11 @@ When you are asked to "address all outstanding PR review comments" or a similar 
 1.  **Fetch Unresolved Comments**: Execute the `npm run fetch-unresolved-comments` script. This script uses `gh` to retrieve all unresolved human review comments from the current pull request.
 
     - Optional: To process a specific review batch (e.g., when multiple reviews exist or when a background agent is launched for a single review), pass the review ID via:
-    
+
       ```bash
       npm run fetch-unresolved-comments -- --review-batch=<REVIEW_ID>
       ```
+
       The `<REVIEW_ID>` is the GitHub review identifier (numeric) available in review webhooks and comments. This allows multiple review batches to be addressed in parallel by separate background agents.
 
     - Optional: If running on a branch that isn't the PR's source branch (e.g., a background agent branch), specify the PR explicitly:
@@ -33,6 +34,7 @@ When you are asked to "address all outstanding PR review comments" or a similar 
 4.  **Update Documentation**: If applicable, update any related `.mdc` documentation guides to incorporate the captured insights and reflect current behavior and design decisions (follow the `system-documentation` rule).
 
 5.  **Resolve Addressed Comments**: When you've addressed items, run `npm run resolve-comments -- <comment_url_1> <comment_url_2> ...` to mark the corresponding review threads as resolved. This accepts PR review comment URLs (e.g., `...#discussion_r123456789`) and resolves their threads directly.
+
 
 ## Definition of Done
 - All PR review comments are resolved; `npm run fetch-unresolved-comments` returns none.

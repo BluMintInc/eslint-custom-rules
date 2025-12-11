@@ -16,10 +16,7 @@ function isMemoizeDecorator(
   decorator: TSESTree.Decorator,
   alias: string,
 ): boolean {
-  let expression = decorator.expression;
-  if (expression.type === AST_NODE_TYPES.ParenthesizedExpression) {
-    expression = expression.expression;
-  }
+  const expression = decorator.expression;
   /* @Alias() */
   if (expression.type === AST_NODE_TYPES.CallExpression) {
     const callee = expression.callee;
@@ -116,10 +113,10 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
           messageId: 'requireMemoize',
           fix(fixer) {
             const fixes: TSESLint.RuleFix[] = [];
+            const sourceCode = context.getSourceCode();
             const decoratorIdent = memoizeNamespace
               ? `${memoizeNamespace}.Memoize`
               : memoizeAlias;
-            const decoratorIndent = ' '.repeat(node.loc.start.column);
             const importStatement = `import { Memoize } from '${MEMOIZE_MODULE}';`;
 
             // Add import if it's not already present; ensure we only add once per file
@@ -127,9 +124,8 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
               !hasMemoizeImport &&
               !memoizeNamespace &&
               !scheduledImportFix &&
-              !context.getSourceCode().text.includes(importStatement)
+              !sourceCode.text.includes(importStatement)
             ) {
-              const sourceCode = context.getSourceCode();
               const programBody = (sourceCode.ast as TSESTree.Program).body;
               const firstImport = programBody.find(
                 (n) => n.type === AST_NODE_TYPES.ImportDeclaration,
@@ -169,10 +165,19 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
               node.decorators && node.decorators.length > 0
                 ? node.decorators[0]
                 : node;
+            const insertionStart = insertionTarget.range
+              ? insertionTarget.range[0]
+              : node.range
+                ? node.range[0]
+                : 0;
+            const text = sourceCode.text;
+            const lineStart = text.lastIndexOf('\n', insertionStart - 1) + 1;
+            const leadingWhitespace =
+              text.slice(lineStart, insertionStart).match(/^[ \t]*/)?.[0] ?? '';
             fixes.push(
-              fixer.insertTextBefore(
-                insertionTarget,
-                `@${decoratorIdent}()\n${decoratorIndent}`,
+              fixer.insertTextBeforeRange(
+                [lineStart, lineStart],
+                `${leadingWhitespace}@${decoratorIdent}()\n`,
               ),
             );
 

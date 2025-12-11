@@ -58,9 +58,10 @@ def fetch_coderabbit_summary(pr_number):
         "--json", "comments",
         "--jq", '.comments[] | select(.author.login == "coderabbitai") | .body'
     ])
-    # Take first 100 lines
+    # Take first 100 lines and ensure non-empty content
     lines = result.split('\n')[:100]
-    return '\n'.join(lines) if lines else "(No CodeRabbit summary found)"
+    stripped = '\n'.join(lines).strip()
+    return stripped if stripped else "(No CodeRabbit summary found)"
 
 
 def determine_bot_status(author_login: str, author_type: str) -> bool:

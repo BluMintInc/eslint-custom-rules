@@ -12,6 +12,7 @@ import { readFileSync, existsSync } from 'node:fs';
 const ISSUE_NUMBER = process.env.ISSUE_NUMBER;
 const GITHUB_REPOSITORY =
   process.env.GITHUB_REPOSITORY || 'BluMintInc/eslint-custom-rules';
+const REVIEW_TEAM = process.env.REVIEW_TEAM || '@BluMintInc/core';
 
 if (!ISSUE_NUMBER) {
   console.error('ISSUE_NUMBER environment variable is required');
@@ -36,11 +37,13 @@ const researchResults = readFileSync(resultsPath, 'utf-8');
  *
  * Also accepts bracket format: [EXACT MATCH], [PARTIAL MATCH], [NO MATCH]
  */
-function detectRecommendationType(results: string): {
-  isExactMatch: boolean;
-  isPartialMatch: boolean;
-  isNoMatch: boolean;
-} {
+type RecommendationType =
+  | 'EXACT_MATCH'
+  | 'PARTIAL_MATCH'
+  | 'NO_MATCH'
+  | 'UNKNOWN';
+
+function detectRecommendationType(results: string): RecommendationType {
   // Look for the Summary section and extract recommendation line
   // Pattern matches: **Recommendation**: VALUE or **Recommendation**: [VALUE]
   const recommendationLineMatch = results.match(
@@ -49,11 +52,7 @@ function detectRecommendationType(results: string): {
 
   if (recommendationLineMatch) {
     const recommendation = recommendationLineMatch[1].toUpperCase();
-    return {
-      isExactMatch: recommendation === 'EXACT MATCH',
-      isPartialMatch: recommendation === 'PARTIAL MATCH',
-      isNoMatch: recommendation === 'NO MATCH',
-    };
+    return recommendation.replace(' ', '_') as RecommendationType;
   }
 
   // Fallback: Look for Summary section header followed by recommendation
@@ -63,23 +62,13 @@ function detectRecommendationType(results: string): {
 
   if (summaryMatch) {
     const recommendation = summaryMatch[1].toUpperCase();
-    return {
-      isExactMatch: recommendation === 'EXACT MATCH',
-      isPartialMatch: recommendation === 'PARTIAL MATCH',
-      isNoMatch: recommendation === 'NO MATCH',
-    };
+    return recommendation.replace(' ', '_') as RecommendationType;
   }
 
-  // No clear recommendation found
-  return {
-    isExactMatch: false,
-    isPartialMatch: false,
-    isNoMatch: false,
-  };
+  return 'UNKNOWN';
 }
 
-const { isExactMatch, isPartialMatch, isNoMatch } =
-  detectRecommendationType(researchResults);
+const recommendationType = detectRecommendationType(researchResults);
 
 /**
  * Execute a GitHub CLI command, handling errors gracefully.
@@ -159,7 +148,7 @@ try {
 }
 
 // Handle recommendation-based actions
-if (isNoMatch) {
+if (recommendationType === 'NO_MATCH') {
   // No existing rule found - automatically trigger implementation
   console.log('NO MATCH detected - triggering implementation workflow');
   try {
@@ -170,13 +159,17 @@ if (isNoMatch) {
   } catch {
     console.error('Failed to add cursor-implement label');
   }
-} else if (isExactMatch || isPartialMatch) {
+} else if (
+  recommendationType === 'EXACT_MATCH' ||
+  recommendationType === 'PARTIAL_MATCH'
+) {
   // Existing rule found - tag dev team for review
-  const matchType = isExactMatch ? 'EXACT MATCH' : 'PARTIAL MATCH';
-  console.log(`${matchType} detected - tagging @dev for review`);
+  const matchType =
+    recommendationType === 'EXACT_MATCH' ? 'EXACT MATCH' : 'PARTIAL MATCH';
+  console.log(`${matchType} detected - tagging ${REVIEW_TEAM} for review`);
   try {
     postIssueComment(
-      '@dev Please review the research findings above. An existing rule may satisfy this requirement.',
+      `${REVIEW_TEAM} Please review the research findings above. An existing rule may satisfy this requirement.`,
     );
     console.log('Posted review request comment');
   } catch {
@@ -197,4 +190,4 @@ if (isNoMatch) {
   }
 }
 
-console.log('Research comment posted and labels updated successfully');
+console.log('Research comment workflow completed');

@@ -12,9 +12,11 @@ const CURSOR_API_KEY = process.env.CURSOR_API_KEY;
 const GITHUB_REPOSITORY =
   process.env.GITHUB_REPOSITORY || 'BluMintInc/eslint-custom-rules';
 const SOURCE_REF = process.env.SOURCE_REF || 'develop';
-const MODEL = process.env.CURSOR_MODEL || 'gpt-5.1-codex-max-high';
+const MODEL = process.env.CURSOR_MODEL || 'gpt-4o';
 const BATCH_SIZE = Number(process.env.BATCH_SIZE || 20);
-const CURSOR_API_TIMEOUT_MS = Number(process.env.CURSOR_API_TIMEOUT_MS || 60000);
+const CURSOR_API_TIMEOUT_MS = Number(
+  process.env.CURSOR_API_TIMEOUT_MS || 60000,
+);
 // Default gap between batches: 15 minutes
 const BATCH_DELAY_MS = Number(process.env.BATCH_DELAY_MS || 15 * 60 * 1000);
 const DRY_RUN = process.argv.includes('--dry-run');
@@ -168,15 +170,7 @@ function callCursorAPI(payload: unknown): Promise<unknown> {
       },
     );
 
-    const timeout = setTimeout(() => {
-      req.destroy(
-        new Error(
-          `Cursor API request timed out after ${CURSOR_API_TIMEOUT_MS}ms`,
-        ),
-      );
-    }, CURSOR_API_TIMEOUT_MS);
-
-    req.on('timeout', () => {
+    req.setTimeout(CURSOR_API_TIMEOUT_MS, () => {
       req.destroy(
         new Error(
           `Cursor API request socket timed out after ${CURSOR_API_TIMEOUT_MS}ms`,
@@ -185,7 +179,6 @@ function callCursorAPI(payload: unknown): Promise<unknown> {
     });
 
     req.on('error', reject);
-    req.on('close', () => clearTimeout(timeout));
     req.write(data);
     req.end();
   });

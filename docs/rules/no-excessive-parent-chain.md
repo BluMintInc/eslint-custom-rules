@@ -77,7 +77,7 @@ This rule is not auto-fixable; violations must be corrected manually.
 ### Problems with Long Parent Chains
 
 1. **Fragility**: Changes to the Firestore path structure can break multiple chained `.parent` calls.
-2. **Readability**: Long chains like `ref.parent.parent.parent.parent` are hard to understand.
+2. **Readability**: Long chains like `ref.parent.parent.parent.parent` are difficult to comprehend.
 3. **Type Safety**: Manual navigation doesn't provide compile-time guarantees about path structure.
 4. **Maintainability**: Refactoring path structures requires updating all hardcoded parent chains.
 

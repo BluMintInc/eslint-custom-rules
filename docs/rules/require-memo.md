@@ -14,6 +14,7 @@ Components that render JSX and receive props must be wrapped with `memo` from `u
 
 
 ### Why this rule exists
+
 - Preserves stable component identities so downstream memoized children do not rerender unnecessarily.
 - Keeps prop-derived callbacks and selectors referentially consistent across renders.
 - Forces intentional opt-out (`Unmemoized`) to document when a component should remain un-memoized.

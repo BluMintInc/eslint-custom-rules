@@ -33,5 +33,6 @@ Use an inline arrow callback to keep `this` intact and make the dependency on th
 ```typescript
 ['a', 'b', 'c'].map((item) => this.processItem(item))
 ['a', 'b', 'c'].filter((item) => this.checkItem(item))
+['a', 'b', 'c'].map((item) => this['processItem'](item))
 ['a', 'b', 'c'].map(processItem)
 ```

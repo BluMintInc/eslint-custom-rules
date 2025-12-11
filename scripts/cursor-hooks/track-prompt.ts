@@ -6,21 +6,35 @@ import {
   modifyConversationLastActive,
   setLastUserMessage,
 } from './change-log';
+import type { Input as CursorHookInput } from './types';
 
-export type Input = {
+export type Input = CursorHookInput & {
   readonly prompt: string;
-  readonly conversation_id?: string;
-  readonly [key: string]: unknown;
 };
+
+function isInput(value: unknown): value is Input {
+  if (typeof value !== 'object' || value === null) return false;
+  const maybe = value as { prompt?: unknown; conversation_id?: unknown };
+  if (typeof maybe.prompt !== 'string') return false;
+  if (
+    maybe.conversation_id !== undefined &&
+    typeof maybe.conversation_id !== 'string'
+  ) {
+    return false;
+  }
+  return true;
+}
 
 function readInput() {
   try {
     if (process.stdin.isTTY) {
       return null;
     }
-    const input = readFileSync(0, 'utf-8');
-    if (!input) return null;
-    return JSON.parse(input);
+    const raw = readFileSync(0, 'utf-8');
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!isInput(parsed)) return null;
+    return parsed;
   } catch {
     return null;
   }
