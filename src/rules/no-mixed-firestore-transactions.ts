@@ -295,61 +295,96 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       }
     }
 
-    return {
-      NewExpression(node) {
-        if (!isNonTransactionalClass(node)) return;
-
-        const transactionScope = getTransactionScope(node);
-        if (!transactionScope) return;
-
-        const className = (node.callee as TSESTree.Identifier).name;
-
-        if (!isFetcherClass(className)) {
-          context.report({
-            node,
-            messageId: 'noMixedTransactions',
-            data: {
-              className,
-              transactionalClass: getTransactionalClassName(className),
-            },
-          });
-          return;
-        }
-
-        const constructorHasTransaction = hasTransactionOption(node.arguments);
-        const variableName = getVariableName(node);
-
-        if (!variableName) {
-          if (constructorHasTransaction) return;
-
-          if (
-            node.parent?.type === AST_NODE_TYPES.MemberExpression &&
-            node.parent.object === node &&
-            isFetchCall(node.parent) &&
-            node.parent.parent?.type === AST_NODE_TYPES.CallExpression
-          ) {
-            return;
-          }
-
-          context.report({
-            node,
-            messageId: 'noMixedTransactions',
-            data: {
-              className,
-              transactionalClass: getTransactionalClassName(className),
-            },
-          });
-          return;
-        }
-
-        addFetcherInstance(transactionScope, variableName, {
-          node,
+    function reportNonFetcherInTransaction(
+      node: TSESTree.NewExpression,
+      className: string,
+    ): void {
+      context.report({
+        node,
+        messageId: 'noMixedTransactions',
+        data: {
           className,
-          constructorHasTransaction,
-          hasTransactionCall: constructorHasTransaction,
-          hasCallWithoutTransaction: false,
-        });
-      },
+          transactionalClass: getTransactionalClassName(className),
+        },
+      });
+    }
+
+    function isInlineFetchFromNew(node: TSESTree.NewExpression): boolean {
+      return (
+        node.parent?.type === AST_NODE_TYPES.MemberExpression &&
+        node.parent.object === node &&
+        isFetchCall(node.parent) &&
+        node.parent.parent?.type === AST_NODE_TYPES.CallExpression
+      );
+    }
+
+    function handleFetcherWithoutVariable(
+      node: TSESTree.NewExpression,
+      className: string,
+      constructorHasTransaction: boolean,
+    ): void {
+      if (constructorHasTransaction) return;
+      if (isInlineFetchFromNew(node)) return;
+
+      reportNonFetcherInTransaction(node, className);
+    }
+
+    function handleFetcherWithVariable(
+      node: TSESTree.NewExpression,
+      className: string,
+      constructorHasTransaction: boolean,
+      variableName: string,
+      transactionScope: TSESTree.Node,
+    ): void {
+      addFetcherInstance(transactionScope, variableName, {
+        node,
+        className,
+        constructorHasTransaction,
+        hasTransactionCall: constructorHasTransaction,
+        hasCallWithoutTransaction: false,
+      });
+    }
+
+    function handleFetcherClass(
+      node: TSESTree.NewExpression,
+      className: string,
+      transactionScope: TSESTree.Node,
+    ): void {
+      const constructorHasTransaction = hasTransactionOption(node.arguments);
+      const variableName = getVariableName(node);
+
+      if (!variableName) {
+        handleFetcherWithoutVariable(node, className, constructorHasTransaction);
+        return;
+      }
+
+      handleFetcherWithVariable(
+        node,
+        className,
+        constructorHasTransaction,
+        variableName,
+        transactionScope,
+      );
+    }
+
+    function handleNewExpression(node: TSESTree.NewExpression): void {
+      if (!isNonTransactionalClass(node)) return;
+
+      const transactionScope = getTransactionScope(node);
+      if (!transactionScope) return;
+
+      const className = (node.callee as TSESTree.Identifier).name;
+
+      if (!isFetcherClass(className)) {
+        reportNonFetcherInTransaction(node, className);
+        return;
+      }
+
+      handleFetcherClass(node, className, transactionScope);
+    }
+
+    return {
+      NewExpression: handleNewExpression,
 
       CallExpression(node) {
         const callee = node.callee;
