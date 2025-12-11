@@ -19,6 +19,7 @@ import { genericStartsWithT } from './rules/generic-starts-with-t';
 import { default as globalConstStyle } from './rules/global-const-style';
 import { noAsyncArrayFilter } from './rules/no-async-array-filter';
 import { noAsyncForEach } from './rules/no-async-foreach';
+import { noConsoleError } from './rules/no-console-error';
 import { noConditionalLiteralsInJsx } from './rules/no-conditional-literals-in-jsx';
 import { noFilterWithoutReturn } from './rules/no-filter-without-return';
 import { noHungarian } from './rules/no-hungarian';
@@ -173,6 +174,7 @@ module.exports = {
         '@blumintinc/blumint/global-const-style': 'error',
         '@blumintinc/blumint/no-async-array-filter': 'error',
         '@blumintinc/blumint/no-async-foreach': 'error',
+        '@blumintinc/blumint/no-console-error': 'warn',
         '@blumintinc/blumint/no-conditional-literals-in-jsx': 'error',
         '@blumintinc/blumint/no-filter-without-return': 'error',
         '@blumintinc/blumint/no-hungarian': 'error',
@@ -420,6 +422,7 @@ module.exports = {
     'no-array-length-in-deps': noArrayLengthInDeps,
     'prefer-use-deep-compare-memo': preferUseDeepCompareMemo,
     'no-circular-references': noCircularReferences,
+    'no-console-error': noConsoleError,
     'no-try-catch-already-exists-in-transaction':
       noTryCatchAlreadyExistsInTransaction,
     'no-passthrough-getters': noPassthroughGetters,
