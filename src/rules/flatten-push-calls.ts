@@ -12,7 +12,9 @@ type PushCallStatement = {
 
 const PUSH_METHOD_NAME = 'push';
 
-function unwrapExpression(expression: TSESTree.Expression): TSESTree.Expression {
+function unwrapExpression(
+  expression: TSESTree.Expression,
+): TSESTree.Expression {
   let current: TSESTree.Expression = expression;
 
   // Peel off harmless wrappers to compare the underlying array identity
@@ -60,14 +62,6 @@ function getPropertyKey(
     return value !== null ? String(value) : null;
   }
 
-  if (
-    computed &&
-    property.type === AST_NODE_TYPES.Identifier &&
-    property.name !== ''
-  ) {
-    return property.name;
-  }
-
   return null;
 }
 
@@ -80,8 +74,7 @@ function getCalleeWithTypeParams(
   const calleeEnd = call.typeParameters
     ? call.typeParameters.range?.[1] ??
       sourceCode.getIndexFromLoc(call.typeParameters.loc.end)
-    : call.callee.range?.[1] ??
-      sourceCode.getIndexFromLoc(call.callee.loc.end);
+    : call.callee.range?.[1] ?? sourceCode.getIndexFromLoc(call.callee.loc.end);
 
   return sourceCode.text.slice(calleeStart, calleeEnd);
 }
@@ -108,8 +101,7 @@ function getExpressionIdentity(expression: TSESTree.Expression): string | null {
       return null;
     case AST_NODE_TYPES.ChainExpression:
       return getExpressionIdentity(
-        (node as TSESTree.ChainExpression)
-          .expression as TSESTree.Expression,
+        (node as TSESTree.ChainExpression).expression as TSESTree.Expression,
       );
     case AST_NODE_TYPES.MemberExpression: {
       if (node.property.type === AST_NODE_TYPES.PrivateIdentifier) return null;
@@ -148,8 +140,8 @@ function isPushCallStatement(
     callee.property.type === AST_NODE_TYPES.Identifier
       ? callee.property.name
       : callee.property.type === AST_NODE_TYPES.Literal
-        ? callee.property.value
-        : null;
+      ? callee.property.value
+      : null;
 
   if (propertyName !== PUSH_METHOD_NAME) return null;
 
@@ -180,14 +172,16 @@ function normalizeIndentation(text: string): string {
   const indents = lines
     .slice(1)
     .filter((line) => line.trim().length > 0)
-    .map((line) => (line.match(/^[\t ]*/u)?.[0].length ?? 0));
+    .map((line) => line.match(/^[\t ]*/u)?.[0].length ?? 0);
 
   const minIndent = indents.length > 0 ? Math.min(...indents) : 0;
   if (minIndent === 0) return text;
 
   return [
     lines[0],
-    ...lines.slice(1).map((line) => line.slice(Math.min(minIndent, line.length))),
+    ...lines
+      .slice(1)
+      .map((line) => line.slice(Math.min(minIndent, line.length))),
   ].join('\n');
 }
 
@@ -241,6 +235,108 @@ export const flattenPushCalls = createRule<[], MessageIds>({
   create(context) {
     const sourceCode = context.getSourceCode();
 
+    type PushSegment = {
+      comments: TSESTree.Comment[];
+      args: TSESTree.CallExpressionArgument[];
+    };
+
+    function buildSegments(group: PushCallStatement[]): PushSegment[] {
+      return group.map((entry, index) => {
+        const previous = index > 0 ? group[index - 1].statement : null;
+        const comments =
+          previous === null
+            ? []
+            : getLeadingCommentsBetween(sourceCode, previous, entry.statement);
+        return { comments, args: entry.call.arguments };
+      });
+    }
+
+    function shouldUseMultilineFormat(
+      segments: PushSegment[],
+      group: PushCallStatement[],
+      totalArgs: number,
+    ): boolean {
+      const hasInterstitialComments = segments.some(
+        (segment) => segment.comments.length > 0,
+      );
+      const hasMultilineArgument = group.some((entry) =>
+        entry.call.arguments.some((arg) =>
+          sourceCode.getText(arg).includes('\n'),
+        ),
+      );
+
+      return hasInterstitialComments || hasMultilineArgument || totalArgs > 2;
+    }
+
+    function detectSemicolon(
+      first: PushCallStatement,
+      last: PushCallStatement,
+    ): boolean {
+      return (
+        sourceCode.getLastToken(last.statement)?.value === ';' ||
+        sourceCode.getLastToken(first.statement)?.value === ';'
+      );
+    }
+
+    function formatArguments(
+      segments: PushSegment[],
+      shouldUseMultiline: boolean,
+      argumentIndent: string,
+    ): string[] {
+      if (!shouldUseMultiline) {
+        return segments.flatMap((segment) =>
+          segment.args.map((arg) => sourceCode.getText(arg)),
+        );
+      }
+
+      const argumentParts: string[] = [];
+      let pendingComments: string[] = [];
+
+      segments.forEach((segment) => {
+        const formattedComments = formatComments(
+          segment.comments,
+          argumentIndent,
+          sourceCode,
+        );
+
+        pendingComments = pendingComments.concat(formattedComments);
+        if (segment.args.length === 0) return;
+
+        segment.args.forEach((arg, index) => {
+          const argText = indentText(sourceCode.getText(arg), argumentIndent);
+          if (index === 0 && pendingComments.length > 0) {
+            argumentParts.push(`${pendingComments.join('\n')}\n${argText}`);
+            pendingComments = [];
+          } else {
+            argumentParts.push(argText);
+          }
+        });
+      });
+
+      if (pendingComments.length > 0 && argumentParts.length > 0) {
+        const lastIndex = argumentParts.length - 1;
+        argumentParts[lastIndex] = `${
+          argumentParts[lastIndex]
+        }\n${pendingComments.join('\n')}`;
+      }
+
+      return argumentParts;
+    }
+
+    function buildFinalReplacement(
+      calleeText: string,
+      argumentParts: string[],
+      shouldUseMultiline: boolean,
+      baseIndent: string,
+      hasSemicolon: boolean,
+    ): string {
+      const argsText = shouldUseMultiline
+        ? `\n${argumentParts.join(',\n')}\n${baseIndent}`
+        : argumentParts.join(', ');
+
+      return `${calleeText}(${argsText})${hasSemicolon ? ';' : ''}`;
+    }
+
     function buildReplacement(group: PushCallStatement[]): string | null {
       const first = group[0];
       const last = group[group.length - 1];
@@ -250,72 +346,28 @@ export const flattenPushCalls = createRule<[], MessageIds>({
       );
       const calleeText = getPreferredCalleeText(group);
 
-      const segments = group.map((entry, index) => {
-        const previous = index > 0 ? group[index - 1].statement : null;
-        const comments =
-          previous === null
-            ? []
-            : getLeadingCommentsBetween(sourceCode, previous, entry.statement);
-        return { comments, args: entry.call.arguments };
-      });
-
-      const hasInterstitialComments = segments.some(
-        (segment) => segment.comments.length > 0,
+      const segments = buildSegments(group);
+      const shouldUseMultiline = shouldUseMultilineFormat(
+        segments,
+        group,
+        totalArgs,
       );
-      const hasMultilineArgument = group.some((entry) =>
-        entry.call.arguments.some((arg) => sourceCode.getText(arg).includes('\n')),
-      );
-
-      const shouldUseMultiline =
-        hasInterstitialComments || hasMultilineArgument || totalArgs > 2;
-
       const baseIndent = getLineIndent(first.statement, sourceCode);
       const argumentIndent = `${baseIndent}  `;
+      const argumentParts = formatArguments(
+        segments,
+        shouldUseMultiline,
+        argumentIndent,
+      );
+      const hasSemicolon = detectSemicolon(first, last);
 
-      const argumentParts: string[] = [];
-
-      segments.forEach((segment) => {
-        if (!shouldUseMultiline) {
-          segment.args.forEach((arg) => {
-            argumentParts.push(sourceCode.getText(arg));
-          });
-          return;
-        }
-
-        const formattedComments = formatComments(
-          segment.comments,
-          argumentIndent,
-          sourceCode,
-        );
-
-        if (segment.args.length === 0) {
-          if (formattedComments.length > 0) {
-            argumentParts.push(formattedComments.join('\n'));
-          }
-          return;
-        }
-
-        segment.args.forEach((arg, index) => {
-          const argText = indentText(sourceCode.getText(arg), argumentIndent);
-          if (index === 0 && formattedComments.length > 0) {
-            argumentParts.push(`${formattedComments.join('\n')}\n${argText}`);
-          } else {
-            argumentParts.push(argText);
-          }
-        });
-      });
-
-      const argsText = shouldUseMultiline
-        ? `\n${argumentParts.join(',\n')}\n${baseIndent}`
-        : argumentParts.join(', ');
-
-      const hasSemicolon =
-        sourceCode.getLastToken(last.statement)?.value === ';' ||
-        sourceCode.getLastToken(first.statement)?.value === ';';
-
-      const replacement = `${calleeText}(${argsText})${
-        hasSemicolon ? ';' : ''
-      }`;
+      const replacement = buildFinalReplacement(
+        calleeText,
+        argumentParts,
+        shouldUseMultiline,
+        baseIndent,
+        hasSemicolon,
+      );
 
       const currentText = sourceCode
         .getText()

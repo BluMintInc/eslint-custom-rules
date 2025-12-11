@@ -58,6 +58,16 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
     items[j].push(b);
     `,
     `
+    const items = [];
+    items[index].push(a);
+    items[index].push(b);
+    `,
+    `
+    const items = [];
+    items[index].push(a);
+    items[index].push(index++);
+    `,
+    `
     const arr = [];
     arr.push(a);
     await doWork();
@@ -171,12 +181,18 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
     {
       code: `
       const items = [];
-      items[index].push(a);
-      items[index].push(b);
+      items.push(a);
+      /* keep track */
+      items.push();
+      items.push(b);
       `,
       output: `
       const items = [];
-      items[index].push(a, b);
+      items.push(
+        a,
+        /* keep track */
+        b
+      );
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
     },

@@ -50,6 +50,10 @@ items.push(
 
 Skip this rule if your style guide prefers one-argument pushes for logging or tracing purposes, even when they are consecutive.
 
+## Limitations
+
+- Computed property accesses that rely on mutable identifiers (for example, `items[index].push(...)`) are skipped because batching would evaluate the index only once and can change behavior when arguments mutate that index (such as `index++` inside a pushed value).
+
 ## Implementation
 
 - [Rule source](../../src/rules/flatten-push-calls.ts)
