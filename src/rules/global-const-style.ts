@@ -152,21 +152,31 @@ export default createRule<[], MessageIds>({
 
           // Only check for as const in TypeScript files
           if (isTypeScript) {
-            const isAsConstExpression = (node: TSESTree.Node): boolean => {
-              if (node.type === AST_NODE_TYPES.TSAsExpression) {
-                return (
-                  node.typeAnnotation?.type ===
-                    AST_NODE_TYPES.TSTypeReference &&
-                  (node.typeAnnotation?.typeName as TSESTree.Identifier)
-                    ?.name === 'const'
-                );
+            const hasAsConstAssertion = (node: TSESTree.Node): boolean => {
+              let current: TSESTree.Node | undefined = node;
+
+              while (
+                current &&
+                (current.type === AST_NODE_TYPES.TSAsExpression ||
+                  current.type === AST_NODE_TYPES.TSTypeAssertion)
+              ) {
+                const { typeAnnotation } = current;
+                if (
+                  typeAnnotation?.type === AST_NODE_TYPES.TSTypeReference &&
+                  typeAnnotation.typeName.type === AST_NODE_TYPES.Identifier &&
+                  typeAnnotation.typeName.name === 'const'
+                ) {
+                  return true;
+                }
+                current = current.expression;
               }
+
               return false;
             };
 
             const shouldHaveAsConst = (node: TSESTree.Node): boolean => {
               // Skip if it's already an as const expression
-              if (isAsConstExpression(node)) {
+              if (hasAsConstAssertion(node)) {
                 return false;
               }
 

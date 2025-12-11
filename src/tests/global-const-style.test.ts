@@ -119,6 +119,11 @@ ruleTesterTs.run('global-const-style', rule, {
       code: 'const EMAIL_REGEX = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;',
       filename: 'test.ts',
     },
+    // Nested assertions that include as const should be accepted
+    {
+      code: 'const COLORS = ({ primary: "#000" } as const) as ThemeA;',
+      filename: 'test.ts',
+    },
   ],
   invalid: [
     // Missing UPPER_SNAKE_CASE and as const in TypeScript
