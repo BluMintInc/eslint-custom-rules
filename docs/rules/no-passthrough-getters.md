@@ -1,8 +1,6 @@
-# Disallow passthrough getters that merely mirror constructor params
+# Avoid unnecessary getter methods that simply return properties from constructor parameters (`@blumintinc/blumint/no-passthrough-getters`)
 
-Rule ID: `@blumintinc/blumint/no-passthrough-getters`
-
-💼 Enabled in ✅ `recommended` config • 🔧 Not fixable • 💭 No type info required
+💼 This rule is enabled in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
 

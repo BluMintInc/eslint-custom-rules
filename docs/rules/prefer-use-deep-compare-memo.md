@@ -26,6 +26,7 @@ import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 ### Examples
 
 Bad: useMemo with unmemoized object dependency:
+
 ```tsx
 // Component re-renders whenever `userConfig` reference changes
 const UserProfile: FC<UserProfileProps> = ({ userConfig }) => {
@@ -42,6 +43,7 @@ const UserProfile: FC<UserProfileProps> = ({ userConfig }) => {
 ```
 
 Good: useDeepCompareMemo with structurally identical objects:
+
 ```tsx
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 
@@ -77,4 +79,3 @@ const x = useMemo(() => compute(data), [data]);
 ## Version
 
 - Introduced in v1.10.0
-

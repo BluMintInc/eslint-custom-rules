@@ -1,4 +1,4 @@
-# no-misleading-boolean-prefixes — Reserve boolean-style prefixes for boolean-returning functions (`@blumintinc/blumint/no-misleading-boolean-prefixes`)
+# Reserve boolean-style prefixes (is/has/should) for functions that actually return boolean values (`@blumintinc/blumint/no-misleading-boolean-prefixes`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
@@ -70,4 +70,3 @@ function getUser() {
 ```
 
 - **prefixes**: string[] — prefixes considered boolean-like. Defaults to `["is", "has", "should"]`.
-

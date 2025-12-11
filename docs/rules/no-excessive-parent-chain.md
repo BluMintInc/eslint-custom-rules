@@ -1,5 +1,7 @@
 # Discourage excessive use of the ref.parent property chain in Firestore and RealtimeDB change handlers (`@blumintinc/blumint/no-excessive-parent-chain`)
 
+💡 This rule is manually fixable by [editor suggestions](https://eslint.org/docs/latest/use/core-concepts#rule-suggestions).
+
 <!-- end auto-generated rule header -->
 
 This rule helps enforce better practices in Firestore and RealtimeDB change handlers by discouraging excessive use of the `ref.parent` property chain. When developers need to access parent/ancestor documents in Firestore paths, they often use multiple chained `.parent` calls (e.g., `ref.parent.parent.parent`), which is error-prone, difficult to read, and fragile to refactoring. Instead, handlers should access path parameters via the `params` object provided in the event parameter, which offers a type-safe, more maintainable approach to accessing path components.

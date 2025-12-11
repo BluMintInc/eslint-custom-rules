@@ -35,8 +35,13 @@ function parseNumericArg(options: { flag: string; alias?: string }) {
   if (index !== -1) {
     const rawValue = process.argv[index + 1];
     const value = Number(rawValue);
-    if (!Number.isNaN(value)) {
+    if (Number.isFinite(value) && value > 0) {
       return value;
+    }
+    if (!Number.isNaN(value)) {
+      throw new Error(
+        `--${options.flag} must be a positive number, got: ${value}`,
+      );
     }
   }
 }
@@ -66,10 +71,10 @@ function labelNames(issue: IssueSearchItem) {
 }
 
 async function githubFetch(
+  token: string,
   path: string,
   init?: RequestInit,
 ): Promise<Response> {
-  const token = requireToken();
   const url = `https://api.github.com${
     path.startsWith('/') ? path : `/${path}`
   }`;
@@ -96,6 +101,7 @@ async function githubFetch(
 }
 
 async function searchIssues(
+  token: string,
   query: string,
   page: number,
   perPage: number,
@@ -108,15 +114,19 @@ async function searchIssues(
     page: String(page),
   });
 
-  const response = await githubFetch(`/search/issues?${params.toString()}`, {
-    method: 'GET',
-  });
+  const response = await githubFetch(
+    token,
+    `/search/issues?${params.toString()}`,
+    {
+      method: 'GET',
+    },
+  );
   const data = (await response.json()) as { items?: IssueSearchItem[] };
   return data.items ?? [];
 }
 
-async function resolveStartIssue(query: string) {
-  const [first] = await searchIssues(query, 1, 1);
+async function resolveStartIssue(query: string, token: string) {
+  const [first] = await searchIssues(token, query, 1, 1);
   if (!first) {
     console.log('No matching open enhancement issues found.');
     process.exit(0);
@@ -124,14 +134,18 @@ async function resolveStartIssue(query: string) {
   return first.number;
 }
 
-async function fetchEligibleIssues(query: string, startIssue: number) {
+async function fetchEligibleIssues(
+  query: string,
+  startIssue: number,
+  token: string,
+) {
   const issues: IssueSearchItem[] = [];
   const perPage = 100;
   let page = 1;
   let hasMore = true;
 
   while (hasMore) {
-    const pageItems = await searchIssues(query, page, perPage);
+    const pageItems = await searchIssues(token, query, page, perPage);
     if (pageItems.length === 0) {
       hasMore = false;
       continue;
@@ -149,7 +163,7 @@ async function fetchEligibleIssues(query: string, startIssue: number) {
   return issues;
 }
 
-async function addLabels(issue: IssueSearchItem) {
+async function addLabels(issue: IssueSearchItem, token: string) {
   const existing = new Set(labelNames(issue));
   const missing = TARGET_LABELS.filter((label) => !existing.has(label));
   if (missing.length === 0) {
@@ -166,12 +180,16 @@ async function addLabels(issue: IssueSearchItem) {
     return;
   }
 
-  const mergedLabels = Array.from(new Set([...existing, ...TARGET_LABELS]));
+  const mergedLabels = [...existing, ...TARGET_LABELS];
 
-  await githubFetch(`/repos/${OWNER}/${REPO}/issues/${issue.number}/labels`, {
-    method: 'POST',
-    body: JSON.stringify({ labels: mergedLabels }),
-  });
+  await githubFetch(
+    token,
+    `/repos/${OWNER}/${REPO}/issues/${issue.number}/labels`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ labels: mergedLabels }),
+    },
+  );
 
   console.log(
     `Added ${missing.join(', ')} to issue #${issue.number} (total labels: ${
@@ -181,6 +199,7 @@ async function addLabels(issue: IssueSearchItem) {
 }
 
 async function main() {
+  const token = requireToken();
   const batchSize =
     parseNumericArg({ flag: 'batch', alias: 'b' }) ?? DEFAULT_BATCH_SIZE;
   const startInput = parseNumericArg({ flag: 'start', alias: 's' });
@@ -192,8 +211,8 @@ async function main() {
   );
 
   const query = `repo:${OWNER}/${REPO} is:issue is:open label:enhancement`;
-  const initialCursor = startInput ?? (await resolveStartIssue(query));
-  const issues = await fetchEligibleIssues(query, initialCursor);
+  const initialCursor = startInput ?? (await resolveStartIssue(query, token));
+  const issues = await fetchEligibleIssues(query, initialCursor, token);
 
   if (issues.length === 0) {
     console.log(
@@ -216,7 +235,7 @@ async function main() {
 
     const results = await Promise.allSettled(
       batch.map(async (issue) => {
-        await addLabels(issue);
+        await addLabels(issue, token);
         return issue.number;
       }),
     );

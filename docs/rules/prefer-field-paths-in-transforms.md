@@ -1,6 +1,8 @@
-# In propagation transforms, avoid returning multi-level nested objects under aggregation containers. Prefer flattened dot-path keys so diffs remove only leaf entries (`@blumintinc/blumint/prefer-field-paths-in-transforms`)
+# Flatten aggregation updates inside transformEach so diff-based deletes remove only the intended fields instead of wiping sibling data (`@blumintinc/blumint/prefer-field-paths-in-transforms`)
 
 ⚠️ This rule _warns_ in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
 
 <!-- end auto-generated rule header -->
 

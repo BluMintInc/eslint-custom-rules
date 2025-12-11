@@ -6,6 +6,8 @@ const BOT_NAME_PATTERN = /(coderabbit|graphite|cursor|bugbot)/i;
 const SUCCESS_PATTERN = /✅ All .* are resolved/;
 const NO_PR_PATTERN = /No open pull request found/i;
 const SAFE_BRANCH_PATTERN = /^(?!\/)(?!.*\/\/)(?!.*\/$)[A-Za-z0-9._/-]+$/;
+const BOT_REVIEW_BATCH_SIZE = 5;
+const HUMAN_REVIEW_BATCH_SIZE = 7;
 
 export function extractPrReviewContext(branchName: string) {
   // Pattern: .*-review-pr-(\d+)-(\d+)(?:[/-]|$)
@@ -178,6 +180,7 @@ function findOpenPrNumberForBranch(branchName: string) {
     return null;
   }
 
+  // Branch name is validated and quoted before shell execution; executeCommand currently accepts only string commands.
   const prLookup = executeCommand(
     `gh pr list --head "${branchName}" --state open --json number --jq '.[0].number'`,
   );
@@ -261,7 +264,7 @@ function validateWithoutReviewBatch(branchName: string): ReviewDetection {
 }
 
 function constructFollowupMessage(isBot: boolean, commentsList: string) {
-  const batchSize = isBot ? 5 : 7;
+  const batchSize = isBot ? BOT_REVIEW_BATCH_SIZE : HUMAN_REVIEW_BATCH_SIZE;
 
   const resolutionInstructions = isBot
     ? `Please make a todolist of at least ${batchSize} items, one for each of these comments, whereby for each comment you:
@@ -317,6 +320,7 @@ ${humanSection}`;
  * _input reserved for future context-aware checks (e.g., branching on task type).
  */
 export function performPrReviewCheck(_input: Input) {
+  void _input;
   try {
     // Extract branch name from git
     const branchResult = executeCommand('git rev-parse --abbrev-ref HEAD');
