@@ -21,7 +21,7 @@ const isFunctionNode = (node: TSESTree.Node): node is FunctionNode =>
   node.type === AST_NODE_TYPES.FunctionExpression ||
   node.type === AST_NODE_TYPES.ArrowFunctionExpression;
 
-const isHookName = (name: string): boolean => /^use[A-Z0-9]/.test(name);
+const isHookName = (name: string): boolean => /^use[A-Z]/.test(name);
 const isComponentName = (name: string): boolean => /^[A-Z]/.test(name);
 
 const forEachChildNode = (
@@ -105,6 +105,21 @@ const hasFunctionParent = (node: TSESTree.Node): boolean => {
   return false;
 };
 
+const getBodyNodeForJsxCheck = (node: FunctionNode): TSESTree.Node | null => {
+  if (
+    node.type === AST_NODE_TYPES.FunctionDeclaration ||
+    node.type === AST_NODE_TYPES.FunctionExpression
+  ) {
+    return node.body;
+  }
+
+  if (node.body && node.body.type !== AST_NODE_TYPES.BlockStatement) {
+    return node.body;
+  }
+
+  return node.body as TSESTree.Node | null;
+};
+
 const isComponentOrHook = (
   node: FunctionNode,
 ): { contextLabel: string } | null => {
@@ -112,14 +127,7 @@ const isComponentOrHook = (
   const hook = name ? isHookName(name) : false;
   const component = name ? isComponentName(name) : false;
   const nestedFunction = hasFunctionParent(node);
-  const jsxBody = containsJsx(
-    node.type === AST_NODE_TYPES.FunctionDeclaration ||
-      node.type === AST_NODE_TYPES.FunctionExpression
-      ? node.body
-      : node.body && node.body.type !== AST_NODE_TYPES.BlockStatement
-        ? node.body
-        : (node.body as TSESTree.Node),
-  );
+  const jsxBody = containsJsx(getBodyNodeForJsxCheck(node));
 
   if (!hook && !component && nestedFunction) {
     return null;
@@ -265,6 +273,20 @@ const findHocName = (
   return null;
 };
 
+const getParentCallExpression = (
+  callExpr: TSESTree.CallExpression,
+): TSESTree.CallExpression | null =>
+  callExpr.parent &&
+  callExpr.parent.type === AST_NODE_TYPES.CallExpression &&
+  callExpr.parent.callee === callExpr
+    ? callExpr.parent
+    : null;
+
+const isPartOfHocChain = (
+  hocName: string,
+  parentHocName: string | null,
+): boolean => Boolean(parentHocName && parentHocName === hocName);
+
 export const memoizeRootLevelHocs = createRule<Options, MessageIds>({
   name: 'memoize-root-level-hocs',
   meta: {
@@ -290,12 +312,82 @@ export const memoizeRootLevelHocs = createRule<Options, MessageIds>({
     ],
     messages: {
       wrapHocInUseMemo:
-        'HOC "{{hocName}}" is created inside {{contextLabel}} during render, producing a new wrapped component on every render and forcing downstream re-renders. Wrap the HOC creation in useMemo (with the right dependencies) or hoist it so the component identity stays stable.',
+        'HOC "{{hocName}}" is created inside {{contextLabel}} during render, so every render creates a brand-new wrapped component reference. React treats that as a different component, unmounting/remounting it (resetting internal state) and forcing children to re-render even when props stay the same. Wrap the HOC creation in useMemo with the correct dependencies or hoist it outside the {{contextLabel}} so the wrapped component identity stays stable.',
     },
   },
   defaultOptions,
   create(context, [options]) {
     const additionalHocs = new Set(options?.additionalHocNames ?? []);
+
+    const reportUnmemoizedHoc = (
+      node: TSESTree.CallExpression,
+      hocName: string,
+      contextInfo: { contextLabel: string },
+    ) => {
+      context.report({
+        node,
+        messageId: 'wrapHocInUseMemo',
+        data: {
+          hocName,
+          contextLabel: contextInfo.contextLabel,
+        },
+      });
+    };
+
+    const checkHocCall = (
+      callExpr: TSESTree.CallExpression,
+      functionNode: FunctionNode,
+      contextInfo: { contextLabel: string },
+    ) => {
+      const hocName = findHocName(callExpr, additionalHocs);
+      const parentCall = getParentCallExpression(callExpr);
+      const parentHocName = parentCall && findHocName(parentCall, additionalHocs);
+
+      if (
+        hocName &&
+        !isPartOfHocChain(hocName, parentHocName) &&
+        !isInsideUseMemoFactory(callExpr, functionNode)
+      ) {
+        reportUnmemoizedHoc(callExpr, hocName, contextInfo);
+      }
+    };
+
+    const visitNode = (
+      current: TSESTree.Node,
+      functionNode: FunctionNode,
+      contextInfo: { contextLabel: string },
+    ) => {
+      if (isFunctionNode(current) && current !== functionNode) {
+        return;
+      }
+
+      if (current.type === AST_NODE_TYPES.CallExpression) {
+        checkHocCall(current, functionNode, contextInfo);
+      }
+
+      forEachChildNode(current, (child) => {
+        visitNode(child, functionNode, contextInfo);
+        return false;
+      });
+    };
+
+    const traverseFunctionBody = (
+      node: FunctionNode,
+      contextInfo: { contextLabel: string },
+    ) => {
+      if (!node.body) {
+        return;
+      }
+
+      if (node.body.type === AST_NODE_TYPES.BlockStatement) {
+        for (const statement of node.body.body) {
+          visitNode(statement, node, contextInfo);
+        }
+        return;
+      }
+
+      visitNode(node.body, node, contextInfo);
+    };
 
     const analyzeFunction = (node: FunctionNode) => {
       const contextInfo = isComponentOrHook(node);
@@ -303,53 +395,7 @@ export const memoizeRootLevelHocs = createRule<Options, MessageIds>({
         return;
       }
 
-      const visit = (current: TSESTree.Node) => {
-        if (isFunctionNode(current) && current !== node) {
-          return;
-        }
-
-        if (current.type === AST_NODE_TYPES.CallExpression) {
-          const hocName = findHocName(current, additionalHocs);
-          const parentCall =
-            current.parent &&
-            current.parent.type === AST_NODE_TYPES.CallExpression &&
-            current.parent.callee === current
-              ? current.parent
-              : null;
-          const parentHocName =
-            parentCall && findHocName(parentCall, additionalHocs);
-
-          if (
-            hocName &&
-            !(parentHocName && parentHocName === hocName) &&
-            !isInsideUseMemoFactory(current, node)
-          ) {
-            context.report({
-              node: current,
-              messageId: 'wrapHocInUseMemo',
-              data: {
-                hocName,
-                contextLabel: contextInfo.contextLabel,
-              },
-            });
-          }
-        }
-
-        forEachChildNode(current, (child) => {
-          visit(child);
-          return false;
-        });
-      };
-
-      if (node.body) {
-        if (node.body.type === AST_NODE_TYPES.BlockStatement) {
-          for (const statement of node.body.body) {
-            visit(statement);
-          }
-        } else {
-          visit(node.body);
-        }
-      }
+      traverseFunctionBody(node, contextInfo);
     };
 
     return {
