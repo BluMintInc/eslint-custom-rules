@@ -697,7 +697,7 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
       code: `
         export class DatadogGitHubIssue implements GitHubIssueRequest {
           public get labels(): components['schemas']['issue']['labels'] {
-            const labels = ['datadog', 'fix-me'];
+            const labels = ['datadog', 'bug'];
 
             if (this.host) {
               labels.push(\`${'${'}this.host${'}'}\`);

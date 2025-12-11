@@ -1,6 +1,6 @@
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
-import { TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 
 function isInsideFunction(node: TSESTree.Node): boolean {
   let current: TSESTree.Node | undefined = node;
@@ -24,29 +24,37 @@ function isFunctionDefinition(node: TSESTree.Expression | null): boolean {
   );
 }
 
+const unwrapOnce = (
+  node: TSESTree.Expression | null,
+): TSESTree.Expression | null => {
+  if (!node) return null;
+  const maybeParen = node as {
+    type?: string;
+    expression?: TSESTree.Expression | null;
+  };
+  if (maybeParen.type === 'ParenthesizedExpression') {
+    return maybeParen.expression ?? null;
+  }
+  switch (node.type) {
+    case AST_NODE_TYPES.TSAsExpression:
+    case AST_NODE_TYPES.TSSatisfiesExpression:
+    case AST_NODE_TYPES.TSNonNullExpression:
+    case AST_NODE_TYPES.ChainExpression:
+    case AST_NODE_TYPES.TSTypeAssertion:
+      return node.expression as TSESTree.Expression | null;
+    default:
+      return null;
+  }
+};
+
 function unwrapExpression(
   node: TSESTree.Expression | null,
 ): TSESTree.Expression | null {
   let current: TSESTree.Expression | null = node;
-  // Unwrap common TS/JS wrappers iteratively
-  // We intentionally include ParenthesizedExpression via a runtime string check
   while (current) {
-    if (
-      current.type === 'TSAsExpression' ||
-      current.type === 'TSSatisfiesExpression' ||
-      current.type === 'TSNonNullExpression' ||
-      current.type === 'ChainExpression' ||
-      current.type === 'TSTypeAssertion' ||
-      (current as any).type === 'ParenthesizedExpression'
-    ) {
-      const inner = (current as any).expression as
-        | TSESTree.Expression
-        | undefined;
-      if (!inner) break;
-      current = inner;
-      continue;
-    }
-    break;
+    const inner = unwrapOnce(current);
+    if (!inner) break;
+    current = inner;
   }
   return current;
 }
@@ -124,39 +132,18 @@ function isZeroOrOne(node: TSESTree.Node | null): boolean {
 }
 
 function isAsConstExpression(node: TSESTree.Node | null): boolean {
-  if (!node) return false;
-
-  // If this is an "as const" assertion directly
-  if (node.type === 'TSAsExpression') {
+  let current = node as TSESTree.Expression | null;
+  while (current) {
     if (
-      node.typeAnnotation.type === 'TSTypeReference' &&
-      node.typeAnnotation.typeName.type === 'Identifier' &&
-      node.typeAnnotation.typeName.name === 'const'
+      current.type === 'TSAsExpression' &&
+      current.typeAnnotation.type === 'TSTypeReference' &&
+      current.typeAnnotation.typeName.type === 'Identifier' &&
+      current.typeAnnotation.typeName.name === 'const'
     ) {
       return true;
     }
-    // Not "as const" - check nested expression
-    return isAsConstExpression(node.expression);
+    current = unwrapOnce(current);
   }
-
-  // Unwrap other wrappers and re-check
-  if (node.type === 'TSSatisfiesExpression') {
-    return isAsConstExpression(node.expression);
-  }
-  if (node.type === 'TSNonNullExpression') {
-    return isAsConstExpression(node.expression);
-  }
-  if (node.type === 'ChainExpression') {
-    return isAsConstExpression(node.expression);
-  }
-  if (node.type === 'TSTypeAssertion') {
-    return isAsConstExpression(node.expression);
-  }
-  // ParenthesizedExpression handled via runtime check to avoid enum type issues
-  if ((node as any).type === 'ParenthesizedExpression') {
-    return isAsConstExpression((node as any).expression);
-  }
-
   return false;
 }
 
@@ -199,19 +186,17 @@ export const extractGlobalConstants: TSESLint.RuleModule<
           !hasAsConstAssertion &&
           (scope.type === 'function' || scope.type === 'block') &&
           isInsideFunction(node) &&
-          node.declarations.length > 0 &&
-          node.declarations[0].id &&
-          node.declarations[0].id.type === 'Identifier'
+          node.declarations.some((d) => d.id.type === 'Identifier')
         ) {
-          const constName = (node.declarations[0].id as TSESTree.Identifier)
-            .name;
-          context.report({
-            node,
-            messageId: 'extractGlobalConstants',
-            data: {
-              declarationName: constName,
-            },
-          });
+          for (const d of node.declarations) {
+            if (d.id.type !== 'Identifier') continue;
+            const constName = d.id.name;
+            context.report({
+              node: d,
+              messageId: 'extractGlobalConstants',
+              data: { declarationName: constName },
+            });
+          }
         }
       },
       FunctionDeclaration(node: TSESTree.FunctionDeclaration) {

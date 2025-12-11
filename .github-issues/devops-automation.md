@@ -102,7 +102,7 @@ Replace current labels with:
 |-----------|-----------|-------------|
 | `enhancement` | `rule-request` | Request for a new ESLint rule |
 | `bug` | `bug` | Bug in an existing rule |
-| N/A | `research-needed` | Triggers deep research workflow |
+| N/A | `cursor-research` | Triggers deep research workflow |
 | N/A | `cursor-implement` | Triggers implementation agent |
 | N/A | `cursor-fix` | Triggers bug fix agent |
 | N/A | `research-complete` | Research has been performed |
@@ -110,7 +110,7 @@ Replace current labels with:
 #### 1.3 Update Issue Templates
 
 Update `.github/ISSUE_TEMPLATE/eslint-rule-request.md`:
-- Change default label from `enhancement` to `rule-request, research-needed`
+- Change default label from `enhancement` to `rule-request, cursor-research`
 - Keep the same structure
 
 Update `.github/ISSUE_TEMPLATE/eslint-rule-bug-report.md`:
@@ -123,7 +123,7 @@ Update `.github/ISSUE_TEMPLATE/eslint-rule-bug-report.md`:
 
 #### 2.1 GitHub Workflow: `cursor-rule-research-agent.yml`
 
-**Trigger**: Issue labeled with `research-needed`
+**Trigger**: Issue labeled with `cursor-research`
 
 **Purpose**: Launch a Cursor Background Agent to research if an ESLint rule already exists.
 
@@ -150,8 +150,8 @@ concurrency:
 jobs:
   research_existing_rules:
     if: |
-      (github.event.action == 'labeled' && github.event.label.name == 'research-needed') ||
-      (github.event.action == 'reopened' && contains(github.event.issue.labels.*.name, 'research-needed'))
+      (github.event.action == 'labeled' && github.event.label.name == 'cursor-research') ||
+      (github.event.action == 'reopened' && contains(github.event.issue.labels.*.name, 'cursor-research'))
     runs-on: ubuntu-latest
     steps:
       # 1. Check if research comment already exists (short-circuit)
@@ -237,7 +237,7 @@ ISSUE_NUMBER=${issue.number} npx tsx scripts/github/post-research-comment.ts
 The script will:
 1. Post your research findings as a comment on the issue
 2. Manipulate labels based on your recommendation:
-   - Remove `research-needed` label
+   - Remove `cursor-research` label
    - Add `research-complete` label
    - If NO MATCH: Also add `cursor-implement` label
 ```
@@ -250,7 +250,7 @@ The `scripts/github/post-research-comment.ts` file is provided in the starter fi
 2. Detects the recommendation (EXACT MATCH, PARTIAL MATCH, or NO MATCH)
 3. Posts the findings as a comment on the GitHub issue
 4. Manipulates labels:
-   - Removes `research-needed`
+   - Removes `cursor-research`
    - Adds `research-complete`
    - If NO MATCH: Adds `cursor-implement` to trigger implementation agent
    - If MATCH: Tags `@dev` for human review
@@ -258,13 +258,13 @@ The `scripts/github/post-research-comment.ts` file is provided in the starter fi
 #### 2.3 Workflow Behavior After Research
 
 - On `EXACT MATCH` or `PARTIAL MATCH`:
-  - Remove `research-needed` label
+  - Remove `cursor-research` label
   - Add `research-complete` label
   - Do NOT add `cursor-implement` (requires human to import existing rule)
   - Comment tags `@dev` to import the existing rule
 
 - On `NO MATCH`:
-  - Remove `research-needed` label
+  - Remove `cursor-research` label
   - Add `research-complete` label
   - **Automatically add `cursor-implement` label** to trigger implementation agent
 

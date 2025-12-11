@@ -1,15 +1,20 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import type { TSESLint } from '@typescript-eslint/utils';
+import pluralize from 'pluralize';
 import { createRule } from '../utils/createRule';
-import * as pluralize from 'pluralize';
 
 type MessageIds = 'missingBooleanPrefix';
 type Options = [
   {
     prefixes?: string[];
+    ignoreOverriddenGetters?: boolean;
   },
 ];
 
-// Default approved boolean prefixes
+// Default approved boolean prefixes. Some less common prefixes (e.g., 'are',
+// 'includes') stay allowed for flexibility even though the user-facing message
+// highlights only the most common ones. Underscore-prefixed names are also
+// intentionally allowed for private/internal fields.
 const DEFAULT_BOOLEAN_PREFIXES = [
   'is',
   'has',
@@ -29,6 +34,11 @@ const DEFAULT_BOOLEAN_PREFIXES = [
   'includes',
   'are', // Adding 'are' as an approved prefix (plural form of 'is')
 ];
+
+const DEFAULT_OPTIONS: Required<Options[0]> = {
+  prefixes: DEFAULT_BOOLEAN_PREFIXES,
+  ignoreOverriddenGetters: false,
+};
 
 export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
   name: 'enforce-boolean-naming-prefixes',
@@ -50,6 +60,10 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
               type: 'string',
             },
           },
+          ignoreOverriddenGetters: {
+            type: 'boolean',
+            default: false,
+          },
         },
         additionalProperties: false,
       },
@@ -61,23 +75,46 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         'This improves readability at call sites: `if (user.{{name}})` is ambiguous, but `if (user.is{{capitalizedName}})` clearly signals a boolean check.',
     },
   },
-  defaultOptions: [{ prefixes: DEFAULT_BOOLEAN_PREFIXES }],
+  defaultOptions: [DEFAULT_OPTIONS],
   create(context, [options]) {
-    const approvedPrefixes = options.prefixes || DEFAULT_BOOLEAN_PREFIXES;
+    const approvedPrefixes = options.prefixes || DEFAULT_OPTIONS.prefixes;
+    const ignoreOverriddenGetters =
+      options.ignoreOverriddenGetters ?? DEFAULT_OPTIONS.ignoreOverriddenGetters;
+    const importStatusCache = new Map<string, boolean>();
+    const externalApiUsageCache = new Map<string, boolean>();
+
+    function findVariableInScopes(
+      name: string,
+    ): TSESLint.Scope.Variable | undefined {
+      let currentScope: TSESLint.Scope.Scope | null = context.getScope();
+      while (currentScope) {
+        const variable = currentScope.variables.find((v) => v.name === name);
+        if (variable) return variable;
+        currentScope = currentScope.upper;
+      }
+      return undefined;
+    }
 
     /**
      * Check if a name starts with any of the approved prefixes, their plural forms,
      * or if it starts with an underscore (which indicates a private/internal property)
      */
-    function hasApprovedPrefix(name: string): boolean {
+    function hasApprovedPrefix(
+      name: string,
+      options?: { treatLeadingUnderscoreAsApproved?: boolean },
+    ): boolean {
+      const treatLeadingUnderscoreAsApproved =
+        options?.treatLeadingUnderscoreAsApproved ?? true;
+      const normalizedName = name.startsWith('_') ? name.slice(1) : name;
+
       // Skip checking properties that start with an underscore (private/internal properties)
-      if (name.startsWith('_')) {
+      if (treatLeadingUnderscoreAsApproved && name.startsWith('_')) {
         return true;
       }
 
       return approvedPrefixes.some((prefix) => {
         // Check for exact prefix match
-        if (name.toLowerCase().startsWith(prefix.toLowerCase())) {
+        if (normalizedName.toLowerCase().startsWith(prefix.toLowerCase())) {
           return true;
         }
 
@@ -85,11 +122,37 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         // Only apply pluralization to certain prefixes that have meaningful plural forms
         if (['is', 'has', 'does', 'was', 'had', 'did'].includes(prefix)) {
           const pluralPrefix = pluralize.plural(prefix);
-          return name.toLowerCase().startsWith(pluralPrefix.toLowerCase());
+          return normalizedName
+            .toLowerCase()
+            .startsWith(pluralPrefix.toLowerCase());
         }
 
         return false;
       });
+    }
+
+    function nameSuggestsBoolean(name: string): boolean {
+      const normalizedName = name.startsWith('_') ? name.slice(1) : name;
+      const lowerName = normalizedName.toLowerCase();
+      const suffixKeywords = [
+        'active',
+        'inactive',
+        'enabled',
+        'disabled',
+        'visible',
+        'ready',
+        'valid',
+        'verified',
+        'authenticated',
+        'authorized',
+      ];
+
+      return (
+        hasApprovedPrefix(normalizedName, {
+          treatLeadingUnderscoreAsApproved: false,
+        }) ||
+        suffixKeywords.some((keyword) => lowerName.endsWith(keyword))
+      );
     }
 
     /**
@@ -186,7 +249,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         // Check for logical expressions that typically return boolean
         if (
           node.init.type === AST_NODE_TYPES.BinaryExpression &&
-          ['===', '!==', '==', '!=', '>', '<', '>=', '<='].includes(
+          ['===', '!==', '==', '!=', '>', '<', '>=', '<=', 'in', 'instanceof'].includes(
             node.init.operator,
           )
         ) {
@@ -447,7 +510,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         }
         if (
           node.body.type === AST_NODE_TYPES.BinaryExpression &&
-          ['===', '!==', '==', '!=', '>', '<', '>=', '<='].includes(
+          ['===', '!==', '==', '!=', '>', '<', '>=', '<=', 'in', 'instanceof'].includes(
             node.body.operator,
           )
         ) {
@@ -480,6 +543,249 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       }
 
       return false;
+    }
+
+    type BooleanEvaluation = 'boolean' | 'nonBoolean' | 'unknown';
+
+    function identifierIsBoolean(identifier: TSESTree.Identifier): boolean {
+      if (nameSuggestsBoolean(identifier.name)) {
+        return true;
+      }
+
+      const variable = findVariableInScopes(identifier.name);
+      if (!variable) return false;
+
+      for (const def of variable.defs) {
+        if (def.type === 'Variable' && def.node) {
+          const declarator = def.node as unknown as TSESTree.VariableDeclarator;
+          if (
+            declarator.id.type === AST_NODE_TYPES.Identifier &&
+            (hasBooleanTypeAnnotation(declarator.id) ||
+              hasInitialBooleanValue(declarator))
+          ) {
+            return true;
+          }
+        }
+
+        if (
+          def.type === 'Parameter' &&
+          def.name?.type === AST_NODE_TYPES.Identifier &&
+          hasBooleanTypeAnnotation(def.name)
+        ) {
+          return true;
+        }
+
+        if (
+          def.type === 'FunctionName' &&
+          def.node &&
+          returnsBooleanValue(def.node as unknown as TSESTree.FunctionLike)
+        ) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    function callExpressionLooksBoolean(
+      callExpression: TSESTree.CallExpression,
+    ): BooleanEvaluation {
+      if (callExpression.callee.type === AST_NODE_TYPES.Identifier) {
+        const calleeName = callExpression.callee.name;
+        const lowerCallee = calleeName.toLowerCase();
+
+        if (lowerCallee.startsWith('assert')) {
+          return identifierReturnsBoolean(calleeName)
+            ? 'boolean'
+            : 'unknown';
+        }
+
+        const matchesPrefix = approvedPrefixes.some(
+          (prefix) =>
+            prefix !== 'asserts' &&
+            lowerCallee.startsWith(prefix.toLowerCase()),
+        );
+
+        if (
+          matchesPrefix ||
+          lowerCallee.includes('boolean') ||
+          lowerCallee.includes('enabled') ||
+          lowerCallee.includes('auth') ||
+          lowerCallee.includes('valid') ||
+          lowerCallee.includes('check')
+        ) {
+          return 'boolean';
+        }
+
+        if (
+          lowerCallee.startsWith('get') ||
+          lowerCallee.startsWith('fetch') ||
+          lowerCallee.startsWith('retrieve') ||
+          lowerCallee.startsWith('load') ||
+          lowerCallee.startsWith('read')
+        ) {
+          return 'unknown';
+        }
+      }
+
+      if (
+        callExpression.callee.type === AST_NODE_TYPES.MemberExpression &&
+        callExpression.callee.property.type === AST_NODE_TYPES.Identifier
+      ) {
+        const methodName = callExpression.callee.property.name;
+        const lowerMethodName = methodName.toLowerCase();
+
+        if (lowerMethodName.startsWith('assert')) {
+          return 'unknown';
+        }
+
+        const matchesPrefix = approvedPrefixes.some(
+          (prefix) =>
+            prefix !== 'asserts' &&
+            lowerMethodName.startsWith(prefix.toLowerCase()),
+        );
+
+        if (
+          matchesPrefix ||
+          lowerMethodName.includes('boolean') ||
+          lowerMethodName.includes('enabled') ||
+          lowerMethodName.includes('auth') ||
+          lowerMethodName.includes('valid') ||
+          lowerMethodName.includes('check')
+        ) {
+          return 'boolean';
+        }
+      }
+
+      return 'unknown';
+    }
+
+    function evaluateBooleanishExpression(
+      expression: TSESTree.Expression | null | undefined,
+    ): BooleanEvaluation {
+      if (!expression) return 'nonBoolean';
+
+      let currentExpression: TSESTree.Expression = expression;
+
+      if (
+        currentExpression.type === AST_NODE_TYPES.TSAsExpression ||
+        currentExpression.type === AST_NODE_TYPES.TSTypeAssertion ||
+        currentExpression.type === AST_NODE_TYPES.TSSatisfiesExpression
+      ) {
+        if (
+          currentExpression.typeAnnotation?.type ===
+          AST_NODE_TYPES.TSBooleanKeyword
+        ) {
+          return 'boolean';
+        }
+
+        currentExpression = currentExpression.expression as TSESTree.Expression;
+      }
+
+      if (currentExpression.type === AST_NODE_TYPES.ChainExpression) {
+        currentExpression = currentExpression.expression;
+      }
+
+      if (
+        (currentExpression as { type: string }).type ===
+        'ParenthesizedExpression'
+      ) {
+        return evaluateBooleanishExpression(
+          (currentExpression as { expression: TSESTree.Expression }).expression,
+        );
+      }
+
+      if (currentExpression.type === AST_NODE_TYPES.TSNonNullExpression) {
+        return evaluateBooleanishExpression(
+          currentExpression.expression as TSESTree.Expression,
+        );
+      }
+
+      if (
+        currentExpression.type === AST_NODE_TYPES.Literal &&
+        typeof currentExpression.value === 'boolean'
+      ) {
+        return 'boolean';
+      }
+
+      if (currentExpression.type === AST_NODE_TYPES.Identifier) {
+        return identifierIsBoolean(currentExpression) ? 'boolean' : 'unknown';
+      }
+
+      if (
+        currentExpression.type === AST_NODE_TYPES.MemberExpression &&
+        currentExpression.property.type === AST_NODE_TYPES.Identifier
+      ) {
+        return nameSuggestsBoolean(currentExpression.property.name)
+          ? 'boolean'
+          : 'unknown';
+      }
+
+      if (currentExpression.type === AST_NODE_TYPES.CallExpression) {
+        return callExpressionLooksBoolean(currentExpression);
+      }
+
+      if (currentExpression.type === AST_NODE_TYPES.BinaryExpression) {
+        if (
+          [
+            '===',
+            '!==',
+            '==',
+            '!=',
+            '>',
+            '<',
+            '>=',
+            '<=',
+            'in',
+            'instanceof',
+          ].includes(currentExpression.operator)
+        ) {
+          return 'boolean';
+        }
+      }
+
+      if (
+        currentExpression.type === AST_NODE_TYPES.UnaryExpression &&
+        currentExpression.operator === '!'
+      ) {
+        return 'boolean';
+      }
+
+      if (currentExpression.type === AST_NODE_TYPES.LogicalExpression) {
+        const left = evaluateBooleanishExpression(currentExpression.left);
+        const right = evaluateBooleanishExpression(currentExpression.right);
+
+        if (left === 'nonBoolean' || right === 'nonBoolean') {
+          return 'nonBoolean';
+        }
+
+        if (left === 'boolean' && right === 'boolean') {
+          return 'boolean';
+        }
+
+        return 'unknown';
+      }
+
+      if (currentExpression.type === AST_NODE_TYPES.ConditionalExpression) {
+        const consequent = evaluateBooleanishExpression(
+          currentExpression.consequent,
+        );
+        const alternate = evaluateBooleanishExpression(
+          currentExpression.alternate,
+        );
+
+        if (consequent === 'nonBoolean' || alternate === 'nonBoolean') {
+          return 'nonBoolean';
+        }
+
+        if (consequent === 'boolean' && alternate === 'boolean') {
+          return 'boolean';
+        }
+
+        return 'unknown';
+      }
+
+      return 'unknown';
     }
 
     /**
@@ -661,6 +967,97 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     }
 
     /**
+     * Traverses an AST depth-first, skipping metadata keys, and stops early when the
+     * visitor returns true.
+     */
+    const isTraversalMetadataKey = (key: string) =>
+      key === 'parent' || key === 'range' || key === 'loc';
+
+    function traverseAst(
+      node: TSESTree.Node,
+      visitor: (candidate: TSESTree.Node) => boolean,
+    ): boolean {
+      if (visitor(node)) return true;
+
+      for (const key in node) {
+        if (isTraversalMetadataKey(key)) continue;
+
+        const value = (node as unknown as Record<string, unknown>)[key];
+        if (Array.isArray(value)) {
+          for (const child of value) {
+            if (
+              child &&
+              typeof child === 'object' &&
+              (child as { type?: unknown }).type
+            ) {
+              if (traverseAst(child as TSESTree.Node, visitor)) {
+                return true;
+              }
+            }
+          }
+        } else if (
+          value &&
+          typeof value === 'object' &&
+          (value as { type?: unknown }).type
+        ) {
+          if (traverseAst(value as TSESTree.Node, visitor)) {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    }
+
+    function collectReturnArguments(
+      root: TSESTree.Node,
+    ): Array<TSESTree.Expression | null> {
+      const results: Array<TSESTree.Expression | null> = [];
+
+      function walk(node: TSESTree.Node) {
+        if (node.type === AST_NODE_TYPES.ReturnStatement) {
+          results.push(node.argument ?? null);
+          return;
+        }
+
+        if (
+          node !== root &&
+          (node.type === AST_NODE_TYPES.FunctionDeclaration ||
+            node.type === AST_NODE_TYPES.FunctionExpression ||
+            node.type === AST_NODE_TYPES.ArrowFunctionExpression)
+        ) {
+          return;
+        }
+
+        for (const key in node) {
+          if (isTraversalMetadataKey(key)) continue;
+
+          const value = (node as unknown as Record<string, unknown>)[key];
+          if (Array.isArray(value)) {
+            for (const child of value) {
+              if (
+                child &&
+                typeof child === 'object' &&
+                (child as { type?: unknown }).type
+              ) {
+                walk(child as TSESTree.Node);
+              }
+            }
+          } else if (
+            value &&
+            typeof value === 'object' &&
+            (value as { type?: unknown }).type
+          ) {
+            walk(value as TSESTree.Node);
+          }
+        }
+      }
+
+      walk(root);
+      return results;
+    }
+
+    /**
      * Check if a variable is used in a while loop condition
      * This searches the scope for while loops that use the variable in their condition
      */
@@ -683,43 +1080,13 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         return false;
       }
 
-      // Recursively search for while loops that use this variable in their condition
-      function searchForWhileLoops(searchNode: TSESTree.Node): boolean {
-        // Check if this is a while loop with our variable in the condition
-        if (searchNode.type === AST_NODE_TYPES.WhileStatement) {
-          // Check if the condition uses our variable
-          if (
-            searchNode.test.type === AST_NODE_TYPES.Identifier &&
-            searchNode.test.name === variableName
-          ) {
-            return true;
-          }
-        }
-
-        // Recursively search child nodes
-        for (const key in searchNode) {
-          if (key === 'parent' || key === 'range' || key === 'loc') continue;
-
-          const value = (searchNode as any)[key];
-          if (Array.isArray(value)) {
-            for (const child of value) {
-              if (child && typeof child === 'object' && child.type) {
-                if (searchForWhileLoops(child)) {
-                  return true;
-                }
-              }
-            }
-          } else if (value && typeof value === 'object' && value.type) {
-            if (searchForWhileLoops(value)) {
-              return true;
-            }
-          }
-        }
-
-        return false;
-      }
-
-      return searchForWhileLoops(currentScope);
+      return traverseAst(currentScope, (searchNode) => {
+        return (
+          searchNode.type === AST_NODE_TYPES.WhileStatement &&
+          searchNode.test.type === AST_NODE_TYPES.Identifier &&
+          searchNode.test.name === variableName
+        );
+      });
     }
 
     /**
@@ -751,9 +1118,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         return false;
       }
 
-      // Recursively search for assignment patterns in the scope
-      function searchForAssignments(node: TSESTree.Node): boolean {
-        // Check if this is an assignment expression that reassigns our variable
+      return traverseAst(currentScope, (node) => {
         if (
           node.type === AST_NODE_TYPES.AssignmentExpression &&
           node.left.type === AST_NODE_TYPES.Identifier &&
@@ -789,31 +1154,8 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
             return true;
           }
         }
-
-        // Recursively search child nodes
-        for (const key in node) {
-          if (key === 'parent' || key === 'range' || key === 'loc') continue;
-
-          const value = (node as any)[key];
-          if (Array.isArray(value)) {
-            for (const child of value) {
-              if (child && typeof child === 'object' && child.type) {
-                if (searchForAssignments(child)) {
-                  return true;
-                }
-              }
-            }
-          } else if (value && typeof value === 'object' && value.type) {
-            if (searchForAssignments(value)) {
-              return true;
-            }
-          }
-        }
-
         return false;
-      }
-
-      return searchForAssignments(currentScope);
+      });
     }
 
     /**
@@ -855,6 +1197,48 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       }
 
       return false;
+    }
+
+    function getterReturnsBoolean(
+      node: TSESTree.MethodDefinition | TSESTree.TSAbstractMethodDefinition,
+    ): boolean {
+      if (node.kind !== 'get') {
+        return false;
+      }
+
+      const functionLike = node.value;
+      const returnAnnotation =
+        functionLike?.returnType?.typeAnnotation ||
+        (node as { returnType?: TSESTree.TSTypeAnnotation }).returnType
+          ?.typeAnnotation;
+
+      if (
+        returnAnnotation &&
+        returnAnnotation.type === (AST_NODE_TYPES.TSBooleanKeyword as any)
+      ) {
+        return true;
+      }
+
+      if (
+        !functionLike?.body ||
+        functionLike.body.type !== AST_NODE_TYPES.BlockStatement
+      ) {
+        return false;
+      }
+
+      const returnArguments = collectReturnArguments(functionLike.body);
+      if (returnArguments.length === 0) {
+        return false;
+      }
+
+      for (const argument of returnArguments) {
+        const evaluation = evaluateBooleanishExpression(argument);
+        if (evaluation !== 'boolean') {
+          return false;
+        }
+      }
+
+      return true;
     }
 
     /**
@@ -966,32 +1350,49 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     /**
      * Check method definitions for boolean return values
      */
-    function checkMethodDefinition(node: TSESTree.MethodDefinition) {
+    function checkMethodDefinition(
+      node: TSESTree.MethodDefinition | TSESTree.TSAbstractMethodDefinition,
+    ) {
       if (node.key.type !== AST_NODE_TYPES.Identifier) return;
 
       const methodName = node.key.name;
+      const isGetter = node.kind === 'get';
 
-      // Skip checking if it's a type predicate
+      const returnAnnotation =
+        node.value?.returnType?.typeAnnotation ||
+        (node as { returnType?: TSESTree.TSTypeAnnotation }).returnType
+          ?.typeAnnotation;
+
       if (
-        node.value.returnType?.typeAnnotation &&
-        node.value.returnType.typeAnnotation.type ===
-          (AST_NODE_TYPES.TSTypePredicate as any)
+        ignoreOverriddenGetters &&
+        isGetter &&
+        ((node as { override?: boolean }).override ||
+          (node as { abstract?: boolean }).abstract ||
+          !node.value?.body ||
+          node.type === AST_NODE_TYPES.TSAbstractMethodDefinition)
       ) {
         return;
       }
 
-      // Check if it returns a boolean
+      // Skip checking if it's a type predicate
       if (
-        node.value.returnType?.typeAnnotation &&
-        node.value.returnType.typeAnnotation.type ===
-          (AST_NODE_TYPES.TSBooleanKeyword as any) &&
-        !hasApprovedPrefix(methodName)
+        returnAnnotation &&
+        returnAnnotation.type === (AST_NODE_TYPES.TSTypePredicate as any)
       ) {
+        return;
+      }
+
+      const returnsBoolean =
+        (returnAnnotation &&
+          returnAnnotation.type === (AST_NODE_TYPES.TSBooleanKeyword as any)) ||
+        (isGetter && getterReturnsBoolean(node));
+
+      if (returnsBoolean && !hasApprovedPrefix(methodName)) {
         context.report({
           node: node.key,
           messageId: 'missingBooleanPrefix',
           data: {
-            type: 'method',
+            type: isGetter ? 'getter' : 'method',
             name: methodName,
             capitalizedName: capitalizeFirst(methodName),
             prefixes: formatPrefixes(),
@@ -1088,125 +1489,126 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
      * Check if an identifier is imported from an external module
      */
     function isImportedIdentifier(name: string): boolean {
-      // Try to find the variable in all scopes, starting from current and going up
-      let currentScope: any = context.getScope();
-      let variable: any = undefined;
-
-      while (currentScope && !variable) {
-        variable = currentScope.variables.find((v: any) => v.name === name);
-        if (!variable) {
-          currentScope = currentScope.upper;
-        }
+      if (importStatusCache.has(name)) {
+        const cached = importStatusCache.get(name);
+        if (cached !== undefined) return cached;
       }
 
-      if (!variable) return false;
+      const variable = findVariableInScopes(name);
+      if (!variable) {
+        importStatusCache.set(name, false);
+        return false;
+      }
 
-      // Check if it's an import binding
-      return variable.defs.some((def: any) => def.type === 'ImportBinding');
+      const isImport = variable.defs.some(
+        (def: any) => def.type === 'ImportBinding',
+      );
+      importStatusCache.set(name, isImport);
+      return isImport;
     }
 
     /**
      * Check if a variable is used with an external API
      */
     function isVariableUsedWithExternalApi(variableName: string): boolean {
-      // Try to find the variable in all scopes, starting from current and going up
-      let currentScope: any = context.getScope();
-      let variable: any = undefined;
-
-      while (currentScope && !variable) {
-        variable = currentScope.variables.find(
-          (v: any) => v.name === variableName,
-        );
-        if (!variable) {
-          currentScope = currentScope.upper;
-        }
+      if (externalApiUsageCache.has(variableName)) {
+        const cached = externalApiUsageCache.get(variableName);
+        if (cached !== undefined) return cached;
       }
 
+      const variable = findVariableInScopes(variableName);
       if (!variable) {
+        externalApiUsageCache.set(variableName, false);
         return false;
       }
 
-      // Check all references to this variable
       for (const reference of variable.references) {
-        // Skip the declaration reference
-        if (reference.identifier === variable.identifiers[0]) {
-          continue;
-        }
-
+        if (reference.identifier === variable.identifiers[0]) continue;
         const id = reference.identifier;
 
-        // Check if the variable is used as a property value in an object passed to a function call
+        const markAndReturnTrue = () => {
+          externalApiUsageCache.set(variableName, true);
+          return true;
+        };
+
         if (
           id.parent?.type === AST_NODE_TYPES.Property &&
-          id.parent.parent?.type === AST_NODE_TYPES.ObjectExpression
+          id.parent.parent?.type === AST_NODE_TYPES.ObjectExpression &&
+          id.parent.parent.parent?.type === AST_NODE_TYPES.CallExpression &&
+          id.parent.parent.parent.callee.type === AST_NODE_TYPES.Identifier &&
+          isImportedIdentifier(id.parent.parent.parent.callee.name)
         ) {
-          // Check if this object is passed to a function call
-          if (id.parent.parent.parent?.type === AST_NODE_TYPES.CallExpression) {
-            const callExpression = id.parent.parent.parent;
-
-            // Check if the function being called is imported
-            if (callExpression.callee.type === AST_NODE_TYPES.Identifier) {
-              const calleeName = callExpression.callee.name;
-              if (isImportedIdentifier(calleeName)) {
-                return true;
-              }
-            }
-          }
+          return markAndReturnTrue();
         }
 
-        // Check if the variable is directly passed to a function call
         if (id.parent?.type === AST_NODE_TYPES.CallExpression) {
-          // Handle direct function calls like ExternalLib(config)
-          if (id.parent.callee.type === AST_NODE_TYPES.Identifier) {
-            const calleeName = id.parent.callee.name;
-            if (isImportedIdentifier(calleeName)) {
-              return true;
-            }
+          if (
+            id.parent.callee.type === AST_NODE_TYPES.Identifier &&
+            isImportedIdentifier(id.parent.callee.name)
+          ) {
+            return markAndReturnTrue();
           }
-
-          // Handle member expression calls like ExternalLib.create(config)
-          if (id.parent.callee.type === AST_NODE_TYPES.MemberExpression) {
-            const objectNode = id.parent.callee.object;
-            if (objectNode.type === AST_NODE_TYPES.Identifier) {
-              const objectName = objectNode.name;
-              if (isImportedIdentifier(objectName)) {
-                return true;
-              }
-            }
+          if (
+            id.parent.callee.type === AST_NODE_TYPES.MemberExpression &&
+            id.parent.callee.object.type === AST_NODE_TYPES.Identifier &&
+            isImportedIdentifier(id.parent.callee.object.name)
+          ) {
+            return markAndReturnTrue();
           }
         }
 
-        // Check if the variable is used in JSX attributes
         if (
           id.parent?.type === AST_NODE_TYPES.JSXExpressionContainer &&
           id.parent.parent?.type === AST_NODE_TYPES.JSXAttribute &&
-          id.parent.parent.parent?.type === AST_NODE_TYPES.JSXOpeningElement
+          id.parent.parent.parent?.type === AST_NODE_TYPES.JSXOpeningElement &&
+          id.parent.parent.parent.name.type === AST_NODE_TYPES.JSXIdentifier &&
+          isImportedIdentifier(id.parent.parent.parent.name.name)
         ) {
-          const jsxOpeningElement = id.parent.parent.parent;
-          if (jsxOpeningElement.name.type === AST_NODE_TYPES.JSXIdentifier) {
-            const componentName = jsxOpeningElement.name.name;
-            if (isImportedIdentifier(componentName)) {
-              return true;
-            }
-          }
+          return markAndReturnTrue();
         }
 
-        // Check if the variable is used in JSX spread attributes
         if (
           id.parent?.type === AST_NODE_TYPES.JSXSpreadAttribute &&
-          id.parent.parent?.type === AST_NODE_TYPES.JSXOpeningElement
+          id.parent.parent?.type === AST_NODE_TYPES.JSXOpeningElement &&
+          id.parent.parent.name.type === AST_NODE_TYPES.JSXIdentifier &&
+          isImportedIdentifier(id.parent.parent.name.name)
         ) {
-          const jsxOpeningElement = id.parent.parent;
-          if (jsxOpeningElement.name.type === AST_NODE_TYPES.JSXIdentifier) {
-            const componentName = jsxOpeningElement.name.name;
-            if (isImportedIdentifier(componentName)) {
-              return true;
-            }
-          }
+          return markAndReturnTrue();
         }
       }
 
+      externalApiUsageCache.set(variableName, false);
       return false;
+    }
+
+    const HOOK_NAMES = new Set(['useMemo', 'useCallback', 'useState']);
+
+    function findVariableFromReactHook(
+      objectExpr: TSESTree.ObjectExpression,
+    ): string | undefined {
+      let current: TSESTree.Node | undefined = objectExpr;
+
+      while (current) {
+        if (current.type === AST_NODE_TYPES.TSAsExpression) {
+          current = current.parent as TSESTree.Node | undefined;
+          continue;
+        }
+
+        if (
+          current.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+          current.parent?.type === AST_NODE_TYPES.CallExpression &&
+          current.parent.callee.type === AST_NODE_TYPES.Identifier &&
+          HOOK_NAMES.has(current.parent.callee.name) &&
+          current.parent.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+          current.parent.parent.id.type === AST_NODE_TYPES.Identifier
+        ) {
+          return current.parent.parent.id.name;
+        }
+
+        current = current.parent as TSESTree.Node | undefined;
+      }
+
+      return undefined;
     }
 
     /**
@@ -1298,61 +1700,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         // 1. const messageInputProps = useMemo(() => ({ grow: true }), [])
         // 2. const messageInputProps = useMemo(() => { return { grow: true }; }, [])
         if (node.parent?.type === AST_NODE_TYPES.ObjectExpression) {
-          const currentNode: TSESTree.Node | undefined = node.parent;
-          let variableName: string | undefined;
+          const hookVariable = findVariableFromReactHook(node.parent);
 
-          // Handle TypeScript 'as const' expressions
-          let parentNode = currentNode.parent;
-          if (parentNode?.type === AST_NODE_TYPES.TSAsExpression) {
-            parentNode = parentNode.parent;
-          }
-
-          // Case 1: Arrow function with expression body - useMemo(() => ({ ... }), [])
-          if (
-            parentNode?.type === AST_NODE_TYPES.ArrowFunctionExpression &&
-            parentNode.parent?.type === AST_NODE_TYPES.CallExpression &&
-            parentNode.parent.callee.type === AST_NODE_TYPES.Identifier &&
-            (parentNode.parent.callee.name === 'useMemo' ||
-              parentNode.parent.callee.name === 'useCallback' ||
-              parentNode.parent.callee.name === 'useState') &&
-            parentNode.parent.parent?.type ===
-              AST_NODE_TYPES.VariableDeclarator &&
-            parentNode.parent.parent.id.type === AST_NODE_TYPES.Identifier
-          ) {
-            variableName = parentNode.parent.parent.id.name;
-          }
-
-          // Case 2: Arrow function with block body - useMemo(() => { return { ... }; }, [])
-          else {
-            // Handle TypeScript 'as const' expressions for return statements
-            let returnParent = currentNode.parent;
-            if (returnParent?.type === AST_NODE_TYPES.TSAsExpression) {
-              returnParent = returnParent.parent;
-            }
-
-            if (
-              returnParent?.type === AST_NODE_TYPES.ReturnStatement &&
-              returnParent.parent?.type === AST_NODE_TYPES.BlockStatement &&
-              returnParent.parent.parent?.type ===
-                AST_NODE_TYPES.ArrowFunctionExpression &&
-              returnParent.parent.parent.parent?.type ===
-                AST_NODE_TYPES.CallExpression &&
-              returnParent.parent.parent.parent.callee.type ===
-                AST_NODE_TYPES.Identifier &&
-              (returnParent.parent.parent.parent.callee.name === 'useMemo' ||
-                returnParent.parent.parent.parent.callee.name ===
-                  'useCallback' ||
-                returnParent.parent.parent.parent.callee.name === 'useState') &&
-              returnParent.parent.parent.parent.parent?.type ===
-                AST_NODE_TYPES.VariableDeclarator &&
-              returnParent.parent.parent.parent.parent.id.type ===
-                AST_NODE_TYPES.Identifier
-            ) {
-              variableName = returnParent.parent.parent.parent.parent.id.name;
-            }
-          }
-
-          if (variableName && isVariableUsedWithExternalApi(variableName)) {
+          if (hookVariable && isVariableUsedWithExternalApi(hookVariable)) {
             isExternalApiCall = true;
           }
         }
@@ -1531,6 +1881,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         }
       },
       MethodDefinition: checkMethodDefinition,
+      TSAbstractMethodDefinition: checkMethodDefinition,
       Property: checkProperty,
       ClassProperty: checkClassProperty,
       PropertyDefinition: checkClassPropertyDeclaration, // For TypeScript class properties

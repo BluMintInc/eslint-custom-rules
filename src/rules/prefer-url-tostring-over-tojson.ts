@@ -19,16 +19,21 @@ function isUrlConstructor(newExpr: TSESTree.NewExpression): boolean {
 }
 
 function isJSONStringifyCall(node: TSESTree.CallExpression): boolean {
-  const callee = node.callee;
-  if (callee.type === AST_NODE_TYPES.MemberExpression) {
-    return (
-      callee.object.type === AST_NODE_TYPES.Identifier &&
-      callee.object.name === 'JSON' &&
-      callee.property.type === AST_NODE_TYPES.Identifier &&
-      callee.property.name === 'stringify'
-    );
+  const { callee } = node;
+  if (callee.type !== AST_NODE_TYPES.MemberExpression) return false;
+
+  let objectExpr: TSESTree.Expression = callee.object as TSESTree.Expression;
+  while (objectExpr.type === AST_NODE_TYPES.MemberExpression) {
+    objectExpr = objectExpr.object as TSESTree.Expression;
   }
-  return false;
+
+  const isJsonIdentifier =
+    objectExpr.type === AST_NODE_TYPES.Identifier && objectExpr.name === 'JSON';
+  const isStringifyProperty =
+    callee.property.type === AST_NODE_TYPES.Identifier &&
+    callee.property.name === 'stringify';
+
+  return isJsonIdentifier && isStringifyProperty;
 }
 
 function findEnclosingJSONStringify(
@@ -103,15 +108,13 @@ export const preferUrlToStringOverToJson: TSESLint.RuleModule<
         try {
           const tsNode = parserServices.esTreeNodeToTSNodeMap.get(expr);
           const type = checker.getTypeAtLocation(tsNode);
-          const typeName = checker.typeToString(type);
-          // Common representations include "URL", "globalThis.URL", "typeof URL" in some contexts
-          if (
-            typeName === 'URL' ||
-            typeName.endsWith('.URL') ||
-            typeName.includes('URL')
-          ) {
-            return true;
-          }
+          const isUrl = (t: ts.Type): boolean => {
+            const sym = t.getSymbol();
+            if (sym?.getName() === 'URL') return true;
+            const unionTypes = (t as ts.UnionOrIntersectionType).types;
+            return Array.isArray(unionTypes) && unionTypes.some(isUrl);
+          };
+          if (isUrl(type)) return true;
         } catch {
           // ignore type errors and fall through
         }
@@ -145,10 +148,12 @@ export const preferUrlToStringOverToJson: TSESLint.RuleModule<
         const callee = node.callee;
         if (callee.type !== AST_NODE_TYPES.MemberExpression) return;
 
-        // property should be .toJSON
+        // property should be .toJSON or ['toJSON']
         if (
-          callee.property.type !== AST_NODE_TYPES.Identifier ||
-          callee.property.name !== 'toJSON'
+          (callee.property.type === AST_NODE_TYPES.Identifier &&
+            callee.property.name !== 'toJSON') ||
+          (callee.property.type === AST_NODE_TYPES.Literal &&
+            callee.property.value !== 'toJSON')
         ) {
           return;
         }
@@ -187,8 +192,9 @@ export const preferUrlToStringOverToJson: TSESLint.RuleModule<
     type: 'suggestion',
     docs: {
       description:
-        'Enforce the use of toString() over toJSON() on URL objects. Prefer passing URL objects directly to JSON.stringify, which will call toJSON automatically.',
+        'Enforce the use of toString() over toJSON() on URL objects. Prefer passing URL objects directly to JSON.stringify, which will call toJSON automatically. See docs/rules/prefer-url-tostring-over-tojson.md for examples.',
       recommended: 'error',
+      requiresTypeChecking: false,
     },
     fixable: 'code',
     schema: [],
