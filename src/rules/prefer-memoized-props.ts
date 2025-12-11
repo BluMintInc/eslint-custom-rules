@@ -8,7 +8,7 @@ type ComponentState = {
     | TSESTree.FunctionDeclaration
     | TSESTree.FunctionExpression
     | TSESTree.ArrowFunctionExpression;
-  bindings: Map<string, BindingKind>;
+  scopes: Map<string, BindingKind>[];
 };
 
 type MessageIds = 'memoizeReferenceProp' | 'avoidPrimitiveMemo';
@@ -43,6 +43,7 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
       | TSESTree.ArrowFunctionExpression
     >();
     const componentStack: ComponentState[] = [];
+    const scopedFunctions = new WeakSet<TSESTree.Node>();
 
     function isReactMemoCallee(
       callee: TSESTree.LeftHandSideExpression,
@@ -154,7 +155,7 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
     }
 
     function pushComponent(node: ComponentState['node']): void {
-      componentStack.push({ node, bindings: new Map() });
+      componentStack.push({ node, scopes: [new Map()] });
     }
 
     function popComponent(node: ComponentState['node']): void {
@@ -166,6 +167,27 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
 
     function currentComponent(): ComponentState | undefined {
       return componentStack[componentStack.length - 1];
+    }
+
+    function currentScope(): Map<string, BindingKind> | undefined {
+      const component = currentComponent();
+      if (!component) return undefined;
+      return component.scopes[component.scopes.length - 1];
+    }
+
+    function pushScopeForNestedFunction(node: TSESTree.Node): void {
+      const component = currentComponent();
+      if (!component) return;
+      component.scopes.push(new Map());
+      scopedFunctions.add(node);
+    }
+
+    function popScopeForNestedFunction(node: TSESTree.Node): void {
+      const component = currentComponent();
+      if (!component) return;
+      if (!scopedFunctions.has(node)) return;
+      component.scopes.pop();
+      scopedFunctions.delete(node);
     }
 
     function classifyInitializer(
@@ -200,8 +222,8 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
     }
 
     function recordBinding(node: TSESTree.VariableDeclarator): void {
-      const component = currentComponent();
-      if (!component) return;
+      const scope = currentScope();
+      if (!scope) return;
       if (node.id.type !== AST_NODE_TYPES.Identifier || !node.init) {
         return;
       }
@@ -212,13 +234,16 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
           : null;
 
       const kind = aliasKind ?? classifyInitializer(node.init);
-      if (kind) component.bindings.set(node.id.name, kind);
+      if (kind) scope.set(node.id.name, kind);
     }
 
     function findBindingKind(name: string): BindingKind | null {
       for (let i = componentStack.length - 1; i >= 0; i -= 1) {
-        const binding = componentStack[i].bindings.get(name);
-        if (binding) return binding;
+        const component = componentStack[i];
+        for (let j = component.scopes.length - 1; j >= 0; j -= 1) {
+          const binding = component.scopes[j].get(name);
+          if (binding) return binding;
+        }
       }
       return null;
     }
@@ -357,21 +382,57 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
       FunctionDeclaration(node) {
         if (isMemoizedComponent(node)) {
           pushComponent(node);
+          return;
+        }
+
+        const scope = currentScope();
+        if (scope && node.id?.type === AST_NODE_TYPES.Identifier) {
+          scope.set(node.id.name, 'function');
+        }
+
+        if (currentComponent()) {
+          pushScopeForNestedFunction(node);
         }
       },
-      'FunctionDeclaration:exit': popComponent,
+      'FunctionDeclaration:exit'(node) {
+        if (isMemoizedComponent(node)) {
+          popComponent(node);
+          return;
+        }
+        popScopeForNestedFunction(node);
+      },
       FunctionExpression(node) {
         if (isMemoizedComponent(node)) {
           pushComponent(node);
+          return;
+        }
+        if (currentComponent()) {
+          pushScopeForNestedFunction(node);
         }
       },
-      'FunctionExpression:exit': popComponent,
+      'FunctionExpression:exit'(node) {
+        if (isMemoizedComponent(node)) {
+          popComponent(node);
+          return;
+        }
+        popScopeForNestedFunction(node);
+      },
       ArrowFunctionExpression(node) {
         if (isMemoizedComponent(node)) {
           pushComponent(node);
+          return;
+        }
+        if (currentComponent()) {
+          pushScopeForNestedFunction(node);
         }
       },
-      'ArrowFunctionExpression:exit': popComponent,
+      'ArrowFunctionExpression:exit'(node) {
+        if (isMemoizedComponent(node)) {
+          popComponent(node);
+          return;
+        }
+        popScopeForNestedFunction(node);
+      },
       VariableDeclarator: recordBinding,
       CallExpression: handleUseMemo,
       JSXAttribute: handleJSXAttribute,

@@ -89,6 +89,18 @@ ruleTesterJsx.run('prefer-memoized-props', preferMemoizedProps, {
         return <span>{memoized}</span>;
       });
     `,
+    `
+      import { memo, useMemo } from 'react';
+      const Shadowing = memo(() => {
+        const stable = useMemo(() => ({ ready: true }), []);
+        function renderRow() {
+          const stable = { shadowed: true };
+          return stable;
+        }
+        renderRow();
+        return <Child config={stable} />;
+      });
+    `,
   ],
   invalid: [
     {
@@ -251,6 +263,31 @@ ruleTesterJsx.run('prefer-memoized-props', preferMemoizedProps, {
         const Icon = memo(({ href }) => (
           <svg xlink:href={{ url: href }} />
         ));
+      `,
+      errors: [{ messageId: 'memoizeReferenceProp' }],
+    },
+    {
+      code: `
+        import { memo } from 'react';
+        const DeclaredHandler = memo(({ save }) => {
+          function handleSave() {
+            save();
+          }
+          return <Button onClick={handleSave} />;
+        });
+      `,
+      errors: [{ messageId: 'memoizeReferenceProp' }],
+    },
+    {
+      code: `
+        import { memo } from 'react';
+        const NestedRenderer = memo(() => {
+          function renderItem() {
+            const payload = { id: '1' };
+            return <Item payload={payload} />;
+          }
+          return renderItem();
+        });
       `,
       errors: [{ messageId: 'memoizeReferenceProp' }],
     },
