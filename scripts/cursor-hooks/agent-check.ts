@@ -412,7 +412,12 @@ async function performAgentCheckInternal(input: Input) {
     return { followup_message: undefined } as const;
   }
 
-  // Priority 0: PR Review Check
+  // Priority 0: Merge Conflict Check - merge conflicts block all other validation
+  const { performMergeConflictCheck } = await import('./merge-conflict-check');
+  const mergeConflictResult = performMergeConflictCheck(input);
+  if (mergeConflictResult) return mergeConflictResult;
+
+  // Priority 1: PR Review Check
   const { performPrReviewCheck } = await import('./pr-review-check');
   const prReviewResult = await performPrReviewCheck(input);
   if (prReviewResult) return prReviewResult;
