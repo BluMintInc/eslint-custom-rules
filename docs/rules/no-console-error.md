@@ -14,6 +14,8 @@
 
 - Reports any call to `console.error`, including optional chaining and computed properties.
 - Flags aliasing of `console.error` via destructuring, assignment, or storing `console` in another variable before calling `.error`.
+- Stops tracking aliases after they are reassigned to non-console targets to avoid false positives.
+- Allows locally shadowed `console` objects so intentional logger shims are not reported.
 - Skips files matched by default ignores: `**/__tests__/**`, `**/__mocks__/**`, `**/__playwright__/**`, `**/scripts/**`, `**/electron/**`, `**/node_modules/**`, `**/dist/**`, `**/build/**`, `**/.next/**`, `**/coverage/**`.
 - Does not auto-fix; remediation depends on context (throw vs. structured logger).
 

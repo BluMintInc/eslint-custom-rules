@@ -23,6 +23,330 @@ const defaultIgnorePatterns = [
   '**/coverage/**',
 ];
 
+const normalizeFilename = (filename: string) => filename.replace(/\\/g, '/');
+
+const buildShouldIgnoreFile = (options: Options[0]) => {
+  const ignorePatterns = [
+    ...defaultIgnorePatterns,
+    ...(options?.ignorePatterns ?? []),
+  ];
+
+  return (filename: string) => {
+    const normalizedFilename = normalizeFilename(filename);
+
+    return (
+      normalizedFilename &&
+      !normalizedFilename.startsWith('<') &&
+      ignorePatterns.some((pattern) =>
+        minimatch(normalizedFilename, pattern, { dot: true }),
+      )
+    );
+  };
+};
+
+const unwrapChainExpression = <T extends TSESTree.Node>(
+  node: T | TSESTree.ChainExpression | null | undefined,
+): T | null => {
+  if (!node) {
+    return null;
+  }
+  if (node.type === AST_NODE_TYPES.ChainExpression) {
+    return node.expression as T;
+  }
+  return node;
+};
+
+const findVariable = (
+  scope: TSESLint.Scope.Scope | null,
+  name: string,
+): TSESLint.Scope.Variable | null => {
+  let current: TSESLint.Scope.Scope | null = scope;
+  while (current) {
+    const variable = current.variables.find((v) => v.name === name);
+    if (variable) {
+      return variable;
+    }
+    current = current.upper;
+  }
+  return null;
+};
+
+const isErrorKey = (
+  key: TSESTree.Expression | TSESTree.PrivateIdentifier,
+  computed: boolean,
+) => {
+  if (!computed && key.type === AST_NODE_TYPES.Identifier) {
+    return key.name === 'error';
+  }
+
+  if (computed) {
+    if (key.type === AST_NODE_TYPES.Literal && key.value === 'error') {
+      return true;
+    }
+
+    if (
+      key.type === AST_NODE_TYPES.TemplateLiteral &&
+      key.expressions.length === 0 &&
+      key.quasis.length === 1 &&
+      key.quasis[0].value.raw === 'error'
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const getLocalNameFromPattern = (target: TSESTree.Node): string | null => {
+  if (target.type === AST_NODE_TYPES.Identifier) {
+    return target.name;
+  }
+
+  if (
+    target.type === AST_NODE_TYPES.AssignmentPattern &&
+    target.left.type === AST_NODE_TYPES.Identifier
+  ) {
+    return target.left.name;
+  }
+
+  return null;
+};
+
+const findDeclaredVariableByName = (
+  name: string,
+  variables: readonly TSESLint.Scope.Variable[],
+) => variables.find((variable) => variable.name === name);
+
+class AliasTracker {
+  private consoleAliases = new Set<TSESLint.Scope.Variable>();
+  private errorAliases = new Set<TSESLint.Scope.Variable>();
+
+  markConsole(variable: TSESLint.Scope.Variable | null | undefined) {
+    if (!variable) {
+      return;
+    }
+    this.consoleAliases.add(variable);
+    this.errorAliases.delete(variable);
+  }
+
+  markError(variable: TSESLint.Scope.Variable | null | undefined) {
+    if (!variable) {
+      return;
+    }
+    this.errorAliases.add(variable);
+    this.consoleAliases.delete(variable);
+  }
+
+  untrack(variable: TSESLint.Scope.Variable | null | undefined) {
+    if (!variable) {
+      return;
+    }
+    this.consoleAliases.delete(variable);
+    this.errorAliases.delete(variable);
+  }
+
+  isConsoleIdentifier(
+    identifier: TSESTree.Identifier,
+    scope: TSESLint.Scope.Scope | null,
+  ) {
+    const variable = findVariable(scope, identifier.name);
+    if (variable) {
+      return this.consoleAliases.has(variable);
+    }
+    return identifier.name === 'console';
+  }
+
+  isConsoleObject(
+    expression: TSESTree.Expression,
+    scope: TSESLint.Scope.Scope | null,
+  ) {
+    const unwrapped = unwrapChainExpression(expression);
+    if (!unwrapped || unwrapped.type !== AST_NODE_TYPES.Identifier) {
+      return false;
+    }
+    return this.isConsoleIdentifier(unwrapped, scope);
+  }
+
+  isConsoleErrorMemberExpression(
+    member: TSESTree.MemberExpression,
+    scope: TSESLint.Scope.Scope | null,
+  ) {
+    return (
+      this.isConsoleObject(member.object as TSESTree.Expression, scope) &&
+      isErrorKey(member.property, member.computed ?? false)
+    );
+  }
+
+  isErrorAlias(
+    identifier: TSESTree.Identifier,
+    scope: TSESLint.Scope.Scope | null,
+  ) {
+    const variable = findVariable(scope, identifier.name);
+    return Boolean(variable && this.errorAliases.has(variable));
+  }
+
+  isConsoleErrorCall(
+    node: TSESTree.CallExpression,
+    scope: TSESLint.Scope.Scope | null,
+  ): boolean {
+    const callee = unwrapChainExpression(node.callee);
+    if (!callee) {
+      return false;
+    }
+
+    if (callee.type === AST_NODE_TYPES.MemberExpression) {
+      return this.isConsoleErrorMemberExpression(callee, scope);
+    }
+
+    if (callee.type === AST_NODE_TYPES.Identifier) {
+      return this.isErrorAlias(callee, scope);
+    }
+
+    if (callee.type === AST_NODE_TYPES.CallExpression) {
+      return this.isConsoleErrorCall(callee, scope);
+    }
+
+    return false;
+  }
+}
+
+const trackVariableDeclarator = (
+  context: TSESLint.RuleContext<MessageIds, Options>,
+  tracker: AliasTracker,
+) => {
+  return (node: TSESTree.VariableDeclarator) => {
+    if (!node.init) {
+      return;
+    }
+
+    const scope = context.getScope();
+    const init = unwrapChainExpression(node.init);
+    const declaredVariables = context.getDeclaredVariables(node);
+
+    const markConsoleAlias = (name: string) =>
+      tracker.markConsole(
+        findDeclaredVariableByName(name, declaredVariables) ?? null,
+      );
+    const markErrorAlias = (name: string) =>
+      tracker.markError(
+        findDeclaredVariableByName(name, declaredVariables) ?? null,
+      );
+
+    if (
+      node.id.type === AST_NODE_TYPES.Identifier &&
+      init &&
+      tracker.isConsoleObject(init as TSESTree.Expression, scope)
+    ) {
+      markConsoleAlias(node.id.name);
+      return;
+    }
+
+    if (
+      node.id.type === AST_NODE_TYPES.Identifier &&
+      init &&
+      init.type === AST_NODE_TYPES.MemberExpression &&
+      tracker.isConsoleErrorMemberExpression(init, scope)
+    ) {
+      markErrorAlias(node.id.name);
+      return;
+    }
+
+    if (
+      node.id.type === AST_NODE_TYPES.ObjectPattern &&
+      init &&
+      tracker.isConsoleObject(init as TSESTree.Expression, scope)
+    ) {
+      for (const prop of node.id.properties) {
+        if (prop.type !== AST_NODE_TYPES.Property) {
+          continue;
+        }
+
+        if (!isErrorKey(prop.key, prop.computed ?? false)) {
+          continue;
+        }
+
+        const localName = getLocalNameFromPattern(prop.value);
+        if (!localName) {
+          continue;
+        }
+
+        markErrorAlias(localName);
+      }
+    }
+  };
+};
+
+const trackAssignmentExpression = (
+  context: TSESLint.RuleContext<MessageIds, Options>,
+  tracker: AliasTracker,
+) => {
+  return (node: TSESTree.AssignmentExpression) => {
+    const scope = context.getScope();
+    const right = unwrapChainExpression(node.right);
+
+    if (!right) {
+      return;
+    }
+
+    if (node.left.type === AST_NODE_TYPES.Identifier) {
+      const variable = findVariable(scope, node.left.name);
+
+      if (tracker.isConsoleObject(right as TSESTree.Expression, scope)) {
+        tracker.markConsole(variable);
+        return;
+      }
+
+      if (
+        right.type === AST_NODE_TYPES.MemberExpression &&
+        tracker.isConsoleErrorMemberExpression(right, scope)
+      ) {
+        tracker.markError(variable);
+        return;
+      }
+
+      tracker.untrack(variable);
+      return;
+    }
+
+    if (node.left.type === AST_NODE_TYPES.ObjectPattern) {
+      const localNames = node.left.properties
+        .filter(
+          (prop): prop is TSESTree.Property =>
+            prop.type === AST_NODE_TYPES.Property &&
+            isErrorKey(prop.key, prop.computed ?? false),
+        )
+        .map((prop) => getLocalNameFromPattern(prop.value))
+        .filter((name): name is string => Boolean(name));
+
+      if (tracker.isConsoleObject(right as TSESTree.Expression, scope)) {
+        for (const name of localNames) {
+          tracker.markError(findVariable(scope, name));
+        }
+        return;
+      }
+
+      for (const name of localNames) {
+        tracker.untrack(findVariable(scope, name));
+      }
+    }
+  };
+};
+
+const trackCallExpression = (
+  context: TSESLint.RuleContext<MessageIds, Options>,
+  tracker: AliasTracker,
+) => {
+  return (node: TSESTree.CallExpression) => {
+    const scope = context.getScope();
+    if (tracker.isConsoleErrorCall(node, scope)) {
+      context.report({
+        node,
+        messageId: 'noConsoleError',
+      });
+    }
+  };
+};
+
 export const noConsoleError = createRule<Options, MessageIds>({
   name: 'no-console-error',
   meta: {
@@ -53,306 +377,18 @@ export const noConsoleError = createRule<Options, MessageIds>({
   },
   defaultOptions: [{}],
   create(context, [options]) {
-    const ignorePatterns = [
-      ...defaultIgnorePatterns,
-      ...(options?.ignorePatterns ?? []),
-    ];
-    const filename = context.getFilename();
-    const normalizedFilename = filename.replace(/\\/g, '/');
+    const shouldIgnoreFile = buildShouldIgnoreFile(options);
 
-    if (
-      normalizedFilename &&
-      !normalizedFilename.startsWith('<') &&
-      ignorePatterns.some((pattern) =>
-        minimatch(normalizedFilename, pattern, { dot: true }),
-      )
-    ) {
+    if (shouldIgnoreFile(context.getFilename())) {
       return {};
     }
 
-    const consoleAliases = new Set<TSESLint.Scope.Variable>();
-    const errorAliases = new Set<TSESLint.Scope.Variable>();
-
-    const unwrapChainExpression = <T extends TSESTree.Node>(
-      node: T | TSESTree.ChainExpression | null | undefined,
-    ): T | null => {
-      if (!node) {
-        return null;
-      }
-      if (node.type === AST_NODE_TYPES.ChainExpression) {
-        return node.expression as T;
-      }
-      return node;
-    };
-
-    const findVariable = (
-      scope: TSESLint.Scope.Scope | null,
-      name: string,
-    ): TSESLint.Scope.Variable | null => {
-      let current: TSESLint.Scope.Scope | null = scope;
-      while (current) {
-        const variable = current.variables.find((v) => v.name === name);
-        if (variable) {
-          return variable;
-        }
-        current = current.upper;
-      }
-      return null;
-    };
-
-    const isErrorKey = (
-      key: TSESTree.Expression | TSESTree.PrivateIdentifier,
-      computed: boolean,
-    ) => {
-      if (!computed && key.type === AST_NODE_TYPES.Identifier) {
-        return key.name === 'error';
-      }
-
-      if (computed) {
-        if (key.type === AST_NODE_TYPES.Literal && key.value === 'error') {
-          return true;
-        }
-
-        if (
-          key.type === AST_NODE_TYPES.TemplateLiteral &&
-          key.expressions.length === 0 &&
-          key.quasis.length === 1 &&
-          key.quasis[0].value.raw === 'error'
-        ) {
-          return true;
-        }
-      }
-
-      return false;
-    };
-
-    const getLocalNameFromPattern = (
-      target: TSESTree.Node,
-    ): string | null => {
-      if (target.type === AST_NODE_TYPES.Identifier) {
-        return target.name;
-      }
-
-      if (
-        target.type === AST_NODE_TYPES.AssignmentPattern &&
-        target.left.type === AST_NODE_TYPES.Identifier
-      ) {
-        return target.left.name;
-      }
-
-      return null;
-    };
-
-    const isConsoleIdentifier = (
-      identifier: TSESTree.Identifier,
-      scope: TSESLint.Scope.Scope | null,
-    ) => {
-      if (identifier.name === 'console') {
-        return true;
-      }
-
-      const variable = findVariable(scope, identifier.name);
-      return Boolean(variable && consoleAliases.has(variable));
-    };
-
-    const isConsoleObject = (
-      expression: TSESTree.Expression,
-      scope: TSESLint.Scope.Scope | null,
-    ) => {
-      const unwrapped = unwrapChainExpression(expression);
-      if (!unwrapped) {
-        return false;
-      }
-
-      if (unwrapped.type === AST_NODE_TYPES.Identifier) {
-        return isConsoleIdentifier(unwrapped, scope);
-      }
-
-      return false;
-    };
-
-    const isConsoleErrorMemberExpression = (
-      member: TSESTree.MemberExpression,
-      scope: TSESLint.Scope.Scope | null,
-    ) => {
-      return (
-        isConsoleObject(member.object as TSESTree.Expression, scope) &&
-        isErrorKey(member.property, member.computed ?? false)
-      );
-    };
-
-    const isErrorAlias = (
-      identifier: TSESTree.Identifier,
-      scope: TSESLint.Scope.Scope | null,
-    ) => {
-      const variable = findVariable(scope, identifier.name);
-      return Boolean(variable && errorAliases.has(variable));
-    };
-
-    const addDeclaredVariableByName = (
-      name: string,
-      variables: readonly TSESLint.Scope.Variable[],
-      target: Set<TSESLint.Scope.Variable>,
-    ) => {
-      const variable = variables.find((item) => item.name === name);
-      if (variable) {
-        target.add(variable);
-      }
-    };
-
-    const isConsoleErrorCall = (
-      node: TSESTree.CallExpression,
-      scope: TSESLint.Scope.Scope | null,
-    ): boolean => {
-      const callee = unwrapChainExpression(node.callee);
-      if (!callee) {
-        return false;
-      }
-
-      if (callee.type === AST_NODE_TYPES.MemberExpression) {
-        return isConsoleErrorMemberExpression(callee, scope);
-      }
-
-      if (callee.type === AST_NODE_TYPES.Identifier) {
-        return isErrorAlias(callee, scope);
-      }
-
-      if (callee.type === AST_NODE_TYPES.CallExpression) {
-        return isConsoleErrorCall(callee, scope);
-      }
-
-      return false;
-    };
+    const aliasTracker = new AliasTracker();
 
     return {
-      VariableDeclarator(node) {
-        if (!node.init) {
-          return;
-        }
-
-        const scope = context.getScope();
-        const init = unwrapChainExpression(node.init);
-        const declaredVariables = context.getDeclaredVariables(node);
-
-        if (
-          node.id.type === AST_NODE_TYPES.Identifier &&
-          init &&
-          isConsoleObject(init as TSESTree.Expression, scope)
-        ) {
-          addDeclaredVariableByName(
-            node.id.name,
-            declaredVariables,
-            consoleAliases,
-          );
-          return;
-        }
-
-        if (
-          node.id.type === AST_NODE_TYPES.Identifier &&
-          init &&
-          init.type === AST_NODE_TYPES.MemberExpression &&
-          isConsoleErrorMemberExpression(init, scope)
-        ) {
-          addDeclaredVariableByName(
-            node.id.name,
-            declaredVariables,
-            errorAliases,
-          );
-          return;
-        }
-
-        if (
-          node.id.type === AST_NODE_TYPES.ObjectPattern &&
-          init &&
-          isConsoleObject(init as TSESTree.Expression, scope)
-        ) {
-          for (const prop of node.id.properties) {
-            if (prop.type !== AST_NODE_TYPES.Property) {
-              continue;
-            }
-
-            if (!isErrorKey(prop.key, prop.computed ?? false)) {
-              continue;
-            }
-
-            const localName = getLocalNameFromPattern(prop.value);
-            if (!localName) {
-              continue;
-            }
-
-            addDeclaredVariableByName(
-              localName,
-              declaredVariables,
-              errorAliases,
-            );
-          }
-        }
-      },
-      AssignmentExpression(node) {
-        const scope = context.getScope();
-        const right = unwrapChainExpression(node.right);
-
-        if (!right) {
-          return;
-        }
-
-        if (
-          node.left.type === AST_NODE_TYPES.Identifier &&
-          isConsoleObject(right as TSESTree.Expression, scope)
-        ) {
-          const variable = findVariable(scope, node.left.name);
-          if (variable) {
-            consoleAliases.add(variable);
-          }
-          return;
-        }
-
-        if (
-          node.left.type === AST_NODE_TYPES.Identifier &&
-          right.type === AST_NODE_TYPES.MemberExpression &&
-          isConsoleErrorMemberExpression(right, scope)
-        ) {
-          const variable = findVariable(scope, node.left.name);
-          if (variable) {
-            errorAliases.add(variable);
-          }
-          return;
-        }
-
-        if (
-          node.left.type === AST_NODE_TYPES.ObjectPattern &&
-          isConsoleObject(right as TSESTree.Expression, scope)
-        ) {
-          for (const prop of node.left.properties) {
-            if (prop.type !== AST_NODE_TYPES.Property) {
-              continue;
-            }
-
-            if (!isErrorKey(prop.key, prop.computed ?? false)) {
-              continue;
-            }
-
-            const localName = getLocalNameFromPattern(prop.value);
-            if (!localName) {
-              continue;
-            }
-
-            const variable = findVariable(scope, localName);
-            if (variable) {
-              errorAliases.add(variable);
-            }
-          }
-        }
-      },
-      CallExpression(node) {
-        const scope = context.getScope();
-        if (isConsoleErrorCall(node, scope)) {
-          context.report({
-            node,
-            messageId: 'noConsoleError',
-          });
-        }
-      },
+      VariableDeclarator: trackVariableDeclarator(context, aliasTracker),
+      AssignmentExpression: trackAssignmentExpression(context, aliasTracker),
+      CallExpression: trackCallExpression(context, aliasTracker),
     };
   },
 });

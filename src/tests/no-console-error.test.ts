@@ -64,6 +64,16 @@ ruleTesterTs.run('no-console-error', noConsoleError, {
       filename: 'tools/temp.ts',
       options: [{ ignorePatterns: ['**/tools/**'] }],
     },
+    `
+      const structuredLogger = { error: () => {} };
+      let err = console.error;
+      err = structuredLogger.error;
+      err('structured');
+    `,
+    `
+      const console = { error: () => {} };
+      console.error('shadowed console is allowed');
+    `,
   ],
   invalid: [
     {
@@ -139,6 +149,16 @@ ruleTesterTs.run('no-console-error', noConsoleError, {
         let alias;
         ({ error: alias } = console);
         alias('boom');
+      `,
+      errors: [{ messageId: 'noConsoleError' }],
+    },
+    {
+      code: `
+        const structuredLogger = { error: () => {} };
+        let err = console.error;
+        err('boom');
+        err = structuredLogger.error;
+        err('structured');
       `,
       errors: [{ messageId: 'noConsoleError' }],
     },
