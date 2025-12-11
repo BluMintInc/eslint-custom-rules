@@ -344,7 +344,10 @@ export const enforceStorageContext = createRule<RuleOptions, MessageIds>({
   },
   defaultOptions: [{}],
   create(context) {
-    const filename = context.getFilename();
+    const filename =
+      (context as unknown as { filename?: string }).filename ??
+      context.getFilename?.() ??
+      '';
     const [options] = context.options;
 
     if (shouldIgnoreFile(filename, options)) {
