@@ -14,6 +14,7 @@ TypeScript snippets in Markdown lose syntax highlighting when the fenced code bl
 
 #### ❌ Incorrect
 
+<!-- markdownlint-disable MD031 MD040 -->
 ````markdown
 ```
 const example = 'TypeScript code without a language specifier';
@@ -25,6 +26,7 @@ const example = 'TypeScript code without a language specifier';
   const underList = 'still needs a language specifier';
   ```
 ````
+<!-- markdownlint-enable MD031 MD040 -->
 
 #### ✅ Correct
 
