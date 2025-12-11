@@ -14,37 +14,38 @@ TypeScript snippets in Markdown lose syntax highlighting when the fenced code bl
 
 #### ❌ Incorrect
 
-```markdown
+````markdown
 ```
 const example = 'TypeScript code without a language specifier';
 ```
-```
+````
 
-```markdown
+````markdown
   ```
   const underList = 'still needs a language specifier';
   ```
-```
+````
 
 #### ✅ Correct
 
-```markdown
+````markdown
 ```typescript
 const example = 'TypeScript code with proper highlighting';
 ```
-```
+````
 
-```markdown
+````markdown
 ```javascript
 const jsExample = 'Other languages stay untouched';
 ```
-```
+````
 
-```markdown
+Empty fenced blocks stay unlabeled because no content needs highlighting:
+
+````markdown
 ```
-// Empty block intentionally unlabeled; no TypeScript assumed
 ```
-```
+````
 
 ## Options
 

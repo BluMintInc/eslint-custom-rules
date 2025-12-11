@@ -4,8 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 Enabled in the recommended config.
-
 Disallow handling Firestore `ALREADY_EXISTS` errors inside `runTransaction` callbacks. `ALREADY_EXISTS` is permanent; the transaction body is retried on contention, so a catch inside the callback will re-run and can append/mutate state multiple times. Handle the error outside the transaction or via a helper (e.g., `runCreateForgivenessTransaction`) so the handler runs once.
 
 ## Why this rule exists
