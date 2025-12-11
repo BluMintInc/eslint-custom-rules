@@ -1,7 +1,29 @@
+import type { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceFirebaseImports } from '../rules/enforce-dynamic-firebase-imports';
 
 const ruleTester = ruleTesterTs;
+
+const errorMessage = (importPath: string) =>
+  `Static import from firebaseCloud path "${importPath}" eagerly bundles Firebase code into the initial client chunk, which inflates startup time and prevents lazy loading. Replace it with an awaited dynamic import so the code only loads when invoked (e.g., \`const module = await import('${importPath}')\` or destructure the exports you need).`;
+
+type ErrorWithData = Pick<
+  TSESLint.TestCaseError<'noDynamicImport'>,
+  'messageId' | 'data'
+>;
+
+const error = (importPath: string): ErrorWithData => ({
+  messageId: 'noDynamicImport',
+  data: { importPath },
+});
+
+describe('rule messages', () => {
+  it('documents dynamic import guidance', () => {
+    expect(enforceFirebaseImports.meta.messages?.noDynamicImport).toBe(
+      errorMessage('{{importPath}}'),
+    );
+  });
+});
 
 ruleTester.run(
   'enforce-dynamic-firebase-imports',
@@ -45,109 +67,109 @@ ruleTester.run(
       // Single named import
       {
         code: `import { setChannelGroup } from '../../../../firebaseCloud/messaging/setGroupChannel';`,
-        errors: [{ messageId: 'noDynamicImport' }],
+        errors: [error('../../../../firebaseCloud/messaging/setGroupChannel')],
         output: `const { setChannelGroup } = await import('../../../../firebaseCloud/messaging/setGroupChannel');`,
       },
       // Multiple named imports
       {
         code: `import { a, b } from '../../../../firebaseCloud/messaging/mod';`,
-        errors: [{ messageId: 'noDynamicImport' }],
+        errors: [error('../../../../firebaseCloud/messaging/mod')],
         output: `const { a, b } = await import('../../../../firebaseCloud/messaging/mod');`,
       },
       // Named import with alias
       {
         code: `import { a as A } from '../../../../firebaseCloud/messaging/mod';`,
-        errors: [{ messageId: 'noDynamicImport' }],
+        errors: [error('../../../../firebaseCloud/messaging/mod')],
         output: `const { a: A } = await import('../../../../firebaseCloud/messaging/mod');`,
       },
       // Multiple named with alias
       {
         code: `import { a as A, b, c as C } from '../../../../firebaseCloud/messaging/mod';`,
-        errors: [{ messageId: 'noDynamicImport' }],
+        errors: [error('../../../../firebaseCloud/messaging/mod')],
         output: `const { a: A, b, c: C } = await import('../../../../firebaseCloud/messaging/mod');`,
       },
       // Default import only
       {
         code: `import helper from '../../../../firebaseCloud/utils/helper';`,
-        errors: [{ messageId: 'noDynamicImport' }],
+        errors: [error('../../../../firebaseCloud/utils/helper')],
         output: `const { default: helper } = await import('../../../../firebaseCloud/utils/helper');`,
       },
       // Default + named
       {
         code: `import helper, { a, b as B } from '../../../../firebaseCloud/utils/helper';`,
-        errors: [{ messageId: 'noDynamicImport' }],
+        errors: [error('../../../../firebaseCloud/utils/helper')],
         output: `const { default: helper, a, b: B } = await import('../../../../firebaseCloud/utils/helper');`,
       },
       // Namespace import only
       {
         code: `import * as helper from '../../../../firebaseCloud/utils/helper';`,
-        errors: [{ messageId: 'noDynamicImport' }],
+        errors: [error('../../../../firebaseCloud/utils/helper')],
         output: `const helper = await import('../../../../firebaseCloud/utils/helper');`,
       },
       // Default + namespace import
       {
         code: `import def, * as helper from '../../../../firebaseCloud/utils/helper';`,
-        errors: [{ messageId: 'noDynamicImport' }],
+        errors: [error('../../../../firebaseCloud/utils/helper')],
         output: `const helper = await import('../../../../firebaseCloud/utils/helper'); const def = helper.default;`,
       },
       // Side-effect import
       {
         code: `import '../../../../firebaseCloud/utils/helper';`,
-        errors: [{ messageId: 'noDynamicImport' }],
+        errors: [error('../../../../firebaseCloud/utils/helper')],
         output: `await import('../../../../firebaseCloud/utils/helper');`,
       },
       // Mixed type and named (preserve type-only import)
       {
         code: `import { type Params, setChannelGroup as set } from '../../../../firebaseCloud/messaging/setGroupChannel';`,
-        errors: [{ messageId: 'noDynamicImport' }],
+        errors: [error('../../../../firebaseCloud/messaging/setGroupChannel')],
         output: `import type { Params } from '../../../../firebaseCloud/messaging/setGroupChannel'; const { setChannelGroup: set } = await import('../../../../firebaseCloud/messaging/setGroupChannel');`,
       },
       // Mixed type (alias) and named (alias)
       {
         code: `import { type X as TX, a as A, b } from '../../../../firebaseCloud/messaging/mod';`,
-        errors: [{ messageId: 'noDynamicImport' }],
+        errors: [error('../../../../firebaseCloud/messaging/mod')],
         output: `import type { X as TX } from '../../../../firebaseCloud/messaging/mod'; const { a: A, b } = await import('../../../../firebaseCloud/messaging/mod');`,
       },
       // Mixed type-only and default
       {
         code: `import def, { type T } from '../../../../firebaseCloud/utils/helper';`,
-        errors: [{ messageId: 'noDynamicImport' }],
+        errors: [error('../../../../firebaseCloud/utils/helper')],
         output: `import type { T } from '../../../../firebaseCloud/utils/helper'; const { default: def } = await import('../../../../firebaseCloud/utils/helper');`,
       },
       // Mixed type-only, default, and named
       {
         code: `import def, { type T, a as A } from '../../../../firebaseCloud/utils/helper';`,
-        errors: [{ messageId: 'noDynamicImport' }],
+        errors: [error('../../../../firebaseCloud/utils/helper')],
         output: `import type { T } from '../../../../firebaseCloud/utils/helper'; const { default: def, a: A } = await import('../../../../firebaseCloud/utils/helper');`,
       },
       // Relative path variant to firebaseCloud
       {
         code: `import { helper } from '../../../../../src/firebaseCloud/utils/helper';`,
-        errors: [{ messageId: 'noDynamicImport' }],
+        errors: [error('../../../../../src/firebaseCloud/utils/helper')],
         output: `const { helper } = await import('../../../../../src/firebaseCloud/utils/helper');`,
       },
       // Multiline static imports should be collapsed appropriately
       {
         code: `import {\n  a,\n  b as B\n} from '../../../../firebaseCloud/messaging/mod';`,
-        errors: [{ messageId: 'noDynamicImport' }],
+        errors: [error('../../../../firebaseCloud/messaging/mod')],
         output: `const { a, b: B } = await import('../../../../firebaseCloud/messaging/mod');`,
       },
       // Ensure no change for specifier order (including aliasing)
       {
         code: `import { z as Z, a, m as M } from '../../../../firebaseCloud/messaging/alpha';`,
-        errors: [{ messageId: 'noDynamicImport' }],
+        errors: [error('../../../../firebaseCloud/messaging/alpha')],
         output: `const { z: Z, a, m: M } = await import('../../../../firebaseCloud/messaging/alpha');`,
       },
       // Namespace import from src path
       {
         code: `import * as cloud from 'src/firebaseCloud/messaging/api';`,
-        errors: [{ messageId: 'noDynamicImport' }],
+        errors: [error('src/firebaseCloud/messaging/api')],
         output: `const cloud = await import('src/firebaseCloud/messaging/api');`,
       },
       // Default + namespace from src path
       {
         code: `import def, * as cloud from 'src/firebaseCloud/messaging/api';`,
-        errors: [{ messageId: 'noDynamicImport' }],
+        errors: [error('src/firebaseCloud/messaging/api')],
         output: `const cloud = await import('src/firebaseCloud/messaging/api'); const def = cloud.default;`,
       },
     ],
