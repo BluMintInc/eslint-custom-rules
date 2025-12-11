@@ -328,6 +328,48 @@ export const withTemplate = () => null;
     },
     {
       code: `
+export const withTemplateNewline = () => null;
+      `,
+      filename: '/workspace/src/template-with-newline.ts',
+      options: [
+        {
+          headerTemplate: `/**
+ * @fileoverview Added by fixer with trailing newline
+ */
+
+`,
+        },
+      ],
+      errors: [{ messageId: 'missingHeader' }],
+      output: `/**
+ * @fileoverview Added by fixer with trailing newline
+ */
+
+
+export const withTemplateNewline = () => null;
+      `,
+    },
+    {
+      code: '#!/usr/bin/env node',
+      filename: '/workspace/src/shebang-script.ts',
+      options: [
+        {
+          headerTemplate: `/**
+ * @fileoverview Added by fixer
+ */
+`,
+        },
+      ],
+      errors: [{ messageId: 'missingHeader' }],
+      output: `#!/usr/bin/env node
+/**
+ * @fileoverview Added by fixer
+ */
+
+`,
+    },
+    {
+      code: `
 /**
  * @fileoverview First header
  */

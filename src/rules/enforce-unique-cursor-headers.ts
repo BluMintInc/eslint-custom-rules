@@ -69,9 +69,7 @@ const isHeaderCandidate = (text: string, requiredTagsLower: string[]): boolean =
     return true;
   }
 
-  return text
-    .split('\n')
-    .some((line) => line.trimStart().startsWith('@') || line.includes('@fileoverview'));
+  return text.split('\n').some((line) => line.trimStart().startsWith('@'));
 };
 
 const collectHeaderGroups = (
@@ -161,11 +159,15 @@ const expandRangeToFullLines = (
   return [start, end];
 };
 
+// Preserve author-provided trailing newlines while guaranteeing a blank line after the header.
 const buildHeaderInsertionText = (template: string): string => {
-  const trimmed = template.trimEnd();
-  const suffix = trimmed.endsWith('\n') ? '' : '\n';
+  const normalizedWhitespace = template
+    .replace(/[ \t]+(\r?\n)/gu, '$1')
+    .replace(/[ \t]+$/u, '');
+  const trailingNewlines = normalizedWhitespace.match(/\n+$/u)?.[0].length ?? 0;
+  const requiredNewlines = trailingNewlines >= 2 ? 0 : 2 - trailingNewlines;
 
-  return `${trimmed}${suffix}\n`;
+  return `${normalizedWhitespace}${'\n'.repeat(requiredNewlines)}`;
 };
 
 export const RULE_NAME = 'enforce-unique-cursor-headers';
@@ -286,14 +288,23 @@ export const enforceUniqueCursorHeaders = createRule<Options, MessageIds>({
             },
             fix: options.headerTemplate
               ? (fixer) => {
-                  const insertionIndex = sourceText.startsWith('#!')
-                    ? sourceText.indexOf('\n') + 1 || sourceText.length
-                    : 0;
-
-                  return fixer.insertTextBeforeRange(
-                    [insertionIndex, insertionIndex],
-                    buildHeaderInsertionText(options.headerTemplate as string),
+                  const hasShebang = sourceText.startsWith('#!');
+                  const shebangNewlineIndex = hasShebang ? sourceText.indexOf('\n') : -1;
+                  const insertionIndex =
+                    hasShebang && shebangNewlineIndex !== -1
+                      ? shebangNewlineIndex + 1
+                      : hasShebang
+                        ? sourceText.length
+                        : 0;
+                  const headerText = buildHeaderInsertionText(
+                    options.headerTemplate as string,
                   );
+                  const textToInsert =
+                    hasShebang && shebangNewlineIndex === -1
+                      ? `\n${headerText}`
+                      : headerText;
+
+                  return fixer.insertTextBeforeRange([insertionIndex, insertionIndex], textToInsert);
                 }
               : null,
           });

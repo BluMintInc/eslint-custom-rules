@@ -28,8 +28,10 @@ Ensures each checked file has exactly one cursor header before any code, prevent
 - `requiredPatterns`: Globs of files that must contain a cursor header.
 - `excludedPatterns`: Globs to skip (e.g., definition files or build outputs).
 - `requiredTags`: Tags that must appear in the header text.
+- Header detection relies on `requiredTags` and `@`-prefixed comment lines; no tag (including `@fileoverview`) is hardcoded beyond the defaults you configure.
 - `allowSplitHeaders`: When false, metadata spread across multiple adjacent comment blocks is reported as a duplicate header.
 - `headerTemplate`: Optional comment block to insert when a required header is missing.
+- When `headerTemplate` already ends with newline characters, the fixer preserves them and only adds the minimum extra whitespace to leave a clear blank line before code.
 - `ignoreGeneratedFiles`: When true, generated files identified by `generatedMarkers` are skipped.
 - `generatedMarkers`: Strings that signal the file is generated.
 
