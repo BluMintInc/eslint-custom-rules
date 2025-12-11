@@ -89,6 +89,18 @@ ruleTesterJsx.run('memoize-root-level-hocs', memoizeRootLevelHocs, {
       return <List items={result} />;
     };
     `,
+    `
+    function withLayout(Component) {
+      function Wrapped(props) {
+        return (
+          <Layout>
+            <Component {...props} />
+          </Layout>
+        );
+      }
+      return withPortal(Wrapped);
+    }
+    `,
   ],
   invalid: [
     {
@@ -198,6 +210,16 @@ ruleTesterJsx.run('memoize-root-level-hocs', memoizeRootLevelHocs, {
       code: `
       function OptionalChain() {
         const Enhanced = maybeHocs?.withPortal(BaseComponent);
+        return <Enhanced />;
+      }
+      `,
+      errors: [{ messageId: 'wrapHocInUseMemo' }],
+    },
+    {
+      code: `
+      function WrapperComponent() {
+        const build = () => <BaseComponent />;
+        const Enhanced = withPortal(build);
         return <Enhanced />;
       }
       `,

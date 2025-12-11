@@ -73,6 +73,8 @@ function ReduxComponent() {
 
 HOCs created inside event handlers, effect callbacks, or other nested functions are ignored because they do not run on every render.
 
+JSX that exists only inside nested helper functions (such as HOC factories that build an inner `Wrapped` component) does not classify the outer factory as a render body; the rule focuses on actual component or hook renders.
+
 ## Options
 
 ```json

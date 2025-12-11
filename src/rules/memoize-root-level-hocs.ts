@@ -81,7 +81,14 @@ const getFunctionName = (node: FunctionNode): string | null => {
   return null;
 };
 
-const containsJsx = (node: TSESTree.Node | null): boolean => {
+type ContainsJsxOptions = {
+  skipFunctionBodies?: boolean;
+};
+
+const containsJsx = (
+  node: TSESTree.Node | null,
+  options?: ContainsJsxOptions,
+): boolean => {
   if (!node) return false;
 
   if (
@@ -91,7 +98,13 @@ const containsJsx = (node: TSESTree.Node | null): boolean => {
     return true;
   }
 
-  return forEachChildNode(node, (child) => containsJsx(child));
+  return forEachChildNode(node, (child) => {
+    if (options?.skipFunctionBodies && isFunctionNode(child)) {
+      return false;
+    }
+
+    return containsJsx(child, options);
+  });
 };
 
 const hasFunctionParent = (node: TSESTree.Node): boolean => {
@@ -127,7 +140,9 @@ const isComponentOrHook = (
   const hook = name ? isHookName(name) : false;
   const component = name ? isComponentName(name) : false;
   const nestedFunction = hasFunctionParent(node);
-  const jsxBody = containsJsx(getBodyNodeForJsxCheck(node));
+  const jsxBody = containsJsx(getBodyNodeForJsxCheck(node), {
+    skipFunctionBodies: !hook && !component,
+  });
 
   if (!hook && !component && nestedFunction) {
     return null;
