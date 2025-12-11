@@ -469,7 +469,8 @@ function getRemovableImportSpecifier(
       | undefined) ?? context.getDeclaredVariables(specifier);
   const [variable] = declaredVariables;
   if (!variable) {
-    return specifier;
+    // Defer removal when scope analysis cannot resolve the import.
+    return null;
   }
 
   const otherReferences = variable.references.filter(
@@ -526,7 +527,14 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
     const expensiveMatchers = (
       context.options[0]?.allowExpensiveCalleePatterns ??
       DEFAULT_EXPENSIVE_PATTERNS
-    ).map((pattern) => new RegExp(pattern));
+      // Skip invalid patterns instead of throwing during lint execution.
+    ).flatMap((pattern) => {
+      try {
+        return [new RegExp(pattern)];
+      } catch {
+        return [];
+      }
+    });
 
     const functionStack: FunctionContext[] = [];
     const reported = new WeakSet<TSESTree.CallExpression>();
@@ -644,7 +652,7 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
           analyzeReturnedValue(expression.alternate, currentContext);
           return;
         case AST_NODE_TYPES.LogicalExpression:
-      analyzeReturnedValue(expression.left, currentContext);
+          analyzeReturnedValue(expression.left, currentContext);
           analyzeReturnedValue(expression.right, currentContext);
           return;
         case AST_NODE_TYPES.SequenceExpression: {

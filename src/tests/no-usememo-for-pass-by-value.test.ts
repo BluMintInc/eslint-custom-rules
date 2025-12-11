@@ -168,6 +168,24 @@ ${typedPrelude}      export function useUpper(value: string) {
       ...baseOptions,
       code: `
 ${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useInvalidPattern(value: string) {
+        return useMemo(() => value, [value]);
+      }
+      `,
+      options: [{ allowExpensiveCalleePatterns: ['('] }],
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}      export function useInvalidPattern(value: string) {
+        return value;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
       import { useMemo as memo } from 'react';
 
       export const useFlag = (values: string[]) =>
