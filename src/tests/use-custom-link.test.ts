@@ -16,12 +16,22 @@ ruleTesterJsx.run('use-custom-link', useCustomLink, {
   invalid: [
     {
       code: `import Link from 'next/link';`,
-      errors: [{ messageId: 'useCustomLink' }],
+      errors: [
+        {
+          messageId: 'useCustomLink',
+          data: { localName: 'Link' },
+        },
+      ],
       output: `import Link from 'src/components/Link';`,
     },
     {
       code: `import { default as NextLink } from 'next/link';`,
-      errors: [{ messageId: 'useCustomLink' }],
+      errors: [
+        {
+          messageId: 'useCustomLink',
+          data: { localName: 'NextLink' },
+        },
+      ],
       output: `import NextLink from 'src/components/Link';`,
     },
   ],
