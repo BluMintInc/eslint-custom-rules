@@ -1,6 +1,20 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
+type ParenthesizedTypeNode = TSESTree.TypeNode & {
+  typeAnnotation: TSESTree.TypeNode;
+};
+
+const PAREN_TYPE =
+  (AST_NODE_TYPES as unknown as Record<string, string>).TSParenthesizedType ??
+  'TSParenthesizedType';
+
+const isParenthesizedType = (
+  node: TSESTree.TypeNode,
+): node is ParenthesizedTypeNode => {
+  return (node as { type?: string }).type === PAREN_TYPE;
+};
+
 /** Utility to convert CONSTANT_CASE or snake/kebab to PascalCase */
 function toPascalCase(name: string): string {
   return name
@@ -51,7 +65,7 @@ function isConstantLikeInitializer(
 
 /** Traverse a TSType and collect referenced identifier names (e.g., A, B in A | B). */
 function collectReferencedTypeNames(
-  node: TSESTree.Node,
+  node: TSESTree.TypeNode,
   acc = new Set<string>(),
 ): Set<string> {
   switch (node.type) {
@@ -71,20 +85,29 @@ function collectReferencedTypeNames(
       break;
     }
     case AST_NODE_TYPES.TSArrayType: {
-      collectReferencedTypeNames((node as any).elementType, acc);
+      const arr = node as TSESTree.TSArrayType;
+      collectReferencedTypeNames(arr.elementType, acc);
       break;
     }
     case AST_NODE_TYPES.TSTypeOperator: {
-      collectReferencedTypeNames((node as any).typeAnnotation, acc);
+      const op = node as TSESTree.TSTypeOperator;
+      if (op.typeAnnotation) collectReferencedTypeNames(op.typeAnnotation, acc);
       break;
     }
     case AST_NODE_TYPES.TSTupleType: {
-      for (const e of (node as any).elementTypes)
-        collectReferencedTypeNames(e, acc);
+      const tup = node as TSESTree.TSTupleType;
+      for (const e of tup.elementTypes) collectReferencedTypeNames(e, acc);
       break;
     }
-    default:
+    default: {
+      if (isParenthesizedType(node)) {
+        collectReferencedTypeNames(
+          (node as ParenthesizedTypeNode).typeAnnotation,
+          acc,
+        );
+      }
       break;
+    }
   }
   return acc;
 }
@@ -185,12 +208,13 @@ export const preferTypeAliasOverTypeofConstant: TSESLint.RuleModule<
         'Prefer named type aliases over `typeof` on same-file global constants; ensure types are declared before constants.',
       recommended: 'error',
     },
+    hasSuggestions: false,
     schema: [],
     messages: {
       preferTypeAlias:
-        'Use a named type alias instead of `typeof {{constName}}` for global constants. Suggested alias: {{suggested}}.',
+        'Type derived from same-file constant "{{constName}}" couples the type to its runtime value and scatters literal unions across the file. Create a named alias such as "{{suggested}}" and reference that alias instead of `typeof {{constName}}` so the type stays stable even if the value changes.',
       defineTypeBeforeConstant:
-        'Declare the type alias {{typeName}} before the constant {{constName}}.',
+        'Type alias "{{typeName}}" appears after constant "{{constName}}", which hides the shape from readers and risks using an undeclared alias. Declare "{{typeName}}" before "{{constName}}" so the type is visible where it is consumed and can be reused consistently.',
     },
   },
   defaultOptions: [],

@@ -10,7 +10,7 @@ This rule enforces the use of the `ImageOptimized` component instead of using `n
 
 ## Rule Details
 
-This rule aims to ensure consistent image handling across the codebase by using a custom optimized image component.
+Use the shared `ImageOptimized` wrapper so every image goes through the same optimization pipeline—responsive sizing, lazy loading, and blur placeholders. Direct `img` tags or `next/image` imports bypass these defaults, making it easy to ship unoptimized assets that inflate payloads and harm Core Web Vitals. The rule is auto-fixable to swap the element or import to `ImageOptimized`.
 
 Examples of **incorrect** code for this rule:
 

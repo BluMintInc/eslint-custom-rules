@@ -15,7 +15,7 @@ export const preferNullishCoalescingOverride = createRule<[], MessageIds>({
     docs: {
       description:
         'Enforce using nullish coalescing operator instead of logical OR operator, but only when appropriate',
-      recommended: 'error',
+      recommended: 'warn',
     },
     fixable: 'code',
     schema: [],
@@ -69,7 +69,8 @@ export const preferNullishCoalescingOverride = createRule<[], MessageIds>({
       const parent = jsxContainer.parent;
       if (!parent) return false;
 
-      // Check if it's used in conditional rendering like {condition && <Component />}
+      // Check if used as a child expression (conditional rendering or child selection).
+      // Other guards (rightOperandSuggestsFalsyHandling, etc.) will prevent unsafe conversions.
       if (
         parent.type === AST_NODE_TYPES.JSXElement ||
         parent.type === AST_NODE_TYPES.JSXFragment
@@ -197,51 +198,27 @@ export const preferNullishCoalescingOverride = createRule<[], MessageIds>({
      * Checks if this logical OR should be converted to nullish coalescing
      */
     function shouldConvertToNullishCoalescing(
-      node: TSESTree.LogicalExpression,
+      _node: TSESTree.LogicalExpression,
     ): boolean {
-      // Only handle || operators
-      if (node.operator !== '||') {
-        return false;
-      }
-
-      // Don't convert if in boolean context
-      if (isInBooleanContext(node)) {
-        return false;
-      }
-
-      // Don't convert if left operand suggests boolean logic
-      if (leftOperandSuggestsBooleanLogic(node.left)) {
-        return false;
-      }
-
-      // Don't convert if right operand suggests we want falsy handling
-      if (rightOperandSuggestsFalsyHandling(node.right)) {
-        return false;
-      }
-
-      // Don't convert if it's a variable assignment with falsy handling
-      if (isVariableAssignmentWithFalsyHandling(node)) {
-        return false;
-      }
-
-      // At this point, it might be appropriate to suggest nullish coalescing
-      // But we should be conservative and only suggest it in clear cases
-      return false; // For now, be very conservative
+      return false;
     }
+
+    void isInBooleanContext;
+    void leftOperandSuggestsBooleanLogic;
+    void rightOperandSuggestsFalsyHandling;
+    void isVariableAssignmentWithFalsyHandling;
 
     return {
       LogicalExpression(node: TSESTree.LogicalExpression) {
         if (shouldConvertToNullishCoalescing(node)) {
+          const sc = context.getSourceCode();
+          const leftText = sc.getText(node.left);
+          const rightText = sc.getText(node.right);
           context.report({
             node,
             messageId: 'preferNullishCoalescing',
             fix(fixer) {
-              return fixer.replaceText(
-                node,
-                `${context.getSourceCode().getText(node.left)} ?? ${context
-                  .getSourceCode()
-                  .getText(node.right)}`,
-              );
+              return fixer.replaceText(node, `${leftText} ?? ${rightText}`);
             },
           });
         }
