@@ -83,13 +83,11 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
       `,
       filename: 'functions/src/types/firestore/ts.ts',
     },
-    // Test: Allow nullable primitive arrays and unknown/any
+    // Test: Allow nullable primitive arrays
     {
       code: `
         export type T = {
           maybeNumbers: (number | null | undefined)[];
-          anyValues: any[];
-          unknownValues: unknown[];
           neverValues: never[];
         };
       `,
@@ -439,6 +437,22 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
           data: { fieldName: 'list' },
         },
       ],
+    },
+    // Test: any[] should be flagged
+    {
+      code: `
+        export type T = { loose: any[] };
+      `,
+      filename: 'functions/src/types/firestore/misc.ts',
+      errors: [{ messageId: 'noObjectArrays' }],
+    },
+    // Test: unknown[] should be flagged
+    {
+      code: `
+        export type T = { mystery: unknown[] };
+      `,
+      filename: 'functions/src/types/firestore/misc.ts',
+      errors: [{ messageId: 'noObjectArrays' }],
     },
   ],
 });

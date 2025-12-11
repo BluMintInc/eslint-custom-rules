@@ -18,8 +18,15 @@
 
 ## How to structure object collections safely
 
-- Prefer `Record<string, T & { index: number }>` keyed by id. Convert arrays to maps with `toMap` and back with `toArr` to preserve ordering via the `index` field.
-- If you need per-item documents or cross-document queries, store items in a subcollection or keep an array of item IDs and fetch the documents individually.
+To preserve order while maintaining queryability and safe updates, store collections as maps keyed by id and add an `index` field to each value. Convert between arrays and maps at your domain boundaries.
+
+- Convert arrays to maps using a helper that adds an `index` field to each item (for example, a `toMap` utility).
+- Convert maps back to arrays by sorting on the `index` field (for example, a `toArr` utility).
+
+This pattern enables you to:
+
+- Query and update individual items without rewriting the entire collection.
+- Preserve the original order via the `index` field.
 
 ## Examples
 
@@ -30,6 +37,7 @@ export type UserProfile = {
   id: string;
   tags: string[];
   timestamps: Timestamp[];
+  path: [number, number][]; // Tuple of primitives is allowed (array of arrays, not objects)
   friends: Record<string, { id: string; name: string; index: number }>;
   contacts: { [id: string]: { email: string; index: number } };
 };
