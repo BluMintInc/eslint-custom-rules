@@ -1,5 +1,31 @@
 import { ruleTesterTs } from '../utils/ruleTester';
-import { preferTypeAliasOverTypeofConstant } from '../rules/prefer-type-alias-over-typeof-constant';
+import {
+  preferTypeAliasOverTypeofConstant,
+  type MessageIds,
+} from '../rules/prefer-type-alias-over-typeof-constant';
+import type { TSESLint } from '@typescript-eslint/utils';
+
+const preferMessage = (constName: string, suggested: string) =>
+  `Type derived from same-file constant "${constName}" couples the type to its runtime value and scatters literal unions across the file. Create a named alias such as "${suggested}" and reference that alias instead of \`typeof ${constName}\` so the type stays stable even if the value changes.`;
+
+const orderMessage = (typeName: string, constName: string) =>
+  `Type alias "${typeName}" appears after constant "${constName}", which hides the shape from readers and risks using an undeclared alias. Declare "${typeName}" before "${constName}" so the type is visible where it is consumed and can be reused consistently.`;
+
+const preferError = (
+  constName: string,
+  suggested: string,
+): TSESLint.TestCaseError<MessageIds> =>
+  ({
+    message: preferMessage(constName, suggested),
+  } as const as unknown as TSESLint.TestCaseError<MessageIds>);
+
+const orderingError = (
+  typeName: string,
+  constName: string,
+): TSESLint.TestCaseError<MessageIds> =>
+  ({
+    message: orderMessage(typeName, constName),
+  } as const as unknown as TSESLint.TestCaseError<MessageIds>);
 
 ruleTesterTs.run(
   'prefer-type-alias-over-typeof-constant',
@@ -95,8 +121,8 @@ ruleTesterTs.run(
           'type StatusToCheck = typeof STATUS_EXCEEDING | typeof STATUS_SUBCEEDING;',
         ].join('\n'),
         errors: [
-          { messageId: 'preferTypeAlias' },
-          { messageId: 'preferTypeAlias' },
+          preferError('STATUS_EXCEEDING', 'StatusExceeding'),
+          preferError('STATUS_SUBCEEDING', 'StatusSubceeding'),
         ],
       },
       // In function parameter
@@ -107,8 +133,8 @@ ruleTesterTs.run(
           'function checkStatus(status: typeof STATUS_EXCEEDING | typeof STATUS_SUBCEEDING) {}',
         ].join('\n'),
         errors: [
-          { messageId: 'preferTypeAlias' },
-          { messageId: 'preferTypeAlias' },
+          preferError('STATUS_EXCEEDING', 'StatusExceeding'),
+          preferError('STATUS_SUBCEEDING', 'StatusSubceeding'),
         ],
       },
       // In interface property
@@ -117,7 +143,7 @@ ruleTesterTs.run(
           "const STATUS_EXCEEDING = 'exceeding' as const;",
           'interface I { status: typeof STATUS_EXCEEDING }',
         ].join('\n'),
-        errors: [{ messageId: 'preferTypeAlias' }],
+        errors: [preferError('STATUS_EXCEEDING', 'StatusExceeding')],
       },
       // With intersection
       {
@@ -125,14 +151,14 @@ ruleTesterTs.run(
           "const STATUS_EXCEEDING = 'exceeding' as const;",
           'type T = typeof STATUS_EXCEEDING & { extra: number };',
         ].join('\n'),
-        errors: [{ messageId: 'preferTypeAlias' }],
+        errors: [preferError('STATUS_EXCEEDING', 'StatusExceeding')],
       },
       // Ensure we ignore non-top-level (so this one is top-level const)
       {
         code: ["const LOCAL = 'x' as const;", 'type T = typeof LOCAL;'].join(
           '\n',
         ),
-        errors: [{ messageId: 'preferTypeAlias' }],
+        errors: [preferError('LOCAL', 'Local')],
       },
       // Ordering: type alias declared after constant
       {
@@ -140,7 +166,7 @@ ruleTesterTs.run(
           "const STATUS_EXCEEDING: StatusExceeding = 'exceeding' as const;",
           "type StatusExceeding = 'exceeding';",
         ].join('\n'),
-        errors: [{ messageId: 'defineTypeBeforeConstant' }],
+        errors: [orderingError('StatusExceeding', 'STATUS_EXCEEDING')],
       },
       // Mixed union: part typeof, part literal
       {
@@ -148,7 +174,7 @@ ruleTesterTs.run(
           "const STATUS_EXCEEDING = 'exceeding' as const;",
           "type T = typeof STATUS_EXCEEDING | 'succeeding';",
         ].join('\n'),
-        errors: [{ messageId: 'preferTypeAlias' }],
+        errors: [preferError('STATUS_EXCEEDING', 'StatusExceeding')],
       },
       // Multiple constants
       {
@@ -157,10 +183,7 @@ ruleTesterTs.run(
           "const B = 'b' as const;",
           'type U = typeof A | typeof B;',
         ].join('\n'),
-        errors: [
-          { messageId: 'preferTypeAlias' },
-          { messageId: 'preferTypeAlias' },
-        ],
+        errors: [preferError('A', 'A'), preferError('B', 'B')],
       },
       // Interface property with intersection
       {
@@ -168,7 +191,7 @@ ruleTesterTs.run(
           "const C = 'c' as const;",
           'interface P { p: typeof C & string }',
         ].join('\n'),
-        errors: [{ messageId: 'preferTypeAlias' }],
+        errors: [preferError('C', 'C')],
       },
     ],
   },

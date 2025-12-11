@@ -52,6 +52,17 @@ const title = payload.title ?? '(untitled)';
 
 If you want to strictly enforce using the nullish coalescing operator in all cases, you should use the original `@typescript-eslint/prefer-nullish-coalescing` rule instead.
 
+### Setup Example
+
+```jsonc
+{
+  "rules": {
+    "@typescript-eslint/prefer-nullish-coalescing": "off",
+    "@blumintinc/blumint/prefer-nullish-coalescing-override": "warn"
+  }
+}
+```
+
 ## Further Reading
 
 - [TypeScript: Nullish Coalescing Operator](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-3-7.html#nullish-coalescing)
