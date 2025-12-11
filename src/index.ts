@@ -130,6 +130,7 @@ import { preferUseDeepCompareMemo } from './rules/prefer-use-deep-compare-memo';
 import { noCircularReferences } from './rules/no-circular-references';
 import { noPassthroughGetters } from './rules/no-passthrough-getters';
 import { noTryCatchAlreadyExistsInTransaction } from './rules/no-try-catch-already-exists-in-transaction';
+import { memoNestedReactComponents } from './rules/memo-nested-react-components';
 
 module.exports = {
   meta: {
@@ -274,6 +275,7 @@ module.exports = {
         '@blumintinc/blumint/no-redundant-usecallback-wrapper': 'error',
         '@blumintinc/blumint/no-array-length-in-deps': 'error',
         '@blumintinc/blumint/prefer-use-deep-compare-memo': 'error',
+        '@blumintinc/blumint/memo-nested-react-components': 'error',
         '@blumintinc/blumint/no-circular-references': 'error',
         '@blumintinc/blumint/no-try-catch-already-exists-in-transaction':
           'error',
@@ -419,6 +421,7 @@ module.exports = {
     'no-redundant-usecallback-wrapper': noRedundantUseCallbackWrapper,
     'no-array-length-in-deps': noArrayLengthInDeps,
     'prefer-use-deep-compare-memo': preferUseDeepCompareMemo,
+    'memo-nested-react-components': memoNestedReactComponents,
     'no-circular-references': noCircularReferences,
     'no-try-catch-already-exists-in-transaction':
       noTryCatchAlreadyExistsInTransaction,
