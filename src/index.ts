@@ -63,8 +63,10 @@ import { noFirestoreObjectArrays } from './rules/no-firestore-object-arrays';
 import { noMemoizeOnStatic } from './rules/no-memoize-on-static';
 import { noUnsafeFirestoreSpread } from './rules/no-unsafe-firestore-spread';
 import { noJsxInHooks } from './rules/no-jsx-in-hooks';
+import { noUnmemoizedMemoWithoutProps } from './rules/no-unmemoized-memo-without-props';
 import { enforceAssertThrows } from './rules/enforce-assert-throws';
 import { preferBatchOperations } from './rules/prefer-batch-operations';
+import { preferDocSetterSetAll } from './rules/prefer-docsetter-setall';
 import { noComplexCloudParams } from './rules/no-complex-cloud-params';
 import { noMixedFirestoreTransactions } from './rules/no-mixed-firestore-transactions';
 import { enforceFirestoreFacade } from './rules/enforce-firestore-facade';
@@ -81,6 +83,7 @@ import { reactUseMemoShouldBeComponent } from './rules/react-usememo-should-be-c
 import { noUnnecessaryVerbSuffix } from './rules/no-unnecessary-verb-suffix';
 import { enforceAssertSafeObjectKey } from './rules/enforce-assert-safe-object-key';
 import { enforceObjectLiteralAsConst } from './rules/enforce-object-literal-as-const';
+import { enforceStableHashSpreadProps } from './rules/enforce-stable-hash-spread-props';
 import { enforcePositiveNaming } from './rules/enforce-positive-naming';
 import { noTypeAssertionReturns } from './rules/no-type-assertion-returns';
 import { preferUtilityFunctionOverPrivateStatic } from './rules/prefer-utility-function-over-private-static';
@@ -133,6 +136,8 @@ import { preferUseDeepCompareMemo } from './rules/prefer-use-deep-compare-memo';
 import { noCircularReferences } from './rules/no-circular-references';
 import { noPassthroughGetters } from './rules/no-passthrough-getters';
 import { noTryCatchAlreadyExistsInTransaction } from './rules/no-try-catch-already-exists-in-transaction';
+import { enforceTransformMemoization } from './rules/enforce-transform-memoization';
+import { verticallyGroupRelatedFunctions } from './rules/vertically-group-related-functions';
 import { default as noStaticConstantsInDynamicFiles } from './rules/no-static-constants-in-dynamic-files';
 import { testFileLocationEnforcement } from './rules/test-file-location-enforcement';
 
@@ -190,6 +195,7 @@ module.exports = {
         '@blumintinc/blumint/prefer-type-over-interface': 'error',
         '@blumintinc/blumint/prefer-type-alias-over-typeof-constant': 'error',
         '@blumintinc/blumint/require-memo': 'error',
+        '@blumintinc/blumint/no-unmemoized-memo-without-props': 'error',
         '@blumintinc/blumint/require-dynamic-firebase-imports': 'error',
         '@blumintinc/blumint/require-https-error': 'error',
         '@blumintinc/blumint/require-https-error-cause': 'error',
@@ -222,6 +228,7 @@ module.exports = {
         '@blumintinc/blumint/no-jsx-in-hooks': 'error',
         '@blumintinc/blumint/enforce-assert-throws': 'error',
         '@blumintinc/blumint/prefer-batch-operations': 'error',
+        '@blumintinc/blumint/prefer-docsetter-setall': 'error',
         '@blumintinc/blumint/no-complex-cloud-params': 'error',
         '@blumintinc/blumint/no-mixed-firestore-transactions': 'error',
         '@blumintinc/blumint/enforce-firestore-facade': 'error',
@@ -233,6 +240,7 @@ module.exports = {
         '@blumintinc/blumint/require-hooks-default-params': 'error',
         '@blumintinc/blumint/prefer-destructuring-no-class': 'error',
         '@blumintinc/blumint/enforce-render-hits-memoization': 'error',
+        '@blumintinc/blumint/enforce-transform-memoization': 'error',
         '@blumintinc/blumint/prefer-fragment-component': 'off',
         '@blumintinc/blumint/react-usememo-should-be-component': 'error',
         '@blumintinc/blumint/no-unnecessary-verb-suffix': 'error',
@@ -281,11 +289,13 @@ module.exports = {
         '@blumintinc/blumint/prefer-next-dynamic': 'error',
         '@blumintinc/blumint/no-redundant-usecallback-wrapper': 'error',
         '@blumintinc/blumint/no-array-length-in-deps': 'error',
+        '@blumintinc/blumint/enforce-stable-hash-spread-props': 'error',
         '@blumintinc/blumint/prefer-use-deep-compare-memo': 'error',
         '@blumintinc/blumint/no-circular-references': 'error',
         '@blumintinc/blumint/no-try-catch-already-exists-in-transaction':
           'error',
         '@blumintinc/blumint/no-passthrough-getters': 'error',
+        '@blumintinc/blumint/vertically-group-related-functions': 'error',
         '@blumintinc/blumint/no-static-constants-in-dynamic-files': 'error',
         '@blumintinc/blumint/test-file-location-enforcement': 'error',
       },
@@ -335,6 +345,7 @@ module.exports = {
     'prefer-type-over-interface': preferTypeOverInterface,
     'prefer-type-alias-over-typeof-constant': preferTypeAliasOverTypeofConstant,
     'require-memo': requireMemo,
+    'no-unmemoized-memo-without-props': noUnmemoizedMemoWithoutProps,
     'no-jsx-whitespace-literal': noJsxWhitespaceLiteral,
     'require-dynamic-firebase-imports': requireDynamicFirebaseImports,
     'require-https-error': requireHttpsError,
@@ -370,6 +381,7 @@ module.exports = {
     'no-jsx-in-hooks': noJsxInHooks,
     'enforce-assert-throws': enforceAssertThrows,
     'prefer-batch-operations': preferBatchOperations,
+    'prefer-docsetter-setall': preferDocSetterSetAll,
     'no-complex-cloud-params': noComplexCloudParams,
     'no-mixed-firestore-transactions': noMixedFirestoreTransactions,
     'enforce-firestore-facade': enforceFirestoreFacade,
@@ -381,11 +393,13 @@ module.exports = {
     'require-hooks-default-params': requireHooksDefaultParams,
     'prefer-destructuring-no-class': preferDestructuringNoClass,
     'enforce-render-hits-memoization': enforceRenderHitsMemoization,
+    'enforce-transform-memoization': enforceTransformMemoization,
     'prefer-fragment-component': preferFragmentComponent,
     'react-usememo-should-be-component': reactUseMemoShouldBeComponent,
     'no-unnecessary-verb-suffix': noUnnecessaryVerbSuffix,
     'enforce-assert-safe-object-key': enforceAssertSafeObjectKey,
     'enforce-object-literal-as-const': enforceObjectLiteralAsConst,
+    'enforce-stable-hash-spread-props': enforceStableHashSpreadProps,
     'enforce-positive-naming': enforcePositiveNaming,
     'no-type-assertion-returns': noTypeAssertionReturns,
     'prefer-utility-function-over-private-static':
@@ -437,6 +451,7 @@ module.exports = {
     'no-try-catch-already-exists-in-transaction':
       noTryCatchAlreadyExistsInTransaction,
     'no-passthrough-getters': noPassthroughGetters,
+    'vertically-group-related-functions': verticallyGroupRelatedFunctions,
     'no-static-constants-in-dynamic-files': noStaticConstantsInDynamicFiles,
     'test-file-location-enforcement': testFileLocationEnforcement,
   },
