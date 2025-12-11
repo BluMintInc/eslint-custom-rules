@@ -513,6 +513,32 @@ ruleTesterTs.run(
       `,
         errors: [buildError('renderTemplate', 'TemplateEngine')],
       },
+      // Class expression with named identifier
+      {
+        code: `
+        const ClassExpression = class NamedExpression {
+          private static compute(value: number) {
+            const doubled = value * 2;
+            const squared = value * value;
+            return { doubled, squared };
+          }
+        };
+      `,
+        errors: [buildError('compute', 'NamedExpression')],
+      },
+      // Class expression relying on variable declarator name
+      {
+        code: `
+        const AssignedExpression = class {
+          private static format(value: string) {
+            const trimmed = value.trim();
+            const upper = trimmed.toUpperCase();
+            return upper;
+          }
+        };
+      `,
+        errors: [buildError('format', 'AssignedExpression')],
+      },
     ],
   },
 );

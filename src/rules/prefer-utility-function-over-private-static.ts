@@ -80,11 +80,30 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
 
       if (
         classNode &&
-        classNode.type === 'ClassDeclaration' &&
-        classNode.id &&
-        classNode.id.type === 'Identifier'
+        (classNode.type === 'ClassDeclaration' ||
+          classNode.type === 'ClassExpression')
       ) {
-        return classNode.id.name;
+        if (classNode.id && classNode.id.type === 'Identifier') {
+          return classNode.id.name;
+        }
+
+        if (
+          classNode.type === 'ClassExpression' &&
+          classNode.parent &&
+          classNode.parent.type === 'VariableDeclarator' &&
+          classNode.parent.id.type === 'Identifier'
+        ) {
+          return classNode.parent.id.name;
+        }
+
+        if (
+          classNode.type === 'ClassExpression' &&
+          classNode.parent &&
+          classNode.parent.type === 'AssignmentExpression' &&
+          classNode.parent.left.type === 'Identifier'
+        ) {
+          return classNode.parent.left.name;
+        }
       }
 
       return 'this class';
