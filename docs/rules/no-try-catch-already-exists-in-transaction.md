@@ -67,7 +67,7 @@ try {
 Or use the forgiveness helper:
 
 ```ts
-import { runCreateForgivenessTransaction } from '../../../util/firestore/runCreateForgivenessTransaction';
+import { runCreateForgivenessTransaction } from '../utils/runCreateForgivenessTransaction';
 
 await runCreateForgivenessTransaction({
   create: async (transaction) => {

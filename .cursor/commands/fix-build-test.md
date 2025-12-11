@@ -25,6 +25,7 @@ If the workflow logs are available, review them to identify:
 Build errors block test execution. Always fix these first.
 
 **Run the build:**
+
 ```bash
 npm run build
 ```
@@ -44,6 +45,7 @@ npm run build
 - Preserve existing functionality—minimal, targeted fixes only
 
 **Re-run build after each fix batch:**
+
 ```bash
 npm run build
 ```
@@ -55,6 +57,7 @@ Continue until `npm run build` exits with code 0.
 Once the build passes, address test failures.
 
 **Run the test suite:**
+
 ```bash
 npm test
 ```
@@ -67,6 +70,7 @@ npm test
 - Prioritize tests that block other tests first
 
 **For narrowing down failures, run a specific test:**
+
 ```bash
 npx jest src/tests/<rule-name>.test.ts
 ```
@@ -85,6 +89,7 @@ npx jest src/tests/<rule-name>.test.ts
 - Fixing auto-fix implementations
 
 **Re-run tests after each fix batch:**
+
 ```bash
 npm test
 ```

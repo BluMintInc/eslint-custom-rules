@@ -47,5 +47,4 @@ AI-generated PR comments can be helpful but are frequently incorrect (roughly ~5
 ## Definition of Done
 
 - All validated AI bot comments are addressed and resolved; `npm run fetch-unresolved-bot-comments` returns none for the PR. Otherwise, please loop back to step 1.
-- Adhere to `task-completion-standards.mdc` for linting, testing, and documentation prior to finishing.
-
+- Adhere to `task-completion-standards.mdc` for linting, testing, and documentation before finishing.

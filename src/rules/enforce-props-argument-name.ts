@@ -44,11 +44,18 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
     function getSuggestedParameterName(
       typeName: string,
       allParams: TSESTree.Parameter[],
+      currentParam: TSESTree.Parameter,
     ): string {
+      const currentId = getIdFromParam(currentParam);
+      const currentName = currentId?.name;
       const existingNames = new Set(
         allParams
-          .map((p) => (p.type === AST_NODE_TYPES.Identifier ? p.name : null))
-          .filter(Boolean) as string[],
+          .map((p) => getIdFromParam(p))
+          .filter(
+            (id): id is TSESTree.Identifier =>
+              !!id && id.name !== currentName,
+          )
+          .map((id) => id.name),
       );
 
       if (typeName === 'Props') {
@@ -199,6 +206,7 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
             const suggestedName = getSuggestedParameterName(
               typeName,
               node.params,
+              param,
             );
 
             if (id.name !== suggestedName) {
@@ -247,6 +255,7 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
             const suggestedName = getSuggestedParameterName(
               typeName,
               method.params,
+              param,
             );
 
             if (id.name !== suggestedName) {

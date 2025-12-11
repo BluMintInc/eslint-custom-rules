@@ -401,86 +401,53 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
 
     // Special case for the method chaining pattern in the test
     function hasPromiseChainWithAssertMethods(node: TSESTree.Node): boolean {
-      // Check for return statements with promise chains
-      if (node.type === AST_NODE_TYPES.ReturnStatement && node.argument) {
-        const arg = node.argument;
+      const walkChain = (callExpr: TSESTree.CallExpression): boolean => {
+        let current: TSESTree.CallExpression | null = callExpr;
 
-        // Check for a call expression that might be the start of a chain
-        if (arg.type === AST_NODE_TYPES.CallExpression) {
-          const callee = arg.callee;
+        while (current) {
+          const callee = current.callee;
 
-          // Check if it's a member expression (this.something())
-          if (
-            callee.type === AST_NODE_TYPES.MemberExpression &&
-            callee.property.type === AST_NODE_TYPES.Identifier
-          ) {
-            // Check if the method name starts with assert
-            if (callee.property.name.toLowerCase().startsWith('assert')) {
-              return true;
-            }
-          }
-
-          // Check for chained calls with multiple then() methods
           if (
             callee.type === AST_NODE_TYPES.MemberExpression &&
             callee.property.type === AST_NODE_TYPES.Identifier &&
-            callee.property.name === 'then'
+            callee.property.name.toLowerCase().startsWith('assert')
           ) {
-            // Check if the object of the then call is another call expression
-            if (callee.object.type === AST_NODE_TYPES.CallExpression) {
-              // Check if the callee of the object is a member expression with an assert method
-              const objectCallee = callee.object.callee;
-              if (
-                objectCallee.type === AST_NODE_TYPES.MemberExpression &&
-                objectCallee.property.type === AST_NODE_TYPES.Identifier &&
-                objectCallee.property.name.toLowerCase().startsWith('assert')
-              ) {
-                return true;
-              }
-
-              // Check if it's another then chain
-              if (
-                objectCallee.type === AST_NODE_TYPES.MemberExpression &&
-                objectCallee.property.type === AST_NODE_TYPES.Identifier &&
-                objectCallee.property.name === 'then'
-              ) {
-                // Continue checking up the chain
-                if (
-                  objectCallee.object.type === AST_NODE_TYPES.CallExpression
-                ) {
-                  const higherCallee = objectCallee.object.callee;
-                  if (
-                    higherCallee.type === AST_NODE_TYPES.MemberExpression &&
-                    higherCallee.property.type === AST_NODE_TYPES.Identifier &&
-                    higherCallee.property.name
-                      .toLowerCase()
-                      .startsWith('assert')
-                  ) {
-                    return true;
-                  }
-                }
-              }
-            }
+            return true;
           }
+
+          if (
+            callee.type === AST_NODE_TYPES.MemberExpression &&
+            callee.object.type === AST_NODE_TYPES.CallExpression
+          ) {
+            // Walk further up any chained call (then/catch/finally or other links).
+            current = callee.object;
+            continue;
+          }
+
+          break;
+        }
+
+        return false;
+      };
+
+      if (node.type === AST_NODE_TYPES.ReturnStatement && node.argument) {
+        if (
+          node.argument.type === AST_NODE_TYPES.CallExpression &&
+          walkChain(node.argument)
+        ) {
+          return true;
         }
       }
 
-      // Check for variable declarations that call assert methods
       if (node.type === AST_NODE_TYPES.VariableDeclaration) {
         for (const declarator of node.declarations) {
           if (
             declarator.init &&
             declarator.init.type === AST_NODE_TYPES.AwaitExpression &&
-            declarator.init.argument.type === AST_NODE_TYPES.CallExpression
+            declarator.init.argument.type === AST_NODE_TYPES.CallExpression &&
+            walkChain(declarator.init.argument)
           ) {
-            const callee = declarator.init.argument.callee;
-            if (
-              callee.type === AST_NODE_TYPES.MemberExpression &&
-              callee.property.type === AST_NODE_TYPES.Identifier &&
-              callee.property.name.toLowerCase().startsWith('assert')
-            ) {
-              return true;
-            }
+            return true;
           }
         }
       }

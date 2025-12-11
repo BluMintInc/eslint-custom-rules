@@ -48,17 +48,18 @@ jobs:
           # Copy the fix-bug command (no rule-request flag for bug fixes)
           cat .cursor/commands/fix-bug.md > "$PROMPT_FILE"
 
-          # Append issue-specific details
-          cat >> "$PROMPT_FILE" << PROMPT_ISSUE
+          # Append issue-specific details safely (no shell expansion of issue text)
+          cat >> "$PROMPT_FILE" <<'PROMPT_ISSUE'
 
           ---
 
           ## Bug to Fix
 
-          **Issue #${ISSUE_NUMBER}**: ${ISSUE_TITLE}
+          PROMPT_ISSUE
 
-          ${ISSUE_BODY}
+          printf '**Issue #%s**: %s\n\n%s\n\n' "$ISSUE_NUMBER" "$ISSUE_TITLE" "$ISSUE_BODY" >> "$PROMPT_FILE"
 
+          cat >> "$PROMPT_FILE" <<'PROMPT_ISSUE'
           ---
 
           When complete, open a PR targeting the \`develop\` branch.
@@ -68,6 +69,11 @@ jobs:
           echo "source_ref=$DEFAULT_REF" >> "$GITHUB_OUTPUT"
           echo "target_branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
           echo "prompt_path=$PROMPT_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Mask Cursor API Key
+        run: echo "::add-mask::${CURSOR_API_KEY}"
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
 
       - name: Launch Cursor Background Agent
         id: launch
@@ -97,7 +103,7 @@ jobs:
             --data "$JSON_PAYLOAD")
 
           AGENT_URL=$(echo "$RESPONSE" | jq -r '.target.url')
-          echo "agent_url=$AGENT_URL" >> $GITHUB_OUTPUT
+          echo "agent_url=$AGENT_URL" >> "$GITHUB_OUTPUT"
 
       - name: Comment on issue with agent link
         run: |

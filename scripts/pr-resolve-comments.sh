@@ -146,9 +146,17 @@ for COMMENT_URL in "${COMMENTS[@]}"; do
     continue
   fi
 
-  gh api graphql -f query="$RESOLVE_THREAD_MUTATION" -f threadId="$THREAD_ID" >/dev/null
-  echo "Resolved thread for $COMMENT_URL"
-  APPLIED=$((APPLIED+1))
+  if gh api graphql -f query="$RESOLVE_THREAD_MUTATION" -f threadId="$THREAD_ID" >/dev/null 2>&1; then
+    echo "Resolved thread for $COMMENT_URL"
+    APPLIED=$((APPLIED+1))
+  else
+    echo "Failed to resolve thread for $COMMENT_URL (thread id: $THREAD_ID)" >&2
+    FAILED=$((FAILED+1))
+  fi
 done
 
 echo "Done. Resolved: $APPLIED, Failed: $FAILED"
+
+if [ "$FAILED" -gt 0 ]; then
+  exit 1
+fi

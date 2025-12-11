@@ -71,7 +71,8 @@ export const optionalChaining: DocumentChangeHandler<
   const { data: change } = event;
 
   // Optional chaining usage
-  const userId = change.after?.ref?.parent?.id;
+  const userId = change.after?.ref?.parent?.id; // ❌ Brittle: derives IDs from refs
+  // ✅ Prefer: const { params: { userId } } = event;
 };
 ```
 
@@ -121,7 +122,9 @@ export const nestedPathHandler: DocumentChangeHandler<
   GameData,
   GamePath
 > = async (event) => {
-  const { params: { gameId, tournamentId, roundId } } = event;
+  const {
+    params: { gameId, tournamentId, roundId }
+  } = event;
 
   const path = `Game/${gameId}/Tournament/${tournamentId}/Round/${roundId}`;
   await db.doc(path).get();

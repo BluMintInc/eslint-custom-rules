@@ -663,6 +663,7 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
         return typeNode.types.some(hasCollectionReferenceType);
       }
 
+      // TSParenthesizedType may appear even though AST_NODE_TYPES omits it
       if ((typeNode.type as string) === 'TSParenthesizedType') {
         const inner = (typeNode as { typeAnnotation: TSESTree.TypeNode })
           .typeAnnotation;

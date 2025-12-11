@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { execSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { fetchChangedFiles } from './change-log';
 
@@ -36,19 +36,12 @@ export function performLintDiff({
 
   console.log(`Linting ${lintableFiles.length} files...`);
 
-  try {
-    execSync(
-      `npx eslint --fix ${lintableFiles
-        .map((file) => {
-          return `"${file}"`;
-        })
-        .join(' ')}`,
-      {
-        stdio: 'inherit',
-      },
-    );
-  } catch {
-    process.exit(1);
+  const result = spawnSync('npx', ['eslint', '--fix', ...lintableFiles], {
+    stdio: 'inherit',
+  });
+
+  if (result.status !== 0) {
+    process.exit(result.status === null ? 1 : result.status);
   }
 }
 
@@ -57,10 +50,17 @@ function parseArgs() {
   const conversationIdIdx = args.indexOf('--conversation-id');
   const generationIdIdx = args.indexOf('--generation-id');
 
+  const conversationIdValue =
+    conversationIdIdx === -1 ? null : args[conversationIdIdx + 1] ?? null;
+  const generationIdValue =
+    generationIdIdx === -1 ? null : args[generationIdIdx + 1] ?? null;
+
   const conversationId =
-    conversationIdIdx === -1 ? null : args[conversationIdIdx + 1];
+    conversationIdValue && conversationIdValue.length > 0
+      ? conversationIdValue
+      : null;
   const generationId =
-    generationIdIdx === -1 ? null : args[generationIdIdx + 1];
+    generationIdValue && generationIdValue.length > 0 ? generationIdValue : null;
 
   return { conversationId, generationId } as const;
 }

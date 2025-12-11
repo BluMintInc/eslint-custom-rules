@@ -136,6 +136,12 @@ mkdir -p "$TMP_DIR"
 ALL_THREADS_FILE="$TMP_DIR/review_threads_all.json"
 PAGE_FILE="$TMP_DIR/review_threads_page.json"
 TMP_FILE="$TMP_DIR/review_threads_tmp.json"
+
+cleanup() {
+  rm -f "$ALL_THREADS_FILE" "$PAGE_FILE" "$TMP_FILE" 2>/dev/null || true
+}
+trap cleanup EXIT
+
 echo '[]' > "$ALL_THREADS_FILE"
 
 THREADS_AFTER=""

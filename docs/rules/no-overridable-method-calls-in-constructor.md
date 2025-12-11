@@ -59,7 +59,7 @@ const myCar = new Car(4); // Leads to error or incorrect log because numberOfDoo
 
 ### Examples of **correct** code for this rule:
 
-**Option 1: Use an initialization method**
+#### Option 1: Use an initialization method
 
 ```typescript
 abstract class Vehicle {
@@ -103,7 +103,7 @@ const myCar = new Car(4);
 myCar.initialize(); // Works correctly as Car is fully initialized.
 ```
 
-**Option 2: Pass necessary data to base constructor or methods**
+#### Option 2: Pass necessary data to base constructor or methods
 
 ```typescript
 abstract class Vehicle {

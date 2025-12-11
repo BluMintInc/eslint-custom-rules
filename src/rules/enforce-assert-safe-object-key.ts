@@ -2,7 +2,13 @@ import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'useAssertSafe';
-type Options = [];
+type Options = [
+  {
+    readonly assertSafeImportPath?: string;
+  },
+];
+
+const DEFAULT_IMPORT_PATH = 'functions/src/util/assertSafe';
 
 export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
   name: 'enforce-assert-safe-object-key',
@@ -14,14 +20,23 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       recommended: 'error',
     },
     fixable: 'code',
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          assertSafeImportPath: { type: 'string' },
+        },
+        additionalProperties: false,
+      },
+    ],
     messages: {
       useAssertSafe:
         'Dynamic object key "{{key}}" is used without assertSafe() validation. Unvalidated keys can resolve to unexpected properties (including prototype fields) and make lookups fragile or unsafe. Wrap the key with assertSafe({{key}}) before accessing the object.',
     },
   },
-  defaultOptions: [],
-  create(context) {
+  defaultOptions: [{}],
+  create(context, [options]) {
+    const importPath = options?.assertSafeImportPath || DEFAULT_IMPORT_PATH;
     let hasAssertSafeImport = false;
 
     /**
@@ -34,8 +49,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       const firstImport = program.body.find(
         (node) => node.type === AST_NODE_TYPES.ImportDeclaration,
       );
-      const importStatement =
-        "import { assertSafe } from 'functions/src/util/assertSafe';\n";
+      const importStatement = `import { assertSafe } from '${importPath}';\n`;
 
       if (firstImport) {
         return fixer.insertTextBefore(firstImport, importStatement);
@@ -68,7 +82,6 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
 
     const reportUseAssertSafe = (
       node: TSESTree.Node,
-      replacementNode: TSESTree.Node,
       expressionText: string,
     ) =>
       context.report({
@@ -76,7 +89,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
         messageId: 'useAssertSafe',
         data: { key: expressionText },
         fix(fixer) {
-          return createFixes(fixer, replacementNode, expressionText);
+          return createFixes(fixer, node, expressionText);
         },
       });
 
@@ -106,7 +119,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
           ) {
             const arg = key.arguments[0];
             const argText = context.getSourceCode().getText(arg);
-            reportUseAssertSafe(key, key, argText);
+            reportUseAssertSafe(key, argText);
           }
 
           // Check for template literals like `${id}`
@@ -119,7 +132,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
           ) {
             const expr = key.expressions[0];
             const exprText = context.getSourceCode().getText(expr);
-            reportUseAssertSafe(key, key, exprText);
+            reportUseAssertSafe(key, exprText);
           }
         }
       },
@@ -136,7 +149,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
           ) {
             const arg = left.arguments[0];
             const argText = context.getSourceCode().getText(arg);
-            reportUseAssertSafe(left, left, argText);
+            reportUseAssertSafe(left, argText);
           }
 
           // Check for template literals like `${id}`
@@ -149,7 +162,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
           ) {
             const expr = left.expressions[0];
             const exprText = context.getSourceCode().getText(expr);
-            reportUseAssertSafe(left, left, exprText);
+            reportUseAssertSafe(left, exprText);
           }
         }
       },
@@ -206,7 +219,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
           ) {
             const arg = property.arguments[0];
             const argText = context.getSourceCode().getText(arg);
-            reportUseAssertSafe(property, property, argText);
+            reportUseAssertSafe(property, argText);
             return;
           }
 
@@ -232,7 +245,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
 
             const expr = property.expressions[0];
             const exprText = context.getSourceCode().getText(expr);
-            reportUseAssertSafe(property, property, exprText);
+            reportUseAssertSafe(property, exprText);
             return;
           }
 
@@ -249,7 +262,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             }
 
             const propText = context.getSourceCode().getText(property);
-            reportUseAssertSafe(property, property, propText);
+            reportUseAssertSafe(property, propText);
             return;
           }
 
@@ -261,7 +274,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             }
 
             const propText = context.getSourceCode().getText(property);
-            reportUseAssertSafe(property, property, propText);
+            reportUseAssertSafe(property, propText);
             return;
           }
 
@@ -277,7 +290,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             }
 
             const propText = context.getSourceCode().getText(property);
-            reportUseAssertSafe(property, property, propText);
+            reportUseAssertSafe(property, propText);
             return;
           }
 
@@ -296,7 +309,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             }
 
             const propText = context.getSourceCode().getText(property);
-            reportUseAssertSafe(property, property, propText);
+            reportUseAssertSafe(property, propText);
             return;
           }
         }

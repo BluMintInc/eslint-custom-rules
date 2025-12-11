@@ -58,6 +58,30 @@ function checkStatus(status: StatusToCheck) {}
 - `typeof` on functions/classes is allowed (this rule targets constant-like initializers).
 - Inference using `as const` without explicit type is allowed.
 
+```ts
+// Imported constants: allowed
+import { API_BASE } from './config';
+type TApi = typeof API_BASE;
+
+// Imported types: allowed (and encouraged)
+import type { SomeType } from './types';
+
+// `keyof typeof`: allowed
+const MAP = { a: 1, b: 2 } as const;
+type Keys = keyof typeof MAP;
+
+// `typeof` on functions/classes: allowed
+function make() {
+  return { x: 1 };
+}
+type Maker = typeof make;
+class Foo {}
+type FooCtor = typeof Foo;
+
+// Inference via `as const`: allowed
+const STATUS = 'ok' as const; // no explicit type annotation needed
+```
+
 ## Options
 
 This rule has no options and is not auto-fixable.
