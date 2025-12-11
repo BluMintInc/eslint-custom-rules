@@ -231,6 +231,10 @@ function isLengthZeroComparison(node: TSESTree.BinaryExpression, name: string): 
     return leftIsLength && rightIsZero;
   }
 
+  if (operator === '>=' || operator === '>') {
+    return leftIsZero && rightIsLength;
+  }
+
   return false;
 }
 

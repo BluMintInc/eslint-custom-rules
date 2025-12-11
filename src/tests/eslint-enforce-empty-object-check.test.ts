@@ -42,6 +42,12 @@ ruleTesterTs.run(
         handle(payload);
       }
       `,
+      `
+      const payload = getPayload();
+      if (!payload || 0 >= Object.keys(payload).length) {
+        handle(payload);
+      }
+      `,
       {
         code: `
         const items: string[] | undefined = getItems();
