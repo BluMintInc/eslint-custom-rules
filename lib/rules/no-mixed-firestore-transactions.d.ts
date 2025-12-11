@@ -1,0 +1,1 @@
+export declare const noMixedFirestoreTransactions: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"noMixedTransactions", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;

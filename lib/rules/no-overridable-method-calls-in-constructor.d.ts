@@ -1,0 +1,1 @@
+export declare const noOverridableMethodCallsInConstructor: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"noOverridableMethodCallsInConstructor", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;

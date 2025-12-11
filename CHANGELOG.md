@@ -1,3 +1,69 @@
+# [1.13.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.12.6...v1.13.0) (2025-12-11)
+
+
+### Bug Fixes
+
+* **enforce-positive-naming.ts:** add intersect & intersecting ([dc06ab6](https://github.com/BluMintInc/eslint-custom-rules/commit/dc06ab6718bb7468b2d8d5e917f2c44ff844eeaa))
+* enhance check run validation in cursor-bot PR review workflow ([4ac5e48](https://github.com/BluMintInc/eslint-custom-rules/commit/4ac5e487ddea594f492fec29ac6878b686fa2219))
+* force update ([d65b8a3](https://github.com/BluMintInc/eslint-custom-rules/commit/d65b8a3165bffccc442555b0f7ecb6a261a79a63))
+* handle missing webhook secrets in Cursor agent workflows ([2590265](https://github.com/BluMintInc/eslint-custom-rules/commit/2590265724e4fdfafedeefae986c6da285632bce))
+* improve idempotency check for Cursor bot agent launches ([1d246a8](https://github.com/BluMintInc/eslint-custom-rules/commit/1d246a88b76aa5e13beced1365a2b400c574a7c7))
+* improve type definitions in prefer-field-paths-in-transforms rule ([e390aff](https://github.com/BluMintInc/eslint-custom-rules/commit/e390aff5b97ad57ff0a1f2cb0a7787fb7a03d0a7))
+* **index.ts:** warn should be error ([d38cba2](https://github.com/BluMintInc/eslint-custom-rules/commit/d38cba2f57ab1c243384fc4a71cb65b080d4476f))
+* **no-hungarian.ts:** whitelist toArr ([5222c89](https://github.com/BluMintInc/eslint-custom-rules/commit/5222c89dd4b1f43cd5262bd36cf29560649bb2cf))
+* **no-unnecessary-verb-suffix.test.ts:** Allow Before & After ([bdb978e](https://github.com/BluMintInc/eslint-custom-rules/commit/bdb978ebe30298f7d58f59bdb203ec8d937da09b))
+* **no-unnecessary-verb-suffix.ts:** allow Before and After ([30bae1e](https://github.com/BluMintInc/eslint-custom-rules/commit/30bae1e6c5868eca9dc4ad252ac77284ca6bd923))
+* prevent enforce-positive-naming false positive on integer ([6f2a97e](https://github.com/BluMintInc/eslint-custom-rules/commit/6f2a97e0d807991ecb8b1b2ac3d9938c22a667cd))
+* refactor agent check logic for improved clarity ([004bc1a](https://github.com/BluMintInc/eslint-custom-rules/commit/004bc1a6d45dedbfc80606b3f439a3767ed8343a))
+* refine boolean naming enforcement logic and enhance test coverage ([987aab1](https://github.com/BluMintInc/eslint-custom-rules/commit/987aab1d0ca98ea1c341651b6e5a95b7523d4946))
+* refine describeNestedPath function to improve fallback logic for nested paths ([5f0f0f5](https://github.com/BluMintInc/eslint-custom-rules/commit/5f0f0f561b5518d379e545d60673176690736383))
+* remove "do not hesitate to ask questions" rule for Cloud Agents ([f1bba66](https://github.com/BluMintInc/eslint-custom-rules/commit/f1bba666ad3b5d62b83c3efd8a95b50a451c3b84))
+* restrict no-unused-props to react contexts ([4dd70d6](https://github.com/BluMintInc/eslint-custom-rules/commit/4dd70d687658f677f0c38cfe867a038dae74fb38))
+* **src/rules/enforce-boolean-naming-prefixes.ts:** remove erroneous test workaround ([e21c533](https://github.com/BluMintInc/eslint-custom-rules/commit/e21c53393f1dfa1b20a9071376d5249b72e522bd))
+* swap error message data in prefer-fragment-component tests ([d099e49](https://github.com/BluMintInc/eslint-custom-rules/commit/d099e49217ee3b690d08b6aa4c3cbe4d9b145ca2))
+* trigger bot review agent on CodeRabbit status updates ([d3c4d47](https://github.com/BluMintInc/eslint-custom-rules/commit/d3c4d473432f57c0191eee0d18c41b345e5c54b5))
+* update cursor-bot PR review agent to handle neutral check conclusions ([1e6af37](https://github.com/BluMintInc/eslint-custom-rules/commit/1e6af37822fc52434d2ff72e5ffb2f15e3b7d8bf))
+* update describeNestedPath function to handle nested object paths correctly ([3631510](https://github.com/BluMintInc/eslint-custom-rules/commit/3631510ec05e7ba22897ddefc307c6d34ba3513f))
+* update error message data in prefer-fragment-component tests ([a8aa529](https://github.com/BluMintInc/eslint-custom-rules/commit/a8aa5299ba5973430231fc23cf41ec8d53213a34))
+* update GitHub workflow and post-research comment script for cursor-research label ([aa5d229](https://github.com/BluMintInc/eslint-custom-rules/commit/aa5d22996b959fdc7f223c4d5ab2614ba24898c5))
+* update labeling conventions in research workflows ([ddc6e06](https://github.com/BluMintInc/eslint-custom-rules/commit/ddc6e06d9aa46933415a054d3df502bba225e1b1))
+* update Node dependency installation process in install script ([842b34c](https://github.com/BluMintInc/eslint-custom-rules/commit/842b34c2edf83a486a15441ae9d9dd762d9c1f2b))
+* update regex in GitHub workflow for issue linking ([dbe9884](https://github.com/BluMintInc/eslint-custom-rules/commit/dbe98847846b962f368644f8028eab99463ad12b))
+
+
+### Features
+
+* add code investigation and solution design command documentation ([bdbf7a8](https://github.com/BluMintInc/eslint-custom-rules/commit/bdbf7a8aa4e2f65fdc4787d457d44058bd12dddb))
+* Add collectBindingIdentifiers helper function ([fd7e878](https://github.com/BluMintInc/eslint-custom-rules/commit/fd7e878e1ceaebe93023495ee36691b02cf332e0))
+* Add enforce-memoize-getters ESLint rule ([b425705](https://github.com/BluMintInc/eslint-custom-rules/commit/b4257056a36a57b7cc29264ee52e9841c7b79b19))
+* add GitHub workflow to link PRs to source issues ([9c8b83c](https://github.com/BluMintInc/eslint-custom-rules/commit/9c8b83c3bca85548d27c6aca43caaa236941045c))
+* add memoize-root-level-hocs rule ([171943f](https://github.com/BluMintInc/eslint-custom-rules/commit/171943fc69d81e63b02994d6274df720a6024645))
+* add merge-review script and update documentation ([6526e84](https://github.com/BluMintInc/eslint-custom-rules/commit/6526e8458201b689313ae03a8ad29e4b423007f6))
+* add new ESLint rule for enforcing safe object keys ([13bfcbc](https://github.com/BluMintInc/eslint-custom-rules/commit/13bfcbc6c9e5195ef8ca716538316503961e7e63))
+* Add no-inline-component-prop ESLint rule ([6600908](https://github.com/BluMintInc/eslint-custom-rules/commit/6600908a43de96d1ae3588a061c27cbef88bfabd))
+* add no-try-catch-already-exists-in-transaction rule ([866a9cb](https://github.com/BluMintInc/eslint-custom-rules/commit/866a9cbd2ae3ac5ac416ece932848751c5e11b92))
+* Add no-try-catch-already-exists-in-transaction rule ([0f8b316](https://github.com/BluMintInc/eslint-custom-rules/commit/0f8b31699fd15f706a91a8d6fae17da905c6f855))
+* add script for labeling enhancement rule requests ([2232b39](https://github.com/BluMintInc/eslint-custom-rules/commit/2232b39c6f5e8b520b36947935a7db801202b2b1))
+* add script to launch agents for improving ESLint rule messaging ([50c5097](https://github.com/BluMintInc/eslint-custom-rules/commit/50c50970c63b25b11134817cf3c84ac8f43d20e9))
+* add scripts and configuration for automated PR review comment handling ([6c09aec](https://github.com/BluMintInc/eslint-custom-rules/commit/6c09aec7833cbf81b7adaf2d2b3215f7ba1885f6))
+* Add type annotation for Program node in test file rule ([d94feb4](https://github.com/BluMintInc/eslint-custom-rules/commit/d94feb4d78a395a75466ad6bd09b7731a16a2e1b))
+* disallow static constants in dynamic files ([ed2c3b0](https://github.com/BluMintInc/eslint-custom-rules/commit/ed2c3b0c12d404a1c7aa29cbe3972d53ba6b678b))
+* Enforce boolean naming on getters and add ignoreOverriddenGetters ([410705d](https://github.com/BluMintInc/eslint-custom-rules/commit/410705dcb7a5bb17c6e40c40d57d479c5379b4ce))
+* enforce colocated test files ([91e01f8](https://github.com/BluMintInc/eslint-custom-rules/commit/91e01f8842664ef0ba9e9b98d7553f52fd4a9aeb))
+* enforce typescript fences in markdown ([6ccecde](https://github.com/BluMintInc/eslint-custom-rules/commit/6ccecde674ffca7c10a0c6123d23d75cca3219eb))
+* enhance automated review addressing system with bot review agent ([91c8cae](https://github.com/BluMintInc/eslint-custom-rules/commit/91c8cae0e947aaa0de909c43d727be67aa11e56e))
+* enhance enforce-boolean-naming-prefixes rule with improved error messaging and capitalization utility ([b4ef77d](https://github.com/BluMintInc/eslint-custom-rules/commit/b4ef77d5856339b0a17172fd2eca737116e0be19))
+* enhance launch-rule-message-doc-agents script with improved lint message handling ([bfe6c4d](https://github.com/BluMintInc/eslint-custom-rules/commit/bfe6c4d7e0037a9267960fa6188ccb066e733249))
+* enhance pr-resolve-comments.sh with branch override functionality ([90e3e13](https://github.com/BluMintInc/eslint-custom-rules/commit/90e3e13f4a9fca5f94041ac9055fb9d88b7782db))
+* Handle rest spread operator in unused props rule ([09bd37f](https://github.com/BluMintInc/eslint-custom-rules/commit/09bd37f7702d971f6a2e0c3c99ab945c4fedb0da))
+* implement automated review addressing system for PRs ([c1ebc9e](https://github.com/BluMintInc/eslint-custom-rules/commit/c1ebc9e4a392739621f1a7d07504815d8a04755f))
+* Make no-static-constants-in-dynamic-files rule fixable ([84537b5](https://github.com/BluMintInc/eslint-custom-rules/commit/84537b570eea2c65c1938e8da9f79b2a2aeacd71))
+
+
+### Reverts
+
+* Revert "Merge pull request [#678](https://github.com/BluMintInc/eslint-custom-rules/issues/678) from BluMintInc/openhands-fix-issue-677" ([4170af6](https://github.com/BluMintInc/eslint-custom-rules/commit/4170af6690aeb67f23f95b1a1d59e2d37ba98d34))
+
 ## [1.12.6](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.12.5...v1.12.6) (2025-03-22)
 
 

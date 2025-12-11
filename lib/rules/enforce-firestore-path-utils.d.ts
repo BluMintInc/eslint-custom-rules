@@ -1,0 +1,1 @@
+export declare const enforceFirestorePathUtils: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"requirePathUtil", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;
