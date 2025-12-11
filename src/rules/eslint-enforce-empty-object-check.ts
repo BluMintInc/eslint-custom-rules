@@ -177,7 +177,7 @@ function isObjectLikeType(type: ts.Type, checker: ts.TypeChecker): 'object' | 'n
   return 'object';
 }
 
-function isObjectKeysLength(node: TSESTree.Node, name: string): boolean {
+function isObjectKeysLengthExpression(node: TSESTree.Node, name: string): boolean {
   if (
     node.type === AST_NODE_TYPES.MemberExpression &&
     !node.computed &&
@@ -213,7 +213,10 @@ function conditionHasEmptyCheck(
         conditionHasEmptyCheck(node.right, name, emptyCheckFunctions)
       );
     case AST_NODE_TYPES.BinaryExpression:
-      if (isObjectKeysLength(node.left, name) || isObjectKeysLength(node.right, name)) {
+      if (
+        isObjectKeysLengthExpression(node.left, name) ||
+        isObjectKeysLengthExpression(node.right, name)
+      ) {
         return true;
       }
       return (
@@ -221,7 +224,7 @@ function conditionHasEmptyCheck(
         conditionHasEmptyCheck(node.right, name, emptyCheckFunctions)
       );
     case AST_NODE_TYPES.UnaryExpression:
-      if (node.operator === '!' && isObjectKeysLength(node.argument, name)) {
+      if (node.operator === '!' && isObjectKeysLengthExpression(node.argument, name)) {
         return true;
       }
       return conditionHasEmptyCheck(node.argument, name, emptyCheckFunctions);
@@ -342,7 +345,7 @@ export const eslintEnforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Opti
           'Object "{{name}}" is only checked for falsiness, so an empty object would pass and execute the guarded branch. Empty API payloads often behave like missing data—also verify Object.keys({{name}}).length === 0 to prevent silent fallthrough.',
       },
     },
-    defaultOptions: [{}],
+    defaultOptions: [{}] as Options,
     create(context) {
       const sourceCode = context.getSourceCode();
       const parserServices = sourceCode.parserServices;
@@ -355,11 +358,10 @@ export const eslintEnforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Opti
         emptyCheckFunctions = DEFAULT_EMPTY_CHECK_FUNCTIONS,
       } = options;
 
-      const patternSet: Set<string> = new Set(
-        objectNamePattern && objectNamePattern.length > 0
-          ? objectNamePattern
-          : DEFAULT_OBJECT_SUFFIXES,
-      );
+      const patternSet: Set<string> = new Set([
+        ...DEFAULT_OBJECT_SUFFIXES,
+        ...(objectNamePattern || []),
+      ]);
       const emptyCheckFunctionsSet: Set<string> = new Set(
         emptyCheckFunctions.length > 0 ? emptyCheckFunctions : DEFAULT_EMPTY_CHECK_FUNCTIONS,
       );
@@ -384,11 +386,6 @@ export const eslintEnforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Opti
       }
 
       function reportNegation(node: TSESTree.UnaryExpression, identifier: TSESTree.Identifier) {
-        const lowerName = identifier.name.toLowerCase();
-        if (NON_OBJECT_LIKE_NAMES.includes(lowerName)) {
-          return;
-        }
-
         if (ignoreInLoops && isInsideLoop(node)) {
           return;
         }

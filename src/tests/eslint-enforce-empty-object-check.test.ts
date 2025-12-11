@@ -1,5 +1,8 @@
+import path from 'path';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { eslintEnforceEmptyObjectCheck } from '../rules/eslint-enforce-empty-object-check';
+
+const tsconfigRootDir = path.join(__dirname, '..', '..');
 
 ruleTesterTs.run(
   'eslint-enforce-empty-object-check',
@@ -34,12 +37,19 @@ ruleTesterTs.run(
         toggle();
       }
       `,
-      `
-      const items: string[] | undefined = getItems();
-      if (!items) {
-        return [];
-      }
-      `,
+      {
+        code: `
+        const items: string[] | undefined = getItems();
+        if (!items) {
+          return [];
+        }
+        `,
+        filename: path.join(tsconfigRootDir, 'src/tests/fixtures/type-aware-array.ts'),
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+      },
       `
       const callback: () => void = getCallback();
       if (!callback) {
@@ -263,6 +273,42 @@ ruleTesterTs.run(
         const responsePayload = getResponse();
         if ((!responsePayload || Object.keys(responsePayload).length === 0)) {
           return;
+        }
+        `,
+      },
+      {
+        code: `
+        const count: Record<string, unknown> | undefined = getCount();
+        if (!count) {
+          return handle(count);
+        }
+        `,
+        filename: path.join(tsconfigRootDir, 'src/tests/fixtures/type-aware-object.ts'),
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'count' } }],
+        output: `
+        const count: Record<string, unknown> | undefined = getCount();
+        if ((!count || Object.keys(count).length === 0)) {
+          return handle(count);
+        }
+        `,
+      },
+      {
+        code: `
+        const config = getConfig();
+        if (!config) {
+          apply(config);
+        }
+        `,
+        options: [{ objectNamePattern: ['Bag'] }],
+        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'config' } }],
+        output: `
+        const config = getConfig();
+        if ((!config || Object.keys(config).length === 0)) {
+          apply(config);
         }
         `,
       },
