@@ -50,7 +50,16 @@ async function loadProfiles(userIds) {
 }
 ```
 
-## How to Fix
+   When you still want concurrency but independent error paths, prefer:
+
+   ```typescript
+   const results = await Promise.allSettled([operation1(), operation2()]);
+   for (const r of results) {
+     if (r.status === 'rejected') handle(r.reason);
+   }
+   ```
+
+3. **Operations with Side Effects**: When operations have side effects that affect other operations.
 
 - Wrap the independent await targets in a single `Promise.all([...])`.
 - Destructure the array result when you need distinct variables.
@@ -64,9 +73,17 @@ Skip or disable the rule if any of the following apply:
 3. The operations rely on ordered side effects that must not overlap.
 4. The awaits sit inside a loop where batching or chunked parallelism would be safer.
 
-## Rule Options
+   ### ✅ Recommended in loops
 
-This rule has no options.
+   ```typescript
+   // Run all in parallel (be mindful of rate limits)
+   await Promise.all(items.map((item) => processItem(item)));
+
+   // Or, use bounded concurrency if needed
+   import pLimit from 'p-limit';
+   const limit = pLimit(5);
+   await Promise.all(items.map((item) => limit(() => processItem(item))));
+   ```
 
 ## Implementation
 

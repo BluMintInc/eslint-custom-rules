@@ -1,5 +1,25 @@
+import { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { semanticFunctionPrefixes } from '../rules/semantic-function-prefixes';
+
+const ALTERNATIVES = {
+  get: 'fetch, retrieve, compute, derive',
+  update: 'modify, set, apply',
+  check: 'validate, assert, ensure',
+  manage: 'control, coordinate, schedule',
+  process: 'transform, sanitize, compute',
+  do: 'execute, perform, apply',
+} as const;
+
+type Prefix = keyof typeof ALTERNATIVES;
+
+const buildMessage = (functionName: string, prefix: Prefix) =>
+  `Function "${functionName}" starts with the generic prefix "${prefix}", which hides whether it fetches remote data, transforms input, or mutates state. Use a semantic verb such as ${ALTERNATIVES[prefix]} to describe the operation and set caller expectations.`;
+
+const error = (functionName: string, prefix: Prefix) =>
+  ({
+    message: buildMessage(functionName, prefix),
+  } as unknown as TSESLint.TestCaseError<'avoidGenericPrefix'>);
 
 ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
   valid: [
@@ -331,125 +351,45 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
     // Basic invalid cases - functions with disallowed prefixes
     {
       code: 'function getData() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'get',
-            alternatives: 'fetch, retrieve, compute, derive',
-          },
-        },
-      ],
+      errors: [error('getData', 'get')],
     },
     {
       code: 'function updateUser() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'update',
-            alternatives: 'modify, set, apply',
-          },
-        },
-      ],
+      errors: [error('updateUser', 'update')],
     },
     {
       code: 'function checkValidity() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'check',
-            alternatives: 'validate, assert, ensure',
-          },
-        },
-      ],
+      errors: [error('checkValidity', 'check')],
     },
     {
       code: 'function manageTasks() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'manage',
-            alternatives: 'control, coordinate, schedule',
-          },
-        },
-      ],
+      errors: [error('manageTasks', 'manage')],
     },
     {
       code: 'function processInput() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'process',
-            alternatives: 'transform, sanitize, compute',
-          },
-        },
-      ],
+      errors: [error('processInput', 'process')],
     },
 
     // Arrow functions with disallowed prefixes
     {
       code: 'const getData = () => {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'get',
-            alternatives: 'fetch, retrieve, compute, derive',
-          },
-        },
-      ],
+      errors: [error('getData', 'get')],
     },
     {
       code: 'const updateUser = function() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'update',
-            alternatives: 'modify, set, apply',
-          },
-        },
-      ],
+      errors: [error('updateUser', 'update')],
     },
     {
       code: 'const checkInput = () => {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'check',
-            alternatives: 'validate, assert, ensure',
-          },
-        },
-      ],
+      errors: [error('checkInput', 'check')],
     },
     {
       code: 'const manageState = function() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'manage',
-            alternatives: 'control, coordinate, schedule',
-          },
-        },
-      ],
+      errors: [error('manageState', 'manage')],
     },
     {
       code: 'const processData = () => {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'process',
-            alternatives: 'transform, sanitize, compute',
-          },
-        },
-      ],
+      errors: [error('processData', 'process')],
     },
 
     // Class methods with disallowed prefixes
@@ -459,15 +399,7 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
           protected async updateUserData() {}
         }
       `,
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'update',
-            alternatives: 'modify, set, apply',
-          },
-        },
-      ],
+      errors: [error('updateUserData', 'update')],
     },
     {
       code: `
@@ -479,199 +411,71 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
         }
       `,
       errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'get',
-            alternatives: 'fetch, retrieve, compute, derive',
-          },
-        },
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'check',
-            alternatives: 'validate, assert, ensure',
-          },
-        },
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'process',
-            alternatives: 'transform, sanitize, compute',
-          },
-        },
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'manage',
-            alternatives: 'control, coordinate, schedule',
-          },
-        },
+        error('getData', 'get'),
+        error('checkInput', 'check'),
+        error('processData', 'process'),
+        error('manageState', 'manage'),
       ],
     },
 
     // EDGE CASES - Different casing with prefixes (should still be flagged)
     {
       code: 'function GetData() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'get',
-            alternatives: 'fetch, retrieve, compute, derive',
-          },
-        },
-      ],
+      errors: [error('GetData', 'get')],
     },
     {
       code: 'function UPDATEUser() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'update',
-            alternatives: 'modify, set, apply',
-          },
-        },
-      ],
+      errors: [error('UPDATEUser', 'update')],
     },
     {
       code: 'function CheckInput() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'check',
-            alternatives: 'validate, assert, ensure',
-          },
-        },
-      ],
+      errors: [error('CheckInput', 'check')],
     },
     {
       code: 'function MANAGETasks() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'manage',
-            alternatives: 'control, coordinate, schedule',
-          },
-        },
-      ],
+      errors: [error('MANAGETasks', 'manage')],
     },
     {
       code: 'function ProcessData() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'process',
-            alternatives: 'transform, sanitize, compute',
-          },
-        },
-      ],
+      errors: [error('ProcessData', 'process')],
     },
 
     // EDGE CASES - Async functions with disallowed prefixes
     {
       code: 'async function getData() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'get',
-            alternatives: 'fetch, retrieve, compute, derive',
-          },
-        },
-      ],
+      errors: [error('getData', 'get')],
     },
     {
       code: 'async function updateUser() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'update',
-            alternatives: 'modify, set, apply',
-          },
-        },
-      ],
+      errors: [error('updateUser', 'update')],
     },
     {
       code: 'const getData = async () => {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'get',
-            alternatives: 'fetch, retrieve, compute, derive',
-          },
-        },
-      ],
+      errors: [error('getData', 'get')],
     },
     {
       code: 'const updateUser = async function() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'update',
-            alternatives: 'modify, set, apply',
-          },
-        },
-      ],
+      errors: [error('updateUser', 'update')],
     },
 
     // EDGE CASES - Generator functions with disallowed prefixes
     {
       code: 'function* getData() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'get',
-            alternatives: 'fetch, retrieve, compute, derive',
-          },
-        },
-      ],
+      errors: [error('getData', 'get')],
     },
     {
       code: 'function* updateUser() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'update',
-            alternatives: 'modify, set, apply',
-          },
-        },
-      ],
+      errors: [error('updateUser', 'update')],
     },
 
     // EDGE CASES - Async generator functions with disallowed prefixes
     {
       code: 'async function* getData() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'get',
-            alternatives: 'fetch, retrieve, compute, derive',
-          },
-        },
-      ],
+      errors: [error('getData', 'get')],
     },
     {
       code: 'async function* updateUser() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'update',
-            alternatives: 'modify, set, apply',
-          },
-        },
-      ],
+      errors: [error('updateUser', 'update')],
     },
 
     // EDGE CASES - Class methods with different access modifiers and disallowed prefixes
@@ -686,41 +490,11 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
         }
       `,
       errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'get',
-            alternatives: 'fetch, retrieve, compute, derive',
-          },
-        },
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'update',
-            alternatives: 'modify, set, apply',
-          },
-        },
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'check',
-            alternatives: 'validate, assert, ensure',
-          },
-        },
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'manage',
-            alternatives: 'control, coordinate, schedule',
-          },
-        },
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'process',
-            alternatives: 'transform, sanitize, compute',
-          },
-        },
+        error('getData', 'get'),
+        error('updateUser', 'update'),
+        error('checkInput', 'check'),
+        error('manageTasks', 'manage'),
+        error('processData', 'process'),
       ],
     },
 
@@ -744,75 +518,27 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
     // EDGE CASES - Export patterns with disallowed prefixes
     {
       code: 'export function getData() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'get',
-            alternatives: 'fetch, retrieve, compute, derive',
-          },
-        },
-      ],
+      errors: [error('getData', 'get')],
     },
     {
       code: 'export function updateUser() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'update',
-            alternatives: 'modify, set, apply',
-          },
-        },
-      ],
+      errors: [error('updateUser', 'update')],
     },
     {
       code: 'export const getData = () => {};',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'get',
-            alternatives: 'fetch, retrieve, compute, derive',
-          },
-        },
-      ],
+      errors: [error('getData', 'get')],
     },
     {
       code: 'export const updateUser = function() {};',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'update',
-            alternatives: 'modify, set, apply',
-          },
-        },
-      ],
+      errors: [error('updateUser', 'update')],
     },
     {
       code: 'export default function getData() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'get',
-            alternatives: 'fetch, retrieve, compute, derive',
-          },
-        },
-      ],
+      errors: [error('getData', 'get')],
     },
     {
       code: 'export default function updateUser() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'update',
-            alternatives: 'modify, set, apply',
-          },
-        },
-      ],
+      errors: [error('updateUser', 'update')],
     },
 
     // EDGE CASES - Nested functions with disallowed prefixes
@@ -830,55 +556,13 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
         }
       `,
       errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'get',
-            alternatives: 'fetch, retrieve, compute, derive',
-          },
-        },
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'update',
-            alternatives: 'modify, set, apply',
-          },
-        },
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'check',
-            alternatives: 'validate, assert, ensure',
-          },
-        },
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'manage',
-            alternatives: 'control, coordinate, schedule',
-          },
-        },
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'process',
-            alternatives: 'transform, sanitize, compute',
-          },
-        },
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'get',
-            alternatives: 'fetch, retrieve, compute, derive',
-          },
-        },
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'update',
-            alternatives: 'modify, set, apply',
-          },
-        },
+        error('getData', 'get'),
+        error('updateUser', 'update'),
+        error('checkInput', 'check'),
+        error('manageTasks', 'manage'),
+        error('processData', 'process'),
+        error('getInfo', 'get'),
+        error('updateInfo', 'update'),
       ],
     },
 
@@ -890,22 +574,7 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
           const updateUser = () => {};
         }
       `,
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'get',
-            alternatives: 'fetch, retrieve, compute, derive',
-          },
-        },
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'update',
-            alternatives: 'modify, set, apply',
-          },
-        },
-      ],
+      errors: [error('getData', 'get'), error('updateUser', 'update')],
     },
     {
       code: `
@@ -917,27 +586,9 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
         }
       `,
       errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'check',
-            alternatives: 'validate, assert, ensure',
-          },
-        },
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'manage',
-            alternatives: 'control, coordinate, schedule',
-          },
-        },
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'process',
-            alternatives: 'transform, sanitize, compute',
-          },
-        },
+        error('checkInput', 'check'),
+        error('manageState', 'manage'),
+        error('processData', 'process'),
       ],
     },
 
@@ -971,27 +622,9 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
         ];
       `,
       errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'get',
-            alternatives: 'fetch, retrieve, compute, derive',
-          },
-        },
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'update',
-            alternatives: 'modify, set, apply',
-          },
-        },
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'check',
-            alternatives: 'validate, assert, ensure',
-          },
-        },
+        error('getData', 'get'),
+        error('updateUser', 'update'),
+        error('checkInput', 'check'),
       ],
     },
 
@@ -1003,54 +636,20 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
         someArray.filter(function checkItem(item) {});
       `,
       errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'get',
-            alternatives: 'fetch, retrieve, compute, derive',
-          },
-        },
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'update',
-            alternatives: 'modify, set, apply',
-          },
-        },
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'check',
-            alternatives: 'validate, assert, ensure',
-          },
-        },
+        error('getData', 'get'),
+        error('updateItem', 'update'),
+        error('checkItem', 'check'),
       ],
     },
 
     // EDGE CASES - IIFE with disallowed prefixes
     {
       code: '(function getData() {})();',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'get',
-            alternatives: 'fetch, retrieve, compute, derive',
-          },
-        },
-      ],
+      errors: [error('getData', 'get')],
     },
     {
       code: '(function updateUser() {})();',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'update',
-            alternatives: 'modify, set, apply',
-          },
-        },
-      ],
+      errors: [error('updateUser', 'update')],
     },
 
     // EDGE CASES - Functions with complex parameter patterns and disallowed prefixes
@@ -1062,159 +661,55 @@ ruleTesterTs.run('semantic-function-prefixes', semanticFunctionPrefixes, {
         function manageTasks([first, ...rest]: number[]) {}
       `,
       errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'get',
-            alternatives: 'fetch, retrieve, compute, derive',
-          },
-        },
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'update',
-            alternatives: 'modify, set, apply',
-          },
-        },
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'check',
-            alternatives: 'validate, assert, ensure',
-          },
-        },
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'manage',
-            alternatives: 'control, coordinate, schedule',
-          },
-        },
+        error('getData', 'get'),
+        error('updateUser', 'update'),
+        error('checkInput', 'check'),
+        error('manageTasks', 'manage'),
       ],
     },
 
     // EDGE CASES - Multiple word combinations with disallowed prefixes
     {
       code: 'function getDataFromAPI() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'get',
-            alternatives: 'fetch, retrieve, compute, derive',
-          },
-        },
-      ],
+      errors: [error('getDataFromAPI', 'get')],
     },
     {
       code: 'function updateUserProfile() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'update',
-            alternatives: 'modify, set, apply',
-          },
-        },
-      ],
+      errors: [error('updateUserProfile', 'update')],
     },
     {
       code: 'function checkInputValidation() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'check',
-            alternatives: 'validate, assert, ensure',
-          },
-        },
-      ],
+      errors: [error('checkInputValidation', 'check')],
     },
     {
       code: 'function manageTaskQueue() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'manage',
-            alternatives: 'control, coordinate, schedule',
-          },
-        },
-      ],
+      errors: [error('manageTaskQueue', 'manage')],
     },
     {
       code: 'function processUserData() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'process',
-            alternatives: 'transform, sanitize, compute',
-          },
-        },
-      ],
+      errors: [error('processUserData', 'process')],
     },
 
     // EDGE CASES - PascalCase variations with disallowed prefixes
     {
       code: 'function GetUserData() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'get',
-            alternatives: 'fetch, retrieve, compute, derive',
-          },
-        },
-      ],
+      errors: [error('GetUserData', 'get')],
     },
     {
       code: 'function UpdateUserProfile() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'update',
-            alternatives: 'modify, set, apply',
-          },
-        },
-      ],
+      errors: [error('UpdateUserProfile', 'update')],
     },
     {
       code: 'function CheckInputData() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'check',
-            alternatives: 'validate, assert, ensure',
-          },
-        },
-      ],
+      errors: [error('CheckInputData', 'check')],
     },
     {
       code: 'function ManageUserSessions() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'manage',
-            alternatives: 'control, coordinate, schedule',
-          },
-        },
-      ],
+      errors: [error('ManageUserSessions', 'manage')],
     },
     {
       code: 'function ProcessFileData() {}',
-      errors: [
-        {
-          messageId: 'avoidGenericPrefix',
-          data: {
-            prefix: 'process',
-            alternatives: 'transform, sanitize, compute',
-          },
-        },
-      ],
+      errors: [error('ProcessFileData', 'process')],
     },
   ],
 });

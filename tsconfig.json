@@ -24,6 +24,7 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "jsx": "react",
+    "baseUrl": ".",
     "typeRoots": [
       "node_modules/@types"
     ],

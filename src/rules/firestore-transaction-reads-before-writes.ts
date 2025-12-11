@@ -122,10 +122,10 @@ export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
       function isTransactionMethodCall(
         node: TSESTree.CallExpression,
         transactionScope?: TSESTree.Node | null,
-      ): { isRead: boolean; isWrite: boolean } {
+      ): { isRead: boolean; isWrite: boolean; methodName: string | null } {
         const callee = node.callee;
         if (callee.type !== AST_NODE_TYPES.MemberExpression) {
-          return { isRead: false, isWrite: false };
+          return { isRead: false, isWrite: false, methodName: null };
         }
 
         const object = callee.object;
@@ -133,19 +133,19 @@ export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
 
         // Check if the object is a transaction
         if (object.type !== AST_NODE_TYPES.Identifier) {
-          return { isRead: false, isWrite: false };
+          return { isRead: false, isWrite: false, methodName: null };
         }
 
         // If we have a transaction scope, check if the object name is a known transaction variable
         if (transactionScope) {
           const scopeInfo = transactionScopes.get(transactionScope);
           if (scopeInfo && !scopeInfo.transactionVariables.has(object.name)) {
-            return { isRead: false, isWrite: false };
+            return { isRead: false, isWrite: false, methodName: null };
           }
         } else {
           // Fallback to general pattern matching
           if (!/^(transaction|tx|t)$/i.test(object.name)) {
-            return { isRead: false, isWrite: false };
+            return { isRead: false, isWrite: false, methodName: null };
           }
         }
 
@@ -169,17 +169,17 @@ export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
           // Computed property access with variable: transaction[methodName]
           // This is tricky to analyze statically. For now, we'll be conservative
           // and assume it could be any method. We'll handle this in the caller.
-          return { isRead: true, isWrite: true }; // Could be either - let caller decide
+          return { isRead: true, isWrite: true, methodName: null }; // Could be either - let caller decide
         }
 
         if (!methodName) {
-          return { isRead: false, isWrite: false };
+          return { isRead: false, isWrite: false, methodName: null };
         }
 
         const isRead = READ_OPERATIONS.has(methodName);
         const isWrite = WRITE_OPERATIONS.has(methodName);
 
-        return { isRead, isWrite };
+        return { isRead, isWrite, methodName };
       }
 
       return {
@@ -248,7 +248,7 @@ export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
         // Check all call expressions for transaction operations
         CallExpression(node) {
           const transactionScope = findTransactionScope(node);
-          const { isRead, isWrite } = isTransactionMethodCall(
+          const { isRead, isWrite, methodName } = isTransactionMethodCall(
             node,
             transactionScope,
           );
@@ -274,6 +274,7 @@ export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
               context.report({
                 node,
                 messageId: 'readsAfterWrites',
+                data: { method: methodName ?? 'unknown' },
               });
             }
             // Don't mark as write since we don't know what method it is
@@ -291,6 +292,7 @@ export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
             context.report({
               node,
               messageId: 'readsAfterWrites',
+              data: { method: methodName ?? 'unknown' },
             });
           }
         },
