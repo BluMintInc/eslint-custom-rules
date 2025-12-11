@@ -84,6 +84,7 @@ import { noTypeAssertionReturns } from './rules/no-type-assertion-returns';
 import { preferUtilityFunctionOverPrivateStatic } from './rules/prefer-utility-function-over-private-static';
 import { enforceMicrodiff } from './rules/enforce-microdiff';
 import { fastDeepEqualOverMicrodiff } from './rules/fast-deep-equal-over-microdiff';
+import { flattenPushCalls } from './rules/flatten-push-calls';
 import { enforceTimestampNow } from './rules/enforce-timestamp-now';
 import { noAlwaysTrueFalseConditions } from './rules/no-always-true-false-conditions';
 import { enforcePropsArgumentName } from './rules/enforce-props-argument-name';
@@ -237,6 +238,7 @@ module.exports = {
           'error',
         '@blumintinc/blumint/enforce-microdiff': 'error',
         '@blumintinc/blumint/fast-deep-equal-over-microdiff': 'error',
+        '@blumintinc/blumint/flatten-push-calls': 'error',
         '@blumintinc/blumint/enforce-timestamp-now': 'error',
         '@blumintinc/blumint/no-always-true-false-conditions': 'error',
         '@blumintinc/blumint/enforce-props-argument-name': 'error',
@@ -380,6 +382,7 @@ module.exports = {
       preferUtilityFunctionOverPrivateStatic,
     'enforce-microdiff': enforceMicrodiff,
     'fast-deep-equal-over-microdiff': fastDeepEqualOverMicrodiff,
+    'flatten-push-calls': flattenPushCalls,
     'enforce-timestamp-now': enforceTimestampNow,
     'no-always-true-false-conditions': noAlwaysTrueFalseConditions,
     'enforce-props-argument-name': enforcePropsArgumentName,
