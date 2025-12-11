@@ -1,6 +1,16 @@
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { preferGlobalRouterStateKey } from '../rules/prefer-global-router-state-key';
 
+const stringLiteralError = (keyValue: string) => ({
+  messageId: 'preferGlobalRouterStateKey' as const,
+  data: { keyValue },
+});
+
+const invalidSourceError = (variableName: string) => ({
+  messageId: 'invalidQueryKeySource' as const,
+  data: { variableName },
+});
+
 ruleTesterJsx.run(
   'prefer-global-router-state-key',
   preferGlobalRouterStateKey,
@@ -241,31 +251,7 @@ ruleTesterJsx.run(
         `,
       },
 
-      // 16. Complex member expressions (allowed - permissive)
-      {
-        code: `
-        function Component() {
-          const keys = {
-            user: 'user-profile'
-          };
-          const [value] = useRouterState({ key: keys.user });
-          return <div>{value}</div>;
-        }
-        `,
-      },
-
-      // 17. Array access (allowed - permissive)
-      {
-        code: `
-        function Component() {
-          const keys = ['user-profile', 'user-settings'];
-          const [value] = useRouterState({ key: keys[0] });
-          return <div>{value}</div>;
-        }
-        `,
-      },
-
-      // 18. Spread operator (allowed - permissive for complex cases)
+      // 17. Spread operator (allowed - permissive for complex cases)
       {
         code: `
         function Component() {
@@ -334,8 +320,9 @@ ruleTesterJsx.run(
           return <div>{value}</div>;
         }
         `,
-        errors: [{ messageId: 'preferGlobalRouterStateKey' }],
-        output: `
+        errors: [stringLiteralError("'user-profile'")],
+        output: `import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
         function Component() {
           const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
           return <div>{value}</div>;
@@ -351,7 +338,7 @@ ruleTesterJsx.run(
           return <div>{value}</div>;
         }
         `,
-        errors: [{ messageId: 'preferGlobalRouterStateKey' }],
+        errors: [stringLiteralError("'user-profile-' + id")],
       },
 
       // 3. String literals in conditional expressions
@@ -364,7 +351,9 @@ ruleTesterJsx.run(
           return <div>{value}</div>;
         }
         `,
-        errors: [{ messageId: 'preferGlobalRouterStateKey' }],
+        errors: [
+          stringLiteralError("isAdmin ? 'admin-dashboard' : 'user-dashboard'"),
+        ],
       },
 
       // 4. Template literals with static content
@@ -375,7 +364,7 @@ ruleTesterJsx.run(
           return <div>{value}</div>;
         }
         `,
-        errors: [{ messageId: 'preferGlobalRouterStateKey' }],
+        errors: [stringLiteralError('`user-profile-${id}`')],
       },
 
       // 5. Variables not from query keys
@@ -387,7 +376,7 @@ ruleTesterJsx.run(
           return <div>{value}</div>;
         }
         `,
-        errors: [{ messageId: 'invalidQueryKeySource' }],
+        errors: [invalidSourceError('key')],
       },
 
       // 6. Variables from wrong import source
@@ -400,7 +389,7 @@ ruleTesterJsx.run(
           return <div>{value}</div>;
         }
         `,
-        errors: [{ messageId: 'invalidQueryKeySource' }],
+        errors: [invalidSourceError('USER_PROFILE_KEY')],
       },
 
       // 7. Non-QUERY_KEY constants from correct source
@@ -413,7 +402,7 @@ ruleTesterJsx.run(
           return <div>{value}</div>;
         }
         `,
-        errors: [{ messageId: 'invalidQueryKeySource' }],
+        errors: [invalidSourceError('OTHER_CONSTANT')],
       },
 
       // 8. Mixed valid and invalid in conditional
@@ -428,7 +417,48 @@ ruleTesterJsx.run(
           return <div>{value}</div>;
         }
         `,
-        errors: [{ messageId: 'preferGlobalRouterStateKey' }],
+        errors: [
+          stringLiteralError(
+            "isAdmin ? QUERY_KEY_USER_PROFILE : 'admin-dashboard'",
+          ),
+        ],
+      },
+
+      // 9. Member expression without validated source
+      {
+        code: `
+        function Component() {
+          const keys = { user: 'user-profile' };
+          const [value] = useRouterState({ key: keys.user });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [invalidSourceError('keys.user')],
+      },
+
+      // 10. Array member expression without validated source
+      {
+        code: `
+        function Component() {
+          const keys = ['user-profile', 'user-settings'];
+          const [value] = useRouterState({ key: keys[0] });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [invalidSourceError('keys[0]')],
+      },
+
+      // 11. Import from unrelated queryKeys path should be rejected
+      {
+        code: `
+        import { QUERY_KEY_USER_PROFILE } from './some/other/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [invalidSourceError('QUERY_KEY_USER_PROFILE')],
       },
 
       // 9. String literals in custom hooks
@@ -443,8 +473,9 @@ ruleTesterJsx.run(
           return <div>{value}</div>;
         }
         `,
-        errors: [{ messageId: 'preferGlobalRouterStateKey' }],
-        output: `
+        errors: [stringLiteralError("'user-profile'")],
+        output: `import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
         function useCustomRouter() {
           return useRouterState({ key: QUERY_KEY_USER_PROFILE });
         }
@@ -464,8 +495,9 @@ ruleTesterJsx.run(
           return <Component {...props} routerValue={value} />;
         };
         `,
-        errors: [{ messageId: 'preferGlobalRouterStateKey' }],
-        output: `
+        errors: [stringLiteralError("'user-profile'")],
+        output: `import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
         const withRouter = (Component) => (props) => {
           const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
           return <Component {...props} routerValue={value} />;
@@ -483,13 +515,14 @@ ruleTesterJsx.run(
         }
         `,
         errors: [
-          { messageId: 'preferGlobalRouterStateKey' },
-          { messageId: 'preferGlobalRouterStateKey' },
+          stringLiteralError("'user-profile'"),
+          stringLiteralError("'user-settings'"),
         ],
-        output: `
+        output: `import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
         function Component() {
           const [value1] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
-          const [value2] = useRouterState({ key: QUERY_KEY_USER_SETTINGS });
+          const [value2] = useRouterState({ key: 'user-settings' });
           return <div>{value1} {value2}</div>;
         }
         `,
@@ -506,8 +539,9 @@ ruleTesterJsx.run(
           return <div>{value}</div>;
         }
         `,
-        errors: [{ messageId: 'preferGlobalRouterStateKey' }],
-        output: `
+        errors: [stringLiteralError("'user-profile'")],
+        output: `import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
         function Component() {
           const [value] = useRouterState({
             key: QUERY_KEY_USER_PROFILE,
@@ -526,7 +560,7 @@ ruleTesterJsx.run(
           return <div>{value}</div>;
         }
         `,
-        errors: [{ messageId: 'preferGlobalRouterStateKey' }],
+        errors: [stringLiteralError('`userProfile${id}`')],
       },
 
       // 14. Binary expressions with string literals
@@ -537,7 +571,7 @@ ruleTesterJsx.run(
           return <div>{value}</div>;
         }
         `,
-        errors: [{ messageId: 'preferGlobalRouterStateKey' }],
+        errors: [stringLiteralError("'user-profile' + suffix")],
       },
 
       // 15. Namespace import with wrong property (currently not detected - complex to implement)
@@ -552,7 +586,7 @@ ruleTesterJsx.run(
           return <div>{value}</div>;
         }
         `,
-        errors: [{ messageId: 'invalidQueryKeySource' }],
+        errors: [invalidSourceError('key')],
       },
 
       // 17. Conditional with both branches invalid
@@ -565,7 +599,11 @@ ruleTesterJsx.run(
           return <div>{value}</div>;
         }
         `,
-        errors: [{ messageId: 'preferGlobalRouterStateKey' }],
+        errors: [
+          stringLiteralError(
+            "type === 'admin' ? 'admin-profile' : 'user-profile'",
+          ),
+        ],
       },
 
       // 18. Mixed import sources - some valid, some invalid
@@ -580,7 +618,7 @@ ruleTesterJsx.run(
           return <div>{value}</div>;
         }
         `,
-        errors: [{ messageId: 'invalidQueryKeySource' }],
+        errors: [invalidSourceError('key')],
       },
 
       // 19. Template literal with only static content
@@ -591,7 +629,7 @@ ruleTesterJsx.run(
           return <div>{value}</div>;
         }
         `,
-        errors: [{ messageId: 'preferGlobalRouterStateKey' }],
+        errors: [stringLiteralError('`userProfile`')],
       },
 
       // 20. Async patterns with string literals
@@ -608,7 +646,7 @@ ruleTesterJsx.run(
           return <div>{value}</div>;
         }
         `,
-        errors: [{ messageId: 'invalidQueryKeySource' }],
+        errors: [invalidSourceError('key')],
       },
     ],
   },

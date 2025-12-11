@@ -97,6 +97,19 @@ function maybeEqual(a, b) {
   return changes.length === 0;
 }`,
     },
+    // Do not flag when microdiff is not imported (local function named diff)
+    {
+      code: `
+function diff(a, b) {
+  return [{ a, b }];
+}
+
+function isSame(a, b) {
+  const changes = diff(a, b);
+  return changes.length === 0;
+}
+`,
+    },
   ],
   invalid: [
     // Using microdiff for equality check with .length === 0
@@ -395,6 +408,75 @@ function checkAll(prevData, newData, previousMetadataRef, newMetadata) {
   );
 
   return isDataEqual && isMetadataEqual;
+}`,
+    },
+    // Variable-based inequality check using changes.length !== 0
+    {
+      code: `import diff from 'microdiff';
+
+function objectsAreDifferent(obj1, obj2) {
+  const changes = diff(obj1, obj2);
+  return changes.length !== 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual' }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function objectsAreDifferent(obj1, obj2) {
+  return !isEqual(obj1, obj2);
+}`,
+    },
+    // Variable-based equality check with literal on left side
+    {
+      code: `import diff from 'microdiff';
+
+function eq(a, b) {
+  const changes = diff(a, b);
+  return 0 === changes.length;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual' }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function eq(a, b) {
+  return isEqual(a, b);
+}`,
+    },
+    // Unary variable check !changes.length
+    {
+      code: `import diff from 'microdiff';
+
+function areSame(x, y) {
+  const changes = diff(x, y);
+  return !changes.length;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual' }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function areSame(x, y) {
+  return isEqual(x, y);
+}`,
+    },
+    // Multiline diff call formatting
+    {
+      code: `import diff from 'microdiff';
+
+function eq(a, b) {
+  return diff(
+    { ...a },
+    { ...b },
+  ).length === 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual' }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function eq(a, b) {
+  return isEqual(
+    { ...a },
+    { ...b },
+  );
 }`,
     },
   ],
