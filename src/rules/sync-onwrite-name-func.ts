@@ -16,7 +16,7 @@ export const syncOnwriteNameFunc = createRule<[], MessageIds>({
     schema: [],
     messages: {
       mismatchedName:
-        'The name field should match the func field in onWrite handlers',
+        'OnWrite handler name "{{nameValue}}" does not match func reference "{{funcName}}". The name field is what gets registered for deploys, logs, and alerts, so a mismatch hides which function is actually running. Rename the "name" value to "{{funcName}}" or point "func" to a function named "{{nameValue}}" so the trigger label and implementation stay in sync.',
     },
   },
   defaultOptions: [],
@@ -83,6 +83,10 @@ export const syncOnwriteNameFunc = createRule<[], MessageIds>({
             context.report({
               node: nameProperty,
               messageId: 'mismatchedName',
+              data: {
+                nameValue,
+                funcName,
+              },
               fix(fixer) {
                 return fixer.replaceText(value, `'${funcName}'`);
               },
