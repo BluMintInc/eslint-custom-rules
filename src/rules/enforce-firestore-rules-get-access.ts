@@ -9,12 +9,12 @@ type MessageIds = 'useGetAccess' | 'requireGetDefault';
 
 type Options = [];
 
+const DIRECT_ACCESS_REGEX =
+  /\b(?:request\.resource|resource)\.data(?!\.get\()(?:\.(?!get\()[A-Za-z_]\w*|\[['"][^'"]+['"]\])+(?:\s*)(?:!=|==|!==|===)\s*(?:null|undefined)\b/;
+
 function hasDirectFieldAccessComparison(text: string): boolean {
-  // Match resource.data.<a>.<b>... <op> null|undefined (requires at least one segment)
-  // and ensure the first accessor after .data is not .get(
-  const directAccessRegex =
-    /\b(?:request\.resource|resource)\.data\.(?!get\()([a-zA-Z_][\w]*)(?:\.[a-zA-Z_][\w]*)*\s*(?:!=|==|!==|===)\s*(?:null|undefined)\b/;
-  return directAccessRegex.test(text);
+  // Match resource.data.<a>.<b>... or bracketed string segments compared to null/undefined.
+  return DIRECT_ACCESS_REGEX.test(text);
 }
 
 function hasGetWithoutDefault(text: string): boolean {
@@ -31,19 +31,38 @@ function hasGetWithoutDefault(text: string): boolean {
 function applyDirectAccessFixes(text: string): string {
   // Replace each direct access chain with equivalent `.get('seg', null)` chain
   const pattern =
-    /\b((?:request\.resource|resource)\.data)\.(?!get\()(([a-zA-Z_][\w]*)(?:\.[a-zA-Z_][\w]*)*)(\s*)((?:!=|==|!==|===)\s*(?:null|undefined)\b)/g;
+    /\b((?:request\.resource|resource)\.data)(?!\.get\()((?:\.(?!get\()[A-Za-z_]\w*|\[['"][^'"]+['"]\])+)(\s*)((?:!=|==|!==|===)\s*(?:null|undefined)\b)/g;
+  const segmentRegex = /(?:\.(?!get\()[A-Za-z_]\w*|\[['"][^'"]+['"]\])/g;
+
+  const unescapeLiteral = (raw: string): string =>
+    raw.replace(/\\(['"\\])/g, '$1');
+
   return text.replace(
     pattern,
     (
       _m,
       prefix: string,
       path: string,
-      _firstSeg: string,
       preOpWhitespace: string,
       opAndRest: string,
     ) => {
-      const segments = path.split('.');
-      const replaced = segments.map((seg) => `.get('${seg}', null)`).join('');
+      const segments: string[] = [];
+      path.replace(segmentRegex, (seg) => {
+        if (seg.startsWith('.')) {
+          segments.push(seg.slice(1));
+          return '';
+        }
+        const match = /"\s*([^"]+)"|'\s*([^']+)'/.exec(seg);
+        if (match) {
+          const raw = match[1] ?? match[2] ?? '';
+          segments.push(unescapeLiteral(raw));
+        }
+        return '';
+      });
+
+      const replaced = segments
+        .map((seg) => `.get('${seg.replace(/'/g, "\\'")}', null)`)
+        .join('');
       return `${prefix}${replaced}${preOpWhitespace}${opAndRest}`;
     },
   );
@@ -100,6 +119,8 @@ export const enforceFirestoreRulesGetAccess = createRule<Options, MessageIds>({
         });
       },
       TemplateLiteral(node) {
+        // Best-effort: we only join static quasis and ignore embedded expressions,
+        // so template expressions spanning placeholders may be missed.
         const staticText = node.quasis.map((q) => q.value.raw).join('');
         if (!/(?:request\.resource|resource)\.data/.test(staticText)) return;
         const needsDirectFix = hasDirectFieldAccessComparison(staticText);

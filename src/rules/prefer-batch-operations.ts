@@ -56,6 +56,63 @@ function getAllCallsFromExpression(
     switch (node.type) {
       case AST_NODE_TYPES.CallExpression:
         calls.push(node);
+
+        if (node.callee.type === AST_NODE_TYPES.MemberExpression) {
+          const obj = node.callee.object;
+          if (
+            obj.type !== AST_NODE_TYPES.Identifier &&
+            obj.type !== AST_NODE_TYPES.ThisExpression &&
+            obj.type !== AST_NODE_TYPES.Literal
+          ) {
+            traverse(obj as TSESTree.Expression);
+          }
+        }
+
+        for (const arg of node.arguments) {
+          if (!arg) continue;
+          if (arg.type === AST_NODE_TYPES.SpreadElement) {
+            traverse(arg.argument as TSESTree.Expression);
+          } else {
+            traverse(arg as TSESTree.Expression);
+          }
+        }
+        break;
+      case AST_NODE_TYPES.AwaitExpression:
+        traverse(node.argument as TSESTree.Expression);
+        break;
+      case AST_NODE_TYPES.ArrayExpression:
+        for (const el of node.elements) {
+          if (!el) continue;
+          if (el.type === AST_NODE_TYPES.SpreadElement) {
+            traverse(el.argument as TSESTree.Expression);
+          } else {
+            traverse(el as TSESTree.Expression);
+          }
+        }
+        break;
+      case AST_NODE_TYPES.ObjectExpression:
+        for (const prop of node.properties) {
+          if (prop.type === AST_NODE_TYPES.SpreadElement) {
+            traverse(prop.argument as TSESTree.Expression);
+          } else if (prop.type === AST_NODE_TYPES.Property) {
+            const val = prop.value;
+            if (
+              val.type !== AST_NODE_TYPES.Identifier &&
+              val.type !== AST_NODE_TYPES.Literal &&
+              val.type !== AST_NODE_TYPES.ThisExpression
+            ) {
+              traverse(val as TSESTree.Expression);
+            }
+          }
+        }
+        break;
+      case AST_NODE_TYPES.SequenceExpression:
+        for (const expr of node.expressions) {
+          traverse(expr as TSESTree.Expression);
+        }
+        break;
+      case AST_NODE_TYPES.UnaryExpression:
+        traverse(node.argument as TSESTree.Expression);
         break;
       case AST_NODE_TYPES.LogicalExpression:
         traverse(node.left);
@@ -93,7 +150,7 @@ function getAllCallsFromExpression(
 
 function findLoopNode(
   node: TSESTree.Node,
-): { node: TSESTree.Node; isArrayMethod?: string } | undefined {
+): { node: TSESTree.Node; isArrayMethod?: string; isPromiseAll?: boolean } | undefined {
   let current: TSESTree.Node | undefined = node;
   let loopNode: TSESTree.Node | null = null;
 
@@ -159,7 +216,7 @@ function findLoopNode(
             }
           }
 
-          return { node: current, isArrayMethod: 'map' };
+          return { node: current, isArrayMethod: 'map', isPromiseAll: true };
         }
         // Check for array methods
         const { isValid, methodName: currentMethodName } =
@@ -353,7 +410,7 @@ export const preferBatchOperations = createRule<[], MessageIds>({
         if (!isValid || !methodName || !setterInstance) return;
 
         // Check if we're in a loop or Promise.all
-        const loopInfo = findLoopNode(node);
+          const loopInfo = findLoopNode(node);
         if (!loopInfo) return;
 
         const batchMethod =
@@ -378,6 +435,7 @@ export const preferBatchOperations = createRule<[], MessageIds>({
         // Determine if this is a traditional loop
         const isTraditionalLoop =
           !loopInfo.isArrayMethod &&
+          !loopInfo.isPromiseAll &&
           (loopInfo.node.type === AST_NODE_TYPES.ForStatement ||
             loopInfo.node.type === AST_NODE_TYPES.ForInStatement ||
             loopInfo.node.type === AST_NODE_TYPES.ForOfStatement ||
@@ -391,7 +449,7 @@ export const preferBatchOperations = createRule<[], MessageIds>({
 
           // For Promise.all contexts, report only once per loop context, on the second occurrence
           if (
-            !isTraditionalLoop &&
+            loopInfo.isPromiseAll &&
             existing.count === 2 &&
             !reportedLoops.has(loopInfo.node)
           ) {
@@ -435,12 +493,7 @@ export const preferBatchOperations = createRule<[], MessageIds>({
           }
 
           // For array methods, report on the first occurrence
-          else if (
-            loopInfo.isArrayMethod &&
-            ['forEach', 'reduce', 'filter', 'map'].includes(
-              loopInfo.isArrayMethod,
-            )
-          ) {
+          else if (loopInfo.isArrayMethod) {
             if (!reportedLoops.has(loopInfo.node)) {
               reportedLoops.add(loopInfo.node);
               const messageId =
