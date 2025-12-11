@@ -59,12 +59,14 @@ const UserProfile: FC<UserProfileProps> = ({ userConfig }) => {
 Good – memoize the dependency first (no rule warning):
 
 ```tsx
-const useUserConfig = (config: UserConfig) =>
-  useMemo(() => ({ ...config, status: getStatusLabel(config.status) }), [config]);
-
 const UserProfile: FC<UserProfileProps> = ({ userConfig }) => {
-  const stableConfig = useUserConfig(userConfig);
-  const formattedData = useMemo(() => stableConfig.status, [stableConfig]);
+  const memoizedConfig = useMemo(
+    () => ({ ...userConfig, status: getStatusLabel(userConfig.status) }),
+    [userConfig],
+  );
+
+  const formattedData = useMemo(() => memoizedConfig.status, [memoizedConfig]);
+
   return <ProfileCard status={formattedData} />;
 };
 ```
