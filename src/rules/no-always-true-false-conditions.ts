@@ -1,4 +1,5 @@
 import { createRule } from '../utils/createRule';
+import type { TSESLint } from '@typescript-eslint/utils';
 import { TSESTree, AST_NODE_TYPES } from '@typescript-eslint/utils';
 
 type MessageIds = 'alwaysTrueCondition' | 'alwaysFalseCondition';
@@ -14,13 +15,19 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
     schema: [],
     messages: {
       alwaysTrueCondition:
-        'This condition is always true, which may indicate a mistake or unnecessary code.',
+        'Condition "{{condition}}" is always true, so the guarded branch runs every time and hides logic errors or redundant checks. Remove the check or rewrite the condition so it depends on runtime values instead of constants.',
       alwaysFalseCondition:
-        'This condition is always false, which may indicate a mistake or dead code.',
+        'Condition "{{condition}}" is always false, so the guarded branch is unreachable and leaves misleading or dead code. Remove the unreachable branch or adjust the condition so it can evaluate to true when intended.',
     },
   },
   defaultOptions: [],
   create(context) {
+    const sourceCode = context.getSourceCode();
+
+    const messageDataFor = (node: TSESTree.Node) => ({
+      condition: sourceCode.getText(node),
+    });
+
     type ConditionResult = {
       isTruthy?: boolean;
       isFalsy?: boolean;
@@ -31,6 +38,65 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
 
     // Track parent nodes that have been evaluated to prevent duplicate reports on children
     const evaluatedParentNodes = new Set<TSESTree.Node>();
+
+    function findVariableInScopes(
+      name: string,
+    ): TSESLint.Scope.Variable | undefined {
+      let currentScope: TSESLint.Scope.Scope | null = context.getScope();
+
+      while (currentScope) {
+        const variable = currentScope.variables.find(
+          (variableItem) => variableItem.name === name,
+        );
+
+        if (variable) {
+          return variable;
+        }
+
+        currentScope = currentScope.upper;
+      }
+
+      return undefined;
+    }
+
+    function resolveIdentifierLiteralValue(
+      identifier: TSESTree.Identifier,
+    ): TSESTree.Literal['value'] | undefined {
+      const variable = findVariableInScopes(identifier.name);
+
+      if (!variable) {
+        return undefined;
+      }
+
+      const definition = variable.defs.find(
+        (def) =>
+          def.type === 'Variable' &&
+          def.node.type === AST_NODE_TYPES.VariableDeclarator &&
+          def.node.id.type === AST_NODE_TYPES.Identifier &&
+          def.node.id.name === identifier.name &&
+          def.parent?.type === AST_NODE_TYPES.VariableDeclaration &&
+          def.parent.kind === 'const',
+      );
+
+      if (
+        !definition ||
+        definition.node.type !== AST_NODE_TYPES.VariableDeclarator ||
+        definition.node.id.type !== AST_NODE_TYPES.Identifier ||
+        definition.node.id.name !== identifier.name ||
+        definition.parent?.type !== AST_NODE_TYPES.VariableDeclaration ||
+        definition.parent.kind !== 'const'
+      ) {
+        return undefined;
+      }
+
+      const initializer = definition.node.init;
+
+      if (initializer?.type === AST_NODE_TYPES.Literal) {
+        return initializer.value;
+      }
+
+      return undefined;
+    }
 
     /**
      * Checks if a literal value is always truthy or falsy
@@ -1638,12 +1704,14 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
         context.report({
           node,
           messageId: 'alwaysTrueCondition',
+          data: messageDataFor(node),
         });
         reportedNodes.add(node);
       } else if (result.isFalsy) {
         context.report({
           node,
           messageId: 'alwaysFalseCondition',
+          data: messageDataFor(node),
         });
         reportedNodes.add(node);
       }
@@ -1714,11 +1782,13 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
                 context.report({
                   node: node.test,
                   messageId: 'alwaysTrueCondition',
+                  data: messageDataFor(node.test),
                 });
               } else {
                 context.report({
                   node: node.test,
                   messageId: 'alwaysFalseCondition',
+                  data: messageDataFor(node.test),
                 });
               }
               reportedNodes.add(node.test);
@@ -1728,15 +1798,23 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
           // Special cases for tests with variables
           if (
             switchStatement.discriminant.type === AST_NODE_TYPES.Literal &&
-            node.test.type === AST_NODE_TYPES.Identifier &&
-            node.test.name === 'value'
+            node.test.type === AST_NODE_TYPES.Identifier
           ) {
-            // These special cases match the test expectations
-            // In a real implementation, you would want to track variable assignments
-            if (!reportedNodes.has(node.test)) {
+            const identifierValue = resolveIdentifierLiteralValue(node.test);
+
+            if (
+              identifierValue !== undefined &&
+              !reportedNodes.has(node.test)
+            ) {
+              const messageId =
+                identifierValue === switchStatement.discriminant.value
+                  ? 'alwaysTrueCondition'
+                  : 'alwaysFalseCondition';
+
               context.report({
                 node: node.test,
-                messageId: 'alwaysFalseCondition',
+                messageId,
+                data: messageDataFor(node.test),
               });
               reportedNodes.add(node.test);
             }
