@@ -352,7 +352,10 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
           return;
         }
 
-        const nextNested = nested || node !== normalized;
+        const isMemberChainObject =
+          node.parent?.type === AST_NODE_TYPES.MemberExpression &&
+          (node.parent as TSESTree.MemberExpression).object === node;
+        const nextNested = nested || (node !== normalized && !isMemberChainObject);
         const nextTransformed = transformed || isTransformingNode(node);
 
         switch (node.type) {
@@ -375,7 +378,7 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
               }
             }
 
-            visit(node.object, true, nextTransformed);
+            visit(node.object, nextNested, nextTransformed);
             if (node.computed) {
               visit(node.property, true, nextTransformed);
             }

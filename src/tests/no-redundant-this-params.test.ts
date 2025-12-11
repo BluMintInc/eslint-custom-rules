@@ -337,6 +337,22 @@ ruleTesterTs.run('no-redundant-this-params', noRedundantThisParams, {
     },
     {
       code: `
+      class SubProperty {
+        private config = { value: 1 };
+
+        private consume(input: number) {
+          return input;
+        }
+
+        run() {
+          return this.consume(this.config.value);
+        }
+      }
+      `,
+      errors: [{ messageId: 'redundantInstanceArg' }],
+    },
+    {
+      code: `
       class Reporter {
         private ids: string[] = [];
 
