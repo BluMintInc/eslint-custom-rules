@@ -20,12 +20,12 @@ const getCallbackLabel = (
     (node.type !== 'ArrowFunctionExpression' ? fallbackName : undefined);
 
   if (functionName) {
-    return `function "{{${functionName}}}"`;
+    return `function "${functionName}"`;
   }
 
   if (node.type === 'ArrowFunctionExpression') {
     return fallbackName
-      ? `arrow function "{{${fallbackName}}}"`
+      ? `arrow function "${fallbackName}"`
       : 'arrow function';
   }
 
@@ -102,6 +102,11 @@ const getAsyncCallbackInfo = (
 
 export const noAsyncForEach: TSESLint.RuleModule<'noAsyncForEach', []> = {
   create(context) {
+    const sourceCode =
+      (context as TSESLint.RuleContext<'noAsyncForEach', []> & {
+        sourceCode?: TSESLint.SourceCode;
+      }).sourceCode ?? context.getSourceCode();
+
     return {
       CallExpression(node: TSESTree.CallExpression) {
         const callee = node.callee;
@@ -113,9 +118,17 @@ export const noAsyncForEach: TSESLint.RuleModule<'noAsyncForEach', []> = {
           callee.property.name === 'forEach' &&
           callback
         ) {
+          const scope =
+            (
+              sourceCode as TSESLint.SourceCode & {
+                getScope?: (
+                  node: TSESTree.Node,
+                ) => TSESLint.Scope.Scope | null;
+              }
+            ).getScope?.(callback) ?? context.getScope();
           const asyncCallbackInfo = getAsyncCallbackInfo(
             callback,
-            context.getScope(),
+            scope,
           );
 
           if (asyncCallbackInfo) {
