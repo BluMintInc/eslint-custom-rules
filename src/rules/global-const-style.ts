@@ -31,15 +31,19 @@ export default createRule<[], MessageIds>({
       context.getFilename().endsWith('.ts') ||
       context.getFilename().endsWith('.tsx');
 
-    const describeValueKind = (node: TSESTree.Node): string => {
+    const unwrapAssertions = (node: TSESTree.Node): TSESTree.Node => {
       let target = node;
-
       while (
         target.type === AST_NODE_TYPES.TSTypeAssertion ||
         target.type === AST_NODE_TYPES.TSAsExpression
       ) {
         target = target.expression;
       }
+      return target;
+    };
+
+    const describeValueKind = (node: TSESTree.Node): string => {
+      const target = unwrapAssertions(node);
 
       if (target.type === AST_NODE_TYPES.ArrayExpression) {
         return 'an array literal';
@@ -166,13 +170,7 @@ export default createRule<[], MessageIds>({
                 return false;
               }
 
-              // Handle type assertions
-              if (
-                node.type === AST_NODE_TYPES.TSTypeAssertion ||
-                node.type === AST_NODE_TYPES.TSAsExpression
-              ) {
-                return shouldHaveAsConst(node.expression);
-              }
+              const target = unwrapAssertions(node);
 
               // Skip if there's an explicit type annotation
               if (declaration.id.typeAnnotation) {
@@ -181,13 +179,13 @@ export default createRule<[], MessageIds>({
 
               // Check if it's a literal, array, or object that should have as const
               // Skip regular expressions as they are already immutable
-              if (node.type === AST_NODE_TYPES.Literal && 'regex' in node) {
+              if (target.type === AST_NODE_TYPES.Literal && 'regex' in target) {
                 return false;
               }
               return (
-                node.type === AST_NODE_TYPES.Literal ||
-                node.type === AST_NODE_TYPES.ArrayExpression ||
-                node.type === AST_NODE_TYPES.ObjectExpression
+                target.type === AST_NODE_TYPES.Literal ||
+                target.type === AST_NODE_TYPES.ArrayExpression ||
+                target.type === AST_NODE_TYPES.ObjectExpression
               );
             };
 

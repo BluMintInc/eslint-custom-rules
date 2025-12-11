@@ -58,9 +58,9 @@ const memoized = memo(MyComponent);
 
 You might want to disable this rule if:
 
-1. Your project uses a different naming convention for module-level constants.
-2. You avoid `as const` and rely on explicit type annotations for literals.
-3. Your codebase rarely defines literal values at module scope and the visual distinction is unnecessary.
+1. You use a different naming convention for module-level constants.
+2. You prefer explicit type annotations over `as const` for literals.
+3. You rarely keep literal values at module scope and do not need the visual distinction.
 
 ## Further Reading
 
