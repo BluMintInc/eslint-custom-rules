@@ -6,9 +6,10 @@ const SAFE_BRANCH_PATTERN = /^[A-Za-z0-9._/-]+$/;
  */
 export function normalizeBranchName(rawName: string): string | null {
   const normalized = rawName
+    .trim()
     .replace(/^remotes\/origin\//, '')
-    .replace(/~\d+$/, '')
     .replace(/\^.*$/, '')
+    .replace(/~\d+$/, '')
     .trim();
 
   if (!normalized) {
