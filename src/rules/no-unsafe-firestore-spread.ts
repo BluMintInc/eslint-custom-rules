@@ -3,6 +3,8 @@ import { createRule } from '../utils/createRule';
 
 type MessageIds = 'unsafeObjectSpread' | 'unsafeArraySpread';
 
+const pathLabel = (path: string) => path || 'the merge payload';
+
 export const noUnsafeFirestoreSpread = createRule<[], MessageIds>({
   name: 'no-unsafe-firestore-spread',
   meta: {
@@ -15,9 +17,9 @@ export const noUnsafeFirestoreSpread = createRule<[], MessageIds>({
     schema: [],
     messages: {
       unsafeObjectSpread:
-        'Avoid using object spread in Firestore updates. Use dot notation with FieldPath instead.',
+        'Firestore merge update spreads an object at "{{path}}" and rewrites that entire field. Spreading bypasses Firestore field-path merges and can drop sibling data. Update specific fields with dot notation or FieldPath instead.',
       unsafeArraySpread:
-        'Avoid using array spread in Firestore updates. Use FieldValue.arrayUnion() instead.',
+        'Firestore merge update spreads an array at "{{path}}" and writes a full array value. This bypasses arrayUnion/arrayRemove semantics and can lose concurrent changes. Use FieldValue.arrayUnion/arrayRemove (or the Web SDK equivalents) to add or remove items safely.',
     },
   },
   defaultOptions: [],
@@ -59,6 +61,7 @@ export const noUnsafeFirestoreSpread = createRule<[], MessageIds>({
           context.report({
             node: property,
             messageId: 'unsafeObjectSpread',
+            data: { path: pathLabel(parentPath) },
             fix: null,
           });
         } else if (property.type === AST_NODE_TYPES.Property) {
@@ -71,13 +74,13 @@ export const noUnsafeFirestoreSpread = createRule<[], MessageIds>({
           if (property.value.type === AST_NODE_TYPES.ObjectExpression) {
             checkObjectForSpreads(property.value, newPath);
           } else if (property.value.type === AST_NODE_TYPES.ArrayExpression) {
-            checkArrayForSpreads(property.value);
+            checkArrayForSpreads(property.value, newPath);
           } else if (property.value.type === AST_NODE_TYPES.CallExpression) {
             // Handle chained array methods like [...array].filter()
             let current: TSESTree.Node = property.value;
             while (current) {
               if (current.type === AST_NODE_TYPES.ArrayExpression) {
-                checkArrayForSpreads(current);
+                checkArrayForSpreads(current, newPath);
                 break;
               } else if (current.type === AST_NODE_TYPES.ObjectExpression) {
                 checkObjectForSpreads(current, newPath);
@@ -98,13 +101,17 @@ export const noUnsafeFirestoreSpread = createRule<[], MessageIds>({
       }
     }
 
-    function checkArrayForSpreads(node: TSESTree.ArrayExpression): void {
+    function checkArrayForSpreads(
+      node: TSESTree.ArrayExpression,
+      parentPath = '',
+    ): void {
       // Check for spreads in the array expression itself
       for (const element of node.elements) {
         if (element?.type === AST_NODE_TYPES.SpreadElement) {
           context.report({
             node: element,
             messageId: 'unsafeArraySpread',
+            data: { path: pathLabel(parentPath) },
             fix: null,
           });
         }

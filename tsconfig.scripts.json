@@ -14,10 +14,12 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "declaration": false,
-    "noEmit": true
+    "noEmit": true,
+    "baseUrl": ".",
   },
   "include": [
-    "scripts/**/*.ts"
+    "scripts/**/*.ts",
+    ".github/scripts/**/*.ts"
   ],
   "exclude": [
     "node_modules"

@@ -19,11 +19,11 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
     schema: [],
     messages: {
       missingExportedType:
-        'Type {{typeName}} should be exported since it is used in an exported function. Add `export` before the type definition: `export type {{typeName}} = ...`',
+        'Type "{{typeName}}" is used in a parameter of an exported function but is not exported. Callers cannot import the parameter contract, which forces duplicate or ad-hoc types and makes the API drift. Export the type (e.g., `export type {{typeName}} = ...`) or reuse an already exported type.',
       missingExportedReturnType:
-        'Return type {{typeName}} should be exported since it is used in an exported function. Add `export` before the type definition: `export type {{typeName}} = ...`',
+        'Return type "{{typeName}}" belongs to an exported function but is not exported. Consumers cannot reference the returned shape for validation or composition, which leads to duplicated types and diverging contracts. Export the return type alias or interface so callers can import the shared contract.',
       missingExportedPropsType:
-        'Props type {{typeName}} should be exported since it is used in an exported React component. Add `export` before the type definition: `export type {{typeName}} = ...`',
+        'Props type "{{typeName}}" is used by an exported React component but is not exported. Other modules cannot type the props when composing the component and end up recreating the shape. Export the props type (e.g., `export type {{typeName}} = ...`) or reference an existing exported props contract.',
     },
   },
   defaultOptions: [],
