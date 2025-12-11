@@ -207,10 +207,7 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
         return true;
       }
 
-      return isMatchingPropertyName(
-        memberExpression.property,
-        identifier.name,
-      );
+      return isMatchingPropertyName(memberExpression.property, identifier.name);
     }
 
     /**
@@ -285,7 +282,9 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
         return false;
       }
 
-      return variable.defs.some((definition) => definition.type === 'Parameter');
+      return variable.defs.some(
+        (definition) => definition.type === 'Parameter',
+      );
     }
 
     /**
@@ -311,12 +310,11 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
      * These are reported without a fixer to avoid changing function signatures.
      */
     function handleClassPropertyAssignment(
-      node: TSESTree.AssignmentExpression,
+      node: TSESTree.AssignmentExpression & {
+        right: TSESTree.MemberExpression;
+      },
     ): void {
-      if (node.right.type !== AST_NODE_TYPES.MemberExpression) {
-        return;
-      }
-
+      // Caller ensures node.right is a MemberExpression.
       if (
         !options.object ||
         node.left.type !== AST_NODE_TYPES.MemberExpression ||
@@ -456,7 +454,11 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
           return;
         }
 
-        handleClassPropertyAssignment(node);
+        handleClassPropertyAssignment(
+          node as TSESTree.AssignmentExpression & {
+            right: TSESTree.MemberExpression;
+          },
+        );
       },
     };
   },
