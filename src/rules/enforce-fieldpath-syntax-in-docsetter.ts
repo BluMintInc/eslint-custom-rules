@@ -69,62 +69,13 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       );
     }
 
-    // Helper function to check if an object has nested objects (excluding arrays)
-    function hasNestedObjects(
-      node: TSESTree.ObjectExpression,
-      prefix = '',
-    ): boolean {
-      for (const property of node.properties) {
-        // Skip spread elements
-        if (property.type === AST_NODE_TYPES.SpreadElement) {
-          continue;
-        }
-
-        if (property.type !== AST_NODE_TYPES.Property) {
-          continue;
-        }
-
-        // Skip computed properties (dynamic keys)
-        if (property.computed) {
-          continue;
-        }
-
-        const isNumericKey =
-          property.key.type === AST_NODE_TYPES.Literal &&
-          (typeof property.key.value === 'number' ||
-            (typeof property.key.value === 'string' &&
-              /^\d+$/.test(property.key.value)));
-
-        // Allow top-level numeric keys (treated like array indexes)
-        if (prefix === '' && isNumericKey) {
-          continue;
-        }
-
-        const value = property.value;
-
-        // Skip if the property key is already using dot notation
-        if (
-          property.key.type === AST_NODE_TYPES.Literal &&
-          typeof property.key.value === 'string' &&
-          property.key.value.includes('.')
-        ) {
-          continue;
-        }
-
-        // Check if the value is an object (but not an array)
-        if (value.type === AST_NODE_TYPES.ObjectExpression) {
-          // Skip nested objects that contain spread elements or computed properties
-          const hasSpreadOrComputed = value.properties.some((prop) =>
-            isSpreadOrComputed(prop),
-          );
-          if (!hasSpreadOrComputed) {
-            return property as TSESTree.Property & {
-              value: TSESTree.ObjectExpression;
-            };
-          }
-        }
-      }
-      return undefined;
+    function isNumericLiteralKey(property: TSESTree.Property): boolean {
+      return (
+        property.key.type === AST_NODE_TYPES.Literal &&
+        (typeof property.key.value === 'number' ||
+          (typeof property.key.value === 'string' &&
+            /^\d+$/.test(property.key.value)))
+      );
     }
 
     // Helper function to flatten nested objects into FieldPath syntax
@@ -168,11 +119,7 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
           continue;
         }
 
-        const isNumericKey =
-          property.key.type === AST_NODE_TYPES.Literal &&
-          (typeof property.key.value === 'number' ||
-            (typeof property.key.value === 'string' &&
-              /^\d+$/.test(property.key.value)));
+        const isNumericKey = isNumericLiteralKey(property);
 
         if (prefix === '' && isNumericKey) {
           continue;
@@ -265,6 +212,57 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       return undefined;
     }
 
+    function getFirstNestedObjectProperty(
+      node: TSESTree.ObjectExpression,
+      keyPredicate?: (keyText: string) => boolean,
+    ):
+      | (TSESTree.Property & { value: TSESTree.ObjectExpression })
+      | undefined {
+      for (const property of node.properties) {
+        if (isSpreadOrComputed(property)) {
+          continue;
+        }
+
+        if (property.type !== AST_NODE_TYPES.Property) {
+          continue;
+        }
+
+        const propertyKeyText = getPropertyKeyText(property);
+        if (!propertyKeyText) {
+          continue;
+        }
+
+        if (keyPredicate && !keyPredicate(propertyKeyText)) {
+          continue;
+        }
+
+        if (
+          node.parent?.type !== AST_NODE_TYPES.Property &&
+          isNumericLiteralKey(property)
+        ) {
+          continue;
+        }
+
+        if (property.value.type !== AST_NODE_TYPES.ObjectExpression) {
+          continue;
+        }
+
+        const hasSpreadOrComputed = property.value.properties.some((prop) =>
+          isSpreadOrComputed(prop),
+        );
+
+        if (hasSpreadOrComputed) {
+          continue;
+        }
+
+        return property as TSESTree.Property & {
+          value: TSESTree.ObjectExpression;
+        };
+      }
+
+      return undefined;
+    }
+
     return {
       // Track DocSetter variable declarations
       VariableDeclarator(node) {
@@ -292,16 +290,22 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
           return;
         }
 
-        const firstNestedProperty = getFirstNestedObjectProperty(firstArg);
+        const sourceCode = context.getSourceCode();
+
+        const firstNestedPropertyWithoutDots = getFirstNestedObjectProperty(
+          firstArg,
+          (key) => !key.includes('.'),
+        );
+
+        const firstNestedProperty =
+          firstNestedPropertyWithoutDots ||
+          getFirstNestedObjectProperty(firstArg);
+
         if (!firstNestedProperty) {
           return;
         }
 
-        const sourceCode = context.getSourceCode();
-        const flattenedProperties = flattenObject(
-          firstArg,
-          sourceCode,
-        );
+        const flattenedProperties = flattenObject(firstArg, sourceCode);
         const propertyKeyText = getPropertyKeyText(firstNestedProperty);
         const exampleFieldPathFromProperty =
           propertyKeyText &&
