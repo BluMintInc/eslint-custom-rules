@@ -47,6 +47,15 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
         return docSetterVariables.has(object.name);
       }
 
+      // Support chained instantiation: new DocSetter(...).set(...)
+      if (
+        object.type === AST_NODE_TYPES.NewExpression &&
+        object.callee.type === AST_NODE_TYPES.Identifier &&
+        object.callee.name === 'DocSetter'
+      ) {
+        return true;
+      }
+
       return false;
     }
 
@@ -61,7 +70,10 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
     }
 
     // Helper function to check if an object has nested objects (excluding arrays)
-    function hasNestedObjects(node: TSESTree.ObjectExpression): boolean {
+    function hasNestedObjects(
+      node: TSESTree.ObjectExpression,
+      prefix = '',
+    ): boolean {
       for (const property of node.properties) {
         // Skip spread elements
         if (property.type === AST_NODE_TYPES.SpreadElement) {
@@ -74,6 +86,17 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
 
         // Skip computed properties (dynamic keys)
         if (property.computed) {
+          continue;
+        }
+
+        const isNumericKey =
+          property.key.type === AST_NODE_TYPES.Literal &&
+          (typeof property.key.value === 'number' ||
+            (typeof property.key.value === 'string' &&
+              /^\d+$/.test(property.key.value)));
+
+        // Allow top-level numeric keys (treated like array indexes)
+        if (prefix === '' && isNumericKey) {
           continue;
         }
 
@@ -91,7 +114,9 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
         // Check if the value is an object (but not an array)
         if (value.type === AST_NODE_TYPES.ObjectExpression) {
           // Skip nested objects that contain spread elements or computed properties
-          const hasSpreadOrComputed = value.properties.some(isSpreadOrComputed);
+          const hasSpreadOrComputed = value.properties.some((prop) =>
+            isSpreadOrComputed(prop),
+          );
           if (!hasSpreadOrComputed) {
             return true;
           }
@@ -141,6 +166,16 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
           continue;
         }
 
+        const isNumericKey =
+          property.key.type === AST_NODE_TYPES.Literal &&
+          (typeof property.key.value === 'number' ||
+            (typeof property.key.value === 'string' &&
+              /^\d+$/.test(property.key.value)));
+
+        if (prefix === '' && isNumericKey) {
+          continue;
+        }
+
         const fullKey = prefix ? `${prefix}.${key}` : key;
 
         // If the value is a nested object, recursively flatten it
@@ -178,22 +213,25 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       );
 
       const flattenedProperties = flattenObject(node, sourceCode);
+      if (idProperty && idProperty.type === AST_NODE_TYPES.Property) {
+        delete flattenedProperties['id'];
+      }
+      const entries = Object.entries(flattenedProperties);
+      const propertyComma = ',';
 
       // Start with the id property if it exists
       let result = '{\n';
       if (idProperty && idProperty.type === AST_NODE_TYPES.Property) {
-        result += `  id: ${sourceCode.getText(idProperty.value)},\n`;
-        delete flattenedProperties['id'];
+        result += `  id: ${sourceCode.getText(
+          idProperty.value,
+        )}${propertyComma}\n`;
       }
 
-      // Add the flattened properties
-      for (const [key, value] of Object.entries(flattenedProperties)) {
-        if (needsQuoting(key)) {
-          result += `  '${key}': ${value},\n`;
-        } else {
-          result += `  ${key}: ${value},\n`;
-        }
-      }
+      // Add the flattened properties (always include trailing commas for multiline objects)
+      entries.forEach(([key, value]) => {
+        const printedKey = needsQuoting(key) ? `'${key}'` : key;
+        result += `  ${printedKey}: ${value}${propertyComma}\n`;
+      });
 
       result += '}';
       return result;

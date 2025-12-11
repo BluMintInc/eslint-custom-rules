@@ -1,6 +1,42 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { preferDocumentFlattening } from '../rules/prefer-document-flattening';
 
+type PreferDocumentFlatteningError = {
+  messageId: 'preferDocumentFlattening';
+  data: {
+    instanceName: string;
+    className: 'DocSetter' | 'DocSetterTransaction';
+  };
+};
+
+const buildMessage = (
+  instanceName: string,
+  className: 'DocSetter' | 'DocSetterTransaction' = 'DocSetter',
+) =>
+  `${className} instance "${instanceName}" sets nested Firestore data without enabling shouldFlatten. Nested object writes overwrite sibling fields and require read-modify-write cycles, which increases contention and hides field-level query paths. Add shouldFlatten: true in the ${className} options or pass flattened field paths (for example, "profile.settings.theme") so nested updates stay atomic and queryable.`;
+
+const errorsFor = (
+  instanceName: string,
+  className: 'DocSetter' | 'DocSetterTransaction' = 'DocSetter',
+): PreferDocumentFlatteningError[] => [
+  {
+    messageId: 'preferDocumentFlattening',
+    data: { instanceName, className },
+  },
+];
+
+describe('prefer-document-flattening message', () => {
+  it('explains why flattening is required and how to fix it', () => {
+    const template =
+      preferDocumentFlattening.meta.messages.preferDocumentFlattening;
+    const formatted = template
+      .replace(/{{className}}/g, 'DocSetter')
+      .replace(/{{instanceName}}/g, 'userSetter');
+
+    expect(formatted).toBe(buildMessage('userSetter'));
+  });
+});
+
 ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
   valid: [
     // Test: DocSetter with shouldFlatten option
@@ -114,11 +150,11 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
       });
     `,
 
-    // Test: DocSetter with shouldFlatten: false explicitly set
+    // Test: DocSetter with shouldFlatten explicitly enabled
     `
       const explicitSetter = new DocSetter<UserDocument>(
         db.collection('users'),
-        { shouldFlatten: false }
+        { shouldFlatten: true }
       );
 
       await explicitSetter.set({
@@ -438,7 +474,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('userSetter'),
     },
 
     // Test: DocSetterTransaction without shouldFlatten setting nested objects
@@ -459,7 +495,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('userTx', 'DocSetterTransaction'),
     },
 
     // Test: DocSetter without shouldFlatten using setAll with nested objects
@@ -470,17 +506,19 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
         await userSetter.setAll([
           {
             id: 'user1',
-            name: 'Alice'
+            data: { name: 'Alice' }
           },
           {
             id: 'user2',
-            profile: {
-              settings: { theme: 'dark' }
+            data: {
+              profile: {
+                settings: { theme: 'dark' }
+              }
             }
           }
         ]);
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('userSetter'),
     },
 
     // Test: DocSetter with complex constructor but missing shouldFlatten
@@ -504,7 +542,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('userSetter'),
     },
 
     // Test: Very deep nesting (4+ levels)
@@ -525,7 +563,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('deepSetter'),
     },
 
     // Test: Mixed arrays with some nested objects
@@ -546,7 +584,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           ]
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('mixedSetter'),
     },
 
     // Test: Objects with nested arrays containing objects
@@ -564,7 +602,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('arrayNestedSetter'),
     },
 
     // Test: Complex nested structures with multiple branches
@@ -584,7 +622,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('complexSetter'),
     },
 
     // Test: Nested objects in different property positions
@@ -601,7 +639,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           last: 'value'
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('positionSetter'),
     },
 
     // Test: Objects with both primitive and nested properties
@@ -620,7 +658,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           count: 42
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('mixedPropSetter'),
     },
 
     // Test: DocSetterTransaction with partial options object but missing shouldFlatten
@@ -643,7 +681,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('partialTx', 'DocSetterTransaction'),
     },
 
     // Test: Nested objects with boolean, number, string, and object values mixed
@@ -663,7 +701,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('mixedValueSetter'),
     },
 
     // Test: Objects with nested objects that have empty objects
@@ -679,7 +717,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('emptyNestedSetter'),
     },
 
     // Test: Objects with nested objects containing arrays
@@ -695,7 +733,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('nestedArraySetter'),
     },
 
     // Test: Conditional nested objects (static analysis limitation - moved to valid)
@@ -717,7 +755,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           profile: { settings: { theme: 'dark' } }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('invalidSetter'),
     },
 
     // Test: DocSetter with let declaration
@@ -732,7 +770,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('userSetter'),
     },
 
     // Test: DocSetter with var declaration
@@ -747,7 +785,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('userSetter'),
     },
 
     // Test: DocSetter in async function with nested objects
@@ -764,7 +802,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           });
         }
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('userSetter'),
     },
 
     // Test: DocSetter in try/catch block with nested objects
@@ -783,7 +821,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           console.error(error);
         }
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('userSetter'),
     },
 
     // Test: DocSetter with Promise chain and nested objects
@@ -800,7 +838,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           console.log('Saved');
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('userSetter'),
     },
 
     // Test: DocSetter with computed property names and nesting
@@ -816,7 +854,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('computedNestedSetter'),
     },
 
     // Test: DocSetter with spread operator and direct nested objects
@@ -832,7 +870,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('spreadNestedSetter'),
     },
 
     // Test: DocSetter with template literal keys and nesting
@@ -848,7 +886,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('templateNestedSetter'),
     },
 
     // Test: DocSetter with numeric keys and nesting
@@ -863,7 +901,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('numericNestedSetter'),
     },
 
     // Test: DocSetter with string literal keys and nesting
@@ -878,7 +916,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('stringNestedSetter'),
     },
 
     // Test: DocSetter with shorthand properties and direct nested objects
@@ -894,7 +932,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('shorthandNestedSetter'),
     },
 
     // Test: DocSetter with method definitions and nesting
@@ -910,7 +948,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('methodNestedSetter'),
     },
 
     // Test: DocSetter with rest/spread syntax and direct nested objects
@@ -927,7 +965,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('restNestedSetter'),
     },
 
     // Test: DocSetter with deeply nested arrays containing objects
@@ -952,7 +990,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           ]
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('deepArraySetter'),
     },
 
     // Test: DocSetter with mixed nested and flat properties in complex structure
@@ -983,7 +1021,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('mixedComplexSetter'),
     },
 
     // Test: DocSetter with nested objects in different array positions
@@ -1012,7 +1050,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           ]
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('arrayPositionSetter'),
     },
 
     // Test: DocSetter with setAll containing mixed complexity
@@ -1023,29 +1061,33 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
         await mixedSetAllSetter.setAll([
           {
             id: 'doc1',
-            simple: 'value'
+            data: { simple: 'value' }
           },
           {
             id: 'doc2',
-            complex: {
-              nested: {
-                deeply: 'value'
+            data: {
+              complex: {
+                nested: {
+                  deeply: 'value'
+                }
               }
             }
           },
           {
             id: 'doc3',
-            array: [
-              {
-                item: {
-                  nested: 'value'
+            data: {
+              array: [
+                {
+                  item: {
+                    nested: 'value'
+                  }
                 }
-              }
-            ]
+              ]
+            }
           }
         ]);
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('mixedSetAllSetter'),
     },
 
     // Test: DocSetter with extremely deep nesting (5+ levels)
@@ -1070,7 +1112,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('extremelyDeepSetter'),
     },
 
     // Test: DocSetter with nested objects containing various data types
@@ -1095,7 +1137,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('dataTypesSetter'),
     },
 
     // Test: DocSetter with nested objects using various key types
@@ -1120,7 +1162,7 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
           }
         });
       `,
-      errors: [{ messageId: 'preferDocumentFlattening' }],
+      errors: errorsFor('keyTypesSetter'),
     },
   ],
 });

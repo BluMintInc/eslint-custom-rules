@@ -1,7 +1,15 @@
 # Implement ESLint Rule
 
 ## Overview
-This command guides the implementation of a new custom ESLint rule for BluMint.
+
+This command guides the implementation of a new custom ESLint rule for BluMint. When the GitHub issue carries the `rule-request` label, build prompts from the issue body and include the `rule-request` flag so expanded test prompts are generated.
+
+## Using Issue Context
+
+- Parse the issue body for example violations and add them as invalid test cases.
+- Pull out edge cases and turn them into separate valid/invalid tests.
+- Capture any described expected auto-fix behavior and add autofix tests with expected output.
+- When the `rule-request` label is present, include the `rule-request` flag to trigger expanded test generation.
 
 ## Available Utilities
 
@@ -18,12 +26,14 @@ Before implementing, familiarize yourself with the available utilities:
 ## Steps
 
 ### 1. Analyze the Specification
+
 - Read the issue description carefully
 - Identify the pattern to detect (what AST nodes to visit)
 - Understand edge cases mentioned in the issue
 - Determine if the rule needs a fixer (auto-fix capability)
 
 ### 2. Create Rule Implementation
+
 Create `src/rules/<rule-name>.ts` (kebab-case filename):
 
 ```typescript
@@ -55,14 +65,17 @@ export const yourRuleName = createRule<[], MessageIds>({
 ```
 
 ### 3. Create Tests
+
 Create `src/tests/<rule-name>.test.ts`:
 
 **IMPORTANT**: Expect to write **20+ tests per rule** covering:
+
 - Valid cases (code that should NOT trigger the rule)
 - Invalid cases (code that SHOULD trigger with expected errors)
 - Edge cases (unusual patterns, nested structures, whitespace)
 
 Choose the appropriate ruleTester:
+
 - `ruleTesterTs` for TypeScript rules (most common)
 - `ruleTesterJsx` for React/JSX rules
 - `ruleTesterJson` for JSON file rules (e.g., package.json)
@@ -87,7 +100,9 @@ ruleTesterTs.run('your-rule-name', yourRuleName, {
 ```
 
 ### 4. Create Documentation
+
 Create `docs/rules/<rule-name>.md`:
+
 - Rule description and rationale
 - Options (if any)
 - Examples of correct code
@@ -95,6 +110,7 @@ Create `docs/rules/<rule-name>.md`:
 - When to disable the rule
 
 ### 5. Update `src/index.ts`
+
 The rule must be registered in **three places**:
 
 ```typescript
@@ -119,14 +135,17 @@ rules: {
 **Note**: Convert kebab-case filename to camelCase for the import variable.
 
 ### 6. Update README
+
 Add the rule to the rules table in `README.md`
 
 ### 7. Verify
+
 - Run `npm test` - all tests must pass
 - Run `npm run lint:fix` - no linting errors
 - Run `npm run build` - build must succeed
 
 ## Quality Checklist
+
 - [ ] Rule correctly identifies violations
 - [ ] No false positives (valid code incorrectly flagged)
 - [ ] No false negatives (invalid code not flagged)
@@ -134,4 +153,3 @@ Add the rule to the rules table in `README.md`
 - [ ] Documentation is clear and accurate
 - [ ] **20+ tests** covering edge cases
 - [ ] Tests include both valid and invalid cases
-
