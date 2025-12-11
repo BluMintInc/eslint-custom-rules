@@ -109,6 +109,7 @@ import { enforceFieldPathSyntaxInDocSetter } from './rules/enforce-fieldpath-syn
 import { preferBlockCommentsForDeclarations } from './rules/prefer-block-comments-for-declarations';
 import { noUndefinedNullPassthrough } from './rules/no-undefined-null-passthrough';
 import { firestoreTransactionReadsBeforeWrites } from './rules/firestore-transaction-reads-before-writes';
+import { enforceTypescriptMarkdownCodeBlocks } from './rules/enforce-typescript-markdown-code-blocks';
 import { preferNullishCoalescingOverride } from './rules/prefer-nullish-coalescing-override';
 import { preferNullishCoalescingBooleanProps } from './rules/prefer-nullish-coalescing-boolean-props';
 import { noRestrictedPropertiesFix } from './rules/no-restricted-properties-fix';
@@ -238,6 +239,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-microdiff': 'error',
         '@blumintinc/blumint/fast-deep-equal-over-microdiff': 'error',
         '@blumintinc/blumint/enforce-timestamp-now': 'error',
+        '@blumintinc/blumint/enforce-typescript-markdown-code-blocks': 'error',
         '@blumintinc/blumint/no-always-true-false-conditions': 'error',
         '@blumintinc/blumint/enforce-props-argument-name': 'error',
         '@blumintinc/blumint/enforce-props-naming-consistency': 'error',
@@ -381,6 +383,8 @@ module.exports = {
     'enforce-microdiff': enforceMicrodiff,
     'fast-deep-equal-over-microdiff': fastDeepEqualOverMicrodiff,
     'enforce-timestamp-now': enforceTimestampNow,
+    'enforce-typescript-markdown-code-blocks':
+      enforceTypescriptMarkdownCodeBlocks,
     'no-always-true-false-conditions': noAlwaysTrueFalseConditions,
     'enforce-props-argument-name': enforcePropsArgumentName,
     'enforce-props-naming-consistency': enforcePropsNamingConsistency,
