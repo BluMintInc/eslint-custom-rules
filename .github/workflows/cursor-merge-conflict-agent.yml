@@ -89,13 +89,15 @@ jobs:
           echo "mergeable_state: $MERGEABLE_STATE"
           echo "has_conflicts: $HAS_CONFLICTS"
 
-          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
-          echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
-          echo "base_ref=$BASE_REF" >> "$GITHUB_OUTPUT"
-          echo "head_ref=$HEAD_REF" >> "$GITHUB_OUTPUT"
-          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
-          echo "mergeable_state=$MERGEABLE_STATE" >> "$GITHUB_OUTPUT"
-          echo "has_conflicts=$HAS_CONFLICTS" >> "$GITHUB_OUTPUT"
+          {
+            echo "pr_number=$PR_NUMBER"
+            echo "pr_url=$PR_URL"
+            echo "base_ref=$BASE_REF"
+            echo "head_ref=$HEAD_REF"
+            echo "head_sha=$HEAD_SHA"
+            echo "mergeable_state=$MERGEABLE_STATE"
+            echo "has_conflicts=$HAS_CONFLICTS"
+          } >> "$GITHUB_OUTPUT"
 
   merge_conflict_check:
     name: Merge conflict check
@@ -240,8 +242,10 @@ jobs:
 
           cat ".cursor/tmp/merge-conflict-prompt.md" >> /tmp/merge-conflict-agent-prompt.txt
 
-          echo "no_prompt=false" >> "$GITHUB_OUTPUT"
-          echo "prompt_path=/tmp/merge-conflict-agent-prompt.txt" >> "$GITHUB_OUTPUT"
+          {
+            echo "no_prompt=false"
+            echo "prompt_path=/tmp/merge-conflict-agent-prompt.txt"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Exit if prompt could not be built
         if: steps.idempotency.outputs.already_launched != 'true' && steps.prompt.outputs.no_prompt == 'true'

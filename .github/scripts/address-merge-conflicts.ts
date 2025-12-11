@@ -26,7 +26,7 @@ function outputInstructions(promptPath: string): void {
   console.log('\n' + '='.repeat(70) + '\n');
 }
 
-async function main(): Promise<void> {
+function main(): void {
   console.log('🚀 Setting up merge conflict resolution workflow...\n');
 
   console.log('Checking dependencies...');
@@ -82,7 +82,9 @@ async function main(): Promise<void> {
   outputInstructions(promptPath);
 }
 
-main().catch((error) => {
+try {
+  main();
+} catch (error) {
   console.error('Unexpected error:', error);
   process.exit(1);
-});
+}

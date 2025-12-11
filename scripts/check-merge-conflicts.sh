@@ -1,6 +1,6 @@
 #!/bin/bash
 # Lists remaining conflicted files in a checklist format for the stop hook.
-# Output: Either "✅ All merge conflicts resolved" or a numbered checklist of conflicted files with hunk counts.
+# Output: Either "✅ All merge conflicts resolved" or a numbered checklist of conflicted files with conflict marker counts.
 
 set -e
 
@@ -22,8 +22,8 @@ echo ""
 counter=1
 while IFS= read -r file; do
   if [ -n "$file" ]; then
-    hunk_count=$(grep -c '^<<<<<<<' "$file" 2>/dev/null || echo "0")
-    echo "$counter. [ ] \`$file\` ($hunk_count conflict hunk(s))"
+    conflict_count=$(grep -c '^<<<<<<<' "$file" 2>/dev/null || echo "0")
+    echo "$counter. [ ] \`$file\` ($conflict_count conflict section(s))"
     counter=$((counter + 1))
   fi
 done <<< "$conflicted_files"
