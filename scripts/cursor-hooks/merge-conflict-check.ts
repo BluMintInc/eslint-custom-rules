@@ -12,9 +12,11 @@ const SUCCESS_PATTERN = /✅ All merge conflicts resolved/;
  * Priority 0 check that runs before PR review checks and code quality checks.
  * Agents cannot stop while merge conflicts remain unresolved.
  */
-export function performMergeConflictCheck(input: Input) {
-  void input;
-
+/**
+ * @param _input - Required by hook interface but unused for merge conflict detection.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function performMergeConflictCheck(_input: Input) {
   try {
     if (!isInMergeConflictState()) {
       return null;

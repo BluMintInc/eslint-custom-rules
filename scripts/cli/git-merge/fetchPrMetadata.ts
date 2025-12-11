@@ -31,7 +31,7 @@ export function fetchPrMetadata(prNumber: number) {
   let codeRabbitSummary: string | null = null;
   try {
     const commentsOutput = runCommand(
-      `gh pr view ${prNumber} --json comments --jq '[.comments[] | select(.author.login == "coderabbitai")] | .[0:100] | .[].body'`,
+      `gh pr view ${prNumber} --json comments --jq '[.comments[] | select(.author.login == "coderabbitai")] | .[0].body // empty'`,
       true,
     );
 

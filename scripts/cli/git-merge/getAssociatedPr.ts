@@ -20,7 +20,9 @@ export function fetchAssociatedPr() {
     }
 
     const result = runCommand(
-      `gh pr list --head ${JSON.stringify(cleanBranchName)} --state open --json number --jq '.[0].number'`,
+      `gh pr list --head ${JSON.stringify(
+        cleanBranchName,
+      )} --state open --json number --jq '.[0].number'`,
       true,
     );
 

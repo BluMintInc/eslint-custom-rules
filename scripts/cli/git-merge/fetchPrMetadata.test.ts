@@ -99,7 +99,7 @@ describe('fetchPrMetadata', () => {
     );
     expect(mockRunCommand).toHaveBeenNthCalledWith(
       2,
-      `gh pr view 77 --json comments --jq '[.comments[] | select(.author.login == "coderabbitai")] | .[0:100] | .[].body'`,
+      `gh pr view 77 --json comments --jq '[.comments[] | select(.author.login == "coderabbitai")] | .[0].body // empty'`,
       true,
     );
   });
