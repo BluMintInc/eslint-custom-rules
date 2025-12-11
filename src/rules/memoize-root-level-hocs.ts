@@ -322,8 +322,7 @@ export const memoizeRootLevelHocs = createRule<Options, MessageIds>({
           if (
             hocName &&
             !(parentHocName && parentHocName === hocName) &&
-            !isInsideUseMemoFactory(current, node) &&
-            !isInsideUseMemoFactory(current.callee, node)
+            !isInsideUseMemoFactory(current, node)
           ) {
             context.report({
               node: current,
