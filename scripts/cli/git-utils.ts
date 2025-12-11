@@ -78,7 +78,14 @@ export function ensureGitClean() {
  */
 export function retrieveCurrentBranch(): string {
   try {
-    return runCommand('git rev-parse --abbrev-ref HEAD', true);
+    const branch = runCommand('git rev-parse --abbrev-ref HEAD', true);
+    if (branch === 'HEAD') {
+      exitWithError(
+        'Error: Detached HEAD detected. Not on a branch.',
+        'Please checkout a branch or specify the ref explicitly.',
+      );
+    }
+    return branch;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     exitWithError('Error: Could not determine current branch.', message);
@@ -99,7 +106,14 @@ export function inferPrFromBranch(branch: string): number | undefined {
     if (!result || result === 'null') {
       return undefined;
     }
-    return Number.parseInt(result, 10);
+    const prNumber = Number.parseInt(result, 10);
+    if (!Number.isFinite(prNumber)) {
+      console.error(
+        `Failed to parse PR number for branch "${branch}": ${result}`,
+      );
+      return undefined;
+    }
+    return prNumber;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`Failed to infer PR from branch "${branch}": ${message}`);

@@ -70,4 +70,3 @@ function getUser() {
 ```
 
 - **prefixes**: string[] — prefixes considered boolean-like. Defaults to `["is", "has", "should"]`.
-
