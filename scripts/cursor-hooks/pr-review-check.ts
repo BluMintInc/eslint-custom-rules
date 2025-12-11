@@ -1,26 +1,13 @@
 /* eslint-disable max-lines */
-import { execSync } from 'node:child_process';
+import { executeCommand } from './agent-check';
 import type { Input } from './types';
 
 const BOT_NAME_PATTERN = /(coderabbit|graphite|cursor|bugbot)/i;
 const SUCCESS_PATTERN = /✅ All .* are resolved/;
 const NO_PR_PATTERN = /No open pull request found/i;
-
-function executeCommand(command: string) {
-  try {
-    const output = execSync(command, { encoding: 'utf-8', stdio: 'pipe' });
-    return { isSuccess: true, output } as const;
-  } catch (error: unknown) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const stdout = (error as any).stdout ? String((error as any).stdout) : null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const stderr = (error as any).stderr ? String((error as any).stderr) : null;
-    return {
-      isSuccess: false,
-      output: `${stdout ?? ''}\n${stderr ?? ''}`,
-    } as const;
-  }
-}
+const SAFE_BRANCH_PATTERN = /^(?!\/)(?!.*\/\/)(?!.*\/$)[A-Za-z0-9._/-]+$/;
+const BOT_REVIEW_BATCH_SIZE = 5;
+const HUMAN_REVIEW_BATCH_SIZE = 7;
 
 export function extractPrReviewContext(branchName: string) {
   // Pattern: .*-review-pr-(\d+)-(\d+)(?:[/-]|$)
@@ -44,7 +31,7 @@ function fetchAllReviews(prNumber: number) {
       repository(owner: "${
         process.env.GITHUB_REPOSITORY?.split('/')[0] || 'BluMintInc'
       }", name: "${
-    process.env.GITHUB_REPOSITORY?.split('/')[1] || 'custom-eslint-rules'
+    process.env.GITHUB_REPOSITORY?.split('/')[1] || 'eslint-custom-rules'
   }") {
         pullRequest(number: ${prNumber}) {
           reviews(first: 100) {
@@ -66,7 +53,12 @@ function fetchAllReviews(prNumber: number) {
     return null;
   }
 
-  return JSON.parse(result.output);
+  try {
+    return JSON.parse(result.output);
+  } catch (error) {
+    console.error('Failed to parse review list response:', error);
+    return null;
+  }
 }
 
 export function determineBotReview(params: {
@@ -122,19 +114,12 @@ export function determineBotReview(params: {
   }
 }
 
-export function validateUnresolvedComments(params: {
-  readonly prNumber: number;
-  readonly reviewId?: number;
-  readonly isBot: boolean;
-}) {
-  const { prNumber, reviewId, isBot } = params;
+type CommentCheckResult = {
+  readonly hasComments: boolean;
+  readonly commentsList: string;
+};
 
-  const reviewArg = reviewId !== undefined ? ` --review-batch=${reviewId}` : '';
-
-  const command = isBot
-    ? `npm run fetch-unresolved-bot-comments -- --pr=${prNumber}${reviewArg}`
-    : `npm run fetch-unresolved-comments -- --pr=${prNumber}${reviewArg}`;
-
+function runUnresolvedCommentCheck(command: string): CommentCheckResult {
   const result = executeCommand(command);
 
   if (!result.isSuccess) {
@@ -142,21 +127,60 @@ export function validateUnresolvedComments(params: {
     return {
       hasComments: false,
       commentsList: 'Failed to fetch comments',
-    } as const;
+    };
   }
 
-  // Parse output to detect if comments remain
-  // The script outputs "✅ All ... are resolved" when no comments remain
   const hasComments =
     !SUCCESS_PATTERN.test(result.output) && !NO_PR_PATTERN.test(result.output);
 
   return {
     hasComments,
     commentsList: result.output,
-  } as const;
+  };
+}
+
+export function validateBotUnresolvedComments(params: {
+  readonly prNumber: number;
+  readonly reviewId?: number;
+}): CommentCheckResult {
+  const { prNumber, reviewId } = params;
+  const reviewArg = reviewId !== undefined ? ` --review-batch=${reviewId}` : '';
+  return runUnresolvedCommentCheck(
+    `npm run fetch-unresolved-bot-comments -- --pr=${prNumber}${reviewArg}`,
+  );
+}
+
+export function validateHumanUnresolvedComments(params: {
+  readonly prNumber: number;
+  readonly reviewId?: number;
+}): CommentCheckResult {
+  const { prNumber, reviewId } = params;
+  const reviewArg = reviewId !== undefined ? ` --review-batch=${reviewId}` : '';
+  return runUnresolvedCommentCheck(
+    `npm run fetch-unresolved-comments -- --pr=${prNumber}${reviewArg}`,
+  );
+}
+
+export function validateUnresolvedComments(params: {
+  readonly prNumber: number;
+  readonly reviewId?: number;
+  readonly isBot: boolean;
+}): CommentCheckResult {
+  const { prNumber, reviewId, isBot } = params;
+  return isBot
+    ? validateBotUnresolvedComments({ prNumber, reviewId })
+    : validateHumanUnresolvedComments({ prNumber, reviewId });
 }
 
 function findOpenPrNumberForBranch(branchName: string) {
+  if (!SAFE_BRANCH_PATTERN.test(branchName)) {
+    console.error(
+      `Branch name contains unsupported characters: ${branchName}. Skipping PR lookup.`,
+    );
+    return null;
+  }
+
+  // Branch name is validated and quoted before shell execution; executeCommand currently accepts only string commands.
   const prLookup = executeCommand(
     `gh pr list --head "${branchName}" --state open --json number --jq '.[0].number'`,
   );
@@ -197,14 +221,12 @@ function validateWithoutReviewBatch(branchName: string): ReviewDetection {
     return null;
   }
 
-  const botResult = validateUnresolvedComments({
+  const botResult = validateBotUnresolvedComments({
     prNumber,
-    isBot: true,
   });
 
-  const humanResult = validateUnresolvedComments({
+  const humanResult = validateHumanUnresolvedComments({
     prNumber,
-    isBot: false,
   });
 
   const hasBot = botResult.hasComments;
@@ -242,7 +264,7 @@ function validateWithoutReviewBatch(branchName: string): ReviewDetection {
 }
 
 function constructFollowupMessage(isBot: boolean, commentsList: string) {
-  const batchSize = isBot ? 5 : 7;
+  const batchSize = isBot ? BOT_REVIEW_BATCH_SIZE : HUMAN_REVIEW_BATCH_SIZE;
 
   const resolutionInstructions = isBot
     ? `Please make a todolist of at least ${batchSize} items, one for each of these comments, whereby for each comment you:
@@ -294,8 +316,11 @@ ${botSection}
 ${humanSection}`;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+/**
+ * _input reserved for future context-aware checks (e.g., branching on task type).
+ */
 export function performPrReviewCheck(_input: Input) {
+  void _input;
   try {
     // Extract branch name from git
     const branchResult = executeCommand('git rev-parse --abbrev-ref HEAD');
@@ -304,6 +329,13 @@ export function performPrReviewCheck(_input: Input) {
     }
 
     const branchName = branchResult.output.trim();
+    if (!SAFE_BRANCH_PATTERN.test(branchName)) {
+      console.error(
+        `Branch name contains unsupported characters: ${branchName}. Skipping PR review check.`,
+      );
+      return null;
+    }
+
     const context = extractPrReviewContext(branchName);
 
     if (!context) {
@@ -312,20 +344,18 @@ export function performPrReviewCheck(_input: Input) {
         return null; // Not a PR review branch
       }
 
-      const { prNumber, reviewType } = fallbackResult;
-
       console.error(
-        `Detected unresolved ${reviewType} review comments on PR #${prNumber} for branch ${branchName}`,
+        `Detected unresolved ${fallbackResult.reviewType} review comments on PR #${fallbackResult.prNumber} for branch ${branchName}`,
       );
 
       const followupMessage =
-        reviewType === 'mixed'
+        fallbackResult.reviewType === 'mixed'
           ? constructMixedFollowupMessage({
               botCommentsList: fallbackResult.botCommentsList,
               humanCommentsList: fallbackResult.humanCommentsList,
             })
           : constructFollowupMessage(
-              reviewType === 'bot',
+              fallbackResult.reviewType === 'bot',
               fallbackResult.commentsList,
             );
 
@@ -343,10 +373,9 @@ export function performPrReviewCheck(_input: Input) {
     console.error(`Review type: ${isBot ? 'bot' : 'human'}`);
 
     // Check for unresolved comments
-    const { hasComments, commentsList } = validateUnresolvedComments({
-      ...context,
-      isBot,
-    });
+    const { hasComments, commentsList } = isBot
+      ? validateBotUnresolvedComments(context)
+      : validateHumanUnresolvedComments(context);
 
     if (!hasComments) {
       console.error('No unresolved comments remaining');

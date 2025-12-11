@@ -1,11 +1,20 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 
+export const TMP_DIR_SEGMENT = '.cursor/tmp/';
 export const LOG_FILE = join(
   process.cwd(),
-  '.cursor/tmp/hooks/agent-change-log.json',
+  `${TMP_DIR_SEGMENT}hooks/agent-change-log.json`,
 );
-export const MAX_LOOPS = 10 as const;
+export const MAX_LOOPS = 200 as const;
 export const ACTIVE_THRESHOLD_MS = 10 * 60 * 1000;
 
 export type ConversationMeta = {
@@ -19,7 +28,11 @@ export type ConversationMeta = {
 
 export type ConversationEntry = {
   readonly _metadata?: ConversationMeta;
-} & { readonly [generationId: string]: readonly string[] };
+  readonly [generationId: string]:
+    | readonly string[]
+    | ConversationMeta
+    | undefined;
+};
 
 export type ChangeLog = {
   readonly [conversationId: string]: ConversationEntry;
@@ -36,27 +49,45 @@ export type MutableConversationMeta = {
 
 export type MutableConversationEntry = {
   _metadata?: MutableConversationMeta;
-} & { [generationId: string]: readonly string[] | undefined };
+  [generationId: string]:
+    | readonly string[]
+    | MutableConversationMeta
+    | undefined;
+};
 
 export type MutableChangeLog = {
   [conversationId: string]: MutableConversationEntry;
 };
 
-export function loadLogFile() {
-  if (!existsSync(LOG_FILE)) return {} as const;
+export function loadLogFile(): MutableChangeLog {
+  if (!existsSync(LOG_FILE)) return {};
   try {
     const content = JSON.parse(readFileSync(LOG_FILE, 'utf-8'));
-    const log: MutableChangeLog = content;
-    return log;
+    if (content && typeof content === 'object') {
+      return content as MutableChangeLog;
+    }
+    return {};
   } catch {
-    return {} as const;
+    return {};
   }
 }
 
 export function saveLogFile(log: MutableChangeLog) {
   const dir = dirname(LOG_FILE);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(LOG_FILE, JSON.stringify(log, null, 2));
+  const tmpFile = join(
+    dir,
+    `agent-change-log.${process.pid}.${Date.now()}.${randomUUID()}.tmp`,
+  );
+  const payload = JSON.stringify(log, null, 2);
+
+  try {
+    writeFileSync(tmpFile, payload, { flag: 'w' });
+    renameSync(tmpFile, LOG_FILE);
+  } catch (error) {
+    rmSync(tmpFile, { force: true });
+    throw error;
+  }
 }
 
 function applyEntryModification(
@@ -64,10 +95,12 @@ function applyEntryModification(
   modifier: (entry: MutableConversationEntry) => void,
 ) {
   const log = loadLogFile();
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-  const logEntry = log[conversationId] || {};
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-  if (!logEntry._metadata) logEntry._metadata = {};
+  const logEntry: MutableConversationEntry = log[conversationId] ?? {
+    _metadata: {},
+  };
+  if (!logEntry._metadata) {
+    logEntry._metadata = {};
+  }
   modifier(logEntry);
   log[conversationId] = logEntry;
   saveLogFile(log);
@@ -205,7 +238,7 @@ function collectFilesExcludingTmp(
 ) {
   for (const file of files) {
     // Filter out files in .cursor/tmp/ directory
-    if (file.includes('.cursor/tmp/')) continue;
+    if (file.includes(TMP_DIR_SEGMENT)) continue;
     allFiles.add(file);
   }
 }
@@ -227,7 +260,7 @@ export function fetchAllConversationFiles({
   conversationId,
 }: {
   readonly conversationId: string;
-}) {
+}): readonly string[] {
   const log = loadLogFile();
   // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
   const conversationEntry = log[conversationId];
@@ -241,7 +274,7 @@ export function fetchChangedFiles({
 }: {
   readonly conversationId: string;
   readonly generationId: string;
-}) {
+}): readonly string[] {
   const log = loadLogFile();
   // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
   const conversationEntry = log[conversationId];
@@ -249,7 +282,5 @@ export function fetchChangedFiles({
   // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
   const files = conversationEntry[generationId];
   if (!Array.isArray(files)) return [] as const;
-  return files.filter((file) => {
-    return !file.includes('.cursor/tmp/');
-  });
+  return files.filter((file) => !file.includes(TMP_DIR_SEGMENT));
 }

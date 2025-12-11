@@ -35,13 +35,20 @@ export default createRule<[], MessageIds>({
       let current: TSESTree.Node | undefined = node.parent;
 
       while (current) {
-        // Check if we're inside a useCallback call
-        if (
-          current.type === AST_NODE_TYPES.CallExpression &&
-          current.callee.type === AST_NODE_TYPES.Identifier &&
-          current.callee.name === 'useCallback'
-        ) {
-          return true;
+        if (current.type === AST_NODE_TYPES.CallExpression) {
+          const { callee } = current;
+          const isDirectUseCallback =
+            callee.type === AST_NODE_TYPES.Identifier &&
+            callee.name === 'useCallback';
+          const isMemberUseCallback =
+            callee.type === AST_NODE_TYPES.MemberExpression &&
+            !callee.computed &&
+            callee.property.type === AST_NODE_TYPES.Identifier &&
+            callee.property.name === 'useCallback';
+
+          if (isDirectUseCallback || isMemberUseCallback) {
+            return true;
+          }
         }
         current = current.parent;
       }
@@ -49,29 +56,52 @@ export default createRule<[], MessageIds>({
       return false;
     }
 
+    function collectBoundNames(param: TSESTree.Parameter, out: string[]) {
+      if (param.type === AST_NODE_TYPES.Identifier) {
+        out.push(param.name);
+        return;
+      }
+
+      if (param.type === AST_NODE_TYPES.AssignmentPattern) {
+        collectBoundNames(param.left as TSESTree.Parameter, out);
+        return;
+      }
+
+      if (param.type === AST_NODE_TYPES.RestElement) {
+        if (param.argument.type === AST_NODE_TYPES.Identifier) {
+          out.push(param.argument.name);
+        }
+        return;
+      }
+
+      if (param.type === AST_NODE_TYPES.ObjectPattern) {
+        for (const property of param.properties) {
+          if (property.type === AST_NODE_TYPES.RestElement) {
+            collectBoundNames(property as unknown as TSESTree.Parameter, out);
+            continue;
+          }
+          if (property.type !== AST_NODE_TYPES.Property) continue;
+          collectBoundNames(property.value as TSESTree.Parameter, out);
+        }
+        return;
+      }
+
+      if (param.type === AST_NODE_TYPES.ArrayPattern) {
+        for (const element of param.elements) {
+          if (element) collectBoundNames(element as TSESTree.Parameter, out);
+        }
+      }
+    }
+
     function getParentFunctionParams(node: TSESTree.Node): string[] {
       let current: TSESTree.Node | undefined = node.parent;
 
       while (current) {
-        if (
-          current.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-          current.type === AST_NODE_TYPES.FunctionExpression
-        ) {
+        if (isFunction(current)) {
           const params: string[] = [];
-          current.params.forEach((param) => {
-            if (param.type === AST_NODE_TYPES.Identifier) {
-              params.push(param.name);
-            } else if (param.type === AST_NODE_TYPES.ObjectPattern) {
-              param.properties.forEach((prop) => {
-                if (
-                  prop.type === AST_NODE_TYPES.Property &&
-                  prop.key.type === AST_NODE_TYPES.Identifier
-                ) {
-                  params.push(prop.key.name);
-                }
-              });
-            }
-          });
+          for (const param of current.params) {
+            collectBoundNames(param as TSESTree.Parameter, params);
+          }
           return params;
         }
         current = current.parent;
@@ -86,37 +116,34 @@ export default createRule<[], MessageIds>({
         | TSESTree.FunctionExpression,
       parentParams: string[],
     ): boolean {
-      const referencedIdentifiers = new Set<string>();
+      const scopeManager = context.getSourceCode().scopeManager;
+      if (!scopeManager) return false;
+      const scope = scopeManager.acquire(functionNode);
+      if (!scope) return false;
 
-      function collectIdentifiers(node: TSESTree.Node) {
-        if (node.type === AST_NODE_TYPES.Identifier) {
-          referencedIdentifiers.add(node.name);
+      // "through" holds references that are not resolved within the function scope
+      for (const ref of scope.through) {
+        const { identifier } = ref;
+        const parent = identifier.parent;
+        const isPropertyKey =
+          parent &&
+          ((parent.type === AST_NODE_TYPES.MemberExpression &&
+            !parent.computed &&
+            parent.property === identifier) ||
+            (parent.type === AST_NODE_TYPES.Property &&
+              parent.key === identifier &&
+              parent.kind === 'init'));
+
+        if (isPropertyKey) {
+          continue;
         }
 
-        // Recursively check child nodes
-        for (const key in node) {
-          if (key === 'parent') continue;
-          const value = (node as any)[key];
-
-          if (Array.isArray(value)) {
-            value.forEach((child) => {
-              if (child && typeof child === 'object' && 'type' in child) {
-                collectIdentifiers(child as TSESTree.Node);
-              }
-            });
-          } else if (value && typeof value === 'object' && 'type' in value) {
-            collectIdentifiers(value as TSESTree.Node);
-          }
+        if (parentParams.includes(identifier.name)) {
+          return true;
         }
       }
 
-      // Collect all identifiers referenced in the function body
-      if (functionNode.body) {
-        collectIdentifiers(functionNode.body);
-      }
-
-      // Check if any referenced identifier matches a parent parameter
-      return parentParams.some((param) => referencedIdentifiers.has(param));
+      return false;
     }
 
     function containsFunction(node: TSESTree.Node): boolean {
@@ -128,6 +155,9 @@ export default createRule<[], MessageIds>({
         return node.properties.some((prop) => {
           if (prop.type === AST_NODE_TYPES.Property && 'value' in prop) {
             return containsFunction(prop.value);
+          }
+          if (prop.type === AST_NODE_TYPES.SpreadElement) {
+            return containsFunction(prop.argument as TSESTree.Node);
           }
           return false;
         });

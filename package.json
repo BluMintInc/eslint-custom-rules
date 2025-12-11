@@ -1,6 +1,6 @@
 {
   "name": "@blumintinc/eslint-plugin-blumint",
-  "version": "1.10.0",
+  "version": "1.12.6",
   "description": "Custom eslint rules for use within BluMint",
   "author": {
     "name": "Brodie McGuire",
@@ -77,9 +77,9 @@
     "cz-conventional-changelog": "3.3.0",
     "del-cli": "4.0.1",
     "dotenv-cli": "5.0.0",
-    "eslint": "8.57.0",
+    "eslint": "8.57.1",
     "eslint-config-prettier": "8.5.0",
-    "eslint-doc-generator": "^1.7.1",
+    "eslint-doc-generator": "2.2.0",
     "eslint-import-resolver-typescript": "3.5.5",
     "eslint-plugin-eslint-plugin": "5.0.0",
     "eslint-plugin-import": "2.26.0",

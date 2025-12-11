@@ -5,12 +5,15 @@ interface ReviewContext {
     is_bot: boolean;
     comment_count: number;
     id: number;
-  } | null;
+  };
   pr: {
     number: number;
     title: string;
   };
 }
+
+const BOT_BATCH_SIZE_LIMIT = 5;
+const HUMAN_BATCH_SIZE_LIMIT = 7;
 
 const contextPath = process.argv[2];
 const commentsPath = process.argv[3];
@@ -31,15 +34,20 @@ try {
     console.warn("Could not read comments file, proceeding without initial checklist.");
   }
 
-  if (!context.review) {
-    console.error("Error: Review context is missing. The review object must be present.");
-    process.exit(1);
-  }
+  const review =
+    context.review ??
+    ({
+      is_bot: false,
+      comment_count: 0,
+      id: 0,
+    } as const);
 
-  const isBot = context.review.is_bot;
-  const commentCount = context.review.comment_count;
+  const isBot = review.is_bot;
+  const commentCount = review.comment_count;
   // Calculate batch size based on review type
-  const batchSize = isBot ? Math.min(5, commentCount) : Math.min(7, commentCount);
+  const batchSize = isBot
+    ? Math.min(BOT_BATCH_SIZE_LIMIT, commentCount)
+    : Math.min(HUMAN_BATCH_SIZE_LIMIT, commentCount);
 
   let taskSteps = "";
   if (isBot) {
@@ -89,7 +97,11 @@ Address this batch of comments completely and correctly before stopping. Use the
   console.log(prompt);
 
 } catch (error) {
-  console.error("Error building prompt:", error);
+  console.error("Error building prompt:", {
+    error,
+    contextPath,
+    commentsPath,
+  });
   process.exit(1);
 }
 

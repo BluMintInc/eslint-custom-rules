@@ -1,6 +1,8 @@
-# Avoid unnecessary getter methods that simply return properties from constructor parameters (`@blumintinc/blumint/no-passthrough-getters`)
+# Disallow passthrough getters that merely mirror constructor params
 
-💼 This rule is enabled in the ✅ `recommended` config.
+Rule ID: `@blumintinc/blumint/no-passthrough-getters`
+
+💼 Enabled in ✅ `recommended` config • 🔧 Not fixable • 💭 No type info required
 
 <!-- end auto-generated rule header -->
 
@@ -65,12 +67,13 @@ export class MatchAdmin {
     return this.settings.otherResults || [];
   }
 
-  // Getter with type assertion - allowed
+  // Getter with type assertion - allowed (provides a safer, narrowed API surface)
   private get typedResults(): ValidResult[] {
     return this.settings.otherResults as ValidResult[];
   }
 
   // Getter accessing parent class property - allowed
+  // (override for access control or to normalize/validate parent value)
   private get parentProperty() {
     return super.parentProperty;
   }

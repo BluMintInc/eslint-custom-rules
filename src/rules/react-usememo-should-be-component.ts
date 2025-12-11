@@ -1,7 +1,15 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'useMemoShouldBeComponent';
+
+const ARRAY_RETURNING_METHODS = new Set([
+  'map',
+  'flatMap',
+  'filter',
+  'concat',
+  'slice',
+]);
 
 /**
  * Checks if a node is a JSX element or fragment
@@ -30,536 +38,126 @@ const isJsxElement = (node: TSESTree.Node | null): boolean => {
 };
 
 /**
- * Checks if a variable is used as a prop value in a JSX element
+ * True if the resolved variable is referenced inside a JSX prop (attribute or spread).
  */
 const isUsedAsComponentProp = (
+  context: TSESLint.RuleContext<'useMemoShouldBeComponent', []>,
   variableName: string,
   node: TSESTree.Node,
 ): boolean => {
-  // Find the function component that contains this node
-  let currentNode: TSESTree.Node | undefined = node;
-  let functionNode: TSESTree.Node | undefined;
-
-  // Walk up the AST to find the function component
-  while (currentNode.parent) {
-    currentNode = currentNode.parent;
+  // Find containing function for proper scope acquisition
+  let current: TSESTree.Node | undefined = node;
+  let fn:
+    | TSESTree.ArrowFunctionExpression
+    | TSESTree.FunctionExpression
+    | TSESTree.FunctionDeclaration
+    | undefined;
+  while (current?.parent) {
+    current = current.parent;
     if (
-      currentNode.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-      currentNode.type === AST_NODE_TYPES.FunctionDeclaration ||
-      currentNode.type === AST_NODE_TYPES.FunctionExpression
+      current.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+      current.type === AST_NODE_TYPES.FunctionDeclaration ||
+      current.type === AST_NODE_TYPES.FunctionExpression
     ) {
-      functionNode = currentNode;
+      fn = current;
       break;
     }
   }
 
-  if (!functionNode) {
-    return false;
+  const sourceCode = context.getSourceCode();
+  const scopeManager = sourceCode.scopeManager;
+  const scope =
+    scopeManager &&
+    ((fn && scopeManager.acquire(fn)) || scopeManager.acquire(node as any));
+  if (!scopeManager || !scope) {
+    return true;
   }
 
-  // Track all variables that eventually flow to JSX props
-  const jsxPropVariables = new Set<string>();
+  const variable =
+    scope.variables.find((v) => v.name === variableName) ??
+    scope.upper?.variables.find((v) => v.name === variableName) ??
+    null;
+  if (!variable) {
+    return true;
+  }
 
-  /**
-   * Recursively analyze the function body to find all variables that flow to JSX props
-   */
-  const analyzeNode = (searchNode: TSESTree.Node) => {
-    if (!searchNode) return;
-
-    // Check JSX attributes for direct variable usage
-    if (searchNode.type === AST_NODE_TYPES.JSXAttribute && searchNode.value) {
-      if (searchNode.value.type === AST_NODE_TYPES.JSXExpressionContainer) {
-        extractVariablesFromExpression(searchNode.value.expression);
-      }
-    }
-
-    // Check JSX spread attributes
-    if (searchNode.type === AST_NODE_TYPES.JSXSpreadAttribute) {
-      extractVariablesFromExpression(searchNode.argument);
-    }
-
-    // Check JSX children - but only if it's NOT a JSX attribute value
-    if (searchNode.type === AST_NODE_TYPES.JSXExpressionContainer) {
-      // Skip if this is a JSX attribute value
+  for (const ref of variable.references) {
+    let p: TSESTree.Node | null =
+      (ref.identifier.parent as TSESTree.Node | null) ?? null;
+    while (p) {
       if (
-        searchNode.parent &&
-        searchNode.parent.type === AST_NODE_TYPES.JSXAttribute
+        p.type === AST_NODE_TYPES.JSXAttribute ||
+        p.type === AST_NODE_TYPES.JSXSpreadAttribute
       ) {
-        return; // This is a prop, not children
-      }
-
-      // Skip if this is a JSX spread attribute
-      if (
-        searchNode.parent &&
-        searchNode.parent.type === AST_NODE_TYPES.JSXSpreadAttribute
-      ) {
-        return; // This is a spread prop, not children
-      }
-
-      // This is JSX children, so we don't extract variables for prop detection
-      return;
-    }
-
-    // Recursively analyze child nodes
-    for (const key in searchNode) {
-      if (key === 'parent') continue;
-
-      const child = (searchNode as any)[key];
-      if (child && typeof child === 'object') {
-        if (Array.isArray(child)) {
-          child.forEach((item) => {
-            if (item && typeof item === 'object') {
-              analyzeNode(item);
-            }
-          });
-        } else {
-          analyzeNode(child);
-        }
-      }
-    }
-  };
-
-  /**
-   * Extract variables from an expression that could flow to JSX props
-   */
-  const extractVariablesFromExpression = (
-    expr: TSESTree.Expression | TSESTree.JSXEmptyExpression | null,
-  ) => {
-    if (!expr) return;
-
-    // Skip JSX empty expressions
-    if (expr.type === AST_NODE_TYPES.JSXEmptyExpression) {
-      return;
-    }
-
-    // Direct identifier
-    if (expr.type === AST_NODE_TYPES.Identifier) {
-      jsxPropVariables.add(expr.name);
-      return;
-    }
-
-    // Conditional expression: condition ? a : b
-    if (expr.type === AST_NODE_TYPES.ConditionalExpression) {
-      extractVariablesFromExpression(expr.consequent);
-      extractVariablesFromExpression(expr.alternate);
-      return;
-    }
-
-    // Logical expression: a && b, a || b
-    if (expr.type === AST_NODE_TYPES.LogicalExpression) {
-      extractVariablesFromExpression(expr.left);
-      extractVariablesFromExpression(expr.right);
-      return;
-    }
-
-    // Object expression: {prop: variable}
-    if (expr.type === AST_NODE_TYPES.ObjectExpression) {
-      for (const prop of expr.properties) {
-        if (prop.type === AST_NODE_TYPES.Property && prop.value) {
-          extractVariablesFromExpression(prop.value as TSESTree.Expression);
-        }
-        if (prop.type === AST_NODE_TYPES.SpreadElement) {
-          extractVariablesFromExpression(prop.argument);
-        }
-      }
-      return;
-    }
-
-    // Array expression: [variable, ...]
-    if (expr.type === AST_NODE_TYPES.ArrayExpression) {
-      for (const element of expr.elements) {
-        if (element && element.type !== AST_NODE_TYPES.SpreadElement) {
-          extractVariablesFromExpression(element);
-        } else if (element && element.type === AST_NODE_TYPES.SpreadElement) {
-          extractVariablesFromExpression(element.argument);
-        }
-      }
-      return;
-    }
-
-    // Call expression: func(variable)
-    if (expr.type === AST_NODE_TYPES.CallExpression) {
-      // For now, don't extract variables from function calls
-      // This is a conservative approach to avoid false positives
-      return;
-    }
-
-    // Member expression: obj.prop
-    if (expr.type === AST_NODE_TYPES.MemberExpression) {
-      extractVariablesFromExpression(expr.object);
-      return;
-    }
-  };
-
-  /**
-   * Find a function definition by name in the current scope
-   */
-  const findFunctionDefinition = (
-    functionName: string,
-    contextNode: TSESTree.Node,
-  ): TSESTree.Node | null => {
-    // Walk up to find the containing function/block scope
-    let current: TSESTree.Node | undefined = contextNode;
-    while (current && current.parent) {
-      current = current.parent;
-      if (
-        current.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-        current.type === AST_NODE_TYPES.FunctionDeclaration ||
-        current.type === AST_NODE_TYPES.FunctionExpression ||
-        current.type === AST_NODE_TYPES.BlockStatement
-      ) {
-        break;
-      }
-    }
-
-    if (!current) return null;
-
-    // Search for function declarations/expressions in this scope
-    const searchInNode = (node: TSESTree.Node): TSESTree.Node | null => {
-      // Variable declarator with function expression
-      if (
-        node.type === AST_NODE_TYPES.VariableDeclarator &&
-        node.id.type === AST_NODE_TYPES.Identifier &&
-        node.id.name === functionName &&
-        node.init &&
-        (node.init.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-          node.init.type === AST_NODE_TYPES.FunctionExpression)
-      ) {
-        return node.init;
-      }
-
-      // Function declaration
-      if (
-        node.type === AST_NODE_TYPES.FunctionDeclaration &&
-        node.id &&
-        node.id.name === functionName
-      ) {
-        return node;
-      }
-
-      // Recursively search child nodes
-      for (const key in node) {
-        if (key === 'parent') continue;
-
-        const child = (node as any)[key];
-        if (child && typeof child === 'object') {
-          if (Array.isArray(child)) {
-            for (const item of child) {
-              if (item && typeof item === 'object') {
-                const result = searchInNode(item);
-                if (result) return result;
-              }
-            }
-          } else {
-            const result = searchInNode(child);
-            if (result) return result;
-          }
-        }
-      }
-
-      return null;
-    };
-
-    return searchInNode(current);
-  };
-
-  /**
-   * Check if a function returns JSX and uses its arguments as props
-   */
-  const functionReturnsJSXWithArgsAsProps = (
-    functionNode: TSESTree.Node,
-  ): boolean => {
-    if (
-      functionNode.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
-      functionNode.type !== AST_NODE_TYPES.FunctionExpression &&
-      functionNode.type !== AST_NODE_TYPES.FunctionDeclaration
-    ) {
-      return false;
-    }
-
-    // Get the function body
-    let body: TSESTree.Node;
-    if (functionNode.type === AST_NODE_TYPES.FunctionDeclaration) {
-      body = functionNode.body;
-    } else {
-      body = functionNode.body;
-    }
-
-    // Check if the function returns JSX
-    const returnsJSX = (node: TSESTree.Node): boolean => {
-      if (node.type === AST_NODE_TYPES.ReturnStatement && node.argument) {
-        return isJsxElement(node.argument);
-      }
-
-      if (isJsxElement(node)) {
         return true;
       }
-
-      // Recursively check child nodes
-      for (const key in node) {
-        if (key === 'parent') continue;
-
-        const child = (node as any)[key];
-        if (child && typeof child === 'object') {
-          if (Array.isArray(child)) {
-            for (const item of child) {
-              if (item && typeof item === 'object' && returnsJSX(item)) {
-                return true;
-              }
-            }
-          } else if (returnsJSX(child)) {
-            return true;
-          }
-        }
-      }
-
-      return false;
-    };
-
-    return returnsJSX(body);
-  };
-
-  // Analyze the function body to find all variables used in JSX props
-  if (functionNode.type === AST_NODE_TYPES.ArrowFunctionExpression) {
-    analyzeNode(functionNode.body);
-  } else if (
-    functionNode.type === AST_NODE_TYPES.FunctionDeclaration ||
-    functionNode.type === AST_NODE_TYPES.FunctionExpression
-  ) {
-    analyzeNode(functionNode.body);
+      p = p.parent as TSESTree.Node | null;
+    }
   }
 
-  // Special case: Check for function calls in return statements that use variables as arguments
-  // and the function returns JSX with those arguments as props
-  const checkFunctionCallsInReturns = (searchNode: TSESTree.Node) => {
-    if (
-      searchNode.type === AST_NODE_TYPES.ReturnStatement &&
-      searchNode.argument
-    ) {
-      if (searchNode.argument.type === AST_NODE_TYPES.CallExpression) {
-        const callExpr = searchNode.argument;
-        if (callExpr.callee.type === AST_NODE_TYPES.Identifier) {
-          const functionName = callExpr.callee.name;
+  return false;
+};
 
-          // Look for the function definition
-          if (functionNode) {
-            const functionDef = findFunctionDefinition(
-              functionName,
-              functionNode,
-            );
-            if (functionDef && functionReturnsJSXWithArgsAsProps(functionDef)) {
-              // This function returns JSX and uses its arguments as props
-              for (const arg of callExpr.arguments) {
-                if (arg.type !== AST_NODE_TYPES.SpreadElement) {
-                  extractVariablesFromExpression(arg);
-                } else {
-                  extractVariablesFromExpression(arg.argument);
-                }
-              }
-            }
-          }
-        }
-      }
+const isUsedAsJsxChild = (
+  context: TSESLint.RuleContext<'useMemoShouldBeComponent', []>,
+  variableName: string,
+  node: TSESTree.Node,
+): boolean => {
+  // Traverse the nearest function (or program) to see if the identifier appears
+  // as a JSX child expression.
+  const sourceCode = context.getSourceCode();
+
+  let container: TSESTree.Node = sourceCode.ast;
+  let current: TSESTree.Node | undefined = node;
+  while (current?.parent) {
+    current = current.parent;
+    if (
+      current.type === AST_NODE_TYPES.FunctionDeclaration ||
+      current.type === AST_NODE_TYPES.FunctionExpression ||
+      current.type === AST_NODE_TYPES.ArrowFunctionExpression
+    ) {
+      container = current;
+      break;
+    }
+  }
+
+  let found = false;
+  const visited = new Set<TSESTree.Node>();
+  const visit = (n: TSESTree.Node) => {
+    if (found || visited.has(n)) return;
+    visited.add(n);
+
+    if (
+      n.type === AST_NODE_TYPES.JSXExpressionContainer &&
+      n.expression.type === AST_NODE_TYPES.Identifier &&
+      n.expression.name === variableName &&
+      n.parent &&
+      (n.parent.type === AST_NODE_TYPES.JSXElement ||
+        n.parent.type === AST_NODE_TYPES.JSXFragment) &&
+      n.parent.children.includes(n)
+    ) {
+      found = true;
+      return;
     }
 
-    // Recursively check child nodes
-    for (const key in searchNode) {
+    for (const key of Object.keys(n) as (keyof typeof n)[]) {
       if (key === 'parent') continue;
-
-      const child = (searchNode as any)[key];
-      if (child && typeof child === 'object') {
-        if (Array.isArray(child)) {
-          child.forEach((item) => {
-            if (item && typeof item === 'object') {
-              checkFunctionCallsInReturns(item);
-            }
-          });
-        } else {
-          checkFunctionCallsInReturns(child);
+      const value = (n as any)[key];
+      if (!value) continue;
+      if (Array.isArray(value)) {
+        for (const child of value) {
+          if (child && typeof child.type === 'string') {
+            visit(child);
+          }
         }
+      } else if (value && typeof value.type === 'string') {
+        visit(value);
       }
     }
   };
 
-  // Check for function calls in return statements
-  if (functionNode.type === AST_NODE_TYPES.ArrowFunctionExpression) {
-    checkFunctionCallsInReturns(functionNode.body);
-  } else if (
-    functionNode.type === AST_NODE_TYPES.FunctionDeclaration ||
-    functionNode.type === AST_NODE_TYPES.FunctionExpression
-  ) {
-    checkFunctionCallsInReturns(functionNode.body);
-  }
-
-  // Now we need to trace variable assignments to see if our target variable flows to any JSX prop variable
-  const variableFlows = new Map<string, Set<string>>();
-
-  /**
-   * Analyze variable assignments and flows
-   */
-  const analyzeVariableFlows = (searchNode: TSESTree.Node) => {
-    if (!searchNode) return;
-
-    // Variable declaration: const x = y
-    if (
-      searchNode.type === AST_NODE_TYPES.VariableDeclarator &&
-      searchNode.id.type === AST_NODE_TYPES.Identifier &&
-      searchNode.init
-    ) {
-      const targetVar = searchNode.id.name;
-      const sourceVars = extractVariableNames(searchNode.init);
-      if (!variableFlows.has(targetVar)) {
-        variableFlows.set(targetVar, new Set());
-      }
-      sourceVars.forEach((sourceVar) => {
-        variableFlows.get(targetVar)!.add(sourceVar);
-      });
-    }
-
-    // Object destructuring: const {a, b} = obj
-    if (
-      searchNode.type === AST_NODE_TYPES.VariableDeclarator &&
-      searchNode.id.type === AST_NODE_TYPES.ObjectPattern &&
-      searchNode.init
-    ) {
-      const sourceVars = extractVariableNames(searchNode.init);
-      for (const prop of searchNode.id.properties) {
-        if (
-          prop.type === AST_NODE_TYPES.Property &&
-          prop.value.type === AST_NODE_TYPES.Identifier
-        ) {
-          const targetVar = prop.value.name;
-          if (!variableFlows.has(targetVar)) {
-            variableFlows.set(targetVar, new Set());
-          }
-          sourceVars.forEach((sourceVar) => {
-            variableFlows.get(targetVar)!.add(sourceVar);
-          });
-        }
-      }
-    }
-
-    // Array destructuring: const [a, b] = arr
-    if (
-      searchNode.type === AST_NODE_TYPES.VariableDeclarator &&
-      searchNode.id.type === AST_NODE_TYPES.ArrayPattern &&
-      searchNode.init
-    ) {
-      const sourceVars = extractVariableNames(searchNode.init);
-      for (const element of searchNode.id.elements) {
-        if (element && element.type === AST_NODE_TYPES.Identifier) {
-          const targetVar = element.name;
-          if (!variableFlows.has(targetVar)) {
-            variableFlows.set(targetVar, new Set());
-          }
-          sourceVars.forEach((sourceVar) => {
-            variableFlows.get(targetVar)!.add(sourceVar);
-          });
-        }
-      }
-    }
-
-    // Recursively analyze child nodes
-    for (const key in searchNode) {
-      if (key === 'parent') continue;
-
-      const child = (searchNode as any)[key];
-      if (child && typeof child === 'object') {
-        if (Array.isArray(child)) {
-          child.forEach((item) => {
-            if (item && typeof item === 'object') {
-              analyzeVariableFlows(item);
-            }
-          });
-        } else {
-          analyzeVariableFlows(child);
-        }
-      }
-    }
-  };
-
-  /**
-   * Extract variable names from an expression
-   */
-  const extractVariableNames = (expr: TSESTree.Expression): string[] => {
-    const variables: string[] = [];
-
-    const extract = (node: TSESTree.Node) => {
-      if (node.type === AST_NODE_TYPES.Identifier) {
-        variables.push(node.name);
-      } else if (node.type === AST_NODE_TYPES.ObjectExpression) {
-        for (const prop of node.properties) {
-          if (prop.type === AST_NODE_TYPES.Property && prop.value) {
-            extract(prop.value);
-          }
-          if (prop.type === AST_NODE_TYPES.SpreadElement) {
-            extract(prop.argument);
-          }
-        }
-      } else if (node.type === AST_NODE_TYPES.ArrayExpression) {
-        for (const element of node.elements) {
-          if (element) {
-            extract(element);
-          }
-        }
-      } else {
-        // Recursively check other node types
-        for (const key in node) {
-          if (key === 'parent') continue;
-          const child = (node as any)[key];
-          if (child && typeof child === 'object') {
-            if (Array.isArray(child)) {
-              child.forEach((item) => {
-                if (item && typeof item === 'object') {
-                  extract(item);
-                }
-              });
-            } else {
-              extract(child);
-            }
-          }
-        }
-      }
-    };
-
-    extract(expr);
-    return variables;
-  };
-
-  // Analyze variable flows in the function
-  if (functionNode.type === AST_NODE_TYPES.ArrowFunctionExpression) {
-    analyzeVariableFlows(functionNode.body);
-  } else if (
-    functionNode.type === AST_NODE_TYPES.FunctionDeclaration ||
-    functionNode.type === AST_NODE_TYPES.FunctionExpression
-  ) {
-    analyzeVariableFlows(functionNode.body);
-  }
-
-  // Check if our target variable flows to any JSX prop variable
-  const checkVariableFlow = (
-    varName: string,
-    visited = new Set<string>(),
-  ): boolean => {
-    if (visited.has(varName)) return false;
-    visited.add(varName);
-
-    // Direct usage in JSX prop
-    if (jsxPropVariables.has(varName)) {
-      return true;
-    }
-
-    // Check if any variable that flows from this one is used in JSX props
-    for (const [targetVar, sourceVars] of variableFlows.entries()) {
-      if (sourceVars.has(varName) && checkVariableFlow(targetVar, visited)) {
-        return true;
-      }
-    }
-
-    return false;
-  };
-
-  return checkVariableFlow(variableName);
+  visit(container);
+  return found;
 };
 
 /**
@@ -727,15 +325,7 @@ const containsJsxInFunction = (
       body.callee.type === AST_NODE_TYPES.MemberExpression &&
       body.callee.property.type === AST_NODE_TYPES.Identifier
     ) {
-      const arrayReturningMethods = new Set([
-        'map',
-        'flatMap',
-        'filter',
-        'reduce',
-        'concat',
-        'slice',
-      ]);
-      if (arrayReturningMethods.has(body.callee.property.name)) {
+      if (ARRAY_RETURNING_METHODS.has(body.callee.property.name)) {
         // Returning an array (even if its elements are JSX) should not be flagged
         return false;
       }
@@ -829,15 +419,7 @@ const containsJsxInExpression = (node: TSESTree.Expression): boolean => {
         node.callee.type === AST_NODE_TYPES.MemberExpression &&
         node.callee.property.type === AST_NODE_TYPES.Identifier
       ) {
-        const arrayReturningMethods = new Set([
-          'map',
-          'flatMap',
-          'filter',
-          'reduce',
-          'concat',
-          'slice',
-        ]);
-        if (arrayReturningMethods.has(node.callee.property.name)) {
+      if (ARRAY_RETURNING_METHODS.has(node.callee.property.name)) {
           return false;
         }
       }
@@ -1064,6 +646,11 @@ export const reactUseMemoShouldBeComponent = createRule<[], MessageIds>({
           ) {
             const variableName = node.parent.id.name;
 
+            // Only report when the memoized value is used as a JSX child
+            if (!isUsedAsJsxChild(context, variableName, node)) {
+              return;
+            }
+
             // Check if the variable is used multiple times in the component
             if (isUsedMultipleTimes(variableName, node)) {
               // If the variable is used multiple times, allow it
@@ -1071,7 +658,7 @@ export const reactUseMemoShouldBeComponent = createRule<[], MessageIds>({
             }
 
             // Check if the variable is used as a prop value in a JSX element
-            if (isUsedAsComponentProp(variableName, node)) {
+            if (isUsedAsComponentProp(context, variableName, node)) {
               // If the variable is used as a prop value, allow it
               return;
             }

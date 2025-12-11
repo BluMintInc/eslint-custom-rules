@@ -150,11 +150,11 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
       });
     `,
 
-    // Test: DocSetter with shouldFlatten: false explicitly set
+    // Test: DocSetter with shouldFlatten explicitly enabled
     `
       const explicitSetter = new DocSetter<UserDocument>(
         db.collection('users'),
-        { shouldFlatten: false }
+        { shouldFlatten: true }
       );
 
       await explicitSetter.set({
@@ -506,12 +506,14 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
         await userSetter.setAll([
           {
             id: 'user1',
-            name: 'Alice'
+            data: { name: 'Alice' }
           },
           {
             id: 'user2',
-            profile: {
-              settings: { theme: 'dark' }
+            data: {
+              profile: {
+                settings: { theme: 'dark' }
+              }
             }
           }
         ]);
@@ -1059,25 +1061,29 @@ ruleTesterTs.run('prefer-document-flattening', preferDocumentFlattening, {
         await mixedSetAllSetter.setAll([
           {
             id: 'doc1',
-            simple: 'value'
+            data: { simple: 'value' }
           },
           {
             id: 'doc2',
-            complex: {
-              nested: {
-                deeply: 'value'
+            data: {
+              complex: {
+                nested: {
+                  deeply: 'value'
+                }
               }
             }
           },
           {
             id: 'doc3',
-            array: [
-              {
-                item: {
-                  nested: 'value'
+            data: {
+              array: [
+                {
+                  item: {
+                    nested: 'value'
+                  }
                 }
-              }
-            ]
+              ]
+            }
           }
         ]);
       `,
