@@ -171,6 +171,48 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
       return false;
     }
 
+    function isIdentifierTarget(
+      node: TSESTree.Node,
+    ): node is TSESTree.Identifier {
+      return node.type === AST_NODE_TYPES.Identifier;
+    }
+
+    function isSkippedClassMemberAccess(
+      memberExpression: TSESTree.MemberExpression,
+    ): boolean {
+      return (
+        isClassInstance(memberExpression, context) ||
+        isStaticClassMember(memberExpression, context)
+      );
+    }
+
+    function isThisMemberInClassMethod(
+      memberExpression: TSESTree.MemberExpression,
+    ): boolean {
+      return (
+        memberExpression.object.type === AST_NODE_TYPES.ThisExpression &&
+        isInsideClassMethod(memberExpression)
+      );
+    }
+
+    function canDestructureObjectProperty(
+      memberExpression: TSESTree.MemberExpression,
+      identifier: TSESTree.Identifier,
+    ): boolean {
+      if (!options.object) {
+        return false;
+      }
+
+      if (options.enforceForRenamedProperties) {
+        return true;
+      }
+
+      return isMatchingPropertyName(
+        memberExpression.property,
+        identifier.name,
+      );
+    }
+
     /**
      * Check if destructuring should be used for this node
      */
@@ -178,37 +220,21 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
       node: TSESTree.MemberExpression,
       leftNode: TSESTree.Node,
     ): boolean {
-      if (leftNode.type !== AST_NODE_TYPES.Identifier) {
+      if (!isIdentifierTarget(leftNode)) {
         return false;
       }
 
       // Skip if this is a class instance or static class member
-      if (
-        isClassInstance(node, context) ||
-        isStaticClassMember(node, context)
-      ) {
+      if (isSkippedClassMemberAccess(node)) {
         return false;
       }
 
       // Skip if the object is 'this' and we're inside a class method
-      if (
-        node.object.type === AST_NODE_TYPES.ThisExpression &&
-        isInsideClassMethod(node)
-      ) {
+      if (isThisMemberInClassMethod(node)) {
         return false;
       }
 
-      // Check object destructuring
-      if (options.object) {
-        if (options.enforceForRenamedProperties) {
-          return true;
-        }
-
-        // Only suggest destructuring when property name matches variable name
-        return isMatchingPropertyName(node.property, leftNode.name);
-      }
-
-      return false;
+      return canDestructureObjectProperty(node, leftNode);
     }
 
     /**
