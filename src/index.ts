@@ -79,6 +79,7 @@ import { reactUseMemoShouldBeComponent } from './rules/react-usememo-should-be-c
 import { noUnnecessaryVerbSuffix } from './rules/no-unnecessary-verb-suffix';
 import { enforceAssertSafeObjectKey } from './rules/enforce-assert-safe-object-key';
 import { enforceObjectLiteralAsConst } from './rules/enforce-object-literal-as-const';
+import { enforceStableHashSpreadProps } from './rules/enforce-stable-hash-spread-props';
 import { enforcePositiveNaming } from './rules/enforce-positive-naming';
 import { noTypeAssertionReturns } from './rules/no-type-assertion-returns';
 import { preferUtilityFunctionOverPrivateStatic } from './rules/prefer-utility-function-over-private-static';
@@ -273,6 +274,7 @@ module.exports = {
         '@blumintinc/blumint/prefer-next-dynamic': 'error',
         '@blumintinc/blumint/no-redundant-usecallback-wrapper': 'error',
         '@blumintinc/blumint/no-array-length-in-deps': 'error',
+        '@blumintinc/blumint/enforce-stable-hash-spread-props': 'error',
         '@blumintinc/blumint/prefer-use-deep-compare-memo': 'error',
         '@blumintinc/blumint/no-circular-references': 'error',
         '@blumintinc/blumint/no-try-catch-already-exists-in-transaction':
@@ -374,6 +376,7 @@ module.exports = {
     'no-unnecessary-verb-suffix': noUnnecessaryVerbSuffix,
     'enforce-assert-safe-object-key': enforceAssertSafeObjectKey,
     'enforce-object-literal-as-const': enforceObjectLiteralAsConst,
+    'enforce-stable-hash-spread-props': enforceStableHashSpreadProps,
     'enforce-positive-naming': enforcePositiveNaming,
     'no-type-assertion-returns': noTypeAssertionReturns,
     'prefer-utility-function-over-private-static':
