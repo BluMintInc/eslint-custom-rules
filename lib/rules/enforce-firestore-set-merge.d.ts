@@ -1,0 +1,1 @@
+export declare const enforceFirestoreSetMerge: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"preferSetMerge", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;

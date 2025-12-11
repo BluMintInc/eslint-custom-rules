@@ -1,0 +1,1 @@
+export declare const noMarginProperties: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"noMarginProperties", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;
