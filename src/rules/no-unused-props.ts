@@ -18,12 +18,179 @@ export const noUnusedProps = createRule({
   },
   defaultOptions: [],
   create(context) {
+    const filename =
+      (context as { filename?: string; getFilename(): string }).filename ??
+      context.getFilename();
+    const ruleSettings =
+      ((context.settings && context.settings['no-unused-props']) as {
+        reactLikeExtensions?: string[];
+      }) ?? {};
+    const reactLikeExtensions = (ruleSettings.reactLikeExtensions ??
+      ['.tsx']).map((ext) => ext.toLowerCase());
+    const fileExtension = filename.includes('.')
+      ? filename.slice(filename.lastIndexOf('.')).toLowerCase()
+      : '';
+    const isTsxFile = reactLikeExtensions.includes(fileExtension);
+    let hasJsxInFile = false;
+
+    const shouldCheckFile = () => isTsxFile || hasJsxInFile;
+
+    const UTILITY_TYPES = new Set([
+      'Pick',
+      'Omit',
+      'Partial',
+      'Required',
+      'Record',
+      'Exclude',
+      'Extract',
+      'NonNullable',
+      'ReturnType',
+      'InstanceType',
+      'ThisType',
+    ]);
+
     const propsTypes: Map<string, Record<string, TSESTree.Node>> = new Map();
-    const usedProps: Map<string, Set<string>> = new Map();
     // Track which spread types have been used in a component
     const usedSpreadTypes: Map<string, Set<string>> = new Map();
-    let currentComponent: { node: TSESTree.Node; typeName: string } | null =
-      null;
+    const componentsToCheck: Array<{
+      typeName: string;
+      used: Set<string>;
+      restUsed: boolean;
+    }> = [];
+    let currentComponent:
+      | {
+          node: TSESTree.Node;
+          typeName: string;
+          used: Set<string>;
+          restUsed: boolean;
+        }
+      | null = null;
+
+    const clearState = () => {
+      propsTypes.clear();
+      usedSpreadTypes.clear();
+      componentsToCheck.length = 0;
+      currentComponent = null;
+    };
+
+    const isGenericTypeSpread = (prop: string) =>
+      prop.startsWith('...') && prop.length === 4 && /^\.\.\.[A-Z]$/.test(prop);
+
+    const hasRestSpreadUsage = (used: Set<string>, restUsed: boolean) => {
+      if (restUsed) {
+        return true;
+      }
+
+      for (const usedProp of used) {
+        if (usedProp.startsWith('...')) {
+          return true;
+        }
+      }
+
+      return false;
+    };
+
+    const isAnyPropFromSpreadTypeUsed = (
+      spreadTypeName: string,
+      used: Set<string>,
+    ) => {
+      const spreadTypeProps = usedSpreadTypes.get(spreadTypeName);
+      if (!spreadTypeProps) {
+        return false;
+      }
+
+      for (const spreadProp of spreadTypeProps) {
+        if (used.has(spreadProp)) {
+          return true;
+        }
+      }
+
+      return false;
+    };
+
+    const shouldSkipSpreadType = (
+      prop: string,
+      hasRestSpread: boolean,
+      used: Set<string>,
+    ) => {
+      if (hasRestSpread) {
+        return true;
+      }
+
+      const spreadTypeName = prop.substring(3);
+
+      if (UTILITY_TYPES.has(spreadTypeName)) {
+        return true;
+      }
+
+      return isAnyPropFromSpreadTypeUsed(spreadTypeName, used);
+    };
+
+    const shouldSkipPropFromSpreadType = (
+      prop: string,
+      currentTypeName: string,
+      used: Set<string>,
+    ) => {
+      for (const [spreadType, props] of usedSpreadTypes.entries()) {
+        if (spreadType === currentTypeName) continue;
+
+        if (!props.has(prop)) {
+          continue;
+        }
+
+        for (const spreadProp of props) {
+          if (used.has(spreadProp)) {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    };
+
+    const reportUnusedProps = (
+      typeName: string,
+      used: Set<string>,
+      restUsed: boolean,
+    ) => {
+      const propsType = propsTypes.get(typeName);
+
+      if (!propsType) {
+        return;
+      }
+
+      const hasRestSpread = hasRestSpreadUsage(used, restUsed);
+
+      Object.keys(propsType).forEach((prop) => {
+        if (!used.has(prop)) {
+          // For imported types (props that start with '...'), only report if there's no rest spread operator
+          // This allows imported types to be used without being flagged when properly forwarded
+          // Don't report unused props if:
+          // 1. It's a spread type and there's a rest spread operator, OR
+          // 2. It's a property from a spread type and any property from that spread type is used, OR
+          // 3. It's a spread type and any of its properties are used in the component
+
+          let shouldReport = true;
+
+          // Skip reporting for generic type parameters (T, K, etc.)
+          if (isGenericTypeSpread(prop)) {
+            shouldReport = false;
+          } else if (prop.startsWith('...')) {
+            shouldReport = !shouldSkipSpreadType(prop, hasRestSpread, used);
+          } else {
+            shouldReport = !shouldSkipPropFromSpreadType(prop, typeName, used);
+          }
+
+          if (shouldReport) {
+            context.report({
+              node: propsType[prop],
+              messageId: 'unusedProp',
+              data: { propName: prop },
+            });
+          }
+        }
+      });
+    };
 
     return {
       TSTypeAliasDeclaration(node) {
@@ -202,21 +369,6 @@ export const noUnusedProps = createRule({
               });
             } else if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
               if (typeNode.typeName.type === AST_NODE_TYPES.Identifier) {
-                // List of TypeScript utility types that transform other types
-                const utilityTypes = [
-                  'Pick',
-                  'Omit',
-                  'Partial',
-                  'Required',
-                  'Record',
-                  'Exclude',
-                  'Extract',
-                  'NonNullable',
-                  'ReturnType',
-                  'InstanceType',
-                  'ThisType',
-                ];
-
                 // Skip checking for utility type parameters (T, K, etc.) as they're not actual props
                 if (
                   typeNode.typeName.name.length === 1 &&
@@ -283,7 +435,7 @@ export const noUnusedProps = createRule({
                   handleOmitType(baseType, omittedProps);
                 } else if (
                   // Handle other utility types like Required, Partial, etc.
-                  utilityTypes.includes(typeNode.typeName.name) &&
+                  UTILITY_TYPES.has(typeNode.typeName.name) &&
                   typeNode.typeParameters
                 ) {
                   // For utility types like Required<T>, Partial<T>, we need to handle the base type
@@ -370,8 +522,8 @@ export const noUnusedProps = createRule({
               const typeName =
                 param.typeAnnotation.typeAnnotation.typeName.name;
               if (typeName.endsWith('Props')) {
-                currentComponent = { node, typeName };
                 const used = new Set<string>();
+                let restUsed = false;
                 param.properties.forEach((prop) => {
                   if (
                     prop.type === AST_NODE_TYPES.Property &&
@@ -384,6 +536,7 @@ export const noUnusedProps = createRule({
                   ) {
                     // Handle rest spread operator {...rest}
                     // When a rest operator is used, all remaining props are considered used
+                    restUsed = true;
                     const propsType = propsTypes.get(typeName);
                     if (propsType) {
                       Object.keys(propsType).forEach((key) => {
@@ -394,7 +547,7 @@ export const noUnusedProps = createRule({
                     }
                   }
                 });
-                usedProps.set(typeName, used);
+                currentComponent = { node, typeName, used, restUsed };
               }
             }
           }
@@ -403,109 +556,31 @@ export const noUnusedProps = createRule({
 
       'VariableDeclaration:exit'(node) {
         if (currentComponent?.node === node) {
-          const { typeName } = currentComponent;
-          const propsType = propsTypes.get(typeName);
-          const used = usedProps.get(typeName);
-
-          if (propsType && used) {
-            Object.keys(propsType).forEach((prop) => {
-              if (!used.has(prop)) {
-                // For imported types (props that start with '...'), only report if there's no rest spread operator
-                // This allows imported types to be used without being flagged when properly forwarded
-                const hasRestSpread = Array.from(used.values()).some(
-                  (usedProp) => usedProp.startsWith('...'),
-                );
-
-                // Don't report unused props if:
-                // 1. It's a spread type and there's a rest spread operator, OR
-                // 2. It's a property from a spread type and any property from that spread type is used, OR
-                // 3. It's a spread type and any of its properties are used in the component
-
-                let shouldReport = true;
-
-                // List of TypeScript utility types that should not be reported
-                const utilityTypes = [
-                  'Pick',
-                  'Partial',
-                  'Required',
-                  'Record',
-                  'Exclude',
-                  'Extract',
-                  'NonNullable',
-                  'ReturnType',
-                  'InstanceType',
-                  'ThisType',
-                ];
-
-                // Skip reporting for generic type parameters (T, K, etc.)
-                if (
-                  prop.startsWith('...') &&
-                  prop.length === 4 &&
-                  /^\.\.\.([A-Z])$/.test(prop)
-                ) {
-                  // This is a generic type parameter like ...T, ...K, etc.
-                  shouldReport = false;
-                } else if (prop.startsWith('...') && hasRestSpread) {
-                  shouldReport = false;
-                } else if (prop.startsWith('...')) {
-                  // For spread types like "...GroupInfoBasic", check if any properties from this type are used
-                  const spreadTypeName = prop.substring(3); // Remove the "..." prefix
-
-                  // Skip reporting for TypeScript utility types
-                  if (utilityTypes.includes(spreadTypeName)) {
-                    shouldReport = false;
-                  } else {
-                    // Get the properties that belong to this spread type
-                    const spreadTypeProps = usedSpreadTypes.get(spreadTypeName);
-
-                    if (spreadTypeProps) {
-                      // Check if any property from this spread type is being used in the component
-                      const anyPropFromSpreadTypeUsed = Array.from(
-                        spreadTypeProps,
-                      ).some((spreadProp) => used.has(spreadProp));
-
-                      if (anyPropFromSpreadTypeUsed) {
-                        shouldReport = false;
-                      }
-                    }
-                  }
-                } else {
-                  // Check if this prop might be from a spread type that has other properties being used
-                  for (const [spreadType, props] of usedSpreadTypes.entries()) {
-                    // Skip the current props type
-                    if (spreadType === typeName) continue;
-
-                    // If this prop is from a spread type
-                    if (props.has(prop)) {
-                      // Check if any other prop from this spread type is being used
-                      const anyPropFromSpreadTypeUsed = Array.from(props).some(
-                        (spreadProp) => used.has(spreadProp),
-                      );
-
-                      if (anyPropFromSpreadTypeUsed) {
-                        shouldReport = false;
-                        break;
-                      }
-                    }
-                  }
-                }
-
-                if (shouldReport) {
-                  context.report({
-                    node: propsType[prop],
-                    messageId: 'unusedProp',
-                    data: { propName: prop },
-                  });
-                }
-              }
-            });
-          }
-
-          // Reset state for this component
-          propsTypes.delete(typeName);
-          usedProps.delete(typeName);
+          const { typeName, used, restUsed } = currentComponent;
+          componentsToCheck.push({ typeName, used, restUsed });
           currentComponent = null;
         }
+      },
+
+      JSXElement() {
+        hasJsxInFile = true;
+      },
+
+      JSXFragment() {
+        hasJsxInFile = true;
+      },
+
+      'Program:exit'() {
+        if (!shouldCheckFile()) {
+          clearState();
+          return;
+        }
+
+        componentsToCheck.forEach(({ typeName, used, restUsed }) =>
+          reportUnusedProps(typeName, used, restUsed),
+        );
+
+        clearState();
       },
     };
   },
