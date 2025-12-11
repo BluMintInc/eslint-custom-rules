@@ -30,8 +30,8 @@ function isPascalCase(name: string): boolean {
 function matchesPattern(name: string, pattern: string): boolean {
   if (pattern === '*') return true;
   if (pattern.includes('*')) {
-    const wildcardCount = (pattern.match(/\*/g) || []).length;
-    if (wildcardCount > 2) {
+    const patternComplexity = (pattern.match(/\*/g) || []).length;
+    if (patternComplexity > 2) {
       return false;
     }
     const escaped = pattern
@@ -480,14 +480,7 @@ export const noInlineComponentProp = createRule<Options, MessageIds>({
           def.type !== 'Parameter' &&
           def.type !== 'Type',
       );
-      if (
-        !definition ||
-        definition.type === 'ImportBinding' ||
-        definition.type === 'Parameter' ||
-        definition.type === 'Type'
-      ) {
-        return;
-      }
+      if (!definition) return;
       const defNode = definition.node;
       if (
         !defNode ||
