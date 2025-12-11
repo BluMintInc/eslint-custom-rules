@@ -198,10 +198,11 @@ function getIdentifierFromExpression(
   return null;
 }
 
-function isStableHashImported(
+function getStableHashLocalNames(
   sourceCode: TSESLint.SourceCode,
   hashImport: { source: string; importName: string },
-): boolean {
+): string[] {
+  const localNames: string[] = [];
   const program = sourceCode.ast;
   for (const node of program.body) {
     if (
@@ -211,14 +212,21 @@ function isStableHashImported(
       for (const spec of node.specifiers) {
         if (
           spec.type === AST_NODE_TYPES.ImportSpecifier &&
-          spec.local.name === hashImport.importName
+          spec.imported.name === hashImport.importName
         ) {
-          return true;
+          localNames.push(spec.local.name);
         }
       }
     }
   }
-  return false;
+  return localNames;
+}
+
+function isStableHashImported(
+  sourceCode: TSESLint.SourceCode,
+  hashImport: { source: string; importName: string },
+): boolean {
+  return getStableHashLocalNames(sourceCode, hashImport).length > 0;
 }
 
 function getIndentBeforeNode(
@@ -298,16 +306,20 @@ export const enforceStableHashSpreadProps = createRule<Options, MessageIds>({
       source: options.hashImport?.source ?? DEFAULT_HASH_IMPORT.source,
       importName: options.hashImport?.importName ?? DEFAULT_HASH_IMPORT.importName,
     };
+    const existingHashLocalNames = getStableHashLocalNames(sourceCode, hashImport);
+    const userHookNames = new Set<string>(options.hookNames ?? []);
     const allowedHashes = new Set<string>([
+      ...existingHashLocalNames,
       hashImport.importName,
       ...(options.allowedHashFunctions ?? []),
     ]);
     const hookNames = new Set<string>([
       ...DEFAULT_HOOKS,
-      ...(options.hookNames ?? []),
+      ...userHookNames,
     ]);
 
     let importPlanned = false;
+    const hashIdentifier = existingHashLocalNames[0] ?? hashImport.importName;
     const functionStack: FunctionContext[] = [];
 
     function getCurrentComponentContext():
@@ -365,7 +377,8 @@ export const enforceStableHashSpreadProps = createRule<Options, MessageIds>({
         if (!current || !current.isComponent) return;
         const hookName = getHookName(node);
         if (!hookName || !hookNames.has(hookName)) return;
-        if (IGNORED_MEMO_HOOKS.has(hookName)) return;
+        if (IGNORED_MEMO_HOOKS.has(hookName) && !userHookNames.has(hookName))
+          return;
         if (node.arguments.length < 2) return;
 
         const depsArg = node.arguments[node.arguments.length - 1];
@@ -415,7 +428,7 @@ export const enforceStableHashSpreadProps = createRule<Options, MessageIds>({
               fixes.push(
                 fixer.replaceText(
                   targetNode,
-                  `${hashImport.importName}(${original})`,
+                  `${hashIdentifier}(${original})`,
                 ),
               );
             }
@@ -439,7 +452,14 @@ export const enforceStableHashSpreadProps = createRule<Options, MessageIds>({
 
             if (!hasExhaustiveDepsDisable(sourceCode, node, depsArg)) {
               const indent = getIndentBeforeNode(sourceCode, depsArg);
-              const commentText = `\n${indent}// eslint-disable-next-line react-hooks/exhaustive-deps\n${indent}`;
+              const tokenBefore = sourceCode.getTokenBefore(depsArg, {
+                includeComments: true,
+              });
+              const needsLeadingNewline =
+                tokenBefore?.loc.end.line === depsArg.loc.start.line;
+              const commentText = needsLeadingNewline
+                ? `\n${indent}// eslint-disable-next-line react-hooks/exhaustive-deps\n${indent}`
+                : `// eslint-disable-next-line react-hooks/exhaustive-deps\n${indent}`;
               fixes.push(fixer.insertTextBefore(depsArg, commentText));
             }
 

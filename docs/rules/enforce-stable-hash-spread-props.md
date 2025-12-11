@@ -54,8 +54,9 @@ import { stableHash } from 'functions/src/util/hash/stableHash';
 const MyComponent = ({ someProp, ...typographyProps }: Props) => {
   useEffect(() => {
     console.log('typographyProps changed!');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stableHash(typographyProps)]);
+  },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [stableHash(typographyProps)]);
 
   return <Typography {...typographyProps}>Hello</Typography>;
 };

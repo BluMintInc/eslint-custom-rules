@@ -327,6 +327,67 @@ const MyComponent = ({ ...props }) => {
 };
         `,
       },
+      {
+        code: `
+import { stableHash as hash } from 'functions/src/util/hash/stableHash';
+
+const MyComponent = ({ ...restProps }) => {
+  useEffect(() => {}, [restProps]);
+  return <Typography {...restProps} />;
+};
+        `,
+        errors: [{ messageId: 'wrapSpreadPropsWithStableHash' }],
+        output: `
+import { stableHash as hash } from 'functions/src/util/hash/stableHash';
+
+const MyComponent = ({ ...restProps }) => {
+  useEffect(() => {}, 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [hash(restProps)]);
+  return <Typography {...restProps} />;
+};
+        `,
+      },
+      {
+        code: `
+const MyComponent = ({ ...restProps }) => {
+  useEffect(
+    () => {},
+    [restProps],
+  );
+  return <div {...restProps} />;
+};
+        `,
+        errors: [{ messageId: 'wrapSpreadPropsWithStableHash' }],
+        output: `import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const MyComponent = ({ ...restProps }) => {
+  useEffect(
+    () => {},
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stableHash(restProps)],
+  );
+  return <div {...restProps} />;
+};
+        `,
+      },
+      {
+        code: `
+const MyComponent = ({ ...rest }) => {
+  useMemo(() => rest, [rest]);
+};
+        `,
+        options: [{ hookNames: ['useMemo'] }],
+        errors: [{ messageId: 'wrapSpreadPropsWithStableHash' }],
+        output: `import { stableHash } from 'functions/src/util/hash/stableHash';
+
+const MyComponent = ({ ...rest }) => {
+  useMemo(() => rest, 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [stableHash(rest)]);
+};
+        `,
+      },
     ],
   },
 );
