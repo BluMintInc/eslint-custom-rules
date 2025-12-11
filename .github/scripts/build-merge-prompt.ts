@@ -13,7 +13,9 @@ function buildFileSection(file: ConflictedFileContext): string {
 ${file.oursDiff.diffFromMergeBase ?? '(no changes)'}
 \`\`\`
 
-#### THEIRS Changes (last modified: ${file.theirsDiff.lastCommitDate ?? 'unknown'})
+#### THEIRS Changes (last modified: ${
+    file.theirsDiff.lastCommitDate ?? 'unknown'
+  })
 \`\`\`diff
 ${file.theirsDiff.diffFromMergeBase ?? '(no changes)'}
 \`\`\`
@@ -33,7 +35,9 @@ function buildPrContextSection(context: MergeContext): string {
 
   let section = `## PR Context
 
-This merge is associated with **PR #${associatedPr.number}**: [${associatedPr.title}](${associatedPr.url})
+This merge is associated with **PR #${associatedPr.number}**: [${
+    associatedPr.title
+  }](${associatedPr.url})
 
 ### PR Description
 ${associatedPr.description || '(No description provided)'}`;
@@ -108,7 +112,9 @@ async function main() {
   }
 
   const fs = await import('node:fs');
-  const context: MergeContext = JSON.parse(fs.readFileSync(contextPath, 'utf-8'));
+  const context: MergeContext = JSON.parse(
+    fs.readFileSync(contextPath, 'utf-8'),
+  );
   console.log(buildMergePrompt(context));
 }
 

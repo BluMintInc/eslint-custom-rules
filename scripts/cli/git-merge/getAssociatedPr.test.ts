@@ -41,7 +41,9 @@ describe('fetchAssociatedPr', () => {
   });
 
   it('returns null when gh command returns empty', () => {
-    mockRunCommand.mockReturnValueOnce('feature-branch').mockReturnValueOnce('');
+    mockRunCommand
+      .mockReturnValueOnce('feature-branch')
+      .mockReturnValueOnce('');
 
     const result = fetchAssociatedPr();
 
@@ -72,7 +74,9 @@ describe('fetchAssociatedPr', () => {
   });
 
   it('cleans up branch name with caret suffix', () => {
-    mockRunCommand.mockReturnValueOnce('feature^1^2').mockReturnValueOnce('456');
+    mockRunCommand
+      .mockReturnValueOnce('feature^1^2')
+      .mockReturnValueOnce('456');
 
     const result = fetchAssociatedPr();
 

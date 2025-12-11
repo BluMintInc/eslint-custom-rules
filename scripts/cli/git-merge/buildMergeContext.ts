@@ -35,7 +35,7 @@ function buildBranchDiff(params: {
   readonly mergeBase: string;
   readonly ref: 'HEAD' | 'MERGE_HEAD';
   readonly branchName: string;
-}) {
+}): BranchDiff {
   const { file, mergeBase, ref, branchName } = params;
 
   const diffFromMergeBase = truncateWithMarker({
@@ -50,7 +50,7 @@ function buildBranchDiff(params: {
     branchName,
     lastCommitDate,
     diffFromMergeBase,
-  } as const satisfies BranchDiff;
+  };
 }
 
 function buildConflictedFileContext(params: {
@@ -58,7 +58,7 @@ function buildConflictedFileContext(params: {
   readonly mergeBase: string;
   readonly ourBranchName: string;
   readonly theirBranchName: string;
-}) {
+}): ConflictedFileContext {
   const { file, mergeBase, ourBranchName, theirBranchName } = params;
 
   let contentWithMarkers: string;
@@ -93,13 +93,13 @@ function buildConflictedFileContext(params: {
     contentWithMarkers,
     oursDiff,
     theirsDiff,
-  } as const satisfies ConflictedFileContext;
+  };
 }
 
 /**
  * Main orchestrator that builds complete merge context for all conflicted files.
  */
-export function buildMergeContext() {
+export function buildMergeContext(): MergeContext {
   if (!isInMergeConflictState()) {
     throw new Error(
       'Error: No merge conflict detected. Run this command after "git merge" produces conflicts.',
@@ -142,5 +142,5 @@ export function buildMergeContext() {
     mergeBaseSha,
     conflictedFiles: conflictedFileContexts,
     associatedPr,
-  } as const satisfies MergeContext;
+  };
 }

@@ -8,6 +8,9 @@ function filterLintableFiles(files: readonly string[]) {
     return (
       /\.(ts|tsx|js|jsx)$/.test(file) &&
       existsSync(file) &&
+      // ESLint ignores dot-directories (like .github/) by default, which produces noisy warnings
+      // when we pass those files explicitly. These scripts are still covered by tests when applicable.
+      !file.startsWith('.github/') &&
       !file.includes('node_modules') &&
       !file.includes('.cursor/tmp/') &&
       !/\.(test|spec)\.(ts|tsx|js|jsx)$/.test(file)
@@ -60,7 +63,9 @@ function parseArgs() {
       ? conversationIdValue
       : null;
   const generationId =
-    generationIdValue && generationIdValue.length > 0 ? generationIdValue : null;
+    generationIdValue && generationIdValue.length > 0
+      ? generationIdValue
+      : null;
 
   return { conversationId, generationId } as const;
 }

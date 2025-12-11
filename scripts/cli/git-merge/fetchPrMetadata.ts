@@ -33,11 +33,13 @@ export function fetchPrMetadata(prNumber: number) {
     // CodeRabbit summary not found or error fetching.
   }
 
-  return {
+  const metadata: PrMetadata = {
     number: prData.number,
     title: prData.title,
     description: prData.body ?? null,
     url: prData.url,
     codeRabbitSummary,
-  } as const satisfies PrMetadata;
+  };
+
+  return metadata;
 }

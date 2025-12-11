@@ -19,13 +19,16 @@ jest.mock('./getBranchLastCommitDate');
 jest.mock('./getAssociatedPr');
 jest.mock('./fetchPrMetadata');
 
-const mockReadFileSync = readFileSync as jest.MockedFunction<typeof readFileSync>;
-const mockRunCommand = runCommand as jest.MockedFunction<typeof runCommand>;
-const mockIsInMergeConflictState = isInMergeConflictState as jest.MockedFunction<
-  typeof isInMergeConflictState
+const mockReadFileSync = readFileSync as jest.MockedFunction<
+  typeof readFileSync
 >;
+const mockRunCommand = runCommand as jest.MockedFunction<typeof runCommand>;
+const mockIsInMergeConflictState =
+  isInMergeConflictState as jest.MockedFunction<typeof isInMergeConflictState>;
 const mockRetrieveConflictedFiles =
-  retrieveConflictedFiles as jest.MockedFunction<typeof retrieveConflictedFiles>;
+  retrieveConflictedFiles as jest.MockedFunction<
+    typeof retrieveConflictedFiles
+  >;
 const mockRetrieveMergeBase = retrieveMergeBase as jest.MockedFunction<
   typeof retrieveMergeBase
 >;
@@ -128,7 +131,9 @@ describe('buildMergeContext', () => {
     mockIsInMergeConflictState.mockReturnValueOnce(true);
     mockRetrieveConflictedFiles.mockReturnValueOnce(['a.ts', 'b.ts']);
     mockRetrieveMergeBase.mockReturnValueOnce('xyz');
-    mockRunCommand.mockReturnValueOnce('develop').mockReturnValueOnce('feature');
+    mockRunCommand
+      .mockReturnValueOnce('develop')
+      .mockReturnValueOnce('feature');
     mockReadFileSync.mockReturnValue('content');
     mockRetrieveSquashedDiff.mockReturnValue('diff');
     mockRetrieveBranchLastCommitDate.mockReturnValue('2024-01-01T00:00:00Z');
@@ -190,9 +195,9 @@ describe('buildMergeContext', () => {
 
     const result = buildMergeContext();
 
-    expect(result.conflictedFiles[0].oursDiff.diffFromMergeBase?.length).toBeLessThan(
-      15_000,
-    );
+    expect(
+      result.conflictedFiles[0].oursDiff.diffFromMergeBase?.length,
+    ).toBeLessThan(15_000);
     expect(result.conflictedFiles[0].oursDiff.diffFromMergeBase).toContain(
       '[diff truncated for size]',
     );

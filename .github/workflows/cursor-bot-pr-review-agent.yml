@@ -83,9 +83,15 @@ jobs:
           echo "head_ref=$HEAD_REF" >> "$GITHUB_OUTPUT"
           echo "manual_override=$MANUAL_OVERRIDE" >> "$GITHUB_OUTPUT"
 
-          if [ "$MANUAL_OVERRIDE" = "true" ]; then
-            echo "Manual override via cursor-address-bot-review label detected; skipping required check gating."
-            echo "missing_required=false" >> "$GITHUB_OUTPUT"
+          # Block bot review automation while the PR is not mergeable due to conflicts.
+          # This keeps the bot agent focused on review feedback only after merge conflicts are resolved.
+          PR_DETAILS=$(gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/pulls/$PR_NUMBER")
+          PR_MERGEABLE_STATE=$(echo "$PR_DETAILS" | jq -r '.mergeable_state // "unknown"')
+          echo "PR mergeable_state: $PR_MERGEABLE_STATE"
+
+          if [ "$PR_MERGEABLE_STATE" = "dirty" ]; then
+            echo "missing_required=true" >> "$GITHUB_OUTPUT"
+            echo "PR has merge conflicts (mergeable_state=dirty). Waiting for merge conflicts to be resolved before launching bot review agent."
             exit 0
           fi
 
@@ -93,6 +99,25 @@ jobs:
           # CodeRabbit whether it reports as a check run or a legacy status context.
           CHECKS_JSON=$(gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/commits/$HEAD_SHA/check-runs?per_page=100")
           STATUSES_JSON=$(gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/commits/$HEAD_SHA/status")
+
+          # Require the merge conflict check to be green before launching.
+          # This ensures the bot agent waits for merge conflicts to be resolved even if bot checks are already passing.
+          merge_conflict_check_status=$(echo "$CHECKS_JSON" | jq -r '([.check_runs[] | select((.app.slug|ascii_downcase)=="github-actions") | select(.name=="Merge conflict check")] | sort_by(.id) | last // {}) | .status // ""')
+          merge_conflict_check_conclusion=$(echo "$CHECKS_JSON" | jq -r '([.check_runs[] | select((.app.slug|ascii_downcase)=="github-actions") | select(.name=="Merge conflict check")] | sort_by(.id) | last // {}) | .conclusion // ""')
+          echo "Merge conflict check run status: $merge_conflict_check_status"
+          echo "Merge conflict check run conclusion: $merge_conflict_check_conclusion"
+
+          if [ "$merge_conflict_check_conclusion" != "success" ]; then
+            echo "missing_required=true" >> "$GITHUB_OUTPUT"
+            echo "Merge conflict check is not green yet. Waiting before launching bot review agent."
+            exit 0
+          fi
+
+          if [ "$MANUAL_OVERRIDE" = "true" ]; then
+            echo "Manual override via cursor-address-bot-review label detected; skipping CodeRabbit/Cursor required check gating (merge conflict gating still applies)."
+            echo "missing_required=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           has_cursor_run=$(echo "$CHECKS_JSON" | jq 'any(.check_runs[]; ((.app.slug|ascii_downcase|test("cursor")) or (.name|test("Cursor Bugbot";"i"))) and .status == "completed" and .conclusion == "success")')
           has_coderabbit_run=$(echo "$CHECKS_JSON" | jq 'any(.check_runs[]; ((.app.slug|ascii_downcase|test("coderabbit")) or (.name|test("CodeRabbit";"i"))) and .status == "completed" and .conclusion == "success")')

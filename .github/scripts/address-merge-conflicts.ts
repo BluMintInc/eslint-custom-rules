@@ -62,7 +62,9 @@ async function main(): Promise<void> {
     console.log(
       `✓ Detected associated PR #${context.associatedPr.number}: "${context.associatedPr.title}"`,
     );
-    console.log('✓ Fetched PR metadata (title, description, CodeRabbit summary)');
+    console.log(
+      '✓ Fetched PR metadata (title, description, CodeRabbit summary)',
+    );
   }
   console.log('');
 
