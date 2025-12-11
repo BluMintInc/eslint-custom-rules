@@ -1,5 +1,7 @@
 # Discourage excessive use of the ref.parent property chain in Firestore and RealtimeDB change handlers (`@blumintinc/blumint/no-excessive-parent-chain`)
 
+💡 This rule is manually fixable by [editor suggestions](https://eslint.org/docs/latest/use/core-concepts#rule-suggestions).
+
 <!-- end auto-generated rule header -->
 
 Firestore and RealtimeDB triggers already surface typed path segments through `event.params`. Long `ref.parent` chains bypass those params and assume the collection layout never changes, which makes handlers brittle and hard to follow. This rule reports handler code that walks more than two consecutive `ref.parent` hops and points developers toward the typed params they already receive.
@@ -79,3 +81,21 @@ export const regularFunction = async (docRef: DocumentReference) => {
   const ancestorId = docRef.parent.parent.parent.parent.id; // Not a handler - rule doesn't apply
 };
 ```
+
+This rule is not auto-fixable; violations must be corrected manually.
+
+## Why This Rule Exists
+
+### Problems with Long Parent Chains
+
+1. **Fragility**: Changes to the Firestore path structure can break multiple chained `.parent` calls.
+2. **Readability**: Long chains like `ref.parent.parent.parent.parent` are difficult to comprehend.
+3. **Type Safety**: Manual navigation doesn't provide compile-time guarantees about path structure.
+4. **Maintainability**: Refactoring path structures requires updating all hardcoded parent chains.
+
+### Benefits of Using Params
+
+1. **Type Safety**: The `params` object is automatically generated based on the path pattern and provides type-safe access
+2. **Maintainability**: Path changes only require updating the path pattern, not individual handlers
+3. **Clarity**: `params.userId` is much clearer than `ref.parent.parent.parent.id`
+4. **Consistency**: All handlers use the same pattern for accessing path components.

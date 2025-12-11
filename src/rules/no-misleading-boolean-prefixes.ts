@@ -10,6 +10,19 @@ type Options = [
 
 const DEFAULT_PREFIXES = ['is', 'has', 'should'];
 
+function unwrapTypeNode(node: TSESTree.TypeNode): TSESTree.TypeNode {
+  let current:
+    | TSESTree.TypeNode
+    | (TSESTree.TypeNode & { typeAnnotation?: TSESTree.TypeNode }) = node;
+  while (
+    (current as any).type === 'TSParenthesizedType' &&
+    (current as any).typeAnnotation
+  ) {
+    current = (current as any).typeAnnotation as TSESTree.TypeNode;
+  }
+  return current;
+}
+
 function isUppercaseLetter(char: string): boolean {
   return char >= 'A' && char <= 'Z';
 }
@@ -36,17 +49,36 @@ function startsWithBooleanPrefix(name: string, prefixes: string[]): boolean {
 
 function isTsBooleanLike(typeNode: TSESTree.TypeNode | undefined): boolean {
   if (!typeNode) return false;
+
+  typeNode = unwrapTypeNode(typeNode);
+
   if (typeNode.type === AST_NODE_TYPES.TSBooleanKeyword) return true;
+
+  if (
+    typeNode.type === AST_NODE_TYPES.TSLiteralType &&
+    typeof (typeNode.literal as { value?: unknown }).value === 'boolean'
+  ) {
+    return true;
+  }
+
+  const isBooleanishUnionMember = (
+    t: TSESTree.TypeNode,
+  ): t is TSESTree.TypeNode => {
+    const unwrapped = unwrapTypeNode(t);
+    return (
+      unwrapped.type === AST_NODE_TYPES.TSBooleanKeyword ||
+      (unwrapped.type === AST_NODE_TYPES.TSLiteralType &&
+        typeof (unwrapped.literal as { value?: unknown }).value ===
+          'boolean') ||
+      unwrapped.type === AST_NODE_TYPES.TSUndefinedKeyword ||
+      unwrapped.type === AST_NODE_TYPES.TSNullKeyword ||
+      unwrapped.type === AST_NODE_TYPES.TSVoidKeyword
+    );
+  };
 
   // Allow unions like boolean | undefined | null | void
   if (typeNode.type === AST_NODE_TYPES.TSUnionType) {
-    return typeNode.types.every(
-      (t) =>
-        t.type === AST_NODE_TYPES.TSBooleanKeyword ||
-        t.type === AST_NODE_TYPES.TSUndefinedKeyword ||
-        t.type === AST_NODE_TYPES.TSNullKeyword ||
-        t.type === AST_NODE_TYPES.TSVoidKeyword,
-    );
+    return typeNode.types.every((t) => isBooleanishUnionMember(t));
   }
 
   // Promise<boolean> (or Promise<boolean | undefined | null>)
@@ -56,16 +88,21 @@ function isTsBooleanLike(typeNode: TSESTree.TypeNode | undefined): boolean {
     typeNode.typeName.name === 'Promise' &&
     typeNode.typeParameters?.params?.length
   ) {
-    const inner = typeNode.typeParameters.params[0];
-    if (inner.type === AST_NODE_TYPES.TSBooleanKeyword) return true;
-    if (inner.type === AST_NODE_TYPES.TSUnionType) {
-      return inner.types.every(
-        (t) =>
-          t.type === AST_NODE_TYPES.TSBooleanKeyword ||
-          t.type === AST_NODE_TYPES.TSUndefinedKeyword ||
-          t.type === AST_NODE_TYPES.TSNullKeyword ||
-          t.type === AST_NODE_TYPES.TSVoidKeyword,
-      );
+    const inner = typeNode.typeParameters.params[0] as
+      | TSESTree.TypeNode
+      | undefined;
+    if (!inner) return false;
+    const resolvedInner = unwrapTypeNode(inner);
+    if (isBooleanishUnionMember(resolvedInner)) return true;
+    const innerType: any = resolvedInner;
+    if (
+      innerType.type === AST_NODE_TYPES.TSUnionType &&
+      Array.isArray(innerType.types) &&
+      innerType.types.every((t: TSESTree.TypeNode) =>
+        isBooleanishUnionMember(t),
+      )
+    ) {
+      return true;
     }
   }
 

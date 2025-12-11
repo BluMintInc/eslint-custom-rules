@@ -6,12 +6,18 @@ type Options = [];
 
 const MEMOIZE_MODULE = 'typescript-memoize';
 
+/**
+ * Matches a memoize decorator in supported syntaxes:
+ * - @Alias()
+ * - @Alias
+ * - @ns.Alias
+ */
 function isMemoizeDecorator(
   decorator: TSESTree.Decorator,
   alias: string,
 ): boolean {
   const expression = decorator.expression;
-  // @Alias()
+  /* @Alias() */
   if (expression.type === AST_NODE_TYPES.CallExpression) {
     const callee = expression.callee;
     return (
@@ -22,11 +28,11 @@ function isMemoizeDecorator(
         callee.property.name === alias)
     );
   }
-  // @Alias
+  /* @Alias */
   if (expression.type === AST_NODE_TYPES.Identifier) {
     return expression.name === alias;
   }
-  // @ns.Alias
+  /* @ns.Alias */
   if (
     expression.type === AST_NODE_TYPES.MemberExpression &&
     !expression.computed &&
@@ -57,22 +63,24 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
   create(context) {
     let hasMemoizeImport = false;
     let memoizeAlias = 'Memoize';
+    let memoizeNamespace: string | null = null;
     let scheduledImportFix = false;
 
     return {
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
         if (node.source.value === MEMOIZE_MODULE) {
-          const memoizeSpecifier = node.specifiers.find(
-            (spec) =>
+          node.specifiers.forEach((spec) => {
+            if (
               spec.type === AST_NODE_TYPES.ImportSpecifier &&
-              spec.imported.name === 'Memoize',
-          );
-          if (memoizeSpecifier) {
-            hasMemoizeImport = true;
-            if (memoizeSpecifier.local) {
-              memoizeAlias = memoizeSpecifier.local.name;
+              spec.imported.name === 'Memoize'
+            ) {
+              hasMemoizeImport = true;
+              memoizeAlias = spec.local?.name ?? memoizeAlias;
+            } else if (spec.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
+              hasMemoizeImport = true;
+              memoizeNamespace = spec.local.name;
             }
-          }
+          });
         }
       },
 
@@ -105,10 +113,19 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
           messageId: 'requireMemoize',
           fix(fixer) {
             const fixes: TSESLint.RuleFix[] = [];
+            const sourceCode = context.getSourceCode();
+            const decoratorIdent = memoizeNamespace
+              ? `${memoizeNamespace}.Memoize`
+              : memoizeAlias;
+            const importStatement = `import { Memoize } from '${MEMOIZE_MODULE}';`;
 
             // Add import if it's not already present; ensure we only add once per file
-            if (!hasMemoizeImport && !scheduledImportFix) {
-              const sourceCode = context.getSourceCode();
+            if (
+              !hasMemoizeImport &&
+              !memoizeNamespace &&
+              !scheduledImportFix &&
+              !sourceCode.text.includes(importStatement)
+            ) {
               const programBody = (sourceCode.ast as TSESTree.Program).body;
               const firstImport = programBody.find(
                 (n) => n.type === AST_NODE_TYPES.ImportDeclaration,
@@ -124,7 +141,7 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
                 const leadingWhitespace =
                   text.slice(lineStart, anchorStart).match(/^[ \t]*/)?.[0] ??
                   '';
-                const importLine = `${leadingWhitespace}import { Memoize } from '${MEMOIZE_MODULE}';\n`;
+                const importLine = `${leadingWhitespace}${importStatement}\n`;
                 fixes.push(
                   fixer.insertTextBeforeRange(
                     [lineStart, lineStart],
@@ -144,10 +161,23 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
             }
 
             // Add decorator for this method
+            const insertionTarget =
+              node.decorators && node.decorators.length > 0
+                ? node.decorators[0]
+                : node;
+            const insertionStart = insertionTarget.range
+              ? insertionTarget.range[0]
+              : node.range
+                ? node.range[0]
+                : 0;
+            const text = sourceCode.text;
+            const lineStart = text.lastIndexOf('\n', insertionStart - 1) + 1;
+            const leadingWhitespace =
+              text.slice(lineStart, insertionStart).match(/^[ \t]*/)?.[0] ?? '';
             fixes.push(
-              fixer.insertTextBefore(
-                node,
-                `@${memoizeAlias}()\n${' '.repeat(node.loc.start.column)}`,
+              fixer.insertTextBeforeRange(
+                [lineStart, lineStart],
+                `${leadingWhitespace}@${decoratorIdent}()\n`,
               ),
             );
 

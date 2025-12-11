@@ -12,11 +12,11 @@ BluMint's guideline is to encode the temporary "loading" phase **inside the prim
 
 ### Detection Heuristic
 
-The rule flags any useState identifier that matches `/^is.*Loading$/i` or `/^isLoading.+/i` and whose setter is invoked with a truthy value before an async boundary and with a falsy value afterwards.
+The rule flags any `useState` identifier that matches the configured patterns (defaults: `/^is.*Loading$/i`, `/^isLoading.+/i`) and whose setter is invoked with a truthy value before an async boundary and with a falsy value afterward.
 
 ### Scope
 
-React function components & custom hooks. Redux/SWR/React-Query flags are ignored.
+React function components & custom hooks. Loading flags that come from external data/state libraries (e.g., Redux selectors, SWR/React Query hooks) are not reported; this rule only targets separate local `useState` loading booleans.
 
 ### Allowed Uses
 
@@ -25,6 +25,10 @@ Booleans whose names do not match the patterns (e.g. `isModalOpen`).
 ### Autofix
 
 Not provided – switching to a sentinel requires manual type widening and consumer updates.
+
+### Options
+
+- `patterns` (`string[]`, optional): Custom regex strings for detecting loading-state variable names. Defaults to `['^is.*Loading$', '^isLoading.+']`.
 
 ## Examples
 
@@ -63,7 +67,7 @@ async function loadAvatar() {
 const [profile, setProfile] = useState<User | null | 'loading'>(null);
 
 async function loadProfile(id: string) {
-  // eslint-disable-next-line react/no-stale-state-across-await
+  // eslint-disable-next-line @blumintinc/blumint/no-stale-state-across-await
   setProfile('loading');                        // sentinel
   const data = await api.get(`/users/${id}`);
   setProfile(data);
@@ -85,7 +89,7 @@ function toggleModal() {
 After adopting the sentinel you'll usually disable that rule for the intentional double update:
 
 ```tsx
-// eslint-disable-next-line react/no-stale-state-across-await
+// eslint-disable-next-line @blumintinc/blumint/no-stale-state-across-await
 setProfile('loading');
 ```
 

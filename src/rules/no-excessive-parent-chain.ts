@@ -2,9 +2,10 @@ import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'excessiveParentChain';
+type Options = [{ max?: number }];
 
 // Maximum number of consecutive .parent calls allowed before warning
-const MAX_PARENT_CHAIN_LENGTH = 2;
+const DEFAULT_MAX_PARENT_CHAIN_LENGTH = 2;
 
 // Handler types that this rule applies to
 const HANDLER_TYPES = new Set([
@@ -14,25 +15,97 @@ const HANDLER_TYPES = new Set([
   'RealtimeDbChangeHandlerTransaction',
 ]);
 
-export const noExcessiveParentChain = createRule<[], MessageIds>({
+export const noExcessiveParentChain = createRule<Options, MessageIds>({
   name: 'no-excessive-parent-chain',
   meta: {
     type: 'suggestion',
+    hasSuggestions: true,
     docs: {
       description:
         'Discourage excessive use of the ref.parent property chain in Firestore and RealtimeDB change handlers',
       recommended: 'error',
     },
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          max: {
+            type: 'integer',
+            minimum: 1,
+          },
+        },
+        additionalProperties: false,
+      },
+    ],
     messages: {
       excessiveParentChain:
         'Found {{count}} consecutive ref.parent hops in this handler. Long parent chains break when Firestore/RealtimeDB paths change and bypass the typed params the trigger already provides. Read path components from event.params (for example, params.userId) instead of walking ref.parent repeatedly.',
     },
   },
-  defaultOptions: [],
+  defaultOptions: [{}],
   create(context) {
+    const maxParentChainLength =
+      context.options[0]?.max ?? DEFAULT_MAX_PARENT_CHAIN_LENGTH;
+
     // Track variables that contain event data
     const eventDataVariables = new Map<string, string>();
+    const eventIdentifiers = new Set<string>();
+    const HANDLER_PARAM_SOURCE = '__handler_param__';
+
+    const recordEventIdentifier = (name: string) => {
+      eventIdentifiers.add(name);
+    };
+
+    const getRootIdentifier = (
+      node: TSESTree.MemberExpression,
+    ): string | null => {
+      let current: TSESTree.Node = node;
+      while (current.type === AST_NODE_TYPES.MemberExpression) {
+        current = current.object;
+      }
+      return current.type === AST_NODE_TYPES.Identifier ? current.name : null;
+    };
+
+    const hasRefProperty = (node: TSESTree.MemberExpression): boolean => {
+      let current: TSESTree.MemberExpression | null = node;
+      while (current) {
+        if (
+          current.property.type === AST_NODE_TYPES.Identifier &&
+          current.property.name === 'ref'
+        ) {
+          return true;
+        }
+        current =
+          current.object.type === AST_NODE_TYPES.MemberExpression
+            ? current.object
+            : null;
+      }
+      return false;
+    };
+
+    const registerHandlerParams = (
+      node: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
+    ) => {
+      for (const param of node.params) {
+        if (param.type === AST_NODE_TYPES.Identifier) {
+          recordEventIdentifier(param.name);
+        }
+
+        if (param.type === AST_NODE_TYPES.ObjectPattern) {
+          for (const prop of param.properties) {
+            if (
+              prop.type === AST_NODE_TYPES.Property &&
+              prop.key.type === AST_NODE_TYPES.Identifier &&
+              prop.value.type === AST_NODE_TYPES.Identifier &&
+              prop.key.name === 'data'
+            ) {
+              eventDataVariables.set(prop.value.name, HANDLER_PARAM_SOURCE);
+              recordEventIdentifier(HANDLER_PARAM_SOURCE);
+            }
+          }
+        }
+      }
+    };
 
     // Check if a function is one of our handler types
     function isHandlerFunction(node: TSESTree.Node): boolean {
@@ -131,6 +204,15 @@ export const noExcessiveParentChain = createRule<[], MessageIds>({
     // This function has been removed as it's no longer needed
 
     return {
+      // Register handler parameters to capture destructured event data
+      'ArrowFunctionExpression, FunctionExpression'(
+        node: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
+      ) {
+        if (isHandlerFunction(node)) {
+          registerHandlerParams(node);
+        }
+      },
+
       // Track variable assignments that contain event data
       VariableDeclarator(node) {
         if (node.id.type === AST_NODE_TYPES.Identifier && node.init) {
@@ -143,6 +225,7 @@ export const noExcessiveParentChain = createRule<[], MessageIds>({
           ) {
             // Store the variable name and the source object (event)
             eventDataVariables.set(node.id.name, node.init.object.name);
+            recordEventIdentifier(node.init.object.name);
           }
 
           // Track assignments from other tracked variables
@@ -155,6 +238,10 @@ export const noExcessiveParentChain = createRule<[], MessageIds>({
               node.id.name,
               eventDataVariables.get(node.init.name) || '',
             );
+            const source = eventDataVariables.get(node.init.name);
+            if (source) {
+              recordEventIdentifier(source);
+            }
           }
 
           // Track assignments from event data properties
@@ -168,6 +255,10 @@ export const noExcessiveParentChain = createRule<[], MessageIds>({
               node.id.name,
               eventDataVariables.get(node.init.object.name) || '',
             );
+            const source = eventDataVariables.get(node.init.object.name);
+            if (source) {
+              recordEventIdentifier(source);
+            }
           }
         }
 
@@ -176,15 +267,20 @@ export const noExcessiveParentChain = createRule<[], MessageIds>({
           node.id.type === AST_NODE_TYPES.ObjectPattern &&
           node.init?.type === AST_NODE_TYPES.Identifier
         ) {
+          const eventSource =
+            eventDataVariables.get(node.init.name) ||
+            (eventIdentifiers.has(node.init.name) ? node.init.name : null);
+
           for (const property of node.id.properties) {
             if (
               property.type === AST_NODE_TYPES.Property &&
               property.key.type === AST_NODE_TYPES.Identifier &&
-              property.key.name === 'data' &&
-              property.value.type === AST_NODE_TYPES.Identifier
+              property.value.type === AST_NODE_TYPES.Identifier &&
+              eventSource
             ) {
-              // Store the destructured variable name
-              eventDataVariables.set(property.value.name, node.init.name);
+              const targetName = property.value.name;
+              eventDataVariables.set(targetName, eventSource);
+              recordEventIdentifier(eventSource);
             }
           }
         }
@@ -202,7 +298,7 @@ export const noExcessiveParentChain = createRule<[], MessageIds>({
 
         // Count the number of consecutive .parent calls
         const parentCount = countParentChain(node);
-        if (parentCount <= MAX_PARENT_CHAIN_LENGTH) {
+        if (parentCount <= maxParentChainLength) {
           return;
         }
 
@@ -226,32 +322,35 @@ export const noExcessiveParentChain = createRule<[], MessageIds>({
           return;
         }
 
-        // Check if this is part of a ref access pattern
-        let isRefAccess = false;
-        let memberExpr: TSESTree.Node = node;
-
-        // Navigate up the member expression chain to find if there's a 'ref' property
-        while (memberExpr.type === AST_NODE_TYPES.MemberExpression) {
-          if (
-            memberExpr.property.type === AST_NODE_TYPES.Identifier &&
-            memberExpr.property.name === 'ref'
-          ) {
-            isRefAccess = true;
-            break;
-          }
-          memberExpr = memberExpr.object;
+        // Only report when the chain originates from tracked event data and contains a ref segment
+        const rootIdentifier = getRootIdentifier(node);
+        if (!rootIdentifier) {
+          return;
         }
 
-        // Only report if this is a ref.parent chain
-        if (isRefAccess) {
-          context.report({
-            node,
-            messageId: 'excessiveParentChain',
-            data: {
-              count: parentCount,
+        if (
+          !hasRefProperty(node) ||
+          (!eventDataVariables.has(rootIdentifier) &&
+            !eventIdentifiers.has(rootIdentifier))
+        ) {
+          return;
+        }
+
+        context.report({
+          node,
+          messageId: 'excessiveParentChain',
+          data: {
+            count: parentCount,
+          },
+          suggest: [
+            {
+              messageId: 'excessiveParentChain',
+              fix(fixer) {
+                return fixer.replaceText(node, 'event.params');
+              },
             },
-          });
-        }
+          ],
+        });
       },
     };
   },

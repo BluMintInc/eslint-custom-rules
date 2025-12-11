@@ -20,3 +20,7 @@ export const ruleTesterJson = new RuleTester({
     ecmaVersion: 2020,
   },
 });
+
+export const ruleTesterMarkdown = new RuleTester({
+  parser: require.resolve('markdown-eslint-parser'),
+});
