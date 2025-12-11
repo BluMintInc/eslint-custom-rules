@@ -124,6 +124,19 @@ ruleTesterTs.run('no-redundant-this-params', noRedundantThisParams, {
       }
     }
     `,
+    `
+    class BrandCheck {
+      #secret = 1;
+
+      private use(result: boolean) {
+        return result;
+      }
+
+      verify(target: object) {
+        return this.use(#secret in target);
+      }
+    }
+    `,
   ],
   invalid: [
     {
@@ -243,7 +256,16 @@ ruleTesterTs.run('no-redundant-this-params', noRedundantThisParams, {
         }
       }
       `,
-      errors: [{ messageId: 'redundantInstanceArg' }],
+      errors: [
+        {
+          messageId: 'redundantInstanceArg',
+          data: {
+            methodName: 'execute',
+            memberText: 'this.config',
+            parameterNote: ' (parameter "cfg")',
+          },
+        },
+      ],
     },
     {
       code: `
@@ -315,6 +337,22 @@ ruleTesterTs.run('no-redundant-this-params', noRedundantThisParams, {
 
         push() {
           return this.enqueue(...this.items);
+        }
+      }
+      `,
+      errors: [{ messageId: 'redundantInstanceArg' }],
+    },
+    {
+      code: `
+      class PrivateFieldExample {
+        #token = 'abc';
+
+        private consume(token: string) {
+          return token.length;
+        }
+
+        run() {
+          return this.consume(this.#token);
         }
       }
       `,

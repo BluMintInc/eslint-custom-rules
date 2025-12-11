@@ -100,11 +100,14 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
     function getMethodParams(
       member: TSESTree.MethodDefinition | TSESTree.TSAbstractMethodDefinition,
     ): TSESTree.Parameter[] {
+      const value = member.value;
+
       if (
-        member.value &&
-        member.value.type === AST_NODE_TYPES.FunctionExpression
+        value &&
+        (value.type === AST_NODE_TYPES.FunctionExpression ||
+          value.type === AST_NODE_TYPES.TSEmptyBodyFunctionExpression)
       ) {
-        return member.value.params;
+        return value.params;
       }
 
       return [];
@@ -328,13 +331,6 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
             }
             return;
           }
-          case AST_NODE_TYPES.PrivateIdentifier:
-            results.push({
-              node,
-              propertyName: `#${node.name}`,
-              nested: nested || node !== normalized,
-            });
-            return;
           case AST_NODE_TYPES.ChainExpression:
             visit(node.expression, nested || node !== normalized);
             return;
