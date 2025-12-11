@@ -1,0 +1,7 @@
+if [ "$CURSOR_BACKGROUND_AGENT" = "true" ]; then
+  echo "Cursor Background Agent detected, skipping post-merge hooks"
+  exit 0
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+"$SCRIPT_DIR/scripts/handle-package-changes.sh"

@@ -1,0 +1,286 @@
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { dirname, join } from 'node:path';
+
+export const TMP_DIR_SEGMENT = '.cursor/tmp/';
+export const LOG_FILE = join(
+  process.cwd(),
+  `${TMP_DIR_SEGMENT}hooks/agent-change-log.json`,
+);
+export const MAX_LOOPS = 200 as const;
+export const ACTIVE_THRESHOLD_MS = 10 * 60 * 1000;
+
+export type ConversationMeta = {
+  readonly hasCheckWorkPrompted?: boolean;
+  readonly hasExpandTestsPrompted?: boolean;
+  readonly isRuleRequest?: boolean;
+  readonly lastUserMessage?: string;
+  readonly endTimestamp?: number;
+  readonly lastActivityTimestamp?: number;
+};
+
+export type ConversationEntry = {
+  readonly _metadata?: ConversationMeta;
+  readonly [generationId: string]:
+    | readonly string[]
+    | ConversationMeta
+    | undefined;
+};
+
+export type ChangeLog = {
+  readonly [conversationId: string]: ConversationEntry;
+};
+
+export type MutableConversationMeta = {
+  hasCheckWorkPrompted?: boolean;
+  hasExpandTestsPrompted?: boolean;
+  isRuleRequest?: boolean;
+  lastUserMessage?: string;
+  endTimestamp?: number;
+  lastActivityTimestamp?: number;
+};
+
+export type MutableConversationEntry = {
+  _metadata?: MutableConversationMeta;
+  [generationId: string]:
+    | readonly string[]
+    | MutableConversationMeta
+    | undefined;
+};
+
+export type MutableChangeLog = {
+  [conversationId: string]: MutableConversationEntry;
+};
+
+export function loadLogFile(): MutableChangeLog {
+  if (!existsSync(LOG_FILE)) return {};
+  try {
+    const content = JSON.parse(readFileSync(LOG_FILE, 'utf-8'));
+    if (content && typeof content === 'object') {
+      return content as MutableChangeLog;
+    }
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveLogFile(log: MutableChangeLog) {
+  const dir = dirname(LOG_FILE);
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  const tmpFile = join(
+    dir,
+    `agent-change-log.${process.pid}.${Date.now()}.${randomUUID()}.tmp`,
+  );
+  const payload = JSON.stringify(log, null, 2);
+
+  try {
+    writeFileSync(tmpFile, payload, { flag: 'w' });
+    renameSync(tmpFile, LOG_FILE);
+  } catch (error) {
+    rmSync(tmpFile, { force: true });
+    throw error;
+  }
+}
+
+function applyEntryModification(
+  conversationId: string,
+  modifier: (entry: MutableConversationEntry) => void,
+) {
+  const log = loadLogFile();
+  const logEntry: MutableConversationEntry = log[conversationId] ?? {
+    _metadata: {},
+  };
+  if (!logEntry._metadata) {
+    logEntry._metadata = {};
+  }
+  modifier(logEntry);
+  log[conversationId] = logEntry;
+  saveLogFile(log);
+  return logEntry;
+}
+
+export function fetchLastUserMessage(conversationId: string) {
+  const log = loadLogFile();
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+  return log[conversationId]?._metadata?.lastUserMessage || null;
+}
+
+export function setLastUserMessage({
+  conversationId,
+  message,
+}: {
+  readonly conversationId: string;
+  readonly message: string;
+}) {
+  applyEntryModification(conversationId, (entry) => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    if (entry._metadata) {
+      entry._metadata.lastUserMessage = message;
+      entry._metadata.lastActivityTimestamp = Date.now();
+    }
+  });
+}
+
+export function modifyConversationLastActive(conversationId: string) {
+  applyEntryModification(conversationId, (entry) => {
+    const now = Date.now();
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    if (entry._metadata) {
+      entry._metadata.endTimestamp = undefined;
+      entry._metadata.lastActivityTimestamp = now;
+    }
+  });
+}
+
+export function modifyConversationEnd(conversationId: string) {
+  try {
+    applyEntryModification(conversationId, (entry) => {
+      const now = Date.now();
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      if (entry._metadata) {
+        entry._metadata.endTimestamp = now;
+        entry._metadata.lastActivityTimestamp = now;
+      }
+    });
+  } catch (error) {
+    // Log error but don't throw - we don't want to break the hook execution
+    console.error(
+      `Error in modifyConversationEnd for ${conversationId}:`,
+      error,
+    );
+  }
+}
+
+export function modifyHeartbeat(conversationId: string) {
+  applyEntryModification(conversationId, (entry) => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    if (entry._metadata) {
+      entry._metadata.lastActivityTimestamp = Date.now();
+    }
+  });
+}
+
+export function detectConcurrentConversations(currentConversationId: string) {
+  const log = loadLogFile();
+  const now = Date.now();
+  // eslint-disable-next-line no-restricted-properties
+  return Object.entries(log).some(([id, entry]) => {
+    if (id === currentConversationId) return false;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const metadata = entry._metadata;
+    if (!metadata) return false;
+    const { endTimestamp, lastActivityTimestamp } = metadata;
+    // If explicitly ended, not concurrent. If no activity recorded, assume inactive.
+    if (endTimestamp !== undefined || !lastActivityTimestamp) return false;
+    return now - lastActivityTimestamp < ACTIVE_THRESHOLD_MS;
+  });
+}
+
+export function hasCheckWorkBeenPrompted(conversationId: string) {
+  const log = loadLogFile();
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+  return log[conversationId]?._metadata?.hasCheckWorkPrompted === true;
+}
+
+export function markCheckWorkPrompted(conversationId: string) {
+  applyEntryModification(conversationId, (entry) => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    if (entry._metadata) {
+      entry._metadata.hasCheckWorkPrompted = true;
+      entry._metadata.lastActivityTimestamp = Date.now();
+    }
+  });
+}
+
+export function hasExpandTestsBeenPrompted(conversationId: string) {
+  const log = loadLogFile();
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+  return log[conversationId]?._metadata?.hasExpandTestsPrompted === true;
+}
+
+export function markExpandTestsPrompted(conversationId: string) {
+  applyEntryModification(conversationId, (entry) => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    if (entry._metadata) {
+      entry._metadata.hasExpandTestsPrompted = true;
+      entry._metadata.lastActivityTimestamp = Date.now();
+    }
+  });
+}
+
+export function isRuleRequestConversation(conversationId: string) {
+  const log = loadLogFile();
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+  return log[conversationId]?._metadata?.isRuleRequest === true;
+}
+
+export function markAsRuleRequest(conversationId: string) {
+  applyEntryModification(conversationId, (entry) => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    if (entry._metadata) {
+      entry._metadata.isRuleRequest = true;
+      entry._metadata.lastActivityTimestamp = Date.now();
+    }
+  });
+}
+
+function collectFilesExcludingTmp(
+  files: readonly string[],
+  allFiles: Set<string>,
+) {
+  for (const file of files) {
+    // Filter out files in .cursor/tmp/ directory
+    if (file.includes(TMP_DIR_SEGMENT)) continue;
+    allFiles.add(file);
+  }
+}
+
+function extractFilesFromEntry(
+  conversationEntry: ConversationEntry | MutableConversationEntry,
+) {
+  const allFiles = new Set<string>();
+  // eslint-disable-next-line no-restricted-properties
+  for (const [key, value] of Object.entries(conversationEntry)) {
+    if (key === '_metadata') continue;
+    if (!Array.isArray(value)) continue;
+    collectFilesExcludingTmp(value, allFiles);
+  }
+  return [...allFiles];
+}
+
+export function fetchAllConversationFiles({
+  conversationId,
+}: {
+  readonly conversationId: string;
+}): readonly string[] {
+  const log = loadLogFile();
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+  const conversationEntry = log[conversationId];
+  if (!conversationEntry) return [] as const;
+  return extractFilesFromEntry(conversationEntry);
+}
+
+export function fetchChangedFiles({
+  conversationId,
+  generationId,
+}: {
+  readonly conversationId: string;
+  readonly generationId: string;
+}): readonly string[] {
+  const log = loadLogFile();
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+  const conversationEntry = log[conversationId];
+  if (!conversationEntry) return [] as const;
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+  const files = conversationEntry[generationId];
+  if (!Array.isArray(files)) return [] as const;
+  return files.filter((file) => !file.includes(TMP_DIR_SEGMENT));
+}

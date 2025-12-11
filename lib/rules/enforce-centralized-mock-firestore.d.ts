@@ -1,1 +1,0 @@
-export declare const enforceCentralizedMockFirestore: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"useCentralizedMockFirestore", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;

@@ -49,11 +49,7 @@ const ALLOWED_SUFFIXES = [
 ];
 
 // Common compound nouns that should not be flagged as Hungarian notation
-const ALLOWED_COMPOUND_NOUNS = [
-  'PhoneNumber',
-  'EmailAddress',
-  'PostalCode',
-];
+const ALLOWED_COMPOUND_NOUNS = ['PhoneNumber', 'EmailAddress', 'PostalCode'];
 
 // Common built-in JavaScript prototype methods
 const BUILT_IN_METHODS = new Set([
@@ -236,13 +232,21 @@ export const noHungarian = createRule<[], MessageIds>({
         // If the variable name contains the compound noun
         if (variableName.includes(compoundNoun)) {
           // Check if it's a prefix like "strPhoneNumber" (which should be flagged)
-          const prefix = variableName.substring(0, variableName.indexOf(compoundNoun));
-          if (TYPE_MARKERS.some(marker => prefix.toLowerCase() === marker.toLowerCase())) {
+          const prefix = variableName.substring(
+            0,
+            variableName.indexOf(compoundNoun),
+          );
+          if (
+            TYPE_MARKERS.some(
+              (marker) => prefix.toLowerCase() === marker.toLowerCase(),
+            )
+          ) {
             // This is a type marker prefix + compound noun, so it should be flagged
             return true;
           }
 
-          // Otherwise, it's a valid use of the compound noun
+          // Otherwise treat the compound noun as an allowed descriptive phrase
+          // (e.g., userPhoneNumber is acceptable even though it contains "Number")
           return false;
         }
       }
@@ -262,9 +266,7 @@ export const noHungarian = createRule<[], MessageIds>({
       const normalizedVarName = variableName.toLowerCase();
 
       // Handle SCREAMING_SNAKE_CASE separately
-      if (
-        variableName === variableName.toUpperCase()
-      ) {
+      if (variableName === variableName.toUpperCase()) {
         // Special case for all-caps variables without underscores (like BREAKPOINTS)
         // These should not be flagged as Hungarian notation
         if (!variableName.includes('_')) {
@@ -318,9 +320,12 @@ export const noHungarian = createRule<[], MessageIds>({
         if (
           normalizedVarName.endsWith(normalizedMarker) &&
           normalizedVarName.length > normalizedMarker.length &&
-          /[A-Z0-9]/.test(
+          (/[A-Z0-9]/.test(
             variableName[variableName.length - normalizedMarker.length - 1],
-          )
+          ) ||
+            /[A-Z]/.test(
+              variableName[variableName.length - normalizedMarker.length],
+            ))
         ) {
           return true;
         }
@@ -332,18 +337,24 @@ export const noHungarian = createRule<[], MessageIds>({
           return false;
         }
 
-        const markerPrefix = variableName.at(markerIndex);
-        const preMarkerPrefix = variableName.at(markerIndex - 1);
-        const suffix = variableName.at(markerIndex + normalizedMarker.length);
+        const preMarkerPrefix =
+          markerIndex > 0 ? variableName[markerIndex - 1] : '';
+        const suffix =
+          variableName[markerIndex + normalizedMarker.length] ?? '';
 
         // Ensure we have proper word boundaries
         // A word boundary is defined by:
         // 1. Start of string OR underscore OR capital letter before the marker
         // 2. End of string OR underscore OR capital letter after the marker
-        const hasStartBoundary = markerIndex === 0 || preMarkerPrefix === '_' || /[A-Z]/.test(markerPrefix || '');
-        const hasEndBoundary = markerIndex + normalizedMarker.length === normalizedVarName.length ||
-                              suffix === '_' ||
-                              /[A-Z]/.test(suffix || '');
+        const hasStartBoundary =
+          markerIndex === 0 ||
+          preMarkerPrefix === '_' ||
+          /[A-Z]/.test(preMarkerPrefix) ||
+          /[A-Z]/.test(variableName[markerIndex]);
+        const hasEndBoundary =
+          markerIndex + normalizedMarker.length === normalizedVarName.length ||
+          suffix === '_' ||
+          /[A-Z]/.test(suffix);
 
         return hasStartBoundary && hasEndBoundary;
       });

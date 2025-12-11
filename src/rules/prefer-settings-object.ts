@@ -51,9 +51,9 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
     ],
     messages: {
       tooManyParams:
-        'Function has too many parameters ({{count}}). Use a settings object instead.',
+        "Function accepts {{count}} positional parameters (limit {{minimum}}). Long positional lists hide each argument's meaning and make call sites easy to mis-order. Pass a single settings object so callers name each field and keep the call readable.",
       sameTypeParams:
-        'Function has multiple parameters of the same type. Use a settings object instead.',
+        'Function receives {{paramCount}} positional parameters including multiple "{{type}}" values. Repeated types in positional arguments invite swapped values and force callers to remember parameter order. Replace the positional list with a settings object so each value is labeled and self-documenting.',
     },
   },
   defaultOptions: [defaultOptions],
@@ -69,15 +69,20 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
         const typeNode = param.typeAnnotation.typeAnnotation;
         if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
           // Include type parameters in the type signature to differentiate generic types
-          const typeName = typeNode.typeName.type === AST_NODE_TYPES.Identifier
-            ? typeNode.typeName.name
-            : 'unknown';
+          const typeName =
+            typeNode.typeName.type === AST_NODE_TYPES.Identifier
+              ? typeNode.typeName.name
+              : 'unknown';
 
           // If there are type parameters, include them in the type signature
-          if (typeNode.typeParameters && typeNode.typeParameters.params.length > 0) {
+          if (
+            typeNode.typeParameters &&
+            typeNode.typeParameters.params.length > 0
+          ) {
+            const sourceCode = context.getSourceCode();
             const typeParams = typeNode.typeParameters.params
-              .map(param => param.type)
-              .join('_');
+              .map((param) => sourceCode.getText(param))
+              .join(', ');
             return `${typeName}<${typeParams}>`;
           }
 
@@ -89,15 +94,20 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
         const typeNode = param.typeAnnotation.typeAnnotation;
         if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
           // Include type parameters in the type signature to differentiate generic types
-          const typeName = typeNode.typeName.type === AST_NODE_TYPES.Identifier
-            ? typeNode.typeName.name
-            : 'unknown';
+          const typeName =
+            typeNode.typeName.type === AST_NODE_TYPES.Identifier
+              ? typeNode.typeName.name
+              : 'unknown';
 
           // If there are type parameters, include them in the type signature
-          if (typeNode.typeParameters && typeNode.typeParameters.params.length > 0) {
+          if (
+            typeNode.typeParameters &&
+            typeNode.typeParameters.params.length > 0
+          ) {
+            const sourceCode = context.getSourceCode();
             const typeParams = typeNode.typeParameters.params
-              .map(param => param.type)
-              .join('_');
+              .map((param) => sourceCode.getText(param))
+              .join(', ');
             return `${typeName}<${typeParams}>`;
           }
 
@@ -111,7 +121,9 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
       return 'unknown';
     }
 
-    function hasSameTypeParameters(params: TSESTree.Parameter[]): boolean {
+    function findDuplicateParameterType(
+      params: TSESTree.Parameter[],
+    ): string | null {
       const typeMap = new Map<string, number>();
 
       for (const param of params) {
@@ -120,11 +132,11 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
         typeMap.set(type, count);
 
         if (count > 1) {
-          return true;
+          return type;
         }
       }
 
-      return false;
+      return null;
     }
 
     function isBuiltInOrThirdParty(node: TSESTree.Node): boolean {
@@ -328,8 +340,8 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
       // This is a common pattern in Firebase/Firestore handlers
       if (
         (node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-         node.type === AST_NODE_TYPES.FunctionExpression ||
-         node.type === AST_NODE_TYPES.FunctionDeclaration) &&
+          node.type === AST_NODE_TYPES.FunctionExpression ||
+          node.type === AST_NODE_TYPES.FunctionDeclaration) &&
         node.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
         node.parent.id?.type === AST_NODE_TYPES.Identifier
       ) {
@@ -338,10 +350,16 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
         if (
           functionName.includes('Transaction') ||
           functionName.includes('WithTransaction') ||
-          (node.parent.id.typeAnnotation?.typeAnnotation.type === AST_NODE_TYPES.TSTypeReference &&
-           node.parent.id.typeAnnotation.typeAnnotation.typeName.type === AST_NODE_TYPES.Identifier &&
-           (node.parent.id.typeAnnotation.typeAnnotation.typeName.name.includes('Transaction') ||
-            node.parent.id.typeAnnotation.typeAnnotation.typeName.name.includes('WithTransaction')))
+          (node.parent.id.typeAnnotation?.typeAnnotation.type ===
+            AST_NODE_TYPES.TSTypeReference &&
+            node.parent.id.typeAnnotation.typeAnnotation.typeName.type ===
+              AST_NODE_TYPES.Identifier &&
+            (node.parent.id.typeAnnotation.typeAnnotation.typeName.name.includes(
+              'Transaction',
+            ) ||
+              node.parent.id.typeAnnotation.typeAnnotation.typeName.name.includes(
+                'WithTransaction',
+              )))
         ) {
           return true;
         }
@@ -369,17 +387,19 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
         context.report({
           node,
           messageId: 'tooManyParams',
-          data: { count: params.length },
+          data: { count: params.length, minimum: minParams },
         });
         return;
       }
 
       // Then check for same type parameters if enabled
       if (finalOptions.checkSameTypeParameters && params.length >= 2) {
-        if (hasSameTypeParameters(params)) {
+        const duplicateType = findDuplicateParameterType(params);
+        if (duplicateType) {
           context.report({
             node,
             messageId: 'sameTypeParams',
+            data: { type: duplicateType, paramCount: params.length },
           });
         }
       }

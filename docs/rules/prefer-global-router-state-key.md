@@ -1,6 +1,8 @@
-# Enforce using global constants or type-safe functions for useRouterState key parameter (`@blumintinc/blumint/prefer-global-router-state-key`)
+# Enforce using centralized router state key constants from queryKeys.ts for useRouterState key parameter (`@blumintinc/blumint/prefer-global-router-state-key`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
 
 <!-- end auto-generated rule header -->
 
@@ -8,50 +10,49 @@ Enforce using global constants or type-safe functions for `useRouterState` key p
 
 ## Rule Details
 
-This rule encourages type safety and maintainability for the `key` parameter in `useRouterState` hook calls. It enforces best practices by requiring the use of global constants or type-safe functions instead of string literals.
+This rule requires every `useRouterState` `key` to come from the centralized `QUERY_KEY_*` exports in `src/util/routing/queryKeys` (or an approved re-export such as `@/constants`). Ad-hoc string keys fragment the router cache, hide the set of supported keys, and make refactors brittle. The rule reports:
 
-### Why?
+- String literals (including template/binary expressions with static segments) passed as the `key`.
+- Variables that are not imported from `queryKeys.ts` or its approved re-exports.
 
-- **Type Safety**: Using constants or type-safe functions provides better type checking and IDE support
-- **Maintainability**: Centralizing key definitions makes it easier to track and update them
-- **Consistency**: Ensures a consistent approach to router state key management across the codebase
+### Why this matters
+
+- **Stable routing cache**: Centralized constants prevent typo-driven cache splits (e.g., `user-profile` vs `userProfile`) that create duplicate entries.
+- **Discoverability**: Keeping keys in one module documents the allowed set and makes audits and refactors reliable.
+- **Safer refactors**: Imports ensure IDEs and codemods can update keys when names change.
+
+### What triggers a violation
+
+- Passing a string literal or template literal directly to `useRouterState`.
+- Building the key with inline string concatenation.
+- Using a variable that was not imported from `queryKeys.ts` (or an allowed re-export) as the key.
 
 ### Examples
 
 #### ❌ Incorrect
 
 ```typescript
-// Untyped string literals lack type safety and IDE support
-const [value, setValue] = useRouterState({ key: 'match-session' });
+// String literal bypasses the shared QUERY_KEY_* constants
+const [value] = useRouterState({ key: 'match-session' });
 
-// Implicit any types don't provide type checking
-const matchKey = someFunction(); // type is implicit
-const [value2, setValue2] = useRouterState({ key: matchKey });
+// Variable not sourced from queryKeys.ts
+import { USER_PROFILE_KEY } from '@/constants/other';
+const [value2] = useRouterState({ key: USER_PROFILE_KEY });
+
+// Inline concatenation hides the intended key
+const [value3] = useRouterState({ key: 'match-' + id });
 ```
 
-#### ✅ Correct
+#### ✅ Correct (centralized constants)
 
 ```typescript
-// Type-safe constant for static keys
-export const MATCH_DIALOG_KEY = 'match-session' as const;
-const [value, setValue] = useRouterState({ key: MATCH_DIALOG_KEY });
+// src/util/routing/queryKeys.ts
+export const QUERY_KEY_MATCH_SESSION = 'match-session' as const;
 
-// Type-safe dynamic key generation
-type ValidPrefix = 'match' | 'tournament' | 'session';
-function generateKey(prefix: ValidPrefix, id: string): string {
-  return `${prefix}-${id}`;
-}
-const [value2, setValue2] = useRouterState({
-  key: generateKey('match', userId)
-});
+// consumer file
+import { QUERY_KEY_MATCH_SESSION } from 'src/util/routing/queryKeys';
 
-// Type-safe prop usage
-interface DialogProps {
-  routerKey: string; // Consider using more specific types like `ValidPrefix`
-}
-function Dialog({ routerKey }: DialogProps) {
-  const [value, setValue] = useRouterState({ key: routerKey });
-}
+const [value] = useRouterState({ key: QUERY_KEY_MATCH_SESSION });
 ```
 
 ## When Not To Use It

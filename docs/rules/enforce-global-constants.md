@@ -1,6 +1,8 @@
-# Enforce using global static constants instead of useMemo with empty dependency arrays for object literals (`@blumintinc/blumint/enforce-global-constants`)
+# Enforce module-level constants for literal objects and extract inline destructuring defaults in React components/hooks (rule: `enforce-global-constants`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 Some problems reported by this rule are automatically fixable with the [`--fix` option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
 
 <!-- end auto-generated rule header -->
 

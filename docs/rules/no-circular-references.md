@@ -1,4 +1,8 @@
-# no-circular-references
+# Disallow circular references in objects (`@blumintinc/blumint/no-circular-references`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 Disallow circular references in objects to prevent issues with JSON serialization and memory leaks.
 

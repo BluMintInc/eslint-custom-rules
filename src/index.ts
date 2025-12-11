@@ -1,13 +1,17 @@
 import { arrayMethodsThisContext } from './rules/array-methods-this-context';
 import { classMethodsReadTopToBottom } from './rules/class-methods-read-top-to-bottom';
 import { default as consistentCallbackNaming } from './rules/consistent-callback-naming';
+import { parallelizeAsyncOperations } from './rules/parallelize-async-operations';
 import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
 import { enforceIdentifiableFirestoreType } from './rules/enforce-identifiable-firestore-type';
 import { default as enforceCallbackMemo } from './rules/enforce-callback-memo';
 import { enforceCallableTypes } from './rules/enforce-callable-types';
+import { enforceConsoleError } from './rules/enforce-console-error';
 import { enforceFirebaseImports } from './rules/enforce-dynamic-firebase-imports';
 import { enforceMuiRoundedIcons } from './rules/enforce-mui-rounded-icons';
+import { enforceQueryKeyTs } from './rules/enforce-querykey-ts';
 import { enforceReactTypeNaming } from './rules/enforce-react-type-naming';
+import { enforceFirestoreRulesGetAccess } from './rules/enforce-firestore-rules-get-access';
 import { exportIfInDoubt } from './rules/export-if-in-doubt';
 import { extractGlobalConstants } from './rules/extract-global-constants';
 import { enforceGlobalConstants } from './rules/enforce-global-constants';
@@ -24,6 +28,7 @@ import { noUnusedProps } from './rules/no-unused-props';
 import { noUselessFragment } from './rules/no-useless-fragment';
 import { preferFragmentShorthand } from './rules/prefer-fragment-shorthand';
 import { preferTypeOverInterface } from './rules/prefer-type-over-interface';
+import { preferTypeAliasOverTypeofConstant } from './rules/prefer-type-alias-over-typeof-constant';
 import { requireMemo } from './rules/require-memo';
 import { noJsxWhitespaceLiteral } from './rules/no-jsx-whitespace-literal';
 import { default as requireDynamicFirebaseImports } from './rules/require-dynamic-firebase-imports';
@@ -49,6 +54,7 @@ import { default as enforceSerializableParams } from './rules/enforce-serializab
 import { enforceRealtimedbPathUtils } from './rules/enforce-realtimedb-path-utils';
 import { enforceMemoizeAsync } from './rules/enforce-memoize-async';
 import { enforceExportedFunctionTypes } from './rules/enforce-exported-function-types';
+import { enforceMemoizeGetters } from './rules/enforce-memoize-getters';
 import { noRedundantParamTypes } from './rules/no-redundant-param-types';
 import { noClassInstanceDestructuring } from './rules/no-class-instance-destructuring';
 import { noFirestoreObjectArrays } from './rules/no-firestore-object-arrays';
@@ -71,7 +77,7 @@ import { enforceRenderHitsMemoization } from './rules/enforce-render-hits-memoiz
 import { preferFragmentComponent } from './rules/prefer-fragment-component';
 import { reactUseMemoShouldBeComponent } from './rules/react-usememo-should-be-component';
 import { noUnnecessaryVerbSuffix } from './rules/no-unnecessary-verb-suffix';
-import { enforceAssertSafeObjectKey } from './rules/enforce-assertSafe-object-key';
+import { enforceAssertSafeObjectKey } from './rules/enforce-assert-safe-object-key';
 import { enforceObjectLiteralAsConst } from './rules/enforce-object-literal-as-const';
 import { enforcePositiveNaming } from './rules/enforce-positive-naming';
 import { noTypeAssertionReturns } from './rules/no-type-assertion-returns';
@@ -81,6 +87,7 @@ import { fastDeepEqualOverMicrodiff } from './rules/fast-deep-equal-over-microdi
 import { enforceTimestampNow } from './rules/enforce-timestamp-now';
 import { noAlwaysTrueFalseConditions } from './rules/no-always-true-false-conditions';
 import { enforcePropsArgumentName } from './rules/enforce-props-argument-name';
+import { enforcePropsNamingConsistency } from './rules/enforce-props-naming-consistency';
 import { preferGlobalRouterStateKey } from './rules/prefer-global-router-state-key';
 import { preferUseMemoOverUseEffectUseState } from './rules/prefer-usememo-over-useeffect-usestate';
 import enforceDynamicImports from './rules/enforce-dynamic-imports';
@@ -98,8 +105,31 @@ import enforceDynamicFileNaming from './rules/enforce-dynamic-file-naming';
 import { default as preferUseCallbackOverUseMemoForFunctions } from './rules/prefer-usecallback-over-usememo-for-functions';
 import { noMarginProperties } from './rules/no-margin-properties';
 import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-prefixes';
+import { enforceFieldPathSyntaxInDocSetter } from './rules/enforce-fieldpath-syntax-in-docsetter';
 import { preferBlockCommentsForDeclarations } from './rules/prefer-block-comments-for-declarations';
 import { noUndefinedNullPassthrough } from './rules/no-undefined-null-passthrough';
+import { firestoreTransactionReadsBeforeWrites } from './rules/firestore-transaction-reads-before-writes';
+import { preferNullishCoalescingOverride } from './rules/prefer-nullish-coalescing-override';
+import { preferNullishCoalescingBooleanProps } from './rules/prefer-nullish-coalescing-boolean-props';
+import { noRestrictedPropertiesFix } from './rules/no-restricted-properties-fix';
+import { noExcessiveParentChain } from './rules/no-excessive-parent-chain';
+import { preferDocumentFlattening } from './rules/prefer-document-flattening';
+import { noOverridableMethodCallsInConstructor } from './rules/no-overridable-method-calls-in-constructor';
+import { useLatestCallback } from './rules/use-latest-callback';
+import { noStaleStateAcrossAwait } from './rules/no-stale-state-across-await';
+import { noSeparateLoadingState } from './rules/no-separate-loading-state';
+import { optimizeObjectBooleanConditions } from './rules/optimize-object-boolean-conditions';
+import { preferParamsOverParentId } from './rules/prefer-params-over-parent-id';
+import { preferFieldPathsInTransforms } from './rules/prefer-field-paths-in-transforms';
+import { noMisleadingBooleanPrefixes } from './rules/no-misleading-boolean-prefixes';
+import { preferUrlToStringOverToJson } from './rules/prefer-url-tostring-over-tojson';
+import { preferNextDynamic } from './rules/prefer-next-dynamic';
+import { default as noRedundantUseCallbackWrapper } from './rules/no-redundant-usecallback-wrapper';
+import { noArrayLengthInDeps } from './rules/no-array-length-in-deps';
+import { preferUseDeepCompareMemo } from './rules/prefer-use-deep-compare-memo';
+import { noCircularReferences } from './rules/no-circular-references';
+import { noPassthroughGetters } from './rules/no-passthrough-getters';
+import { noTryCatchAlreadyExistsInTransaction } from './rules/no-try-catch-already-exists-in-transaction';
 
 module.exports = {
   meta: {
@@ -113,10 +143,17 @@ module.exports = {
     recommended: {
       plugins: ['@blumintinc/blumint'],
       rules: {
+        '@blumintinc/blumint/firestore-transaction-reads-before-writes':
+          'error',
+        // Override the @typescript-eslint/prefer-nullish-coalescing rule
+        '@typescript-eslint/prefer-nullish-coalescing': 'off',
+        '@blumintinc/blumint/prefer-nullish-coalescing-override': 'error',
         '@blumintinc/blumint/prefer-block-comments-for-declarations': 'error',
         '@blumintinc/blumint/key-only-outermost-element': 'error',
+        '@blumintinc/blumint/parallelize-async-operations': 'error',
         '@blumintinc/blumint/avoid-utils-directory': 'error',
         '@blumintinc/blumint/enforce-firestore-path-utils': 'error',
+        '@blumintinc/blumint/enforce-firestore-rules-get-access': 'error',
         '@blumintinc/blumint/no-jsx-whitespace-literal': 'error',
         '@blumintinc/blumint/array-methods-this-context': 'error',
         '@blumintinc/blumint/class-methods-read-top-to-bottom': 'error',
@@ -126,9 +163,10 @@ module.exports = {
         '@blumintinc/blumint/enforce-identifiable-firestore-type': 'error',
         '@blumintinc/blumint/enforce-callback-memo': 'error',
         '@blumintinc/blumint/enforce-callable-types': 'error',
+        '@blumintinc/blumint/enforce-console-error': 'error',
         '@blumintinc/blumint/enforce-dynamic-firebase-imports': 'error',
         '@blumintinc/blumint/enforce-react-type-naming': 'error',
-        // '@blumintinc/blumint/export-if-in-doubt': 'warn',
+        '@blumintinc/blumint/export-if-in-doubt': 'error',
         '@blumintinc/blumint/extract-global-constants': 'error',
         '@blumintinc/blumint/enforce-global-constants': 'error',
         '@blumintinc/blumint/generic-starts-with-t': 'error',
@@ -142,9 +180,10 @@ module.exports = {
         '@blumintinc/blumint/no-unpinned-dependencies': 'error',
         '@blumintinc/blumint/no-unused-props': 'error',
         '@blumintinc/blumint/no-uuidv4-base62-as-key': 'error',
-        //'@blumintinc/blumint/no-useless-fragment': 'error',
-        //'@blumintinc/blumint/prefer-fragment-shorthand': 'error',
+        '@blumintinc/blumint/no-useless-fragment': 'error',
+        '@blumintinc/blumint/prefer-fragment-shorthand': 'error',
         '@blumintinc/blumint/prefer-type-over-interface': 'error',
+        '@blumintinc/blumint/prefer-type-alias-over-typeof-constant': 'error',
         '@blumintinc/blumint/require-memo': 'error',
         '@blumintinc/blumint/require-dynamic-firebase-imports': 'error',
         '@blumintinc/blumint/require-https-error': 'error',
@@ -168,8 +207,9 @@ module.exports = {
         '@blumintinc/blumint/enforce-memoize-async': 'error',
         '@blumintinc/blumint/enforce-exported-function-types': 'error',
         '@blumintinc/blumint/no-redundant-param-types': 'error',
+        '@blumintinc/blumint/enforce-memoize-getters': 'error',
         '@blumintinc/blumint/no-class-instance-destructuring': 'error',
-        '@blumintinc/blumint/no-firestore-object-arrays': 'warn',
+        '@blumintinc/blumint/no-firestore-object-arrays': 'error',
         '@blumintinc/blumint/no-memoize-on-static': 'error',
         '@blumintinc/blumint/no-unsafe-firestore-spread': 'error',
         '@blumintinc/blumint/no-jsx-in-hooks': 'error',
@@ -186,10 +226,10 @@ module.exports = {
         '@blumintinc/blumint/require-hooks-default-params': 'error',
         '@blumintinc/blumint/prefer-destructuring-no-class': 'error',
         '@blumintinc/blumint/enforce-render-hits-memoization': 'error',
-        '@blumintinc/blumint/prefer-fragment-component': 'error',
+        '@blumintinc/blumint/prefer-fragment-component': 'off',
         '@blumintinc/blumint/react-usememo-should-be-component': 'error',
         '@blumintinc/blumint/no-unnecessary-verb-suffix': 'error',
-        '@blumintinc/blumint/enforce-assertSafe-object-key': 'error',
+        '@blumintinc/blumint/enforce-assert-safe-object-key': 'error',
         '@blumintinc/blumint/enforce-object-literal-as-const': 'error',
         '@blumintinc/blumint/enforce-positive-naming': 'error',
         '@blumintinc/blumint/no-type-assertion-returns': 'error',
@@ -200,15 +240,10 @@ module.exports = {
         '@blumintinc/blumint/enforce-timestamp-now': 'error',
         '@blumintinc/blumint/no-always-true-false-conditions': 'error',
         '@blumintinc/blumint/enforce-props-argument-name': 'error',
+        '@blumintinc/blumint/enforce-props-naming-consistency': 'error',
         '@blumintinc/blumint/prefer-global-router-state-key': 'error',
         '@blumintinc/blumint/prefer-usememo-over-useeffect-usestate': 'error',
-        '@blumintinc/blumint/enforce-dynamic-imports': [
-          'error',
-          {
-            libraries: ['@stream-io/video-react-sdk', 'some-heavy-lib*'],
-            allowImportType: true,
-          },
-        ],
+        '@blumintinc/blumint/enforce-dynamic-imports': 'error',
         '@blumintinc/blumint/ensure-pointer-events-none': 'error',
         '@blumintinc/blumint/no-object-values-on-strings': 'error',
         '@blumintinc/blumint/no-unnecessary-destructuring': 'error',
@@ -217,27 +252,57 @@ module.exports = {
         '@blumintinc/blumint/omit-index-html': 'error',
         '@blumintinc/blumint/enforce-id-capitalization': 'error',
         '@blumintinc/blumint/no-unused-usestate': 'error',
-        '@blumintinc/blumint/enforce-dynamic-file-naming': 'error',
         '@blumintinc/blumint/prefer-usecallback-over-usememo-for-functions':
           'error',
         '@blumintinc/blumint/no-margin-properties': 'error',
         '@blumintinc/blumint/enforce-boolean-naming-prefixes': 'error',
+        '@blumintinc/blumint/enforce-fieldpath-syntax-in-docsetter': 'error',
         '@blumintinc/blumint/no-undefined-null-passthrough': 'error',
+        '@blumintinc/blumint/prefer-nullish-coalescing-boolean-props': 'error',
+        '@blumintinc/blumint/no-overridable-method-calls-in-constructor':
+          'error',
+        '@blumintinc/blumint/use-latest-callback': 'error',
+        '@blumintinc/blumint/enforce-querykey-ts': 'error',
+        '@blumintinc/blumint/no-stale-state-across-await': 'error',
+        '@blumintinc/blumint/no-separate-loading-state': 'error',
+        '@blumintinc/blumint/optimize-object-boolean-conditions': 'error',
+        '@blumintinc/blumint/prefer-params-over-parent-id': 'error',
+        '@blumintinc/blumint/prefer-field-paths-in-transforms': 'warn',
+        '@blumintinc/blumint/no-misleading-boolean-prefixes': 'error',
+        '@blumintinc/blumint/prefer-url-tostring-over-tojson': 'error',
+        '@blumintinc/blumint/prefer-next-dynamic': 'error',
+        '@blumintinc/blumint/no-redundant-usecallback-wrapper': 'error',
+        '@blumintinc/blumint/no-array-length-in-deps': 'error',
+        '@blumintinc/blumint/prefer-use-deep-compare-memo': 'error',
+        '@blumintinc/blumint/no-circular-references': 'error',
+        '@blumintinc/blumint/no-try-catch-already-exists-in-transaction':
+          'error',
+        '@blumintinc/blumint/no-passthrough-getters': 'error',
       },
     },
   },
 
   rules: {
-    'prefer-block-comments-for-declarations': preferBlockCommentsForDeclarations,
+    'firestore-transaction-reads-before-writes':
+      firestoreTransactionReadsBeforeWrites,
+    'prefer-nullish-coalescing-override': preferNullishCoalescingOverride,
+    'no-restricted-properties-fix': noRestrictedPropertiesFix,
+    'no-excessive-parent-chain': noExcessiveParentChain,
+    'prefer-document-flattening': preferDocumentFlattening,
+    'prefer-block-comments-for-declarations':
+      preferBlockCommentsForDeclarations,
     'key-only-outermost-element': keyOnlyOutermostElement,
     'array-methods-this-context': arrayMethodsThisContext,
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
     'consistent-callback-naming': consistentCallbackNaming,
+    'parallelize-async-operations': parallelizeAsyncOperations,
     'dynamic-https-errors': dynamicHttpsErrors,
     'enforce-identifiable-firestore-type': enforceIdentifiableFirestoreType,
     'enforce-callback-memo': enforceCallbackMemo,
     'enforce-react-type-naming': enforceReactTypeNaming,
+    'enforce-firestore-rules-get-access': enforceFirestoreRulesGetAccess,
     'enforce-callable-types': enforceCallableTypes,
+    'enforce-console-error': enforceConsoleError,
     'enforce-dynamic-firebase-imports': enforceFirebaseImports,
     'enforce-mui-rounded-icons': enforceMuiRoundedIcons,
     'export-if-in-doubt': exportIfInDoubt,
@@ -258,6 +323,7 @@ module.exports = {
     'enforce-dynamic-file-naming': enforceDynamicFileNaming,
     'prefer-fragment-shorthand': preferFragmentShorthand,
     'prefer-type-over-interface': preferTypeOverInterface,
+    'prefer-type-alias-over-typeof-constant': preferTypeAliasOverTypeofConstant,
     'require-memo': requireMemo,
     'no-jsx-whitespace-literal': noJsxWhitespaceLiteral,
     'require-dynamic-firebase-imports': requireDynamicFirebaseImports,
@@ -284,6 +350,7 @@ module.exports = {
     'enforce-memoize-async': enforceMemoizeAsync,
     'enforce-exported-function-types': enforceExportedFunctionTypes,
     'no-redundant-param-types': noRedundantParamTypes,
+    'enforce-memoize-getters': enforceMemoizeGetters,
     'no-class-instance-destructuring': noClassInstanceDestructuring,
     'no-firestore-object-arrays': noFirestoreObjectArrays,
     'no-memoize-on-static': noMemoizeOnStatic,
@@ -305,7 +372,7 @@ module.exports = {
     'prefer-fragment-component': preferFragmentComponent,
     'react-usememo-should-be-component': reactUseMemoShouldBeComponent,
     'no-unnecessary-verb-suffix': noUnnecessaryVerbSuffix,
-    'enforce-assertSafe-object-key': enforceAssertSafeObjectKey,
+    'enforce-assert-safe-object-key': enforceAssertSafeObjectKey,
     'enforce-object-literal-as-const': enforceObjectLiteralAsConst,
     'enforce-positive-naming': enforcePositiveNaming,
     'no-type-assertion-returns': noTypeAssertionReturns,
@@ -316,6 +383,7 @@ module.exports = {
     'enforce-timestamp-now': enforceTimestampNow,
     'no-always-true-false-conditions': noAlwaysTrueFalseConditions,
     'enforce-props-argument-name': enforcePropsArgumentName,
+    'enforce-props-naming-consistency': enforcePropsNamingConsistency,
     'prefer-global-router-state-key': preferGlobalRouterStateKey,
     'prefer-usememo-over-useeffect-usestate':
       preferUseMemoOverUseEffectUseState,
@@ -332,6 +400,28 @@ module.exports = {
       preferUseCallbackOverUseMemoForFunctions,
     'no-margin-properties': noMarginProperties,
     'enforce-boolean-naming-prefixes': enforceBooleanNamingPrefixes,
+    'enforce-fieldpath-syntax-in-docsetter': enforceFieldPathSyntaxInDocSetter,
     'no-undefined-null-passthrough': noUndefinedNullPassthrough,
+    'prefer-nullish-coalescing-boolean-props':
+      preferNullishCoalescingBooleanProps,
+    'no-overridable-method-calls-in-constructor':
+      noOverridableMethodCallsInConstructor,
+    'use-latest-callback': useLatestCallback,
+    'enforce-querykey-ts': enforceQueryKeyTs,
+    'no-stale-state-across-await': noStaleStateAcrossAwait,
+    'no-separate-loading-state': noSeparateLoadingState,
+    'optimize-object-boolean-conditions': optimizeObjectBooleanConditions,
+    'prefer-params-over-parent-id': preferParamsOverParentId,
+    'prefer-field-paths-in-transforms': preferFieldPathsInTransforms,
+    'no-misleading-boolean-prefixes': noMisleadingBooleanPrefixes,
+    'prefer-url-tostring-over-tojson': preferUrlToStringOverToJson,
+    'prefer-next-dynamic': preferNextDynamic,
+    'no-redundant-usecallback-wrapper': noRedundantUseCallbackWrapper,
+    'no-array-length-in-deps': noArrayLengthInDeps,
+    'prefer-use-deep-compare-memo': preferUseDeepCompareMemo,
+    'no-circular-references': noCircularReferences,
+    'no-try-catch-already-exists-in-transaction':
+      noTryCatchAlreadyExistsInTransaction,
+    'no-passthrough-getters': noPassthroughGetters,
   },
 };

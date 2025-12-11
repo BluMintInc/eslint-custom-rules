@@ -2,6 +2,14 @@ import { createRule } from '../utils/createRule';
 import { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import * as pluralize from 'pluralize';
 
+const NON_PLURALIZABLE_SUFFIXES = [
+  'Props',
+  'Params',
+  'Options',
+  'Settings',
+  'Data',
+];
+
 export const enforceSingularTypeNames: TSESLint.RuleModule<
   'typeShouldBeSingular',
   never[]
@@ -16,12 +24,11 @@ export const enforceSingularTypeNames: TSESLint.RuleModule<
       // Skip checking if name is too short (less than 3 characters)
       if (name.length < 3) return false;
 
-      // Skip checking if name ends with 'Props' or 'Params'
+      // Skip checking if name ends with 'Props', 'Params', 'Data', etc.
       if (
-        name.endsWith('Props') ||
-        name.endsWith('Params') ||
-        name.endsWith('Options') ||
-        name.endsWith('Settings')
+        NON_PLURALIZABLE_SUFFIXES.some((suffix) =>
+          name.toLowerCase().endsWith(suffix.toLowerCase()),
+        )
       )
         return false;
 

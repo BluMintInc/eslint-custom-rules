@@ -1,7 +1,15 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'useMemoShouldBeComponent';
+
+const ARRAY_RETURNING_METHODS = new Set([
+  'map',
+  'flatMap',
+  'filter',
+  'concat',
+  'slice',
+]);
 
 /**
  * Checks if a node is a JSX element or fragment
@@ -27,6 +35,129 @@ const isJsxElement = (node: TSESTree.Node | null): boolean => {
     node.type === AST_NODE_TYPES.JSXElement ||
     node.type === AST_NODE_TYPES.JSXFragment
   );
+};
+
+/**
+ * True if the resolved variable is referenced inside a JSX prop (attribute or spread).
+ */
+const isUsedAsComponentProp = (
+  context: TSESLint.RuleContext<'useMemoShouldBeComponent', []>,
+  variableName: string,
+  node: TSESTree.Node,
+): boolean => {
+  // Find containing function for proper scope acquisition
+  let current: TSESTree.Node | undefined = node;
+  let fn:
+    | TSESTree.ArrowFunctionExpression
+    | TSESTree.FunctionExpression
+    | TSESTree.FunctionDeclaration
+    | undefined;
+  while (current?.parent) {
+    current = current.parent;
+    if (
+      current.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+      current.type === AST_NODE_TYPES.FunctionDeclaration ||
+      current.type === AST_NODE_TYPES.FunctionExpression
+    ) {
+      fn = current;
+      break;
+    }
+  }
+
+  const sourceCode = context.getSourceCode();
+  const scopeManager = sourceCode.scopeManager;
+  const scope =
+    scopeManager &&
+    ((fn && scopeManager.acquire(fn)) || scopeManager.acquire(node as any));
+  if (!scopeManager || !scope) {
+    return true;
+  }
+
+  const variable =
+    scope.variables.find((v) => v.name === variableName) ??
+    scope.upper?.variables.find((v) => v.name === variableName) ??
+    null;
+  if (!variable) {
+    return true;
+  }
+
+  for (const ref of variable.references) {
+    let p: TSESTree.Node | null =
+      (ref.identifier.parent as TSESTree.Node | null) ?? null;
+    while (p) {
+      if (
+        p.type === AST_NODE_TYPES.JSXAttribute ||
+        p.type === AST_NODE_TYPES.JSXSpreadAttribute
+      ) {
+        return true;
+      }
+      p = p.parent as TSESTree.Node | null;
+    }
+  }
+
+  return false;
+};
+
+const isUsedAsJsxChild = (
+  context: TSESLint.RuleContext<'useMemoShouldBeComponent', []>,
+  variableName: string,
+  node: TSESTree.Node,
+): boolean => {
+  // Traverse the nearest function (or program) to see if the identifier appears
+  // as a JSX child expression.
+  const sourceCode = context.getSourceCode();
+
+  let container: TSESTree.Node = sourceCode.ast;
+  let current: TSESTree.Node | undefined = node;
+  while (current?.parent) {
+    current = current.parent;
+    if (
+      current.type === AST_NODE_TYPES.FunctionDeclaration ||
+      current.type === AST_NODE_TYPES.FunctionExpression ||
+      current.type === AST_NODE_TYPES.ArrowFunctionExpression
+    ) {
+      container = current;
+      break;
+    }
+  }
+
+  let found = false;
+  const visited = new Set<TSESTree.Node>();
+  const visit = (n: TSESTree.Node) => {
+    if (found || visited.has(n)) return;
+    visited.add(n);
+
+    if (
+      n.type === AST_NODE_TYPES.JSXExpressionContainer &&
+      n.expression.type === AST_NODE_TYPES.Identifier &&
+      n.expression.name === variableName &&
+      n.parent &&
+      (n.parent.type === AST_NODE_TYPES.JSXElement ||
+        n.parent.type === AST_NODE_TYPES.JSXFragment) &&
+      n.parent.children.includes(n)
+    ) {
+      found = true;
+      return;
+    }
+
+    for (const key of Object.keys(n) as (keyof typeof n)[]) {
+      if (key === 'parent') continue;
+      const value = (n as any)[key];
+      if (!value) continue;
+      if (Array.isArray(value)) {
+        for (const child of value) {
+          if (child && typeof child.type === 'string') {
+            visit(child);
+          }
+        }
+      } else if (value && typeof value.type === 'string') {
+        visit(value);
+      }
+    }
+  };
+
+  visit(container);
+  return found;
 };
 
 /**
@@ -188,34 +319,15 @@ const containsJsxInFunction = (
     return containsJsxInBlockStatement(body);
   }
 
-  // Check for array methods returning JSX
+  // Check for array methods returning arrays (do not flag arrays of JSX)
   if (body.type === AST_NODE_TYPES.CallExpression) {
     if (
       body.callee.type === AST_NODE_TYPES.MemberExpression &&
       body.callee.property.type === AST_NODE_TYPES.Identifier
     ) {
-      // Check array methods like map, filter, find, etc.
-      const arrayMethods = [
-        'map',
-        'filter',
-        'find',
-        'findIndex',
-        'some',
-        'every',
-        'reduce',
-      ];
-      if (
-        arrayMethods.includes(body.callee.property.name) &&
-        body.arguments.length > 0
-      ) {
-        const callback = body.arguments[0];
-        if (
-          (callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-            callback.type === AST_NODE_TYPES.FunctionExpression) &&
-          containsJsxInFunction(callback)
-        ) {
-          return true;
-        }
+      if (ARRAY_RETURNING_METHODS.has(body.callee.property.name)) {
+        // Returning an array (even if its elements are JSX) should not be flagged
+        return false;
       }
     }
 
@@ -302,47 +414,25 @@ const containsJsxInExpression = (node: TSESTree.Expression): boolean => {
       return containsJsxInObject(node);
 
     case AST_NODE_TYPES.CallExpression:
-      // Special case for array methods that return data structures with JSX
+      // Do not flag arrays of JSX: common array-producing patterns
       if (
         node.callee.type === AST_NODE_TYPES.MemberExpression &&
-        node.callee.property.type === AST_NODE_TYPES.Identifier &&
-        node.callee.property.name === 'map' &&
-        node.arguments.length > 0
+        node.callee.property.type === AST_NODE_TYPES.Identifier
       ) {
-        const callback = node.arguments[0];
-        if (
-          callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-          callback.type === AST_NODE_TYPES.FunctionExpression
-        ) {
-          // Check if the callback returns an object with both JSX and non-JSX properties
-          if (
-            callback.body.type !== AST_NODE_TYPES.BlockStatement &&
-            callback.body.type === AST_NODE_TYPES.ObjectExpression
-          ) {
-            let hasNonJsxProperties = false;
-            let hasJsxProperties = false;
-
-            for (const property of callback.body.properties) {
-              if (property.type === AST_NODE_TYPES.Property && property.value) {
-                if (isJsxElement(property.value)) {
-                  hasJsxProperties = true;
-                } else if (
-                  property.value.type !== AST_NODE_TYPES.ObjectExpression
-                ) {
-                  hasNonJsxProperties = true;
-                }
-              }
-            }
-
-            // If the object has both JSX and non-JSX properties, it's likely a data object
-            if (hasNonJsxProperties && hasJsxProperties) {
-              return false;
-            }
-          }
-
-          // For other cases, check if the function returns JSX directly
-          return containsJsxInFunction(callback);
+      if (ARRAY_RETURNING_METHODS.has(node.callee.property.name)) {
+          return false;
         }
+      }
+
+      // Array.from(...) returns an array as well
+      if (
+        node.callee.type === AST_NODE_TYPES.MemberExpression &&
+        node.callee.object.type === AST_NODE_TYPES.Identifier &&
+        node.callee.object.name === 'Array' &&
+        node.callee.property.type === AST_NODE_TYPES.Identifier &&
+        node.callee.property.name === 'from'
+      ) {
+        return false;
       }
 
       // Check if it's an IIFE
@@ -353,42 +443,7 @@ const containsJsxInExpression = (node: TSESTree.Expression): boolean => {
         return containsJsxInFunction(node.callee);
       }
 
-      // Check array methods
-      if (
-        node.callee.type === AST_NODE_TYPES.MemberExpression &&
-        node.callee.property.type === AST_NODE_TYPES.Identifier
-      ) {
-        const arrayMethods = [
-          'filter',
-          'find',
-          'findIndex',
-          'some',
-          'every',
-          'reduce',
-        ];
-        if (
-          arrayMethods.includes(node.callee.property.name) &&
-          node.arguments.length > 0
-        ) {
-          const callback = node.arguments[0];
-          if (
-            callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-            callback.type === AST_NODE_TYPES.FunctionExpression
-          ) {
-            return containsJsxInFunction(callback);
-          }
-        }
-      }
-
-      // Check arguments for JSX
-      for (const arg of node.arguments) {
-        if (
-          arg.type !== AST_NODE_TYPES.SpreadElement &&
-          containsJsxInExpression(arg)
-        ) {
-          return true;
-        }
-      }
+      // Do not flag based on JSX in arguments of non-IIFE calls
       return false;
 
     case AST_NODE_TYPES.ArrowFunctionExpression:
@@ -479,8 +534,17 @@ const containsJsxInBlockStatement = (
     // Check variable declarations for JSX
     if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
       for (const declarator of statement.declarations) {
-        if (declarator.init && containsJsxInExpression(declarator.init)) {
-          return true;
+        if (declarator.init) {
+          // Ignore nested function expressions (helpers/callbacks) even if they return JSX
+          if (
+            declarator.init.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+            declarator.init.type === AST_NODE_TYPES.FunctionExpression
+          ) {
+            continue;
+          }
+          if (containsJsxInExpression(declarator.init)) {
+            return true;
+          }
         }
       }
     }
@@ -566,7 +630,7 @@ export const reactUseMemoShouldBeComponent = createRule<[], MessageIds>({
     schema: [],
     messages: {
       useMemoShouldBeComponent:
-        'useMemo returning JSX should be extracted into a separate component. Use React.memo() for component memoization instead.',
+        'useMemo result "{{memoName}}" returns JSX, which hides a component inside a memoized value. JSX needs component identity so React can manage props, state, and dev tooling; wrapping it in useMemo bypasses that boundary and makes reuse/debugging harder. Extract this JSX into its own component and memoize it with React.memo if stability is required.',
     },
   },
   defaultOptions: [],
@@ -582,16 +646,37 @@ export const reactUseMemoShouldBeComponent = createRule<[], MessageIds>({
           ) {
             const variableName = node.parent.id.name;
 
+            // Only report when the memoized value is used as a JSX child
+            if (!isUsedAsJsxChild(context, variableName, node)) {
+              return;
+            }
+
             // Check if the variable is used multiple times in the component
             if (isUsedMultipleTimes(variableName, node)) {
               // If the variable is used multiple times, allow it
               return;
             }
+
+            // Check if the variable is used as a prop value in a JSX element
+            if (isUsedAsComponentProp(context, variableName, node)) {
+              // If the variable is used as a prop value, allow it
+              return;
+            }
           }
+
+          const memoName =
+            node.parent &&
+            node.parent.type === AST_NODE_TYPES.VariableDeclarator &&
+            node.parent.id.type === AST_NODE_TYPES.Identifier
+              ? node.parent.id.name
+              : 'useMemo return value';
 
           context.report({
             node,
             messageId: 'useMemoShouldBeComponent',
+            data: {
+              memoName,
+            },
           });
         }
       },

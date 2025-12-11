@@ -29,10 +29,15 @@
     "lint": "npm-run-all \"lint:*\"",
     "lint:eslint-docs": "npm-run-all \"update:eslint-docs -- --check\"",
     "lint:js": "eslint ./src",
-    "lint:shell": "shellcheck .devcontainer/git-flow-completion.bash",
     "lint:fix": "tsc && eslint \"./src/**/*\" --quiet --fix",
     "test": "jest --passWithNoTests --reporters=default --reporters=jest-junit",
     "test:ci": "jest --ci --passWithNoTests --reporters=default --reporters=jest-junit",
+    "address-review": "tsx ./.github/scripts/address-review.ts",
+    "merge-review": "tsx ./.github/scripts/merge-review.ts",
+    "fetch-unresolved-comments": "./scripts/pr-check-comments.sh",
+    "fetch-unresolved-bot-comments": "./scripts/pr-check-bot-comments.sh",
+    "resolve-comments": "./scripts/pr-resolve-comments.sh",
+    "apply-comment-decisions": "./scripts/pr-apply-comment-decisions.sh",
     "docs": "./scripts/make-docs.sh && npm run update:eslint-docs",
     "update:eslint-docs": "eslint-doc-generator --init-rule-docs",
     "build": "tsc",
@@ -72,9 +77,9 @@
     "cz-conventional-changelog": "3.3.0",
     "del-cli": "4.0.1",
     "dotenv-cli": "5.0.0",
-    "eslint": "8.57.0",
+    "eslint": "8.57.1",
     "eslint-config-prettier": "8.5.0",
-    "eslint-doc-generator": "1.7.1",
+    "eslint-doc-generator": "2.2.0",
     "eslint-import-resolver-typescript": "3.5.5",
     "eslint-plugin-eslint-plugin": "5.0.0",
     "eslint-plugin-import": "2.26.0",
@@ -95,7 +100,8 @@
     "semantic-release": "19.0.3",
     "ts-jest": "29.2.6",
     "ts-node": "10.9.1",
-    "typescript": "4.9.5"
+    "tsx": "4.19.4",
+    "typescript": "^5.0.3"
   },
   "peerDependencies": {
     "eslint": ">=7"

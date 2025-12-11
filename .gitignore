@@ -36,5 +36,12 @@ lib/package.json
 # But don't ignore scripts
 !scripts/**/*.js
 
-# Ingored in this eslint-custom-rules repo so that it only shows in the agora repo
+# Ignored in this eslint-custom-rules repo so that it only shows in the agora repo
 .specstory/
+
+# Cursor hooks temporary files
+.cursor/tmp/
+
+# Intentionally exclude this rule file: interactive question prompts block async Cloud Agents.
+# The file is removed for Cloud Agent runs and must remain uncommitted.
+.cursor/rules/do-not-hesitate-to-ask-questions.mdc

@@ -82,8 +82,9 @@ ruleTesterTs.run(
             data: {
               type: 'variable',
               name: 'active',
+              capitalizedName: 'Active',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -96,8 +97,9 @@ ruleTesterTs.run(
             data: {
               type: 'variable',
               name: 'userLoggedIn',
+              capitalizedName: 'UserLoggedIn',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -110,8 +112,9 @@ ruleTesterTs.run(
             data: {
               type: 'variable',
               name: 'completed',
+              capitalizedName: 'Completed',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -126,8 +129,9 @@ ruleTesterTs.run(
             data: {
               type: 'parameter',
               name: 'enabled',
+              capitalizedName: 'Enabled',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -140,8 +144,9 @@ ruleTesterTs.run(
             data: {
               type: 'parameter',
               name: 'valid',
+              capitalizedName: 'Valid',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -165,8 +170,9 @@ ruleTesterTs.run(
             data: {
               type: 'property',
               name: 'verified',
+              capitalizedName: 'Verified',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
           {
@@ -174,8 +180,9 @@ ruleTesterTs.run(
             data: {
               type: 'property',
               name: 'premium',
+              capitalizedName: 'Premium',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
           {
@@ -183,8 +190,9 @@ ruleTesterTs.run(
             data: {
               type: 'method',
               name: 'accountLocked',
+              capitalizedName: 'AccountLocked',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -204,8 +212,9 @@ ruleTesterTs.run(
             data: {
               type: 'property',
               name: 'active',
+              capitalizedName: 'Active',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
           {
@@ -213,8 +222,9 @@ ruleTesterTs.run(
             data: {
               type: 'property',
               name: 'subscription',
+              capitalizedName: 'Subscription',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -229,8 +239,9 @@ ruleTesterTs.run(
             data: {
               type: 'property',
               name: 'enabled',
+              capitalizedName: 'Enabled',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
           {
@@ -238,8 +249,48 @@ ruleTesterTs.run(
             data: {
               type: 'property',
               name: 'feature',
+              capitalizedName: 'Feature',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+            },
+          },
+        ],
+      },
+      {
+        code: `
+        const config = { enabled: true };
+
+        if (config && extraCondition) {
+          doSomething(config);
+        }
+        `,
+        errors: [
+          {
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'property',
+              name: 'enabled',
+              capitalizedName: 'Enabled',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+            },
+          },
+        ],
+      },
+      {
+        code: `
+        const flags = { visible: true };
+        flags === otherConfig;
+        `,
+        errors: [
+          {
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'property',
+              name: 'visible',
+              capitalizedName: 'Visible',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -254,8 +305,9 @@ ruleTesterTs.run(
             data: {
               type: 'function',
               name: 'authorized',
+              capitalizedName: 'Authorized',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -268,8 +320,9 @@ ruleTesterTs.run(
             data: {
               type: 'function',
               name: 'userExists',
+              capitalizedName: 'UserExists',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -284,8 +337,9 @@ ruleTesterTs.run(
             data: {
               type: 'variable',
               name: 'valid',
+              capitalizedName: 'Valid',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -298,8 +352,9 @@ ruleTesterTs.run(
             data: {
               type: 'variable',
               name: 'permission',
+              capitalizedName: 'Permission',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],
@@ -315,6 +370,7 @@ ruleTesterTs.run(
             data: {
               type: 'variable',
               name: 'isActive',
+              capitalizedName: 'IsActive',
               prefixes: 'has, can',
             },
           },

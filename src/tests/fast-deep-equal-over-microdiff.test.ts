@@ -60,6 +60,51 @@ function hasConfigChanged(oldConfig, newConfig) {
   return diff(oldConfig, newConfig).length > 0;
 }`,
     },
+    // Do not flag when variable is used beyond length equality (for-of)
+    {
+      code: `import diff from 'microdiff';
+
+function processChanges(a, b) {
+  const changes = diff(a, b);
+  const isEqual = changes.length === 0;
+  for (const change of changes) {
+    if (change.type === 'CREATE') return false;
+  }
+  return isEqual;
+}`,
+    },
+    // Do not flag when comparing to non-zero literal
+    {
+      code: `import diff from 'microdiff';
+
+function hasOneChange(a, b) {
+  const changes = diff(a, b);
+  return changes.length === 1;
+}`,
+    },
+    // Do not flag when variable is reassigned later
+    {
+      code: `import diff from 'microdiff';
+
+function maybeEqual(a, b) {
+  let changes = diff(a, b);
+  changes = [];
+  return changes.length === 0;
+}`,
+    },
+    // Do not flag when microdiff is not imported (local function named diff)
+    {
+      code: `
+function diff(a, b) {
+  return [{ a, b }];
+}
+
+function isSame(a, b) {
+  const changes = diff(a, b);
+  return changes.length === 0;
+}
+`,
+    },
   ],
   invalid: [
     // Using microdiff for equality check with .length === 0
@@ -232,6 +277,191 @@ import deepEqual from 'fast-deep-equal';
 
 function areObjectsEqual(obj1, obj2) {
   return deepEqual(obj1, obj2);
+}`,
+    },
+    // Default import of microdiff, direct inline equality
+    {
+      code: `import diff from 'microdiff';
+
+function areObjectsEqual(a, b) {
+  return diff(a, b).length === 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual' }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function areObjectsEqual(a, b) {
+  return isEqual(a, b);
+}`,
+    },
+    // Variable assignment with arbitrary name, then equality check
+    {
+      code: `import diff from 'microdiff';
+
+function areObjectsEqual(a, b) {
+  const changes = diff(a, b);
+  return changes.length === 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual' }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function areObjectsEqual(a, b) {
+  return isEqual(a, b);
+}`,
+    },
+    // Variable assignment with different name, used in if condition
+    {
+      code: `import diff from 'microdiff';
+
+function doSomething(before, after) {
+  const differences = diff(before, after);
+  if (differences.length === 0) {
+    return;
+  }
+}`,
+      errors: [{ messageId: 'useFastDeepEqual' }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function doSomething(before, after) {
+  if (isEqual(before, after)) {
+    return;
+  }
+}`,
+    },
+    // Unary usage on variable: !changes.length
+    {
+      code: `import diff from 'microdiff';
+
+function areSame(x, y) {
+  const changes = diff(x, y);
+  return !changes.length;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual' }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function areSame(x, y) {
+  return isEqual(x, y);
+}`,
+    },
+    // Symmetric literal comparison: 0 === diff(...).length
+    {
+      code: `import diff from 'microdiff';
+
+function eq(a, b) {
+  return 0 === diff(a, b).length;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual' }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function eq(a, b) {
+  return isEqual(a, b);
+}`,
+    },
+    // Multiple occurrences in the same file should add a single import
+    {
+      code: `import diff from 'microdiff';
+
+function checkAll(prevData, newData, previousMetadataRef, newMetadata) {
+  const changesData = diff({ ...prevData }, { ...newData });
+  const isDataEqual = changesData.length === 0;
+
+  const changesMetadata = diff(
+    { ...previousMetadataRef.current },
+    { ...newMetadata },
+  );
+  const isMetadataEqual = changesMetadata.length === 0;
+
+  return isDataEqual && isMetadataEqual;
+}`,
+      errors: [
+        { messageId: 'useFastDeepEqual' },
+        { messageId: 'useFastDeepEqual' },
+      ],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function checkAll(prevData, newData, previousMetadataRef, newMetadata) {
+  const isDataEqual = isEqual({ ...prevData }, { ...newData });
+
+  const isMetadataEqual = isEqual(
+    { ...previousMetadataRef.current },
+    { ...newMetadata },
+  );
+
+  return isDataEqual && isMetadataEqual;
+}`,
+    },
+    // Variable-based inequality check using changes.length !== 0
+    {
+      code: `import diff from 'microdiff';
+
+function objectsAreDifferent(obj1, obj2) {
+  const changes = diff(obj1, obj2);
+  return changes.length !== 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual' }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function objectsAreDifferent(obj1, obj2) {
+  return !isEqual(obj1, obj2);
+}`,
+    },
+    // Variable-based equality check with literal on left side
+    {
+      code: `import diff from 'microdiff';
+
+function eq(a, b) {
+  const changes = diff(a, b);
+  return 0 === changes.length;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual' }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function eq(a, b) {
+  return isEqual(a, b);
+}`,
+    },
+    // Unary variable check !changes.length
+    {
+      code: `import diff from 'microdiff';
+
+function areSame(x, y) {
+  const changes = diff(x, y);
+  return !changes.length;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual' }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function areSame(x, y) {
+  return isEqual(x, y);
+}`,
+    },
+    // Multiline diff call formatting
+    {
+      code: `import diff from 'microdiff';
+
+function eq(a, b) {
+  return diff(
+    { ...a },
+    { ...b },
+  ).length === 0;
+}`,
+      errors: [{ messageId: 'useFastDeepEqual' }],
+      output: `import diff from 'microdiff';
+import isEqual from 'fast-deep-equal';
+
+function eq(a, b) {
+  return isEqual(
+    { ...a },
+    { ...b },
+  );
 }`,
     },
   ],

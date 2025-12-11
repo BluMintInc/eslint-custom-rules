@@ -1,0 +1,216 @@
+import { createRule } from '../utils/createRule';
+import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+
+type MessageIds = 'restrictedProperty';
+
+/**
+ * This rule is a wrapper around the core ESLint no-restricted-properties rule
+ * that adds special handling for Object.keys() and Object.values() results.
+ * It prevents false positives when accessing standard array properties/methods
+ * on the arrays returned by Object.keys() and Object.values().
+ */
+export const noRestrictedPropertiesFix = createRule<
+  [
+    {
+      object?: string;
+      property?: string;
+      message?: string;
+      allowObjects?: string[];
+    }[],
+  ],
+  MessageIds
+>({
+  name: 'no-restricted-properties-fix',
+  meta: {
+    type: 'suggestion',
+    docs: {
+      description:
+        'Disallow certain properties on certain objects, with special handling for Object.keys() and Object.values()',
+      recommended: 'error',
+    },
+    fixable: 'code',
+    schema: [
+      {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            object: { type: 'string' },
+            property: { type: 'string' },
+            message: { type: 'string' },
+            allowObjects: {
+              type: 'array',
+              items: { type: 'string' },
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+    ],
+    messages: {
+      restrictedProperty:
+        "Disallowed object property: '{{objectName}}.{{propertyName}}'{{message}}",
+    },
+  },
+  defaultOptions: [[]],
+  create(context, [restrictedProperties]) {
+    if (!restrictedProperties || restrictedProperties.length === 0) {
+      return {};
+    }
+
+    const SAFE_ARRAY_PROPERTIES = new Set([
+      'length',
+      'sort',
+      'filter',
+      'map',
+      'reduce',
+      'forEach',
+      'join',
+      'slice',
+      'concat',
+    ]);
+
+    /**
+     * Checks if the given node is a result of Object.keys() or Object.values()
+     * @param node The node to check
+     * @returns True if the node is a result of Object.keys() or Object.values()
+     */
+    function isObjectKeysOrValuesResult(
+      node: TSESTree.Node,
+    ): node is TSESTree.CallExpression {
+      if (node.type !== AST_NODE_TYPES.CallExpression) {
+        return false;
+      }
+
+      const callee = node.callee;
+      if (callee.type !== AST_NODE_TYPES.MemberExpression) {
+        return false;
+      }
+
+      if (
+        callee.object.type !== AST_NODE_TYPES.Identifier ||
+        callee.object.name !== 'Object'
+      ) {
+        return false;
+      }
+
+      if (
+        callee.property.type !== AST_NODE_TYPES.Identifier ||
+        (callee.property.name !== 'keys' && callee.property.name !== 'values')
+      ) {
+        return false;
+      }
+
+      return true;
+    }
+
+    return {
+      MemberExpression(node) {
+        // Skip if the object is a result of Object.keys() or Object.values()
+        if (isObjectKeysOrValuesResult(node.object)) {
+          if (
+            node.property.type === AST_NODE_TYPES.Identifier &&
+            SAFE_ARRAY_PROPERTIES.has(node.property.name)
+          ) {
+            return;
+          }
+        }
+
+        // Apply the original rule logic
+        for (const restrictedProp of restrictedProperties) {
+          const objectMatches =
+            restrictedProp.object &&
+            node.object.type === AST_NODE_TYPES.Identifier &&
+            node.object.name === restrictedProp.object;
+
+          const propertyMatches =
+            restrictedProp.property &&
+            ((node.property.type === AST_NODE_TYPES.Identifier &&
+              node.property.name === restrictedProp.property) ||
+              (node.property.type === AST_NODE_TYPES.Literal &&
+                node.property.value === restrictedProp.property));
+
+          // If both object and property are restricted
+          if (
+            restrictedProp.object &&
+            restrictedProp.property &&
+            objectMatches &&
+            propertyMatches
+          ) {
+            context.report({
+              node,
+              messageId: 'restrictedProperty',
+              data: {
+                objectName: restrictedProp.object,
+                propertyName: restrictedProp.property,
+                message: restrictedProp.message
+                  ? `: ${restrictedProp.message}`
+                  : '',
+              },
+              fix: () => null,
+            });
+          }
+          // If only property is restricted (for any object)
+          else if (
+            !restrictedProp.object &&
+            restrictedProp.property &&
+            propertyMatches
+          ) {
+            // Check if the object is in the allowObjects list
+            if (
+              restrictedProp.allowObjects &&
+              node.object.type === AST_NODE_TYPES.Identifier &&
+              restrictedProp.allowObjects.includes(node.object.name)
+            ) {
+              continue;
+            }
+
+            const objectName =
+              node.object.type === AST_NODE_TYPES.Identifier
+                ? node.object.name
+                : 'unknown';
+
+            context.report({
+              node,
+              messageId: 'restrictedProperty',
+              data: {
+                objectName,
+                propertyName: restrictedProp.property,
+                message: restrictedProp.message
+                  ? `: ${restrictedProp.message}`
+                  : '',
+              },
+              fix: () => null,
+            });
+          }
+          // If only object is restricted (any property)
+          else if (
+            restrictedProp.object &&
+            !restrictedProp.property &&
+            objectMatches
+          ) {
+            const propertyName =
+              node.property.type === AST_NODE_TYPES.Identifier
+                ? node.property.name
+                : node.property.type === AST_NODE_TYPES.Literal
+                ? String(node.property.value)
+                : 'unknown';
+
+            context.report({
+              node,
+              messageId: 'restrictedProperty',
+              data: {
+                objectName: restrictedProp.object,
+                propertyName,
+                message: restrictedProp.message
+                  ? `: ${restrictedProp.message}`
+                  : '',
+              },
+              fix: () => null,
+            });
+          }
+        }
+      },
+    };
+  },
+});

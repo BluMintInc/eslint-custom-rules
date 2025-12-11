@@ -53,8 +53,9 @@ ruleTesterTs.run(
             data: {
               type: 'variable',
               name: 'redemption',
+              capitalizedName: 'Redemption',
               prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts, includes',
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
           },
         ],

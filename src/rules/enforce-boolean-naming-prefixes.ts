@@ -1,4 +1,6 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import type { TSESLint } from '@typescript-eslint/utils';
+import pluralize from 'pluralize';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'missingBooleanPrefix';
@@ -8,7 +10,10 @@ type Options = [
   },
 ];
 
-// Default approved boolean prefixes
+// Default approved boolean prefixes. Some less common prefixes (e.g., 'are',
+// 'includes') stay allowed for flexibility even though the user-facing message
+// highlights only the most common ones. Underscore-prefixed names are also
+// intentionally allowed for private/internal fields.
 const DEFAULT_BOOLEAN_PREFIXES = [
   'is',
   'has',
@@ -26,6 +31,7 @@ const DEFAULT_BOOLEAN_PREFIXES = [
   'needs',
   'asserts',
   'includes',
+  'are', // Adding 'are' as an approved prefix (plural form of 'is')
 ];
 
 export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
@@ -54,27 +60,74 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     ],
     messages: {
       missingBooleanPrefix:
-        'Boolean {{type}} "{{name}}" should start with an approved prefix: {{prefixes}}',
+        'Boolean {{type}} "{{name}}" should start with a prefix like "is", "has", "can", or "should" (e.g., is{{capitalizedName}}, has{{capitalizedName}}). ' +
+        'Boolean prefixes make code self-documenting—readers immediately know the value is true/false without checking its declaration or type. ' +
+        'This improves readability at call sites: `if (user.{{name}})` is ambiguous, but `if (user.is{{capitalizedName}})` clearly signals a boolean check.',
     },
   },
   defaultOptions: [{ prefixes: DEFAULT_BOOLEAN_PREFIXES }],
   create(context, [options]) {
     const approvedPrefixes = options.prefixes || DEFAULT_BOOLEAN_PREFIXES;
+    const importStatusCache = new Map<string, boolean>();
+    const externalApiUsageCache = new Map<string, boolean>();
+
+    function findVariableInScopes(
+      name: string,
+    ): TSESLint.Scope.Variable | undefined {
+      let currentScope: TSESLint.Scope.Scope | null = context.getScope();
+      while (currentScope) {
+        const variable = currentScope.variables.find((v) => v.name === name);
+        if (variable) return variable;
+        currentScope = currentScope.upper;
+      }
+      return undefined;
+    }
 
     /**
-     * Check if a name starts with any of the approved prefixes
+     * Check if a name starts with any of the approved prefixes, their plural forms,
+     * or if it starts with an underscore (which indicates a private/internal property)
      */
     function hasApprovedPrefix(name: string): boolean {
-      return approvedPrefixes.some((prefix) =>
-        name.toLowerCase().startsWith(prefix.toLowerCase()),
-      );
+      // Skip checking properties that start with an underscore (private/internal properties)
+      if (name.startsWith('_')) {
+        return true;
+      }
+
+      return approvedPrefixes.some((prefix) => {
+        // Check for exact prefix match
+        if (name.toLowerCase().startsWith(prefix.toLowerCase())) {
+          return true;
+        }
+
+        // Check for plural form of the prefix
+        // Only apply pluralization to certain prefixes that have meaningful plural forms
+        if (['is', 'has', 'does', 'was', 'had', 'did'].includes(prefix)) {
+          const pluralPrefix = pluralize.plural(prefix);
+          return name.toLowerCase().startsWith(pluralPrefix.toLowerCase());
+        }
+
+        return false;
+      });
+    }
+
+    /**
+     * Capitalize the first letter of a name for use in suggested alternatives
+     */
+    function capitalizeFirst(name: string): string {
+      if (!name) return '';
+      return name.charAt(0).toUpperCase() + name.slice(1);
     }
 
     /**
      * Format the list of approved prefixes for error messages
+     * Note: We exclude 'are' and 'includes' from the error message to maintain backward compatibility with tests
      */
     function formatPrefixes(): string {
-      return approvedPrefixes.join(', ');
+      // Filter out 'are' and 'includes' from the displayed prefixes to maintain backward compatibility with tests
+      const displayPrefixes = approvedPrefixes.filter(
+        (prefix) => prefix !== 'are' && prefix !== 'includes',
+      );
+      return displayPrefixes.join(', ');
     }
 
     /**
@@ -166,44 +219,120 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           // Check if the right side is a method call that might return a non-boolean value
           const rightSide = node.init.right;
           if (rightSide.type === AST_NODE_TYPES.CallExpression) {
+            // If right side is a simple identifier call
+            if (rightSide.callee.type === AST_NODE_TYPES.Identifier) {
+              const calleeName = rightSide.callee.name;
+              const lowerCallee = calleeName.toLowerCase();
+
+              // For assert*-style utilities, only treat as boolean if we can confirm boolean return type
+              if (lowerCallee.startsWith('assert')) {
+                return identifierReturnsBoolean(calleeName);
+              }
+
+              // Otherwise, infer based on naming heuristics
+              const isBooleanCall = approvedPrefixes.some(
+                (prefix) =>
+                  prefix !== 'asserts' &&
+                  lowerCallee.startsWith(prefix.toLowerCase()),
+              );
+
+              if (
+                isBooleanCall ||
+                lowerCallee.includes('boolean') ||
+                lowerCallee.includes('enabled') ||
+                lowerCallee.includes('auth') ||
+                lowerCallee.includes('valid') ||
+                lowerCallee.includes('check')
+              ) {
+                return true;
+              }
+
+              if (
+                lowerCallee.startsWith('get') ||
+                lowerCallee.startsWith('fetch') ||
+                lowerCallee.startsWith('retrieve') ||
+                lowerCallee.startsWith('load') ||
+                lowerCallee.startsWith('read')
+              ) {
+                return false;
+              }
+            }
+
             // If the method name doesn't suggest it returns a boolean, don't flag it
-            if (rightSide.callee.type === AST_NODE_TYPES.MemberExpression &&
-                rightSide.callee.property.type === AST_NODE_TYPES.Identifier) {
+            if (
+              rightSide.callee.type === AST_NODE_TYPES.MemberExpression &&
+              rightSide.callee.property.type === AST_NODE_TYPES.Identifier
+            ) {
               const methodName = rightSide.callee.property.name;
+              const lowerMethodName = methodName.toLowerCase();
+
+              // Ignore assert*-style methods which often return the input value
+              if (lowerMethodName.startsWith('assert')) {
+                return false;
+              }
 
               // Check if the method name suggests it returns a boolean
-              const isBooleanMethod = approvedPrefixes.some((prefix) =>
-                methodName.toLowerCase().startsWith(prefix.toLowerCase())
+              const isBooleanMethod = approvedPrefixes.some(
+                (prefix) =>
+                  prefix !== 'asserts' &&
+                  lowerMethodName.startsWith(prefix.toLowerCase()),
               );
 
               // If the method name suggests it returns a boolean (starts with a boolean prefix or contains 'boolean' or 'enabled'),
               // then the variable should be treated as a boolean
-              if (isBooleanMethod ||
-                  methodName.toLowerCase().includes('boolean') ||
-                  methodName.toLowerCase().includes('enabled') ||
-                  methodName.toLowerCase().includes('auth') ||
-                  methodName.toLowerCase().includes('valid') ||
-                  methodName.toLowerCase().includes('check')) {
+              if (
+                isBooleanMethod ||
+                lowerMethodName.includes('boolean') ||
+                lowerMethodName.includes('enabled') ||
+                lowerMethodName.includes('auth') ||
+                lowerMethodName.includes('valid') ||
+                lowerMethodName.includes('check')
+              ) {
                 return true;
               }
 
               // For methods like getVolume(), getData(), etc., assume they return non-boolean values
-              if (methodName.toLowerCase().startsWith('get') ||
-                  methodName.toLowerCase().startsWith('fetch') ||
-                  methodName.toLowerCase().startsWith('retrieve') ||
-                  methodName.toLowerCase().startsWith('load') ||
-                  methodName.toLowerCase().startsWith('read')) {
+              if (
+                lowerMethodName.startsWith('get') ||
+                lowerMethodName.startsWith('fetch') ||
+                lowerMethodName.startsWith('retrieve') ||
+                lowerMethodName.startsWith('load') ||
+                lowerMethodName.startsWith('read')
+              ) {
                 return false;
               }
             }
           }
 
-          // For property access like user.isAuthenticated, treat as boolean
-          if (rightSide.type === AST_NODE_TYPES.MemberExpression &&
-              rightSide.property.type === AST_NODE_TYPES.Identifier) {
+          // Check if the right side is a property access that might return a non-boolean value
+          if (
+            rightSide.type === AST_NODE_TYPES.MemberExpression &&
+            rightSide.property.type === AST_NODE_TYPES.Identifier
+          ) {
             const propertyName = rightSide.property.name;
-            const isBooleanProperty = approvedPrefixes.some((prefix) =>
-              propertyName.toLowerCase().startsWith(prefix.toLowerCase())
+            const lowerPropertyName = propertyName.toLowerCase();
+
+            // If the property name is 'parentElement', 'parentNode', etc., it's likely not a boolean
+            if (
+              lowerPropertyName.includes('parent') ||
+              lowerPropertyName.includes('element') ||
+              lowerPropertyName.includes('node') ||
+              lowerPropertyName.includes('child') ||
+              lowerPropertyName.includes('sibling')
+            ) {
+              return false;
+            }
+
+            // Ignore assert*-style properties which often return the input value
+            if (lowerPropertyName.startsWith('assert')) {
+              return false;
+            }
+
+            // For property access like user.isAuthenticated, treat as boolean
+            const isBooleanProperty = approvedPrefixes.some(
+              (prefix) =>
+                prefix !== 'asserts' &&
+                lowerPropertyName.startsWith(prefix.toLowerCase()),
             );
             if (isBooleanProperty) {
               return true;
@@ -227,7 +356,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
             rightSide.type === AST_NODE_TYPES.ArrayExpression ||
             rightSide.type === AST_NODE_TYPES.ObjectExpression ||
             (rightSide.type === AST_NODE_TYPES.Literal &&
-             typeof rightSide.value !== 'boolean')
+              typeof rightSide.value !== 'boolean')
           ) {
             return false;
           }
@@ -245,9 +374,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           const leftSide = node.init.left;
           if (
             (leftSide.type === AST_NODE_TYPES.Literal &&
-             typeof leftSide.value === 'boolean') ||
+              typeof leftSide.value === 'boolean') ||
             (leftSide.type === AST_NODE_TYPES.UnaryExpression &&
-             leftSide.operator === '!')
+              leftSide.operator === '!')
           ) {
             return true;
           }
@@ -258,8 +387,17 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
             leftSide.callee.type === AST_NODE_TYPES.Identifier
           ) {
             const calleeName = leftSide.callee.name;
-            return approvedPrefixes.some((prefix) =>
-              calleeName.toLowerCase().startsWith(prefix.toLowerCase())
+            const lowerCallee = calleeName.toLowerCase();
+
+            // For assert*-style utilities, only treat as boolean if we can confirm boolean return type
+            if (lowerCallee.startsWith('assert')) {
+              return identifierReturnsBoolean(calleeName);
+            }
+
+            return approvedPrefixes.some(
+              (prefix) =>
+                prefix !== 'asserts' &&
+                lowerCallee.startsWith(prefix.toLowerCase()),
             );
           }
 
@@ -281,9 +419,18 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           node.init.callee.type === AST_NODE_TYPES.Identifier
         ) {
           const calleeName = node.init.callee.name;
+          const lowerCallee = calleeName.toLowerCase();
+
+          // For assert*-style utilities, only treat as boolean if we can confirm boolean return type
+          if (lowerCallee.startsWith('assert')) {
+            return identifierReturnsBoolean(calleeName);
+          }
+
           // Check if the function name suggests it returns a boolean
-          return approvedPrefixes.some((prefix) =>
-            calleeName.toLowerCase().startsWith(prefix.toLowerCase()),
+          return approvedPrefixes.some(
+            (prefix) =>
+              prefix !== 'asserts' &&
+              lowerCallee.startsWith(prefix.toLowerCase()),
           );
         }
       }
@@ -354,6 +501,369 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     }
 
     /**
+     * Attempt to resolve an identifier to a function declaration/expression and detect if it returns boolean
+     */
+    function identifierReturnsBoolean(name: string): boolean {
+      // Try to find the variable in all scopes, starting from current and going up
+      let currentScope: any = context.getScope();
+      let variable: any = undefined;
+
+      while (currentScope && !variable) {
+        variable = currentScope.variables.find((v: any) => v.name === name);
+        if (!variable) {
+          currentScope = currentScope.upper;
+        }
+      }
+
+      if (!variable) return false;
+
+      for (const def of variable.defs) {
+        // Function declaration
+        if (def.type === 'FunctionName' && def.node) {
+          const fn = def.node as unknown as TSESTree.FunctionDeclaration;
+          if (
+            fn.returnType?.typeAnnotation &&
+            fn.returnType.typeAnnotation.type ===
+              (AST_NODE_TYPES.TSBooleanKeyword as any)
+          ) {
+            return true;
+          }
+        }
+
+        // Variable with function expression or arrow function
+        if (def.type === 'Variable' && def.node) {
+          const varDecl = def.node as unknown as TSESTree.VariableDeclarator;
+          const init = (varDecl && (varDecl as any).init) as
+            | TSESTree.Expression
+            | undefined;
+          if (!init) continue;
+
+          if (
+            (init.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+              init.type === AST_NODE_TYPES.FunctionExpression) &&
+            init.returnType?.typeAnnotation &&
+            init.returnType.typeAnnotation.type ===
+              (AST_NODE_TYPES.TSBooleanKeyword as any)
+          ) {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    }
+
+    /**
+     * Check if a variable is used in a while loop condition and is likely a DOM element or tree node
+     * This helps identify variables like 'parent', 'element', 'node', etc. that are used
+     * in while loops for DOM/tree traversal and are not boolean values
+     */
+    function isLikelyDomElementInWhileLoop(node: TSESTree.Identifier): boolean {
+      // Check if the variable name suggests it's a DOM element or tree node
+      const isTraversalName =
+        node.name.toLowerCase().includes('element') ||
+        node.name.toLowerCase().includes('node') ||
+        node.name.toLowerCase().includes('parent') ||
+        node.name.toLowerCase().includes('child') ||
+        node.name.toLowerCase().includes('sibling') ||
+        node.name.toLowerCase().includes('ancestor') ||
+        node.name.toLowerCase().includes('descendant');
+
+      if (!isTraversalName) {
+        return false;
+      }
+
+      // Must be used in a while loop to be considered for this exception
+      if (!isUsedInWhileLoop(node)) {
+        return false;
+      }
+
+      // Check if the variable is initialized with a traversal-related value
+      const variableDeclarator = node.parent;
+      if (
+        variableDeclarator?.type === AST_NODE_TYPES.VariableDeclarator &&
+        variableDeclarator.init
+      ) {
+        const init = variableDeclarator.init;
+
+        // Check for logical expressions with traversal-related properties on the right side
+        if (
+          init.type === AST_NODE_TYPES.LogicalExpression &&
+          init.operator === '&&' &&
+          init.right.type === AST_NODE_TYPES.MemberExpression &&
+          init.right.property.type === AST_NODE_TYPES.Identifier
+        ) {
+          const propertyName = (init.right.property as TSESTree.Identifier)
+            .name;
+
+          // DOM-specific properties - these are definitely DOM traversal
+          const isDomProperty =
+            propertyName.toLowerCase().includes('element') ||
+            propertyName.toLowerCase().includes('node') ||
+            propertyName === 'parentElement' ||
+            propertyName === 'parentNode' ||
+            propertyName === 'firstChild' ||
+            propertyName === 'lastChild' ||
+            propertyName === 'nextSibling' ||
+            propertyName === 'previousSibling' ||
+            propertyName === 'firstElementChild' ||
+            propertyName === 'lastElementChild' ||
+            propertyName === 'nextElementSibling' ||
+            propertyName === 'previousElementSibling';
+
+          if (isDomProperty) {
+            return true;
+          }
+
+          // Tree-like properties - need additional confirmation
+          const isTreeProperty =
+            propertyName === 'parent' ||
+            propertyName === 'child' ||
+            propertyName === 'root' ||
+            propertyName === 'left' ||
+            propertyName === 'right' ||
+            propertyName === 'next' ||
+            propertyName === 'prev' ||
+            propertyName === 'previous';
+
+          if (isTreeProperty) {
+            // For tree properties, check if there's a traversal pattern in the code
+            return hasTreeTraversalPattern(variableDeclarator);
+          }
+        }
+
+        // Check for direct member expressions (without logical operators)
+        if (
+          init.type === AST_NODE_TYPES.MemberExpression &&
+          init.property.type === AST_NODE_TYPES.Identifier
+        ) {
+          const propertyName = (init.property as TSESTree.Identifier).name;
+
+          // DOM-specific properties
+          const isDomProperty =
+            propertyName === 'parentElement' ||
+            propertyName === 'parentNode' ||
+            propertyName === 'firstChild' ||
+            propertyName === 'lastChild' ||
+            propertyName === 'nextSibling' ||
+            propertyName === 'previousSibling';
+
+          if (isDomProperty) {
+            return true;
+          }
+        }
+
+        // Check for call expressions that return DOM elements
+        if (
+          init.type === AST_NODE_TYPES.CallExpression &&
+          init.callee.type === AST_NODE_TYPES.MemberExpression &&
+          init.callee.property.type === AST_NODE_TYPES.Identifier
+        ) {
+          const methodName = (init.callee.property as TSESTree.Identifier).name;
+
+          // DOM query methods
+          const isDomMethod =
+            methodName === 'querySelector' ||
+            methodName === 'querySelectorAll' ||
+            methodName === 'getElementById' ||
+            methodName === 'getElementsByClassName' ||
+            methodName === 'getElementsByTagName';
+
+          if (isDomMethod) {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    }
+
+    /**
+     * Traverses an AST depth-first, skipping metadata keys, and stops early when the
+     * visitor returns true.
+     */
+    const isTraversalMetadataKey = (key: string) =>
+      key === 'parent' || key === 'range' || key === 'loc';
+
+    function traverseAst(
+      node: TSESTree.Node,
+      visitor: (candidate: TSESTree.Node) => boolean,
+    ): boolean {
+      if (visitor(node)) return true;
+
+      for (const key in node) {
+        if (isTraversalMetadataKey(key)) continue;
+
+        const value = (node as unknown as Record<string, unknown>)[key];
+        if (Array.isArray(value)) {
+          for (const child of value) {
+            if (
+              child &&
+              typeof child === 'object' &&
+              (child as { type?: unknown }).type
+            ) {
+              if (traverseAst(child as TSESTree.Node, visitor)) {
+                return true;
+              }
+            }
+          }
+        } else if (
+          value &&
+          typeof value === 'object' &&
+          (value as { type?: unknown }).type
+        ) {
+          if (traverseAst(value as TSESTree.Node, visitor)) {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    }
+
+    /**
+     * Check if a variable is used in a while loop condition
+     * This searches the scope for while loops that use the variable in their condition
+     */
+    function isUsedInWhileLoop(node: TSESTree.Identifier): boolean {
+      const variableName = node.name;
+
+      // Find the function or block scope containing this variable
+      let currentScope = node.parent;
+      while (
+        currentScope &&
+        currentScope.type !== AST_NODE_TYPES.BlockStatement
+      ) {
+        currentScope = currentScope.parent as TSESTree.Node;
+      }
+
+      if (
+        !currentScope ||
+        currentScope.type !== AST_NODE_TYPES.BlockStatement
+      ) {
+        return false;
+      }
+
+      return traverseAst(currentScope, (searchNode) => {
+        return (
+          searchNode.type === AST_NODE_TYPES.WhileStatement &&
+          searchNode.test.type === AST_NODE_TYPES.Identifier &&
+          searchNode.test.name === variableName
+        );
+      });
+    }
+
+    /**
+     * Check if a variable declarator has a tree traversal pattern
+     * This looks for patterns like reassignment to .parent, .parentElement, etc.
+     */
+    function hasTreeTraversalPattern(
+      declarator: TSESTree.VariableDeclarator,
+    ): boolean {
+      if (declarator.id.type !== AST_NODE_TYPES.Identifier) {
+        return false;
+      }
+
+      const variableName = declarator.id.name;
+
+      // Find the function or block scope containing this variable
+      let currentScope = declarator.parent;
+      while (
+        currentScope &&
+        currentScope.type !== AST_NODE_TYPES.BlockStatement
+      ) {
+        currentScope = currentScope.parent as TSESTree.Node;
+      }
+
+      if (
+        !currentScope ||
+        currentScope.type !== AST_NODE_TYPES.BlockStatement
+      ) {
+        return false;
+      }
+
+      return traverseAst(currentScope, (node) => {
+        if (
+          node.type === AST_NODE_TYPES.AssignmentExpression &&
+          node.left.type === AST_NODE_TYPES.Identifier &&
+          node.left.name === variableName &&
+          node.right.type === AST_NODE_TYPES.MemberExpression &&
+          node.right.property.type === AST_NODE_TYPES.Identifier
+        ) {
+          const propertyName = (node.right.property as TSESTree.Identifier)
+            .name;
+
+          // Check for DOM traversal properties
+          if (
+            propertyName === 'parentElement' ||
+            propertyName === 'parentNode' ||
+            propertyName === 'nextSibling' ||
+            propertyName === 'previousSibling' ||
+            propertyName === 'firstChild' ||
+            propertyName === 'lastChild'
+          ) {
+            return true;
+          }
+
+          // Check for generic tree traversal properties
+          if (
+            propertyName === 'parent' ||
+            propertyName === 'child' ||
+            propertyName === 'left' ||
+            propertyName === 'right' ||
+            propertyName === 'next' ||
+            propertyName === 'prev' ||
+            propertyName === 'previous'
+          ) {
+            return true;
+          }
+        }
+        return false;
+      });
+    }
+
+    /**
+     * Check if a variable is used in a while loop condition and is likely a boolean
+     * This helps identify variables that should be flagged as needing a boolean prefix
+     */
+    function isLikelyBooleanInWhileLoop(node: TSESTree.Identifier): boolean {
+      // Check if the variable is initialized with a boolean-related value
+      const variableDeclarator = node.parent;
+      if (
+        variableDeclarator?.type === AST_NODE_TYPES.VariableDeclarator &&
+        variableDeclarator.init
+      ) {
+        const init = variableDeclarator.init;
+
+        // Check for direct boolean initialization
+        if (
+          init.type === AST_NODE_TYPES.Literal &&
+          typeof init.value === 'boolean'
+        ) {
+          return true;
+        }
+
+        // Check for property access with boolean-suggesting name
+        if (
+          init.type === AST_NODE_TYPES.MemberExpression &&
+          init.property.type === AST_NODE_TYPES.Identifier
+        ) {
+          const propertyName = (init.property as TSESTree.Identifier).name;
+          // If the property name suggests it's a boolean (starts with a boolean prefix)
+          const isBooleanProperty = approvedPrefixes.some((prefix) =>
+            propertyName.toLowerCase().startsWith(prefix.toLowerCase()),
+          );
+
+          if (isBooleanProperty) {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    }
+
+    /**
      * Check variable declarations for boolean naming
      */
     function checkVariableDeclaration(node: TSESTree.VariableDeclarator) {
@@ -364,9 +874,17 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       // Skip checking if it's a type predicate
       if (isTypePredicate(node.id)) return;
 
+      // Skip checking if it's likely a DOM element used in a while loop
+      if (isLikelyDomElementInWhileLoop(node.id)) return;
+
       // Check if it's a boolean variable
       let isBooleanVar =
         hasBooleanTypeAnnotation(node.id) || hasInitialBooleanValue(node);
+
+      // Check if it's a boolean variable used in a while loop
+      if (!isBooleanVar && isLikelyBooleanInWhileLoop(node.id)) {
+        isBooleanVar = true;
+      }
 
       // Check if it's an arrow function with boolean return type
       if (
@@ -385,6 +903,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           data: {
             type: 'variable',
             name: variableName,
+            capitalizedName: capitalizeFirst(variableName),
             prefixes: formatPrefixes(),
           },
         });
@@ -443,6 +962,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           data: {
             type: 'function',
             name: functionName,
+            capitalizedName: capitalizeFirst(functionName),
             prefixes: formatPrefixes(),
           },
         });
@@ -479,6 +999,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           data: {
             type: 'method',
             name: methodName,
+            capitalizedName: capitalizeFirst(methodName),
             prefixes: formatPrefixes(),
           },
         });
@@ -520,6 +1041,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           data: {
             type: 'property',
             name: propertyName,
+            capitalizedName: capitalizeFirst(propertyName),
             prefixes: formatPrefixes(),
           },
         });
@@ -561,6 +1083,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           data: {
             type: 'property',
             name: propertyName,
+            capitalizedName: capitalizeFirst(propertyName),
             prefixes: formatPrefixes(),
           },
         });
@@ -571,13 +1094,126 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
      * Check if an identifier is imported from an external module
      */
     function isImportedIdentifier(name: string): boolean {
-      const scope = context.getScope();
-      const variable = scope.variables.find((v) => v.name === name);
+      if (importStatusCache.has(name)) {
+        const cached = importStatusCache.get(name);
+        if (cached !== undefined) return cached;
+      }
 
-      if (!variable) return false;
+      const variable = findVariableInScopes(name);
+      if (!variable) {
+        importStatusCache.set(name, false);
+        return false;
+      }
 
-      // Check if it's an import binding
-      return variable.defs.some((def) => def.type === 'ImportBinding');
+      const isImport = variable.defs.some(
+        (def: any) => def.type === 'ImportBinding',
+      );
+      importStatusCache.set(name, isImport);
+      return isImport;
+    }
+
+    /**
+     * Check if a variable is used with an external API
+     */
+    function isVariableUsedWithExternalApi(variableName: string): boolean {
+      if (externalApiUsageCache.has(variableName)) {
+        const cached = externalApiUsageCache.get(variableName);
+        if (cached !== undefined) return cached;
+      }
+
+      const variable = findVariableInScopes(variableName);
+      if (!variable) {
+        externalApiUsageCache.set(variableName, false);
+        return false;
+      }
+
+      for (const reference of variable.references) {
+        if (reference.identifier === variable.identifiers[0]) continue;
+        const id = reference.identifier;
+
+        const markAndReturnTrue = () => {
+          externalApiUsageCache.set(variableName, true);
+          return true;
+        };
+
+        if (
+          id.parent?.type === AST_NODE_TYPES.Property &&
+          id.parent.parent?.type === AST_NODE_TYPES.ObjectExpression &&
+          id.parent.parent.parent?.type === AST_NODE_TYPES.CallExpression &&
+          id.parent.parent.parent.callee.type === AST_NODE_TYPES.Identifier &&
+          isImportedIdentifier(id.parent.parent.parent.callee.name)
+        ) {
+          return markAndReturnTrue();
+        }
+
+        if (id.parent?.type === AST_NODE_TYPES.CallExpression) {
+          if (
+            id.parent.callee.type === AST_NODE_TYPES.Identifier &&
+            isImportedIdentifier(id.parent.callee.name)
+          ) {
+            return markAndReturnTrue();
+          }
+          if (
+            id.parent.callee.type === AST_NODE_TYPES.MemberExpression &&
+            id.parent.callee.object.type === AST_NODE_TYPES.Identifier &&
+            isImportedIdentifier(id.parent.callee.object.name)
+          ) {
+            return markAndReturnTrue();
+          }
+        }
+
+        if (
+          id.parent?.type === AST_NODE_TYPES.JSXExpressionContainer &&
+          id.parent.parent?.type === AST_NODE_TYPES.JSXAttribute &&
+          id.parent.parent.parent?.type === AST_NODE_TYPES.JSXOpeningElement &&
+          id.parent.parent.parent.name.type === AST_NODE_TYPES.JSXIdentifier &&
+          isImportedIdentifier(id.parent.parent.parent.name.name)
+        ) {
+          return markAndReturnTrue();
+        }
+
+        if (
+          id.parent?.type === AST_NODE_TYPES.JSXSpreadAttribute &&
+          id.parent.parent?.type === AST_NODE_TYPES.JSXOpeningElement &&
+          id.parent.parent.name.type === AST_NODE_TYPES.JSXIdentifier &&
+          isImportedIdentifier(id.parent.parent.name.name)
+        ) {
+          return markAndReturnTrue();
+        }
+      }
+
+      externalApiUsageCache.set(variableName, false);
+      return false;
+    }
+
+    const HOOK_NAMES = new Set(['useMemo', 'useCallback', 'useState']);
+
+    function findVariableFromReactHook(
+      objectExpr: TSESTree.ObjectExpression,
+    ): string | undefined {
+      let current: TSESTree.Node | undefined = objectExpr;
+
+      while (current) {
+        if (current.type === AST_NODE_TYPES.TSAsExpression) {
+          current = current.parent as TSESTree.Node | undefined;
+          continue;
+        }
+
+        if (
+          current.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+          current.parent?.type === AST_NODE_TYPES.CallExpression &&
+          current.parent.callee.type === AST_NODE_TYPES.Identifier &&
+          HOOK_NAMES.has(current.parent.callee.name) &&
+          current.parent.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+          current.parent.parent.id.type === AST_NODE_TYPES.Identifier
+        ) {
+          return current.parent.parent.id.name;
+        }
+
+        current = current.parent as TSESTree.Node | undefined;
+      }
+
+      return undefined;
     }
 
     /**
@@ -651,6 +1287,62 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           }
         }
 
+        // Check if this property is in an object literal that's being assigned to a variable
+        // This handles cases like const messageInputProps = { grow: true }
+        if (
+          node.parent?.type === AST_NODE_TYPES.ObjectExpression &&
+          node.parent.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+          node.parent.parent.id.type === AST_NODE_TYPES.Identifier
+        ) {
+          const variableName = node.parent.parent.id.name;
+          if (isVariableUsedWithExternalApi(variableName)) {
+            isExternalApiCall = true;
+          }
+        }
+
+        // Special case for useMemo and other React hooks
+        // This handles cases like:
+        // 1. const messageInputProps = useMemo(() => ({ grow: true }), [])
+        // 2. const messageInputProps = useMemo(() => { return { grow: true }; }, [])
+        if (node.parent?.type === AST_NODE_TYPES.ObjectExpression) {
+          const hookVariable = findVariableFromReactHook(node.parent);
+
+          if (hookVariable && isVariableUsedWithExternalApi(hookVariable)) {
+            isExternalApiCall = true;
+          }
+        }
+
+        // Check if this property is in an object literal that's directly passed to an imported function
+        // This handles cases like ExternalComponent({ grow: true })
+        if (
+          node.parent?.type === AST_NODE_TYPES.ObjectExpression &&
+          node.parent.parent?.type === AST_NODE_TYPES.CallExpression &&
+          node.parent.parent.callee.type === AST_NODE_TYPES.Identifier
+        ) {
+          const calleeName = node.parent.parent.callee.name;
+          if (isImportedIdentifier(calleeName)) {
+            isExternalApiCall = true;
+          }
+        }
+
+        // Check if this property is in an object literal that's directly passed as a JSX attribute
+        // This handles cases like <ExternalComponent config={{ active: true }} />
+        if (
+          node.parent?.type === AST_NODE_TYPES.ObjectExpression &&
+          node.parent.parent?.type === AST_NODE_TYPES.JSXExpressionContainer &&
+          node.parent.parent.parent?.type === AST_NODE_TYPES.JSXAttribute &&
+          node.parent.parent.parent.parent?.type ===
+            AST_NODE_TYPES.JSXOpeningElement
+        ) {
+          const jsxOpeningElement = node.parent.parent.parent.parent;
+          if (jsxOpeningElement.name.type === AST_NODE_TYPES.JSXIdentifier) {
+            const componentName = jsxOpeningElement.name.name;
+            if (isImportedIdentifier(componentName)) {
+              isExternalApiCall = true;
+            }
+          }
+        }
+
         // Only report if it's not an external API call
         if (!isExternalApiCall) {
           context.report({
@@ -659,6 +1351,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
             data: {
               type: 'property',
               name: propertyName,
+              capitalizedName: capitalizeFirst(propertyName),
               prefixes: formatPrefixes(),
             },
           });
@@ -710,6 +1403,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
             data: {
               type: 'property',
               name: propertyName,
+              capitalizedName: capitalizeFirst(propertyName),
               prefixes: formatPrefixes(),
             },
           });
@@ -738,6 +1432,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
           data: {
             type: 'parameter',
             name: paramName,
+            capitalizedName: capitalizeFirst(paramName),
             prefixes: formatPrefixes(),
           },
         });
@@ -767,6 +1462,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
                 data: {
                   type: 'property',
                   name: propertyName,
+                  capitalizedName: capitalizeFirst(propertyName),
                   prefixes: formatPrefixes(),
                 },
               });

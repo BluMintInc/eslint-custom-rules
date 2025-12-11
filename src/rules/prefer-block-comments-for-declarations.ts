@@ -15,20 +15,31 @@ export const preferBlockCommentsForDeclarations: TSESLint.RuleModule<
      */
     const isLineCommentBeforeDeclaration = (
       comment: TSESTree.Comment,
-      node: TSESTree.Node
+      node: TSESTree.Node,
     ): boolean => {
       // Only process line comments
       if (comment.type !== 'Line') {
         return false;
       }
 
-      // Ignore ESLint directive comments
+      // Ignore ESLint & TypeScript directive comments
       const commentText = comment.value.trim();
-      if (commentText.startsWith('eslint-disable') ||
-          commentText.startsWith('eslint-enable') ||
-          commentText.startsWith('eslint-env') ||
-          commentText.startsWith('global ') ||
-          commentText.startsWith('globals ')) {
+      if (
+        // ESLint
+        commentText.startsWith('eslint-disable') ||
+        commentText.startsWith('eslint-enable') ||
+        commentText.startsWith('eslint-env') ||
+        commentText.startsWith('eslint ') ||
+        commentText.startsWith('global ') ||
+        commentText.startsWith('globals ') ||
+        commentText.startsWith('exported ') ||
+        // TypeScript line directives (keep as line comments)
+        /^@ts-(ignore|expect-error|check|nocheck)\b/.test(commentText) ||
+        // TypeScript triple-slash directives (value of a 'Line' comment that started with '///')
+        commentText.startsWith('/ <reference') ||
+        commentText.startsWith('/ <amd-') ||
+        commentText.startsWith('/ <jsxImportSource')
+      ) {
         return false;
       }
 
@@ -48,12 +59,10 @@ export const preferBlockCommentsForDeclarations: TSESLint.RuleModule<
       while (parent) {
         if (
           parent.type === 'BlockStatement' &&
-          (
-            parent.parent?.type === 'FunctionDeclaration' ||
+          (parent.parent?.type === 'FunctionDeclaration' ||
             parent.parent?.type === 'FunctionExpression' ||
             parent.parent?.type === 'ArrowFunctionExpression' ||
-            parent.parent?.type === 'MethodDefinition'
-          )
+            parent.parent?.type === 'MethodDefinition')
         ) {
           return true;
         }

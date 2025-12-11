@@ -1,0 +1,113 @@
+name: Fix ESLint Rule Bug
+
+on:
+  issues:
+    types: [labeled, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+concurrency:
+  group: cursor-fix-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  fix_bug:
+    if: |
+      ((github.event.action == 'labeled' && github.event.label.name == 'cursor-fix') ||
+       (github.event.action == 'reopened' && contains(github.event.issue.labels.*.name, 'cursor-fix'))) &&
+      contains(github.event.issue.labels.*.name, 'bug')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute variables and build prompt
+        id: vars
+        run: |
+          set -euo pipefail
+          ISSUE_NUMBER='${{ github.event.issue.number }}'
+          DEFAULT_REF='develop'
+
+          # Fetch issue details
+          ISSUE_JSON=$(gh api repos/${{ github.repository }}/issues/$ISSUE_NUMBER)
+          ISSUE_TITLE=$(echo "$ISSUE_JSON" | jq -r '.title')
+          ISSUE_BODY=$(echo "$ISSUE_JSON" | jq -r '.body // ""')
+
+          # Derive target branch
+          TARGET_BRANCH="develop-fix-bug-$ISSUE_NUMBER"
+
+          # Build prompt by copying command file and appending issue details
+          PROMPT_FILE=/tmp/fix-prompt.txt
+
+          # Copy the fix-bug command (no rule-request flag for bug fixes)
+          cat .cursor/commands/fix-bug.md > "$PROMPT_FILE"
+
+          # Append issue-specific details safely (no shell expansion of issue text)
+          cat >> "$PROMPT_FILE" <<'PROMPT_ISSUE'
+
+          ---
+
+          ## Bug to Fix
+
+          PROMPT_ISSUE
+
+          printf '**Issue #%s**: %s\n\n%s\n\n' "$ISSUE_NUMBER" "$ISSUE_TITLE" "$ISSUE_BODY" >> "$PROMPT_FILE"
+
+          cat >> "$PROMPT_FILE" <<'PROMPT_ISSUE'
+          ---
+
+          When complete, open a PR targeting the \`develop\` branch.
+          When you open the GitHub pull request for this work, do not open it as a draft. Create an open, ready-for-review PR.
+          PROMPT_ISSUE
+
+          echo "source_ref=$DEFAULT_REF" >> "$GITHUB_OUTPUT"
+          echo "target_branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
+          echo "prompt_path=$PROMPT_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Mask Cursor API Key
+        run: echo "::add-mask::${CURSOR_API_KEY}"
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+
+      - name: Launch Cursor Background Agent
+        id: launch
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          PROMPT_FILE='${{ steps.vars.outputs.prompt_path }}'
+
+          JSON_PAYLOAD=$(jq -n \
+            --rawfile prompt_text "$PROMPT_FILE" \
+            --arg repository "https://github.com/${{ github.repository }}" \
+            --arg source_ref "${{ steps.vars.outputs.source_ref }}" \
+            --arg target_branch "${{ steps.vars.outputs.target_branch }}" \
+            --arg model "gpt-5.1-codex-max-high" \
+            '{
+              model: $model,
+              prompt: { text: $prompt_text },
+              source: { repository: $repository, ref: $source_ref },
+              target: { branchName: $target_branch, autoCreatePr: true, skipReviewerRequest: true }
+            }')
+
+          RESPONSE=$(curl --fail --silent --show-error \
+            --request POST \
+            --url https://api.cursor.com/v0/agents \
+            --header "Authorization: Bearer ${CURSOR_API_KEY}" \
+            --header "Content-Type: application/json" \
+            --data "$JSON_PAYLOAD")
+
+          AGENT_URL=$(echo "$RESPONSE" | jq -r '.target.url')
+          echo "agent_url=$AGENT_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Comment on issue with agent link
+        run: |
+          URL='${{ steps.launch.outputs.agent_url }}'
+          gh api repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/comments \
+            -f body="🔧 Launched Cursor Bug Fix Agent. View agent: $URL"
+

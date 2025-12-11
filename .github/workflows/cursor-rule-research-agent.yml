@@ -1,0 +1,174 @@
+name: Research Existing ESLint Rules
+
+'on':
+  issues:
+    types: [labeled, reopened]
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+concurrency:
+  group: cursor-research-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  research_existing_rules:
+    if: |
+      (github.event.action == 'labeled' && github.event.label.name == 'cursor-research') ||
+      (github.event.action == 'reopened' && contains(github.event.issue.labels.*.name, 'cursor-research'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for existing research
+        id: check_research
+        run: |
+          COMMENTS=$(gh api repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/comments)
+          HAS_RESEARCH=$(echo "$COMMENTS" | jq 'any(.body | contains("## 🔍 ESLint Rule Research Results"))')
+          echo "has_research=$HAS_RESEARCH" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if research exists
+        if: steps.check_research.outputs.has_research == 'true'
+        run: |
+          echo "Research already completed for this issue. Skipping."
+          exit 0
+
+      - name: Checkout
+        if: steps.check_research.outputs.has_research != 'true'
+        uses: actions/checkout@v4
+
+      - name: Compute variables and build prompt
+        if: steps.check_research.outputs.has_research != 'true'
+        id: vars
+        run: |
+          set -euo pipefail
+          ISSUE_NUMBER='${{ github.event.issue.number }}'
+
+          # Fetch issue details
+          ISSUE_JSON=$(gh api repos/${{ github.repository }}/issues/$ISSUE_NUMBER)
+          ISSUE_TITLE=$(echo "$ISSUE_JSON" | jq -r '.title')
+          ISSUE_BODY=$(echo "$ISSUE_JSON" | jq -r '.body // ""')
+
+          # Derive target branch
+          TARGET_BRANCH="develop-research-rule-$ISSUE_NUMBER"
+
+          # Build research prompt
+          PROMPT_FILE=/tmp/research-prompt.txt
+          cat > "$PROMPT_FILE" << 'PROMPT_EOF'
+          Conduct a thorough and deep research of the @Web to determine if an ESLint rule already exists that matches the following description.
+
+          ## Rule Description
+          PROMPT_EOF
+
+          # Append issue details without allowing shell expansion of issue text
+          cat >> "$PROMPT_FILE" <<'PROMPT_ISSUE'
+
+          PROMPT_ISSUE
+
+          printf "**Title**: %s\n**Body**:\n%s\n\n" "$ISSUE_TITLE" "$ISSUE_BODY" >> "$PROMPT_FILE"
+
+          cat >> "$PROMPT_FILE" <<'PROMPT_ISSUE'
+          ## Detailed Steps for Comprehensive Research
+
+          1. **Search thoroughly across a wide variety of sources**, including but not limited to:
+             - Official ESLint core rules (https://eslint.org/docs/rules/)
+             - @typescript-eslint/eslint-plugin rules
+             - eslint-plugin-react and eslint-plugin-react-hooks
+             - eslint-plugin-import
+             - Other relevant ESLint plugins on npm
+             - GitHub repositories, issues, and pull requests
+             - Discussions on Stack Overflow, Reddit, and programming forums
+
+          2. **Provide links** to all relevant ESLint rules, plugins, or discussions discovered, along with concise assessments regarding how closely these resources align with the provided description.
+
+          3. **Offer a clear recommendation** based on your extensive findings:
+             - **EXACT MATCH**: An existing rule exactly meets the criteria and can be directly utilized
+             - **PARTIAL MATCH**: An existing rule partially meets the criteria and could be adapted with minimal modifications or configuration
+             - **NO MATCH**: No suitable rule exists, necessitating the creation of a new custom rule
+
+          Include direct URLs and detailed summaries of your findings for comprehensive reference.
+
+          ## Output
+
+          After completing your research, write your findings to `.cursor/tmp/research-results.md`. Your results should follow the template below:
+
+          ```markdown
+          ## 🔍 ESLint Rule Research Results
+
+          ### Summary
+          **Recommendation**: [EXACT MATCH | PARTIAL MATCH | NO MATCH]
+
+          ### Existing Rule(s) Found
+
+          #### 1. `eslint-plugin-xxx/rule-name`
+          - **Match Level**: 80%
+          - **Description**: Brief description
+          - **Configuration**: Example config
+          - **Limitations**: What it doesn't cover
+
+          ### Recommendation Details
+          [Detailed explanation of the recommendation]
+          ```
+
+          Then run:
+
+          ```bash
+          ISSUE_NUMBER=${ISSUE_NUMBER} npx tsx scripts/github/post-research-comment.ts
+          ```
+
+          The script will:
+          1. Post your research findings as a comment on the issue
+          2. Manipulate labels based on your recommendation:
+             - Remove `cursor-research` label
+             - Add `research-complete` label
+             - If NO MATCH: Also add `cursor-implement` label
+          PROMPT_ISSUE
+
+          echo "source_ref=develop" >> "$GITHUB_OUTPUT"
+          echo "target_branch=$TARGET_BRANCH" >> "$GITHUB_OUTPUT"
+          echo "prompt_path=$PROMPT_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Mask Cursor API Key
+        if: steps.check_research.outputs.has_research != 'true'
+        run: echo "::add-mask::${CURSOR_API_KEY}"
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+
+      - name: Launch Cursor Background Agent
+        if: steps.check_research.outputs.has_research != 'true'
+        id: launch
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          PROMPT_FILE='${{ steps.vars.outputs.prompt_path }}'
+
+          JSON_PAYLOAD=$(jq -n \
+            --rawfile prompt_text "$PROMPT_FILE" \
+            --arg repository "https://github.com/${{ github.repository }}" \
+            --arg source_ref "${{ steps.vars.outputs.source_ref }}" \
+            --arg target_branch "${{ steps.vars.outputs.target_branch }}" \
+            --arg model "gpt-5.1-codex-max-high" \
+            '{
+              model: $model,
+              prompt: { text: $prompt_text },
+              source: { repository: $repository, ref: $source_ref },
+              target: { branchName: $target_branch, autoCreatePr: false, skipReviewerRequest: true }
+            }')
+
+          RESPONSE=$(curl --fail --silent --show-error \
+            --request POST \
+            --url https://api.cursor.com/v0/agents \
+            --header "Authorization: Bearer ${CURSOR_API_KEY}" \
+            --header "Content-Type: application/json" \
+            --data "$JSON_PAYLOAD")
+
+          AGENT_URL=$(echo "$RESPONSE" | jq -r '.target.url')
+          echo "agent_url=$AGENT_URL" >> "$GITHUB_OUTPUT"
+      - name: Comment on issue with agent link
+        if: steps.check_research.outputs.has_research != 'true'
+        run: |
+          URL='${{ steps.launch.outputs.agent_url }}'
+          gh api repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/comments \
+            -f body="🔍 Launched Cursor Research Agent to check for existing ESLint rules. View agent: $URL"

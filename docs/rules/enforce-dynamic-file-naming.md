@@ -1,7 +1,5 @@
 # Enforce .dynamic.ts(x) file naming when @blumintinc/blumint/enforce-dynamic-imports or @blumintinc/blumint/require-dynamic-firebase-imports rule is disabled (`@blumintinc/blumint/enforce-dynamic-file-naming`)
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
 <!-- end auto-generated rule header -->
 
 This rule ensures that when the `@blumintinc/blumint/enforce-dynamic-imports` rule is disabled, the file's name reflects that it contains static imports instead of dynamic ones. Specifically, if the rule is disabled for a particular line, the file must end in `.dynamic.tsx` or `.dynamic.ts` instead of just `.tsx` or `.ts`. Conversely, if a file ends in `.dynamic.tsx` or `.dynamic.ts`, it must contain at least one instance of `// eslint-disable-next-line @blumintinc/blumint/enforce-dynamic-imports` or `/* eslint-disable @blumintinc/blumint/enforce-dynamic-imports */`.

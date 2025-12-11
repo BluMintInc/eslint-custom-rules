@@ -1,6 +1,6 @@
 import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
-import { TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 
 function isInsideFunction(node: TSESTree.Node): boolean {
   let current: TSESTree.Node | undefined = node;
@@ -24,62 +24,73 @@ function isFunctionDefinition(node: TSESTree.Expression | null): boolean {
   );
 }
 
-function isImmutableValue(node: TSESTree.Expression | null): boolean {
-  if (!node) return false;
-
-  switch (node.type) {
-    case 'Literal':
-      return true;
-    case 'TemplateLiteral':
-      return node.expressions.length === 0;
-    case 'UnaryExpression':
-      return isImmutableValue(node.argument);
-    case 'BinaryExpression':
-      if (node.left.type === 'PrivateIdentifier') return false;
-      return isImmutableValue(node.left) && isImmutableValue(node.right);
-    default:
-      return false;
+const unwrapOnce = (
+  node: TSESTree.Expression | null,
+): TSESTree.Expression | null => {
+  if (!node) return null;
+  const maybeParen = node as {
+    type?: string;
+    expression?: TSESTree.Expression | null;
+  };
+  if (maybeParen.type === 'ParenthesizedExpression') {
+    return maybeParen.expression ?? null;
   }
+  switch (node.type) {
+    case AST_NODE_TYPES.TSAsExpression:
+    case AST_NODE_TYPES.TSSatisfiesExpression:
+    case AST_NODE_TYPES.TSNonNullExpression:
+    case AST_NODE_TYPES.ChainExpression:
+    case AST_NODE_TYPES.TSTypeAssertion:
+      return node.expression as TSESTree.Expression | null;
+    default:
+      return null;
+  }
+};
+
+function unwrapExpression(
+  node: TSESTree.Expression | null,
+): TSESTree.Expression | null {
+  let current: TSESTree.Expression | null = node;
+  while (current) {
+    const inner = unwrapOnce(current);
+    if (!inner) break;
+    current = inner;
+  }
+  return current;
 }
 
 function isMutableValue(node: TSESTree.Expression | null): boolean {
-  if (!node) return false;
+  const unwrapped = unwrapExpression(node);
+  if (!unwrapped) return false;
+
+  // If explicitly marked readonly with `as const`, treat as immutable
+  if (node && isAsConstExpression(node)) {
+    return false;
+  }
 
   // Check for JSX elements (always mutable due to props/context)
-  if (node.type === 'JSXElement' || node.type === 'JSXFragment') {
+  if (unwrapped.type === 'JSXElement' || unwrapped.type === 'JSXFragment') {
     return true;
   }
 
   // Check for object expressions (always mutable)
-  if (node.type === 'ObjectExpression') {
+  if (unwrapped.type === 'ObjectExpression') {
     return true;
   }
 
-  // Check array literals - mutable if empty or if they contain mutable values
-  if (node.type === 'ArrayExpression') {
-    // Empty arrays are mutable since they can be modified later
-    if (node.elements.length === 0) return true;
-    // Arrays with spread elements are mutable
-    if (
-      node.elements.some(
-        (element) => !element || element.type === 'SpreadElement',
-      )
-    )
-      return true;
-    // Arrays with non-immutable values are mutable
-    return node.elements.some(
-      (element) => !isImmutableValue(element as TSESTree.Expression),
-    );
+  // Arrays are mutable objects unless explicitly narrowed with `as const`.
+  if (unwrapped.type === 'ArrayExpression') {
+    return true;
   }
 
   // Check for new expressions (e.g., new Map(), new Set())
-  if (node.type === 'NewExpression') {
+  if (unwrapped.type === 'NewExpression') {
     return true;
   }
 
   // Check for array/object methods that return mutable values
-  if (node.type === 'CallExpression') {
-    const callee = node.callee;
+  if (unwrapped.type === 'CallExpression') {
+    const callee = unwrapped.callee;
     if (callee.type === 'MemberExpression') {
       // Handle both Identifier and non-Identifier property nodes
       if (callee.property.type !== 'Identifier') {
@@ -121,18 +132,18 @@ function isZeroOrOne(node: TSESTree.Node | null): boolean {
 }
 
 function isAsConstExpression(node: TSESTree.Node | null): boolean {
-  if (!node) return false;
-
-  if (node.type === 'TSAsExpression') {
+  let current = node as TSESTree.Expression | null;
+  while (current) {
     if (
-      node.typeAnnotation.type === 'TSTypeReference' &&
-      node.typeAnnotation.typeName.type === 'Identifier' &&
-      node.typeAnnotation.typeName.name === 'const'
+      current.type === 'TSAsExpression' &&
+      current.typeAnnotation.type === 'TSTypeReference' &&
+      current.typeAnnotation.typeName.type === 'Identifier' &&
+      current.typeAnnotation.typeName.name === 'const'
     ) {
       return true;
     }
+    current = unwrapOnce(current);
   }
-
   return false;
 }
 
@@ -174,17 +185,18 @@ export const extractGlobalConstants: TSESLint.RuleModule<
           !hasDependencies &&
           !hasAsConstAssertion &&
           (scope.type === 'function' || scope.type === 'block') &&
-          isInsideFunction(node)
+          isInsideFunction(node) &&
+          node.declarations.some((d) => d.id.type === 'Identifier')
         ) {
-          const constName = (node.declarations[0].id as TSESTree.Identifier)
-            .name;
-          context.report({
-            node,
-            messageId: 'extractGlobalConstants',
-            data: {
-              declarationName: constName,
-            },
-          });
+          for (const d of node.declarations) {
+            if (d.id.type !== 'Identifier') continue;
+            const constName = d.id.name;
+            context.report({
+              node: d,
+              messageId: 'extractGlobalConstants',
+              data: { declarationName: constName },
+            });
+          }
         }
       },
       FunctionDeclaration(node: TSESTree.FunctionDeclaration) {

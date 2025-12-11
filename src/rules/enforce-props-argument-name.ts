@@ -1,18 +1,8 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
-type MessageIds = 'usePropsForType';
-type Options = [
-  {
-    enforceDestructuring?: boolean;
-    ignoreExternalInterfaces?: boolean;
-  },
-];
-
-const defaultOptions: Options[0] = {
-  enforceDestructuring: false,
-  ignoreExternalInterfaces: true,
-};
+type MessageIds = 'usePropsParameterName' | 'usePropsParameterNameWithPrefix';
+type Options = [];
 
 export const enforcePropsArgumentName = createRule<Options, MessageIds>({
   name: 'enforce-props-argument-name',
@@ -20,55 +10,20 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Enforce using "Props" suffix in type names for parameter objects',
+        'Authoritative rule: parameters with types ending in "Props" should be named "props" (or prefixed variants when multiple Props params exist)',
       recommended: 'error',
     },
     fixable: 'code',
-    schema: [
-      {
-        type: 'object',
-        properties: {
-          enforceDestructuring: {
-            type: 'boolean',
-          },
-          ignoreExternalInterfaces: {
-            type: 'boolean',
-          },
-        },
-        additionalProperties: false,
-      },
-    ],
+    schema: [],
     messages: {
-      usePropsForType:
-        'Use "Props" suffix in type name instead of "{{ typeSuffix }}"',
+      usePropsParameterName:
+        'Parameter with type "{{ typeName }}" should be named "props"',
+      usePropsParameterNameWithPrefix:
+        'Parameter with type "{{ typeName }}" should be named "{{ suggestedName }}"',
     },
   },
-  defaultOptions: [defaultOptions],
-  create(context, [options]) {
-    const finalOptions = { ...defaultOptions, ...options };
-
-    // Check if a node is from an external library
-    function isFromExternalLibrary(node: TSESTree.Node): boolean {
-      if (!finalOptions.ignoreExternalInterfaces) {
-        return false;
-      }
-
-      let current = node;
-      while (current.parent) {
-        if (current.type === AST_NODE_TYPES.TSInterfaceDeclaration) {
-          // Check if the interface extends something from an external library
-          const interfaceDecl = current as TSESTree.TSInterfaceDeclaration;
-          if (interfaceDecl.extends && interfaceDecl.extends.length > 0) {
-            // Check if any of the extended interfaces are from external libraries
-            // This is a simplified check - a more robust implementation would trace imports
-            return true;
-          }
-        }
-        current = current.parent;
-      }
-      return false;
-    }
-
+  defaultOptions: [],
+  create(context) {
     // Extract type name from a type annotation
     function getTypeName(typeAnnotation: TSESTree.TypeNode): string | null {
       if (typeAnnotation.type === AST_NODE_TYPES.TSTypeReference) {
@@ -80,43 +35,141 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
       return null;
     }
 
-    // Check if a type name has a non-"Props" suffix
-    function hasNonPropsSuffix(typeName: string): string | null {
-      if (typeName.endsWith('Props')) {
-        return null;
-      }
-
-      const suffixes = [
-        'Config',
-        'Settings',
-        'Options',
-        'Params',
-        'Parameters',
-        'Args',
-        'Arguments',
-      ];
-      for (const suffix of suffixes) {
-        if (typeName.endsWith(suffix)) {
-          return suffix;
-        }
-      }
-      return null;
+    // Check if a type name ends with "Props"
+    function endsWithProps(typeName: string): boolean {
+      return typeName.endsWith('Props');
     }
 
-    // Fix type name
-    function fixTypeName(
-      fixer: any,
-      node: TSESTree.TypeNode,
-      oldName: string,
-      suffix: string,
-    ): any {
-      if (
-        node.type === AST_NODE_TYPES.TSTypeReference &&
-        node.typeName.type === AST_NODE_TYPES.Identifier
-      ) {
-        const baseName = oldName.slice(0, -suffix.length);
-        return fixer.replaceText(node.typeName, `${baseName}Props`);
+    // Generate suggested parameter name for Props types
+    function getSuggestedParameterName(
+      typeName: string,
+      allParams: TSESTree.Parameter[],
+      currentParam: TSESTree.Parameter,
+    ): string {
+      const currentId = getIdFromParam(currentParam);
+      const currentName = currentId?.name;
+      const existingNames = new Set(
+        allParams
+          .map((p) => getIdFromParam(p))
+          .filter(
+            (id): id is TSESTree.Identifier =>
+              !!id && id.name !== currentName,
+          )
+          .map((id) => id.name),
+      );
+
+      if (typeName === 'Props') {
+        let candidate = 'props';
+        let suffix = 2;
+        while (existingNames.has(candidate)) {
+          candidate = `props${suffix++}`;
+        }
+        return candidate;
       }
+
+      // Count how many parameters have Props types
+      const propsParams = allParams.filter((param) => {
+        if (
+          param.type === AST_NODE_TYPES.Identifier &&
+          param.typeAnnotation &&
+          param.typeAnnotation.typeAnnotation
+        ) {
+          const paramTypeName = getTypeName(
+            param.typeAnnotation.typeAnnotation,
+          );
+          return paramTypeName && endsWithProps(paramTypeName);
+        }
+        return false;
+      });
+
+      // If there's only one Props parameter, suggest "props"
+      if (propsParams.length <= 1) {
+        let candidate = 'props';
+        let suffix = 2;
+        while (existingNames.has(candidate)) {
+          candidate = `props${suffix++}`;
+        }
+        return candidate;
+      }
+
+      // If there are multiple Props parameters, use prefixed names
+      // For types like "UserProps", suggest "userProps"
+      const baseName = typeName.slice(0, -5); // Remove "Props"
+      const camelCaseBase =
+        baseName.charAt(0).toLowerCase() + baseName.slice(1);
+
+      let candidate = `${camelCaseBase}Props`;
+      let i = 2;
+      while (existingNames.has(candidate)) {
+        candidate = `${camelCaseBase}Props${i++}`;
+      }
+      return candidate;
+    }
+
+    // Check if parameter is destructured
+    function isDestructuredParameter(param: TSESTree.Parameter): boolean {
+      if (
+        param.type === AST_NODE_TYPES.ObjectPattern ||
+        param.type === AST_NODE_TYPES.ArrayPattern
+      ) {
+        return true;
+      }
+
+      if (
+        param.type === AST_NODE_TYPES.AssignmentPattern &&
+        (param.left.type === AST_NODE_TYPES.ObjectPattern ||
+          param.left.type === AST_NODE_TYPES.ArrayPattern)
+      ) {
+        return true;
+      }
+
+      if (param.type === AST_NODE_TYPES.TSParameterProperty) {
+        const inner = param.parameter;
+        if (
+          inner.type === AST_NODE_TYPES.ObjectPattern ||
+          inner.type === AST_NODE_TYPES.ArrayPattern
+        ) {
+          return true;
+        }
+        if (
+          inner.type === AST_NODE_TYPES.AssignmentPattern &&
+          (inner.left.type === AST_NODE_TYPES.ObjectPattern ||
+            inner.left.type === AST_NODE_TYPES.ArrayPattern)
+        ) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    function getIdFromParam(param: TSESTree.Parameter): TSESTree.Identifier | null {
+      if (param.type === AST_NODE_TYPES.Identifier) return param;
+
+      if (
+        param.type === AST_NODE_TYPES.AssignmentPattern &&
+        param.left.type === AST_NODE_TYPES.Identifier
+      ) {
+        return param.left;
+      }
+
+      if (param.type === AST_NODE_TYPES.TSParameterProperty) {
+        const inner = param.parameter;
+        if (inner.type === AST_NODE_TYPES.Identifier) return inner;
+        if (
+          inner.type === AST_NODE_TYPES.AssignmentPattern &&
+          inner.left.type === AST_NODE_TYPES.Identifier
+        ) {
+          return inner.left;
+        }
+      }
+
+      if (param.type === AST_NODE_TYPES.RestElement) {
+        if (param.argument.type === AST_NODE_TYPES.Identifier) {
+          return param.argument;
+        }
+      }
+
       return null;
     }
 
@@ -128,133 +181,109 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
         | TSESTree.ArrowFunctionExpression
         | TSESTree.TSMethodSignature,
     ): void {
-      if (node.params.length !== 1) {
-        return; // Only check functions with a single parameter
-      }
-
-      const param = node.params[0];
-
-      // Skip primitive parameters
+      // Skip function expressions that are part of method definitions
+      // to avoid duplicate processing
       if (
-        param.type === AST_NODE_TYPES.Identifier &&
-        param.typeAnnotation &&
-        (param.typeAnnotation.typeAnnotation.type ===
-          AST_NODE_TYPES.TSStringKeyword ||
-          param.typeAnnotation.typeAnnotation.type ===
-            AST_NODE_TYPES.TSNumberKeyword ||
-          param.typeAnnotation.typeAnnotation.type ===
-            AST_NODE_TYPES.TSBooleanKeyword)
+        node.type === AST_NODE_TYPES.FunctionExpression &&
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.MethodDefinition
       ) {
         return;
       }
 
-      // Check if the parameter has a type annotation
-      if (
-        param.type === AST_NODE_TYPES.Identifier &&
-        param.typeAnnotation &&
-        param.typeAnnotation.typeAnnotation
-      ) {
-        const typeName = getTypeName(param.typeAnnotation.typeAnnotation);
+      const sourceCode = context.getSourceCode();
 
-        if (typeName) {
-          const nonPropsSuffix = hasNonPropsSuffix(typeName);
+      node.params.forEach((param) => {
+        if (isDestructuredParameter(param)) {
+          return;
+        }
 
-          if (nonPropsSuffix) {
-            context.report({
-              node: param.typeAnnotation.typeAnnotation,
-              messageId: 'usePropsForType',
-              data: { typeSuffix: nonPropsSuffix },
-              fix: (fixer) =>
-                fixTypeName(
-                  fixer,
-                  param.typeAnnotation!.typeAnnotation,
+        const id = getIdFromParam(param);
+        if (id && id.typeAnnotation && id.typeAnnotation.typeAnnotation) {
+          const typeName = getTypeName(id.typeAnnotation.typeAnnotation);
+
+          if (typeName && endsWithProps(typeName)) {
+            const suggestedName = getSuggestedParameterName(
+              typeName,
+              node.params,
+              param,
+            );
+
+            if (id.name !== suggestedName) {
+              const messageId =
+                suggestedName === 'props'
+                  ? 'usePropsParameterName'
+                  : 'usePropsParameterNameWithPrefix';
+
+              context.report({
+                node: id,
+                messageId,
+                data: {
                   typeName,
-                  nonPropsSuffix,
-                ),
-            });
+                  suggestedName,
+                },
+                fix: (fixer) => {
+                  const token = sourceCode.getFirstToken(id);
+                  if (!token) return null;
+                  return fixer.replaceTextRange(
+                    [token.range[0], token.range[1]],
+                    suggestedName,
+                  );
+                },
+              });
+            }
           }
         }
-      }
+      });
     }
 
-    // Check class constructor parameters
-    function checkClassConstructor(node: TSESTree.MethodDefinition): void {
-      if (node.kind !== 'constructor') {
-        return;
-      }
+    // Check class method parameters (including constructors)
+    function checkClassMethod(node: TSESTree.MethodDefinition): void {
+      const method = node.value;
+      const sourceCode = context.getSourceCode();
 
-      const constructor = node.value;
-      if (constructor.params.length !== 1) {
-        return; // Only check constructors with a single parameter
-      }
+      method.params.forEach((param) => {
+        if (isDestructuredParameter(param)) {
+          return;
+        }
 
-      const param = constructor.params[0];
+        const id = getIdFromParam(param);
+        if (id && id.typeAnnotation && id.typeAnnotation.typeAnnotation) {
+          const typeName = getTypeName(id.typeAnnotation.typeAnnotation);
 
-      // Skip primitive parameters
-      if (
-        param.type === AST_NODE_TYPES.Identifier &&
-        param.typeAnnotation &&
-        (param.typeAnnotation.typeAnnotation.type ===
-          AST_NODE_TYPES.TSStringKeyword ||
-          param.typeAnnotation.typeAnnotation.type ===
-            AST_NODE_TYPES.TSNumberKeyword ||
-          param.typeAnnotation.typeAnnotation.type ===
-            AST_NODE_TYPES.TSBooleanKeyword)
-      ) {
-        return;
-      }
+          if (typeName && endsWithProps(typeName)) {
+            const suggestedName = getSuggestedParameterName(
+              typeName,
+              method.params,
+              param,
+            );
 
-      // Check if the parameter has a type annotation
-      if (
-        param.type === AST_NODE_TYPES.Identifier &&
-        param.typeAnnotation &&
-        param.typeAnnotation.typeAnnotation
-      ) {
-        const typeName = getTypeName(param.typeAnnotation.typeAnnotation);
+            if (id.name !== suggestedName) {
+              const messageId =
+                suggestedName === 'props'
+                  ? 'usePropsParameterName'
+                  : 'usePropsParameterNameWithPrefix';
 
-        if (typeName) {
-          const nonPropsSuffix = hasNonPropsSuffix(typeName);
-
-          if (nonPropsSuffix) {
-            context.report({
-              node: param.typeAnnotation.typeAnnotation,
-              messageId: 'usePropsForType',
-              data: { typeSuffix: nonPropsSuffix },
-              fix: (fixer) =>
-                fixTypeName(
-                  fixer,
-                  param.typeAnnotation!.typeAnnotation,
+              context.report({
+                node: id,
+                messageId,
+                data: {
                   typeName,
-                  nonPropsSuffix,
-                ),
-            });
+                  suggestedName,
+                },
+                fix: (fixer) => {
+                  const token = sourceCode.getFirstToken(id);
+                  if (!token) return null;
+                  return fixer.replaceTextRange(
+                    [token.range[0], token.range[1]],
+                    suggestedName,
+                  );
+                },
+              });
+            }
           }
         }
-      }
-    }
-
-    // Check type definitions
-    function checkTypeDefinition(node: TSESTree.TSTypeAliasDeclaration): void {
-      if (!node.id || !node.id.name) {
-        return;
-      }
-
-      const typeName = node.id.name;
-      const nonPropsSuffix = hasNonPropsSuffix(typeName);
-
-      if (nonPropsSuffix && !isFromExternalLibrary(node)) {
-        const baseName = typeName.slice(0, -nonPropsSuffix.length);
-        const newTypeName = `${baseName}Props`;
-
-        context.report({
-          node: node.id,
-          messageId: 'usePropsForType',
-          data: { typeSuffix: nonPropsSuffix },
-          fix: (fixer) => {
-            return fixer.replaceText(node.id, newTypeName);
-          },
-        });
-      }
+      });
     }
 
     return {
@@ -262,8 +291,7 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
       FunctionExpression: checkFunctionParams,
       ArrowFunctionExpression: checkFunctionParams,
       TSMethodSignature: checkFunctionParams,
-      MethodDefinition: checkClassConstructor,
-      TSTypeAliasDeclaration: checkTypeDefinition,
+      MethodDefinition: checkClassMethod,
     };
   },
 });

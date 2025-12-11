@@ -1,1 +1,0 @@
-export declare const reactUseMemoShouldBeComponent: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"useMemoShouldBeComponent", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;
