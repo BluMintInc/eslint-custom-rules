@@ -58,6 +58,19 @@ const NON_OBJECT_LIKE_NAMES = [
   'arr',
 ];
 
+function hasBooleanPrefixBoundary(name: string): boolean {
+  const lower = name.toLowerCase();
+
+  return BOOLEAN_PREFIXES.some((prefix) => {
+    if (!lower.startsWith(prefix)) {
+      return false;
+    }
+
+    const boundary = name.charAt(prefix.length);
+    return boundary !== '' && boundary >= 'A' && boundary <= 'Z';
+  });
+}
+
 function isLoopLike(node: TSESTree.Node): boolean {
   return (
     node.type === AST_NODE_TYPES.ForStatement ||
@@ -82,7 +95,7 @@ function isInsideLoop(node: TSESTree.Node | undefined): boolean {
 function nameLooksObjectLike(name: string, patterns: Set<string>): boolean {
   const lower = name.toLowerCase();
 
-  if (BOOLEAN_PREFIXES.some((prefix) => lower.startsWith(prefix))) {
+  if (hasBooleanPrefixBoundary(name)) {
     return false;
   }
 
@@ -199,6 +212,28 @@ function isObjectKeysLengthExpression(node: TSESTree.Node, name: string): boolea
   return false;
 }
 
+function isZeroLiteral(node: TSESTree.Node): boolean {
+  return node.type === AST_NODE_TYPES.Literal && node.value === 0;
+}
+
+function isLengthZeroComparison(node: TSESTree.BinaryExpression, name: string): boolean {
+  const { operator, left, right } = node;
+  const leftIsLength = isObjectKeysLengthExpression(left, name);
+  const rightIsLength = isObjectKeysLengthExpression(right, name);
+  const leftIsZero = isZeroLiteral(left);
+  const rightIsZero = isZeroLiteral(right);
+
+  if (operator === '===' || operator === '==') {
+    return (leftIsLength && rightIsZero) || (rightIsLength && leftIsZero);
+  }
+
+  if (operator === '<=' || operator === '<') {
+    return leftIsLength && rightIsZero;
+  }
+
+  return false;
+}
+
 function conditionHasEmptyCheck(
   node: TSESTree.Node | undefined,
   name: string,
@@ -213,10 +248,7 @@ function conditionHasEmptyCheck(
         conditionHasEmptyCheck(node.right, name, emptyCheckFunctions)
       );
     case AST_NODE_TYPES.BinaryExpression:
-      if (
-        isObjectKeysLengthExpression(node.left, name) ||
-        isObjectKeysLengthExpression(node.right, name)
-      ) {
+      if (isLengthZeroComparison(node, name)) {
         return true;
       }
       return (

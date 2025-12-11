@@ -37,6 +37,11 @@ ruleTesterTs.run(
         toggle();
       }
       `,
+      `
+      if (!payload || Object.keys(payload).length <= 0) {
+        handle(payload);
+      }
+      `,
       {
         code: `
         const items: string[] | undefined = getItems();
@@ -331,6 +336,49 @@ ruleTesterTs.run(
         const config = getConfig();
         if ((!config || Object.keys(config).length === 0)) {
           apply(config);
+        }
+        `,
+      },
+      {
+        code: `
+        if (!payload || Object.keys(payload).length > 5) {
+          handle(payload);
+        }
+        `,
+        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } }],
+        output: `
+        if ((!payload || Object.keys(payload).length === 0) || Object.keys(payload).length > 5) {
+          handle(payload);
+        }
+        `,
+      },
+      {
+        code: `
+        const config = load();
+        if (!config || Object.keys(config).length === 10) {
+          return config;
+        }
+        `,
+        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'config' } }],
+        output: `
+        const config = load();
+        if ((!config || Object.keys(config).length === 0) || Object.keys(config).length === 10) {
+          return config;
+        }
+        `,
+      },
+      {
+        code: `
+        const islandData = fetchIsland();
+        if (!islandData) {
+          return islandData;
+        }
+        `,
+        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'islandData' } }],
+        output: `
+        const islandData = fetchIsland();
+        if ((!islandData || Object.keys(islandData).length === 0)) {
+          return islandData;
         }
         `,
       },
