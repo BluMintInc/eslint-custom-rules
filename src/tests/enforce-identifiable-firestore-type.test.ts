@@ -72,6 +72,24 @@ ruleTesterTs.run(
       `,
         filename: 'functions/src/types/firestore/UserItem/index.ts',
       },
+      {
+        code: `
+        import { Identifiable } from '../../Identifiable';
+        import { Timestamp } from 'firebase-admin/firestore';
+
+        export type GroupInfo<T = Timestamp> = Readonly<
+          Identifiable & {
+            username: string;
+            usernameLowercase: string;
+            imgUrl: string;
+            dateCreated: T;
+          }
+        >;
+
+        export type Guild<T = Timestamp> = Readonly<GroupInfo<T>>;
+      `,
+        filename: 'functions/src/types/firestore/Guild/index.ts',
+      },
     ],
     invalid: [
       {
@@ -131,6 +149,27 @@ ruleTesterTs.run(
           {
             messageId: 'missingType',
             data: { typeName: 'Connection', folderName: 'Connection' },
+          },
+        ],
+      },
+      {
+        code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+
+        export type GroupInfo<T = Timestamp> = Readonly<{
+          username: string;
+          usernameLowercase: string;
+          imgUrl: string;
+          dateCreated: T;
+        }>;
+
+        export type Guild<T = Timestamp> = Readonly<GroupInfo<T>>;
+      `,
+        filename: 'functions/src/types/firestore/Guild/index.ts',
+        errors: [
+          {
+            messageId: 'notExtendingIdentifiable',
+            data: { typeName: 'Guild' },
           },
         ],
       },
