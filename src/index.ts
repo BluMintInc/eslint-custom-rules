@@ -133,6 +133,7 @@ import { noCircularReferences } from './rules/no-circular-references';
 import { noPassthroughGetters } from './rules/no-passthrough-getters';
 import { noTryCatchAlreadyExistsInTransaction } from './rules/no-try-catch-already-exists-in-transaction';
 import { enforceTransformMemoization } from './rules/enforce-transform-memoization';
+import { verticallyGroupRelatedFunctions } from './rules/vertically-group-related-functions';
 import { default as noStaticConstantsInDynamicFiles } from './rules/no-static-constants-in-dynamic-files';
 import { testFileLocationEnforcement } from './rules/test-file-location-enforcement';
 
@@ -286,6 +287,7 @@ module.exports = {
         '@blumintinc/blumint/no-try-catch-already-exists-in-transaction':
           'error',
         '@blumintinc/blumint/no-passthrough-getters': 'error',
+        '@blumintinc/blumint/vertically-group-related-functions': 'error',
         '@blumintinc/blumint/no-static-constants-in-dynamic-files': 'error',
         '@blumintinc/blumint/test-file-location-enforcement': 'error',
       },
@@ -437,6 +439,7 @@ module.exports = {
     'no-try-catch-already-exists-in-transaction':
       noTryCatchAlreadyExistsInTransaction,
     'no-passthrough-getters': noPassthroughGetters,
+    'vertically-group-related-functions': verticallyGroupRelatedFunctions,
     'no-static-constants-in-dynamic-files': noStaticConstantsInDynamicFiles,
     'test-file-location-enforcement': testFileLocationEnforcement,
   },
