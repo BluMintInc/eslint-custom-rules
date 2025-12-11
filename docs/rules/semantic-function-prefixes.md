@@ -1,4 +1,4 @@
-# Enforce semantic function prefixes over generic ones like "get" and "update" (`@blumintinc/blumint/semantic-function-prefixes`)
+# Require semantic function prefixes instead of generic verbs so callers know whether a function fetches data, transforms input, or mutates state (`@blumintinc/blumint/semantic-function-prefixes`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

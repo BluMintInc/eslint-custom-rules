@@ -1,6 +1,6 @@
-# Enforce using Fragment imported from react over shorthand fragments and React.Fragment (`@blumintinc/blumint/prefer-fragment-component`)
+# Require the Fragment named import instead of shorthand fragments or React.Fragment to keep fragments explicit and prop-friendly (`@blumintinc/blumint/prefer-fragment-component`)
 
-💼 This rule is enabled in the ✅ `recommended` config.
+🚫 This rule is _disabled_ in the ✅ `recommended` config.
 
 🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
 
