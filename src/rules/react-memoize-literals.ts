@@ -46,6 +46,10 @@ function getFunctionName(
     return fn.id?.name ?? null;
   }
 
+  if (fn.type === AST_NODE_TYPES.FunctionExpression && fn.id?.name) {
+    return fn.id.name;
+  }
+
   const parent = fn.parent;
   if (
     parent &&
@@ -185,6 +189,23 @@ function findEnclosingHookCall(
   return null;
 }
 
+function findOwningFunction(
+  node: TSESTree.Node,
+):
+  | TSESTree.FunctionDeclaration
+  | TSESTree.FunctionExpression
+  | TSESTree.ArrowFunctionExpression
+  | null {
+  let current: TSESTree.Node | null = node.parent as TSESTree.Node | null;
+  while (current) {
+    if (isFunctionNode(current)) {
+      return current;
+    }
+    current = current.parent as TSESTree.Node | null;
+  }
+  return null;
+}
+
 function isReturnValueFromHook(
   node: TSESTree.Node,
   owner:
@@ -201,10 +222,15 @@ function isReturnValueFromHook(
     return true;
   }
 
-  return (
-    node.parent?.type === AST_NODE_TYPES.ReturnStatement &&
-    node.parent.argument === node
-  );
+  if (
+    node.parent?.type !== AST_NODE_TYPES.ReturnStatement ||
+    node.parent.argument !== node
+  ) {
+    return false;
+  }
+
+  const owningFunction = findOwningFunction(node.parent);
+  return owningFunction === owner;
 }
 
 function buildMemoSuggestions(

@@ -295,6 +295,63 @@ function useUserSettings() {
         },
       ],
     },
+    // Literal returned from nested function inside hook should not be treated as a hook return
+    {
+      code: `
+function useValue() {
+  const getValue = () => {
+    return { value: 42 };
+  };
+  return getValue;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'hook "useValue"',
+            memoHook: 'useCallback',
+          },
+        },
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'object literal',
+            context: 'hook "useValue"',
+            memoHook: 'useMemo',
+          },
+        },
+      ],
+    },
+    // Named function expression component passed to HOC should be detected
+    {
+      code: `
+const Memoized = memo(function MyComponent({ onClick }) {
+  const handler = () => onClick();
+  const options = { debounce: 100 };
+  return <button onClick={handler}>{options.debounce}</button>;
+});
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'component "MyComponent"',
+            memoHook: 'useCallback',
+          },
+        },
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'object literal',
+            context: 'component "MyComponent"',
+            memoHook: 'useMemo',
+          },
+        },
+      ],
+    },
     // Custom hook returning array literal
     {
       code: `
