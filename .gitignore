@@ -42,5 +42,6 @@ lib/package.json
 # Cursor hooks temporary files
 .cursor/tmp/
 
-# Cloud Agent: deleted rule file (asking questions blocks async agents)
+# Cloud Agent: keep this rule file untracked because interactive prompts
+# block async agents and the file must stay removed locally.
 .cursor/rules/do-not-hesitate-to-ask-questions.mdc
