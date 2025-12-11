@@ -6,9 +6,9 @@
 
 This rule enforces two important requirements for `HttpsError` constructor calls:
 
-1. **No dynamic content in the message field**: Template literals and dynamic content should not be used in the second argument (message field) of the `HttpsError` constructor, as this field is hashed to produce a unique identifier for error monitoring.
+1. **No dynamic content in the message (second argument)**: Do not use template literals or any dynamic content in the second argument of `HttpsError`. This string is hashed to produce a stable unique ID for error monitoring.
 
-2. **Required third argument**: All `HttpsError` constructor calls must include a third argument for contextual details that aids in debugging.
+2. **Required third argument**: All `HttpsError` constructor calls must include a third argument with contextual details to aid debugging.
 
 ## Rule Details
 
@@ -27,6 +27,33 @@ throw new HttpsError('foo', `Error: ${bar}`, 'baz');
 throw new HttpsError('foo', `Error: ${bar}`);
 ```
 
+**Missing third argument (messageId: `missingThirdArgument`)**
+
+- ❌ Invalid:
+  ```typescript
+  throw new HttpsError('not-found', 'Resource not found');
+  ```
+- ✅ Valid:
+  ```typescript
+  throw new HttpsError('not-found', 'Resource not found', { id: resourceId });
+  ```
+
+**Dynamic message content (messageId: `dynamicHttpsErrors`)**
+
+- ❌ Invalid:
+  ```typescript
+  throw new https.HttpsError('permission-denied', `User ${userId} cannot access`, {
+    path,
+  });
+  ```
+- ✅ Valid:
+  ```typescript
+  throw new https.HttpsError('permission-denied', 'User cannot access', {
+    path,
+    userId,
+  });
+  ```
+
 Examples of **correct** code for this rule:
 
 ```typescript
@@ -42,6 +69,13 @@ throw new HttpsError('not-found', 'Resource not found', { id: resourceId });
 
 ## Why?
 
-The second argument of `HttpsError` is used to generate a unique identifier for error monitoring and tracking. Including dynamic content in this field would result in different identifiers for what should be considered the same type of error, making it difficult to aggregate and monitor errors effectively.
+The second argument of `HttpsError` is used to generate a unique ID for error monitoring and tracking. Including dynamic content in this field produces different IDs for the same error shape, making aggregation and monitoring ineffective.
 
 The third argument should contain all dynamic context information that helps with debugging while preserving the error's unique identifier.
+
+### Warnings & Considerations
+
+- Do not include PII in the second argument; keep the second argument stable and generic.
+- Keep third-argument context small and serializable; avoid dumping large nested objects.
+- Prefer explicit identifiers in the second argument (e.g., `OrderNotFound`) over prose.
+- For exceptional one-off errors, use an inline disable with a comment explaining why.
