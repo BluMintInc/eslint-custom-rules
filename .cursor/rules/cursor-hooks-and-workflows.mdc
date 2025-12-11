@@ -10,6 +10,10 @@ alwaysApply: false
 
 This system automates the ESLint rule development lifecycle using **Cursor Hooks** for local quality enforcement and **GitHub Workflows** for triggering Cursor Background Agents on issue events.
 
+## Why the System Was Built
+
+Automation reduces manual toil by enforcing local quality gates and launching background agents so repetitive rule work does not block developers.
+
 ## Architecture Overview
 
 ```
@@ -20,7 +24,7 @@ This system automates the ESLint rule development lifecycle using **Cursor Hooks
                                       │
                                       ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│               cursor-rule-research-agent.yml (research-needed)               │
+│               cursor-rule-research-agent.yml (cursor-research)               │
 │     • Searches web for existing ESLint rules                                 │
 │     • Posts findings as issue comment                                        │
 │     • Labels: research-complete, cursor-implement (if NO MATCH)              │
@@ -42,11 +46,24 @@ This system automates the ESLint rule development lifecycle using **Cursor Hooks
 
 | Term | Description |
 |------|-------------|
-| **Cursor Hook** | Script executed at agent lifecycle events (stop, afterFileEdit, beforeSubmitPrompt) |
-| **Stop Hook** | Prevents agent completion until quality checks pass |
-| **Rule Request Flag** | `<!-- rule-request -->` marker that triggers expanded test prompts |
-| **Change Log** | JSON file tracking modified files per conversation/generation |
-| **MAX_LOOPS** | Safety limit (10) preventing infinite validation loops |
+| **Cursor Hook** | Lifecycle event handler that runs automated checks at key agent milestones |
+| **Stop Hook** | Quality gate that blocks completion until required checks succeed |
+| **Validation Loop** | Iterative rerun cycle triggered by failing checks, bounded by MAX_LOOPS to avoid infinite prompting |
+| **Quality Gate** | Ordered set of build, lint, test, and structure checks applied before an agent can finish |
+| **Rule Implementation Lifecycle** | Multi-stage flow from issue triage through research, implementation, validation, and PR creation |
+
+## Core Components
+
+- Cursor Hooks: Local lifecycle scripts that enforce lint/build/test and prompt tracking on every agent run.
+- GitHub Workflows: Issue and review triggers that launch background agents for research, implementation, and bug fixes.
+- Validation Layers: Stop hook checks that gate completion on build, lint, tests, and rule structure for reliability.
+- Change Log: Per-conversation file tracking that keeps prompts idempotent and resumes validation across loops.
+
+## How It Makes Developers' Lives Easier
+
+- Automated quality gates prevent manual babysitting of lint/build/test steps.
+- Structured prompts and rule scaffolding reduce errors and keep implementations consistent.
+- Loop prevention and concurrency controls avoid duplicated agent runs and wasted API cycles.
 
 ## Directory Structure
 
@@ -68,14 +85,29 @@ This system automates the ESLint rule development lifecycle using **Cursor Hooks
         └── agent-change-log.json        # Auto-created change log
 
 scripts/
+├── check-merge-conflicts.sh          # Lists remaining conflicted files (merge conflict stop hook)
 ├── cursor-hooks/
 │   ├── agent-check.ts                   # Main stop hook logic
 │   ├── change-log.ts                    # Change log utilities
 │   ├── lint-diff.ts                     # Lint changed files only
+│   ├── merge-conflict-check.ts          # Merge conflict stop logic (Priority 0)
+│   ├── pr-review-check.ts               # PR review comment check for stop hook (Priority 1)
 │   ├── track-changes.ts                 # Track file modifications
 │   ├── track-prompt.ts                  # Track prompts & detect flags
 │   ├── types.ts                         # Shared TypeScript types
 │   └── validate-rule-structure.ts       # Validate rule has all files
+├── cli/
+│   ├── git-utils.ts                     # Git CLI utilities
+│   └── git-merge/                       # Merge-conflict context utilities
+│       ├── types.ts
+│       ├── isInMergeConflictState.ts
+│       ├── getConflictedFiles.ts
+│       ├── getMergeBase.ts
+│       ├── getSquashedDiff.ts
+│       ├── getBranchLastCommitDate.ts
+│       ├── getAssociatedPr.ts
+│       ├── fetchPrMetadata.ts
+│       └── buildMergeContext.ts
 └── github/
     └── post-research-comment.ts         # Post research findings to issue
 
@@ -91,7 +123,7 @@ scripts/
 |-------|---------|
 | `rule-request` | New ESLint rule request |
 | `bug` | Bug in existing rule |
-| `research-needed` | Triggers research workflow |
+| `cursor-research` | Triggers research workflow |
 | `research-complete` | Research has been performed |
 | `cursor-implement` | Triggers implementation workflow |
 | `cursor-fix` | Triggers bug fix workflow |
@@ -100,7 +132,7 @@ scripts/
 
 ### 1. Research Workflow (`cursor-rule-research-agent.yml`)
 
-**Trigger**: Issue labeled with `research-needed`
+**Trigger**: Issue labeled with `cursor-research`
 
 **Purpose**: Search for existing ESLint rules before implementing
 
@@ -110,7 +142,7 @@ scripts/
 3. Agent writes findings to `.cursor/tmp/research-results.md`
 4. Agent runs `post-research-comment.ts` which:
    - Posts findings as issue comment
-   - Removes `research-needed` label
+   - Removes `cursor-research` label
    - Adds `research-complete` label
    - If NO MATCH: Adds `cursor-implement` label
 
@@ -161,17 +193,27 @@ scripts/
 
 1. **Heartbeat Update**: Record activity timestamp
 2. **Status Check**: Skip checks if agent status is not `completed`
-3. **Build Validation**: `npm run build` must succeed
-4. **Linting Validation**: ESLint on changed files only
-5. **Test Validation**: `npm test` must pass
-6. **Rule Structure Validation**: For rule implementations, verify:
+3. **Merge Conflict Check (Priority 0)**: If a `git merge` is in progress and conflicts remain, block completion and provide a fresh conflict-resolution prompt. Use `npm run address-merge-conflicts` to generate the initial prompt.
+4. **PR Review Check (Priority 1)**: For PR review branches (`*-review-pr-*`), check for unresolved comments (see `automated-review-addressing.mdc`)
+5. **Build Validation**: `npm run build` must succeed
+6. **Linting Validation**: ESLint on changed files only
+7. **Test Validation**: `npm test` must pass
+8. **Rule Structure Validation**: For rule implementations, verify:
    - `src/rules/{rule-name}.ts` exists
    - `src/tests/{rule-name}.test.ts` exists
    - `docs/rules/{rule-name}.md` exists
    - `src/index.ts` updated in 3 places (import, config, rules)
    - `README.md` mentions the rule
-7. **Check-Your-Work Prompt**: Self-review prompt
-8. **Expand Tests Prompt**: For rule implementations only (requires 20+ tests)
+9. **Check-Your-Work Prompt**: Self-review prompt
+10. **Expand Tests Prompt**: For rule implementations only (requires 20+ tests)
+
+#### Critical Insights for Maintainers
+
+- Order is fail-fast by design: stop on build errors before lint/test to avoid long runs on broken builds, prevent expensive lint/test runs, and reduce agent API costs.
+- Common pain points: flaky tests or slow lint/test runs can loop; rerun locally with the same commands in stop.sh and scope to changed files when possible.
+- Rule structure validation loops if required files are missing or src/index.ts exports are incomplete; ensure all items in the checklist above exist before reruns.
+- MAX_LOOPS in change-log.ts (surfaced via .cursor/hooks.json) prevents infinite prompting; increase only when intentionally allowing longer runs.
+- Hook side-effects cascade: PR review checks can short-circuit quality checks, and change-log updates influence later prompts; watch the console output to see which stage stopped the run.
 
 ### Rule Request Detection
 
@@ -248,7 +290,7 @@ If an agent keeps failing the same check:
 
 ### Research Workflow Not Triggering
 
-- Ensure issue has `research-needed` label
+- Ensure issue has `cursor-research` label
 - Check if research comment already exists (short-circuit logic)
 - Verify `CURSOR_API_KEY` secret is configured
 
@@ -361,7 +403,7 @@ Use [act](https://github.com/nektos/act) to test GitHub workflows locally:
 cat > test-event.json << 'EOF'
 {
   "action": "labeled",
-  "label": { "name": "research-needed" },
+  "label": { "name": "cursor-research" },
   "issue": { "number": 123, "title": "Test Rule", "body": "Test body" }
 }
 EOF
