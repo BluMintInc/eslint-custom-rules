@@ -54,6 +54,12 @@ ruleTesterJsx.run('memoize-root-level-hocs', memoizeRootLevelHocs, {
     }
     `,
     `
+    function WithDigitPrefix() {
+      const Enhanced = with1Config(BaseComponent);
+      return <Enhanced />;
+    }
+    `,
+    `
     function ModalWrapper() {
       useEffect(() => {
         const EnhancedModal = withAnimation(Modal);

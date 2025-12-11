@@ -24,6 +24,33 @@ const isFunctionNode = (node: TSESTree.Node): node is FunctionNode =>
 const isHookName = (name: string): boolean => /^use[A-Z0-9]/.test(name);
 const isComponentName = (name: string): boolean => /^[A-Z]/.test(name);
 
+const forEachChildNode = (
+  node: TSESTree.Node,
+  callback: (child: TSESTree.Node) => boolean | void,
+): boolean => {
+  for (const key of Object.keys(node) as (keyof typeof node)[]) {
+    if (key === 'parent') continue;
+    const value = (node as any)[key];
+    if (!value) continue;
+
+    if (Array.isArray(value)) {
+      for (const child of value) {
+        if (child && typeof child.type === 'string') {
+          if (callback(child as TSESTree.Node)) {
+            return true;
+          }
+        }
+      }
+    } else if (value && typeof value.type === 'string') {
+      if (callback(value as TSESTree.Node)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+};
+
 const getFunctionName = (node: FunctionNode): string | null => {
   if (node.type === AST_NODE_TYPES.FunctionDeclaration && node.id) {
     return node.id.name;
@@ -64,23 +91,7 @@ const containsJsx = (node: TSESTree.Node | null): boolean => {
     return true;
   }
 
-  for (const key of Object.keys(node) as (keyof typeof node)[]) {
-    if (key === 'parent') continue;
-    const value = (node as any)[key];
-    if (!value) continue;
-
-    if (Array.isArray(value)) {
-      for (const child of value) {
-        if (child && typeof child.type === 'string' && containsJsx(child)) {
-          return true;
-        }
-      }
-    } else if (value && typeof value.type === 'string' && containsJsx(value)) {
-      return true;
-    }
-  }
-
-  return false;
+  return forEachChildNode(node, (child) => containsJsx(child));
 };
 
 const hasFunctionParent = (node: TSESTree.Node): boolean => {
@@ -235,7 +246,7 @@ const isHocIdentifier = (
   }
 
   const suffix = name.charAt(4);
-  return Boolean(suffix) && suffix === suffix.toUpperCase();
+  return Boolean(suffix) && /^[A-Z]$/.test(suffix);
 };
 
 const findHocName = (
@@ -325,21 +336,10 @@ export const memoizeRootLevelHocs = createRule<Options, MessageIds>({
           }
         }
 
-        for (const key of Object.keys(current) as (keyof typeof current)[]) {
-          if (key === 'parent') continue;
-          const value = (current as any)[key];
-          if (!value) continue;
-
-          if (Array.isArray(value)) {
-            for (const child of value) {
-              if (child && typeof child.type === 'string') {
-                visit(child);
-              }
-            }
-          } else if (value && typeof value.type === 'string') {
-            visit(value as TSESTree.Node);
-          }
-        }
+        forEachChildNode(current, (child) => {
+          visit(child);
+          return false;
+        });
       };
 
       if (node.body) {
