@@ -31,6 +31,11 @@ export const noOverridableMethodCallsInConstructor = createRule<[], MessageIds>(
           return false;
         }
 
+        // ES private methods (#foo) are non-overridable
+        if (node.key.type === AST_NODE_TYPES.PrivateIdentifier) {
+          return false;
+        }
+
         // Static methods are not overridable in the same way as instance methods
         if (node.static) {
           return false;
@@ -42,10 +47,8 @@ export const noOverridableMethodCallsInConstructor = createRule<[], MessageIds>(
       /**
        * Checks if a method is abstract
        */
-      function isAbstractMethod(node: TSESTree.MethodDefinition): boolean {
-        // Check if the method has the 'abstract' modifier
-        // Abstract methods have no body (TSEmptyBodyFunctionExpression)
-        return node.value.type === AST_NODE_TYPES.TSEmptyBodyFunctionExpression;
+      function isAbstractMethod(_node: TSESTree.MethodDefinition): boolean {
+        return false;
       }
 
       /**
@@ -207,13 +210,13 @@ export const noOverridableMethodCallsInConstructor = createRule<[], MessageIds>(
             collectMethodNames(node);
 
           // Find the constructor method
-          const constructor = node.body.body.find(
+          const ctorMethod = node.body.body.find(
             (member): member is TSESTree.MethodDefinition =>
               member.type === AST_NODE_TYPES.MethodDefinition &&
               member.kind === 'constructor',
           );
 
-          if (!constructor || !constructor.value.body) {
+          if (!ctorMethod || !ctorMethod.value.body) {
             return; // No constructor or constructor has no body
           }
 
@@ -328,7 +331,7 @@ export const noOverridableMethodCallsInConstructor = createRule<[], MessageIds>(
           }
 
           // Start checking from the constructor body
-          checkForMethodCalls(constructor.value.body);
+          checkForMethodCalls(ctorMethod.value.body);
         },
       };
     },

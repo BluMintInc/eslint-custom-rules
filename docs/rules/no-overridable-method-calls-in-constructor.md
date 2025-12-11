@@ -43,7 +43,11 @@ class Car extends Vehicle {
 }
 ```
 
+> **Note**: Examples focus on construction-order hazards, assuming `strictPropertyInitialization` is disabled or handled elsewhere.
+
 ### Examples of **correct** code for this rule:
+
+#### Option 1: Use an initialization method
 
 ```typescript
 abstract class Vehicle {
@@ -74,6 +78,8 @@ class Car extends Vehicle {
 const car = new Car(4);
 car.initialize(); // ✅ Subclass state is ready
 ```
+
+#### Option 2: Pass necessary data to base constructor or methods
 
 ```typescript
 abstract class Vehicle {
