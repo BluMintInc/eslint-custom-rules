@@ -337,6 +337,7 @@ module.exports = {
                       '../../../src/**',
                       '../../../../src/**',
                       '../../../../../src/**',
+                      '../../../../../../src/**',
                     ],
                     message:
                       'Backend Cloud Functions (.f.ts under functions/) must not import frontend modules from src/**. Frontend code can depend on browser-only APIs and bundling it into Cloud Functions breaks server execution; move shared logic into functions/src or a shared package.',

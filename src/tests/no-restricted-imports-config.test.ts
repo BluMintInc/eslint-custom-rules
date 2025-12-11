@@ -102,4 +102,18 @@ describe('recommended no-restricted-imports override for frontend/backend bounda
 
     expect(messages).toHaveLength(0);
   });
+
+  it('flags deeply nested Cloud Function entrypoints outside functions/src importing frontend src/**', async () => {
+    const messages = await lint(
+      "import { AuthClient } from '../../../../../../src/util/auth/client';",
+      'functions/a/b/c/d/e/handle.f.ts',
+    );
+
+    expect(messages).toEqual([
+      expect.objectContaining({
+        ruleId: 'no-restricted-imports',
+        message: expect.stringContaining('Cloud Functions'),
+      }),
+    ]);
+  });
 });
