@@ -43,7 +43,7 @@ This ensures effects re-run whenever array contents change, not just when its le
 - The fixer introduces one memoized hash per array and appends numeric suffixes on conflicts (for example, `itemsHash2`); verify the naming fits your code style.
 - Keep added `useMemo` calls in hook order; do not move them above conditional hooks to avoid Rules of Hooks violations.
 - If you only care about emptiness, prefer an explicit boolean check in the effect body and locally disable this rule for that dependency array.
-- For very large or frequently changing arrays, hashing can be non-trivial—benchmark if this is on a hot path and consider cheaper identity signals when appropriate.
+- For large or frequently changing arrays, hashing can be non-trivial—benchmark if this is on a hot path and consider cheaper identity signals when appropriate.
 
 ## Examples
 

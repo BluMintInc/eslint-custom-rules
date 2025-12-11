@@ -21,7 +21,7 @@ Draft concise, casual Slack messages based on the current conversation context a
 ### Markdown Limitations
 Slack formatting is *not quite* markdown:
 - Use single asterisk for *bold* (not double)
-- Use single underscore for _italic_
+- Use single asterisk for *italic*
 - Code blocks use ``` without language specification
 
 ### Common Elements
@@ -42,7 +42,7 @@ Slack formatting is *not quite* markdown:
 
 ## Example
 
-**Input**: "i've made a github issue for the above, and a Cursor background agent is working on implementing the issue. Please draft a Slack message letting safkat.k know there was security vulnerability with joining tournaments, why, and that he should review the agent's implementation of this ticket and merge it in with high priority."
+**Input**: "i've made a GitHub issue for the above, and a Cursor background agent is working on implementing the issue. Please draft a Slack message letting safkat.k know there was security vulnerability with joining tournaments, why, and that he should review the agent's implementation of this ticket and merge it in with high priority."
 
 **Output**: "Hey @safkat.k - Found a security vulnerability where users accepting team invites could bypass the sign-in and username customization guards that other tournament registration flows enforce, creating an inconsistent security posture. I've created a GitHub issue and a Cursor background agent is implementing the fix - can you review and merge it with high priority? The fix ensures team invite acceptance uses the same `'signInAndCustomizeUsername'` guard flow as direct tournament joins."
 
@@ -51,5 +51,4 @@ Slack formatting is *not quite* markdown:
 1. **Brevity First**: Default to one paragraph unless explicitly told otherwise
 2. **Context-Aware**: Use conversation context to inform the message
 3. **Action-Oriented**: Clearly state what action is needed and priority
-5. **Self-Contained**: Include enough context that the message makes sense without reading the full conversation
-
+4. **Self-Contained**: Include enough context that the message makes sense without reading the full conversation

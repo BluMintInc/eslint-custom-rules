@@ -101,9 +101,7 @@ export function inferPrFromBranch(branch: string): number | undefined {
     return Number.parseInt(result, 10);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error(
-      `Failed to infer PR from branch "${branch}": ${message}`,
-    );
+    console.error(`Failed to infer PR from branch "${branch}": ${message}`);
     return undefined;
   }
 }
@@ -112,6 +110,9 @@ export function inferPrFromBranch(branch: string): number | undefined {
  * Given a PR number, get the head branch name.
  */
 export function inferBranchFromPr(prId: number): string {
+  if (!Number.isInteger(prId) || !Number.isFinite(prId) || prId <= 0) {
+    exitWithError(`Invalid PR id: ${prId}. Must be a positive integer.`);
+  }
   try {
     const result = runCommand(
       `gh pr view ${prId} --json headRefName --jq '.headRefName'`,

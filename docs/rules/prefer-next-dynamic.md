@@ -85,7 +85,7 @@ const Component = dynamic(
 
 - **Non-Component Imports**: Skips when the variable is never used in JSX, avoiding false positives for utilities.
 - **Named Exports**: When destructuring (e.g., `{ Picker }`), the fixer returns `mod.Picker`.
-- **Incorrect dynamic usage**: The fixer ensures an async loader and applies `{ ssr: false }` (current default; not configurable in this rule).
+- **Incorrect dynamic usage**: The fixer ensures an async loader and applies `{ ssr: false }`.
 - **Multiple declarators**: Safely replaces only the matching declarator in comma-separated declarations.
 
   Before:
@@ -113,9 +113,7 @@ const Component = dynamic(
 
 The fixer always passes `{ ssr: false }` to `dynamic()`; configuring other options (loading components, suspense, etc.) is not supported by this rule.
 
-### When not to use
-
-- Projects not using Next.js or intentionally using a custom dynamic wrapper should disable this rule.
+### Configuration
 
 ```json
 {
@@ -124,3 +122,7 @@ The fixer always passes `{ ssr: false }` to `dynamic()`; configuring other optio
   }
 }
 ```
+
+### When not to use
+
+- Projects not using Next.js or intentionally using a custom dynamic wrapper should disable this rule.

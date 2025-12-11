@@ -146,6 +146,7 @@ alwaysApply: false
 - **Notable assumptions that proved inaccurate**: Document any assumptions you discovered from code analysis or context
 - **Important lessons or improvements**: Provide actionable advice for future maintainers
 
+
 #### A-Temporal Phrasing (CRITICAL)
 - **Never use time-coupled language**: Avoid words like "now", "currently", "recently", "new", "old", "temporary"
 - **Use present-tense, declarative statements**: Describe what the system does

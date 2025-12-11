@@ -63,7 +63,6 @@ ruleTesterJsx.run('enforce-css-media-queries', enforceCssMediaQueries, {
       `,
       errors: [
         error('useMediaQuery import from @mui/material'),
-        error('useMediaQuery import'),
         error('useMediaQuery call'),
       ],
     },
@@ -79,7 +78,6 @@ ruleTesterJsx.run('enforce-css-media-queries', enforceCssMediaQueries, {
       `,
       errors: [
         error('useMediaQuery import from @mui/material'),
-        error('useMediaQuery import'),
         error('useMediaQuery call'),
       ],
     },
@@ -110,7 +108,6 @@ ruleTesterJsx.run('enforce-css-media-queries', enforceCssMediaQueries, {
       `,
       errors: [
         error('useMobile import from ../hooks/useMobile'),
-        error('useMobile import'),
         error('useMobile call'),
       ],
     },
@@ -126,7 +123,6 @@ ruleTesterJsx.run('enforce-css-media-queries', enforceCssMediaQueries, {
       `,
       errors: [
         error('useMobile import from src/hooks/useMobile'),
-        error('useMobile import'),
         error('useMobile call'),
       ],
     },
@@ -151,7 +147,6 @@ ruleTesterJsx.run('enforce-css-media-queries', enforceCssMediaQueries, {
       `,
       errors: [
         error('useMediaQuery import from @mui/material'),
-        error('useMediaQuery import'),
         error('useMediaQuery call'),
       ],
     },

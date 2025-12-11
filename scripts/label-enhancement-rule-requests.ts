@@ -100,19 +100,17 @@ async function searchIssues(
   page: number,
   perPage: number,
 ): Promise<IssueSearchItem[]> {
-  const url = new URL('https://api.github.com/search/issues');
-  url.searchParams.set('q', query);
-  url.searchParams.set('sort', 'created');
-  url.searchParams.set('order', 'desc');
-  url.searchParams.set('per_page', String(perPage));
-  url.searchParams.set('page', String(page));
+  const params = new URLSearchParams({
+    q: query,
+    sort: 'created',
+    order: 'desc',
+    per_page: String(perPage),
+    page: String(page),
+  });
 
-  const response = await githubFetch(
-    url.toString().replace('https://api.github.com', ''),
-    {
-      method: 'GET',
-    },
-  );
+  const response = await githubFetch(`/search/issues?${params.toString()}`, {
+    method: 'GET',
+  });
   const data = (await response.json()) as { items?: IssueSearchItem[] };
   return data.items ?? [];
 }

@@ -3,7 +3,11 @@ import { createRule } from '../utils/createRule';
 
 type MessageIds = 'noObjectArrays';
 
-type ParenthesizedTypeNode = TSESTree.TSParenthesizedType;
+type ParenthesizedTypeNode = {
+  type: 'TSParenthesizedType';
+  typeAnnotation: TSESTree.TypeNode;
+  parent?: TSESTree.Node;
+};
 
 const PRIMITIVE_TYPES = new Set([
   'string',
@@ -44,14 +48,22 @@ const isArrayGenericReference = (node: TSESTree.TSTypeReference): boolean => {
   );
 };
 
-const isParenthesizedType = (
-  node: TSESTree.TypeNode,
-): node is ParenthesizedTypeNode => {
-  return node.type === AST_NODE_TYPES.TSParenthesizedType;
+const isParenthesizedType = (node: unknown): node is ParenthesizedTypeNode => {
+  if (!node || typeof node !== 'object') return false;
+  const candidate = node as {
+    type?: unknown;
+    typeAnnotation?: unknown;
+  };
+  return (
+    candidate.type === 'TSParenthesizedType' &&
+    candidate.typeAnnotation !== undefined
+  );
 };
 
-const unwrapArrayElementType = (node: TSESTree.TypeNode): TSESTree.TypeNode => {
-  let current: TSESTree.TypeNode = node;
+const unwrapArrayElementType = (
+  node: TSESTree.TypeNode | ParenthesizedTypeNode,
+): TSESTree.TypeNode => {
+  let current: TSESTree.TypeNode | ParenthesizedTypeNode = node;
   // Fixpoint loop: peel wrappers in any order until none remain
   // Cap unwrap iterations to prevent accidental non-terminating edits if new cases are added.
   // Wrappers are finite; 10 is generous but safe.
@@ -65,7 +77,8 @@ const unwrapArrayElementType = (node: TSESTree.TypeNode): TSESTree.TypeNode => {
       continue;
     }
     if (isParenthesizedType(current)) {
-      current = (current as ParenthesizedTypeNode).typeAnnotation;
+      const paren = current as ParenthesizedTypeNode;
+      current = paren.typeAnnotation;
       continue;
     }
     if (current.type === AST_NODE_TYPES.TSArrayType) {
@@ -83,7 +96,7 @@ const unwrapArrayElementType = (node: TSESTree.TypeNode): TSESTree.TypeNode => {
     }
     break;
   }
-  return current;
+  return current as TSESTree.TypeNode;
 };
 
 // Determine whether this type node appears in a Firestore model type context
@@ -241,15 +254,16 @@ Prefer:
     };
 
     const isPrimitiveLikeTypeNode = (
-      node: TSESTree.TypeNode,
+      node: TSESTree.TypeNode | ParenthesizedTypeNode,
       recursionDepth = 0,
     ): boolean => {
       if (recursionDepth > 25) {
         return false;
       }
       if (isParenthesizedType(node)) {
+        const paren = node as ParenthesizedTypeNode;
         return isPrimitiveLikeTypeNode(
-          (node as ParenthesizedTypeNode).typeAnnotation,
+          paren.typeAnnotation,
           recursionDepth + 1,
         );
       }
@@ -307,11 +321,12 @@ Prefer:
       }
     };
 
-    const isObjectType = (node: TSESTree.TypeNode): boolean => {
+    const isObjectType = (
+      node: TSESTree.TypeNode | ParenthesizedTypeNode,
+    ): boolean => {
       if (isParenthesizedType(node)) {
-        return isObjectType(
-          (node as ParenthesizedTypeNode).typeAnnotation,
-        );
+        const paren = node as ParenthesizedTypeNode;
+        return isObjectType(paren.typeAnnotation);
       }
       switch (node.type) {
         case AST_NODE_TYPES.TSTypeLiteral:
@@ -369,7 +384,8 @@ Prefer:
     const skipReadonlyAndParens = (
       parent: TSESTree.Node | undefined,
     ): TSESTree.Node | undefined => {
-      let currentParent = parent;
+      let currentParent: TSESTree.Node | ParenthesizedTypeNode | undefined =
+        parent;
       while (currentParent) {
         if (
           currentParent.type === AST_NODE_TYPES.TSTypeOperator &&
@@ -379,9 +395,9 @@ Prefer:
             .parent as TSESTree.Node | undefined;
           continue;
         }
-        if (isParenthesizedType(currentParent as TSESTree.TypeNode)) {
-          currentParent = (currentParent as ParenthesizedTypeNode)
-            .parent as TSESTree.Node | undefined;
+        if (isParenthesizedType(currentParent)) {
+          const paren = currentParent as ParenthesizedTypeNode;
+          currentParent = paren.parent as TSESTree.Node | undefined;
           continue;
         }
         break;

@@ -103,10 +103,10 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
           messageId: 'requireMemoizeGetter',
           fix(fixer) {
             const fixes: TSESLint.RuleFix[] = [];
+            const sourceCode = context.getSourceCode();
 
             // Insert import if needed, at the top alongside other imports
             if (!hasMemoizeImport && !scheduledImportFix) {
-              const sourceCode = context.getSourceCode();
               const programBody = (sourceCode.ast as TSESTree.Program).body;
               const firstImport = programBody.find(
                 (n) => n.type === AST_NODE_TYPES.ImportDeclaration,
@@ -142,12 +142,15 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
 
             // Insert decorator above the getter (or before the first decorator), preserving indentation
             const indent = ' '.repeat(node.loc.start.column);
-            const target =
-              node.decorators && node.decorators.length > 0
-                ? node.decorators[0]
-                : node;
+            const lineStart = node.range
+              ? sourceCode.text.lastIndexOf('\n', node.range[0] - 1) + 1
+              : 0;
+            const insertPosition = Math.max(0, lineStart);
             fixes.push(
-              fixer.insertTextBefore(target, `${indent}@${memoizeAlias}()\n`),
+              fixer.insertTextBeforeRange(
+                [insertPosition, insertPosition],
+                `${indent}@${memoizeAlias}()\n`,
+              ),
             );
 
             return fixes;

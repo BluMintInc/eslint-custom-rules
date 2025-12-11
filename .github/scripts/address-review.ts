@@ -38,7 +38,7 @@ interface ReviewContext {
     author_type: string;
     is_bot: boolean;
     comment_count: number;
-  } | null;
+  };
   coderabbit_summary: string;
 }
 
@@ -123,7 +123,7 @@ function fetchCodeRabbitSummary(prNumber: number): string {
       true
     );
     const sanitized = sanitizeCodeRabbitSummary(result ?? '');
-    return sanitized || '(No CodeRabbit summary found)';
+    return sanitized ? sanitized : '(No CodeRabbit summary found)';
   } catch {
     return '(No CodeRabbit summary found)';
   }
@@ -132,7 +132,12 @@ function fetchCodeRabbitSummary(prNumber: number): string {
 /**
  * Build review context similar to Python script.
  */
-export function buildReviewContext(prNumber: number, reviewBatch: number | undefined, forceBot: boolean, forceHuman: boolean): ReviewContext {
+export function buildReviewContext(
+  prNumber: number,
+  reviewBatch: number | undefined,
+  forceBot: boolean,
+  forceHuman: boolean,
+): ReviewContext {
   try {
     const prJson = runCommand(
       `gh pr view ${prNumber} --json number,title,body,headRefName,baseRefName,url`,
@@ -142,7 +147,16 @@ export function buildReviewContext(prNumber: number, reviewBatch: number | undef
 
     const repo = process.env.GITHUB_REPOSITORY || runCommand('gh repo view --json nameWithOwner --jq .nameWithOwner', true);
 
-    let review: ReviewContext['review'] = null;
+    // Always start with a non-null review object so prompt generation never fails,
+    // even when users run the default "npm run address-review" with no flags.
+    let review: ReviewContext['review'] = {
+      id: 0,
+      author: '(Review author)',
+      author_type: forceBot ? 'Bot' : 'User',
+      is_bot: forceBot ?? false,
+      comment_count: 0,
+    };
+
     if (reviewBatch !== undefined) {
       let isBot = false;
       if (forceBot) {
@@ -175,8 +189,8 @@ export function buildReviewContext(prNumber: number, reviewBatch: number | undef
       };
     }
 
+    // Final safeguard: ensure review is always present
     if (!review) {
-      // Fallback: provide a placeholder review to keep downstream tooling stable
       review = {
         id: 0,
         author: '(Review author)',
@@ -391,7 +405,7 @@ async function main(): Promise<void> {
   console.log('✓ Review context built\n');
 
   // Determine if bot review (value already resolved in context)
-  const isBot = context.review?.is_bot ?? false;
+  const isBot = context.review.is_bot;
   console.log(`Review type: ${isBot ? 'AI Bot' : 'Human'}`);
 
   // Fetch unresolved comments
@@ -409,10 +423,7 @@ async function main(): Promise<void> {
 
   // Build final context without mutating the original
   const finalContext: ReviewContext =
-    context.review &&
-    context.review.comment_count === 0 &&
-    (options.forceBot || options.forceHuman) &&
-    options.reviewBatch === undefined
+    context.review.comment_count === 0
       ? {
           ...context,
           review: { ...context.review, comment_count: commentCount },

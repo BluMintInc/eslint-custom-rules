@@ -52,6 +52,11 @@ const payload = JSON.stringify({ link: url }); // `toJSON` called automatically 
 console.log(new URL('https://e.com').toString());
 ```
 
+```javascript
+const maybeUrl = Math.random() > 0.5 ? new URL('https://e.com') : undefined;
+console.log(maybeUrl?.toString());
+```
+
 ## When Not To Use It
 
 - If your project intentionally prefers `toJSON()` to signal JSON-only usage even outside `JSON.stringify`. This is uncommon and discouraged due to redundancy with `toString()` on `URL`.
