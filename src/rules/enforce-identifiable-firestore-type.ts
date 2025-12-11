@@ -205,7 +205,18 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
             }
 
             if (currentType.type === AST_NODE_TYPES.TSTypeReference) {
+              if (currentType.typeName.type !== AST_NODE_TYPES.Identifier) {
+                return false;
+              }
+
+              const typeName = currentType.typeName.name;
+
+              if (typeName === 'Identifiable') {
+                return true;
+              }
+
               if (
+                transparentTypeNames.has(typeName) &&
                 currentType.typeParameters?.params?.some((param) =>
                   checkIdField(param, visitedTypes),
                 )
@@ -213,22 +224,12 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
                 return true;
               }
 
-              if (currentType.typeName.type !== AST_NODE_TYPES.Identifier) {
+              if (visitedTypes.has(typeName)) {
                 return false;
               }
 
-              if (currentType.typeName.name === 'Identifiable') {
-                return true;
-              }
-
-              if (visitedTypes.has(currentType.typeName.name)) {
-                return false;
-              }
-
-              visitedTypes.add(currentType.typeName.name);
-              const referencedType = findTypeAliasAnnotation(
-                currentType.typeName.name,
-              );
+              visitedTypes.add(typeName);
+              const referencedType = findTypeAliasAnnotation(typeName);
 
               return checkIdField(referencedType, visitedTypes);
             }

@@ -334,8 +334,10 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                             ) {
                               const importText = `import { ${suggestedConstant} } from '@/util/routing/queryKeys';\n`;
                               const firstImport = sourceCode.ast.body.find(
-                                (n): n is TSESTree.ImportDeclaration =>
-                                  n.type === AST_NODE_TYPES.ImportDeclaration,
+                                (
+                                  node,
+                                ): node is TSESTree.ImportDeclaration =>
+                                  node.type === AST_NODE_TYPES.ImportDeclaration,
                               );
 
                               if (firstImport) {

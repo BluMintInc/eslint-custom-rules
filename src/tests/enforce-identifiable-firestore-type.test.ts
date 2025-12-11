@@ -189,6 +189,18 @@ ruleTesterTs.run(
       },
       {
         code: `
+        export type Guild = Resolve<Map<{ id: string }, string>>;
+      `,
+        filename: 'functions/src/types/firestore/Guild/index.ts',
+        errors: [
+          {
+            messageId: 'notExtendingIdentifiable',
+            data: { typeName: 'Guild' },
+          },
+        ],
+      },
+      {
+        code: `
         import { Identifiable } from '../../Identifiable';
 
         export type Guild = Array<Identifiable>;
