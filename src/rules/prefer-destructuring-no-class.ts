@@ -280,6 +280,61 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
       return false;
     }
 
+    /**
+     * Report assignments that copy properties from parameter objects to class fields.
+     * These are reported without a fixer to avoid changing function signatures.
+     */
+    function handleClassPropertyAssignment(
+      node: TSESTree.AssignmentExpression,
+    ): void {
+      if (node.right.type !== AST_NODE_TYPES.MemberExpression) {
+        return;
+      }
+
+      if (
+        !options.object ||
+        node.left.type !== AST_NODE_TYPES.MemberExpression ||
+        node.left.object.type !== AST_NODE_TYPES.ThisExpression
+      ) {
+        return;
+      }
+
+      const rightObject = node.right.object;
+
+      if (
+        rightObject.type !== AST_NODE_TYPES.Identifier ||
+        !isFunctionParameter(rightObject)
+      ) {
+        return;
+      }
+
+      const leftPropertyName = getMemberExpressionPropertyName(node.left);
+      const rightPropertyName = getMemberExpressionPropertyName(node.right);
+
+      if (!leftPropertyName || !rightPropertyName) {
+        return;
+      }
+
+      if (
+        !options.enforceForRenamedProperties &&
+        leftPropertyName !== rightPropertyName
+      ) {
+        return;
+      }
+
+      if (
+        isClassInstance(node.right, context) ||
+        isStaticClassMember(node.right, context)
+      ) {
+        return;
+      }
+
+      context.report({
+        node,
+        messageId: 'preferDestructuring',
+      });
+    }
+
     return {
       VariableDeclarator(node) {
         // Skip if variable is declared without assignment or if init is not a MemberExpression
@@ -375,50 +430,7 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
           return;
         }
 
-        if (
-          !options.object ||
-          node.left.type !== AST_NODE_TYPES.MemberExpression ||
-          node.left.object.type !== AST_NODE_TYPES.ThisExpression
-        ) {
-          return;
-        }
-
-        const rightObject = node.right.object;
-
-        if (
-          rightObject.type !== AST_NODE_TYPES.Identifier ||
-          !isFunctionParameter(rightObject)
-        ) {
-          return;
-        }
-
-        const leftPropertyName = getMemberExpressionPropertyName(node.left);
-        const rightPropertyName = getMemberExpressionPropertyName(node.right);
-
-        if (!leftPropertyName || !rightPropertyName) {
-          return;
-        }
-
-        if (
-          !options.enforceForRenamedProperties &&
-          leftPropertyName !== rightPropertyName
-        ) {
-          return;
-        }
-
-        if (
-          isClassInstance(node.right, context) ||
-          isStaticClassMember(node.right, context)
-        ) {
-          return;
-        }
-
-        // Report without fixer because altering parameter destructuring would
-        // change the function signature and is safer to do manually.
-        context.report({
-          node,
-          messageId: 'preferDestructuring',
-        });
+        handleClassPropertyAssignment(node);
       },
     };
   },
