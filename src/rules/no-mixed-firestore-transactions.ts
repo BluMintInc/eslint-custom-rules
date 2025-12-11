@@ -9,6 +9,16 @@ const NON_TRANSACTIONAL_CLASSES = new Set([
   'FirestoreFetcher',
 ]);
 
+const FETCHER_CLASSES = new Set(['FirestoreDocFetcher', 'FirestoreFetcher']);
+
+type FetcherInstance = {
+  node: TSESTree.NewExpression;
+  className: string;
+  constructorHasTransaction: boolean;
+  hasTransactionCall: boolean;
+  hasCallWithoutTransaction: boolean;
+};
+
 export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
   name: 'no-mixed-firestore-transactions',
   meta: {
@@ -27,6 +37,7 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     const transactionScopes = new Set<TSESTree.Node>();
+    const fetcherInstances = new Map<TSESTree.Node, Map<string, FetcherInstance>>();
 
     function getTransactionalClassName(className: string): string {
       if (className === 'DocSetter') return 'DocSetterTransaction';
@@ -74,39 +85,222 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       );
     }
 
-    function isInTransactionScope(node: TSESTree.Node): boolean {
+    function isFunctionLike(
+      node: TSESTree.Node,
+    ): node is
+      | TSESTree.FunctionDeclaration
+      | TSESTree.FunctionExpression
+      | TSESTree.ArrowFunctionExpression {
+      return (
+        node.type === AST_NODE_TYPES.FunctionDeclaration ||
+        node.type === AST_NODE_TYPES.FunctionExpression ||
+        node.type === AST_NODE_TYPES.ArrowFunctionExpression
+      );
+    }
+
+    function getTransactionScope(node: TSESTree.Node): TSESTree.Node | null {
       let current: TSESTree.Node | undefined = node;
       while (current) {
         if (transactionScopes.has(current)) {
-          return true;
+          return current;
         }
-        if (
-          current.type === AST_NODE_TYPES.FunctionDeclaration ||
-          current.type === AST_NODE_TYPES.FunctionExpression ||
-          current.type === AST_NODE_TYPES.ArrowFunctionExpression
-        ) {
-          const params = current.params;
-          if (params.some(isTransactionParameter)) {
-            return true;
-          }
+
+        if (isFunctionLike(current) && current.params.some(isTransactionParameter)) {
+          return current.body ?? current;
         }
+
         current = current.parent;
       }
-      return false;
+      return null;
+    }
+
+    function getVariableName(node: TSESTree.NewExpression): string | null {
+      const parent = node.parent;
+      if (
+        parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+        parent.id.type === AST_NODE_TYPES.Identifier
+      ) {
+        return parent.id.name;
+      }
+
+      if (
+        parent?.type === AST_NODE_TYPES.AssignmentExpression &&
+        parent.left.type === AST_NODE_TYPES.Identifier
+      ) {
+        return parent.left.name;
+      }
+
+      return null;
+    }
+
+    function isFetcherClass(className: string): boolean {
+      return FETCHER_CLASSES.has(className);
+    }
+
+    function isTransactionOptionObject(
+      arg: TSESTree.CallExpressionArgument,
+    ): arg is TSESTree.ObjectExpression {
+      if (arg.type !== AST_NODE_TYPES.ObjectExpression) return false;
+
+      return arg.properties.some((property) => {
+        if (property.type !== AST_NODE_TYPES.Property || property.computed) {
+          return false;
+        }
+
+        const key = property.key;
+
+        return (
+          (key.type === AST_NODE_TYPES.Identifier && key.name === 'transaction') ||
+          (key.type === AST_NODE_TYPES.Literal && key.value === 'transaction')
+        );
+      });
+    }
+
+    function hasTransactionOption(
+      args: TSESTree.CallExpressionArgument[],
+    ): boolean {
+      return args.some(isTransactionOptionObject);
+    }
+
+    function ensureFetcherScope(
+      scope: TSESTree.Node,
+    ): Map<string, FetcherInstance> {
+      if (!fetcherInstances.has(scope)) {
+        fetcherInstances.set(scope, new Map());
+      }
+
+      return fetcherInstances.get(scope)!;
+    }
+
+    function shouldReportFetcher(instance: FetcherInstance): boolean {
+      if (instance.constructorHasTransaction) return false;
+      if (instance.hasCallWithoutTransaction) return true;
+      if (instance.hasTransactionCall) return false;
+      return true;
+    }
+
+    function isFetchCall(callee: TSESTree.MemberExpression): boolean {
+      return (
+        callee.property.type === AST_NODE_TYPES.Identifier &&
+        callee.property.name === 'fetch'
+      );
     }
 
     return {
-      'CallExpression[callee.property.name="runTransaction"]'(
-        node: TSESTree.CallExpression,
-      ) {
-        if (!isFirestoreTransaction(node)) return;
+      NewExpression(node) {
+        if (!isNonTransactionalClass(node)) return;
 
-        const callback = node.arguments[0];
-        if (
-          callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-          callback.type === AST_NODE_TYPES.FunctionExpression
+        const transactionScope = getTransactionScope(node);
+        if (!transactionScope) return;
+
+        const className = (node.callee as TSESTree.Identifier).name;
+
+        if (!isFetcherClass(className)) {
+          context.report({
+            node,
+            messageId: 'noMixedTransactions',
+            data: {
+              className,
+              transactionalClass: getTransactionalClassName(className),
+            },
+          });
+          return;
+        }
+
+        const constructorHasTransaction = hasTransactionOption(node.arguments);
+        const variableName = getVariableName(node);
+
+        if (!variableName) {
+          if (constructorHasTransaction) return;
+
+          if (
+            node.parent?.type === AST_NODE_TYPES.MemberExpression &&
+            node.parent.object === node &&
+            isFetchCall(node.parent) &&
+            node.parent.parent?.type === AST_NODE_TYPES.CallExpression
+          ) {
+            return;
+          }
+
+          context.report({
+            node,
+            messageId: 'noMixedTransactions',
+            data: {
+              className,
+              transactionalClass: getTransactionalClassName(className),
+            },
+          });
+          return;
+        }
+
+        const scope = ensureFetcherScope(transactionScope);
+        scope.set(variableName, {
+          node,
+          className,
+          constructorHasTransaction,
+          hasTransactionCall: constructorHasTransaction,
+          hasCallWithoutTransaction: false,
+        });
+      },
+
+      CallExpression(node) {
+        const callee = node.callee;
+
+        if (callee.type !== AST_NODE_TYPES.MemberExpression) {
+          return;
+        }
+
+        if (!isFetchCall(callee)) {
+          if (isFirestoreTransaction(node)) {
+            const callback = node.arguments[0];
+            if (
+              callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+              callback.type === AST_NODE_TYPES.FunctionExpression
+            ) {
+              transactionScopes.add(callback.body);
+            }
+          }
+          return;
+        }
+
+        const transactionScope = getTransactionScope(node);
+        if (!transactionScope) return;
+
+        const callHasTransaction = hasTransactionOption(node.arguments);
+        const object = callee.object;
+
+        if (object.type === AST_NODE_TYPES.Identifier) {
+          const scope = fetcherInstances.get(transactionScope);
+          const instance = scope?.get(object.name);
+
+          if (!instance) return;
+
+          if (callHasTransaction || instance.constructorHasTransaction) {
+            instance.hasTransactionCall =
+              instance.hasTransactionCall || callHasTransaction;
+          } else {
+            instance.hasCallWithoutTransaction = true;
+          }
+        } else if (
+          object.type === AST_NODE_TYPES.NewExpression &&
+          object.callee.type === AST_NODE_TYPES.Identifier &&
+          isFetcherClass(object.callee.name)
         ) {
-          transactionScopes.add(callback.body);
+          const constructorHasTransaction = hasTransactionOption(
+            object.arguments,
+          );
+
+          if (!(constructorHasTransaction || callHasTransaction)) {
+            const className = object.callee.name;
+            context.report({
+              node: object,
+              messageId: 'noMixedTransactions',
+              data: {
+                className,
+                transactionalClass: getTransactionalClassName(className),
+              },
+            });
+          }
         }
       },
 
@@ -122,19 +316,23 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
         }
       },
 
-      NewExpression(node) {
-        if (!isInTransactionScope(node) || !isNonTransactionalClass(node))
-          return;
+      'Program:exit'() {
+        for (const scope of fetcherInstances.values()) {
+          for (const instance of scope.values()) {
+            if (!shouldReportFetcher(instance)) continue;
 
-        const className = (node.callee as TSESTree.Identifier).name;
-        context.report({
-          node,
-          messageId: 'noMixedTransactions',
-          data: {
-            className,
-            transactionalClass: getTransactionalClassName(className),
-          },
-        });
+            context.report({
+              node: instance.node,
+              messageId: 'noMixedTransactions',
+              data: {
+                className: instance.className,
+                transactionalClass: getTransactionalClassName(
+                  instance.className,
+                ),
+              },
+            });
+          }
+        }
       },
     };
   },

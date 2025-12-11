@@ -156,6 +156,43 @@ ruleTesterTs.run(
         });
       `,
       },
+      // Valid: FirestoreDocFetcher fetch uses transaction options inside transaction
+      {
+        code: `
+        await db.runTransaction(async (tx) => {
+          const fetcher = new FirestoreDocFetcher<UserDocument>(userRef);
+          const user = await fetcher.fetch({ transaction: tx });
+          return user;
+        });
+      `,
+      },
+      // Valid: Inline fetcher creation with transaction option
+      {
+        code: `
+        await db.runTransaction(async (tx) => {
+          await new FirestoreFetcher(ref).fetch({ transaction: tx });
+        });
+      `,
+      },
+      // Valid: Fetcher constructed with transaction option
+      {
+        code: `
+        await db.runTransaction(async (tx) => {
+          const fetcher = new FirestoreDocFetcher(userRef, { transaction: tx });
+          await fetcher.fetch();
+        });
+      `,
+      },
+      // Valid: Fetcher assigned via reassignment with transaction option
+      {
+        code: `
+        let fetcher: FirestoreFetcher;
+        await db.runTransaction(async (tx) => {
+          fetcher = new FirestoreFetcher(ref);
+          await fetcher.fetch({ transaction: tx });
+        });
+      `,
+      },
     ],
     invalid: [
       // Invalid: Using DocSetter inside transaction
@@ -400,6 +437,95 @@ ruleTesterTs.run(
             data: {
               className: 'DocSetter',
               transactionalClass: 'DocSetterTransaction',
+            },
+          },
+        ],
+      },
+      // Invalid: Inline fetcher without transaction option
+      {
+        code: `
+        await db.runTransaction(async (tx) => {
+          await new FirestoreDocFetcher(ref).fetch();
+        });
+      `,
+        errors: [
+          {
+            messageId: 'noMixedTransactions',
+            data: {
+              className: 'FirestoreDocFetcher',
+              transactionalClass: 'FirestoreDocFetcherTransaction',
+            },
+          },
+        ],
+      },
+      // Invalid: Fetcher called with and without transaction options
+      {
+        code: `
+        await db.runTransaction(async (tx) => {
+          const fetcher = new FirestoreFetcher(ref);
+          await fetcher.fetch({ transaction: tx });
+          await fetcher.fetch();
+        });
+      `,
+        errors: [
+          {
+            messageId: 'noMixedTransactions',
+            data: {
+              className: 'FirestoreFetcher',
+              transactionalClass: 'FirestoreFetcherTransaction',
+            },
+          },
+        ],
+      },
+      // Invalid: Inline fetcher instantiated without usage
+      {
+        code: `
+        await db.runTransaction(async (tx) => {
+          new FirestoreDocFetcher(ref);
+        });
+      `,
+        errors: [
+          {
+            messageId: 'noMixedTransactions',
+            data: {
+              className: 'FirestoreDocFetcher',
+              transactionalClass: 'FirestoreDocFetcherTransaction',
+            },
+          },
+        ],
+      },
+      // Invalid: Fetcher created but never used
+      {
+        code: `
+        await db.runTransaction(async (tx) => {
+          const fetcher = new FirestoreFetcher(ref);
+        });
+      `,
+        errors: [
+          {
+            messageId: 'noMixedTransactions',
+            data: {
+              className: 'FirestoreFetcher',
+              transactionalClass: 'FirestoreFetcherTransaction',
+            },
+          },
+        ],
+      },
+      // Invalid: Transaction option provided via computed key
+      {
+        code: `
+        await db.runTransaction(async (tx) => {
+          const key = 'transaction';
+          const fetcher = new FirestoreDocFetcher(ref);
+          await fetcher.fetch({ [key]: tx });
+        });
+      `,
+        errors: [
+          {
+            messageId: 'noMixedTransactions',
+            data: {
+              className: 'FirestoreDocFetcher',
+              transactionalClass: 'FirestoreDocFetcherTransaction',
             },
           },
         ],
