@@ -10,6 +10,14 @@ type MessageIds =
 
 type BlockLike = TSESTree.BlockStatement | TSESTree.Program;
 
+const TYPE_EXPRESSION_WRAPPERS = new Set<TSESTree.Node['type']>([
+  AST_NODE_TYPES.TSAsExpression,
+  AST_NODE_TYPES.TSTypeAssertion,
+  AST_NODE_TYPES.TSNonNullExpression,
+  AST_NODE_TYPES.TSSatisfiesExpression,
+  AST_NODE_TYPES.TSInstantiationExpression,
+]);
+
 function isHookLikeName(name: string): boolean {
   return /^use[A-Z0-9]/.test(name);
 }
@@ -34,7 +42,13 @@ function isHookCallee(
 }
 
 function isTypeNode(node: TSESTree.Node | undefined): boolean {
-  return Boolean(node && node.type.startsWith('TS'));
+  if (!node) {
+    return false;
+  }
+  if (TYPE_EXPRESSION_WRAPPERS.has(node.type)) {
+    return false;
+  }
+  return node.type.startsWith('TS');
 }
 
 function isDeclarationIdentifier(
@@ -774,17 +788,25 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
         }
 
         const intervening = body.slice(index + 1, usageIndex);
-        // Bail when intervening code redeclares the placeholder or touches the initializer dependency so we do not cross redefinitions or TDZ hazards.
-        const touchesTrackedNames = intervening.some(
-          (stmt) =>
-            statementDeclaresAny(stmt, nameSet) ||
-            statementMutatesAny(stmt, nameSet) ||
-            (dependencies.size > 0 &&
-              (statementDeclaresAny(stmt, dependencies) ||
-                statementReferencesAny(stmt, dependencies) ||
-                statementMutatesAny(stmt, dependencies))),
-        );
-        if (touchesTrackedNames) {
+        // Only move across pure declarations that do not mention the placeholder or its initializer dependencies to avoid changing closure timing or TDZ behavior.
+        const crossesImpureOrTracked = intervening.some((stmt) => {
+          if (!isPureDeclaration(stmt, { allowHooks: false })) {
+            return true;
+          }
+          if (statementDeclaresAny(stmt, nameSet) || statementMutatesAny(stmt, nameSet)) {
+            return true;
+          }
+          if (
+            dependencies.size > 0 &&
+            (statementDeclaresAny(stmt, dependencies) ||
+              statementReferencesAny(stmt, dependencies) ||
+              statementMutatesAny(stmt, dependencies))
+          ) {
+            return true;
+          }
+          return false;
+        });
+        if (crossesImpureOrTracked) {
           return;
         }
 
@@ -811,6 +833,44 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
       }
       return null;
     }
+
+  function collectCalleeDependencies(
+    body: TSESTree.Statement[],
+    callee: TSESTree.LeftHandSideExpression | TSESTree.PrivateIdentifier | TSESTree.Super,
+    dependencies: Set<string>,
+  ): void {
+    if (callee.type !== AST_NODE_TYPES.Identifier) {
+      return;
+    }
+    const name = callee.name;
+
+    const functionDeclaration = body.find(
+      (statement) =>
+        statement.type === AST_NODE_TYPES.FunctionDeclaration && statement.id?.name === name,
+    ) as TSESTree.FunctionDeclaration | undefined;
+    if (functionDeclaration && functionDeclaration.body) {
+      collectUsedIdentifiers(functionDeclaration.body, dependencies, { skipFunctions: true });
+      return;
+    }
+
+    for (const statement of body) {
+      if (statement.type !== AST_NODE_TYPES.VariableDeclaration) {
+        continue;
+      }
+      for (const declarator of statement.declarations) {
+        if (
+          declarator.id.type === AST_NODE_TYPES.Identifier &&
+          declarator.id.name === name &&
+          declarator.init &&
+          (declarator.init.type === AST_NODE_TYPES.FunctionExpression ||
+            declarator.init.type === AST_NODE_TYPES.ArrowFunctionExpression)
+        ) {
+          collectUsedIdentifiers(declarator.init.body, dependencies, { skipFunctions: true });
+          return;
+        }
+      }
+    }
+  }
 
     function isSideEffectExpression(
       statement: TSESTree.Statement,
@@ -839,6 +899,7 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
 
         const dependencies = new Set<string>();
         collectUsedIdentifiers(expression, dependencies, { skipFunctions: true });
+        collectCalleeDependencies(body, callExpression.callee, dependencies);
 
         const targetIndex = findEarliestSafeIndex(body, index, dependencies, { allowHooks: false });
 

@@ -137,6 +137,44 @@ function doNotJumpOverRedeclaredDerived() {
   use(value);
 }
     `,
+    `
+function preserveClosureTiming() {
+  let x;
+  inner();
+  function inner() {
+    console.log(x);
+  }
+  x = 1;
+}
+    `,
+    `
+const obj = makeObject();
+if (obj!.disabled) {
+  return;
+}
+use(obj);
+    `,
+    `
+let data;
+const id = getId();
+const status = checkStatus();
+if (shouldFetch) {
+  data = fetchData();
+}
+    `,
+    `
+let counter = 0;
+const mid = doMid();
+log(mid);
+console.log(counter);
+    `,
+    `
+let logger;
+function logAll() {
+  return 1;
+}
+logger = createLogger();
+    `,
   ],
   invalid: [
     {
@@ -158,25 +196,6 @@ const b = a;
     },
     {
       code: `
-let data;
-const id = getId();
-const status = checkStatus();
-if (shouldFetch) {
-  data = fetchData();
-}
-      `,
-      output: `
-const id = getId();
-const status = checkStatus();
-let data;
-if (shouldFetch) {
-  data = fetchData();
-}
-      `,
-      errors: [{ messageId: 'moveDeclarationCloser' }],
-    },
-    {
-      code: `
 let results = [];
 
 console.log('Processing started');
@@ -268,28 +287,6 @@ const derived = base.value * count;
 const later = 2;
 `,
       errors: [{ messageId: 'groupDerived' }],
-    },
-    {
-      code: '\nlet counter = 0;\nconst mid = doMid();\nlog(mid);\nconsole.log(counter);\n',
-      output: '\nconst mid = doMid();\nlog(mid);\nlet counter = 0;\nconsole.log(counter);\n',
-      errors: [{ messageId: 'moveDeclarationCloser' }],
-    },
-    {
-      code: `
-let logger;
-function logAll() {
-  return 1;
-}
-logger = createLogger();
-      `,
-      output: `
-function logAll() {
-  return 1;
-}
-let logger;
-logger = createLogger();
-      `,
-      errors: [{ messageId: 'moveDeclarationCloser' }],
     },
   ],
 });

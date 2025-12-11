@@ -8,6 +8,8 @@
 
 Keep related statements grouped in a logical, top-to-bottom order. The rule hoists guard clauses above skipped setup, places derived declarations next to their dependencies, keeps placeholder declarations near their first use, and lifts side effects (like logging) above unrelated initialization. Hook calls are left in place so React's Rules of Hooks are not broken.
 
+Placeholder declarations only move across pure declarations that do not reference the placeholder or its initializer, so closure timing and TDZ behavior remain unchanged.
+
 ## Rule Details
 
 This rule rearranges statements inside a block to keep the execution flow readable and chronological.
