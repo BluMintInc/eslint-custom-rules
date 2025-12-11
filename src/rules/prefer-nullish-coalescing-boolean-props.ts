@@ -3,6 +3,66 @@ import { createRule } from '../utils/createRule';
 
 type MessageIds = 'preferNullishCoalescing';
 
+const BOOLEAN_PROP_REGEX =
+  /^(is|has|should|can|will|do|does|did|was|were|enable|disable)/;
+
+function isInJSXBooleanAttribute(node: TSESTree.Node): boolean {
+  const parent = node.parent;
+  if (parent?.type !== AST_NODE_TYPES.JSXAttribute) return false;
+
+  const attributeName = parent.name.name;
+  const booleanPropNames = [
+    'disabled',
+    'required',
+    'checked',
+    'selected',
+    'readOnly',
+    'autoFocus',
+    'autoPlay',
+    'controls',
+    'default',
+    'defer',
+    'hidden',
+    'isOpen',
+    'loop',
+    'multiple',
+    'muted',
+    'noValidate',
+    'open',
+    'scoped',
+    'seamless',
+    'itemScope',
+    'allowFullScreen',
+    'async',
+    'autofocus',
+    'autoplay',
+    'formNoValidate',
+    'spellcheck',
+    'translate',
+  ];
+
+  return (
+    typeof attributeName === 'string' &&
+    (booleanPropNames.includes(attributeName) ||
+      BOOLEAN_PROP_REGEX.test(attributeName))
+  );
+}
+
+function isInConditionalContext(node: TSESTree.Node): boolean {
+  const parent = node.parent;
+  if (!parent) return false;
+
+  return (
+    (parent.type === AST_NODE_TYPES.IfStatement && node === parent.test) ||
+    (parent.type === AST_NODE_TYPES.ConditionalExpression &&
+      node === parent.test) ||
+    (parent.type === AST_NODE_TYPES.WhileStatement && node === parent.test) ||
+    (parent.type === AST_NODE_TYPES.ForStatement && node === parent.test) ||
+    (parent.type === AST_NODE_TYPES.DoWhileStatement && node === parent.test) ||
+    (parent.type === AST_NODE_TYPES.SwitchCase && node === parent.test)
+  );
+}
+
 /**
  * Determines if a node is within a boolean context in JSX props or other boolean contexts
  */
@@ -11,61 +71,8 @@ function isInBooleanContext(node: TSESTree.Node): boolean {
 
   // Traverse up the AST to find if we're in a boolean context
   while (current && current.parent) {
-    // If we're in a JSX attribute value
-    if (current.parent.type === AST_NODE_TYPES.JSXAttribute) {
-      const attributeName = current.parent.name.name;
-
-      // Common boolean props in React components
-      const booleanPropNames = [
-        'disabled',
-        'required',
-        'checked',
-        'selected',
-        'readOnly',
-        'autoFocus',
-        'autoPlay',
-        'controls',
-        'default',
-        'defer',
-        'hidden',
-        'isOpen',
-        'loop',
-        'multiple',
-        'muted',
-        'noValidate',
-        'open',
-        'scoped',
-        'seamless',
-        'itemScope',
-        'allowFullScreen',
-        'async',
-        'autofocus',
-        'autoplay',
-        'formNoValidate',
-        'spellcheck',
-        'translate',
-      ];
-
-      // Check if the attribute name is a common boolean prop
-      if (
-        typeof attributeName === 'string' &&
-        (booleanPropNames.includes(attributeName) ||
-          // Also check for props that start with 'is', 'has', 'should', 'can', 'will', etc.
-          /^(is|has|should|can|will|do|does|did|was|were|enable|disable)/.test(
-            attributeName,
-          ))
-      ) {
-        return true;
-      }
-    }
-
-    // If we're in a boolean expression context
-    if (
-      current.parent.type === AST_NODE_TYPES.IfStatement &&
-      current === current.parent.test
-    ) {
-      return true;
-    }
+    if (isInJSXBooleanAttribute(current)) return true;
+    if (isInConditionalContext(current)) return true;
 
     // If we're in a logical expression that's part of a boolean context
     if (
@@ -485,21 +492,27 @@ function isInBooleanContext(node: TSESTree.Node): boolean {
 function couldBeNullish(node: TSESTree.Expression): boolean {
   // For literals, check the actual value
   if (node.type === AST_NODE_TYPES.Literal) {
-    // If it's null or undefined, it's nullish
-    if (node.value === null || node.value === undefined) {
-      return true;
-    }
-    // Boolean literals, numbers, strings are not nullish
-    if (
-      typeof node.value === 'boolean' ||
-      typeof node.value === 'number' ||
-      typeof node.value === 'string'
-    ) {
-      return false;
-    }
+    return node.value === null || node.value === undefined;
   }
 
-  // For other expressions, assume they could be nullish
+  if (node.type === AST_NODE_TYPES.Identifier && node.name === 'undefined') {
+    return true;
+  }
+
+  if (
+    node.type === AST_NODE_TYPES.NewExpression ||
+    node.type === AST_NODE_TYPES.ArrayExpression ||
+    node.type === AST_NODE_TYPES.ObjectExpression ||
+    node.type === AST_NODE_TYPES.FunctionExpression ||
+    node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+    node.type === AST_NODE_TYPES.ClassExpression ||
+    (node.type === AST_NODE_TYPES.TemplateLiteral &&
+      node.expressions.length === 0)
+  ) {
+    return false;
+  }
+
+  // For other expressions, conservatively assume they could be nullish
   return true;
 }
 
