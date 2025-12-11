@@ -1,6 +1,14 @@
 import { ruleTesterJsx } from '../utils/ruleTester';
 import rule from '../rules/require-image-optimized';
 
+describe('require-image-optimized messages', () => {
+  it('provides an educational replacement hint', () => {
+    expect(rule.meta.messages.useImageOptimized).toBe(
+      'Use ImageOptimized from {{ componentPath }} instead of {{ component }}. The shared wrapper handles responsive sizing, lazy loading, and blur placeholders so images stay optimized and do not hurt Core Web Vitals. Replace this usage with ImageOptimized to send the asset through the optimization pipeline.',
+    );
+  });
+});
+
 ruleTesterJsx.run('require-image-optimized', rule, {
   valid: [
     {

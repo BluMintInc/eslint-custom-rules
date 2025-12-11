@@ -24,14 +24,47 @@ ruleTesterTs.run('array-method-this-content', arrayMethodsThisContext, {
       "['a', 'b', 'c'].every(this.validateItem)",
       "['a', 'b', 'c'].reduce(this.combineItems)",
     ].map((testCase) => {
+      const arrayMethod = testCase.match(/\.(\w+)\(/)?.[1] ?? '';
+      const methodName = testCase.match(/this\.(\w+)/)?.[1] ?? '';
+      const methodAccessor = `.${methodName}`;
+
       return {
         code: testCase,
-        errors: [{ messageId: 'unexpected' as const }],
+        errors: [
+          {
+            messageId: 'unexpected' as const,
+            data: {
+              arrayMethod,
+              methodAccessor,
+              methodReference: `this${methodAccessor}`,
+            },
+          },
+        ],
       };
     }),
     {
+      code: "['a', 'b', 'c'].map(this['processItem'])",
+      errors: [
+        {
+          messageId: 'unexpected' as const,
+          data: {
+            arrayMethod: 'map',
+            methodAccessor: "['processItem']",
+            methodReference: "this['processItem']",
+          },
+        },
+      ],
+    },
+    {
       code: "['a', 'b', 'c'].map(function(item) { return this.processItem(item) }.bind(this))",
-      errors: [{ messageId: 'preferArrow' as const }],
+      errors: [
+        {
+          messageId: 'preferArrow' as const,
+          data: {
+            arrayMethod: 'map',
+          },
+        },
+      ],
     },
   ],
 });
