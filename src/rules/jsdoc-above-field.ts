@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 
 import { createRule } from '../utils/createRule';
 
@@ -47,8 +47,11 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
   },
   defaultOptions,
   create(context, [options = defaultOptions[0]]) {
-    const sourceCode = context.getSourceCode();
+    const sourceCode =
+      (context as unknown as { sourceCode?: TSESLint.SourceCode }).sourceCode ??
+      context.getSourceCode();
     const { checkObjectLiterals = false } = options;
+    const allComments = sourceCode.getAllComments();
 
     const isRelevantNode = (
       node: TSESTree.Node,
@@ -123,7 +126,7 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
         | TSESTree.PropertyDefinition
         | TSESTree.Property,
     ): TSESTree.Comment | undefined => {
-      return sourceCode.getAllComments().find((comment) => {
+      return allComments.find((comment) => {
         if (!isJSDocBlock(comment)) {
           return false;
         }
@@ -166,11 +169,17 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
         | TSESTree.Property,
       comment: TSESTree.Comment,
     ) => {
-      const indent = indentForNode(node);
+      const insertTarget =
+        node.type === AST_NODE_TYPES.PropertyDefinition &&
+        node.decorators &&
+        node.decorators.length > 0
+          ? node.decorators[0]
+          : node;
+      const indent = indentForNode(insertTarget);
       const commentText = formatCommentWithIndent(comment, indent);
       let removalStart = comment.range[0];
       const removalEnd = comment.range[1];
-      const lineStart = node.range[0] - node.loc.start.column;
+      const lineStart = insertTarget.range[0] - insertTarget.loc.start.column;
 
       while (
         removalStart > node.range[1] &&
@@ -199,9 +208,7 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
       });
     };
 
-    const checkNode = (
-      node: TSESTree.Node,
-    ) => {
+    const checkNode = (node: TSESTree.Node) => {
       if (!isRelevantNode(node)) {
         return;
       }
@@ -218,7 +225,7 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
     return {
       TSPropertySignature: checkNode,
       PropertyDefinition: checkNode,
-      Property: checkNode,
+      ...(checkObjectLiterals && { Property: checkNode }),
     };
   },
 });
