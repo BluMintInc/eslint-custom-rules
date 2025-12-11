@@ -240,20 +240,33 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
     }
 
     /**
+     * Look up a variable by name within a scope.
+     */
+    function findVariableInScope(scope: any, name: string) {
+      return scope?.variables.find((variable: any) => variable.name === name);
+    }
+
+    /**
+     * Check whether a variable definition originates from a parameter.
+     */
+    function isParameterDefinition(variable: any): boolean {
+      return Array.isArray(variable?.defs)
+        ? variable.defs.some(
+            (definition: any) => definition.type === 'Parameter',
+          )
+        : false;
+    }
+
+    /**
      * Determine whether an identifier refers to a function or method parameter.
      */
     function isFunctionParameter(identifier: TSESTree.Identifier): boolean {
       let scope: any = context.getScope();
 
       while (scope) {
-        const variable = scope.variables.find(
-          (variable: any) => variable.name === identifier.name,
-        );
-
-        if (variable) {
-          return variable.defs.some(
-            (definition: any) => definition.type === 'Parameter',
-          );
+        const variable = findVariableInScope(scope, identifier.name);
+        if (variable && isParameterDefinition(variable)) {
+          return true;
         }
 
         scope = scope.upper;
@@ -395,6 +408,8 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
           return;
         }
 
+        // Report without fixer because altering parameter destructuring would
+        // change the function signature and is safer to do manually.
         context.report({
           node,
           messageId: 'preferDestructuring',
