@@ -12,7 +12,7 @@ Require DocSetter and DocSetterTransaction instances to flatten nested Firestore
 
 ## Rule Details
 
-The rule reports DocSetter or DocSetterTransaction instances that are created without `shouldFlatten` and later call `set` or `setAll` with payloads containing nested objects (including arrays of nested objects).
+The rule reports when you create `DocSetter` or `DocSetterTransaction` instances without `shouldFlatten` and later call `set` or `setAll` with payloads containing nested objects (including arrays of nested objects).
 
 Using field paths with flattened documents instead of nested objects provides several critical advantages:
 
@@ -78,6 +78,28 @@ await userSetter.set({
 });
 ```
 
+#### ✅ Correct (transaction)
+
+```typescript
+// Creating DocSetterTransaction with shouldFlatten option
+const userTx = new DocSetterTransaction<UserDocument>(db, { shouldFlatten: true });
+
+await userTx.run(async (tx) => {
+  // Set nested objects; they will be flattened automatically.
+  await tx.set('users/user123', {
+    profile: {
+      personal: { firstName: 'John', lastName: 'Doe' },
+      settings: { theme: 'dark' },
+    },
+  });
+
+  // Update a nested field directly using a field path.
+  await tx.updateIfExists('users/user123', {
+    'profile.settings.theme': 'light',
+  });
+});
+```
+
 #### ✅ Correct (flatten manually)
 
 ```typescript
@@ -97,9 +119,9 @@ await userSetter.set({
 
 You might consider disabling this rule if:
 
-1. You're working with documents that don't have nested objects.
-2. You have specific performance requirements that benefit from nested object structures.
-3. You're using a different pattern for document updates that doesn't rely on field paths.
+1. The documents you handle do not have nested objects.
+2. Performance needs are better served by nested object structures.
+3. A different document-update pattern avoids field paths entirely.
 
 ## Further Reading
 

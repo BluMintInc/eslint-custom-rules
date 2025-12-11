@@ -15,6 +15,10 @@ This rule is aimed at preventing long chains of `.parent` calls in Firestore and
 
 The rule allows up to 2 consecutive `.parent` calls before raising a warning, as this is often reasonable for simple relative path navigation.
 
+## Options
+
+This rule has no options. The maximum allowed consecutive `.parent` calls is fixed at `2`.
+
 Examples of **incorrect** code for this rule:
 
 ```typescript
@@ -73,7 +77,7 @@ This rule is not auto-fixable; violations must be corrected manually.
 ### Problems with Long Parent Chains
 
 1. **Fragility**: Changes to the Firestore path structure can break multiple chained `.parent` calls.
-2. **Readability**: Long chains like `ref.parent.parent.parent.parent` are hard to understand.
+2. **Readability**: Long chains like `ref.parent.parent.parent.parent` are difficult to comprehend.
 3. **Type Safety**: Manual navigation doesn't provide compile-time guarantees about path structure.
 4. **Maintainability**: Refactoring path structures requires updating all hardcoded parent chains.
 

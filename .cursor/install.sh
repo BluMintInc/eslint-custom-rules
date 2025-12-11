@@ -22,6 +22,12 @@ ensure_node() {
 
   echo "Node.js 22+ is required. Attempting installation..."
 
+  # Source nvm if available (function-based install)
+  if [ -s "$HOME/.nvm/nvm.sh" ]; then
+    # shellcheck disable=SC1090
+    . "$HOME/.nvm/nvm.sh"
+  fi
+
   if require_cmd nvm; then
     nvm install 22
     nvm use 22

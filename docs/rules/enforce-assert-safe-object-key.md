@@ -40,6 +40,10 @@ console.log(obj[assertSafe(`${id}_suffix`)]);
 const hasKey = assertSafe(id) in obj;
 ```
 
+## Options
+
+- `assertSafeImportPath` (string, default: `functions/src/util/assertSafe`): override the import path used by the fixer when inserting `assertSafe`. Set this to your local helper path when consuming the plugin outside BluMint.
+
 ## When Not To Use It
 
 You might consider disabling this rule if:

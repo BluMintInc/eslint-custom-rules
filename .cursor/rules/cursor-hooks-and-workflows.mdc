@@ -10,6 +10,10 @@ alwaysApply: false
 
 This system automates the ESLint rule development lifecycle using **Cursor Hooks** for local quality enforcement and **GitHub Workflows** for triggering Cursor Background Agents on issue events.
 
+## Why the System Was Built
+
+Automation reduces manual toil by enforcing local quality gates and launching background agents so repetitive rule work does not block developers.
+
 ## Architecture Overview
 
 ```
@@ -42,11 +46,24 @@ This system automates the ESLint rule development lifecycle using **Cursor Hooks
 
 | Term | Description |
 |------|-------------|
-| **Cursor Hook** | Script executed at agent lifecycle events (stop, afterFileEdit, beforeSubmitPrompt) |
-| **Stop Hook** | Prevents agent completion until quality checks pass |
-| **Rule Request Flag** | `<!-- rule-request -->` marker that triggers expanded test prompts |
-| **Change Log** | JSON file tracking modified files per conversation/generation |
-| **MAX_LOOPS** | Safety limit (10) preventing infinite validation loops |
+| **Cursor Hook** | Lifecycle event handler that runs automated checks at key agent milestones |
+| **Stop Hook** | Quality gate that blocks completion until required checks succeed |
+| **Validation Loop** | Iterative rerun cycle triggered by failing checks, bounded by MAX_LOOPS to avoid infinite prompting |
+| **Quality Gate** | Ordered set of build, lint, test, and structure checks applied before an agent can finish |
+| **Rule Implementation Lifecycle** | Multi-stage flow from issue triage through research, implementation, validation, and PR creation |
+
+## Core Components
+
+- Cursor Hooks: Local lifecycle scripts that enforce lint/build/test and prompt tracking on every agent run.
+- GitHub Workflows: Issue and review triggers that launch background agents for research, implementation, and bug fixes.
+- Validation Layers: Stop hook checks that gate completion on build, lint, tests, and rule structure for reliability.
+- Change Log: Per-conversation file tracking that keeps prompts idempotent and resumes validation across loops.
+
+## How It Makes Developers' Lives Easier
+
+- Automated quality gates prevent manual babysitting of lint/build/test steps.
+- Structured prompts and rule scaffolding reduce errors and keep implementations consistent.
+- Loop prevention and concurrency controls avoid duplicated agent runs and wasted API cycles.
 
 ## Directory Structure
 
@@ -176,6 +193,14 @@ scripts/
    - `README.md` mentions the rule
 8. **Check-Your-Work Prompt**: Self-review prompt
 9. **Expand Tests Prompt**: For rule implementations only (requires 20+ tests)
+
+#### Critical Insights for Maintainers
+
+- Order is fail-fast by design: stop on build errors before lint/test to avoid long runs on broken builds, prevent expensive lint/test runs, and reduce agent API costs.
+- Common pain points: flaky tests or slow lint/test runs can loop; rerun locally with the same commands in stop.sh and scope to changed files when possible.
+- Rule structure validation loops if required files are missing or src/index.ts exports are incomplete; ensure all items in the checklist above exist before reruns.
+- MAX_LOOPS in change-log.ts (surfaced via .cursor/hooks.json) prevents infinite prompting; increase only when intentionally allowing longer runs.
+- Hook side-effects cascade: PR review checks can short-circuit quality checks, and change-log updates influence later prompts; watch the console output to see which stage stopped the run.
 
 ### Rule Request Detection
 

@@ -1,5 +1,5 @@
 ---
-description: 
+description: Standard risks and considerations checklist for planning markdown docs
 globs: *.md
 alwaysApply: false
 ---
@@ -34,6 +34,5 @@ When drafting or reviewing a planning document, you must perform an analysis cov
     - Are there any GDPR or other privacy regulation concerns to address?
 
 ## Articulating Findings
-
 
 After performing the analysis, you should articulate your findings clearly and actionably within the conversation or even directly on the planning document as a dedicated "Warnings & Considerations" section to highlight potential risks, suggest mitigation strategies, and note important technical details that must be handled during implementation.

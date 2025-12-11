@@ -2,7 +2,7 @@ name: Launch Cursor Agent on PR Review
 
 on:
   pull_request_review:
-    types: [submitted]
+    types: ['submitted']
 
 permissions:
   contents: read
@@ -20,9 +20,13 @@ jobs:
        (github.event.pull_request.base.ref == 'develop' && github.event.pull_request.head.ref == 'main')
        )) }}
     runs-on: ubuntu-latest
+    concurrency:
+      # Prevent overlapping agents for the same PR branch
+      group: cursor-pr-review-${{ github.event.pull_request.number || github.event.pull_request.head.ref }}
+      cancel-in-progress: false
     steps:
       - name: Checkout
-        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955  # v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -111,7 +115,7 @@ jobs:
         run: |
           # Build prompt using TypeScript script
           # Pass the context JSON path AND the comments markdown file path
-          npx tsx .github/scripts/build-pr-review-prompt.ts /tmp/pr-review-context.json /tmp/pr-review-comments.md > /tmp/pr-review-prompt.txt
+          npx tsx ".github/scripts/build-pr-review-prompt.ts" "/tmp/pr-review-context.json" "/tmp/pr-review-comments.md" > /tmp/pr-review-prompt.txt
           
           echo "prompt_path=/tmp/pr-review-prompt.txt" >> $GITHUB_OUTPUT
 
@@ -274,4 +278,3 @@ jobs:
           gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews \
             -f event=COMMENT \
             -f body="✅ Launched Cursor agent to address review ${{ steps.context.outputs.review_id }} (${{ steps.comments.outputs.count }} comment(s)). View agent: $URL. The agent pushes fixes directly to this PR branch. (Note: Could not anchor to a diff line to make this resolvable.)"
-

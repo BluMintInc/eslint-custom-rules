@@ -20,7 +20,7 @@ Propagation transforms often merge into shared aggregation containers. Returning
 
 ## Examples
 
-#### ❌ Incorrect
+### ❌ Incorrect
 
 ```typescript
 const strategy = {
@@ -36,7 +36,7 @@ const strategy = {
 };
 ```
 
-#### ✅ Correct
+### ✅ Correct
 
 ```typescript
 const strategy = {

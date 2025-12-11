@@ -442,3 +442,27 @@ ruleTesterJsx.run(
     ],
   },
 );
+
+describe('enforce-exported-function-types messages', () => {
+  it('explains missingExportedType', () => {
+    expect(enforceExportedFunctionTypes.meta.messages.missingExportedType).toBe(
+      'Type "{{typeName}}" is used in a parameter of an exported function but is not exported. Callers cannot import the parameter contract, which forces duplicate or ad-hoc types and makes the API drift. Export the type (e.g., `export type {{typeName}} = ...`) or reuse an already exported type.',
+    );
+  });
+
+  it('explains missingExportedReturnType', () => {
+    expect(
+      enforceExportedFunctionTypes.meta.messages.missingExportedReturnType,
+    ).toBe(
+      'Return type "{{typeName}}" belongs to an exported function but is not exported. Consumers cannot reference the returned shape for validation or composition, which leads to duplicated types and diverging contracts. Export the return type alias or interface so callers can import the shared contract.',
+    );
+  });
+
+  it('explains missingExportedPropsType', () => {
+    expect(
+      enforceExportedFunctionTypes.meta.messages.missingExportedPropsType,
+    ).toBe(
+      'Props type "{{typeName}}" is used by an exported React component but is not exported. Other modules cannot type the props when composing the component and end up recreating the shape. Export the props type (e.g., `export type {{typeName}} = ...`) or reference an existing exported props contract.',
+    );
+  });
+});

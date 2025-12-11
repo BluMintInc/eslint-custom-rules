@@ -1,6 +1,7 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
-import { createRule } from '../utils/createRule';
+import type { TSESLint } from '@typescript-eslint/utils';
 import pluralize from 'pluralize';
+import { createRule } from '../utils/createRule';
 
 type MessageIds = 'missingBooleanPrefix';
 type Options = [
@@ -70,12 +71,12 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     const importStatusCache = new Map<string, boolean>();
     const externalApiUsageCache = new Map<string, boolean>();
 
-    function findVariableInScopes(name: string) {
-      let currentScope: any = context.getScope();
+    function findVariableInScopes(
+      name: string,
+    ): TSESLint.Scope.Variable | undefined {
+      let currentScope: TSESLint.Scope.Scope | null = context.getScope();
       while (currentScope) {
-        const variable = currentScope.variables.find(
-          (v: any) => v.name === name,
-        );
+        const variable = currentScope.variables.find((v) => v.name === name);
         if (variable) return variable;
         currentScope = currentScope.upper;
       }
@@ -678,6 +679,49 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     }
 
     /**
+     * Traverses an AST depth-first, skipping metadata keys, and stops early when the
+     * visitor returns true.
+     */
+    const isTraversalMetadataKey = (key: string) =>
+      key === 'parent' || key === 'range' || key === 'loc';
+
+    function traverseAst(
+      node: TSESTree.Node,
+      visitor: (candidate: TSESTree.Node) => boolean,
+    ): boolean {
+      if (visitor(node)) return true;
+
+      for (const key in node) {
+        if (isTraversalMetadataKey(key)) continue;
+
+        const value = (node as unknown as Record<string, unknown>)[key];
+        if (Array.isArray(value)) {
+          for (const child of value) {
+            if (
+              child &&
+              typeof child === 'object' &&
+              (child as { type?: unknown }).type
+            ) {
+              if (traverseAst(child as TSESTree.Node, visitor)) {
+                return true;
+              }
+            }
+          }
+        } else if (
+          value &&
+          typeof value === 'object' &&
+          (value as { type?: unknown }).type
+        ) {
+          if (traverseAst(value as TSESTree.Node, visitor)) {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    }
+
+    /**
      * Check if a variable is used in a while loop condition
      * This searches the scope for while loops that use the variable in their condition
      */
@@ -700,43 +744,13 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         return false;
       }
 
-      // Recursively search for while loops that use this variable in their condition
-      function searchForWhileLoops(searchNode: TSESTree.Node): boolean {
-        // Check if this is a while loop with our variable in the condition
-        if (searchNode.type === AST_NODE_TYPES.WhileStatement) {
-          // Check if the condition uses our variable
-          if (
-            searchNode.test.type === AST_NODE_TYPES.Identifier &&
-            searchNode.test.name === variableName
-          ) {
-            return true;
-          }
-        }
-
-        // Recursively search child nodes
-        for (const key in searchNode) {
-          if (key === 'parent' || key === 'range' || key === 'loc') continue;
-
-          const value = (searchNode as any)[key];
-          if (Array.isArray(value)) {
-            for (const child of value) {
-              if (child && typeof child === 'object' && child.type) {
-                if (searchForWhileLoops(child)) {
-                  return true;
-                }
-              }
-            }
-          } else if (value && typeof value === 'object' && value.type) {
-            if (searchForWhileLoops(value)) {
-              return true;
-            }
-          }
-        }
-
-        return false;
-      }
-
-      return searchForWhileLoops(currentScope);
+      return traverseAst(currentScope, (searchNode) => {
+        return (
+          searchNode.type === AST_NODE_TYPES.WhileStatement &&
+          searchNode.test.type === AST_NODE_TYPES.Identifier &&
+          searchNode.test.name === variableName
+        );
+      });
     }
 
     /**
@@ -768,9 +782,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         return false;
       }
 
-      // Recursively search for assignment patterns in the scope
-      function searchForAssignments(node: TSESTree.Node): boolean {
-        // Check if this is an assignment expression that reassigns our variable
+      return traverseAst(currentScope, (node) => {
         if (
           node.type === AST_NODE_TYPES.AssignmentExpression &&
           node.left.type === AST_NODE_TYPES.Identifier &&
@@ -806,31 +818,8 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
             return true;
           }
         }
-
-        // Recursively search child nodes
-        for (const key in node) {
-          if (key === 'parent' || key === 'range' || key === 'loc') continue;
-
-          const value = (node as any)[key];
-          if (Array.isArray(value)) {
-            for (const child of value) {
-              if (child && typeof child === 'object' && child.type) {
-                if (searchForAssignments(child)) {
-                  return true;
-                }
-              }
-            }
-          } else if (value && typeof value === 'object' && value.type) {
-            if (searchForAssignments(value)) {
-              return true;
-            }
-          }
-        }
-
         return false;
-      }
-
-      return searchForAssignments(currentScope);
+      });
     }
 
     /**
@@ -1191,11 +1180,40 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         ) {
           return markAndReturnTrue();
         }
-
       }
 
       externalApiUsageCache.set(variableName, false);
       return false;
+    }
+
+    const HOOK_NAMES = new Set(['useMemo', 'useCallback', 'useState']);
+
+    function findVariableFromReactHook(
+      objectExpr: TSESTree.ObjectExpression,
+    ): string | undefined {
+      let current: TSESTree.Node | undefined = objectExpr;
+
+      while (current) {
+        if (current.type === AST_NODE_TYPES.TSAsExpression) {
+          current = current.parent as TSESTree.Node | undefined;
+          continue;
+        }
+
+        if (
+          current.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+          current.parent?.type === AST_NODE_TYPES.CallExpression &&
+          current.parent.callee.type === AST_NODE_TYPES.Identifier &&
+          HOOK_NAMES.has(current.parent.callee.name) &&
+          current.parent.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+          current.parent.parent.id.type === AST_NODE_TYPES.Identifier
+        ) {
+          return current.parent.parent.id.name;
+        }
+
+        current = current.parent as TSESTree.Node | undefined;
+      }
+
+      return undefined;
     }
 
     /**
@@ -1287,61 +1305,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         // 1. const messageInputProps = useMemo(() => ({ grow: true }), [])
         // 2. const messageInputProps = useMemo(() => { return { grow: true }; }, [])
         if (node.parent?.type === AST_NODE_TYPES.ObjectExpression) {
-          const currentNode: TSESTree.Node | undefined = node.parent;
-          let variableName: string | undefined;
+          const hookVariable = findVariableFromReactHook(node.parent);
 
-          // Handle TypeScript 'as const' expressions
-          let parentNode = currentNode.parent;
-          if (parentNode?.type === AST_NODE_TYPES.TSAsExpression) {
-            parentNode = parentNode.parent;
-          }
-
-          // Case 1: Arrow function with expression body - useMemo(() => ({ ... }), [])
-          if (
-            parentNode?.type === AST_NODE_TYPES.ArrowFunctionExpression &&
-            parentNode.parent?.type === AST_NODE_TYPES.CallExpression &&
-            parentNode.parent.callee.type === AST_NODE_TYPES.Identifier &&
-            (parentNode.parent.callee.name === 'useMemo' ||
-              parentNode.parent.callee.name === 'useCallback' ||
-              parentNode.parent.callee.name === 'useState') &&
-            parentNode.parent.parent?.type ===
-              AST_NODE_TYPES.VariableDeclarator &&
-            parentNode.parent.parent.id.type === AST_NODE_TYPES.Identifier
-          ) {
-            variableName = parentNode.parent.parent.id.name;
-          }
-
-          // Case 2: Arrow function with block body - useMemo(() => { return { ... }; }, [])
-          else {
-            // Handle TypeScript 'as const' expressions for return statements
-            let returnParent = currentNode.parent;
-            if (returnParent?.type === AST_NODE_TYPES.TSAsExpression) {
-              returnParent = returnParent.parent;
-            }
-
-            if (
-              returnParent?.type === AST_NODE_TYPES.ReturnStatement &&
-              returnParent.parent?.type === AST_NODE_TYPES.BlockStatement &&
-              returnParent.parent.parent?.type ===
-                AST_NODE_TYPES.ArrowFunctionExpression &&
-              returnParent.parent.parent.parent?.type ===
-                AST_NODE_TYPES.CallExpression &&
-              returnParent.parent.parent.parent.callee.type ===
-                AST_NODE_TYPES.Identifier &&
-              (returnParent.parent.parent.parent.callee.name === 'useMemo' ||
-                returnParent.parent.parent.parent.callee.name ===
-                  'useCallback' ||
-                returnParent.parent.parent.parent.callee.name === 'useState') &&
-              returnParent.parent.parent.parent.parent?.type ===
-                AST_NODE_TYPES.VariableDeclarator &&
-              returnParent.parent.parent.parent.parent.id.type ===
-                AST_NODE_TYPES.Identifier
-            ) {
-              variableName = returnParent.parent.parent.parent.parent.id.name;
-            }
-          }
-
-          if (variableName && isVariableUsedWithExternalApi(variableName)) {
+          if (hookVariable && isVariableUsedWithExternalApi(hookVariable)) {
             isExternalApiCall = true;
           }
         }

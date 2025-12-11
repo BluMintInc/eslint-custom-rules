@@ -134,7 +134,7 @@ import { noTryCatchAlreadyExistsInTransaction } from './rules/no-try-catch-alrea
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.10.0',
+    version: '1.12.6',
   },
   parseOptions: {
     ecmaVersion: 2020,

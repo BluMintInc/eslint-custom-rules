@@ -66,6 +66,8 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
             return;
           }
 
+          // Only string concatenation with "+" can be static; all other operators
+          // are treated as dynamic to avoid hashing non-literal message content.
           const isDynamicBinaryExpression = (
             expression: TSESTree.BinaryExpression,
           ): boolean => {
@@ -103,10 +105,10 @@ export const dynamicHttpsErrors: TSESLint.RuleModule<MessageIds, never[]> =
       };
       return {
         NewExpression(node: TSESTree.NewExpression) {
-          return checkForHttpsError(node);
+          checkForHttpsError(node);
         },
         CallExpression(node: TSESTree.CallExpression) {
-          return checkForHttpsError(node);
+          checkForHttpsError(node);
         },
       };
     },

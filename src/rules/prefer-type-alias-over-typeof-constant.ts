@@ -1,6 +1,20 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
+type ParenthesizedTypeNode = TSESTree.TypeNode & {
+  typeAnnotation: TSESTree.TypeNode;
+};
+
+const PAREN_TYPE =
+  (AST_NODE_TYPES as unknown as Record<string, string>).TSParenthesizedType ??
+  'TSParenthesizedType';
+
+const isParenthesizedType = (
+  node: TSESTree.TypeNode,
+): node is ParenthesizedTypeNode => {
+  return (node as { type?: string }).type === PAREN_TYPE;
+};
+
 /** Utility to convert CONSTANT_CASE or snake/kebab to PascalCase */
 function toPascalCase(name: string): string {
   return name
@@ -51,7 +65,7 @@ function isConstantLikeInitializer(
 
 /** Traverse a TSType and collect referenced identifier names (e.g., A, B in A | B). */
 function collectReferencedTypeNames(
-  node: TSESTree.Node,
+  node: TSESTree.TypeNode,
   acc = new Set<string>(),
 ): Set<string> {
   switch (node.type) {
@@ -85,13 +99,15 @@ function collectReferencedTypeNames(
       for (const e of tup.elementTypes) collectReferencedTypeNames(e, acc);
       break;
     }
-    case AST_NODE_TYPES.TSParenthesizedType: {
-      const paren = node as TSESTree.TSParenthesizedType;
-      collectReferencedTypeNames(paren.typeAnnotation, acc);
+    default: {
+      if (isParenthesizedType(node)) {
+        collectReferencedTypeNames(
+          (node as ParenthesizedTypeNode).typeAnnotation,
+          acc,
+        );
+      }
       break;
     }
-    default:
-      break;
   }
   return acc;
 }
