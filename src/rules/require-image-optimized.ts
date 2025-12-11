@@ -26,7 +26,7 @@ export = createRule({
     ],
     messages: {
       useImageOptimized:
-        'Use ImageOptimized component from {{ componentPath }} instead of {{ component }}',
+        'Use ImageOptimized from {{ componentPath }} instead of {{ component }}. The shared wrapper handles responsive sizing, lazy loading, and blur placeholders so images stay optimized and do not hurt Core Web Vitals. Replace this usage with ImageOptimized to send the asset through the optimization pipeline.',
     },
   },
   defaultOptions: [{ componentPath: 'src/components/image/ImageOptimized' }],

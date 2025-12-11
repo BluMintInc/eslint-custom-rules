@@ -82,13 +82,6 @@ ruleTesterTs.run('dynamic-https-errors', dynamicHttpsErrors, {
     "throw new HttpsError('foo', 'bar', [1, 2, 3].map(x => x * 2));",
     "throw new HttpsError('foo', 'bar', condition && { conditionalData: true });",
 
-    // String concatenation and other expressions in second argument (currently allowed - testing current behavior)
-    "throw new HttpsError('foo', 'Error: ' + variable, 'context');",
-    "throw new HttpsError('foo', getMessage(), 'context');",
-    "throw new HttpsError('foo', obj.message, 'context');",
-    "throw new HttpsError('foo', condition ? 'msg1' : 'msg2', 'context');",
-    "throw new HttpsError('foo', errorMessage, 'context');",
-
     // Empty template literals (valid - no expressions)
     "throw new HttpsError('foo', ``, 'context');",
     "throw new HttpsError('foo', `Static only`, 'context');",
@@ -119,6 +112,10 @@ ruleTesterTs.run('dynamic-https-errors', dynamicHttpsErrors, {
     },
     {
       code: "throw new HttpsError('foo', `Error: ${bar}`, 'baz');",
+      errors: [{ messageId: 'dynamicHttpsErrors' }],
+    },
+    {
+      code: "throw new HttpsError('foo', 'Error: ' + variable, 'context');",
       errors: [{ messageId: 'dynamicHttpsErrors' }],
     },
 
@@ -233,31 +230,19 @@ ruleTesterTs.run('dynamic-https-errors', dynamicHttpsErrors, {
     // Cases with both issues - dynamic content AND missing third argument
     {
       code: "throw new HttpsError('foo', `Error: ${bar}`);",
-      errors: [
-        { messageId: 'missingThirdArgument' },
-        { messageId: 'dynamicHttpsErrors' },
-      ],
+      errors: [{ messageId: 'missingThirdArgument' }],
     },
     {
       code: "https.HttpsError('foo', `Error: ${bar}`);",
-      errors: [
-        { messageId: 'missingThirdArgument' },
-        { messageId: 'dynamicHttpsErrors' },
-      ],
+      errors: [{ messageId: 'missingThirdArgument' }],
     },
     {
       code: "throw new HttpsError('invalid-argument', `Missing ${field} in request`);",
-      errors: [
-        { messageId: 'missingThirdArgument' },
-        { messageId: 'dynamicHttpsErrors' },
-      ],
+      errors: [{ messageId: 'missingThirdArgument' }],
     },
     {
       code: "throw new https.HttpsError('permission-denied', `User ${userId} not authorized`);",
-      errors: [
-        { messageId: 'missingThirdArgument' },
-        { messageId: 'dynamicHttpsErrors' },
-      ],
+      errors: [{ messageId: 'missingThirdArgument' }],
     },
 
     // Edge cases - only one argument with dynamic content
@@ -325,17 +310,11 @@ ruleTesterTs.run('dynamic-https-errors', dynamicHttpsErrors, {
     // Template literals with complex expressions and missing third argument
     {
       code: "throw new HttpsError('foo', `Complex ${obj.nested.prop} error`);",
-      errors: [
-        { messageId: 'missingThirdArgument' },
-        { messageId: 'dynamicHttpsErrors' },
-      ],
+      errors: [{ messageId: 'missingThirdArgument' }],
     },
     {
       code: "throw new HttpsError('foo', `${getPrefix()} ${getSuffix()}`);",
-      errors: [
-        { messageId: 'missingThirdArgument' },
-        { messageId: 'dynamicHttpsErrors' },
-      ],
+      errors: [{ messageId: 'missingThirdArgument' }],
     },
 
     // Spread operator with insufficient arguments or unknown argument count
@@ -365,10 +344,7 @@ ruleTesterTs.run('dynamic-https-errors', dynamicHttpsErrors, {
         'foo',
         \`Dynamic \${error}\`  // dynamic content in second arg
       );`,
-      errors: [
-        { messageId: 'missingThirdArgument' },
-        { messageId: 'dynamicHttpsErrors' },
-      ],
+      errors: [{ messageId: 'missingThirdArgument' }],
     },
 
     // Edge cases with empty arguments
@@ -378,10 +354,7 @@ ruleTesterTs.run('dynamic-https-errors', dynamicHttpsErrors, {
     },
     {
       code: "throw new HttpsError('', `Dynamic ${content}`);",
-      errors: [
-        { messageId: 'missingThirdArgument' },
-        { messageId: 'dynamicHttpsErrors' },
-      ],
+      errors: [{ messageId: 'missingThirdArgument' }],
     },
 
     // Nested template literals
@@ -404,7 +377,6 @@ ruleTesterTs.run('dynamic-https-errors', dynamicHttpsErrors, {
       `,
       errors: [
         { messageId: 'missingThirdArgument' },
-        { messageId: 'dynamicHttpsErrors' },
         { messageId: 'missingThirdArgument' },
       ],
     },
@@ -422,7 +394,6 @@ ruleTesterTs.run('dynamic-https-errors', dynamicHttpsErrors, {
       errors: [
         { messageId: 'missingThirdArgument' },
         { messageId: 'missingThirdArgument' },
-        { messageId: 'dynamicHttpsErrors' },
       ],
     },
   ],

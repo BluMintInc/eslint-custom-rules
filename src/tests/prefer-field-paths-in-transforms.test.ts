@@ -1,5 +1,20 @@
+import type { TestCaseError } from '@typescript-eslint/utils/dist/ts-eslint';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { preferFieldPathsInTransforms } from '../rules/prefer-field-paths-in-transforms';
+
+const message = (container: string, nestedPath: string) =>
+  `Transform returns nested object under "${container}" (e.g., "${nestedPath}"). ` +
+  'Nested writes in shared aggregation containers cause diff reconciliation to delete the whole subtree, wiping sibling fields. ' +
+  `Flatten the update into field-path keys such as "${container}.${nestedPath}" so only the intended leaf changes and other aggregation data stays intact.`;
+
+// Cast required because ESLint RuleTester rejects combining message and messageId in expectations.
+const error = (
+  container: string,
+  nestedPath: string,
+): TestCaseError<'preferFieldPathsInTransforms'> =>
+  ({
+    message: message(container, nestedPath),
+  } as unknown as TestCaseError<'preferFieldPathsInTransforms'>);
 
 ruleTesterTs.run(
   'prefer-field-paths-in-transforms',
@@ -142,7 +157,39 @@ ruleTesterTs.run(
           }
         };
       `,
-        errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+        errors: [error('matchesAggregation', 'matchPreviews')],
+      },
+      // Nested object is not the first property under container
+      {
+        code: `
+        const strategy = {
+          transformEach(doc) {
+            return {
+              matchesAggregation: {
+                leaf: 123,
+                matchPreviews: { [doc.id]: doc.preview },
+              },
+            };
+          }
+        };
+      `,
+        errors: [error('matchesAggregation', 'matchPreviews')],
+      },
+      // Computed-only nested objects: prefer first object key for fallback
+      {
+        code: `
+        const strategy = {
+          transformEach(doc) {
+            return {
+              matchesAggregation: {
+                first: { [doc.id]: doc.preview },
+                second: { [doc.otherId]: doc.preview },
+              },
+            };
+          }
+        };
+      `,
+        errors: [error('matchesAggregation', 'first')],
       },
       // Nested two levels under previews
       {
@@ -159,7 +206,7 @@ ruleTesterTs.run(
           }
         };
       `,
-        errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+        errors: [error('previews', 'users')],
       },
       // Class method form
       {
@@ -176,7 +223,7 @@ ruleTesterTs.run(
           }
         }
       `,
-        errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+        errors: [error('groupAggregation', 'items')],
         options: [{ containers: ['*Aggregation'] }],
       },
       // Variable named transformEach
@@ -190,7 +237,7 @@ ruleTesterTs.run(
           };
         };
       `,
-        errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+        errors: [error('matchesAggregation', 'matchPreviews')],
       },
       // Assignment to obj.transformEach
       {
@@ -206,7 +253,7 @@ ruleTesterTs.run(
           };
         };
       `,
-        errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+        errors: [error('matchesAggregation', 'matchPreviews')],
       },
       // Dot-key at top but nested object under container still flagged
       {
@@ -222,7 +269,7 @@ ruleTesterTs.run(
           }
         };
       `,
-        errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+        errors: [error('matchesAggregation', 'nested.deeper')],
       },
     ],
   },
@@ -372,7 +419,7 @@ ruleTesterTs.run(
           };
         }
       `,
-        errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+        errors: [error('matchesAggregation', 'matchPreviews')],
       },
       // Class property arrow transformEach with nested container
       {
@@ -383,7 +430,7 @@ ruleTesterTs.run(
           });
         }
       `,
-        errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+        errors: [error('previews', 'users')],
       },
       // Arrow implicit return with nested container
       {
@@ -395,7 +442,7 @@ ruleTesterTs.run(
         };
       `,
         options: [{ containers: ['*Aggregation'] }],
-        errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+        errors: [error('groupAggregation', 'items')],
       },
       // Nested at depth 2 under container should flag even with sibling dot key
       {
@@ -409,7 +456,7 @@ ruleTesterTs.run(
           }
         };
       `,
-        errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+        errors: [error('matchesAggregation', 'a.b')],
       },
       // Container with empty object at top-level nested then nested child
       {
@@ -423,7 +470,7 @@ ruleTesterTs.run(
           }
         };
       `,
-        errors: [{ messageId: 'preferFieldPathsInTransforms' }],
+        errors: [error('previews', 'users')],
       },
     ],
   },
