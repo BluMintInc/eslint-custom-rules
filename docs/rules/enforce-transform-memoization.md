@@ -69,10 +69,17 @@ function Component() {
 ```
 
 ```js
-// ✅ Memoized utility wrapper
+// ✅ Memoized utility wrapper with useMemo
+import { useMemo } from 'react';
 const throttle = (fn) => fn;
+const TextInput = () => null;
+
 function Component() {
-  const transformValue = throttle((value) => value.toString(), 200);
+  const transformValue = useMemo(
+    () => throttle((value) => value.toString(), 200),
+    [],
+  );
+
   return adaptValue({
     valueKey: 'value',
     onChangeKey: 'onChange',

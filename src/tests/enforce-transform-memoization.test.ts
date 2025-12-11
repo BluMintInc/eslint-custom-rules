@@ -97,15 +97,15 @@ ruleTesterTs.run('enforce-transform-memoization', enforceTransformMemoization, {
     `,
     `
       const throttle = (fn: any) => fn;
+      const throttledTransform = throttle((value: number) => value.toString(), 200);
       const TextInput = () => null;
 
       function Component() {
-        const transformFn = throttle((value: number) => value.toString(), 200);
         return adaptValue(
           {
             valueKey: 'value',
             onChangeKey: 'onChange',
-            transformValue: transformFn,
+            transformValue: throttledTransform,
           },
           TextInput,
         );
@@ -126,6 +126,38 @@ ruleTesterTs.run('enforce-transform-memoization', enforceTransformMemoization, {
         };
 
         return adaptValue(config.props, config.component);
+      }
+    `,
+    `
+      import { useMemo } from 'react';
+      const Switch = () => null;
+
+      function Component() {
+        const configs = {
+          base: {
+            transformValue: useMemo(() => (value) => value, []),
+          },
+        };
+        const props = { ...configs.base };
+
+        return adaptValue(props, Switch);
+      }
+    `,
+    `
+      import { useMemo } from 'react';
+      const Input = () => null;
+
+      function Component() {
+        const base = {
+          transformValue: (value) => value,
+        };
+        const props = {
+          ...base,
+          transformValue: useMemo(() => (value) => value, []),
+          valueKey: 'value',
+        };
+
+        return adaptValue(props, Input);
       }
     `,
     `
@@ -407,6 +439,23 @@ ruleTesterTs.run('enforce-transform-memoization', enforceTransformMemoization, {
         }
       `,
       errors: [{ messageId: 'missingDependencies' }],
+    },
+    {
+      code: `
+        const throttle = (fn: any) => fn;
+        const TextInput = () => null;
+        function Component() {
+          return adaptValue(
+            {
+              valueKey: 'value',
+              onChangeKey: 'onChange',
+              transformValue: throttle((value) => value.toString(), 200),
+            },
+            TextInput,
+          );
+        }
+      `,
+      errors: [{ messageId: 'memoizeTransformValue' }],
     },
   ],
 });

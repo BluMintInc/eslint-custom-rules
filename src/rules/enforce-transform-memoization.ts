@@ -35,15 +35,8 @@ export const enforceTransformMemoization = createRule<[], MessageIds>({
     const sourceCode = context.getSourceCode();
     const scopeManager = sourceCode.scopeManager;
     const adaptValueNames = new Set(['adaptValue']);
-    const memoizingUtilities = new Set([
-      'useMemo',
-      'useCallback',
-      'useEvent',
-      'memoize',
-      'memoizeOne',
-      'throttle',
-      'debounce',
-    ]);
+    const memoizingHooks = new Set(['useMemo', 'useCallback']);
+    const stabilizingUtilities = new Set(['useEvent']);
 
     const getPropertyName = (
       key:
@@ -183,10 +176,10 @@ export const enforceTransformMemoization = createRule<[], MessageIds>({
     };
 
     const extractDependencyNames = (depsArg: TSESTree.ArrayExpression) => {
-      const names = new Set<string>();
+      const dependencyNames = new Set<string>();
 
       const addName = (name: string | null) => {
-        if (name) names.add(name);
+        if (name) dependencyNames.add(name);
       };
 
       const extractFromExpression = (
@@ -216,12 +209,10 @@ export const enforceTransformMemoization = createRule<[], MessageIds>({
       for (const element of depsArg.elements) {
         if (!element) continue;
         if (element.type === AST_NODE_TYPES.SpreadElement) continue;
-        addName(
-          extractFromExpression(element as unknown as TSESTree.Expression),
-        );
+        addName(extractFromExpression(element as unknown as TSESTree.Expression));
       }
 
-      return names;
+      return dependencyNames;
     };
 
     const formatMissingDeps = (
@@ -260,17 +251,21 @@ export const enforceTransformMemoization = createRule<[], MessageIds>({
       const unwrapped = unwrapExpression(expression);
 
       if (unwrapped.type === AST_NODE_TYPES.ObjectExpression) {
+        let found: TSESTree.Expression | null = null;
         for (const prop of unwrapped.properties) {
           if (prop.type === AST_NODE_TYPES.Property) {
             const keyName = getPropertyName(prop.key);
             if (keyName === key) {
-              return prop.value as TSESTree.Expression;
+              found = prop.value as TSESTree.Expression;
             }
           } else if (prop.type === AST_NODE_TYPES.SpreadElement) {
             const nested = resolveValueForKey(prop.argument, key, depth + 1);
-            if (nested) return nested;
+            if (nested) {
+              found = nested;
+            }
           }
         }
+        if (found) return found;
       }
 
       if (unwrapped.type === AST_NODE_TYPES.Identifier) {
@@ -288,12 +283,19 @@ export const enforceTransformMemoization = createRule<[], MessageIds>({
         const propertyName = getPropertyName(unwrapped.property);
         if (!propertyName) return null;
         if (unwrapped.object.type !== AST_NODE_TYPES.Super) {
-          const object = resolveValueForKey(
+          const resolvedMember = resolveValueForKey(
             unwrapped.object as TSESTree.Expression,
             propertyName,
             depth + 1,
           );
-          if (object) return object;
+          if (!resolvedMember) return null;
+          if (
+            propertyName !== key &&
+            resolvedMember.type === AST_NODE_TYPES.ObjectExpression
+          ) {
+            return resolveValueForKey(resolvedMember, key, depth + 1);
+          }
+          return resolvedMember;
         }
       }
 
@@ -375,11 +377,7 @@ export const enforceTransformMemoization = createRule<[], MessageIds>({
 
       if (unwrapped.type === AST_NODE_TYPES.CallExpression) {
         const calleeName = getCalleeName(unwrapped.callee);
-        if (
-          calleeName === 'useMemo' ||
-          calleeName === 'useCallback' ||
-          memoizingUtilities.has(calleeName)
-        ) {
+        if (memoizingHooks.has(calleeName)) {
           if (
             (expectedHook === 'useMemo' && calleeName === 'useCallback') ||
             (expectedHook === 'useCallback' && calleeName === 'useMemo')
@@ -395,54 +393,51 @@ export const enforceTransformMemoization = createRule<[], MessageIds>({
             };
           }
 
-          if (
-            calleeName === 'useMemo' ||
-            calleeName === 'useCallback'
-          ) {
-            const callback = unwrapped.arguments[0];
-            const depsArg = unwrapped.arguments[unwrapped.arguments.length - 1];
-            const externalDeps =
-              callback && isFunctionExpression(callback)
-                ? collectExternalDependencies(callback)
-                : new Set<string>();
+          const callback = unwrapped.arguments[0];
+          const depsArg = unwrapped.arguments[unwrapped.arguments.length - 1];
+          const externalDeps =
+            callback && isFunctionExpression(callback)
+              ? collectExternalDependencies(callback)
+              : new Set<string>();
 
-            if (!depsArg || depsArg.type !== AST_NODE_TYPES.ArrayExpression) {
+          if (!depsArg || depsArg.type !== AST_NODE_TYPES.ArrayExpression) {
+            return {
+              ok: false,
+              messageId: 'missingDependencies',
+              data: {
+                hook: calleeName,
+                propName,
+                deps: formatMissingDeps(externalDeps, false),
+              },
+            };
+          }
+
+          if (externalDeps.size > 0) {
+            const declaredDeps = extractDependencyNames(depsArg);
+            const missingDeps = new Set<string>();
+            for (const dep of externalDeps) {
+              if (!declaredDeps.has(dep)) {
+                missingDeps.add(dep);
+              }
+            }
+
+            if (missingDeps.size > 0) {
               return {
                 ok: false,
                 messageId: 'missingDependencies',
                 data: {
                   hook: calleeName,
                   propName,
-                  deps: formatMissingDeps(externalDeps, false),
+                  deps: formatMissingDeps(missingDeps, true),
                 },
               };
             }
-
-            if (externalDeps.size > 0) {
-              const declaredDeps = extractDependencyNames(depsArg);
-              const missingDeps = new Set<string>();
-              for (const dep of externalDeps) {
-                if (!declaredDeps.has(dep)) {
-                  missingDeps.add(dep);
-                }
-              }
-
-              if (missingDeps.size > 0) {
-                return {
-                  ok: false,
-                  messageId: 'missingDependencies',
-                  data: {
-                    hook: calleeName,
-                    propName,
-                    deps: formatMissingDeps(missingDeps, true),
-                  },
-                };
-              }
-            }
-
-            return { ok: true };
           }
 
+          return { ok: true };
+        }
+
+        if (stabilizingUtilities.has(calleeName)) {
           return { ok: true };
         }
 
