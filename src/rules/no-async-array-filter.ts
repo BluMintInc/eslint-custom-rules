@@ -21,6 +21,9 @@ export const noAsyncArrayFilter: TSESLint.RuleModule<'unexpected', never[]> =
               context.report({
                 node: callback,
                 messageId: 'unexpected',
+                data: {
+                  methodName: node.callee.property.name,
+                },
               });
             }
           }
@@ -33,13 +36,13 @@ export const noAsyncArrayFilter: TSESLint.RuleModule<'unexpected', never[]> =
       type: 'problem',
       docs: {
         description:
-          "Disallow async callbacks in Array.filter() as they lead to incorrect filtering. Since async functions return Promises which are always truthy, the filter will keep all elements regardless of the async check's result. Use Promise.all() with map() first, then filter based on the resolved results.",
+          'Disallow async callbacks in Array.filter(). Async predicates return Promises that are always truthy to the filter, so no element is ever removed. Resolve async checks first (Promise.all + map) or use a synchronous predicate to decide which items to keep.',
         recommended: 'error',
       },
       schema: [],
       messages: {
         unexpected:
-          'Async array filter is dangerous as a Promise object will always be truthy. Instead of `array.filter(async x => await someCheck(x))`, first resolve the promises with `Promise.all()` or move the async logic elsewhere: `const results = await Promise.all(array.map(x => someCheck(x))); array.filter((_, i) => results[i])`.',
+          'Async predicate in {{methodName}} keeps every element because Array.filter does not await Promises, so the returned Promise is always treated as truthy. Resolve the async checks before filtering (e.g., const results = await Promise.all(items.map(check)); const filtered = items.filter((_, i) => results[i]);) or switch to a synchronous predicate.',
       },
     },
     defaultOptions: [],
