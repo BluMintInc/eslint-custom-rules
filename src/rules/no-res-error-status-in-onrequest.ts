@@ -92,7 +92,7 @@ const getResponseParamNames = (node: FunctionNode): string[] => {
     const likelyResponse =
       lowered === 'res' || lowered === 'response' || lowered === 'resp';
 
-    if (likelyResponse || index === 1 || (index === 0 && node.params.length === 1)) {
+    if (likelyResponse || index === 1) {
       acc.push(name);
     }
 
@@ -287,7 +287,7 @@ const findStatusCall = (node: TSESTree.CallExpression): StatusCallInfo | null =>
 const isErrorStatus = (statusCode: number | null): boolean =>
   statusCode === null || statusCode >= 400;
 
-export const noResErrorStatusInOnrequest: TSESLint.RuleModule<
+export const requireHttpsErrorInOnRequestHandlers: TSESLint.RuleModule<
   MessageIds,
   never[]
 > = createRule({

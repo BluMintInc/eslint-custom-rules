@@ -131,7 +131,7 @@ import { noArrayLengthInDeps } from './rules/no-array-length-in-deps';
 import { preferUseDeepCompareMemo } from './rules/prefer-use-deep-compare-memo';
 import { noCircularReferences } from './rules/no-circular-references';
 import { noPassthroughGetters } from './rules/no-passthrough-getters';
-import { noResErrorStatusInOnrequest } from './rules/no-res-error-status-in-onrequest';
+import { requireHttpsErrorInOnRequestHandlers } from './rules/no-res-error-status-in-onrequest';
 import { noTryCatchAlreadyExistsInTransaction } from './rules/no-try-catch-already-exists-in-transaction';
 import { default as noStaticConstantsInDynamicFiles } from './rules/no-static-constants-in-dynamic-files';
 import { testFileLocationEnforcement } from './rules/test-file-location-enforcement';
@@ -430,7 +430,7 @@ module.exports = {
     'prefer-url-tostring-over-tojson': preferUrlToStringOverToJson,
     'prefer-next-dynamic': preferNextDynamic,
     'no-redundant-usecallback-wrapper': noRedundantUseCallbackWrapper,
-    'no-res-error-status-in-onrequest': noResErrorStatusInOnrequest,
+    'no-res-error-status-in-onrequest': requireHttpsErrorInOnRequestHandlers,
     'no-array-length-in-deps': noArrayLengthInDeps,
     'prefer-use-deep-compare-memo': preferUseDeepCompareMemo,
     'no-circular-references': noCircularReferences,

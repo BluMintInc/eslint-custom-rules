@@ -1,5 +1,5 @@
 import { ruleTesterTs } from '../utils/ruleTester';
-import { noResErrorStatusInOnrequest } from '../rules/no-res-error-status-in-onrequest';
+import { requireHttpsErrorInOnRequestHandlers } from '../rules/no-res-error-status-in-onrequest';
 
 const parserOptions = {
   ecmaVersion: 2020 as const,
@@ -8,7 +8,7 @@ const parserOptions = {
 
 ruleTesterTs.run(
   'no-res-error-status-in-onrequest',
-  noResErrorStatusInOnrequest,
+  requireHttpsErrorInOnRequestHandlers,
   {
     valid: [
       {
@@ -32,6 +32,16 @@ ruleTesterTs.run(
           import onRequest from 'functions/src/v2/https/onRequest';
           export default onRequest((req) => {
             return 'noop';
+          });
+        `,
+        parserOptions,
+      },
+      {
+        code: `
+          import onRequest from 'functions/src/v2/https/onRequest';
+          export default onRequest((req) => {
+            validateRequest(req);
+            return { ok: true };
           });
         `,
         parserOptions,
