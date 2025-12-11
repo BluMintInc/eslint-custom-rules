@@ -1,4 +1,5 @@
 import { runCommand } from '../git-utils';
+import { normalizeBranchName } from './normalizeBranchName';
 
 /**
  * Detects if MERGE_HEAD has an associated open PR by querying GitHub.
@@ -12,21 +13,14 @@ export function fetchAssociatedPr() {
       true,
     );
 
-    if (!mergeHeadBranch) {
-      return null;
-    }
-
-    const cleanBranchName = mergeHeadBranch
-      .replace(/^remotes\/origin\//, '')
-      .replace(/~\d+$/, '')
-      .replace(/\^.*$/, '');
+    const cleanBranchName = normalizeBranchName(mergeHeadBranch);
 
     if (!cleanBranchName) {
       return null;
     }
 
     const result = runCommand(
-      `gh pr list --head "${cleanBranchName}" --state open --json number --jq '.[0].number'`,
+      `gh pr list --head ${JSON.stringify(cleanBranchName)} --state open --json number --jq '.[0].number'`,
       true,
     );
 

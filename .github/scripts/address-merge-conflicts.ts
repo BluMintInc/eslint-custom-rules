@@ -3,6 +3,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { ensureDependency, runCommand } from '../../scripts/cli/git-utils';
+import { normalizeBranchName } from '../../scripts/cli/git-merge/normalizeBranchName';
 import { isInMergeConflictState } from '../../scripts/cli/git-merge/isInMergeConflictState';
 import { buildMergeContext } from '../../scripts/cli/git-merge/buildMergeContext';
 import { buildMergePrompt } from './build-merge-prompt';
@@ -43,14 +44,17 @@ function main(): void {
   }
 
   const ourBranch = runCommand('git rev-parse --abbrev-ref HEAD', true);
-  let theirBranch = runCommand('git name-rev --name-only MERGE_HEAD', true);
-  theirBranch = theirBranch
-    .replace(/^remotes\/origin\//, '')
-    .replace(/~\d+$/, '')
-    .replace(/\^.*$/, '');
+  const normalizedTheirBranch = normalizeBranchName(
+    runCommand('git name-rev --name-only MERGE_HEAD', true),
+  );
+
+  if (!normalizedTheirBranch) {
+    console.error('Error: Failed to normalize merge head branch name.');
+    process.exit(1);
+  }
 
   console.log(
-    `✓ Merge conflict detected (merging '${theirBranch}' into '${ourBranch}')\n`,
+    `✓ Merge conflict detected (merging '${normalizedTheirBranch}' into '${ourBranch}')\n`,
   );
 
   console.log('Gathering context...');

@@ -11,7 +11,12 @@ export function retrieveSquashedDiff(params: {
 }) {
   const { file, fromRef, toRef } = params;
   try {
-    return runCommand(`git diff ${fromRef}..${toRef} -- "${file}"`, true);
+    return runCommand(
+      `git diff ${JSON.stringify(fromRef)}..${JSON.stringify(
+        toRef,
+      )} -- ${JSON.stringify(file)}`,
+      true,
+    );
   } catch {
     return null;
   }

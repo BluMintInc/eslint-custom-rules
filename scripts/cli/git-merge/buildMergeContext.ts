@@ -8,6 +8,7 @@ import { retrieveSquashedDiff } from './getSquashedDiff';
 import { retrieveBranchLastCommitDate } from './getBranchLastCommitDate';
 import { fetchAssociatedPr } from './getAssociatedPr';
 import { fetchPrMetadata } from './fetchPrMetadata';
+import { normalizeBranchName } from './normalizeBranchName';
 
 const MAX_CONTENT_SIZE = 100_000 as const; // 100KB limit for file content
 const MAX_DIFF_SIZE = 10_000 as const; // 10KB limit for squashed diffs
@@ -116,11 +117,15 @@ export function buildMergeContext(): MergeContext {
   const mergeBaseSha = retrieveMergeBase();
 
   const ourBranchName = runCommand('git rev-parse --abbrev-ref HEAD', true);
-  let theirBranchName = runCommand('git name-rev --name-only MERGE_HEAD', true);
-  theirBranchName = theirBranchName
-    .replace(/^remotes\/origin\//, '')
-    .replace(/~\d+$/, '')
-    .replace(/\^.*$/, '');
+  const theirBranchRaw = runCommand(
+    'git name-rev --name-only MERGE_HEAD',
+    true,
+  );
+  const theirBranchName = normalizeBranchName(theirBranchRaw);
+
+  if (!theirBranchName) {
+    throw new Error('Error: Failed to normalize merge head branch name.');
+  }
 
   const conflictedFileContexts = conflictedFiles.map((file) => {
     return buildConflictedFileContext({

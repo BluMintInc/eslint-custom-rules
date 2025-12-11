@@ -58,6 +58,15 @@ describe('fetchAssociatedPr', () => {
     expect(result).toBeNull();
   });
 
+  it('returns null when branch name is unsafe', () => {
+    mockRunCommand.mockReturnValueOnce('feature; rm -rf /');
+
+    const result = fetchAssociatedPr();
+
+    expect(result).toBeNull();
+    expect(mockRunCommand).toHaveBeenCalledTimes(1);
+  });
+
   it('cleans up branch name with version suffix', () => {
     mockRunCommand
       .mockReturnValueOnce('remotes/origin/my-branch~2')

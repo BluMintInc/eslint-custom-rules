@@ -28,7 +28,7 @@ describe('retrieveSquashedDiff', () => {
 
     expect(result).toBe(expectedDiff);
     expect(mockRunCommand).toHaveBeenCalledWith(
-      'git diff abc123..HEAD -- "src/file.ts"',
+      'git diff "abc123".."HEAD" -- "src/file.ts"',
       true,
     );
   });
@@ -57,7 +57,7 @@ describe('retrieveSquashedDiff', () => {
     });
 
     expect(mockRunCommand).toHaveBeenCalledWith(
-      'git diff base..HEAD -- "path/to/my file.ts"',
+      'git diff "base".."HEAD" -- "path/to/my file.ts"',
       true,
     );
     expect(result).toBe('diff content');

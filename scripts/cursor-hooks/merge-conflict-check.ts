@@ -1,24 +1,10 @@
-import { execSync } from 'node:child_process';
 import { isInMergeConflictState } from '../cli/git-merge/isInMergeConflictState';
 import { buildMergeContext } from '../cli/git-merge/buildMergeContext';
 import { buildMergePrompt } from '../../.github/scripts/build-merge-prompt';
 import type { Input } from './types';
+import { executeCommand } from './agent-check';
 
 const SUCCESS_PATTERN = /✅ All merge conflicts resolved/;
-
-type ExecError = Error & { stdout?: string | Buffer; stderr?: string | Buffer };
-
-function executeCommand(command: string) {
-  try {
-    const output = execSync(command, { encoding: 'utf-8', stdio: 'pipe' });
-    return { isSuccess: true, output } as const;
-  } catch (error: unknown) {
-    const execError = error as ExecError;
-    const stdout = execError.stdout ? String(execError.stdout) : '';
-    const stderr = execError.stderr ? String(execError.stderr) : '';
-    return { isSuccess: false, output: `${stdout}\n${stderr}` } as const;
-  }
-}
 
 /**
  * Stop hook check for merge conflicts.
