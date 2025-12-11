@@ -288,6 +288,32 @@ const later = 2;
 `,
       errors: [{ messageId: 'groupDerived' }],
     },
+    {
+      code: `
+const base = getBase();
+const temp = other as number;
+const derived = base.value;
+      `,
+      output: `
+const base = getBase();
+const derived = base.value;
+const temp = other as number;
+`,
+      errors: [{ messageId: 'groupDerived' }],
+    },
+    {
+      code: `
+const base = getBase();
+const unrelated = 1;
+const payload = { base };
+      `,
+      output: `
+const base = getBase();
+const payload = { base };
+const unrelated = 1;
+`,
+      errors: [{ messageId: 'groupDerived' }],
+    },
   ],
 });
 

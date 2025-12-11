@@ -51,6 +51,21 @@ function isTypeNode(node: TSESTree.Node | undefined): boolean {
   return node.type.startsWith('TS');
 }
 
+function unwrapTypeExpression(
+  expression: TSESTree.Expression | TSESTree.PrivateIdentifier,
+): TSESTree.Expression | TSESTree.PrivateIdentifier {
+  switch (expression.type) {
+    case AST_NODE_TYPES.TSAsExpression:
+    case AST_NODE_TYPES.TSTypeAssertion:
+    case AST_NODE_TYPES.TSNonNullExpression:
+    case AST_NODE_TYPES.TSSatisfiesExpression:
+    case AST_NODE_TYPES.TSInstantiationExpression:
+      return expression.expression as TSESTree.Expression;
+    default:
+      return expression;
+  }
+}
+
 function isDeclarationIdentifier(
   node: TSESTree.Identifier,
   parent: TSESTree.Node | undefined,
@@ -180,7 +195,8 @@ function shouldSkipIdentifier(
     parent &&
     parent.type === AST_NODE_TYPES.Property &&
     parent.key === identifier &&
-    !parent.computed
+    !parent.computed &&
+    !parent.shorthand
   ) {
     return true;
   }
@@ -406,6 +422,11 @@ function initializerIsSafe(
   { allowHooks }: { allowHooks: boolean },
 ): boolean {
   // Hook calls are treated as impure so we never reorder React hook execution unless a callsite explicitly opts in.
+  const unwrapped = unwrapTypeExpression(expression);
+  if (unwrapped !== expression) {
+    return initializerIsSafe(unwrapped as TSESTree.Expression, { allowHooks });
+  }
+
   switch (expression.type) {
     case AST_NODE_TYPES.Literal:
     case AST_NODE_TYPES.Identifier:
