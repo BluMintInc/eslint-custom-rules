@@ -158,26 +158,41 @@ export const extractGlobalConstants: TSESLint.RuleModule<
           return;
         }
 
+        const declarations = node.declarations.filter(
+          (declaration): declaration is TSESTree.VariableDeclarator =>
+            Boolean(declaration),
+        );
+
+        if (declarations.length === 0) {
+          return;
+        }
+
         // Skip if any of the declarations are function definitions or mutable values
         if (
-          node.declarations.some(
-            (d) => isFunctionDefinition(d.init) || isMutableValue(d.init),
+          declarations.some(
+            (declaration) =>
+              isFunctionDefinition(declaration.init) ||
+              isMutableValue(declaration.init),
           )
         ) {
           return;
         }
 
         const scope = context.getScope();
-        const hasDependencies = node.declarations.some(
+        const hasDependencies = declarations.some(
           (declaration) =>
             declaration.init &&
             ASTHelpers.declarationIncludesIdentifier(declaration.init),
         );
 
         // Skip constants with 'as const' type assertions used in loops
-        const hasAsConstAssertion = node.declarations.some(
+        const hasAsConstAssertion = declarations.some(
           (declaration) =>
             declaration.init && isAsConstExpression(declaration.init),
+        );
+
+        const hasIdentifierDeclaration = declarations.some(
+          (declaration) => declaration.id?.type === AST_NODE_TYPES.Identifier,
         );
 
         // Only check function/block scoped constants without dependencies
@@ -186,13 +201,13 @@ export const extractGlobalConstants: TSESLint.RuleModule<
           !hasAsConstAssertion &&
           (scope.type === 'function' || scope.type === 'block') &&
           isInsideFunction(node) &&
-          node.declarations.some((d) => d.id.type === 'Identifier')
+          hasIdentifierDeclaration
         ) {
-          for (const d of node.declarations) {
-            if (d.id.type !== 'Identifier') continue;
-            const constName = d.id.name;
+          for (const declaration of declarations) {
+            if (declaration.id?.type !== AST_NODE_TYPES.Identifier) continue;
+            const constName = declaration.id.name;
             context.report({
-              node: d,
+              node: declaration,
               messageId: 'extractGlobalConstants',
               data: { declarationName: constName },
             });
