@@ -1,6 +1,6 @@
 ---
-description: 
-globs: *.ts,*.tsx
+description: Guidelines for writing effective in-code comments
+globs: "**/*.{ts,tsx,js,jsx,py,java}"
 alwaysApply: true
 ---
 ## Purpose
@@ -17,7 +17,6 @@ This rule guides you, the AI agent, in writing effective, maintainable, and "Cle
 
 ## When This Rule Should Be Followed
 
-The principles in this rule are foundational for all code generation and modification. They must be applied **anytime you write or modify code** within any programming file (e.g., `.ts`, `.tsx`, `.js`, `.py`, etc.).
+The principles in this rule are foundational for all code generation and modification. They must be applied **anytime you write or modify code** within any programming file (e.g., `.ts`, `.tsx`, `.js`, `.jsx`, `.py`, `.java`, etc.).
 
 **This rule should be considered auto-attached and always active when you are working with source code files.**
-

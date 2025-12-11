@@ -866,7 +866,7 @@ ruleTesterJsx.run(
             messageId: 'extractBooleanCondition',
             data: {
               expression: '!data',
-              suggestedName: 'hasData',
+              suggestedName: 'isDataMissing',
               objectName: 'data',
             },
           },
@@ -884,7 +884,7 @@ ruleTesterJsx.run(
             messageId: 'extractBooleanCondition',
             data: {
               expression: 'Object.keys(items).length === 0',
-              suggestedName: 'hasItems',
+              suggestedName: 'isItemsEmpty',
               objectName: 'items',
             },
           },
@@ -975,7 +975,7 @@ ruleTesterJsx.run(
             messageId: 'extractBooleanCondition',
             data: {
               expression: '!user',
-              suggestedName: 'hasUser',
+              suggestedName: 'isUserMissing',
               objectName: 'user',
             },
           },
@@ -1019,7 +1019,7 @@ ruleTesterJsx.run(
             messageId: 'extractBooleanCondition',
             data: {
               expression: '!roundPreviews',
-              suggestedName: 'hasRoundPreviews',
+              suggestedName: 'isRoundPreviewsMissing',
               objectName: 'roundPreviews',
             },
           },
@@ -1073,7 +1073,7 @@ ruleTesterJsx.run(
             messageId: 'extractBooleanCondition',
             data: {
               expression: 'Object.keys(settings).length <= 0',
-              suggestedName: 'hasSettings',
+              suggestedName: 'isSettingsEmpty',
               objectName: 'settings',
             },
           },
@@ -1091,7 +1091,7 @@ ruleTesterJsx.run(
             messageId: 'extractBooleanCondition',
             data: {
               expression: '!data',
-              suggestedName: 'hasData',
+              suggestedName: 'isDataMissing',
               objectName: 'data',
             },
           },
@@ -1128,7 +1128,7 @@ ruleTesterJsx.run(
             messageId: 'extractBooleanCondition',
             data: {
               expression: '!data',
-              suggestedName: 'hasData',
+              suggestedName: 'isDataMissing',
               objectName: 'data',
             },
           },
@@ -1148,7 +1148,7 @@ ruleTesterJsx.run(
             messageId: 'extractBooleanCondition',
             data: {
               expression: 'Object.keys(cache).length === 0',
-              suggestedName: 'hasCache',
+              suggestedName: 'isCacheEmpty',
               objectName: 'cache',
             },
           },
@@ -1184,7 +1184,7 @@ ruleTesterJsx.run(
             messageId: 'extractBooleanCondition',
             data: {
               expression: '!userProfile',
-              suggestedName: 'hasUserProfile',
+              suggestedName: 'isUserProfileMissing',
               objectName: 'userProfile',
             },
           },
@@ -1249,7 +1249,7 @@ ruleTesterJsx.run(
             messageId: 'extractBooleanCondition',
             data: {
               expression: '!data',
-              suggestedName: 'hasData',
+              suggestedName: 'isDataMissing',
               objectName: 'data',
             },
           },
@@ -1267,7 +1267,7 @@ ruleTesterJsx.run(
             messageId: 'extractBooleanCondition',
             data: {
               expression: 'Object.keys(items).length === 0',
-              suggestedName: 'hasItems',
+              suggestedName: 'isItemsEmpty',
               objectName: 'items',
             },
           },
@@ -1303,7 +1303,7 @@ ruleTesterJsx.run(
             messageId: 'extractBooleanCondition',
             data: {
               expression: '! data',
-              suggestedName: 'hasData',
+              suggestedName: 'isDataMissing',
               objectName: 'data',
             },
           },
@@ -1321,7 +1321,7 @@ ruleTesterJsx.run(
             messageId: 'extractBooleanCondition',
             data: {
               expression: 'Object . keys ( data ) . length === 0',
-              suggestedName: 'hasData',
+              suggestedName: 'isDataEmpty',
               objectName: 'data',
             },
           },
@@ -1339,7 +1339,7 @@ ruleTesterJsx.run(
             messageId: 'extractBooleanCondition',
             data: {
               expression: '!user_data',
-              suggestedName: 'hasUser_data',
+              suggestedName: 'isUser_dataMissing',
               objectName: 'user_data',
             },
           },
@@ -1357,7 +1357,7 @@ ruleTesterJsx.run(
             messageId: 'extractBooleanCondition',
             data: {
               expression: '!userData',
-              suggestedName: 'hasUserData',
+              suggestedName: 'isUserDataMissing',
               objectName: 'userData',
             },
           },
@@ -1375,7 +1375,7 @@ ruleTesterJsx.run(
             messageId: 'extractBooleanCondition',
             data: {
               expression: '!UserData',
-              suggestedName: 'hasUserData',
+              suggestedName: 'isUserDataMissing',
               objectName: 'UserData',
             },
           },
@@ -1393,7 +1393,7 @@ ruleTesterJsx.run(
             messageId: 'extractBooleanCondition',
             data: {
               expression: '!data2',
-              suggestedName: 'hasData2',
+              suggestedName: 'isData2Missing',
               objectName: 'data2',
             },
           },
@@ -1447,7 +1447,7 @@ ruleTesterJsx.run(
             messageId: 'extractBooleanCondition',
             data: {
               expression: 'Object.keys(data).length <= 0',
-              suggestedName: 'hasData',
+              suggestedName: 'isDataEmpty',
               objectName: 'data',
             },
           },
@@ -1519,7 +1519,7 @@ ruleTesterJsx.run(
             messageId: 'extractBooleanCondition',
             data: {
               expression: '!data',
-              suggestedName: 'hasData',
+              suggestedName: 'isDataMissing',
               objectName: 'data',
             },
           },
@@ -1538,7 +1538,7 @@ ruleTesterJsx.run(
             messageId: 'extractBooleanCondition',
             data: {
               expression: '!data',
-              suggestedName: 'hasData',
+              suggestedName: 'isDataMissing',
               objectName: 'data',
             },
           },
@@ -1556,7 +1556,7 @@ ruleTesterJsx.run(
             messageId: 'extractBooleanCondition',
             data: {
               expression: '!data',
-              suggestedName: 'hasData',
+              suggestedName: 'isDataMissing',
               objectName: 'data',
             },
           },
@@ -1564,7 +1564,7 @@ ruleTesterJsx.run(
             messageId: 'extractBooleanCondition',
             data: {
               expression: 'Object.keys(config).length === 0',
-              suggestedName: 'hasConfig',
+              suggestedName: 'isConfigEmpty',
               objectName: 'config',
             },
           },
@@ -1582,7 +1582,7 @@ ruleTesterJsx.run(
             messageId: 'extractBooleanCondition',
             data: {
               expression: '!veryLongVariableNameForUserData',
-              suggestedName: 'hasVeryLongVariableNameForUserData',
+              suggestedName: 'isVeryLongVariableNameForUserDataMissing',
               objectName: 'veryLongVariableNameForUserData',
             },
           },

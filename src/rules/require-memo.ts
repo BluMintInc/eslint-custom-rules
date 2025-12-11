@@ -102,9 +102,19 @@ function checkFunction(
       isUnmemoizedExportedFunctionComponent,
     ].map((fn) => fn(parentNode, node));
     if (results.some((result) => !!result)) {
+      const componentName =
+        (node.type === 'FunctionDeclaration' && node.id?.name) ||
+        (parentNode.type === 'VariableDeclarator' &&
+          parentNode.id.type === 'Identifier' &&
+          parentNode.id.name) ||
+        'component';
+
       context.report({
         node,
         messageId: 'requireMemo',
+        data: {
+          name: componentName,
+        },
         fix:
           results[2] || results[1]
             ? function fix(fixer) {
@@ -237,7 +247,10 @@ export const requireMemo: TSESLint.RuleModule<'requireMemo', []> = {
       recommended: 'error',
     },
     messages: {
-      requireMemo: 'Component definition not wrapped in memo()',
+      requireMemo:
+        'Component "{{name}}" renders JSX with props but is not wrapped in memo(). ' +
+        'Without memo the component function is recreated on every parent render, breaking referential equality and causing avoidable child re-renders. ' +
+        'Wrap the component with memo from util/memo so callers receive a stable reference; rename to "{{name}}Unmemoized" if it must stay un-memoized.',
     },
     schema: [],
     fixable: 'code',
