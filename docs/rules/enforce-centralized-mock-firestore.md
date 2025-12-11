@@ -6,11 +6,11 @@
 
 <!-- end auto-generated rule header -->
 
-Enforces the use of the centralized mockFirestore from the predefined location instead of creating new mock instances.
+If a file defines or re-exports a local `mockFirestore` instead of importing it from `../../../../../__test-utils__/mockFirestore`, that mock drifts away from the canonical behavior and hides API changes. Import the centralized mock so fixes land in one place and every suite stays aligned.
 
 ## Rule Details
 
-This rule aims to ensure consistency in test mocks by requiring the use of a centralized mockFirestore implementation.
+If you define a local `mockFirestore`, your tests diverge from the canonical behavior. When Firestore data shapes or helper APIs change, scattered mocks silently drift and break only in the suites that forget to update, while the centralized mock absorbs the change once. This rule reports any file where you declare, destructure, or reference a local `mockFirestore` (including renames and `this.mockFirestore`) instead of importing from the shared path, and the fixer rewrites the file to import the shared mock and swap local references to it.
 
 Examples of **incorrect** code for this rule:
 
@@ -35,6 +35,18 @@ beforeEach(() => {
 });
 ```
 
+```js
+const { mockFirestore: customMockFirestore } = require('./customMocks');
+
+describe('test suite', () => {
+  beforeEach(() => {
+    customMockFirestore({
+      'some/path': [{ id: 'test' }],
+    });
+  });
+});
+```
+
 Examples of **correct** code for this rule:
 
 ```js
@@ -47,9 +59,19 @@ beforeEach(() => {
 });
 ```
 
+```js
+import { mockFirestore as centralMockFirestore } from '../../../../../__test-utils__/mockFirestore';
+
+beforeEach(() => {
+  centralMockFirestore({
+    'some/path': [{ id: 'test' }],
+  });
+});
+```
+
 ## When Not To Use It
 
-If you need to use different mock implementations for specific test cases, you might want to disable this rule. However, consider contributing to the centralized mockFirestore implementation instead of creating custom mocks.
+You should disable this rule only when your suite must intentionally exercise a different Firestore mock. Prefer extending the centralized mock to cover that behavior so the team benefits from a single source of truth.
 
 ## Further Reading
 
