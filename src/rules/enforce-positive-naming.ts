@@ -334,6 +334,7 @@ const IN_EXCEPTIONS = [
   'insurgents',
   'insurrection',
   'intake',
+  'integer',
   'integers',
   'intel',
   'intellect',
@@ -853,12 +854,11 @@ const DIS_EXCEPTIONS = [
 ];
 
 // Words that contain negative prefixes but should be treated as valid
-const EXCEPTION_WORDS = [
-  ...IN_EXCEPTIONS,
-  ...NO_EXCEPTIONS,
-  ...UN_EXCEPTIONS,
-  ...DIS_EXCEPTIONS,
-];
+const EXCEPTION_WORDS_SET = new Set(
+  [...IN_EXCEPTIONS, ...NO_EXCEPTIONS, ...UN_EXCEPTIONS, ...DIS_EXCEPTIONS].map(
+    (word) => word.toLowerCase(),
+  ),
+);
 
 /**
  * Splits a variable name into individual words based on naming conventions:
@@ -981,11 +981,7 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
       if (words.length > 1) {
         const secondWord = words[1].toLowerCase();
 
-        if (
-          EXCEPTION_WORDS.some(
-            (exception) => secondWord === exception.toLowerCase(),
-          )
-        ) {
+        if (EXCEPTION_WORDS_SET.has(secondWord)) {
           return { isNegative: false, alternatives: [] };
         }
       }

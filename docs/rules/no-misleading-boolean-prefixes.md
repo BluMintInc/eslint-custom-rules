@@ -3,20 +3,19 @@
 💼 This rule is enabled in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
-### no-misleading-boolean-prefixes
 
 Reserve boolean-style prefixes like is, has, or should for functions that actually return boolean values. Boolean prefixes promise a yes/no answer; returning strings, objects, or void misleads callers about the contract and hides incorrect branching.
 
 - **Type**: problem
 - **Recommended**: error
 
-#### Why
+## Why
 
 - Boolean prefixes signal that the function answers a yes/no question. Returning non-boolean values makes call sites read as conditionals when they are not.
 - Non-boolean returns with boolean prefixes hide logic errors (e.g., returning a string then checking it in an `if` silently coerces to `true`).
 - Consistent prefixes keep APIs self-documenting and prevent subtle bugs caused by mistaken truthiness checks.
 
-#### Examples
+## Examples
 
 Bad: names suggest booleans but return non-boolean values.
 ```javascript
@@ -61,7 +60,7 @@ function getConfig() {
 }
 ```
 
-#### Allowed patterns
+## Allowed patterns
 
 - Type predicates (e.g., `function isUser(u): u is User { ... }`)
 - Explicit `boolean` return types or `Promise<boolean>` (and unions with `null`/`undefined`/`void`)
