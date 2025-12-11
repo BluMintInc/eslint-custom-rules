@@ -160,40 +160,51 @@ export const extractGlobalConstants: TSESLint.RuleModule<
 
         const declarations = node.declarations.filter(
           (declaration): declaration is TSESTree.VariableDeclarator =>
-            Boolean(declaration),
+            declaration !== null && declaration !== undefined,
         );
 
         if (declarations.length === 0) {
           return;
         }
 
-        // Skip if any of the declarations are function definitions or mutable values
-        if (
-          declarations.some(
-            (declaration) =>
-              isFunctionDefinition(declaration.init) ||
-              isMutableValue(declaration.init),
-          )
-        ) {
+        let hasFunctionOrMutableValue = false;
+        let hasDependencies = false;
+        let hasAsConstAssertion = false;
+        let hasIdentifierDeclaration = false;
+
+        for (const declaration of declarations) {
+          const init = declaration.init ?? null;
+
+          if (isFunctionDefinition(init) || isMutableValue(init)) {
+            hasFunctionOrMutableValue = true;
+            break;
+          }
+
+          if (!hasDependencies && init) {
+            hasDependencies = ASTHelpers.declarationIncludesIdentifier(init);
+          }
+
+          if (!hasAsConstAssertion && init) {
+            hasAsConstAssertion = isAsConstExpression(init);
+          }
+
+          if (
+            !hasIdentifierDeclaration &&
+            declaration.id?.type === AST_NODE_TYPES.Identifier
+          ) {
+            hasIdentifierDeclaration = true;
+          }
+
+          if (hasDependencies && hasAsConstAssertion && hasIdentifierDeclaration) {
+            continue;
+          }
+        }
+
+        if (hasFunctionOrMutableValue) {
           return;
         }
 
         const scope = context.getScope();
-        const hasDependencies = declarations.some(
-          (declaration) =>
-            declaration.init &&
-            ASTHelpers.declarationIncludesIdentifier(declaration.init),
-        );
-
-        // Skip constants with 'as const' type assertions used in loops
-        const hasAsConstAssertion = declarations.some(
-          (declaration) =>
-            declaration.init && isAsConstExpression(declaration.init),
-        );
-
-        const hasIdentifierDeclaration = declarations.some(
-          (declaration) => declaration.id?.type === AST_NODE_TYPES.Identifier,
-        );
 
         // Only check function/block scoped constants without dependencies
         if (
