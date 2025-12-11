@@ -49,7 +49,11 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
           if (importPath === 'react') {
             memoNamespaces.set(specifier.local.name, importPath);
           } else if (isMemoUtilityImportPath(importPath)) {
-            memoIdentifiers.set(specifier.local.name, importPath);
+            if (specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
+              memoNamespaces.set(specifier.local.name, importPath);
+            } else {
+              memoIdentifiers.set(specifier.local.name, importPath);
+            }
           }
         }
       }
@@ -196,7 +200,7 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
     function ensureCompareDeeplyImportFixes(
       fixer: TSESLint.RuleFixer,
       preferredSource?: string,
-    ): TSESLint.RuleFix[] {
+    ): { fixes: TSESLint.RuleFix[]; localName: string } {
       const program = sourceCode.ast;
       const existingImport = program.body.find(
         (node): node is TSESTree.ImportDeclaration =>
@@ -211,13 +215,18 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
           : existingImport?.source.value ?? 'src/util/memo';
 
       if (existingImport) {
-        const alreadyHas = existingImport.specifiers.some(
-          (spec) =>
+        const compareDeeplySpecifier = existingImport.specifiers.find(
+          (spec): spec is TSESTree.ImportSpecifier =>
             spec.type === AST_NODE_TYPES.ImportSpecifier &&
             spec.imported.type === AST_NODE_TYPES.Identifier &&
             spec.imported.name === 'compareDeeply',
         );
-        if (alreadyHas) return [];
+        if (compareDeeplySpecifier) {
+          return {
+            fixes: [],
+            localName: compareDeeplySpecifier.local.name,
+          };
+        }
 
         const hasNamedSpecifier = existingImport.specifiers.some(
           (spec) => spec.type === AST_NODE_TYPES.ImportSpecifier,
@@ -225,9 +234,10 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
         if (hasNamedSpecifier) {
           const lastSpecifier =
             existingImport.specifiers[existingImport.specifiers.length - 1];
-          return [
-            fixer.insertTextAfter(lastSpecifier, ', compareDeeply'),
-          ];
+          return {
+            fixes: [fixer.insertTextAfter(lastSpecifier, ', compareDeeply')],
+            localName: 'compareDeeply',
+          };
         }
 
         const defaultSpecifier = existingImport.specifiers.find(
@@ -235,17 +245,23 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
             spec.type === AST_NODE_TYPES.ImportDefaultSpecifier,
         );
         if (defaultSpecifier) {
-          return [
-            fixer.insertTextAfter(defaultSpecifier, ', { compareDeeply }'),
-          ];
+          return {
+            fixes: [
+              fixer.insertTextAfter(defaultSpecifier, ', { compareDeeply }'),
+            ],
+            localName: 'compareDeeply',
+          };
         }
 
-        return [
-          fixer.insertTextAfter(
-            existingImport,
-            `\nimport { compareDeeply } from '${importSource}';`,
-          ),
-        ];
+        return {
+          fixes: [
+            fixer.insertTextAfter(
+              existingImport,
+              `\nimport { compareDeeply } from '${importSource}';`,
+            ),
+          ],
+          localName: 'compareDeeply',
+        };
       }
 
       const firstImport = program.body.find(
@@ -254,12 +270,16 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
       const importText = `import { compareDeeply } from '${importSource}';\n`;
 
       if (firstImport) {
-        return [fixer.insertTextBefore(firstImport, importText)];
+        return {
+          fixes: [fixer.insertTextBefore(firstImport, importText)],
+          localName: 'compareDeeply',
+        };
       }
 
-      return [
-        fixer.insertTextBeforeRange([0, 0], importText),
-      ];
+      return {
+        fixes: [fixer.insertTextBeforeRange([0, 0], importText)],
+        localName: 'compareDeeply',
+      };
     }
 
     return {
@@ -305,18 +325,17 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
           },
           fix(fixer) {
             const fixes: TSESLint.RuleFix[] = [];
+            const importResult = ensureCompareDeeplyImportFixes(
+              fixer,
+              memoCall.source,
+            );
             fixes.push(
               fixer.insertTextAfter(
                 componentArg,
-                `, compareDeeply(${propsCall})`,
+                `, ${importResult.localName}(${propsCall})`,
               ),
             );
-            fixes.push(
-              ...ensureCompareDeeplyImportFixes(
-                fixer,
-                memoCall.source,
-              ),
-            );
+            fixes.push(...importResult.fixes);
             return fixes;
           },
         });

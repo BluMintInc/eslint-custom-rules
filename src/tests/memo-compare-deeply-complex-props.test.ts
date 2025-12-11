@@ -315,6 +315,41 @@ export const Wrapped = memo(Comp, compareDeeply('settings'));
         errors: [{ messageId: 'useCompareDeeply' }],
       },
       {
+        filename: 'src/components/NamespaceMemoUtil.tsx',
+        code: `
+import * as memoUtil from 'src/util/memo';
+type Props = { payload: { value: string } };
+const Comp = ({ payload }: Props) => <div>{payload.value}</div>;
+export const Wrapped = memoUtil.memo(Comp);
+`,
+        output: `
+import * as memoUtil from 'src/util/memo';
+import { compareDeeply } from 'src/util/memo';
+type Props = { payload: { value: string } };
+const Comp = ({ payload }: Props) => <div>{payload.value}</div>;
+export const Wrapped = memoUtil.memo(Comp, compareDeeply('payload'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      {
+        filename: 'src/components/AliasedCompareDeeply.tsx',
+        code: `
+import { memo } from 'react';
+import { compareDeeply as cd } from 'src/util/memo';
+type Props = { info: { id: string } };
+const Comp = ({ info }: Props) => <div>{info.id}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { memo } from 'react';
+import { compareDeeply as cd } from 'src/util/memo';
+type Props = { info: { id: string } };
+const Comp = ({ info }: Props) => <div>{info.id}</div>;
+export const Wrapped = memo(Comp, cd('info'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      {
         filename: 'src/components/RecordProp.tsx',
         code: `
 import { memo } from 'react';
