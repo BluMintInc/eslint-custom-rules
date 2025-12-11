@@ -1,4 +1,4 @@
-# Enforce naming parameters "props" when their type ends with "Props" (`@blumintinc/blumint/enforce-props-naming-consistency`)
+# Prefer naming single "Props"-typed parameters as "props"; enforcement defers to enforce-props-argument-name for multi-Props cases (`@blumintinc/blumint/enforce-props-naming-consistency`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
@@ -13,6 +13,10 @@ Enforce that when a class or function accepts a parameter with a type that has t
 This rule enforces that parameters with types ending in "Props" should be consistently named `props`. This standardization improves code readability and establishes a consistent pattern across the codebase. When developers see a parameter named `props`, they'll immediately understand it represents a collection of properties being passed to that function or class.
 
 This rule only applies to non-destructured parameters to avoid conflicts with destructuring patterns where individual properties are intentionally extracted.
+
+### Type information
+
+This rule requires type information (configure `parserOptions.project`).
 
 ### Examples of **incorrect** code for this rule:
 
@@ -31,7 +35,7 @@ export class TournamentFactory {
 // Arrow function with Props type parameter named incorrectly
 const renderUser = (data: UserProps) => {
   // ...
-};
+}
 
 // Method with Props type parameter named incorrectly
 class ComponentManager {
@@ -58,7 +62,7 @@ export class TournamentFactory {
 // Arrow function with Props type parameter named correctly
 const renderUser = (props: UserProps) => {
   // ...
-};
+}
 
 // Method with Props type parameter named correctly
 class ComponentManager {
@@ -72,7 +76,7 @@ function UserCard({ name, avatar, role }: UserCardProps) {
   // ...
 }
 
-// Parameters already named with "props" suffix are allowed
+// Parameters already named with a `Props`-aligned suffix are allowed (e.g., uiProps, dataProps)
 function mergeConfigs(uiProps: UIProps, dataProps: DataProps) {
   // ...
 }
@@ -87,12 +91,12 @@ function processData(settings: ConfigurationSettings) {
 
 #### Multiple Parameters with Props Types
 
-When a function has multiple parameters with types ending in "Props", the rule is skipped to avoid naming conflicts. In such cases, it's recommended to use descriptive names with the "props" suffix:
+When a function has multiple parameters with types ending in "Props", the rule does not report to avoid naming conflicts. In such cases, prefer descriptive names that retain the `Props` suffix:
 
 ```ts
 // This will not trigger the rule due to multiple Props parameters
-function mergeConfigs(uiSettings: UIProps, dataSettings: DataProps) {
-  // Consider renaming to: uiProps, dataProps
+function mergeConfigs(uiProps: UIProps, dataProps: DataProps) {
+  // Consistent with this rule's intent: keep the `Props` suffix in parameter names
 }
 ```
 

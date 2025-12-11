@@ -133,7 +133,12 @@ ruleTesterJsx.run(
           return <div>{computedValue}</div>;
         }
       `,
-        errors: [{ messageId: 'preferUseMemo' }],
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'computedValue' },
+          },
+        ],
         output: null, // Skip output checking
       },
       // Invalid case: computation with object literal
@@ -149,7 +154,12 @@ ruleTesterJsx.run(
           return <MyComponent config={config} />;
         }
       `,
-        errors: [{ messageId: 'preferUseMemo' }],
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'config' },
+          },
+        ],
         output: null, // Skip output checking
       },
       // Invalid case: computation with array literal
@@ -165,7 +175,12 @@ ruleTesterJsx.run(
           return <List items={processedItems} />;
         }
       `,
-        errors: [{ messageId: 'preferUseMemo' }],
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'processedItems' },
+          },
+        ],
         output: null, // Skip output checking
       },
       // Invalid case: computation with function that has "compute" prefix
@@ -181,7 +196,12 @@ ruleTesterJsx.run(
           return <div>{result}</div>;
         }
       `,
-        errors: [{ messageId: 'preferUseMemo' }],
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'result' },
+          },
+        ],
         output: null, // Skip output checking
       },
       // Invalid case: computation with function that has "calculate" prefix
@@ -197,7 +217,12 @@ ruleTesterJsx.run(
           return <div>Total: {sum}</div>;
         }
       `,
-        errors: [{ messageId: 'preferUseMemo' }],
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'sum' },
+          },
+        ],
         output: null, // Skip output checking
       },
       // Invalid case: computation with function that has "format" prefix
@@ -213,7 +238,12 @@ ruleTesterJsx.run(
           return <div>{formattedDate}</div>;
         }
       `,
-        errors: [{ messageId: 'preferUseMemo' }],
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'formattedDate' },
+          },
+        ],
         output: null, // Skip output checking
       },
       // Invalid case: computation with function that has "transform" prefix
@@ -229,7 +259,12 @@ ruleTesterJsx.run(
           return <div>{transformed}</div>;
         }
       `,
-        errors: [{ messageId: 'preferUseMemo' }],
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'transformed' },
+          },
+        ],
         output: null, // Skip output checking
       },
       // Invalid case: computation with function that has "convert" prefix
@@ -245,7 +280,12 @@ ruleTesterJsx.run(
           return <div>{fahrenheit}°F</div>;
         }
       `,
-        errors: [{ messageId: 'preferUseMemo' }],
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'fahrenheit' },
+          },
+        ],
         output: null, // Skip output checking
       },
       // Invalid case: computation with function that has "get" prefix
@@ -261,7 +301,12 @@ ruleTesterJsx.run(
           return <div>{fullName}</div>;
         }
       `,
-        errors: [{ messageId: 'preferUseMemo' }],
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'fullName' },
+          },
+        ],
         output: null, // Skip output checking
       },
       // Invalid case: computation with function that has "derive" prefix
@@ -277,7 +322,12 @@ ruleTesterJsx.run(
           return <div>Total: {totalPrice}</div>;
         }
       `,
-        errors: [{ messageId: 'preferUseMemo' }],
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'totalPrice' },
+          },
+        ],
         output: null, // Skip output checking
       },
       // Invalid case: computation with function that has "create" prefix
@@ -293,7 +343,12 @@ ruleTesterJsx.run(
           return <Chart config={chart} />;
         }
       `,
-        errors: [{ messageId: 'preferUseMemo' }],
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'chart' },
+          },
+        ],
         output: null, // Skip output checking
       },
       // Invalid case: computation with array method (map)
@@ -309,7 +364,12 @@ ruleTesterJsx.run(
           return <UserList names={userNames} />;
         }
       `,
-        errors: [{ messageId: 'preferUseMemo' }],
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'userNames' },
+          },
+        ],
         output: null, // Skip output checking
       },
       // Invalid case: computation with array method (filter)
@@ -325,7 +385,12 @@ ruleTesterJsx.run(
           return <ItemList items={activeItems} />;
         }
       `,
-        errors: [{ messageId: 'preferUseMemo' }],
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'activeItems' },
+          },
+        ],
         output: null, // Skip output checking
       },
       // Invalid case: computation with array method (reduce)
@@ -341,7 +406,12 @@ ruleTesterJsx.run(
           return <div>Total: {total}</div>;
         }
       `,
-        errors: [{ messageId: 'preferUseMemo' }],
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'total' },
+          },
+        ],
         output: null, // Skip output checking
       },
       // Invalid case: computation with nested object destructuring
@@ -361,7 +431,12 @@ ruleTesterJsx.run(
           return <UserProfile info={displayInfo} />;
         }
       `,
-        errors: [{ messageId: 'preferUseMemo' }],
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'displayInfo' },
+          },
+        ],
         output: null, // Skip output checking
       },
       // Invalid case: computation with template literals
@@ -377,7 +452,12 @@ ruleTesterJsx.run(
           return <div>{fullName}</div>;
         }
       `,
-        errors: [{ messageId: 'preferUseMemo' }],
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'fullName' },
+          },
+        ],
         output: null, // Skip output checking
       },
       // Invalid case: computation with ternary operator
@@ -393,7 +473,12 @@ ruleTesterJsx.run(
           return <DataDisplay data={displayData} />;
         }
       `,
-        errors: [{ messageId: 'preferUseMemo' }],
+        errors: [
+          {
+            messageId: 'preferUseMemo',
+            data: { stateName: 'displayData' },
+          },
+        ],
         output: null, // Skip output checking
       },
     ],

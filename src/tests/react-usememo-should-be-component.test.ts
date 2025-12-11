@@ -1075,7 +1075,12 @@ ruleTesterJsx.run(
           return <div>{userAvatar}</div>;
         };
       `,
-        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'userAvatar' },
+          },
+        ],
       },
 
       // useMemo with direct JSX return (no block)
@@ -1093,7 +1098,12 @@ ruleTesterJsx.run(
           return <div>{header}</div>;
         };
       `,
-        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'header' },
+          },
+        ],
       },
       // useMemo with conditional JSX
       {
@@ -1111,7 +1121,12 @@ ruleTesterJsx.run(
           return <div>{userInfo}</div>;
         };
       `,
-        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'userInfo' },
+          },
+        ],
       },
 
       // Multiple useMemo with JSX in the same component
@@ -1147,8 +1162,14 @@ ruleTesterJsx.run(
         };
       `,
         errors: [
-          { messageId: 'useMemoShouldBeComponent' },
-          { messageId: 'useMemoShouldBeComponent' },
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'userAvatar' },
+          },
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'header' },
+          },
         ],
       },
       // useMemo with nested JSX structure
@@ -1189,7 +1210,12 @@ ruleTesterJsx.run(
           return <div className="wrapper">{content}</div>;
         };
       `,
-        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'content' },
+          },
+        ],
       },
       // useMemo with JSX fragments
       {
@@ -1208,7 +1234,12 @@ ruleTesterJsx.run(
           return <div className="user-card">{userDetails}</div>;
         };
       `,
-        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'userDetails' },
+          },
+        ],
       },
       // useMemo with complex conditional rendering
       {
@@ -1239,7 +1270,12 @@ ruleTesterJsx.run(
           return <div className="status-container">{statusDisplay}</div>;
         };
       `,
-        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'statusDisplay' },
+          },
+        ],
       },
       // useMemo with JSX in ternary expressions
       {
@@ -1266,7 +1302,12 @@ ruleTesterJsx.run(
           return <div className="auth-container">{authStatus}</div>;
         };
       `,
-        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'authStatus' },
+          },
+        ],
       },
       // useMemo with JSX in array methods other than map (returns single JSX) remains invalid
       {
@@ -1283,7 +1324,12 @@ ruleTesterJsx.run(
           return <div>{firstItem}</div>;
         };
       `,
-        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'firstItem' },
+          },
+        ],
       },
 
       // useMemo with JSX in IIFE
@@ -1310,7 +1356,12 @@ ruleTesterJsx.run(
           return <div>{configPanel}</div>;
         };
       `,
-        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'configPanel' },
+          },
+        ],
       },
       // useMemo with complex JSX and multiple returns
       {
@@ -1350,7 +1401,12 @@ ruleTesterJsx.run(
           return <form>{formStep}</form>;
         };
       `,
-        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'formStep' },
+          },
+        ],
       },
       // useMemo with dynamic component creation
       {
@@ -1371,7 +1427,12 @@ ruleTesterJsx.run(
           return <div className="dynamic-component-wrapper">{dynamicComponent}</div>;
         };
       `,
-        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'dynamicComponent' },
+          },
+        ],
       },
       // useMemo with template literals in JSX
       {
@@ -1389,7 +1450,12 @@ ruleTesterJsx.run(
           return <div>{userGreeting}</div>;
         };
       `,
-        errors: [{ messageId: 'useMemoShouldBeComponent' }],
+        errors: [
+          {
+            messageId: 'useMemoShouldBeComponent',
+            data: { memoName: 'userGreeting' },
+          },
+        ],
       },
     ],
   },

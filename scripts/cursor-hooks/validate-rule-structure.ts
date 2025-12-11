@@ -51,6 +51,14 @@ export function validateRuleStructure(ruleName: string): ValidationResult {
 
   const indexIssues: string[] = [];
 
+  // Check for rule name conflicts (prevent accidental overwrites)
+  const ruleFile = `src/rules/${ruleName}.ts`;
+  if (existsSync(ruleFile)) {
+    indexIssues.push(
+      `Warning: Rule '${ruleName}' already exists at ${ruleFile}. Proceeding may overwrite the existing implementation.`,
+    );
+  }
+
   // Check for missing files
   const missingFiles = requiredFiles.filter((file) => !existsSync(file));
 

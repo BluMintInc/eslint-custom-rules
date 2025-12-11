@@ -1,5 +1,7 @@
 # Disallow certain properties on certain objects, with special handling for Object.keys() and Object.values() (`@blumintinc/blumint/no-restricted-properties-fix`)
 
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
 <!-- end auto-generated rule header -->
 
 > Disallow certain properties on certain objects, with special handling for Object.keys() and Object.values()
@@ -27,6 +29,11 @@ const sortedValues = Object.values(myObject).sort((a, b) => a - b);
 // This should not be flagged even with optional chaining
 const exampleAggregation = { teams: { teamA: {}, teamB: {} } };
 const teamCount = Object.keys(exampleAggregation.teams ?? {}).length;
+
+// Allowed by allowObjects
+/* eslint @blumintinc/blumint/no-restricted-properties-fix: ["error", [{ "property": "push", "allowObjects": ["router", "history"] }]] */
+const router = { push: (path) => path };
+router.push('/home'); // OK due to allowObjects
 ```
 
 Examples of **incorrect** code with this rule:
@@ -36,7 +43,7 @@ Examples of **incorrect** code with this rule:
 const disallowedObject = { disallowedProperty: 'value' };
 const value = disallowedObject.disallowedProperty; // Error: Disallowed object property: 'disallowedObject.disallowedProperty'
 
-/* eslint @blumintinc/blumint/no-restricted-properties-fix: ["error", [{ "property": "push", "allowObjects": ["router", "history"] }]] */
+/* eslint @blumintinc/blumint/no-restricted-properties-fix: ["error", [{ "property": "push" }]] */
 const myArray = [1, 2, 3];
 myArray.push(4); // Error: Disallowed object property: 'myArray.push'
 ```
@@ -45,7 +52,7 @@ myArray.push(4); // Error: Disallowed object property: 'myArray.push'
 
 This rule accepts an array of objects, where each object specifies the restrictions:
 
-```js
+```json
 {
   "rules": {
     "@blumintinc/blumint/no-restricted-properties-fix": ["error", [
@@ -69,9 +76,13 @@ Each object in the array can have the following properties:
 - `message` (string): Optional custom error message.
 - `allowObjects` (string[]): Optional array of object names that are allowed to use the restricted property.
 
+At least one of `object` or `property` must be provided for each restriction entry.
+
 ## When Not To Use It
 
 If you don't have any object/property combinations to restrict, you should not use this rule.
+
+Avoid enabling this rule alongside the core `no-restricted-properties` with the same restrictions to prevent duplicate reports.
 
 ## Related Rules
 
