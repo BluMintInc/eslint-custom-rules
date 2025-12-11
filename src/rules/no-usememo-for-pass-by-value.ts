@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree, TSESLint, ASTUtils } from '@typescript-eslint/utils';
 import ts from 'typescript';
 import { createRule } from '../utils/createRule';
 
@@ -386,6 +386,67 @@ function getReplacementText(
   return sourceCode.getText(returnedExpression);
 }
 
+function isSafeAtomicExpression(expression: TSESTree.Expression): boolean {
+  switch (expression.type) {
+    case AST_NODE_TYPES.Identifier:
+    case AST_NODE_TYPES.Literal:
+    case AST_NODE_TYPES.TemplateLiteral:
+    case AST_NODE_TYPES.ThisExpression:
+    case AST_NODE_TYPES.Super:
+    case AST_NODE_TYPES.MemberExpression:
+    case AST_NODE_TYPES.CallExpression:
+    case AST_NODE_TYPES.NewExpression:
+    case AST_NODE_TYPES.ArrayExpression:
+    case AST_NODE_TYPES.ObjectExpression:
+    case AST_NODE_TYPES.ArrowFunctionExpression:
+    case AST_NODE_TYPES.FunctionExpression:
+    case AST_NODE_TYPES.ClassExpression:
+    case AST_NODE_TYPES.TaggedTemplateExpression:
+    case AST_NODE_TYPES.UnaryExpression:
+    case AST_NODE_TYPES.UpdateExpression:
+    case AST_NODE_TYPES.AwaitExpression:
+    case AST_NODE_TYPES.TSAsExpression:
+    case AST_NODE_TYPES.TSTypeAssertion:
+    case AST_NODE_TYPES.TSNonNullExpression:
+      return true;
+    default:
+      return false;
+  }
+}
+
+function shouldParenthesizeReplacement(
+  node: TSESTree.CallExpression,
+  replacementExpression: TSESTree.Expression,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+): boolean {
+  if (ASTUtils.isParenthesized(replacementExpression, sourceCode)) {
+    return false;
+  }
+
+  const parent = node.parent;
+  if (!parent) {
+    return false;
+  }
+
+  switch (parent.type) {
+    case AST_NODE_TYPES.LogicalExpression:
+    case AST_NODE_TYPES.BinaryExpression:
+      return !isSafeAtomicExpression(replacementExpression);
+    case AST_NODE_TYPES.UnaryExpression:
+    case AST_NODE_TYPES.AwaitExpression:
+    case AST_NODE_TYPES.MemberExpression:
+    case AST_NODE_TYPES.TaggedTemplateExpression:
+    case AST_NODE_TYPES.TSNonNullExpression:
+    case AST_NODE_TYPES.ChainExpression:
+      return true;
+    case AST_NODE_TYPES.CallExpression:
+    case AST_NODE_TYPES.NewExpression:
+      return parent.callee === node;
+    default:
+      return false;
+  }
+}
+
 function getRemovableImportSpecifier(
   callExpression: TSESTree.CallExpression,
   imports: UseMemoImports,
@@ -527,13 +588,22 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
         },
         fix: (fixer) => {
           const replacementText = getReplacementText(callback, sourceCode);
-          if (!replacementText) {
+          if (!replacementText || !returnedExpression) {
             return null;
           }
 
+          const needsParentheses = shouldParenthesizeReplacement(
+            node,
+            returnedExpression,
+            sourceCode,
+          );
+          const replacement = needsParentheses
+            ? `(${replacementText})`
+            : replacementText;
+
           const specifier = getRemovableImportSpecifier(node, imports, context);
           const fixes: TSESLint.RuleFix[] = [
-            fixer.replaceText(node, replacementText),
+            fixer.replaceText(node, replacement),
           ];
 
           if (specifier) {

@@ -324,7 +324,24 @@ ${typedPrelude}
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
 ${typedPrelude}      export function useLogicalLeft(value?: string) {
-        return value && value.toUpperCase() || 'NONE';
+        return (value && value.toUpperCase()) || 'NONE';
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useLogicalAnd(flag: boolean, label: string) {
+        return useMemo(() => flag || label.length > 0, [flag, label]) && label;
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}      export function useLogicalAnd(flag: boolean, label: string) {
+        return (flag || label.length > 0) && label;
       }
       `,
     },

@@ -78,4 +78,4 @@ This rule accepts an options object:
 ## When Not To Use It
 
 - If your codebase intentionally memoizes primitives to satisfy external dependency-array tooling and you prefer that style over readability.
-- If type information is not available (this rule requires `parserOptions.project`).*** End Patch
+- If type information is not available (this rule requires `parserOptions.project`).
