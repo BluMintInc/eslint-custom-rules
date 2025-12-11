@@ -18,7 +18,7 @@ export const noConditionalLiteralsInJsx: TSESLint.RuleModule<
     schema: [],
     messages: {
       unexpected:
-        'Conditional text literal {{literal}} is rendered next to other JSX text or expressions. Splitting a sentence across conditional strings creates fragmented text nodes that confuse browser translation and can trigger React hydration mismatches. Wrap the conditional literal in its own element (for example, <span>{ {{condition}} && {{literal}} }</span>) or move the entire sentence inside the conditional so it renders as a single text node.',
+        'Conditional text literal {{literal}} is rendered next to other JSX text or expressions under condition {{condition}}. Splitting a sentence across conditional strings creates fragmented text nodes that confuse browser translation and can trigger React hydration mismatches. Wrap the conditional literal in its own element (for example, <span>{ {{expression}} }</span>) or move the entire sentence inside the conditional so it renders as a single text node.',
     },
   },
   defaultOptions: [],
@@ -84,6 +84,7 @@ export const noConditionalLiteralsInJsx: TSESLint.RuleModule<
             data: {
               literal: sourceCode.getText(literalNode),
               condition: sourceCode.getText(conditionalNode),
+              expression: sourceCode.getText(logicalExpression),
             },
           });
         }

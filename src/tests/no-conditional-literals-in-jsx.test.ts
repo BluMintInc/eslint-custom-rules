@@ -12,24 +12,33 @@ ruleTesterJsx.run(
         code: `<div> This is a test {conditional && 'additional text'} </div>`,
         condition: 'conditional',
         literal: `'additional text'`,
+        expression: `conditional && 'additional text'`,
       },
       {
         code: `<div> This is a {isReady && 'also text'} test </div>`,
         condition: 'isReady',
         literal: `'also text'`,
+        expression: `isReady && 'also text'`,
       },
       {
         code: `<div> <span> This is a {show && 'extra'} test </span> </div>`,
         condition: 'show',
         literal: `'extra'`,
+        expression: `show && 'extra'`,
       },
-    ].map(({ code, condition, literal }) => {
+      {
+        code: `<div> Label: {value || 'missing'} </div>`,
+        condition: 'value',
+        literal: `'missing'`,
+        expression: `value || 'missing'`,
+      },
+    ].map(({ code, condition, literal, expression }) => {
       return {
         code,
         errors: [
           {
             messageId: 'unexpected',
-            data: { literal, condition },
+            data: { literal, condition, expression },
           },
         ],
       };
