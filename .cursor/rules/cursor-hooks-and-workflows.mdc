@@ -85,17 +85,29 @@ Automation reduces manual toil by enforcing local quality gates and launching ba
         └── agent-change-log.json        # Auto-created change log
 
 scripts/
+├── check-merge-conflicts.sh          # Lists remaining conflicted files (merge conflict stop hook)
 ├── cursor-hooks/
 │   ├── agent-check.ts                   # Main stop hook logic
 │   ├── change-log.ts                    # Change log utilities
 │   ├── lint-diff.ts                     # Lint changed files only
-│   ├── pr-review-check.ts               # PR review comment check for stop hook
+│   ├── merge-conflict-check.ts          # Merge conflict stop logic (Priority 0)
+│   ├── pr-review-check.ts               # PR review comment check for stop hook (Priority 1)
 │   ├── track-changes.ts                 # Track file modifications
 │   ├── track-prompt.ts                  # Track prompts & detect flags
 │   ├── types.ts                         # Shared TypeScript types
 │   └── validate-rule-structure.ts       # Validate rule has all files
 ├── cli/
-│   └── git-utils.ts                     # Git CLI utilities
+│   ├── git-utils.ts                     # Git CLI utilities
+│   └── git-merge/                       # Merge-conflict context utilities
+│       ├── types.ts
+│       ├── isInMergeConflictState.ts
+│       ├── getConflictedFiles.ts
+│       ├── getMergeBase.ts
+│       ├── getSquashedDiff.ts
+│       ├── getBranchLastCommitDate.ts
+│       ├── getAssociatedPr.ts
+│       ├── fetchPrMetadata.ts
+│       └── buildMergeContext.ts
 └── github/
     └── post-research-comment.ts         # Post research findings to issue
 
@@ -181,18 +193,19 @@ scripts/
 
 1. **Heartbeat Update**: Record activity timestamp
 2. **Status Check**: Skip checks if agent status is not `completed`
-3. **PR Review Check**: For PR review branches (`*-review-pr-*`), check for unresolved comments (see `automated-review-addressing.mdc`)
-4. **Build Validation**: `npm run build` must succeed
-5. **Linting Validation**: ESLint on changed files only
-6. **Test Validation**: `npm test` must pass
-7. **Rule Structure Validation**: For rule implementations, verify:
+3. **Merge Conflict Check (Priority 0)**: If a `git merge` is in progress and conflicts remain, block completion and provide a fresh conflict-resolution prompt. Use `npm run address-merge-conflicts` to generate the initial prompt.
+4. **PR Review Check (Priority 1)**: For PR review branches (`*-review-pr-*`), check for unresolved comments (see `automated-review-addressing.mdc`)
+5. **Build Validation**: `npm run build` must succeed
+6. **Linting Validation**: ESLint on changed files only
+7. **Test Validation**: `npm test` must pass
+8. **Rule Structure Validation**: For rule implementations, verify:
    - `src/rules/{rule-name}.ts` exists
    - `src/tests/{rule-name}.test.ts` exists
    - `docs/rules/{rule-name}.md` exists
    - `src/index.ts` updated in 3 places (import, config, rules)
    - `README.md` mentions the rule
-8. **Check-Your-Work Prompt**: Self-review prompt
-9. **Expand Tests Prompt**: For rule implementations only (requires 20+ tests)
+9. **Check-Your-Work Prompt**: Self-review prompt
+10. **Expand Tests Prompt**: For rule implementations only (requires 20+ tests)
 
 #### Critical Insights for Maintainers
 

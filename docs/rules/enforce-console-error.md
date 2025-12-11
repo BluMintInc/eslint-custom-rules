@@ -1,6 +1,6 @@
 # Require console logging for useAlertDialog severities (`@blumintinc/blumint/enforce-console-error`)
 
-✅ Enabled in the `recommended` config.
+💼 This rule is enabled in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
 
