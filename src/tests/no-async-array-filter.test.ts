@@ -14,6 +14,9 @@ ruleTesterTs.run('no-async-array-filter', noAsyncArrayFilter, {
       errors: [
         {
           messageId: 'unexpected',
+          data: {
+            methodName: 'filter',
+          },
         },
       ],
     },
@@ -24,6 +27,9 @@ ruleTesterTs.run('no-async-array-filter', noAsyncArrayFilter, {
       errors: [
         {
           messageId: 'unexpected',
+          data: {
+            methodName: 'filter',
+          },
         },
       ],
     },
