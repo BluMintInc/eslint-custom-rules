@@ -27,8 +27,9 @@ ruleTesterTs.run('no-misused-switch-case', noMisusedSwitchCase, {
         `,
   ],
   invalid: [
-    // Misused logical OR
-    `
+    {
+      // Misused logical OR
+      code: `
         switch (input) {
           case 'a' || 'b':
             // This is invalid
@@ -37,9 +38,19 @@ ruleTesterTs.run('no-misused-switch-case', noMisusedSwitchCase, {
             // Handle default
         }
         `,
-
-    // Misused logical OR with additional valid cases
-    `
+      errors: [
+        {
+          messageId: 'noMisusedSwitchCase',
+          data: {
+            expressionText: "'a' || 'b'",
+            cascadingCases: "case 'a': case 'b':",
+          },
+        },
+      ],
+    },
+    {
+      // Misused logical OR with additional valid cases
+      code: `
         switch (input) {
           case 'a' || 'b':
             // This is invalid
@@ -52,19 +63,34 @@ ruleTesterTs.run('no-misused-switch-case', noMisusedSwitchCase, {
             // Handle default
         }
         `,
-  ].map((testCase) => {
-    return {
-      code: testCase,
       errors: [
         {
           messageId: 'noMisusedSwitchCase',
           data: {
             expressionText: "'a' || 'b'",
-            leftText: "'a'",
-            rightText: "'b'",
+            cascadingCases: "case 'a': case 'b':",
           },
         },
       ],
-    };
-  }),
+    },
+    {
+      // Misused nested logical OR should suggest individual operands
+      code: `
+        switch (input) {
+          case first() || second() || third():
+            doThing();
+            break;
+        }
+        `,
+      errors: [
+        {
+          messageId: 'noMisusedSwitchCase',
+          data: {
+            expressionText: 'first() || second() || third()',
+            cascadingCases: 'case first(): case second(): case third():',
+          },
+        },
+      ],
+    },
+  ],
 });

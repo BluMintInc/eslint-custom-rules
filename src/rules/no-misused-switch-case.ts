@@ -16,12 +16,32 @@ export const noMisusedSwitchCase: TSESLint.RuleModule<
     schema: [],
     messages: {
       noMisusedSwitchCase:
-        'Case expression uses logical OR "{{expressionText}}", but "||" collapses to a single value so only one operand is ever compared. Move each operand into its own case (e.g., "case {{leftText}}: case {{rightText}}:") to make both values reachable and the switch intent readable.',
+        'Case expression uses logical OR "{{expressionText}}", but "||" collapses to a single operand so only one branch is reachable. Move each operand into its own case (e.g., "{{cascadingCases}}") so every value is matched and the switch intent stays clear.',
     },
   },
   defaultOptions: [],
   create(context) {
     const sourceCode = context.getSourceCode();
+
+    const flattenLogicalOrOperands = (
+      expression: TSESTree.Expression,
+    ): string[] => {
+      const operands: string[] = [];
+
+      const visit = (node: TSESTree.Expression) => {
+        if (node.type === 'LogicalExpression' && node.operator === '||') {
+          visit(node.left);
+          visit(node.right);
+          return;
+        }
+
+        operands.push(sourceCode.getText(node));
+      };
+
+      visit(expression);
+
+      return operands;
+    };
 
     return {
       SwitchStatement(node: TSESTree.SwitchStatement) {
@@ -30,13 +50,16 @@ export const noMisusedSwitchCase: TSESLint.RuleModule<
             switchCase.test?.type === 'LogicalExpression' &&
             switchCase.test.operator === '||'
           ) {
+            const operands = flattenLogicalOrOperands(switchCase.test);
+
             context.report({
               node: switchCase,
               messageId: 'noMisusedSwitchCase',
               data: {
                 expressionText: sourceCode.getText(switchCase.test),
-                leftText: sourceCode.getText(switchCase.test.left),
-                rightText: sourceCode.getText(switchCase.test.right),
+                cascadingCases: operands
+                  .map((operand) => `case ${operand}:`)
+                  .join(' '),
               },
             });
           }
