@@ -1,7 +1,7 @@
 /**
  * Shared types for Cursor stop hook modules.
  * Extracted to avoid circular dependencies between agent-check.ts
- * and modules it imports.
+ * and modules it imports (pr-review-check.ts).
  */
 
 export type Input = {

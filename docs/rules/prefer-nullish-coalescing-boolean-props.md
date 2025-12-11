@@ -10,7 +10,7 @@ This rule prevents the `@typescript-eslint/prefer-nullish-coalescing` rule from 
 
 ## Rule Details
 
-In boolean contexts, using logical OR is semantically correct and intentional as it converts falsy values (like `false`, `0`, `''`, `null`, and `undefined`) to `false`. Replacing these with nullish coalescing (`??`) would change the component's behavior since `??` only handles `null` and `undefined` values.
+In boolean contexts, using logical OR is semantically correct because `||` returns the first truthy operand and the consuming position coerces the result to a boolean. Replacing `||` with nullish coalescing (`??`) changes behavior for falsy-but-not-nullish values like `0`, `''`, or `false`, which `??` would pass through.
 
 This rule works alongside the `@typescript-eslint/prefer-nullish-coalescing` rule to prevent it from suggesting incorrect replacements in boolean contexts.
 
@@ -48,7 +48,7 @@ const isDisabled = !isValidated.phoneNumber || !hasUserTyped.phoneNumber || isLo
 
 ### Examples of incorrect code
 
-This rule doesn't mark any code as incorrect. It's designed to prevent the `@typescript-eslint/prefer-nullish-coalescing` rule from incorrectly flagging logical OR in boolean contexts.
+This rule doesn't report diagnostics on its own; it exists to prevent `@typescript-eslint/prefer-nullish-coalescing` from suggesting `??` in boolean contexts.
 
 ## When Not To Use It
 

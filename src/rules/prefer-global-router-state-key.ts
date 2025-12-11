@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'preferGlobalRouterStateKey' | 'invalidQueryKeySource';
@@ -21,13 +21,14 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
     schema: [],
     messages: {
       preferGlobalRouterStateKey:
-        'Router state key must be imported from "@/util/routing/queryKeys" or "src/util/routing/queryKeys". Use a QUERY_KEY_* constant instead of string literals.',
+        'Router state key {{keyValue}} is a string literal. String literals bypass the shared queryKeys.ts QUERY_KEY_* constants, which leads to duplicate router cache entries and makes allowed keys hard to discover. Import the corresponding QUERY_KEY_* constant from "@/util/routing/queryKeys" (or its approved re-export) and pass that to useRouterState instead.',
       invalidQueryKeySource:
-        'Router state key must use a QUERY_KEY_* constant from queryKeys.ts. Variable "{{variableName}}" is not imported from the correct source.',
+        'Router state key variable "{{variableName}}" is not sourced from queryKeys.ts. useRouterState keys must come from QUERY_KEY_* exports so routing cache keys stay stable and traceable. Import the matching constant from "@/util/routing/queryKeys" (or its approved re-export) and use that value here instead of {{variableName}}.',
     },
   },
   defaultOptions: [],
   create(context) {
+    const sourceCode = context.getSourceCode();
     // Track imports from queryKeys.ts
     const queryKeyImports = new Map<
       string,
@@ -48,28 +49,23 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
     // Track re-exports and variable assignments
     const variableAssignments = new Map<string, TSESTree.Node>();
 
-    const validQueryKeySources = new Set([
-      '@/util/routing/queryKeys',
-      'src/util/routing/queryKeys',
-      './util/routing/queryKeys',
-      '../util/routing/queryKeys',
-      '../../util/routing/queryKeys',
-      '../../../util/routing/queryKeys',
-      '../../../../util/routing/queryKeys',
-      '@/constants',
-      '@/constants/index',
+    const validQueryKeySources = new Set<string>([
+      'util/routing/queryKeys',
+      'constants',
+      'constants/index',
     ]);
 
     /**
      * Check if a source path refers to queryKeys.ts or re-exports from it
      */
     function isQueryKeysSource(source: string): boolean {
+      const normalized = source
+        .replace(/^@\/|^src\//, '')
+        .replace(/^(\.\/|\.\.\/)+/, '');
+
       return (
-        validQueryKeySources.has(source) ||
-        source.endsWith('/util/routing/queryKeys') ||
-        source.includes('queryKeys') ||
-        source.endsWith('/constants') ||
-        source.endsWith('/constants/index')
+        validQueryKeySources.has(normalized) ||
+        normalized.endsWith('util/routing/queryKeys')
       );
     }
 
@@ -161,9 +157,8 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
         return isValidQueryKeyUsage(node.expression);
       }
 
-      // Allow array access and member expressions that might be valid
       if (node.type === AST_NODE_TYPES.MemberExpression) {
-        return true; // Be permissive for complex member expressions
+        return false;
       }
 
       return false;
@@ -301,6 +296,9 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                     context.report({
                       node: keyValue,
                       messageId: 'preferGlobalRouterStateKey',
+                      data: {
+                        keyValue: sourceCode.getText(keyValue),
+                      },
                       fix(fixer) {
                         if (
                           keyValue.type === AST_NODE_TYPES.Literal &&
@@ -310,10 +308,48 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                             keyValue.value,
                           );
                           if (suggestedConstant) {
-                            return fixer.replaceText(
-                              keyValue,
-                              suggestedConstant,
+                            const fixes: TSESLint.RuleFix[] = [];
+
+                            // 1) Replace the literal with the constant
+                            fixes.push(
+                              fixer.replaceText(keyValue, suggestedConstant),
                             );
+
+                            // 2) Ensure an import exists for the suggested constant
+                            const sourceCode = context.getSourceCode();
+                            const alreadyImportedNamed = Array.from(
+                              queryKeyImports.values(),
+                            ).some(
+                              (info) =>
+                                isQueryKeysSource(info.source) &&
+                                info.imported === suggestedConstant,
+                            );
+                            const hasNamespaceOrDefault =
+                              namespaceImports.size > 0 ||
+                              defaultImports.size > 0;
+
+                            if (!alreadyImportedNamed && !hasNamespaceOrDefault) {
+                              const importText = `import { ${suggestedConstant} } from '@/util/routing/queryKeys';\n`;
+                              const firstImport =
+                                sourceCode.ast.body.find(
+                                  (
+                                    n,
+                                  ): n is TSESTree.ImportDeclaration =>
+                                    n.type === AST_NODE_TYPES.ImportDeclaration,
+                                );
+
+                              if (firstImport) {
+                                fixes.push(
+                                  fixer.insertTextBefore(firstImport, importText),
+                                );
+                              } else {
+                                fixes.push(
+                                  fixer.insertTextBeforeRange([0, 0], importText),
+                                );
+                              }
+                            }
+
+                            return fixes;
                           }
                         }
                         return null;
@@ -325,6 +361,14 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                       messageId: 'invalidQueryKeySource',
                       data: {
                         variableName: keyValue.name,
+                      },
+                    });
+                  } else if (keyValue.type === AST_NODE_TYPES.MemberExpression) {
+                    context.report({
+                      node: keyValue,
+                      messageId: 'invalidQueryKeySource',
+                      data: {
+                        variableName: sourceCode.getText(keyValue),
                       },
                     });
                   }

@@ -55,6 +55,23 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
     },
     {
       code: `
+        type Props = {
+          tournamentId: string;
+          gameReadonly: Readonly<{ id: string; name: string }>;
+        };
+
+        export const createScheduler = ({ tournamentId }: Props) => {
+          return { id: tournamentId };
+        };
+      `,
+      filename: 'functions/src/util/tournaments/exampleBackendUsage.ts',
+      parserOptions: {
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
         type Props = { title: string };
         const MyComponent = ({ title }: Props) => <h1>{title}</h1>;
       `,
@@ -179,6 +196,35 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         sourceType: 'module',
       },
     },
+    {
+      code: `
+        import { ImportedProps } from './external';
+
+        const ForwardRefComponent = ({ label, ...rest }: Props) => (
+          <div {...rest}>{label}</div>
+        );
+
+        type Props = { label: string } & ImportedProps;
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type Props = Partial & { title: string };
+        const Component = ({ title }: Props) => <h1>{title}</h1>;
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
   ],
   invalid: [
     {
@@ -271,6 +317,43 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         ecmaFeatures: { jsx: true },
         ecmaVersion: 2018,
         sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type FooProps = { used: string; unused: string };
+
+        const helper = ({ used }: FooProps) => {
+          return used.toUpperCase();
+        };
+
+        const Component = ({ used }: FooProps) => {
+          return <span>{used}</span>;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'mixed.tsx',
+      settings: {
+        'no-unused-props': {
+          reactLikeExtensions: [],
+        },
+      },
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+        jsx: true,
       },
     },
   ],
