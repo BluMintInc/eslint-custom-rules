@@ -15,6 +15,10 @@ This rule is aimed at preventing long chains of `.parent` calls in Firestore and
 
 The rule allows up to 2 consecutive `.parent` calls before raising a warning, as this is often reasonable for simple relative path navigation.
 
+## Options
+
+This rule has no options. The maximum allowed consecutive `.parent` calls is fixed at `2`.
+
 Examples of **incorrect** code for this rule:
 
 ```typescript
@@ -66,20 +70,20 @@ export const regularFunction = async (docRef: DocumentReference) => {
 };
 ```
 
+This rule is not auto-fixable; violations must be corrected manually.
+
 ## Why This Rule Exists
 
 ### Problems with Long Parent Chains
 
-1. **Fragility**: Changes to the Firestore path structure can break multiple chained `.parent` calls
-2. **Readability**: Long chains like `ref.parent.parent.parent.parent` are hard to understand
-3. **Type Safety**: Manual navigation doesn't provide compile-time guarantees about path structure
-4. **Maintainability**: Refactoring path structures requires updating all hardcoded parent chains
+1. **Fragility**: Changes to the Firestore path structure can break multiple chained `.parent` calls.
+2. **Readability**: Long chains like `ref.parent.parent.parent.parent` are difficult to comprehend.
+3. **Type Safety**: Manual navigation doesn't provide compile-time guarantees about path structure.
+4. **Maintainability**: Refactoring path structures requires updating all hardcoded parent chains.
 
 ### Benefits of Using Params
 
 1. **Type Safety**: The `params` object is automatically generated based on the path pattern and provides type-safe access
 2. **Maintainability**: Path changes only require updating the path pattern, not individual handlers
 3. **Clarity**: `params.userId` is much clearer than `ref.parent.parent.parent.id`
-4. **Consistency**: All handlers use the same pattern for accessing path components
-
-
+4. **Consistency**: All handlers use the same pattern for accessing path components.
