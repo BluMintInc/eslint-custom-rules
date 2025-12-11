@@ -13,6 +13,7 @@ Renaming during object destructuring is useful when it resolves naming conflicts
 - Targets object destructuring where `source: alias` (or `source: alias = default`) is declared.
 - Flags when the alias is used exactly once, solely as the value of an object property whose key is `source` and the property is not computed.
 - Skips computed property names and aliases that are read more than once or participate in other expressions.
+- Does not offer a fix when using the original key would shadow another binding in the same or nested scope, preventing semantic changes.
 
 ### Examples of **incorrect** code for this rule:
 

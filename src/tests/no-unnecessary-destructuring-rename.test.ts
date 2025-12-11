@@ -72,6 +72,20 @@ ruleTester.run(
       const { user: { name: userName } } = data;
       const card = { displayName: userName, payload: { name: userName } };
       `,
+
+      // Rename avoids collision with existing binding
+      `
+      const id = 'outer';
+      const { id: renamedId } = data;
+      const payload = { id: renamedId };
+      const echo = id;
+      `,
+
+      // Alias is used inside a scope that already binds the original name
+      `
+      const { id: renamedId } = source;
+      const buildPayload = (id: string) => ({ id: renamedId, incoming: id });
+      `,
     ],
     invalid: [
       // Basic pattern from the issue
@@ -225,6 +239,19 @@ ruleTester.run(
         output: `
         const { token } = session ?? {};
         return { token: token };
+        `,
+      },
+
+      // Nested destructuring rename
+      {
+        code: `
+        const { user: { name: userName } } = data;
+        const card = { name: userName };
+        `,
+        errors: [{ messageId: 'unnecessaryDestructuringRename' }],
+        output: `
+        const { user: { name } } = data;
+        const card = { name: name };
         `,
       },
     ],

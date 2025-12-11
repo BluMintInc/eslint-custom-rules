@@ -12,6 +12,7 @@ type RenameCandidate = {
 
 type ResolvedCandidate = RenameCandidate & {
   targetProperty: TSESTree.Property;
+  reference: TSESLint.Scope.Reference;
 };
 
 function getRenamedPropertyInfo(
@@ -80,9 +81,27 @@ export const noUnnecessaryDestructuringRename = createRule<[], MessageIds>({
       return context.getDeclaredVariables(node);
     };
 
+    function collectDeclaredVariablesUpTree(
+      node: TSESTree.Node | null,
+    ): TSESLint.Scope.Variable[] {
+      const variables: TSESLint.Scope.Variable[] = [];
+      let currentNode: TSESTree.Node | null = node;
+
+      while (currentNode) {
+        for (const variable of getDeclaredVariables(currentNode)) {
+          if (!variables.includes(variable)) {
+            variables.push(variable);
+          }
+        }
+
+        currentNode = currentNode.parent ?? null;
+      }
+
+      return variables;
+    }
+
     function captureCandidates(pattern: TSESTree.ObjectPattern): void {
-      const declarationTarget = pattern.parent ?? pattern;
-      const declaredVariables = getDeclaredVariables(declarationTarget);
+      const declaredVariables = collectDeclaredVariablesUpTree(pattern);
 
       for (const property of pattern.properties) {
         if (property.type !== AST_NODE_TYPES.Property) {
@@ -136,6 +155,80 @@ export const noUnnecessaryDestructuringRename = createRule<[], MessageIds>({
       return parent;
     }
 
+    function scopeHasNameInChain(
+      scope: TSESLint.Scope.Scope | null,
+      stopScope: TSESLint.Scope.Scope,
+      name: string,
+    ): boolean {
+      let currentScope: TSESLint.Scope.Scope | null = scope;
+
+      while (currentScope) {
+        if (currentScope.set.has(name)) {
+          return true;
+        }
+
+        if (currentScope === stopScope) {
+          break;
+        }
+
+        currentScope = currentScope.upper;
+      }
+
+      return false;
+    }
+
+    function referencesNameWithoutLocalBinding(
+      scope: TSESLint.Scope.Scope,
+      name: string,
+    ): boolean {
+      const scopesToCheck: TSESLint.Scope.Scope[] = [scope];
+
+      while (scopesToCheck.length > 0) {
+        const currentScope = scopesToCheck.pop()!;
+
+        if (!currentScope.set.has(name)) {
+          const hasReference =
+            currentScope.references.some(
+              (reference) => reference.identifier.name === name,
+            ) ||
+            currentScope.through.some(
+              (reference) => reference.identifier.name === name,
+            );
+
+          if (hasReference) {
+            return true;
+          }
+        }
+
+        for (const childScope of currentScope.childScopes) {
+          if (!childScope.set.has(name)) {
+            scopesToCheck.push(childScope);
+          }
+        }
+      }
+
+      return false;
+    }
+
+    function isSafeToInlineOriginal(
+      reference: TSESLint.Scope.Reference,
+      variable: TSESLint.Scope.Variable,
+      originalName: string,
+    ): boolean {
+      const declarationScope = variable.scope;
+      const referenceScope = reference.from ?? declarationScope;
+
+      if (declarationScope.set.has(originalName)) {
+        return false;
+      }
+
+      if (scopeHasNameInChain(referenceScope, declarationScope, originalName)) {
+        return false;
+      }
+
+      return !referencesNameWithoutLocalBinding(declarationScope, originalName);
+    }
+
     return {
       ObjectPattern(node) {
         captureCandidates(node);
@@ -167,6 +260,12 @@ export const noUnnecessaryDestructuringRename = createRule<[], MessageIds>({
           const [{ reference: matchedReference, property: targetProperty }] =
             matchingReferences;
 
+          if (
+            !isSafeToInlineOriginal(matchedReference, variable, originalName)
+          ) {
+            continue;
+          }
+
           const hasOtherUsages = variable.references.some((ref) => {
             if (ref === matchedReference) {
               return false;
@@ -196,6 +295,7 @@ export const noUnnecessaryDestructuringRename = createRule<[], MessageIds>({
             aliasIdentifier,
             variable,
             targetProperty,
+            reference: matchedReference,
           });
         }
 
