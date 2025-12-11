@@ -850,10 +850,6 @@ const DIS_EXCEPTIONS = [
   'dismissal',
   'disk',
   'disks',
-];
-
-// Domain-specific negative-prefix terms that should not be flagged
-const DOMAIN_NEGATIVE_PREFIX_EXCEPTIONS = [
   'dispute',
   'disputed',
   'disputes',
@@ -867,7 +863,6 @@ const EXCEPTION_WORDS_SET = new Set(
     ...NO_EXCEPTIONS,
     ...UN_EXCEPTIONS,
     ...DIS_EXCEPTIONS,
-    ...DOMAIN_NEGATIVE_PREFIX_EXCEPTIONS,
   ].map((word) => word.toLowerCase()),
 );
 
