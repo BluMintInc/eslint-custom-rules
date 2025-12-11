@@ -459,14 +459,23 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
               scheduledImportFix = true;
             }
 
-            const lineStart = node.range
-              ? sourceCode.text.lastIndexOf('\n', node.range[0] - 1) + 1
+            const insertionTarget =
+              node.decorators && node.decorators.length > 0
+                ? node.decorators[0]
+                : node;
+            const insertionStart = insertionTarget.range
+              ? insertionTarget.range[0]
+              : node.range
+              ? node.range[0]
               : 0;
-            const indent = ' '.repeat(node.loc.start.column);
+            const text = sourceCode.text;
+            const lineStart = text.lastIndexOf('\n', insertionStart - 1) + 1;
+            const leadingWhitespace =
+              text.slice(lineStart, insertionStart).match(/^[ \t]*/)?.[0] ?? '';
             fixes.push(
               fixer.insertTextBeforeRange(
                 [lineStart, lineStart],
-                `${indent}@${decoratorIdent}()\n`,
+                `${leadingWhitespace}@${decoratorIdent}()\n`,
               ),
             );
 
