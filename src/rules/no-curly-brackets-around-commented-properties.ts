@@ -116,10 +116,9 @@ function getSiblingIndent(
   return indent;
 }
 
-function computeReplacement(
+function extractContentBetweenBraces(
   sourceCode: Readonly<TSESLint.SourceCode>,
   node: TSESTree.BlockStatement,
-  baseIndentOverride?: string | null,
 ): string | null {
   const openingBrace = sourceCode.getFirstToken(node);
   const closingBrace = sourceCode.getLastToken(node);
@@ -129,52 +128,92 @@ function computeReplacement(
     return null;
   }
 
-  const between = sourceCode.text.slice(
-    openingBrace.range[1],
-    closingBrace.range[0],
-  );
+  return sourceCode.text.slice(openingBrace.range[1], closingBrace.range[0]);
+}
 
-  const lines = between.split('\n');
+function trimEmptyLines(lines: string[]): string[] {
+  const result = [...lines];
 
-  while (lines.length > 0 && lines[0].trim() === '') {
-    lines.shift();
+  while (result.length > 0 && result[0].trim() === '') {
+    result.shift();
   }
 
-  while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
-    lines.pop();
+  while (result.length > 0 && result[result.length - 1].trim() === '') {
+    result.pop();
   }
 
-  /* istanbul ignore next -- empty blocks are filtered earlier */
-  if (!lines.length) {
+  return result;
+}
+
+function determineBaseIndent(
+  indentFromLine: string,
+  baseIndentOverride?: string | null,
+): string {
+  if (baseIndentOverride === null || baseIndentOverride === undefined) {
+    return indentFromLine;
+  }
+
+  return baseIndentOverride.length <= indentFromLine.length
+    ? baseIndentOverride
+    : indentFromLine;
+}
+
+function calculateMinAdditionalIndent(lines: string[]): number {
+  const indents = lines
+    .filter((line) => line.trim() !== '')
+    .map((line) => line.match(/^\s*/)?.[0].length ?? 0);
+
+  return indents.length ? Math.min(...indents) : 0;
+}
+
+function normalizeLineIndentation(
+  lines: string[],
+  extraIndent: number,
+  minAdditionalIndent: number,
+): string[] {
+  const indentPrefix = extraIndent > 0 ? ' '.repeat(extraIndent) : '';
+
+  return lines.map((line) => {
+    const currentIndent = line.match(/^\s*/)?.[0].length ?? 0;
+    const removeLength = Math.min(currentIndent, minAdditionalIndent);
+    const withoutIndent =
+      removeLength > 0 ? line.slice(Math.min(removeLength, line.length)) : line;
+    return `${indentPrefix}${withoutIndent.trimEnd()}`;
+  });
+}
+
+function computeReplacement(
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  node: TSESTree.BlockStatement,
+  baseIndentOverride?: string | null,
+): string | null {
+  const content = extractContentBetweenBraces(sourceCode, node);
+
+  if (content === null) {
     return null;
   }
 
-  const indentOfBlockLine =
-    baseIndentOverride ??
-    sourceCode.lines[node.loc.start.line - 1]?.match(/^\s*/)?.[0] ??
-    '';
+  const trimmedLines = trimEmptyLines(content.split('\n'));
 
-  const additionalIndents = lines
-    .filter((line) => line.trim() !== '')
-    .map((line) => {
-      const indentLength = line.match(/^\s*/)?.[0].length ?? 0;
-      return Math.max(indentLength - indentOfBlockLine.length, 0);
-    });
+  /* istanbul ignore next -- empty blocks are filtered earlier */
+  if (!trimmedLines.length) {
+    return null;
+  }
 
-  const minAdditionalIndent = additionalIndents.length
-    ? Math.min(...additionalIndents)
-    : 0;
+  const indentFromLine =
+    sourceCode.lines[node.loc.start.line - 1]?.match(/^\s*/)?.[0] ?? '';
 
-  const normalizedLines = lines.map((line) => {
-    const currentIndent = line.match(/^\s*/)?.[0].length ?? 0;
-    const removeLength = Math.min(
-      currentIndent,
-      indentOfBlockLine.length + minAdditionalIndent,
-    );
-    const withoutIndent =
-      removeLength > 0 ? line.slice(Math.min(removeLength, line.length)) : line;
-    return `${indentOfBlockLine}${withoutIndent.trimEnd()}`;
-  });
+  const targetIndent = determineBaseIndent(indentFromLine, baseIndentOverride);
+
+  const indentDelta = Math.max(targetIndent.length - indentFromLine.length, 0);
+
+  const minAdditionalIndent = calculateMinAdditionalIndent(trimmedLines);
+
+  const normalizedLines = normalizeLineIndentation(
+    trimmedLines,
+    indentDelta,
+    minAdditionalIndent,
+  );
 
   return normalizedLines.join('\n');
 }

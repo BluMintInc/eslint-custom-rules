@@ -126,7 +126,7 @@ namespace TournamentSettings {
         output: `
 namespace TournamentSettings {
   export interface Settings {}
-    // deprecatedField: number;
+  // deprecatedField: number;
   export interface NextGen {}
 }
         `,
@@ -219,7 +219,7 @@ namespace Legacy {
         `,
         output: `
 namespace Legacy {
-    // value: number;
+  // value: number;
 }
         `,
         errors: [{ messageId: 'removeCommentWrappedBlock' }],
