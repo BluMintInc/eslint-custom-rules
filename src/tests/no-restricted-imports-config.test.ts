@@ -50,7 +50,7 @@ describe('recommended no-restricted-imports override for frontend/backend bounda
 
   it('flags Cloud Function .f.ts files importing from frontend src/**', async () => {
     const messages = await lint(
-      "import { AuthClient } from '../../src/util/auth/client';",
+      "import { AuthClient } from '../../../src/util/auth/client';",
       'functions/src/auth/handle-login.f.ts',
     );
 
@@ -60,6 +60,15 @@ describe('recommended no-restricted-imports override for frontend/backend bounda
         message: expect.stringContaining('Cloud Functions'),
       }),
     ]);
+  });
+
+  it('allows Cloud Function .f.ts files importing functions/src backend modules', async () => {
+    const messages = await lint(
+      "import { AuthClient } from '../../src/util/auth/client';",
+      'functions/src/auth/handle-login.f.ts',
+    );
+
+    expect(messages).toHaveLength(0);
   });
 
   it('allows Cloud Function .f.ts files importing other backend modules', async () => {

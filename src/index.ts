@@ -289,7 +289,40 @@ module.exports = {
       },
       overrides: [
         {
+          files: ['functions/src/**/*.f.ts'],
+          rules: {
+            'no-restricted-imports': [
+              'error',
+              {
+                patterns: [
+                  {
+                    /**
+                     * ESLint's no-restricted-imports needs explicit patterns
+                     * for each relative depth. These entries cover up to six
+                     * directory traversals so functions/src code cannot escape
+                     * into the frontend src/. Projects using path aliases
+                     * (e.g., @/src/**) should add matching restrictions for
+                     * those aliases in their own configs.
+                     */
+                    group: [
+                      'src/**',
+                      '../../../src/**',
+                      '../../../../src/**',
+                      '../../../../../src/**',
+                      '../../../../../../src/**',
+                      '../../../../../../../src/**',
+                    ],
+                    message:
+                      'Backend Cloud Functions (.f.ts under functions/) must not import frontend modules from src/**. Frontend code can depend on browser-only APIs and bundling it into Cloud Functions breaks server execution; move shared logic into functions/src or a shared package.',
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        {
           files: ['functions/**/*.f.ts'],
+          excludedFiles: ['functions/src/**/*.f.ts'],
           rules: {
             'no-restricted-imports': [
               'error',
