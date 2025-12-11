@@ -10,4 +10,3 @@
     "stop": [{ "command": ".cursor/hooks/stop.sh" }]
   }
 }
-

@@ -2,8 +2,27 @@ import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'parallelizeAsyncOperations';
+type Options = [
+  {
+    sideEffectPatterns?: Array<string | RegExp>;
+  },
+];
 
-export const parallelizeAsyncOperations = createRule<[], MessageIds>({
+const defaultOptions: Options = [
+  {
+    sideEffectPatterns: [
+      'updatecounter',
+      'setcounter',
+      'incrementcounter',
+      'decrementcounter',
+      'updatethreshold',
+      'setthreshold',
+      'checkthreshold',
+    ],
+  },
+];
+
+export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
   name: 'parallelize-async-operations',
   meta: {
     type: 'suggestion',
@@ -13,14 +32,37 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
       recommended: 'error',
     },
     fixable: 'code',
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          sideEffectPatterns: {
+            type: 'array',
+            items: {
+              anyOf: [
+                { type: 'string' },
+                { type: 'object', instanceof: 'RegExp' },
+              ],
+            },
+            default: [],
+          },
+        },
+        additionalProperties: false,
+      },
+    ],
     messages: {
       parallelizeAsyncOperations:
         'Multiple sequential awaits detected. Consider using Promise.all() to parallelize independent async operations for better performance.',
     },
   },
-  defaultOptions: [],
-  create(context) {
+  defaultOptions,
+  create(context, [options]) {
+    const sourceCode = context.getSourceCode();
+    const sideEffectMatchers = (options?.sideEffectPatterns ?? []).map(
+      (pattern) =>
+        typeof pattern === 'string' ? new RegExp(pattern, 'i') : pattern,
+    );
+    const reportedRanges = new Set<string>();
     /**
      * Checks if a node is an await expression
      */
@@ -129,6 +171,7 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
     function hasDependencies(
       awaitNodes: TSESTree.Node[],
       variableNames: Set<string>,
+      sideEffectPatterns: RegExp[],
     ): boolean {
       // If we have fewer than 2 nodes, there are no dependencies to check
       if (awaitNodes.length < 2) {
@@ -164,43 +207,16 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
             callee.type === AST_NODE_TYPES.MemberExpression &&
             callee.property.type === AST_NODE_TYPES.Identifier
           ) {
-            const methodName = callee.property.name.toLowerCase();
-
-            // Only flag operations that are very likely to have side effects that affect other operations
-            const sideEffectMethods = [
-              'updatecounter',
-              'setcounter',
-              'incrementcounter',
-              'decrementcounter',
-              'updatethreshold',
-              'setthreshold',
-              'checkthreshold',
-            ];
-
-            if (
-              sideEffectMethods.some((method) => methodName.includes(method))
-            ) {
+            const methodName = callee.property.name;
+            if (sideEffectPatterns.some((pattern) => pattern.test(methodName))) {
               return true;
             }
           }
 
-          // Check for function calls that might indicate side effects
           if (callee.type === AST_NODE_TYPES.Identifier) {
-            const functionName = callee.name.toLowerCase();
-
-            // Only flag operations that are very likely to have side effects that affect other operations
-            const sideEffectFunctions = [
-              'updatecounter',
-              'setcounter',
-              'incrementcounter',
-              'decrementcounter',
-              'updatethreshold',
-              'setthreshold',
-              'checkthreshold',
-            ];
-
+            const functionName = callee.name;
             if (
-              sideEffectFunctions.some((func) => functionName.includes(func))
+              sideEffectPatterns.some((pattern) => pattern.test(functionName))
             ) {
               return true;
             }
@@ -333,8 +349,6 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
       fixer: TSESLint.RuleFixer,
       awaitNodes: TSESTree.Node[],
     ): TSESLint.RuleFix | null {
-      const sourceCode = context.getSourceCode();
-
       // Extract the await expressions
       const awaitExpressions = awaitNodes
         .map((node) => getAwaitExpression(node))
@@ -349,34 +363,36 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
         sourceCode.getText(expr.argument),
       );
 
-      // Check if we have variable declarations that need to be preserved
-      const variableNames: (string | null)[] = [];
+      const idsText: string[] = [];
+      const declKinds = new Set<TSESTree.VariableDeclaration['kind']>();
       let hasVariableDeclarations = false;
 
       for (const node of awaitNodes) {
         if (node.type === AST_NODE_TYPES.VariableDeclaration) {
           hasVariableDeclarations = true;
+          declKinds.add(node.kind);
           for (const declarator of node.declarations) {
-            if (declarator.id.type === AST_NODE_TYPES.Identifier) {
-              variableNames.push(declarator.id.name);
-            } else {
-              variableNames.push(null); // For complex patterns
-            }
+            idsText.push(sourceCode.getText(declarator.id));
           }
         } else if (node.type === AST_NODE_TYPES.ExpressionStatement) {
-          // Expression statement without variable assignment
-          variableNames.push(null);
+          idsText.push('');
         }
       }
 
       let promiseAllText: string;
 
       if (hasVariableDeclarations) {
-        // Create destructuring assignment with Promise.all
-        const destructuringPattern = variableNames
-          .map((name) => name || '')
-          .join(', ');
-        promiseAllText = `const [${destructuringPattern}] = await Promise.all([\n  ${awaitArguments.join(
+        if (declKinds.size !== 1) {
+          return null;
+        }
+
+        if (idsText.length !== awaitArguments.length) {
+          return null;
+        }
+
+        const destructuringPattern = idsText.join(', ');
+        const declKind = Array.from(declKinds)[0];
+        promiseAllText = `${declKind} [${destructuringPattern}] = await Promise.all([\n  ${awaitArguments.join(
           ',\n  ',
         )}\n]);`;
       } else {
@@ -395,54 +411,51 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
       return fixer.replaceTextRange([startPos, endPos], promiseAllText);
     }
 
-    return {
-      BlockStatement(node) {
-        const awaitNodes: TSESTree.Node[] = [];
+    const processStatementList = (statements: TSESTree.Statement[]): void => {
+      const awaitNodes: TSESTree.Node[] = [];
 
-        // Collect consecutive await expressions or variable declarations with await
-        for (const statement of node.body) {
+      for (const statement of statements) {
+        if (
+          isExpressionStatementWithAwait(statement) ||
+          isVariableDeclarationWithAwait(statement)
+        ) {
+          awaitNodes.push(statement);
+        } else if (awaitNodes.length >= 2) {
+          const variableNames = extractVariableNames(awaitNodes);
+
           if (
-            isExpressionStatementWithAwait(statement) ||
-            isVariableDeclarationWithAwait(statement)
+            !hasDependencies(awaitNodes, variableNames, sideEffectMatchers) &&
+            !areInTryCatchBlocks(awaitNodes) &&
+            !areInLoop(awaitNodes)
           ) {
-            awaitNodes.push(statement);
-          } else if (awaitNodes.length >= 2) {
-            // We found a non-await statement after a sequence of awaits
-            // Check if we should report the sequence
-
-            // Extract variable names from variable declarations
-            const variableNames = extractVariableNames(awaitNodes);
-
-            // Check if there are dependencies between awaits
-            if (
-              !hasDependencies(awaitNodes, variableNames) &&
-              !areInTryCatchBlocks(awaitNodes) &&
-              !areInLoop(awaitNodes)
-            ) {
+            const key = `${awaitNodes[0].range?.[0]}-${awaitNodes[awaitNodes.length - 1].range?.[1]}`;
+            if (!reportedRanges.has(key)) {
+              reportedRanges.add(key);
               context.report({
                 node: awaitNodes[0],
                 messageId: 'parallelizeAsyncOperations',
                 fix: (fixer) => generateFix(fixer, awaitNodes),
               });
             }
-
-            // Reset for the next sequence
-            awaitNodes.length = 0;
-          } else {
-            // Reset if we encounter a non-await statement
-            awaitNodes.length = 0;
           }
+
+          awaitNodes.length = 0;
+        } else {
+          awaitNodes.length = 0;
         }
+      }
 
-        // Check the last sequence if it exists
-        if (awaitNodes.length >= 2) {
-          const variableNames = extractVariableNames(awaitNodes);
+      if (awaitNodes.length >= 2) {
+        const variableNames = extractVariableNames(awaitNodes);
 
-          if (
-            !hasDependencies(awaitNodes, variableNames) &&
-            !areInTryCatchBlocks(awaitNodes) &&
-            !areInLoop(awaitNodes)
-          ) {
+        if (
+          !hasDependencies(awaitNodes, variableNames, sideEffectMatchers) &&
+          !areInTryCatchBlocks(awaitNodes) &&
+          !areInLoop(awaitNodes)
+        ) {
+          const key = `${awaitNodes[0].range?.[0]}-${awaitNodes[awaitNodes.length - 1].range?.[1]}`;
+          if (!reportedRanges.has(key)) {
+            reportedRanges.add(key);
             context.report({
               node: awaitNodes[0],
               messageId: 'parallelizeAsyncOperations',
@@ -450,6 +463,15 @@ export const parallelizeAsyncOperations = createRule<[], MessageIds>({
             });
           }
         }
+      }
+    };
+
+    return {
+      Program(node) {
+        processStatementList(node.body);
+      },
+      BlockStatement(node) {
+        processStatementList(node.body);
       },
     };
   },
