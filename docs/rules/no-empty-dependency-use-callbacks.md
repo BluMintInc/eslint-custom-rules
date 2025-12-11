@@ -177,4 +177,5 @@ function Component() {
 ```
 
 Callbacks that reference component scope, return JSX, or are declared in multi-variable statements are reported without an auto-fix to avoid unsafe refactors. If a callback must stay for memoization or HMR reasons, add an `eslint-disable-next-line @blumintinc/blumint/no-empty-dependency-use-callbacks` comment with a short justification.
-Callbacks that rely on component-scoped type aliases or interfaces are treated as component-bound and will not be hoisted.
+Callbacks that rely on type aliases or interfaces defined in any enclosing block scope are treated as component-bound and will not be hoisted.
+If the module already defines a value with the same name, the fixer is skipped to avoid introducing duplicate declarations.

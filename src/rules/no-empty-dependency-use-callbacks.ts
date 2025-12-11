@@ -87,10 +87,11 @@ function isPropertyKey(
 function collectNearestBlockTypeBindings(
   node: TSESTree.Node,
 ): Set<string> {
+  const localTypes = new Set<string>();
   let current: TSESTree.Node | undefined = node.parent ?? undefined;
+
   while (current) {
     if (current.type === AST_NODE_TYPES.BlockStatement) {
-      const localTypes = new Set<string>();
       for (const statement of current.body) {
         if (
           statement.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
@@ -99,14 +100,14 @@ function collectNearestBlockTypeBindings(
           localTypes.add(statement.id.name);
         }
       }
-      return localTypes;
     }
     if (current.type === AST_NODE_TYPES.Program) {
       break;
     }
     current = current.parent ?? undefined;
   }
-  return new Set<string>();
+
+  return localTypes;
 }
 
 function usesLocalTypeBindings(
@@ -266,6 +267,105 @@ function analyzeExternalReferences(
   return { hasComponentScopeRef };
 }
 
+function getProgramNode(node: TSESTree.Node): TSESTree.Program | null {
+  let current: TSESTree.Node | undefined = node;
+  while (current && current.type !== AST_NODE_TYPES.Program) {
+    current = current.parent ?? undefined;
+  }
+  return current?.type === AST_NODE_TYPES.Program ? current : null;
+}
+
+function collectPatternIdentifiers(
+  pattern:
+    | TSESTree.BindingName
+    | TSESTree.AssignmentPattern
+    | TSESTree.RestElement,
+  names: Set<string>,
+): void {
+  switch (pattern.type) {
+    case AST_NODE_TYPES.Identifier:
+      names.add(pattern.name);
+      return;
+    case AST_NODE_TYPES.ObjectPattern:
+      for (const property of pattern.properties) {
+        if (property.type === AST_NODE_TYPES.Property) {
+          collectPatternIdentifiers(
+            property.value as TSESTree.BindingName,
+            names,
+          );
+        } else if (property.type === AST_NODE_TYPES.RestElement) {
+          collectPatternIdentifiers(
+            property.argument as TSESTree.BindingName,
+            names,
+          );
+        }
+      }
+      return;
+    case AST_NODE_TYPES.ArrayPattern:
+      for (const element of pattern.elements) {
+        if (!element) continue;
+        if (element.type === AST_NODE_TYPES.RestElement) {
+          collectPatternIdentifiers(
+            element.argument as TSESTree.BindingName,
+            names,
+          );
+        } else {
+          collectPatternIdentifiers(element as TSESTree.BindingName, names);
+        }
+      }
+      return;
+    case AST_NODE_TYPES.RestElement:
+      collectPatternIdentifiers(
+        pattern.argument as TSESTree.BindingName,
+        names,
+      );
+      return;
+    case AST_NODE_TYPES.AssignmentPattern:
+      collectPatternIdentifiers(pattern.left, names);
+      return;
+  }
+}
+
+function getModuleScopeValueBindings(program: TSESTree.Program): Set<string> {
+  const names = new Set<string>();
+
+  for (const statement of program.body) {
+    const target =
+      statement.type === AST_NODE_TYPES.ExportNamedDeclaration ||
+      statement.type === AST_NODE_TYPES.ExportDefaultDeclaration
+        ? statement.declaration
+        : statement;
+
+    if (!target) continue;
+
+    if (target.type === AST_NODE_TYPES.ImportDeclaration) {
+      for (const specifier of target.specifiers) {
+        names.add(specifier.local.name);
+      }
+      continue;
+    }
+
+    if (target.type === AST_NODE_TYPES.VariableDeclaration) {
+      for (const declaration of target.declarations) {
+        collectPatternIdentifiers(declaration.id, names);
+      }
+      continue;
+    }
+
+    if (
+      target.type === AST_NODE_TYPES.FunctionDeclaration ||
+      target.type === AST_NODE_TYPES.ClassDeclaration ||
+      target.type === AST_NODE_TYPES.TSEnumDeclaration
+    ) {
+      if (target.id) {
+        names.add(target.id.name);
+      }
+    }
+  }
+
+  return names;
+}
+
 function buildHoistFixes(
   context: Readonly<TSESLint.RuleContext<MessageIds, Options>>,
   callExpression: TSESTree.CallExpression,
@@ -299,6 +399,14 @@ function buildHoistFixes(
   const hoistTarget = findHoistTarget(varDecl.parent);
   if (!hoistTarget) {
     return null;
+  }
+
+  const programNode = getProgramNode(hoistTarget);
+  if (programNode) {
+    const moduleBindings = getModuleScopeValueBindings(programNode);
+    if (moduleBindings.has(declarator.id.name)) {
+      return null;
+    }
   }
 
   const sourceCode = context.getSourceCode();

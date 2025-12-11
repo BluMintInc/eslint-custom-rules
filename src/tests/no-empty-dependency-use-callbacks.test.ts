@@ -81,6 +81,17 @@ function Component() {
 `,
   `
 import { useCallback } from 'react';
+function Outer() {
+  type LocalType = { value: number };
+  function Inner() {
+    const handler = useCallback((input: LocalType) => input.value, []);
+    return handler({ value: 1 });
+  }
+  return <Inner />;
+}
+`,
+  `
+import { useCallback } from 'react';
 function Component({ formatter }) {
   const formatPrice = useCallback((price) => formatter(price), [formatter]);
   return <span>{formatPrice(10)}</span>;
@@ -338,6 +349,18 @@ function Component() {
   return <div data-id={marker}>{handler()}</div>;
 }
     `,
+  },
+  {
+    code: `
+import { useCallback } from 'react';
+const formatCurrency = (value) => value.toFixed(2);
+function Component() {
+  const formatCurrency = useCallback((amount) => amount.toFixed(2), []);
+  return <span>{formatCurrency(10)}</span>;
+}
+    `,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: null,
   },
 ];
 
