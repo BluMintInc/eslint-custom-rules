@@ -2,6 +2,11 @@ import { ruleTesterTs } from '../utils/ruleTester';
 import rule, { RULE_NAME } from '../rules/enforce-dynamic-imports';
 
 const ruleTester = ruleTesterTs;
+const buildError = (source: string) =>
+  ({
+    messageId: 'dynamicImportRequired' as const,
+    data: { source },
+  });
 
 ruleTester.run(RULE_NAME, rule, {
   valid: [
@@ -49,43 +54,43 @@ ruleTester.run(RULE_NAME, rule, {
     {
       code: `import VideoSDK from '@stream-io/video-react-sdk';`,
       options: [{ libraries: ['@stream-io/video-react-sdk'] }],
-      errors: [{ messageId: 'dynamicImportRequired' }],
+      errors: [buildError('@stream-io/video-react-sdk')],
     },
     // Named imports from blacklisted library
     {
       code: `import { VideoCall } from '@stream-io/video-react-sdk';`,
       options: [{ libraries: ['@stream-io/video-react-sdk'] }],
-      errors: [{ messageId: 'dynamicImportRequired' }],
+      errors: [buildError('@stream-io/video-react-sdk')],
     },
     // Multiple named imports from blacklisted library
     {
       code: `import { VideoCall, AudioCall } from '@stream-io/video-react-sdk';`,
       options: [{ libraries: ['@stream-io/video-react-sdk'] }],
-      errors: [{ messageId: 'dynamicImportRequired' }],
+      errors: [buildError('@stream-io/video-react-sdk')],
     },
     // Named imports with aliases from blacklisted library
     {
       code: `import { VideoCall as VC } from '@stream-io/video-react-sdk';`,
       options: [{ libraries: ['@stream-io/video-react-sdk'] }],
-      errors: [{ messageId: 'dynamicImportRequired' }],
+      errors: [buildError('@stream-io/video-react-sdk')],
     },
     // Side-effect import from blacklisted library
     {
       code: `import '@stream-io/video-react-sdk';`,
       options: [{ libraries: ['@stream-io/video-react-sdk'] }],
-      errors: [{ messageId: 'dynamicImportRequired' }],
+      errors: [buildError('@stream-io/video-react-sdk')],
     },
     // Glob pattern matching
     {
       code: `import { VideoCall } from '@stream-io/video-react-sdk';`,
       options: [{ libraries: ['@stream-io/*'] }],
-      errors: [{ messageId: 'dynamicImportRequired' }],
+      errors: [buildError('@stream-io/video-react-sdk')],
     },
     // Multiple libraries with glob patterns
     {
       code: `import { SomeComponent } from 'some-heavy-library';`,
       options: [{ libraries: ['@stream-io/*', 'some-heavy-*'] }],
-      errors: [{ messageId: 'dynamicImportRequired' }],
+      errors: [buildError('some-heavy-library')],
     },
     // Type imports should be invalid if allowImportType is false
     {
@@ -93,7 +98,7 @@ ruleTester.run(RULE_NAME, rule, {
       options: [
         { libraries: ['@stream-io/video-react-sdk'], allowImportType: false },
       ],
-      errors: [{ messageId: 'dynamicImportRequired' }],
+      errors: [buildError('@stream-io/video-react-sdk')],
     },
   ],
 });
