@@ -93,9 +93,13 @@ function collectNamesFromPattern(
           }
         } else if (value.left.type === AST_NODE_TYPES.ObjectPattern) {
           collectNamesFromPattern(value.left, names, orderedNames);
+        } else if (value.left.type === AST_NODE_TYPES.ArrayPattern) {
+          collectNamesFromArrayPattern(value.left, names, orderedNames);
         }
       } else if (value.type === AST_NODE_TYPES.ObjectPattern) {
         collectNamesFromPattern(value, names, orderedNames);
+      } else if (value.type === AST_NODE_TYPES.ArrayPattern) {
+        collectNamesFromArrayPattern(value, names, orderedNames);
       }
     } else if (property.type === AST_NODE_TYPES.RestElement) {
       if (property.argument.type === AST_NODE_TYPES.Identifier) {
@@ -105,6 +109,50 @@ function collectNamesFromPattern(
         }
       } else if (property.argument.type === AST_NODE_TYPES.ObjectPattern) {
         collectNamesFromPattern(property.argument, names, orderedNames);
+      } else if (property.argument.type === AST_NODE_TYPES.ArrayPattern) {
+        collectNamesFromArrayPattern(property.argument, names, orderedNames);
+      }
+    }
+  }
+}
+
+function collectNamesFromArrayPattern(
+  pattern: TSESTree.ArrayPattern,
+  names: Set<string>,
+  orderedNames: string[],
+): void {
+  for (const element of pattern.elements) {
+    if (!element) continue;
+    if (element.type === AST_NODE_TYPES.Identifier) {
+      if (!names.has(element.name)) {
+        names.add(element.name);
+        orderedNames.push(element.name);
+      }
+    } else if (element.type === AST_NODE_TYPES.AssignmentPattern) {
+      if (element.left.type === AST_NODE_TYPES.Identifier) {
+        if (!names.has(element.left.name)) {
+          names.add(element.left.name);
+          orderedNames.push(element.left.name);
+        }
+      } else if (element.left.type === AST_NODE_TYPES.ObjectPattern) {
+        collectNamesFromPattern(element.left, names, orderedNames);
+      } else if (element.left.type === AST_NODE_TYPES.ArrayPattern) {
+        collectNamesFromArrayPattern(element.left, names, orderedNames);
+      }
+    } else if (element.type === AST_NODE_TYPES.ObjectPattern) {
+      collectNamesFromPattern(element, names, orderedNames);
+    } else if (element.type === AST_NODE_TYPES.ArrayPattern) {
+      collectNamesFromArrayPattern(element, names, orderedNames);
+    } else if (element.type === AST_NODE_TYPES.RestElement) {
+      if (element.argument.type === AST_NODE_TYPES.Identifier) {
+        if (!names.has(element.argument.name)) {
+          names.add(element.argument.name);
+          orderedNames.push(element.argument.name);
+        }
+      } else if (element.argument.type === AST_NODE_TYPES.ObjectPattern) {
+        collectNamesFromPattern(element.argument, names, orderedNames);
+      } else if (element.argument.type === AST_NODE_TYPES.ArrayPattern) {
+        collectNamesFromArrayPattern(element.argument, names, orderedNames);
       }
     }
   }
@@ -116,28 +164,179 @@ function collectProperties(
   acc: Map<string, DestructuringProperty>,
 ): void {
   for (const property of pattern.properties) {
-    const text = sourceCode.getText(property);
-    let keyText = text;
+    const text = getSafePropertyText(property, sourceCode);
+    const keyText =
+      property.type === AST_NODE_TYPES.Property
+        ? property.key.type === AST_NODE_TYPES.Literal
+          ? String(property.key.value)
+          : property.key.type === AST_NODE_TYPES.Identifier
+          ? property.key.name
+          : sourceCode.getText(property.key)
+        : `...${sourceCode.getText(property.argument)}`;
 
-    if (property.type === AST_NODE_TYPES.Property) {
-      const keyNode = property.key;
-      if (keyNode.type === AST_NODE_TYPES.Identifier) {
-        keyText = keyNode.name;
-      } else if (keyNode.type === AST_NODE_TYPES.Literal) {
-        keyText = String(keyNode.value);
-      }
-    } else if (property.type === AST_NODE_TYPES.RestElement) {
-      keyText = `...${sourceCode.getText(property.argument)}`;
-    }
+    if (acc.has(keyText)) continue;
 
-    if (!acc.has(keyText)) {
-      acc.set(keyText, {
-        key: keyText,
-        text,
-        order: property.range ? property.range[0] : acc.size,
-      });
-    }
+    acc.set(keyText, {
+      key: keyText,
+      text,
+      order: property.range ? property.range[0] : acc.size,
+    });
   }
+}
+
+function renderArrayPatternWithDefaults(
+  pattern: TSESTree.ArrayPattern,
+  sourceCode: TSESLint.SourceCode,
+): string {
+  const elements = pattern.elements.map((element) => {
+    if (!element) return '';
+    if (element.type === AST_NODE_TYPES.Identifier) {
+      return sourceCode.getText(element);
+    }
+    if (element.type === AST_NODE_TYPES.AssignmentPattern) {
+      const left = element.left;
+      const leftText =
+        left.type === AST_NODE_TYPES.ObjectPattern
+          ? renderObjectPatternWithDefaults(left, sourceCode)
+          : left.type === AST_NODE_TYPES.ArrayPattern
+          ? renderArrayPatternWithDefaults(left, sourceCode)
+          : sourceCode.getText(left);
+      return `${leftText} = ${sourceCode.getText(element.right)}`;
+    }
+    if (element.type === AST_NODE_TYPES.ObjectPattern) {
+      const nested = renderObjectPatternWithDefaults(element, sourceCode);
+      return `${nested} = {}`;
+    }
+    if (element.type === AST_NODE_TYPES.ArrayPattern) {
+      const nested = renderArrayPatternWithDefaults(element, sourceCode);
+      return `${nested} = []`;
+    }
+    if (element.type === AST_NODE_TYPES.RestElement) {
+      const argument = element.argument;
+      if (argument.type === AST_NODE_TYPES.ObjectPattern) {
+        return `...${renderObjectPatternWithDefaults(argument, sourceCode)}`;
+      }
+      if (argument.type === AST_NODE_TYPES.ArrayPattern) {
+        return `...${renderArrayPatternWithDefaults(argument, sourceCode)}`;
+      }
+      return `...${sourceCode.getText(argument)}`;
+    }
+    return sourceCode.getText(element);
+  });
+
+  return `[${elements.join(', ')}]`;
+}
+
+function renderObjectPatternWithDefaults(
+  pattern: TSESTree.ObjectPattern,
+  sourceCode: TSESLint.SourceCode,
+): string {
+  const properties = pattern.properties.map((property) => {
+    if (property.type === AST_NODE_TYPES.Property) {
+      if (property.shorthand) {
+        return sourceCode.getText(property);
+      }
+
+      const keyText = property.computed
+        ? `[${sourceCode.getText(property.key)}]`
+        : sourceCode.getText(property.key);
+      const value = property.value;
+
+      if (value.type === AST_NODE_TYPES.AssignmentPattern) {
+        const left = value.left;
+        if (
+          !property.computed &&
+          property.key.type === AST_NODE_TYPES.Identifier &&
+          left.type === AST_NODE_TYPES.Identifier &&
+          property.key.name === left.name
+        ) {
+          return `${sourceCode.getText(property.key)} = ${sourceCode.getText(value.right)}`;
+        }
+        const leftText =
+          left.type === AST_NODE_TYPES.ObjectPattern
+            ? renderObjectPatternWithDefaults(left, sourceCode)
+            : left.type === AST_NODE_TYPES.ArrayPattern
+            ? renderArrayPatternWithDefaults(left, sourceCode)
+            : sourceCode.getText(left);
+        return `${keyText}: ${leftText} = ${sourceCode.getText(value.right)}`;
+      }
+
+      if (value.type === AST_NODE_TYPES.ObjectPattern) {
+        const nested = renderObjectPatternWithDefaults(value, sourceCode);
+        return `${keyText}: ${nested} = {}`;
+      }
+
+      if (value.type === AST_NODE_TYPES.ArrayPattern) {
+        const nested = renderArrayPatternWithDefaults(value, sourceCode);
+        return `${keyText}: ${nested} = []`;
+      }
+
+      return `${keyText}: ${sourceCode.getText(value)}`;
+    }
+
+    if (property.type === AST_NODE_TYPES.RestElement) {
+      if (property.argument.type === AST_NODE_TYPES.ObjectPattern) {
+        return `...${renderObjectPatternWithDefaults(property.argument, sourceCode)}`;
+      }
+      if (property.argument.type === AST_NODE_TYPES.ArrayPattern) {
+        return `...${renderArrayPatternWithDefaults(property.argument, sourceCode)}`;
+      }
+      return `...${sourceCode.getText(property.argument)}`;
+    }
+
+    return sourceCode.getText(property);
+  });
+
+  return `{ ${properties.join(', ')} }`;
+}
+
+function getSafePropertyText(
+  property: TSESTree.Property | TSESTree.RestElement,
+  sourceCode: TSESLint.SourceCode,
+): string {
+  if (property.type === AST_NODE_TYPES.RestElement) {
+    return `...${sourceCode.getText(property.argument)}`;
+  }
+
+  if (property.shorthand) {
+    return sourceCode.getText(property);
+  }
+
+  const keyText = property.computed
+    ? `[${sourceCode.getText(property.key)}]`
+    : sourceCode.getText(property.key);
+  const value = property.value;
+
+  if (value.type === AST_NODE_TYPES.AssignmentPattern) {
+    const left = value.left;
+    if (
+      !property.computed &&
+      property.key.type === AST_NODE_TYPES.Identifier &&
+      left.type === AST_NODE_TYPES.Identifier &&
+      property.key.name === left.name
+    ) {
+      return `${sourceCode.getText(property.key)} = ${sourceCode.getText(value.right)}`;
+    }
+    const leftText =
+      left.type === AST_NODE_TYPES.ObjectPattern
+        ? renderObjectPatternWithDefaults(left, sourceCode)
+        : left.type === AST_NODE_TYPES.ArrayPattern
+        ? renderArrayPatternWithDefaults(left, sourceCode)
+        : sourceCode.getText(left);
+    return `${keyText}: ${leftText} = ${sourceCode.getText(value.right)}`;
+  }
+
+  if (value.type === AST_NODE_TYPES.ObjectPattern) {
+    const nested = renderObjectPatternWithDefaults(value, sourceCode);
+    return `${keyText}: ${nested} = {}`;
+  }
+
+  if (value.type === AST_NODE_TYPES.ArrayPattern) {
+    const nested = renderArrayPatternWithDefaults(value, sourceCode);
+    return `${keyText}: ${nested} = []`;
+  }
+
+  return `${keyText}: ${sourceCode.getText(value)}`;
 }
 
 function dependencyElements(
@@ -174,6 +373,14 @@ function testContainsObjectMember(
         }
         return base.type === AST_NODE_TYPES.Identifier && base.name === objectName;
       })()
+    ) {
+      found = true;
+      break;
+    }
+
+    if (
+      current.type === AST_NODE_TYPES.Identifier &&
+      current.name === objectName
     ) {
       found = true;
       break;
@@ -239,6 +446,35 @@ function fullLineRange(
   return [start, end];
 }
 
+function shouldSkipNestedFunction(
+  node: TSESTree.Node,
+  callback: TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression,
+): boolean {
+  return isFunctionNode(node) && node !== callback;
+}
+
+function hasPriorConditionalGuard(
+  node: TSESTree.Node,
+  baseName: string | null,
+  visitorKeys: Record<string, string[]>,
+): boolean {
+  if (!baseName) return false;
+  const parent = node.parent;
+  if (!parent || parent.type !== AST_NODE_TYPES.BlockStatement) return false;
+
+  const index = parent.body.indexOf(node as TSESTree.Statement);
+  if (index <= 0) return false;
+
+  return parent.body
+    .slice(0, index)
+    .some(
+      (statement) =>
+        statement.type === AST_NODE_TYPES.IfStatement &&
+        Boolean(statement.test) &&
+        testContainsObjectMember(statement.test, baseName, visitorKeys),
+    );
+}
+
 export const enforceEarlyDestructuring = createRule<[], MessageIds>({
   name: 'enforce-early-destructuring',
   meta: {
@@ -257,10 +493,11 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.getSourceCode();
+    const sourceCode =
+      (context as unknown as { sourceCode?: TSESLint.SourceCode }).sourceCode ??
+      context.getSourceCode();
     const visitorKeys =
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ((sourceCode as any).visitorKeys as Record<string, string[]>) ??
+      (sourceCode as unknown as { visitorKeys?: Record<string, string[]> }).visitorKeys ??
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (context as any).visitorKeys ??
       {};
@@ -296,8 +533,7 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
           const current = stack.shift();
           if (!current) continue;
 
-          if (isFunctionNode(current) && current !== callback) {
-            // Skip nested functions (covers async helpers)
+          if (shouldSkipNestedFunction(current, callback)) {
             continue;
           }
 
@@ -316,7 +552,10 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
                 if (!depTextSet.has(objectText)) continue;
 
                 const baseName = getBaseIdentifier(declarator.init);
-                if (isTypeNarrowingContext(current, baseName, visitorKeys)) {
+                if (
+                  hasPriorConditionalGuard(current, baseName, visitorKeys) ||
+                  isTypeNarrowingContext(current, baseName, visitorKeys)
+                ) {
                   continue;
                 }
 

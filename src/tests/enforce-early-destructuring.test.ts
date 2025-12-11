@@ -111,6 +111,17 @@ ruleTesterJsx.run(
           };
         `,
       },
+      {
+        code: `
+          const MyComponent = ({ response }) => {
+            useEffect(() => {
+              if (!response) return;
+              const { data } = response;
+              processData(data);
+            }, [response]);
+          };
+        `,
+      },
     ],
     invalid: [
       {
@@ -134,27 +145,6 @@ ruleTesterJsx.run(
               if (!canPlayAudio) return;
               startAudio();
             }, [canPlayAudio, startAudio]);
-          };
-        `,
-        errors: [{ messageId: 'hoistDestructuring' }],
-      },
-      {
-        code: `
-          const MyComponent = ({ response }) => {
-            useEffect(() => {
-              if (!response) return;
-              const { data } = response;
-              processData(data);
-            }, [response]);
-          };
-        `,
-        output: `
-          const MyComponent = ({ response }) => {
-            const { data } = (response) ?? {};
-            useEffect(() => {
-              if (!response) return;
-              processData(data);
-            }, [data]);
           };
         `,
         errors: [{ messageId: 'hoistDestructuring' }],
@@ -228,7 +218,7 @@ ruleTesterJsx.run(
         `,
         output: `
           const MyComponent = ({ user }) => {
-            const { profile: { name, age } } = (user) ?? {};
+            const { profile: { name, age } = {} } = (user) ?? {};
             useEffect(() => {
               renderProfile(name, age);
             }, [name, age]);
@@ -251,6 +241,25 @@ ruleTesterJsx.run(
             useEffect(() => {
               return canPlayAudio;
             }, [canPlayAudio]);
+          };
+        `,
+        errors: [{ messageId: 'hoistDestructuring' }],
+      },
+      {
+        code: `
+          const MyComponent = ({ response }) => {
+            useEffect(() => {
+              const { items: [first, second] } = response;
+              consume(first, second);
+            }, [response]);
+          };
+        `,
+        output: `
+          const MyComponent = ({ response }) => {
+            const { items: [first, second] = [] } = (response) ?? {};
+            useEffect(() => {
+              consume(first, second);
+            }, [first, second]);
           };
         `,
         errors: [{ messageId: 'hoistDestructuring' }],

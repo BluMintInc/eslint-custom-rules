@@ -12,11 +12,11 @@ Destructuring inside `useEffect`, `useCallback`, or `useMemo` forces the depende
 
 The fixer:
 - Hoists object destructuring out of the hook callback.
-- Adds a `?? {}` guard so destructuring is safe outside the hook.
+- Adds `?? {}` plus `= {}` / `= []` defaults for nested object or array patterns so hoisted destructuring is safe when inputs are nullish.
 - Replaces the object dependency with the destructured bindings.
 - Merges multiple destructures of the same object into a single hoisted pattern.
 - Skips destructuring inside async callbacks or nested async helpers.
-- Skips destructuring that depends on type-narrowing checks (e.g., `if (response.type === 'success')`).
+- Skips destructuring that depends on type-narrowing checks, including truthiness guards on the object (e.g., `if (!response) return;`).
 
 ### ❌ Incorrect
 
@@ -34,9 +34,8 @@ const MyComponent = () => {
 
 ```typescript
 useEffect(() => {
-  if (!response) return;
-  const { data } = response;
-  processData(data);
+  const { items: [first, second] } = response;
+  consume(first, second);
 }, [response]);
 ```
 
@@ -77,6 +76,14 @@ const { name, age } = user ?? {};
 useCallback(() => {
   log(name, age);
 }, [name, age]);
+```
+
+```typescript
+const { items: [first, second] = [] } = response ?? {};
+
+useEffect(() => {
+  consume(first, second);
+}, [first, second]);
 ```
 
 ### When to disable
