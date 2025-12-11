@@ -9,6 +9,7 @@
 This rule detects when Firestore transaction read operations are performed after write operations within the same transaction. In Firestore transactions, all read operations should be performed before any write operations to ensure transaction integrity and prevent potential errors.
 
 Reading after writing can lead to:
+
 - Unexpected behavior
 - Transaction failures
 - Infinite retry loops
@@ -44,6 +45,18 @@ await firestore.runTransaction(async (transaction) => {
     // This read happens after a conditional write
     const secondSnapshot = await transaction.get(otherDocRef); // ❌ Error
   }
+});
+```
+
+```typescript
+// Computed property access after a write (still a read)
+await firestore.runTransaction(async (transaction) => {
+  transaction.set(docRef, { status: 'processing' });
+
+  const method = 'get';
+  const docSnapshot = await transaction[method](otherDocRef); // ❌ Error
+
+  return docSnapshot.data();
 });
 ```
 
@@ -100,27 +113,47 @@ await runTransaction(getFirestore(), async (transaction) => {
 });
 ```
 
+```typescript
+// Computed property access is safe when reads happen first
+await firestore.runTransaction(async (transaction) => {
+  const method = 'get';
+  const doc = await transaction[method](docRef); // Read first, before writes
+
+  transaction.set(docRef, { status: 'processing' });
+  return doc.data();
+});
+```
+
 ## Edge Cases Handled
 
 ### 1. Conditional Write Operations
+
 The rule tracks control flow to identify reads that could potentially occur after writes, even in conditional branches.
 
 ### 2. Different Transaction Object Names
+
 The rule identifies transaction parameters regardless of their name (e.g., `transaction`, `tx`, `t`) and tracks their methods.
 
 ### 3. Multiple SDK Versions
+
 The rule recognizes various Firebase SDK imports and patterns:
 - Web v9 SDK (modular)
 - Web v8 SDK (namespaced)
 - Admin SDK
 
 ### 4. Transaction vs. Direct Methods
+
 The rule distinguishes between transaction methods (`transaction.get()`) and direct Firestore methods (`docRef.get()`), only flagging transaction operations.
 
 ### 5. Nested Function Calls
+
 The rule attempts to track transaction objects passed to other functions and analyzes their usage across function boundaries when possible.
 
-## When Not To Use
+### 6. Computed Transaction Method Access
+
+Computed property access (e.g., `transaction['get']`) is treated conservatively. Reads after writes are reported even when the method name is computed, and reported data includes the method name when it can be determined.
+
+## When Not To Use It
 
 This rule should generally always be enabled when working with Firestore transactions, as it enforces a fundamental requirement of Firestore's transaction model. However, you might consider disabling it if:
 

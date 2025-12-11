@@ -3,6 +3,8 @@ import { createRule } from '../utils/createRule';
 
 type MessageIds = 'noComplexObjects';
 
+const PASCAL_CASE_RE = /^[A-Z][a-zA-Z0-9]*$/;
+
 export const noComplexCloudParams = createRule<[], MessageIds>({
   name: 'no-complex-cloud-params',
   meta: {
@@ -146,7 +148,7 @@ export const noComplexCloudParams = createRule<[], MessageIds>({
           // Check if it's PascalCase (potential class instance)
           // PascalCase: starts with capital, has lowercase letters, no underscores
           const isPascalCase =
-            /^[A-Z][a-zA-Z0-9]*$/.test(node.name) && /[a-z]/.test(node.name);
+            PASCAL_CASE_RE.test(node.name) && /[a-z]/.test(node.name);
           return isPascalCase;
         }
 
