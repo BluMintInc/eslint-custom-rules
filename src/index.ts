@@ -129,6 +129,7 @@ import { noArrayLengthInDeps } from './rules/no-array-length-in-deps';
 import { preferUseDeepCompareMemo } from './rules/prefer-use-deep-compare-memo';
 import { noCircularReferences } from './rules/no-circular-references';
 import { noPassthroughGetters } from './rules/no-passthrough-getters';
+import { noResErrorStatusInOnrequest } from './rules/no-res-error-status-in-onrequest';
 import { noTryCatchAlreadyExistsInTransaction } from './rules/no-try-catch-already-exists-in-transaction';
 
 module.exports = {
@@ -272,6 +273,7 @@ module.exports = {
         '@blumintinc/blumint/prefer-url-tostring-over-tojson': 'error',
         '@blumintinc/blumint/prefer-next-dynamic': 'error',
         '@blumintinc/blumint/no-redundant-usecallback-wrapper': 'error',
+        '@blumintinc/blumint/no-res-error-status-in-onrequest': 'error',
         '@blumintinc/blumint/no-array-length-in-deps': 'error',
         '@blumintinc/blumint/prefer-use-deep-compare-memo': 'error',
         '@blumintinc/blumint/no-circular-references': 'error',
@@ -417,6 +419,7 @@ module.exports = {
     'prefer-url-tostring-over-tojson': preferUrlToStringOverToJson,
     'prefer-next-dynamic': preferNextDynamic,
     'no-redundant-usecallback-wrapper': noRedundantUseCallbackWrapper,
+    'no-res-error-status-in-onrequest': noResErrorStatusInOnrequest,
     'no-array-length-in-deps': noArrayLengthInDeps,
     'prefer-use-deep-compare-memo': preferUseDeepCompareMemo,
     'no-circular-references': noCircularReferences,
