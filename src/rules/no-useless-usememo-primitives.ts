@@ -213,12 +213,44 @@ function isPrimitiveExpressionWithoutTypes(expr: TSESTree.Expression): {
 } {
   switch (expr.type) {
     case AST_NODE_TYPES.Literal:
-    case AST_NODE_TYPES.Identifier:
+      return { primitive: true, kind: describePrimitiveExpression(expr) };
+    case AST_NODE_TYPES.Identifier: {
+      const identifier = expr as TSESTree.Identifier;
+      if (
+        identifier.name === 'undefined' ||
+        identifier.name === 'Infinity' ||
+        identifier.name === 'NaN'
+      ) {
+        return { primitive: true, kind: describePrimitiveExpression(expr) };
+      }
+      return { primitive: false, kind: 'primitive value' };
+    }
     case AST_NODE_TYPES.TemplateLiteral:
       return { primitive: true, kind: describePrimitiveExpression(expr) };
     case AST_NODE_TYPES.UnaryExpression:
-      return isPrimitiveExpressionWithoutTypes(expr.argument as TSESTree.Expression);
-    case AST_NODE_TYPES.BinaryExpression:
+      return { primitive: true, kind: describePrimitiveExpression(expr) };
+    case AST_NODE_TYPES.BinaryExpression: {
+      const comparisonOperators = new Set([
+        '==',
+        '===',
+        '!=',
+        '!==',
+        '<',
+        '<=',
+        '>',
+        '>=',
+        'instanceof',
+        'in',
+      ]);
+      const primitive =
+        comparisonOperators.has(expr.operator) ||
+        (isPrimitiveExpressionWithoutTypes(expr.left as TSESTree.Expression).primitive &&
+          isPrimitiveExpressionWithoutTypes(expr.right as TSESTree.Expression).primitive);
+      return {
+        primitive,
+        kind: describePrimitiveExpression(expr),
+      };
+    }
     case AST_NODE_TYPES.LogicalExpression:
       return {
         primitive:
@@ -229,7 +261,6 @@ function isPrimitiveExpressionWithoutTypes(expr: TSESTree.Expression): {
     case AST_NODE_TYPES.ConditionalExpression:
       return {
         primitive:
-          isPrimitiveExpressionWithoutTypes(expr.test as TSESTree.Expression).primitive &&
           isPrimitiveExpressionWithoutTypes(expr.consequent as TSESTree.Expression).primitive &&
           isPrimitiveExpressionWithoutTypes(expr.alternate as TSESTree.Expression).primitive,
         kind: describePrimitiveExpression(expr),
@@ -299,7 +330,7 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
         }
       })();
 
-    function evaluatePrimitiveWithTypes(
+    function classifyExpressionType(
       expr: TSESTree.Expression,
     ): { status: 'primitive' | 'non-primitive' | 'unknown'; kind: string } {
       if (!checker || !tsModule || !parserServices) {
@@ -482,7 +513,7 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
           return;
         }
 
-        const typeEvaluation = evaluatePrimitiveWithTypes(returnedExpression);
+        const typeEvaluation = classifyExpressionType(returnedExpression);
         let isPrimitive = false;
         let valueKind = typeEvaluation.kind;
 

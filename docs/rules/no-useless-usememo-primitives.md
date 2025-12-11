@@ -12,7 +12,7 @@
 - **Why**: Primitive results do not change identity between renders, so `useMemo` only adds complexity and hides when values can change. Dependency arrays for primitives also provide no protection against re-renders, making the hook misleading.
 - **What it checks**:
   - Flags `useMemo` (or `React.useMemo`) when the callback returns a primitive value.
-  - Uses TypeScript type information when available; otherwise falls back to AST heuristics for simple primitive expressions (literals, identifiers, template literals, logical/conditional/arithmetic expressions).
+- Uses TypeScript type information when available; otherwise falls back to AST heuristics for simple primitive expressions (literals, template literals, unary/comparison expressions, and conditionals whose branches are primitive). Bare identifiers are treated as unknown to avoid false positives in JS files.
   - Skips cases with obvious side effects or non-deterministic calls such as `Date.now()`, `new Date()`, `Math.random()`, or `crypto.getRandomValues`.
   - Skips when the callback includes function calls if `ignoreCallExpressions` is enabled (default) to avoid flagging intentionally expensive computations.
 - **Auto-fix**: Replaces `useMemo(() => EXPR, [deps])` with `EXPR` and removes the dependency array.
@@ -72,6 +72,7 @@ const onClick = useCallback(() => doThing(a, b), [a, b]);
 - Function returns are not flagged here; prefer `@blumintinc/blumint/prefer-usecallback-over-usememo-for-functions` for those.
 - Ambiguous or complex bodies with multiple statements are ignored to avoid unsafe fixes.
 - When `ignoreCallExpressions` is `false`, calls are analyzed only when type information proves the return type is primitive; otherwise they are skipped to avoid false positives.
+- Without TypeScript type information, identifiers are considered ambiguous (except for `undefined`, `Infinity`, and `NaN`), so JavaScript files may produce fewer findings to prevent false positives when a memoized identifier refers to an object or array.
 
 ### When Not To Use It
 

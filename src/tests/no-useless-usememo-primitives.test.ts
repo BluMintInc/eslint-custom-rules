@@ -140,6 +140,13 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
       `,
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
     },
+    {
+      code: `
+        const payload = { id: 1 };
+        const memoized = useMemo(() => payload, [payload]);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+    },
   ],
   invalid: [
     {
@@ -166,31 +173,44 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
     },
     {
       code: `
+        const flagA: boolean = true;
+        const flagB: boolean = false;
         const isEnabled = useMemo(() => flagA && flagB, [flagA, flagB]);
       `,
-      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
-      errors: [{ messageId: 'uselessUseMemoPrimitive', data: { valueKind: 'primitive value' } }],
+      parserOptions: typedParserOptions,
+      filename: 'src/typed-and-and.ts',
+      errors: [{ messageId: 'uselessUseMemoPrimitive', data: { valueKind: 'boolean value' } }],
       output: `
+        const flagA: boolean = true;
+        const flagB: boolean = false;
         const isEnabled = (flagA && flagB);
       `,
     },
     {
       code: `
+        const maybe: string | null = Math.random() > 0.5 ? 'yes' : null;
         const fallback = useMemo(() => maybe ?? null, [maybe]);
       `,
-      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      parserOptions: typedParserOptions,
+      filename: 'src/typed-nullish.ts',
       errors: [{ messageId: 'uselessUseMemoPrimitive' }],
       output: `
+        const maybe: string | null = Math.random() > 0.5 ? 'yes' : null;
         const fallback = (maybe ?? null);
       `,
     },
     {
       code: `
+        const price: number = 10;
+        const taxRate: number = 0.1;
         const priceLabel = useMemo(() => price * taxRate, [price, taxRate]);
       `,
-      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      parserOptions: typedParserOptions,
+      filename: 'src/typed-number.ts',
       errors: [{ messageId: 'uselessUseMemoPrimitive' }],
       output: `
+        const price: number = 10;
+        const taxRate: number = 0.1;
         const priceLabel = (price * taxRate);
       `,
     },
@@ -308,21 +328,33 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
     },
     {
       code: `
+        const left: boolean = true;
+        const right: boolean = false;
+        const fallback: string = 'fallback';
         const chained = useMemo(() => (left && right) || fallback, [left, right, fallback]);
       `,
-      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      parserOptions: typedParserOptions,
+      filename: 'src/typed-logical.ts',
       errors: [{ messageId: 'uselessUseMemoPrimitive' }],
       output: `
+        const left: boolean = true;
+        const right: boolean = false;
+        const fallback: string = 'fallback';
         const chained = ((left && right) || fallback);
       `,
     },
     {
       code: `
+        const count: number = 1;
+        const limit: number = 2;
         const comparison = useMemo(() => count > limit, [count, limit]);
       `,
-      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      parserOptions: typedParserOptions,
+      filename: 'src/typed-comparison.ts',
       errors: [{ messageId: 'uselessUseMemoPrimitive' }],
       output: `
+        const count: number = 1;
+        const limit: number = 2;
         const comparison = (count > limit);
       `,
     },
@@ -358,11 +390,14 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
     },
     {
       code: `
+        const text: string = 'value';
         const coerced = useMemo(() => (text as string), [text]);
       `,
-      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+      parserOptions: typedParserOptions,
+      filename: 'src/typed-coerced.ts',
       errors: [{ messageId: 'uselessUseMemoPrimitive' }],
       output: `
+        const text: string = 'value';
         const coerced = (text as string);
       `,
     },
