@@ -54,6 +54,7 @@ import { default as enforceSerializableParams } from './rules/enforce-serializab
 import { enforceRealtimedbPathUtils } from './rules/enforce-realtimedb-path-utils';
 import { enforceMemoizeAsync } from './rules/enforce-memoize-async';
 import { enforceExportedFunctionTypes } from './rules/enforce-exported-function-types';
+import { noRedundantAnnotationAssertion } from './rules/no-redundant-annotation-assertion';
 import { enforceMemoizeGetters } from './rules/enforce-memoize-getters';
 import { noRedundantParamTypes } from './rules/no-redundant-param-types';
 import { noClassInstanceDestructuring } from './rules/no-class-instance-destructuring';
@@ -206,6 +207,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-realtimedb-path-utils': 'error',
         '@blumintinc/blumint/enforce-memoize-async': 'error',
         '@blumintinc/blumint/enforce-exported-function-types': 'error',
+        '@blumintinc/blumint/no-redundant-annotation-assertion': 'error',
         '@blumintinc/blumint/no-redundant-param-types': 'error',
         '@blumintinc/blumint/enforce-memoize-getters': 'error',
         '@blumintinc/blumint/no-class-instance-destructuring': 'error',
@@ -349,6 +351,7 @@ module.exports = {
     'enforce-realtimedb-path-utils': enforceRealtimedbPathUtils,
     'enforce-memoize-async': enforceMemoizeAsync,
     'enforce-exported-function-types': enforceExportedFunctionTypes,
+    'no-redundant-annotation-assertion': noRedundantAnnotationAssertion,
     'no-redundant-param-types': noRedundantParamTypes,
     'enforce-memoize-getters': enforceMemoizeGetters,
     'no-class-instance-destructuring': noClassInstanceDestructuring,
