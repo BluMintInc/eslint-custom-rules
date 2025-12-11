@@ -59,6 +59,27 @@ ruleTesterTs.run('no-handler-suffix', noHandlerSuffix, {
       `,
       options: [{ interfaceAllowlist: ['External.Handler'] }],
     },
+    // Ignored when class implements deeply nested allowlisted interface
+    {
+      code: `
+        namespace External {
+          export namespace Events {
+            export namespace Contracts {
+              export interface Handler {
+                onEvent(): void;
+              }
+            }
+          }
+        }
+
+        class MyHandler implements External.Events.Contracts.Handler {
+          onEventHandler() {}
+        }
+      `,
+      options: [
+        { interfaceAllowlist: ['External.Events.Contracts.Handler'] },
+      ],
+    },
     // Ignored when class implementations are globally skipped
     {
       code: `
@@ -68,6 +89,23 @@ ruleTesterTs.run('no-handler-suffix', noHandlerSuffix, {
 
         class Button implements ClickHandler {
           clickHandler() {}
+        }
+      `,
+      options: [{ ignoreInterfaceImplementations: true }],
+    },
+    // Ignored for deeply nested interface when implementations are skipped
+    {
+      code: `
+        namespace External {
+          export namespace Events {
+            export interface ClickHandler {
+              onClick(): void;
+            }
+          }
+        }
+
+        class Button implements External.Events.ClickHandler {
+          onClickHandler() {}
         }
       `,
       options: [{ ignoreInterfaceImplementations: true }],

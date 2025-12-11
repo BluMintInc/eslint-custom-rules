@@ -61,34 +61,37 @@ function isInAllowedFile(
   return allowFilePatterns.some((pattern) => minimatch(filename, pattern));
 }
 
+function toMemberExpressionName(
+  expr: TSESTree.MemberExpression,
+): string | null {
+  if (expr.computed || expr.property.type !== AST_NODE_TYPES.Identifier) {
+    return null;
+  }
+
+  const objectName =
+    expr.object.type === AST_NODE_TYPES.Identifier
+      ? expr.object.name
+      : expr.object.type === AST_NODE_TYPES.MemberExpression
+        ? toMemberExpressionName(expr.object)
+        : null;
+
+  return objectName ? `${objectName}.${expr.property.name}` : null;
+}
+
 function getImplementedInterfaces(
   classNode: TSESTree.ClassDeclaration | TSESTree.ClassExpression,
 ): string[] {
   return (
     classNode.implements?.flatMap((impl) => {
       const expr = impl.expression;
-      if (expr.type === AST_NODE_TYPES.Identifier) {
-        return [expr.name];
-      }
-      if ('left' in expr && 'right' in expr) {
-        return [toEntityName(expr as unknown as TSESTree.EntityName)];
-      }
-      if (
-        expr.type === AST_NODE_TYPES.MemberExpression &&
-        expr.property.type === AST_NODE_TYPES.Identifier
-      ) {
-        const objectName =
-          expr.object.type === AST_NODE_TYPES.Identifier
-            ? expr.object.name
-            : 'left' in expr.object
-              ? toEntityName(expr.object as unknown as TSESTree.EntityName)
-              : null;
+      const name =
+        expr.type === AST_NODE_TYPES.Identifier
+          ? expr.name
+          : expr.type === AST_NODE_TYPES.MemberExpression
+            ? toMemberExpressionName(expr)
+            : null;
 
-        if (objectName) {
-          return [`${objectName}.${expr.property.name}`];
-        }
-      }
-      return [];
+      return name ? [name] : [];
     }) ?? []
   );
 }
