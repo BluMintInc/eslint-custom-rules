@@ -2,45 +2,51 @@
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+🔧 You can auto-fix violations with ESLint’s --fix option. Auto-fixes are applied when safe (e.g., runtime imports from `firebaseCloud` are rewritten to dynamic imports; type-only imports are preserved).
 
 <!-- end auto-generated rule header -->
 
-Static imports from `firebaseCloud/` pull Firebase handlers, admin utilities, and their dependencies into the initial client bundle. Those modules are only needed when a specific action runs, so loading them eagerly slows startup and can initialize Firebase earlier than intended. This rule keeps Firebase code lazy by requiring dynamic imports and auto-fixing offending statements.
-
 ## Rule Details
 
-- Flags any static `import` whose path contains `firebaseCloud/`.
-- Allows `import type` and type-only specifiers to keep type information available without loading runtime code.
-- Auto-fix rewrites to an awaited `import()` call and preserves type-only specifiers as a separate `import type`.
+This rule enforces dynamic importing for modules under `firebaseCloud` so Firebase code loads only when needed. Dynamic imports keep cold-start and bundle size lower by deferring Firebase client/server code until it is actually executed.
 
-## Why this matters
+## Usage
 
-- `firebaseCloud` modules often include large SDK chunks; statically importing them inflates the first payload and hurts time-to-interactive.
-- Static imports defeat code splitting—every route pays the Firebase cost even if the code path never executes.
-- Lazy loading keeps Firebase initialization aligned with the trigger point and avoids accidental early side effects.
+Enable the rule via the recommended config or explicitly:
+
+```json
+{
+  "plugins": ["@blumintinc/blumint"],
+  "rules": {
+    "@blumintinc/blumint/enforce-dynamic-firebase-imports": "error"
+  }
+}
+```
+
+This rule has no configuration options; the behavior is fixed.
 
 ## Examples
 
-### ❌ Incorrect
+### Incorrect
 
 ```ts
-import { setGroupChannel } from '../../../../firebaseCloud/messaging/setGroupChannel';
-import helper from 'src/firebaseCloud/utils/helper';
-import '../../../../firebaseCloud/utils/helper';
+// Eager import pulls Firebase into the main bundle
+import { firebaseCloud } from 'firebaseCloud';
+
+const handler = () => {
+  return firebaseCloud.doWork();
+};
 ```
 
-### ✅ Correct
+### Correct
 
 ```ts
-const { setGroupChannel } = await import('../../../../firebaseCloud/messaging/setGroupChannel');
-const helper = await import('src/firebaseCloud/utils/helper');
-await import('../../../../firebaseCloud/utils/helper'); // side-effect import
-import type { Params } from '../../../../firebaseCloud/messaging/setGroupChannel';
+// Runtime import keeps Firebase out of the initial bundle
+const handler = async () => {
+  const { firebaseCloud } = await import('firebaseCloud');
+  return firebaseCloud.doWork();
+};
+
+// Type-only imports remain untouched
+import type { FirebaseTypes } from 'firebaseCloud';
 ```
-
-## How to fix violations
-
-- Replace static firebaseCloud imports with an awaited `import()` in the code path that uses the module.
-- Destructure only the exports you need from the resolved module; default exports can be accessed via `default`.
-- Keep type information with `import type` statements when necessary—the auto-fix will preserve them for you.
