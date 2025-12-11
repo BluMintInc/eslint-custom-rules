@@ -29,6 +29,7 @@ type GenericType<T> = T[];
 ```
 
 ## How to Fix
+
 - Rename generic parameters to start with `T`, preserving the rest of the name to keep intent clear (e.g., `Param` → `TParam`, `ResponseType` → `TResponseType`).
 - Apply the same prefix to every generic in a declaration so readers can instantly recognize them as type placeholders.
 
