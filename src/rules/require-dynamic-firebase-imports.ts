@@ -15,7 +15,7 @@ export default createRule({
     schema: [],
     messages: {
       requireDynamicImport:
-        'Firebase dependencies must be imported dynamically to reduce bundle size',
+        'Static Firebase import from "{{importSource}}" keeps the Firebase SDK in the initial bundle and blocks route-level code splitting. Use an `await import(\'{{importSource}}\')` dynamic import so Firebase loads only on the code path that needs it; type-only imports remain allowed.',
     },
   },
   defaultOptions: [],
@@ -84,6 +84,7 @@ export default createRule({
           context.report({
             node,
             messageId: 'requireDynamicImport',
+            data: { importSource },
             fix(fixer) {
               const dynamicImport = createDynamicImport(node);
               return fixer.replaceText(node, dynamicImport);

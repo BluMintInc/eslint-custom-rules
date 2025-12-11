@@ -37,6 +37,33 @@ throw new HttpsError('foo', `Error: ${bar}`, 'baz');
 throw new HttpsError('foo', `Error: ${bar}`);
 ```
 
+**Missing third argument (messageId: `missingThirdArgument`)**
+
+- ❌ Invalid:
+  ```typescript
+  throw new HttpsError('not-found', 'Resource not found');
+  ```
+- ✅ Valid:
+  ```typescript
+  throw new HttpsError('not-found', 'Resource not found', { id: resourceId });
+  ```
+
+**Dynamic message content (messageId: `dynamicHttpsErrors`)**
+
+- ❌ Invalid:
+  ```typescript
+  throw new https.HttpsError('permission-denied', `User ${userId} cannot access`, {
+    path,
+  });
+  ```
+- ✅ Valid:
+  ```typescript
+  throw new https.HttpsError('permission-denied', 'User cannot access', {
+    path,
+    userId,
+  });
+  ```
+
 Examples of **correct** code for this rule:
 
 ```typescript
@@ -49,3 +76,16 @@ throw new https.HttpsError('foo', 'bar', 'baz');
 throw new https.HttpsError('foo', 'bar', `Details: ${baz}`);
 throw new HttpsError('not-found', 'Resource not found', { id: resourceId });
 ```
+
+## Why?
+
+The second argument of `HttpsError` is used to generate a unique ID for error monitoring and tracking. Including dynamic content in this field produces different IDs for the same error shape, making aggregation and monitoring ineffective.
+
+The third argument should contain all dynamic context information that helps with debugging while preserving the error's unique identifier.
+
+### Warnings & Considerations
+
+- Do not include PII in the second argument; keep the second argument stable and generic.
+- Keep third-argument context small and serializable; avoid dumping large nested objects.
+- Prefer explicit identifiers in the second argument (e.g., `OrderNotFound`) over prose.
+- For exceptional one-off errors, use an inline disable with a comment explaining why.
