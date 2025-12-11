@@ -238,63 +238,69 @@ function conditionHasEmptyCheck(
   node: TSESTree.Node | undefined,
   name: string,
   emptyCheckFunctions: Set<string>,
+  negationDepth = 0,
 ): boolean {
   if (!node) return false;
 
   switch (node.type) {
     case AST_NODE_TYPES.LogicalExpression:
       return (
-        conditionHasEmptyCheck(node.left, name, emptyCheckFunctions) ||
-        conditionHasEmptyCheck(node.right, name, emptyCheckFunctions)
+        conditionHasEmptyCheck(node.left, name, emptyCheckFunctions, negationDepth) ||
+        conditionHasEmptyCheck(node.right, name, emptyCheckFunctions, negationDepth)
       );
     case AST_NODE_TYPES.BinaryExpression:
       if (isLengthZeroComparison(node, name)) {
-        return true;
+        return negationDepth % 2 === 0;
       }
       return (
-        conditionHasEmptyCheck(node.left, name, emptyCheckFunctions) ||
-        conditionHasEmptyCheck(node.right, name, emptyCheckFunctions)
+        conditionHasEmptyCheck(node.left, name, emptyCheckFunctions, negationDepth) ||
+        conditionHasEmptyCheck(node.right, name, emptyCheckFunctions, negationDepth)
       );
     case AST_NODE_TYPES.UnaryExpression:
-      if (node.operator === '!' && isObjectKeysLengthExpression(node.argument, name)) {
-        return true;
+      if (node.operator === '!') {
+        return conditionHasEmptyCheck(node.argument, name, emptyCheckFunctions, negationDepth + 1);
       }
-      return conditionHasEmptyCheck(node.argument, name, emptyCheckFunctions);
+      return conditionHasEmptyCheck(node.argument, name, emptyCheckFunctions, negationDepth);
     case AST_NODE_TYPES.CallExpression: {
       const callee = node.callee;
+      const firstArgIsTarget =
+        node.arguments[0] &&
+        node.arguments[0].type === AST_NODE_TYPES.Identifier &&
+        node.arguments[0].name === name;
       if (
         callee.type === AST_NODE_TYPES.Identifier &&
         emptyCheckFunctions.has(callee.name) &&
-        node.arguments[0] &&
-        node.arguments[0].type === AST_NODE_TYPES.Identifier &&
-        node.arguments[0].name === name
+        firstArgIsTarget
       ) {
-        return true;
+        return negationDepth % 2 === 0;
       }
       if (
         callee.type === AST_NODE_TYPES.MemberExpression &&
         !callee.computed &&
         callee.property.type === AST_NODE_TYPES.Identifier &&
         emptyCheckFunctions.has(callee.property.name) &&
-        node.arguments[0] &&
-        node.arguments[0].type === AST_NODE_TYPES.Identifier &&
-        node.arguments[0].name === name
+        firstArgIsTarget
       ) {
-        return true;
+        return negationDepth % 2 === 0;
       }
 
       return (
-        conditionHasEmptyCheck(callee, name, emptyCheckFunctions) ||
-        node.arguments.some((argument) => conditionHasEmptyCheck(argument, name, emptyCheckFunctions))
+        conditionHasEmptyCheck(callee, name, emptyCheckFunctions, negationDepth) ||
+        node.arguments.some((argument) =>
+          conditionHasEmptyCheck(argument, name, emptyCheckFunctions, negationDepth),
+        )
       );
     }
     case AST_NODE_TYPES.MemberExpression:
-      return conditionHasEmptyCheck(node.object, name, emptyCheckFunctions);
+      if (isObjectKeysLengthExpression(node, name)) {
+        return negationDepth % 2 === 1;
+      }
+      return conditionHasEmptyCheck(node.object, name, emptyCheckFunctions, negationDepth);
     case AST_NODE_TYPES.ConditionalExpression:
       return (
-        conditionHasEmptyCheck(node.test, name, emptyCheckFunctions) ||
-        conditionHasEmptyCheck(node.consequent, name, emptyCheckFunctions) ||
-        conditionHasEmptyCheck(node.alternate, name, emptyCheckFunctions)
+        conditionHasEmptyCheck(node.test, name, emptyCheckFunctions, negationDepth) ||
+        conditionHasEmptyCheck(node.consequent, name, emptyCheckFunctions, negationDepth) ||
+        conditionHasEmptyCheck(node.alternate, name, emptyCheckFunctions, negationDepth)
       );
     default:
       return false;

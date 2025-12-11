@@ -369,6 +369,21 @@ ruleTesterTs.run(
       },
       {
         code: `
+        const payload = getPayload();
+        if (!payload || !!Object.keys(payload).length) {
+          return handle(payload);
+        }
+        `,
+        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } }],
+        output: `
+        const payload = getPayload();
+        if ((!payload || Object.keys(payload).length === 0) || !!Object.keys(payload).length) {
+          return handle(payload);
+        }
+        `,
+      },
+      {
+        code: `
         const islandData = fetchIsland();
         if (!islandData) {
           return islandData;
