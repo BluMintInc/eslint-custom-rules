@@ -64,4 +64,4 @@ This rule does not have any options.
 ## When Not To Use It
 
 - You are working in contexts where `HttpsError` is not available or you intentionally want to construct errors outside a `catch` block (those calls are out of scope for this rule).
-- You deliberately do not want to preserve the original error stack (not recommended for production error monitoring). 
+- You deliberately do not want to preserve the original error stack (not recommended for production error monitoring).

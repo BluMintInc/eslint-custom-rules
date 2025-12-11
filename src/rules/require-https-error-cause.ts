@@ -66,6 +66,8 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
     const sourceCode = context.getSourceCode();
     const catchStack: CatchFrame[] = [];
 
+    // ESLint 9 moves getScope onto sourceCode; ESLint 8 exposes context.getScope().
+    // This shim keeps the rule compatible until the codebase drops ESLint 8 support.
     const getScopeForNode = (node: TSESTree.Node) => {
       const sourceCodeWithScope = sourceCode as unknown as {
         getScope?: (
@@ -178,6 +180,9 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
           return;
         }
 
+        // Destructured catch params (e.g., `catch ({ message })`) do not bind the
+        // full error object, so they cannot be forwarded as the HttpsError cause.
+        // Users should bind the error value (e.g., `catch (error)`) before rethrowing.
         catchStack.push({ paramName: null, node });
       },
       'CatchClause:exit'() {
