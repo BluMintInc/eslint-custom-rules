@@ -516,6 +516,10 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
           return;
         }
 
+        if (callback.generator) {
+          return;
+        }
+
         const returnedExpression = getReturnedExpression(callback);
         if (!returnedExpression) {
           return;

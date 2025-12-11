@@ -44,6 +44,12 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
     },
     {
       code: `
+        const iterator = useMemo(function* () { yield 1; return 1; }, []);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+    },
+    {
+      code: `
         const checksum = useMemo(() => computeChecksum(largeData), [largeData]);
       `,
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
