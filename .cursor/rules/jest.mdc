@@ -6,87 +6,96 @@ alwaysApply: true
 
 Given an ESLint rule implementation (e.g., `src/rules/my-rule.ts`), implement or update a comprehensive Jest test suite in `src/tests/` (e.g., `src/tests/my-rule.test.ts`). The suite must achieve high code coverage (90% minimum, 100% preferred) and pass all checks.
 
-# Background Knowledge
+## Purpose
 
-## Testing Environment
-- **Framework**: Jest with `ts-jest`.
-- **Runner**: ESLint's `RuleTester` tailored for TypeScript/JSX/JSON via `src/utils/ruleTester.ts`.
-- **Location**: Tests are located in `src/tests/`, mirroring the rule filename (e.g., `src/rules/foo.ts` -> `src/tests/foo.test.ts`).
-- **Execution**: Run `npm test` or `npx jest src/tests/my-rule.test.ts`.
+Ensure every rule ships with a thorough, repeatable test suite that prevents false positives, catches regressions, and documents expected behavior.
 
-## Key Testing Utilities
+## Why the System Was Built
 
-Import the appropriate `RuleTester` from `../utils/ruleTester` based on the target code type:
+Reliable rule tests keep 100+ custom rules stable across refactors and TypeScript upgrades by codifying expected diagnostics, auto-fixes, and edge cases.
+
+## Definitions
+
+- **RuleTester**: Harness that runs lint cases against a rule and asserts reported errors/fixes.
+- **Valid case**: Code that must NOT trigger the rule (guards against false positives).
+- **Invalid case**: Code that MUST trigger the rule with expected `messageId` (prevents false negatives and verifies fixes).
+- **Coverage target**: 90% minimum, 100% preferred across rule logic and fixers.
+
+## Core Components
+
+- `ruleTesterTs`, `ruleTesterJsx`, `ruleTesterJson` from `src/utils/ruleTester.ts` for TS, JSX/React, and JSON rules.
+- Jest with `ts-jest` for executing suites.
+- Auto-fix assertions via `output` in invalid cases when the rule is fixable.
+
+## Directory Structure
+
+- Tests live in `src/tests/`, mirroring rule filenames (`src/rules/foo.ts` → `src/tests/foo.test.ts`).
+- RuleTester utilities: `src/utils/ruleTester.ts`.
+- Coverage output: `coverage/`.
+
+## Setup and Execution
+
+- Run all tests: `npm test`
+- Run a single suite: `npx jest src/tests/<rule>.test.ts`
+
+## Test Case Patterns
 
 ```typescript
 import { ruleTesterTs, ruleTesterJsx, ruleTesterJson } from '../utils/ruleTester';
 import { myRule } from '../rules/my-rule';
 
-// For standard TypeScript rules
-ruleTesterTs.run('my-rule', myRule, { ... });
+// TypeScript rules
+ruleTesterTs.run('my-rule', myRule, { valid: [], invalid: [] });
 
-// For React/JSX rules
-ruleTesterJsx.run('my-rule', myRule, { ... });
+// React/JSX rules
+ruleTesterJsx.run('my-rule', myRule, { valid: [], invalid: [] });
 
-// For JSON rules
-ruleTesterJson.run('my-rule', myRule, { ... });
+// JSON rules
+ruleTesterJson.run('my-rule', myRule, { valid: [], invalid: [] });
 ```
 
-## Testing Best Practices: Valid vs Invalid
-
-ESLint rule tests are split into `valid` and `invalid` cases.
-
-### ✅ Valid Cases (False Positive Prevention)
-Code that should **NOT** trigger the rule.
-- **Coverage**: Include edge cases, similar-but-correct patterns, and ignored contexts.
-- **Format**: Simple string or object with `code` and `filename`.
+### ✅ Valid Cases (false-positive prevention)
+- Good patterns that must NOT report.
+- Include similar-but-correct code and ignored paths.
 
 ```typescript
 valid: [
-  // Simple string
   'const x = 1;',
-  
-  // With filename/options
-  {
-    code: 'const x = 1;',
-    filename: 'src/utils/math.ts',
-    options: [{ allow: true }]
-  }
+  { code: 'const x = 1;', filename: 'src/utils/math.ts', options: [{ allow: true }] },
 ]
 ```
 
-### ❌ Invalid Cases (False Negative Prevention)
-Code that **SHOULD** trigger the rule.
-- **Coverage**: variations of violations, nested structures, different syntaxes.
-- **Format**: Object with `code`, `filename`, and `errors`.
-- **Errors**: Must match the `messageId` defined in the rule meta.
+### ❌ Invalid Cases (false-negative prevention)
+- Violations that MUST report with the right `messageId`.
+- Provide `output` when verifying auto-fix.
 
 ```typescript
 invalid: [
   {
     code: 'const x = var;',
     errors: [{ messageId: 'unexpectedVar' }],
-    // Optional: Verify auto-fix output
-    output: 'const x = fixedVar;' 
-  }
+    output: 'const x = fixedVar;',
+  },
 ]
 ```
 
-# Implementation Steps
+## Usage Instructions
 
-1.  **Analyze the Rule**: Understand the AST nodes it targets, the logic it applies, and the edge cases it handles.
-2.  **Select the Tester**: Choose `ruleTesterTs`, `ruleTesterJsx`, or `ruleTesterJson`.
-3.  **Draft Test Cases**:
-    *   **Valid**: 10+ cases covering happy paths, ignored files, and tricky syntax that shouldn't match.
-    *   **Invalid**: 10+ cases covering direct violations, nested violations, and corner cases.
-4.  **Execute Tests**: Run `npx jest src/tests/<rule>.test.ts`.
-5.  **Refine & Cover**:
-    *   If tests fail, fix the rule or the test case.
-    *   Check coverage report (generated in `coverage/`).
-    *   Add cases to reach >90% coverage.
-6.  **Verify**: Ensure all tests pass and coverage is sufficient.
+1) Analyze the rule (targets, visitors, edge cases).  
+2) Select the correct tester variant.  
+3) Draft cases: 10+ valid and 10+ invalid, covering nested and tricky syntax.  
+4) Run `npx jest src/tests/<rule>.test.ts`.  
+5) Refine until coverage ≥90% and all assertions pass.  
+6) Keep fixes minimal and focused on requested behavior.
 
-# Rules of Thumb
-- **Test the "Why"**: Ensure `messageId`s match the intent.
-- **Test Context**: Use `filename` in test cases if the rule logic depends on file paths (e.g., only checking `.tsx` files).
-- **Test Fixes**: If the rule is fixable, always provide the `output` property in `invalid` cases to verify the auto-fix.
+## How It Makes Developers' Lives Easier
+
+- Prevents regressions when refactoring rules or upgrading TypeScript/ESLint.
+- Documents expected diagnostics and fixes for future contributors.
+- Speeds debugging by localizing failures to a single rule suite.
+
+## Critical Insights for Maintainers
+
+- Test the intent: `messageId` should match the rule’s purpose.
+- Use filenames when rule behavior depends on file type/path.
+- Always assert `output` for fixable rules to guard against unsafe fixes.

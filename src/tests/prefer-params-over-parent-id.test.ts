@@ -4,18 +4,15 @@ import { preferParamsOverParentId } from '../rules/prefer-params-over-parent-id'
 
 type PreferParamsError = TSESLint.TestCaseError<'preferParams'>;
 
-const preferParamsMessage = (paramName: 'userId' | 'parentId' = 'userId') =>
+const preferParamsMessage = (paramName = 'userId') =>
   `Accessing parent IDs through \`ref.parent.id\` bypasses the handler params and breaks when collection nesting changes. Use the params object for stable, typed IDs instead (destructure \`const { params: { ${paramName} } } = event\` or read \`params.${paramName}\`).`;
 
-const userIdError = (): PreferParamsError =>
-  ({
-    message: preferParamsMessage('userId'),
-  } as unknown as PreferParamsError);
+const paramError = (paramName = 'userId'): PreferParamsError =>
+  ({ message: preferParamsMessage(paramName) } as unknown as PreferParamsError);
 
-const parentIdError = (): PreferParamsError =>
-  ({
-    message: preferParamsMessage('parentId'),
-  } as unknown as PreferParamsError);
+const userIdError = (): PreferParamsError => paramError('userId');
+
+const parentIdError = (): PreferParamsError => paramError('parentId');
 
 const repeatError = (count: number, factory: () => PreferParamsError) =>
   Array.from({ length: count }, () => factory());
@@ -1095,7 +1092,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const greatGrandparentId = change.after.ref.parent.parent.parent.id;
         };
       `,
-      errors: [parentIdError()],
+      errors: [paramError('parent3Id')],
     },
 
     // FALSE NEGATIVE PREVENTION: Mixed optional and non-optional chaining
@@ -1257,7 +1254,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const deepParent = change.after.ref.parent.parent.parent.parent.id;
         };
       `,
-      errors: [parentIdError()],
+      errors: [paramError('parent4Id')],
     },
 
     // EDGE CASE: Handler with ref.parent.id in complex expressions
@@ -1878,7 +1875,11 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const roundId = change.after.ref.parent.id;
         };
       `,
-      errors: [parentIdError(), parentIdError(), userIdError()],
+      errors: [
+        paramError('parent3Id'),
+        parentIdError(),
+        userIdError(),
+      ],
     },
 
     // EDGE CASE: Variable assignment and reuse
@@ -1914,7 +1915,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const grandparentId = change.after.ref.parent.parent.parent.id;
         };
       `,
-      errors: repeatError(2, parentIdError),
+      errors: [paramError('parent4Id'), paramError('parent3Id')],
     },
 
     // EDGE CASE: Optional chaining variants

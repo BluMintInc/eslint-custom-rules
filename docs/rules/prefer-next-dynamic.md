@@ -24,6 +24,7 @@ import { useDynamic } from '../../hooks/useDynamic';
 
 const EmojiPicker = useDynamic(import('@emoji-mart/react'));
 const App = () => <EmojiPicker/>;
+// Note: If this value were never rendered as <EmojiPicker />, the rule would not flag it.
 ```
 
 Good:
@@ -59,7 +60,7 @@ const Picker = dynamic(
 ### What this rule checks
 
 - Any variable declaration of the form `const X = useDynamic(import('...'))` where `X` is later used as a JSX component is flagged.
-- Destructuring `const { Picker } = useDynamic(import('...'))` is treated as importing a named export and fixed accordingly.
+- Destructuring (including aliases), e.g. `const { Picker: Emoji } = useDynamic(import('...'))`, is treated as importing a named export and fixed accordingly (binds the local `Emoji` to `mod.Picker`).
 - If `dynamic` is not imported, an import is added: `import dynamic from 'next/dynamic';`.
 - If `useDynamic` import becomes unused, it is removed (or the specifier is removed if there are other specifiers).
 
@@ -84,16 +85,35 @@ const Component = dynamic(
 
 - **Non-Component Imports**: Skips when the variable is never used in JSX, avoiding false positives for utilities.
 - **Named Exports**: When destructuring (e.g., `{ Picker }`), the fixer returns `mod.Picker`.
-- **Incorrect dynamic usage**: The fixer ensures an async loader and `{ ssr: false }` option are applied.
+- **Incorrect dynamic usage**: The fixer ensures an async loader and applies `{ ssr: false }`.
 - **Multiple declarators**: Safely replaces only the matching declarator in comma-separated declarations.
 
-### When not to use
+  Before:
 
-- Projects not using Next.js or intentionally using a custom dynamic wrapper should disable this rule.
+  ```ts
+  const { Picker }, other = useDynamic(import('@emoji-mart/react')), something = 1;
+  ```
 
-### Configuration
+  After:
 
-No options.
+  ```ts
+  const Picker = dynamic(
+    async () => {
+      const mod = await import('@emoji-mart/react');
+      return mod.Picker;
+    },
+    { ssr: false },
+  );
+  const something = 1;
+  ```
+
+### Options
+
+- `useDynamicSources` (string[], optional): additional module specifiers to treat as `useDynamic` sources. Defaults to `["useDynamic","./useDynamic","../hooks/useDynamic","../../hooks/useDynamic"]`.
+
+The fixer always passes `{ ssr: false }` to `dynamic()`; configuring other options (loading components, suspense, etc.) is not supported by this rule.
+
+#### Example configuration
 
 ```json
 {
@@ -102,3 +122,7 @@ No options.
   }
 }
 ```
+
+### When not to use
+
+- Projects not using Next.js or intentionally using a custom dynamic wrapper should disable this rule.

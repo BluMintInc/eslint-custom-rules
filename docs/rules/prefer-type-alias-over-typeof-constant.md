@@ -4,18 +4,18 @@
 
 <!-- end auto-generated rule header -->
 
-Use named type aliases instead of `typeof` against same-file top-level constants and declare the alias before any constant that relies on it.
+Use named type aliases instead of `typeof` on same-file top-level constants, and declare the alias before any constant that relies on it.
 
-- Why: `typeof CONST` derives a type from a runtime value. When the value changes, the type changes too, and literal unions sprawl across the file. A named alias keeps the type stable, readable, and reusable.
-- Why ordering: Declaring the alias before the constant makes the shape visible at the point of use and avoids referencing a not-yet-declared alias.
+- Why: `typeof CONST` couples types to runtime values and spreads literal unions around. Define a named alias (e.g., `type StatusExceeding = 'exceeding'`) and reuse it to keep types stable and readable.
+- Why ordering: Declare the alias first so readers see the type before the value that uses it.
 - Scope: Applies only to same-file top-level `const` values with constant-like initializers. Imported values are ignored. `keyof typeof` patterns are allowed.
 
 ## Rule Details
 
 The rule reports in two situations:
 
-1. A `typeof CONST_NAME` type reference targets a same-file top-level `const` initialized with a constant-like value (literal, object literal, array literal, possibly with `as const`). Create a named alias (e.g., `type StatusExceeding = 'exceeding'`) and reuse it instead of deriving the type from the value.
-2. A constant uses an explicit type annotation whose alias is declared later in the file. Declare the alias before the constant so readers encounter the type first.
+1. You use `typeof CONST_NAME` on a same-file top-level `const` initialized with a constant-like value (literal, object literal, array literal, possibly with `as const`). Create a named alias (for example, `type StatusExceeding = 'exceeding'`) and reuse it instead of deriving the type from the value.
+2. A constant’s explicit type annotation points to an alias declared later in the file. Declare the alias first so the type is visible before the value that depends on it.
 
 ### Incorrect
 
@@ -58,9 +58,33 @@ function checkStatus(status: StatusToCheck) {}
 - `typeof` on functions/classes is allowed (this rule targets constant-like initializers).
 - Inference using `as const` without explicit type is allowed.
 
+```ts
+// Imported constants: allowed
+import { API_BASE } from './config';
+type TApi = typeof API_BASE;
+
+// Imported types: allowed (and encouraged)
+import type { SomeType } from './types';
+
+// `keyof typeof`: allowed
+const MAP = { a: 1, b: 2 } as const;
+type Keys = keyof typeof MAP;
+
+// `typeof` on functions/classes: allowed
+function make() {
+  return { x: 1 };
+}
+type Maker = typeof make;
+class Foo {}
+type FooCtor = typeof Foo;
+
+// Inference via `as const`: allowed
+const STATUS = 'ok' as const; // no explicit type annotation needed
+```
+
 ## Options
 
-This rule does not have options.
+This rule has no options and is not auto-fixable.
 
 ## When Not To Use It
 

@@ -1,25 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { modifyHeartbeat } from './change-log';
-
-/** Redefine to avoid complex dependencies */
-const LOG_FILE_PATH = join(
-  process.cwd(),
-  '.cursor/tmp/hooks/agent-change-log.json',
-);
+import type { ChangeLog } from './change-log';
+import { LOG_FILE, modifyHeartbeat } from './change-log';
 
 export type Input = {
   readonly file_path: string;
   readonly conversation_id?: string;
   readonly generation_id?: string;
   readonly [key: string]: unknown;
-};
-
-export type ChangeLog = {
-  readonly [conversationId: string]: {
-    readonly [generationId: string]: readonly string[];
-  };
 };
 
 function readInput() {
@@ -55,7 +44,7 @@ function ensureLogStructure(
   }
 }
 
-export function trackChanges(input: Input, logPath: string = LOG_FILE_PATH) {
+export function trackChanges(input: Input, logPath: string = LOG_FILE) {
   const { conversation_id, generation_id, file_path } = input;
 
   if (!conversation_id || !generation_id || !file_path) {
@@ -72,7 +61,11 @@ export function trackChanges(input: Input, logPath: string = LOG_FILE_PATH) {
     modifyHeartbeat(conversation_id);
   } catch (error) {
     // Ignore errors, don't block file saving
-    console.error('Failed to update heartbeat:', error);
+    console.error('Failed to update heartbeat:', {
+      error,
+      conversationId: conversation_id,
+      generationId: generation_id,
+    });
   }
 
   if (!existsSync(file_path)) {
@@ -84,8 +77,7 @@ export function trackChanges(input: Input, logPath: string = LOG_FILE_PATH) {
     mkdirSync(dir, { recursive: true });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let log: any = {};
+  let log: ChangeLog | Record<string, unknown> = {};
   if (existsSync(logPath)) {
     try {
       log = JSON.parse(readFileSync(logPath, 'utf-8'));
@@ -98,14 +90,21 @@ export function trackChanges(input: Input, logPath: string = LOG_FILE_PATH) {
   const generationIdKey = generation_id;
 
   ensureLogStructure(log, {
-    conversationIdKey: String(conversationIdKey),
-    generationIdKey: String(generationIdKey),
+    conversationIdKey,
+    generationIdKey,
   });
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-  if (!log[conversationIdKey][generationIdKey].includes(file_path)) {
+  // Use `as ChangeLog` to access structured entry
+  const conversationEntry = (log as ChangeLog)[conversationIdKey];
+  if (
+    conversationEntry &&
+    Array.isArray(conversationEntry[generationIdKey]) &&
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-    log[conversationIdKey][generationIdKey].push(file_path);
+    !conversationEntry[generationIdKey].includes(file_path)
+  ) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+    (conversationEntry[generationIdKey] as string[]).push(file_path);
     writeFileSync(logPath, JSON.stringify(log, null, 2));
   }
 }

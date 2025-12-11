@@ -78,7 +78,7 @@ import { enforceRenderHitsMemoization } from './rules/enforce-render-hits-memoiz
 import { preferFragmentComponent } from './rules/prefer-fragment-component';
 import { reactUseMemoShouldBeComponent } from './rules/react-usememo-should-be-component';
 import { noUnnecessaryVerbSuffix } from './rules/no-unnecessary-verb-suffix';
-import { enforceAssertSafeObjectKey } from './rules/enforce-assertSafe-object-key';
+import { enforceAssertSafeObjectKey } from './rules/enforce-assert-safe-object-key';
 import { enforceObjectLiteralAsConst } from './rules/enforce-object-literal-as-const';
 import { enforcePositiveNaming } from './rules/enforce-positive-naming';
 import { noTypeAssertionReturns } from './rules/no-type-assertion-returns';
@@ -135,7 +135,7 @@ import { noTryCatchAlreadyExistsInTransaction } from './rules/no-try-catch-alrea
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.10.0',
+    version: '1.12.6',
   },
   parseOptions: {
     ecmaVersion: 2020,
@@ -228,10 +228,10 @@ module.exports = {
         '@blumintinc/blumint/require-hooks-default-params': 'error',
         '@blumintinc/blumint/prefer-destructuring-no-class': 'error',
         '@blumintinc/blumint/enforce-render-hits-memoization': 'error',
-        '@blumintinc/blumint/prefer-fragment-component': 'error',
+        '@blumintinc/blumint/prefer-fragment-component': 'off',
         '@blumintinc/blumint/react-usememo-should-be-component': 'error',
         '@blumintinc/blumint/no-unnecessary-verb-suffix': 'error',
-        '@blumintinc/blumint/enforce-assertSafe-object-key': 'error',
+        '@blumintinc/blumint/enforce-assert-safe-object-key': 'error',
         '@blumintinc/blumint/enforce-object-literal-as-const': 'error',
         '@blumintinc/blumint/enforce-positive-naming': 'error',
         '@blumintinc/blumint/no-type-assertion-returns': 'error',
@@ -375,7 +375,7 @@ module.exports = {
     'prefer-fragment-component': preferFragmentComponent,
     'react-usememo-should-be-component': reactUseMemoShouldBeComponent,
     'no-unnecessary-verb-suffix': noUnnecessaryVerbSuffix,
-    'enforce-assertSafe-object-key': enforceAssertSafeObjectKey,
+    'enforce-assert-safe-object-key': enforceAssertSafeObjectKey,
     'enforce-object-literal-as-const': enforceObjectLiteralAsConst,
     'enforce-positive-naming': enforcePositiveNaming,
     'no-type-assertion-returns': noTypeAssertionReturns,

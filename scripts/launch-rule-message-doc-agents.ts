@@ -5,15 +5,18 @@ import type { IncomingMessage } from 'node:http';
 import * as ts from 'typescript';
 
 type LaunchResult =
-  | { rule: string; agentUrl: string; branch: string }
-  | { rule: string; branch: string; error: string };
+  | { success: true; rule: string; agentUrl: string; branch: string }
+  | { success: false; rule: string; branch: string; error: string };
 
 const CURSOR_API_KEY = process.env.CURSOR_API_KEY;
 const GITHUB_REPOSITORY =
   process.env.GITHUB_REPOSITORY || 'BluMintInc/eslint-custom-rules';
 const SOURCE_REF = process.env.SOURCE_REF || 'develop';
-const MODEL = process.env.CURSOR_MODEL || 'gpt-5.1-codex-max-high';
+const MODEL = process.env.CURSOR_MODEL || 'gpt-4o';
 const BATCH_SIZE = Number(process.env.BATCH_SIZE || 20);
+const CURSOR_API_TIMEOUT_MS = Number(
+  process.env.CURSOR_API_TIMEOUT_MS || 60000,
+);
 // Default gap between batches: 15 minutes
 const BATCH_DELAY_MS = Number(process.env.BATCH_DELAY_MS || 15 * 60 * 1000);
 const DRY_RUN = process.argv.includes('--dry-run');
@@ -132,6 +135,7 @@ function callCursorAPI(payload: unknown): Promise<unknown> {
         method: 'POST',
         hostname: 'api.cursor.com',
         path: '/v0/agents',
+        timeout: CURSOR_API_TIMEOUT_MS,
         headers: {
           Authorization: `Bearer ${CURSOR_API_KEY}`,
           'Content-Type': 'application/json',
@@ -166,6 +170,14 @@ function callCursorAPI(payload: unknown): Promise<unknown> {
       },
     );
 
+    req.setTimeout(CURSOR_API_TIMEOUT_MS, () => {
+      req.destroy(
+        new Error(
+          `Cursor API request socket timed out after ${CURSOR_API_TIMEOUT_MS}ms`,
+        ),
+      );
+    });
+
     req.on('error', reject);
     req.write(data);
     req.end();
@@ -178,7 +190,7 @@ async function launchAgent(rule: string): Promise<LaunchResult> {
 
   if (DRY_RUN) {
     console.log(`[dry-run] Would launch agent for ${rule} on branch ${branch}`);
-    return { rule, branch, agentUrl: 'dry-run' };
+    return { success: true, rule, branch, agentUrl: 'dry-run' };
   }
 
   const payload = {
@@ -201,12 +213,12 @@ async function launchAgent(rule: string): Promise<LaunchResult> {
     };
     const agentUrl = response.target?.url ?? 'unknown';
     console.log(`Launched agent for ${rule} -> ${agentUrl}`);
-    return { rule, branch, agentUrl };
+    return { success: true, rule, branch, agentUrl };
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Unknown error launching agent';
     console.error(`Failed to launch agent for ${rule}: ${message}`);
-    return { rule, branch, error: message };
+    return { success: false, rule, branch, error: message };
   }
 }
 
@@ -244,14 +256,8 @@ async function run() {
     }
   }
 
-  const successes = results.filter(
-    (result): result is { rule: string; agentUrl: string; branch: string } =>
-      'agentUrl' in result && !('error' in result),
-  );
-  const failures = results.filter(
-    (result): result is { rule: string; branch: string; error: string } =>
-      'error' in result,
-  );
+  const successes = results.filter((result) => result.success);
+  const failures = results.filter((result) => !result.success);
 
   console.log('\nSummary:');
   console.log(

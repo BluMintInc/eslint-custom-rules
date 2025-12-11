@@ -79,9 +79,10 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
             typeNode.typeParameters &&
             typeNode.typeParameters.params.length > 0
           ) {
+            const sourceCode = context.getSourceCode();
             const typeParams = typeNode.typeParameters.params
-              .map((param) => param.type)
-              .join('_');
+              .map((param) => sourceCode.getText(param))
+              .join(', ');
             return `${typeName}<${typeParams}>`;
           }
 
@@ -103,9 +104,10 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
             typeNode.typeParameters &&
             typeNode.typeParameters.params.length > 0
           ) {
+            const sourceCode = context.getSourceCode();
             const typeParams = typeNode.typeParameters.params
-              .map((param) => param.type)
-              .join('_');
+              .map((param) => sourceCode.getText(param))
+              .join(', ');
             return `${typeName}<${typeParams}>`;
           }
 

@@ -12,7 +12,9 @@ This rule enforces memoizing React components that render JSX using our custom `
 
 Components that render JSX and receive props must be wrapped with `memo` from `util/memo`. Without memoization the component function is recreated on every parent render, which breaks referential equality, forces avoidable child re-renders, and invalidates memoized callbacks or selectors. If a component must stay unmemoized, suffix its name with `Unmemoized` to opt out explicitly.
 
+
 ### Why this rule exists
+
 - Preserves stable component identities so downstream memoized children do not rerender unnecessarily.
 - Keeps prop-derived callbacks and selectors referentially consistent across renders.
 - Forces intentional opt-out (`Unmemoized`) to document when a component should remain un-memoized.

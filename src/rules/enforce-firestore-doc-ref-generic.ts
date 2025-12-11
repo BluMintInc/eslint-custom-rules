@@ -232,8 +232,16 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
       return false;
     }
 
+    const isTypedCollectionReferenceCache = new Map<TSESTree.Node, boolean>();
+
     function isTypedCollectionReference(node: TSESTree.Node): boolean {
-      // Check if the node is a call to .collection() with generics
+      if (!node) return false;
+      if (isTypedCollectionReferenceCache.has(node)) {
+        return isTypedCollectionReferenceCache.get(node)!;
+      }
+
+      let result = false;
+
       if (
         node.type === AST_NODE_TYPES.CallExpression &&
         node.callee.type === AST_NODE_TYPES.MemberExpression &&
@@ -242,25 +250,17 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
         node.typeParameters &&
         node.typeParameters.params.length > 0
       ) {
-        return true;
+        result = true;
+      } else if (node.type === AST_NODE_TYPES.MemberExpression) {
+        result = checkMemberExpressionForCollectionReference(node);
+      } else if (node.type === AST_NODE_TYPES.Identifier) {
+        result = checkIdentifierForCollectionReference(node);
+      } else if (node.type === AST_NODE_TYPES.CallExpression) {
+        result = checkCallExpressionForCollectionReference(node);
       }
 
-      // Check if the node is a member expression
-      if (node.type === AST_NODE_TYPES.MemberExpression) {
-        return checkMemberExpressionForCollectionReference(node);
-      }
-
-      // Check if the node is an identifier that refers to a typed variable or parameter
-      if (node.type === AST_NODE_TYPES.Identifier) {
-        return checkIdentifierForCollectionReference(node);
-      }
-
-      // Check if the node is a call expression that returns a CollectionReference
-      if (node.type === AST_NODE_TYPES.CallExpression) {
-        return checkCallExpressionForCollectionReference(node);
-      }
-
-      return false;
+      isTypedCollectionReferenceCache.set(node, result);
+      return result;
     }
 
     function checkMemberExpressionForCollectionReference(
@@ -501,58 +501,51 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
     function findFunctionParameter(
       node: TSESTree.Identifier,
     ): TSESTree.Parameter | null {
+      const isFunctionNode = (
+        n: TSESTree.Node,
+      ): n is
+        | TSESTree.FunctionDeclaration
+        | TSESTree.FunctionExpression
+        | TSESTree.ArrowFunctionExpression =>
+        n.type === AST_NODE_TYPES.FunctionDeclaration ||
+        n.type === AST_NODE_TYPES.FunctionExpression ||
+        n.type === AST_NODE_TYPES.ArrowFunctionExpression;
+
+      const findParamInFunction = (
+        func:
+          | TSESTree.FunctionDeclaration
+          | TSESTree.FunctionExpression
+          | TSESTree.ArrowFunctionExpression,
+      ): TSESTree.Identifier | null => {
+        const param = func.params.find(
+          (p): p is TSESTree.Identifier =>
+            p.type === AST_NODE_TYPES.Identifier &&
+            p.name === node.name &&
+            'typeAnnotation' in p &&
+            p.typeAnnotation !== undefined,
+        );
+        return param || null;
+      };
+
+      const functionScopes: Array<
+        | TSESTree.FunctionDeclaration
+        | TSESTree.FunctionExpression
+        | TSESTree.ArrowFunctionExpression
+      > = [];
+
       let current: TSESTree.Node | undefined = node;
       while (current) {
-        if (
-          current.type === AST_NODE_TYPES.FunctionDeclaration ||
-          current.type === AST_NODE_TYPES.FunctionExpression ||
-          current.type === AST_NODE_TYPES.ArrowFunctionExpression
-        ) {
-          const param = current.params.find(
-            (p): p is TSESTree.Identifier =>
-              p.type === AST_NODE_TYPES.Identifier &&
-              p.name === node.name &&
-              'typeAnnotation' in p &&
-              p.typeAnnotation !== undefined,
-          );
-          if (param) {
-            return param;
-          }
+        if (isFunctionNode(current)) {
+          functionScopes.push(current);
         }
-        current = current.parent as TSESTree.Node;
+        current = current.parent as TSESTree.Node | undefined;
       }
 
-      // Also check parent function scopes for closure variables
-      current = node;
-      while (current) {
-        if (
-          current.type === AST_NODE_TYPES.FunctionDeclaration ||
-          current.type === AST_NODE_TYPES.FunctionExpression ||
-          current.type === AST_NODE_TYPES.ArrowFunctionExpression
-        ) {
-          // Look in parent functions for the parameter
-          let parentFunc = current.parent as TSESTree.Node;
-          while (parentFunc) {
-            if (
-              parentFunc.type === AST_NODE_TYPES.FunctionDeclaration ||
-              parentFunc.type === AST_NODE_TYPES.FunctionExpression ||
-              parentFunc.type === AST_NODE_TYPES.ArrowFunctionExpression
-            ) {
-              const param = parentFunc.params.find(
-                (p): p is TSESTree.Identifier =>
-                  p.type === AST_NODE_TYPES.Identifier &&
-                  p.name === node.name &&
-                  'typeAnnotation' in p &&
-                  p.typeAnnotation !== undefined,
-              );
-              if (param) {
-                return param;
-              }
-            }
-            parentFunc = parentFunc.parent as TSESTree.Node;
-          }
+      for (const func of functionScopes) {
+        const param = findParamInFunction(func);
+        if (param) {
+          return param;
         }
-        current = current.parent as TSESTree.Node;
       }
 
       return null;
@@ -651,13 +644,36 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
     function hasCollectionReferenceType(typeNode: TSESTree.TypeNode): boolean {
       if (
         typeNode.type === AST_NODE_TYPES.TSTypeReference &&
-        typeNode.typeName.type === AST_NODE_TYPES.Identifier &&
-        typeNode.typeName.name === 'CollectionReference' &&
+        ((typeNode.typeName.type === AST_NODE_TYPES.Identifier &&
+          typeNode.typeName.name === 'CollectionReference') ||
+          (typeNode.typeName.type === AST_NODE_TYPES.TSQualifiedName &&
+            typeNode.typeName.right.type === AST_NODE_TYPES.Identifier &&
+            typeNode.typeName.right.name === 'CollectionReference')) &&
         typeNode.typeParameters &&
         typeNode.typeParameters.params.length > 0
       ) {
         return true;
       }
+
+      if (typeNode.type === AST_NODE_TYPES.TSUnionType) {
+        return typeNode.types.some(hasCollectionReferenceType);
+      }
+
+      if (typeNode.type === AST_NODE_TYPES.TSIntersectionType) {
+        return typeNode.types.some(hasCollectionReferenceType);
+      }
+
+      // TSParenthesizedType may appear even though AST_NODE_TYPES omits it
+      if ((typeNode.type as string) === 'TSParenthesizedType') {
+        const inner = (typeNode as { typeAnnotation: TSESTree.TypeNode })
+          .typeAnnotation;
+        return hasCollectionReferenceType(inner);
+      }
+
+      if (typeNode.type === AST_NODE_TYPES.TSArrayType) {
+        return hasCollectionReferenceType(typeNode.elementType);
+      }
+
       return false;
     }
 

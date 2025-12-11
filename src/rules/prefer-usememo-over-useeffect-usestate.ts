@@ -21,7 +21,11 @@ export const preferUseMemoOverUseEffectUseState = createRule({
     // Track useState declarations to match with useEffect
     const stateSetters = new Map<
       string,
-      { stateName: string; initialValue: TSESTree.Node | null }
+      {
+        stateName: string;
+        initialValue: TSESTree.Node | null;
+        defId: TSESTree.Identifier;
+      }
     >();
 
     // Helper to check if a node is a pure computation (no side effects)
@@ -146,8 +150,10 @@ export const preferUseMemoOverUseEffectUseState = createRule({
             const stateName = node.id.elements[0].name;
             const setterName = node.id.elements[1].name;
             const initialValue = node.init.arguments[0] || null;
+            // keep a reference to the defining identifier node
+            const defId = node.id.elements[1];
 
-            stateSetters.set(setterName, { stateName, initialValue });
+            stateSetters.set(setterName, { stateName, initialValue, defId });
           }
         }
       },
@@ -181,7 +187,25 @@ export const preferUseMemoOverUseEffectUseState = createRule({
               const setterName = statement.expression.callee.name;
               const stateInfo = stateSetters.get(setterName);
 
-              if (stateInfo && statement.expression.arguments.length === 1) {
+              // Verify the setter identifier resolves to the tracked binding
+              const calleeId = statement.expression
+                .callee as TSESTree.Identifier;
+              const scope = context.getScope();
+              const variable =
+                scope.set.get(calleeId.name) ||
+                scope.upper?.set.get(calleeId.name);
+              const defNode = variable?.defs?.[0]?.name;
+
+              if (
+                !stateInfo ||
+                !defNode ||
+                defNode.type !== 'Identifier' ||
+                defNode.name !== stateInfo.defId.name
+              ) {
+                return;
+              }
+
+              if (statement.expression.arguments.length === 1) {
                 const computation = statement.expression.arguments[0];
 
                 // Skip if this is a state synchronization pattern

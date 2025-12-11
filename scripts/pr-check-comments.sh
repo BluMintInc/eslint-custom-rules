@@ -9,6 +9,8 @@ LIMIT=""
 PR_OVERRIDE=""
 BOTS_REGEX="(coderabbit|graphite|cursor|bugbot)"
 REVIEW_BATCH=""
+# Default limit for unresolved comments shown per run
+DEFAULT_LIMIT=7
 for arg in "$@"; do
   case "$arg" in
     --bots-only) BOTS_ONLY=true ;;
@@ -84,6 +86,13 @@ REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 mkdir -p "$REPO_ROOT/.cursor/tmp"
 TMP_DIR="$REPO_ROOT/.cursor/tmp/pr_review"
 mkdir -p "$TMP_DIR"
+ALL_THREADS_FILE="$TMP_DIR/review_threads.json"
+PAGE_FILE="$TMP_DIR/review_threads_page.json"
+TMP_FILE="$TMP_DIR/review_threads_tmp.json"
+
+# Clean up temp files on exit; these live under .cursor/tmp (gitignored) but
+# we remove them to avoid accumulation across runs.
+trap 'rm -f "$ALL_THREADS_FILE" "$PAGE_FILE" "$TMP_FILE"' EXIT
 
 # Owner / repo
 OWNER=$(gh repo view --json owner --jq '.owner.login')
@@ -179,11 +188,6 @@ def line_suffix(l): if l then ":" + (l|tostring) else "" end;
     )
   end
 '
-# shellcheck enable=SC2016
-
-ALL_THREADS_FILE="$TMP_DIR/review_threads.json"
-PAGE_FILE="$TMP_DIR/review_threads_page.json"
-TMP_FILE="$TMP_DIR/review_threads_tmp.json"
 echo '[]' > "$ALL_THREADS_FILE"
 
 # Paginate through ALL reviewThreads
@@ -209,7 +213,7 @@ done
 # NOTE: We have to use -F capitalized for the number parameter otherwise it will crash.
 if [ "$BOTS_ONLY" = true ]; then BOTS_ONLY_JSON=true; else BOTS_ONLY_JSON=false; fi
 if [ "$INCLUDE_BOTS" = true ]; then INCLUDE_BOTS_JSON=true; else INCLUDE_BOTS_JSON=false; fi
-if [ -n "$LIMIT" ]; then LIMIT_JSON=$LIMIT; else LIMIT_JSON=7; fi
+if [ -n "$LIMIT" ]; then LIMIT_JSON=$LIMIT; else LIMIT_JSON=$DEFAULT_LIMIT; fi
 
 UNRESOLVED_COMMENTS=$(cat "$ALL_THREADS_FILE" | jq -r \
   --argjson botsOnly "$BOTS_ONLY_JSON" \

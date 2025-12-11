@@ -43,21 +43,16 @@ const [value2] = useRouterState({ key: USER_PROFILE_KEY });
 const [value3] = useRouterState({ key: 'match-' + id });
 ```
 
-#### ✅ Correct
+#### ✅ Correct (centralized constants)
 
 ```typescript
-// Import the shared QUERY_KEY_* constant
-import { QUERY_KEY_MATCH_SESSION } from '@/util/routing/queryKeys';
+// src/util/routing/queryKeys.ts
+export const QUERY_KEY_MATCH_SESSION = 'match-session' as const;
+
+// consumer file
+import { QUERY_KEY_MATCH_SESSION } from 'src/util/routing/queryKeys';
+
 const [value] = useRouterState({ key: QUERY_KEY_MATCH_SESSION });
-
-// Re-exported constants are allowed
-import { QUERY_KEY_USER_PROFILE } from '@/constants';
-const [profile] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
-
-// Derived keys stay anchored to the shared constant
-const [withSuffix] = useRouterState({
-  key: `${QUERY_KEY_MATCH_SESSION}-${id}`,
-});
 ```
 
 ## When Not To Use It

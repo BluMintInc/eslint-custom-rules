@@ -91,9 +91,9 @@ jobs:
           CHECKS_JSON=$(gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/commits/$HEAD_SHA/check-runs?per_page=100")
           STATUSES_JSON=$(gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/commits/$HEAD_SHA/status")
 
-          has_cursor_run=$(echo "$CHECKS_JSON" | jq 'any(.check_runs[]; ((.app.slug|ascii_downcase|test("cursor")) or (.name|test("Cursor Bugbot";"i"))) and .status == "completed" and (.conclusion == "success" or .conclusion == "neutral"))')
-          has_coderabbit_run=$(echo "$CHECKS_JSON" | jq 'any(.check_runs[]; ((.app.slug|ascii_downcase|test("coderabbit")) or (.name|test("CodeRabbit";"i"))) and .status == "completed" and (.conclusion == "success" or .conclusion == "neutral"))')
-          has_coderabbit_status=$(echo "$STATUSES_JSON" | jq 'any(.statuses[]?; (.context|test("CodeRabbit";"i")) and (.state == "success" or .state == "neutral"))')
+          has_cursor_run=$(echo "$CHECKS_JSON" | jq 'any(.check_runs[]; ((.app.slug|ascii_downcase|test("cursor")) or (.name|test("Cursor Bugbot";"i"))) and .status == "completed" and .conclusion == "success")')
+          has_coderabbit_run=$(echo "$CHECKS_JSON" | jq 'any(.check_runs[]; ((.app.slug|ascii_downcase|test("coderabbit")) or (.name|test("CodeRabbit";"i"))) and .status == "completed" and .conclusion == "success")')
+          has_coderabbit_status=$(echo "$STATUSES_JSON" | jq 'any(.statuses[]?; (.context|test("CodeRabbit";"i")) and .state == "success")')
 
           echo "Cursor check run satisfied: $has_cursor_run"
           echo "CodeRabbit check run satisfied: $has_coderabbit_run"
@@ -155,7 +155,6 @@ jobs:
         if: steps.checks.outputs.missing_required == 'false' && steps.idempotency.outputs.already_launched != 'true' && steps.comments.outputs.no_comments != 'true'
         run: |
           PR=${{ steps.checks.outputs.pr_number }}
-          HEAD_REF='${{ steps.checks.outputs.head_ref }}'
           COMMENT_COUNT='${{ steps.comments.outputs.count }}'
 
           PR_JSON=$(gh pr view "$PR" --json number,title,body,headRefName,baseRefName,url)
@@ -252,8 +251,6 @@ jobs:
 
       - name: Comment on PR
         if: steps.launch.outputs.launched == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           URL='${{ steps.launch.outputs.agent_url }}'
           PR=${{ steps.checks.outputs.pr_number }}
