@@ -260,7 +260,7 @@ export const noArrayLengthInDeps = createRule<Options, MessageIds>({
           node: depsArg,
           messageId: 'noArrayLengthInDeps',
           fix(fixer) {
-            const sourceCode = context.getSourceCode();
+            const sourceCode = context.sourceCode;
             const fixes: TSESLint.RuleFix[] = [];
             const hostFn =
               findEnclosingFunction(node) ?? (sourceCode.ast as TSESTree.Node);

@@ -198,9 +198,7 @@ export const enforceTimestampNow = createRule<[], MessageIds>({
             messageId: 'preferTimestampNow',
             fix(fixer) {
               if (node.callee.type === AST_NODE_TYPES.MemberExpression) {
-                const timestampObj = context
-                  .getSourceCode()
-                  .getText(node.callee.object);
+                const timestampObj = context.sourceCode.getText(node.callee.object);
                 return fixer.replaceText(node, `${timestampObj}.now()`);
               }
               return null;
@@ -212,9 +210,7 @@ export const enforceTimestampNow = createRule<[], MessageIds>({
             messageId: 'preferTimestampNow',
             fix(fixer) {
               if (node.callee.type === AST_NODE_TYPES.MemberExpression) {
-                const timestampObj = context
-                  .getSourceCode()
-                  .getText(node.callee.object);
+                const timestampObj = context.sourceCode.getText(node.callee.object);
                 return fixer.replaceText(node, `${timestampObj}.now()`);
               }
               return null;

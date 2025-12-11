@@ -129,7 +129,7 @@ export const keyOnlyOutermostElement = createRule<Options, MessageIds>({
               // Mark this attribute as reported to avoid duplicate reports
               reportedAttributes.add(attr);
 
-              const sourceCode = context.getSourceCode();
+              const sourceCode = context.sourceCode;
               context.report({
                 node: attr,
                 messageId: 'keyOnlyOutermostElement',

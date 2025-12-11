@@ -14,7 +14,7 @@ export const arrayMethodsThisContext: TSESLint.RuleModule<
   never[]
 > = createRule({
   create(context) {
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode;
 
     return {
       CallExpression(node: TSESTree.CallExpression) {

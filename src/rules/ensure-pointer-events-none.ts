@@ -134,7 +134,7 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
           messageId: 'missingPointerEventsNone',
           fix(fixer) {
             // Find the last property in the object
-            const sourceCode = context.getSourceCode();
+            const sourceCode = context.sourceCode;
             const properties = node.properties;
             if (properties.length === 0) return null;
 

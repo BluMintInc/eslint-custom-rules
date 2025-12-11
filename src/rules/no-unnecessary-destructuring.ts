@@ -34,7 +34,7 @@ export const noUnnecessaryDestructuring = createRule({
             node,
             messageId: 'noUnnecessaryDestructuring',
             fix(fixer) {
-              const sourceCode = context.getSourceCode();
+              const sourceCode = context.sourceCode;
               const restName = sourceCode.getText(restElement.argument);
 
               // Handle the case where init might be null
@@ -65,7 +65,7 @@ export const noUnnecessaryDestructuring = createRule({
             node,
             messageId: 'noUnnecessaryDestructuring',
             fix(fixer) {
-              const sourceCode = context.getSourceCode();
+              const sourceCode = context.sourceCode;
               const restName = sourceCode.getText(restElement.argument);
               const rightText = sourceCode.getText(node.right);
 

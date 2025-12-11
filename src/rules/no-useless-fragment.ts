@@ -9,7 +9,7 @@ export const noUselessFragment: TSESLint.RuleModule<'noUselessFragment', []> = {
             node,
             messageId: 'noUselessFragment',
             fix(fixer) {
-              const sourceCode = context.getSourceCode();
+              const sourceCode = context.sourceCode;
               // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
               const openingFragment = sourceCode.getFirstToken(node)!;
               // eslint-disable-next-line @typescript-eslint/no-non-null-assertion

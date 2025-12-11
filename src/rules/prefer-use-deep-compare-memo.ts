@@ -117,7 +117,7 @@ function collectMemoizedIdentifiers(
   context: TSESLint.RuleContext<'preferUseDeepCompareMemo', []>,
 ): Set<string> {
   const memoized = new Set<string>();
-  const sourceCode = context.getSourceCode();
+  const sourceCode = context.sourceCode;
   const program = sourceCode.ast;
 
   function visit(node: TSESTree.Node): void {
@@ -171,7 +171,7 @@ function ensureDeepCompareImportFixes(
   fixer: TSESLint.RuleFixer,
 ): TSESLint.RuleFix[] {
   const fixes: TSESLint.RuleFix[] = [];
-  const sourceCode = context.getSourceCode();
+  const sourceCode = context.sourceCode;
   const program = sourceCode.ast;
 
   // If already imported anywhere, skip adding
@@ -270,7 +270,7 @@ function isImportedIdentifier(
   context: TSESLint.RuleContext<'preferUseDeepCompareMemo', []>,
   name: string,
 ): boolean {
-  const sourceCode = context.getSourceCode();
+  const sourceCode = context.sourceCode;
   const program = sourceCode.ast;
   for (const node of program.body) {
     if (node.type === AST_NODE_TYPES.ImportDeclaration) {
@@ -477,7 +477,7 @@ export const preferUseDeepCompareMemo = createRule<[], MessageIds>({
             fixes.push(...ensureDeepCompareImportFixes(context, fixer));
 
             // Clean up now-unused React/useMemo imports if safe
-            const sourceCode = context.getSourceCode();
+            const sourceCode = context.sourceCode;
             const program = sourceCode.ast;
             const reactImport = program.body.find(
               (n): n is TSESTree.ImportDeclaration =>

@@ -124,6 +124,12 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
     },
     {
       code: `
+        const regex = useMemo(() => /abc/i, []);
+      `,
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+    },
+    {
+      code: `
         const heavy = useMemo(() => { const interim = compute(); return interim * 2; }, [compute]);
       `,
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },

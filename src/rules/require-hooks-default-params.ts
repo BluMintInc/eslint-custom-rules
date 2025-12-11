@@ -148,9 +148,7 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
                       node: param,
                       messageId: 'requireDefaultParams',
                       fix(fixer) {
-                        const paramText = context
-                          .getSourceCode()
-                          .getText(param);
+                        const paramText = context.sourceCode.getText(param);
                         return fixer.replaceText(param, `${paramText} = {}`);
                       },
                     });
@@ -168,9 +166,7 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
                       node: param,
                       messageId: 'requireDefaultParams',
                       fix(fixer) {
-                        const paramText = context
-                          .getSourceCode()
-                          .getText(param);
+                        const paramText = context.sourceCode.getText(param);
                         return fixer.replaceText(param, `${paramText} = {}`);
                       },
                     });
@@ -178,7 +174,7 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
                 }
               } else {
                 // If we can't find the type definition, check if it's defined in the same file
-                const program = context.getSourceCode().ast;
+                const program = context.sourceCode.ast;
                 const typeDefinitions = program.body.filter((node) => {
                   if (
                     node.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
@@ -201,9 +197,7 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
                         node: param,
                         messageId: 'requireDefaultParams',
                         fix(fixer) {
-                          const paramText = context
-                            .getSourceCode()
-                            .getText(param);
+                        const paramText = context.sourceCode.getText(param);
                           return fixer.replaceText(param, `${paramText} = {}`);
                         },
                       });
@@ -225,9 +219,7 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
                         node: param,
                         messageId: 'requireDefaultParams',
                         fix(fixer) {
-                          const paramText = context
-                            .getSourceCode()
-                            .getText(param);
+                        const paramText = context.sourceCode.getText(param);
                           return fixer.replaceText(param, `${paramText} = {}`);
                         },
                       });
@@ -249,7 +241,7 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
                 node: param,
                 messageId: 'requireDefaultParams',
                 fix(fixer) {
-                  const paramText = context.getSourceCode().getText(param);
+                  const paramText = context.sourceCode.getText(param);
                   return fixer.replaceText(param, `${paramText} = {}`);
                 },
               });

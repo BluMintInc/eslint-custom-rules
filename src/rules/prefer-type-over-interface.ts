@@ -27,7 +27,7 @@ export const preferTypeOverInterface: TSESLint.RuleModule<
           node,
           messageId: 'preferType',
           fix(fixer) {
-            const sourceCode = context.getSourceCode();
+            const sourceCode = context.sourceCode;
             const openingBrace = sourceCode.getTokenAfter(node.id, {
               filter: (token) => token.value === '{',
             });

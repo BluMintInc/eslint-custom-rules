@@ -59,7 +59,7 @@ export const enforceTypescriptMarkdownCodeBlocks = createRule<Options, MessageId
 
     return {
       Program() {
-        const sourceCode = context.getSourceCode();
+        const sourceCode = context.sourceCode;
         const text = sourceCode.getText();
 
         let index = 0;

@@ -551,9 +551,9 @@ export const preferNullishCoalescingBooleanProps = createRule<[], MessageIds>({
               fix(fixer) {
                 return fixer.replaceText(
                   node,
-                  `${context.getSourceCode().getText(node.left)} ?? ${context
-                    .getSourceCode()
-                    .getText(node.right)}`,
+                  `${context.sourceCode.getText(node.left)} ?? ${context.sourceCode.getText(
+                    node.right,
+                  )}`,
                 );
               },
             });

@@ -19,6 +19,18 @@ const DEFAULT_OPTIONS: Required<Options[number]> = {
 
 const NON_DETERMINISTIC_MEMBERS = new Set(['Date.now', 'Math.random', 'performance.now']);
 const NON_DETERMINISTIC_CONSTRUCTORS = new Set(['Date']);
+const COMPARISON_OPERATORS = new Set([
+  '==',
+  '===',
+  '!=',
+  '!==',
+  '<',
+  '<=',
+  '>',
+  '>=',
+  'instanceof',
+  'in',
+]);
 
 function isUseMemoCallee(callee: TSESTree.LeftHandSideExpression): boolean {
   if (callee.type === AST_NODE_TYPES.Identifier) {
@@ -157,6 +169,9 @@ function hasUnsafeSideEffects(expr: TSESTree.Expression): boolean {
 function describePrimitiveExpression(expr: TSESTree.Expression): string {
   switch (expr.type) {
     case AST_NODE_TYPES.Literal: {
+      if ('regex' in expr && expr.regex) {
+        return 'RegExp object';
+      }
       if ('bigint' in expr && expr.bigint !== undefined) {
         return 'bigint value';
       }
@@ -212,8 +227,12 @@ function isPrimitiveExpressionWithoutTypes(expr: TSESTree.Expression): {
   kind: string;
 } {
   switch (expr.type) {
-    case AST_NODE_TYPES.Literal:
+    case AST_NODE_TYPES.Literal: {
+      if ('regex' in expr && expr.regex) {
+        return { primitive: false, kind: describePrimitiveExpression(expr) };
+      }
       return { primitive: true, kind: describePrimitiveExpression(expr) };
+    }
     case AST_NODE_TYPES.Identifier: {
       const identifier = expr as TSESTree.Identifier;
       if (
@@ -230,20 +249,8 @@ function isPrimitiveExpressionWithoutTypes(expr: TSESTree.Expression): {
     case AST_NODE_TYPES.UnaryExpression:
       return { primitive: true, kind: describePrimitiveExpression(expr) };
     case AST_NODE_TYPES.BinaryExpression: {
-      const comparisonOperators = new Set([
-        '==',
-        '===',
-        '!=',
-        '!==',
-        '<',
-        '<=',
-        '>',
-        '>=',
-        'instanceof',
-        'in',
-      ]);
       const primitive =
-        comparisonOperators.has(expr.operator) ||
+        COMPARISON_OPERATORS.has(expr.operator) ||
         (isPrimitiveExpressionWithoutTypes(expr.left as TSESTree.Expression).primitive &&
           isPrimitiveExpressionWithoutTypes(expr.right as TSESTree.Expression).primitive);
       return {
@@ -305,7 +312,7 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
   defaultOptions: [DEFAULT_OPTIONS],
   create(context) {
     const options = { ...DEFAULT_OPTIONS, ...context.options[0] };
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode;
     const services = sourceCode.parserServices;
     const parserServices =
       services && 'hasFullTypeInformation' in services && services.hasFullTypeInformation

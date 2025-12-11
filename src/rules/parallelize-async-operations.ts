@@ -57,7 +57,7 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
   },
   defaultOptions,
   create(context, [options]) {
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode;
     const sideEffectMatchers = (options?.sideEffectPatterns ?? []).map(
       (pattern) =>
         typeof pattern === 'string' ? new RegExp(pattern, 'i') : pattern,

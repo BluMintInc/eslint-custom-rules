@@ -181,9 +181,7 @@ function getObjectUsagesInHook(
         } else {
           // For other computed properties, use the exact expression
           try {
-            const propertyText = context
-              .getSourceCode()
-              .getText(memberExpr.property);
+            const propertyText = context.sourceCode.getText(memberExpr.property);
             parts.unshift(`[${propertyText}]`);
           } catch (e) {
             // Fallback to wildcard if we can't get the source text

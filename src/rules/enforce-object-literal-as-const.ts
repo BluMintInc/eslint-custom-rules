@@ -66,7 +66,7 @@ export const enforceObjectLiteralAsConst = createRule({
         }
 
         // Check if the return statement is inside a function
-        const sourceCode = context.getSourceCode();
+        const sourceCode = context.sourceCode;
         // Use context.getAncestors() for now, but note it's deprecated
         // We'll need to update this when upgrading to ESLint v9
         const ancestors = context.getAncestors();

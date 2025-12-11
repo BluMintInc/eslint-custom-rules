@@ -162,7 +162,7 @@ Prefer:
       return {};
     }
 
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode;
 
     // Collect alias/interface/enum information within this file to refine object vs primitive classification
     const aliasNameToType = new Map<string, TSESTree.TypeNode>();
