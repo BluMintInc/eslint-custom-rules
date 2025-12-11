@@ -112,11 +112,6 @@ const leftmostIdentifier = (node: TSESTree.Node | null): TSESTree.Identifier | n
   return null;
 };
 
-const isGlobalLike = (node: TSESTree.Expression): boolean => {
-  const base = leftmostIdentifier(node);
-  return !!base && GLOBAL_NAMES.has(base.name);
-};
-
 const getAliasFromStack = (
   aliases: AliasStack,
   name: string,
@@ -126,6 +121,19 @@ const getAliasFromStack = (
     if (value !== undefined) return value;
   }
   return null;
+};
+
+const isGlobalLike = (
+  node: TSESTree.Expression,
+  aliases: AliasStack,
+): boolean => {
+  const base = leftmostIdentifier(node);
+  if (!base) return false;
+
+  const alias = getAliasFromStack(aliases, base.name);
+  if (alias) return false;
+
+  return GLOBAL_NAMES.has(base.name);
 };
 
 /**
@@ -159,7 +167,11 @@ const resolveStorageObject = (
     if (objectKind) return objectKind;
 
     const propertyName = getPropertyName(target.property);
-    if (propertyName && STORAGE_NAMES.has(propertyName as StorageKind) && isGlobalLike(target.object as TSESTree.Expression)) {
+    if (
+      propertyName &&
+      STORAGE_NAMES.has(propertyName as StorageKind) &&
+      isGlobalLike(target.object as TSESTree.Expression, aliases)
+    ) {
       return propertyName as StorageKind;
     }
   }
@@ -237,6 +249,9 @@ const identifierRepresentsDeclaration = (node: TSESTree.Identifier): boolean => 
   ) {
     return true;
   }
+  if (parent.type === AST_NODE_TYPES.CatchClause && parent.param === node) {
+    return true;
+  }
   if (parent.type === AST_NODE_TYPES.ClassDeclaration && parent.id === node) {
     return true;
   }
@@ -290,11 +305,11 @@ const isStorageContainerSource = (
 ): boolean => {
   const source = unwrapExpression(init);
 
-  if (isGlobalLike(source)) return true;
+  if (isGlobalLike(source, aliases)) return true;
 
   if (source.type === AST_NODE_TYPES.MemberExpression) {
     if (resolveStorageObject(source, aliases)) return true;
-    return isGlobalLike(source.object as TSESTree.Expression);
+    return isGlobalLike(source.object as TSESTree.Expression, aliases);
   }
 
   return false;
@@ -448,7 +463,7 @@ export const enforceStorageContext = createRule<RuleOptions, MessageIds>({
 
     const handleIdentifier = (node: TSESTree.Identifier): void => {
       if (identifierRepresentsDeclaration(node)) {
-        if (STORAGE_NAMES.has(node.name as StorageKind)) {
+        if (STORAGE_NAMES.has(node.name as StorageKind) || GLOBAL_NAMES.has(node.name)) {
           markShadowed(node.name);
         }
         return;
@@ -500,7 +515,7 @@ export const enforceStorageContext = createRule<RuleOptions, MessageIds>({
       if (
         propertyName &&
         STORAGE_NAMES.has(propertyName as StorageKind) &&
-        isGlobalLike(object)
+        isGlobalLike(object, storageAliases)
       ) {
         if (
           node.parent &&

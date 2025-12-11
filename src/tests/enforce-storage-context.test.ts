@@ -92,6 +92,17 @@ ruleTesterTs.run('enforce-storage-context', enforceStorageContext, {
         sessionStorage.getItem('k');
       }
     `,
+    `
+      const window = { localStorage: createMockStorage() };
+      window.localStorage.setItem('k', 'v');
+    `,
+    `
+      try {
+        throw new Error('boom');
+      } catch (localStorage) {
+        localStorage.message;
+      }
+    `,
   ],
   invalid: [
     {
