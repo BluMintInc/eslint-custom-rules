@@ -1,4 +1,4 @@
-# no-redundant-usecallback-wrapper
+# Prevent wrapping already memoized/stable callbacks from hooks/contexts in an extra useCallback() (`@blumintinc/blumint/no-redundant-usecallback-wrapper`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
