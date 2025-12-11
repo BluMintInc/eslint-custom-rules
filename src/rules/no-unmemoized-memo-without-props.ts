@@ -23,6 +23,7 @@ type ParamSummary = {
   isEmptyObjectPattern: boolean;
   referencedTypeNames: string[];
   explicitEmptyAnnotation: boolean;
+  hasInlineNonEmptyType: boolean;
   identifierWithUnknownShape: boolean;
 };
 
@@ -96,6 +97,31 @@ const collectTypeNames = (typeNode?: TSESTree.TypeNode | null): string[] => {
   }
 };
 
+const typeNodeHasNonEmptyInlineType = (
+  typeNode?: TSESTree.TypeNode | null,
+): boolean => {
+  if (!typeNode) {
+    return false;
+  }
+
+  switch (typeNode.type) {
+    case AST_NODE_TYPES.TSTypeLiteral:
+      return typeNode.members.length > 0;
+    case AST_NODE_TYPES.TSUnionType:
+    case AST_NODE_TYPES.TSIntersectionType:
+      return typeNode.types.some(typeNodeHasNonEmptyInlineType);
+    case AST_NODE_TYPES.TSMappedType:
+    case AST_NODE_TYPES.TSIndexedAccessType:
+    case AST_NODE_TYPES.TSArrayType:
+    case AST_NODE_TYPES.TSTupleType:
+    case AST_NODE_TYPES.TSFunctionType:
+    case AST_NODE_TYPES.TSTypePredicate:
+      return true;
+    default:
+      return false;
+  }
+};
+
 const isExplicitEmptyType = (typeNode?: TSESTree.TypeNode | null): boolean => {
   if (!typeNode) {
     return false;
@@ -122,6 +148,7 @@ const summarizeParams = (params: TSESTree.Parameter[]): ParamSummary => {
       isEmptyObjectPattern: false,
       referencedTypeNames: [],
       explicitEmptyAnnotation: false,
+      hasInlineNonEmptyType: false,
       identifierWithUnknownShape: false,
     };
   }
@@ -134,6 +161,7 @@ const summarizeParams = (params: TSESTree.Parameter[]): ParamSummary => {
       isEmptyObjectPattern: false,
       referencedTypeNames: [],
       explicitEmptyAnnotation: false,
+      hasInlineNonEmptyType: false,
       identifierWithUnknownShape: false,
     };
   }
@@ -148,6 +176,7 @@ const summarizeParams = (params: TSESTree.Parameter[]): ParamSummary => {
       isEmptyObjectPattern: false,
       referencedTypeNames: [],
       explicitEmptyAnnotation: false,
+      hasInlineNonEmptyType: false,
       identifierWithUnknownShape: false,
     };
   }
@@ -163,6 +192,7 @@ const summarizeParams = (params: TSESTree.Parameter[]): ParamSummary => {
       isEmptyObjectPattern: param.properties.length === 0,
       referencedTypeNames,
       explicitEmptyAnnotation: isExplicitEmptyType(typeNode),
+      hasInlineNonEmptyType: typeNodeHasNonEmptyInlineType(typeNode),
       identifierWithUnknownShape: false,
     };
   }
@@ -179,6 +209,7 @@ const summarizeParams = (params: TSESTree.Parameter[]): ParamSummary => {
       isEmptyObjectPattern: false,
       referencedTypeNames,
       explicitEmptyAnnotation,
+      hasInlineNonEmptyType: typeNodeHasNonEmptyInlineType(typeNode),
       identifierWithUnknownShape: !typeNode && !explicitEmptyAnnotation,
     };
   }
@@ -190,6 +221,7 @@ const summarizeParams = (params: TSESTree.Parameter[]): ParamSummary => {
     isEmptyObjectPattern: false,
     referencedTypeNames: [],
     explicitEmptyAnnotation: false,
+    hasInlineNonEmptyType: false,
     identifierWithUnknownShape: true,
   };
 };
@@ -207,6 +239,10 @@ const componentHasProps = (
   }
 
   if (summary.identifierWithUnknownShape) {
+    return true;
+  }
+
+  if (summary.hasInlineNonEmptyType) {
     return true;
   }
 
@@ -229,41 +265,38 @@ const componentHasProps = (
   return true;
 };
 
-const componentUsesIgnoredHook = (
-  node: FunctionLikeNode,
+const isIgnoredHookCall = (
+  callee: TSESTree.Expression | TSESTree.PrivateIdentifier,
   ignoreHooks: Set<string>,
-  visitorKeys: Record<string, string[]>,
 ): boolean => {
-  if (ignoreHooks.size === 0) {
-    return false;
+  if (callee.type === AST_NODE_TYPES.Identifier && ignoreHooks.has(callee.name)) {
+    return true;
   }
 
-  const stack: TSESTree.Node[] = [];
-
-  if (node.body) {
-    stack.push(node.body as TSESTree.Node);
+  if (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.property.type === AST_NODE_TYPES.Identifier &&
+    ignoreHooks.has(callee.property.name)
+  ) {
+    return true;
   }
+
+  return false;
+};
+
+const traverseAst = (
+  node: TSESTree.Node,
+  visitorKeys: Record<string, string[]>,
+  visitor: (node: TSESTree.Node) => boolean,
+): boolean => {
+  const stack: TSESTree.Node[] = [node];
 
   while (stack.length > 0) {
     const current = stack.pop()!;
 
-    if (current.type === AST_NODE_TYPES.CallExpression) {
-      const callee = current.callee;
-      if (
-        callee.type === AST_NODE_TYPES.Identifier &&
-        ignoreHooks.has(callee.name)
-      ) {
-        return true;
-      }
-
-      if (
-        callee.type === AST_NODE_TYPES.MemberExpression &&
-        !callee.computed &&
-        callee.property.type === AST_NODE_TYPES.Identifier &&
-        ignoreHooks.has(callee.property.name)
-      ) {
-        return true;
-      }
+    if (visitor(current)) {
+      return true;
     }
 
     for (const key of visitorKeys[current.type] ?? []) {
@@ -286,6 +319,24 @@ const componentUsesIgnoredHook = (
   }
 
   return false;
+};
+
+const componentUsesIgnoredHook = (
+  node: FunctionLikeNode,
+  ignoreHooks: Set<string>,
+  visitorKeys: Record<string, string[]>,
+): boolean => {
+  if (ignoreHooks.size === 0 || !node.body) {
+    return false;
+  }
+
+  return traverseAst(
+    node.body as TSESTree.Node,
+    visitorKeys,
+    (current) =>
+      current.type === AST_NODE_TYPES.CallExpression &&
+      isIgnoredHookCall(current.callee, ignoreHooks),
+  );
 };
 
 export const noUnmemoizedMemoWithoutProps = createRule<Options, MessageIds>({
@@ -342,6 +393,10 @@ export const noUnmemoizedMemoWithoutProps = createRule<Options, MessageIds>({
 
     const tryRecordComponent = (name: string, node: FunctionLikeNode) => {
       if (!name.endsWith('Unmemoized')) {
+        return;
+      }
+
+      if (!node.body) {
         return;
       }
 
@@ -406,7 +461,7 @@ export const noUnmemoizedMemoWithoutProps = createRule<Options, MessageIds>({
               reactNamespaceNames.add(specifier.local.name);
             }
 
-            if (isMemoSource(importPath)) {
+            if (isMemoSource(importPath) && importPath !== 'react') {
               memoIdentifiers.add(specifier.local.name);
             }
           }
@@ -457,13 +512,13 @@ export const noUnmemoizedMemoWithoutProps = createRule<Options, MessageIds>({
 
         if (node.init.type === AST_NODE_TYPES.CallExpression) {
           const calleeName = getIdentifierFromCallee(node.init.callee);
-      if (calleeName && ignoreHocs.has(calleeName)) {
+          if (calleeName && ignoreHocs.has(calleeName)) {
             components.set(node.id.name, {
               node: node.init as unknown as FunctionLikeNode,
               summary: summarizeParams([]),
               returnsJsx: false,
               usesIgnoredHook: false,
-          hocCalleeName: calleeName,
+              hocCalleeName: calleeName,
             });
           }
         }

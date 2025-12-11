@@ -123,6 +123,26 @@ ruleTesterJsx.run(
           export const ThirdParty = memo(ThirdPartyUnmemoized);
         `,
       },
+      {
+        filename: 'component.tsx',
+        code: `
+          import { memo } from 'react';
+          type Empty = {};
+          const IntersectUnmemoized = (props: Empty & { x: number }) => (
+            <div>{props.x}</div>
+          );
+          export const Intersect = memo(IntersectUnmemoized);
+        `,
+      },
+      {
+        filename: 'component.tsx',
+        code: `
+          import React from 'react';
+          const NonMemoCallUnmemoized = () => <div />;
+          const maybeMemo = React(NonMemoCallUnmemoized);
+          export { maybeMemo };
+        `,
+      },
     ],
     invalid: [
       {
@@ -224,6 +244,18 @@ ruleTesterJsx.run(
           export const MultipleArgs = memo(MultipleArgsUnmemoized, compare);
         `,
         errors: [baseError('MultipleArgsUnmemoized')],
+      },
+      {
+        filename: 'component.tsx',
+        code: `
+          import { memo } from 'react';
+          function OverloadedUnmemoized(): JSX.Element;
+          function OverloadedUnmemoized() {
+            return <div />;
+          }
+          export const Overloaded = memo(OverloadedUnmemoized);
+        `,
+        errors: [baseError('OverloadedUnmemoized')],
       },
     ],
   },
