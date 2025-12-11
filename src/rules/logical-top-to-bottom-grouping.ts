@@ -702,6 +702,7 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
                     !isPureDeclaration(between, { allowHooks: false }) ||
                     statementDeclaresAny(between, priorDependencySet) ||
                     statementReferencesAny(between, priorDependencySet) ||
+                    statementDeclaresAny(between, declaredNames) ||
                     statementReferencesAny(between, declaredNames),
                 );
 
@@ -773,16 +774,17 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
         }
 
         const intervening = body.slice(index + 1, usageIndex);
-        // Bail when intervening code declares or touches the initializer dependency so we do not cross redefinitions or TDZ hazards.
-        const touchesDependencies =
-          dependencies.size > 0 &&
-          intervening.some(
-            (stmt) =>
-              statementDeclaresAny(stmt, dependencies) ||
-              statementReferencesAny(stmt, dependencies) ||
-              statementMutatesAny(stmt, dependencies),
-          );
-        if (touchesDependencies) {
+        // Bail when intervening code redeclares the placeholder or touches the initializer dependency so we do not cross redefinitions or TDZ hazards.
+        const touchesTrackedNames = intervening.some(
+          (stmt) =>
+            statementDeclaresAny(stmt, nameSet) ||
+            statementMutatesAny(stmt, nameSet) ||
+            (dependencies.size > 0 &&
+              (statementDeclaresAny(stmt, dependencies) ||
+                statementReferencesAny(stmt, dependencies) ||
+                statementMutatesAny(stmt, dependencies))),
+        );
+        if (touchesTrackedNames) {
           return;
         }
 

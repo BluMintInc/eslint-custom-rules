@@ -122,6 +122,21 @@ const fallback = 1;
 const { value = fallback } = source;
 use(value, fallback);
     `,
+    `
+function hoistShouldRespectRedeclaration() {
+  var x = 1;
+  var x = 2;
+  use(x);
+}
+    `,
+    `
+function doNotJumpOverRedeclaredDerived() {
+  const base = getBase();
+  var value = 2;
+  var value = base.count;
+  use(value);
+}
+    `,
   ],
   invalid: [
     {
