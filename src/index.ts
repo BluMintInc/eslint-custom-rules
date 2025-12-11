@@ -116,6 +116,7 @@ import { noExcessiveParentChain } from './rules/no-excessive-parent-chain';
 import { preferDocumentFlattening } from './rules/prefer-document-flattening';
 import { noOverridableMethodCallsInConstructor } from './rules/no-overridable-method-calls-in-constructor';
 import { useLatestCallback } from './rules/use-latest-callback';
+import { noEmptyDependencyUseCallbacks } from './rules/no-empty-dependency-use-callbacks';
 import { noStaleStateAcrossAwait } from './rules/no-stale-state-across-await';
 import { noSeparateLoadingState } from './rules/no-separate-loading-state';
 import { optimizeObjectBooleanConditions } from './rules/optimize-object-boolean-conditions';
@@ -262,6 +263,7 @@ module.exports = {
         '@blumintinc/blumint/no-overridable-method-calls-in-constructor':
           'error',
         '@blumintinc/blumint/use-latest-callback': 'error',
+        '@blumintinc/blumint/no-empty-dependency-use-callbacks': 'error',
         '@blumintinc/blumint/enforce-querykey-ts': 'error',
         '@blumintinc/blumint/no-stale-state-across-await': 'error',
         '@blumintinc/blumint/no-separate-loading-state': 'error',
@@ -407,6 +409,7 @@ module.exports = {
     'no-overridable-method-calls-in-constructor':
       noOverridableMethodCallsInConstructor,
     'use-latest-callback': useLatestCallback,
+    'no-empty-dependency-use-callbacks': noEmptyDependencyUseCallbacks,
     'enforce-querykey-ts': enforceQueryKeyTs,
     'no-stale-state-across-await': noStaleStateAcrossAwait,
     'no-separate-loading-state': noSeparateLoadingState,
