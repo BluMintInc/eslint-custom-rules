@@ -205,10 +205,30 @@ const isMemberExpressionObject = (node: TSESTree.Identifier): boolean => {
   );
 };
 
+const isStorageContainerSource = (
+  init: TSESTree.Expression,
+  aliases: Map<string, StorageKind>,
+): boolean => {
+  const source = unwrapExpression(init);
+
+  if (isGlobalLike(source)) return true;
+
+  if (source.type === AST_NODE_TYPES.MemberExpression) {
+    if (resolveStorageObject(source, aliases)) return true;
+    return isGlobalLike(source.object as TSESTree.Expression);
+  }
+
+  return false;
+};
+
 const recordAliasFromPattern = (
   pattern: TSESTree.ObjectPattern,
+  init: TSESTree.Expression | null,
   aliases: Map<string, StorageKind>,
 ): void => {
+  if (!init) return;
+  if (!isStorageContainerSource(init, aliases)) return;
+
   for (const prop of pattern.properties) {
     if (prop.type !== AST_NODE_TYPES.Property) continue;
     if (prop.computed) continue;
@@ -401,21 +421,27 @@ export const enforceStorageContext = createRule<RuleOptions, MessageIds>({
           storageAliases.delete(node.id.name);
         }
       } else if (node.id.type === AST_NODE_TYPES.ObjectPattern) {
-        recordAliasFromPattern(node.id, storageAliases);
+        recordAliasFromPattern(node.id, node.init as TSESTree.Expression, storageAliases);
       }
     };
 
     const handleAssignmentExpression = (
       node: TSESTree.AssignmentExpression,
     ): void => {
-      if (node.left.type !== AST_NODE_TYPES.Identifier) return;
-
-      const right = node.right as TSESTree.Expression;
-      const storageKind = resolveStorageObject(right, storageAliases);
-      if (storageKind) {
-        storageAliases.set(node.left.name, storageKind);
-      } else {
-        storageAliases.delete(node.left.name);
+      if (node.left.type === AST_NODE_TYPES.Identifier) {
+        const right = node.right as TSESTree.Expression;
+        const storageKind = resolveStorageObject(right, storageAliases);
+        if (storageKind) {
+          storageAliases.set(node.left.name, storageKind);
+        } else {
+          storageAliases.delete(node.left.name);
+        }
+      } else if (node.left.type === AST_NODE_TYPES.ObjectPattern) {
+        recordAliasFromPattern(
+          node.left,
+          node.right as TSESTree.Expression,
+          storageAliases,
+        );
       }
     };
 

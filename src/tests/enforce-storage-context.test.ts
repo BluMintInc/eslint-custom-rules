@@ -65,6 +65,11 @@ ruleTesterTs.run('enforce-storage-context', enforceStorageContext, {
       customWindow.localStorage;
     `,
     `
+      const config = { localStorage: { setItem: () => {} } };
+      const { localStorage: cfg } = config;
+      cfg.setItem('value', 'x');
+    `,
+    `
       const { getItem } = useLocalStorage();
       const value = typeof window === 'undefined' ? null : getItem('k');
     `,
@@ -167,6 +172,14 @@ ruleTesterTs.run('enforce-storage-context', enforceStorageContext, {
       filename: '/workspace/src/components/storage.test.ts',
       options: [{ allowInTests: false }],
       errors: [{ messageId: 'useStorageContext' }],
+    },
+    {
+      code: `
+        let store;
+        ({ localStorage: store } = window);
+        store.setItem('k', 'v');
+      `,
+      errors: [{ messageId: 'useStorageContext' }, { messageId: 'useStorageContext' }],
     },
   ],
 });
