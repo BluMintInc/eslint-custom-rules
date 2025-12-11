@@ -49,6 +49,7 @@ import { enforceFirestoreSetMerge } from './rules/enforce-firestore-set-merge';
 import { enforceVerbNounNaming } from './rules/enforce-verb-noun-naming';
 import { noExplicitReturnType } from './rules/no-explicit-return-type';
 import { useCustomMemo } from './rules/use-custom-memo';
+import { memoizeRootLevelHocs } from './rules/memoize-root-level-hocs';
 import { useCustomLink } from './rules/use-custom-link';
 import { default as enforceSerializableParams } from './rules/enforce-serializable-params';
 import { enforceRealtimedbPathUtils } from './rules/enforce-realtimedb-path-utils';
@@ -109,6 +110,7 @@ import { enforceFieldPathSyntaxInDocSetter } from './rules/enforce-fieldpath-syn
 import { preferBlockCommentsForDeclarations } from './rules/prefer-block-comments-for-declarations';
 import { noUndefinedNullPassthrough } from './rules/no-undefined-null-passthrough';
 import { firestoreTransactionReadsBeforeWrites } from './rules/firestore-transaction-reads-before-writes';
+import { enforceTypescriptMarkdownCodeBlocks } from './rules/enforce-typescript-markdown-code-blocks';
 import { preferNullishCoalescingOverride } from './rules/prefer-nullish-coalescing-override';
 import { preferNullishCoalescingBooleanProps } from './rules/prefer-nullish-coalescing-boolean-props';
 import { noRestrictedPropertiesFix } from './rules/no-restricted-properties-fix';
@@ -131,6 +133,8 @@ import { noCircularReferences } from './rules/no-circular-references';
 import { noPassthroughGetters } from './rules/no-passthrough-getters';
 import { noTryCatchAlreadyExistsInTransaction } from './rules/no-try-catch-already-exists-in-transaction';
 import { verticallyGroupRelatedFunctions } from './rules/vertically-group-related-functions';
+import { default as noStaticConstantsInDynamicFiles } from './rules/no-static-constants-in-dynamic-files';
+import { testFileLocationEnforcement } from './rules/test-file-location-enforcement';
 
 module.exports = {
   meta: {
@@ -191,6 +195,7 @@ module.exports = {
         '@blumintinc/blumint/use-custom-router': 'error',
         '@blumintinc/blumint/require-image-optimized': 'error',
         '@blumintinc/blumint/require-usememo-object-literals': 'error',
+        '@blumintinc/blumint/memoize-root-level-hocs': 'error',
         '@blumintinc/blumint/enforce-safe-stringify': 'error',
         '@blumintinc/blumint/no-entire-object-hook-deps': 'error',
         '@blumintinc/blumint/no-compositing-layer-props': 'error',
@@ -239,6 +244,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-microdiff': 'error',
         '@blumintinc/blumint/fast-deep-equal-over-microdiff': 'error',
         '@blumintinc/blumint/enforce-timestamp-now': 'error',
+        '@blumintinc/blumint/enforce-typescript-markdown-code-blocks': 'error',
         '@blumintinc/blumint/no-always-true-false-conditions': 'error',
         '@blumintinc/blumint/enforce-props-argument-name': 'error',
         '@blumintinc/blumint/enforce-props-naming-consistency': 'error',
@@ -280,6 +286,8 @@ module.exports = {
           'error',
         '@blumintinc/blumint/no-passthrough-getters': 'error',
         '@blumintinc/blumint/vertically-group-related-functions': 'error',
+        '@blumintinc/blumint/no-static-constants-in-dynamic-files': 'error',
+        '@blumintinc/blumint/test-file-location-enforcement': 'error',
       },
     },
   },
@@ -333,6 +341,7 @@ module.exports = {
     'use-custom-router': useCustomRouter,
     'require-image-optimized': requireImageOptimized,
     'require-usememo-object-literals': requireUseMemoObjectLiterals,
+    'memoize-root-level-hocs': memoizeRootLevelHocs,
     'enforce-safe-stringify': enforceStableStringify,
     'avoid-utils-directory': avoidUtilsDirectory,
     'no-entire-object-hook-deps': noEntireObjectHookDeps,
@@ -383,6 +392,8 @@ module.exports = {
     'enforce-microdiff': enforceMicrodiff,
     'fast-deep-equal-over-microdiff': fastDeepEqualOverMicrodiff,
     'enforce-timestamp-now': enforceTimestampNow,
+    'enforce-typescript-markdown-code-blocks':
+      enforceTypescriptMarkdownCodeBlocks,
     'no-always-true-false-conditions': noAlwaysTrueFalseConditions,
     'enforce-props-argument-name': enforcePropsArgumentName,
     'enforce-props-naming-consistency': enforcePropsNamingConsistency,
@@ -426,5 +437,7 @@ module.exports = {
       noTryCatchAlreadyExistsInTransaction,
     'no-passthrough-getters': noPassthroughGetters,
     'vertically-group-related-functions': verticallyGroupRelatedFunctions,
+    'no-static-constants-in-dynamic-files': noStaticConstantsInDynamicFiles,
+    'test-file-location-enforcement': testFileLocationEnforcement,
   },
 };
