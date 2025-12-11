@@ -1410,7 +1410,15 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
         const docRef = db.collection('users').doc('user123');
         const userDoc = await docRef.get();
       `,
-      errors: [{ messageId: 'noDirectGet' }],
+      errors: [
+        {
+          messageId: 'noDirectGet',
+          data: {
+            method: 'get',
+            target: 'docRef',
+          },
+        },
+      ],
     },
     // Invalid direct set usage
     {
@@ -1418,7 +1426,15 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
         const docRef = db.collection('users').doc('user123');
         await docRef.set({ name: 'John' });
       `,
-      errors: [{ messageId: 'noDirectSet' }],
+      errors: [
+        {
+          messageId: 'noDirectSet',
+          data: {
+            method: 'set',
+            target: 'docRef',
+          },
+        },
+      ],
     },
     // Invalid direct update usage
     {
@@ -1426,7 +1442,15 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
         const docRef = db.collection('users').doc('user123');
         await docRef.update({ score: 100 });
       `,
-      errors: [{ messageId: 'noDirectUpdate' }],
+      errors: [
+        {
+          messageId: 'noDirectUpdate',
+          data: {
+            method: 'update',
+            target: 'docRef',
+          },
+        },
+      ],
     },
     // Invalid direct delete usage
     {
@@ -1434,7 +1458,15 @@ ruleTesterTs.run('enforce-firestore-facade', enforceFirestoreFacade, {
         const docRef = db.collection('users').doc('user123');
         await docRef.delete();
       `,
-      errors: [{ messageId: 'noDirectDelete' }],
+      errors: [
+        {
+          messageId: 'noDirectDelete',
+          data: {
+            method: 'delete',
+            target: 'docRef',
+          },
+        },
+      ],
     },
     // Invalid batch operations
     {
