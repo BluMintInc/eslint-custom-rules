@@ -14,6 +14,7 @@ Renaming during object destructuring is useful when it resolves naming conflicts
 - Flags when the alias is used exactly once, solely as the value of an object property whose key is `source` and the property is not computed.
 - Skips computed property names and aliases that are read more than once or participate in other expressions.
 - Does not offer a fix when using the original key would shadow another binding in the same or nested scope, preventing semantic changes.
+- Skips properties whose original key cannot be used as a binding identifier (for example reserved words), because the alias is required in those cases.
 
 ### Examples of **incorrect** code for this rule:
 

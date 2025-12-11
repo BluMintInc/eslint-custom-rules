@@ -86,6 +86,12 @@ ruleTester.run(
       const { id: renamedId } = source;
       const buildPayload = (id: string) => ({ id: renamedId, incoming: id });
       `,
+
+      // Reserved word property cannot bind to the same identifier
+      `
+      const { class: className } = input;
+      const payload = { class: className };
+      `,
     ],
     invalid: [
       // Basic pattern from the issue

@@ -11,9 +11,70 @@ type RenameCandidate = {
 };
 
 type ResolvedCandidate = RenameCandidate & {
-  targetProperty: TSESTree.Property;
+  targetProperty: PropertyWithIdentifierValue;
   reference: TSESLint.Scope.Reference;
 };
+
+type PropertyWithIdentifierValue = TSESTree.Property & {
+  value: TSESTree.Identifier;
+};
+
+const BINDABLE_IDENTIFIER_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
+const RESERVED_BINDINGS = new Set<string>([
+  'break',
+  'case',
+  'catch',
+  'class',
+  'const',
+  'continue',
+  'debugger',
+  'default',
+  'delete',
+  'do',
+  'else',
+  'enum',
+  'export',
+  'extends',
+  'false',
+  'finally',
+  'for',
+  'function',
+  'if',
+  'import',
+  'in',
+  'instanceof',
+  'new',
+  'null',
+  'return',
+  'super',
+  'switch',
+  'this',
+  'throw',
+  'true',
+  'try',
+  'typeof',
+  'var',
+  'void',
+  'while',
+  'with',
+  'yield',
+  'let',
+  'await',
+  'static',
+  'implements',
+  'interface',
+  'package',
+  'private',
+  'protected',
+  'public',
+]);
+
+function isBindableIdentifier(name: string): boolean {
+  return (
+    BINDABLE_IDENTIFIER_PATTERN.test(name) && !RESERVED_BINDINGS.has(name)
+  );
+}
 
 function getRenamedPropertyInfo(
   property: TSESTree.Property,
@@ -113,6 +174,10 @@ export const noUnnecessaryDestructuringRename = createRule<[], MessageIds>({
           continue;
         }
 
+        if (!isBindableIdentifier(renameInfo.originalName)) {
+          continue;
+        }
+
         const variable = declaredVariables.find((declaredVar) =>
           declaredVar.identifiers.includes(renameInfo.aliasIdentifier),
         );
@@ -132,7 +197,7 @@ export const noUnnecessaryDestructuringRename = createRule<[], MessageIds>({
     function findMatchingReference(
       reference: TSESLint.Scope.Reference,
       originalName: string,
-    ): TSESTree.Property | null {
+    ): PropertyWithIdentifierValue | null {
       const identifier = reference.identifier;
       const parent = identifier.parent;
 
@@ -152,7 +217,7 @@ export const noUnnecessaryDestructuringRename = createRule<[], MessageIds>({
         return null;
       }
 
-      return parent;
+      return parent as PropertyWithIdentifierValue;
     }
 
     function scopeHasNameInChain(
@@ -229,144 +294,164 @@ export const noUnnecessaryDestructuringRename = createRule<[], MessageIds>({
       return !referencesNameWithoutLocalBinding(declarationScope, originalName);
     }
 
+    function getMatchingReferences(
+      variable: TSESLint.Scope.Variable,
+      originalName: string,
+    ): Array<{ reference: TSESLint.Scope.Reference; property: PropertyWithIdentifierValue }> {
+      const matchingReferences: Array<{
+        reference: TSESLint.Scope.Reference;
+        property: PropertyWithIdentifierValue;
+      }> = [];
+
+      for (const reference of variable.references) {
+        const property = findMatchingReference(reference, originalName);
+        if (property) {
+          matchingReferences.push({ reference, property });
+        }
+      }
+
+      return matchingReferences;
+    }
+
+    function hasOtherUsages(
+      variable: TSESLint.Scope.Variable,
+      matchedReference: TSESLint.Scope.Reference,
+    ): boolean {
+      return variable.references.some((ref) => {
+        if (ref === matchedReference) {
+          return false;
+        }
+
+        // Ignore the initializer write introduced by the destructuring itself.
+        if (ref.init && ref.isWrite() && !ref.isRead()) {
+          return false;
+        }
+
+        return (
+          ref.isRead() ||
+          ref.isWrite() ||
+          // Type references indicate another use even if not a runtime read.
+          (ref as unknown as { isTypeReference?: boolean }).isTypeReference === true
+        );
+      });
+    }
+
+    function resolveValidCandidates(): ResolvedCandidate[] {
+      const resolvedCandidates: ResolvedCandidate[] = [];
+
+      for (const candidate of candidates) {
+        const { variable, originalName, aliasIdentifier, propertyNode } = candidate;
+
+        const matchingReferences = getMatchingReferences(variable, originalName);
+        if (matchingReferences.length !== 1) {
+          continue;
+        }
+
+        const [{ reference: matchedReference, property: targetProperty }] =
+          matchingReferences;
+
+        if (!isSafeToInlineOriginal(matchedReference, variable, originalName)) {
+          continue;
+        }
+
+        if (hasOtherUsages(variable, matchedReference)) {
+          continue;
+        }
+
+        resolvedCandidates.push({
+          propertyNode,
+          originalName,
+          aliasIdentifier,
+          variable,
+          targetProperty,
+          reference: matchedReference,
+        });
+      }
+
+      return resolvedCandidates;
+    }
+
+    function groupCandidatesByPattern(
+      resolvedCandidates: ResolvedCandidate[],
+    ): Map<TSESTree.ObjectPattern, ResolvedCandidate[]> {
+      const candidatesByPattern = new Map<
+        TSESTree.ObjectPattern,
+        ResolvedCandidate[]
+      >();
+
+      for (const candidate of resolvedCandidates) {
+        const pattern = candidate.propertyNode.parent as TSESTree.ObjectPattern;
+        const existing = candidatesByPattern.get(pattern);
+        if (existing) {
+          existing.push(candidate);
+        } else {
+          candidatesByPattern.set(pattern, [candidate]);
+        }
+      }
+
+      return candidatesByPattern;
+    }
+
+    function generateFixes(
+      fixer: TSESLint.RuleFixer,
+      patternCandidates: ResolvedCandidate[],
+    ): TSESLint.RuleFix[] {
+      const fixes: TSESLint.RuleFix[] = [];
+
+      for (const groupCandidate of patternCandidates) {
+        const {
+          propertyNode: groupedProperty,
+          targetProperty: groupedTarget,
+          originalName: groupedOriginal,
+        } = groupCandidate;
+
+        const destructReplacement =
+          groupedProperty.value.type === AST_NODE_TYPES.AssignmentPattern &&
+          groupedProperty.value.left.type === AST_NODE_TYPES.Identifier
+            ? `${groupedOriginal} = ${sourceCode.getText(
+                groupedProperty.value.right,
+              )}`
+            : groupedOriginal;
+
+        fixes.push(fixer.replaceText(groupedProperty, destructReplacement));
+        fixes.push(fixer.replaceText(groupedTarget.value, groupedOriginal));
+      }
+
+      return fixes;
+    }
+
+    function reportAndFixCandidates(
+      candidatesByPattern: Map<TSESTree.ObjectPattern, ResolvedCandidate[]>,
+    ): void {
+      for (const patternCandidates of candidatesByPattern.values()) {
+        patternCandidates.forEach((candidate, index) => {
+          const { propertyNode, originalName, aliasIdentifier } = candidate;
+          const isFixCarrier = index === 0;
+
+          context.report({
+            node: propertyNode,
+            messageId: 'unnecessaryDestructuringRename',
+            data: {
+              originalName,
+              aliasName: aliasIdentifier.name,
+            },
+            fix: !isFixCarrier
+              ? undefined
+              : (fixer) => generateFixes(fixer, patternCandidates),
+          });
+        });
+      }
+    }
+
     return {
       ObjectPattern(node) {
         captureCandidates(node);
       },
 
       'Program:exit'() {
-        const resolvedCandidates: ResolvedCandidate[] = [];
-
-        for (const candidate of candidates) {
-          const { variable, originalName, aliasIdentifier, propertyNode } =
-            candidate;
-
-          const matchingReferences: Array<{
-            reference: TSESLint.Scope.Reference;
-            property: TSESTree.Property;
-          }> = [];
-
-          for (const reference of variable.references) {
-            const property = findMatchingReference(reference, originalName);
-            if (property) {
-              matchingReferences.push({ reference, property });
-            }
-          }
-
-          if (matchingReferences.length !== 1) {
-            continue;
-          }
-
-          const [{ reference: matchedReference, property: targetProperty }] =
-            matchingReferences;
-
-          if (
-            !isSafeToInlineOriginal(matchedReference, variable, originalName)
-          ) {
-            continue;
-          }
-
-          const hasOtherUsages = variable.references.some((ref) => {
-            if (ref === matchedReference) {
-              return false;
-            }
-
-            // Ignore the initializer write introduced by the destructuring itself.
-            if (ref.init && ref.isWrite() && !ref.isRead()) {
-              return false;
-            }
-
-            return (
-              ref.isRead() ||
-              ref.isWrite() ||
-              // Type references indicate another use even if not a runtime read.
-              (ref as unknown as { isTypeReference?: boolean })
-                .isTypeReference === true
-            );
-          });
-
-          if (hasOtherUsages) {
-            continue;
-          }
-
-          resolvedCandidates.push({
-            propertyNode,
-            originalName,
-            aliasIdentifier,
-            variable,
-            targetProperty,
-            reference: matchedReference,
-          });
-        }
-
-        const candidatesByPattern = new Map<
-          TSESTree.ObjectPattern,
-          ResolvedCandidate[]
-        >();
-
-        for (const candidate of resolvedCandidates) {
-          const pattern = candidate.propertyNode
-            .parent as TSESTree.ObjectPattern;
-          const existing = candidatesByPattern.get(pattern);
-          if (existing) {
-            existing.push(candidate);
-          } else {
-            candidatesByPattern.set(pattern, [candidate]);
-          }
-        }
-
-        for (const patternCandidates of candidatesByPattern.values()) {
-          patternCandidates.forEach((candidate, index) => {
-            const { propertyNode, originalName, aliasIdentifier } = candidate;
-            const isFixCarrier = index === 0;
-
-            context.report({
-              node: propertyNode,
-              messageId: 'unnecessaryDestructuringRename',
-              data: {
-                originalName,
-                aliasName: aliasIdentifier.name,
-              },
-              fix: !isFixCarrier
-                ? undefined
-                : (fixer) => {
-                    const fixes: TSESLint.RuleFix[] = [];
-
-                    for (const groupCandidate of patternCandidates) {
-                      const { propertyNode: groupedProperty, targetProperty: groupedTarget, originalName: groupedOriginal } =
-                        groupCandidate;
-
-                      const destructReplacement =
-                        groupedProperty.value.type ===
-                          AST_NODE_TYPES.AssignmentPattern &&
-                        groupedProperty.value.left.type ===
-                          AST_NODE_TYPES.Identifier
-                          ? `${groupedOriginal} = ${sourceCode.getText(
-                              groupedProperty.value.right,
-                            )}`
-                          : groupedOriginal;
-
-                      fixes.push(
-                        fixer.replaceText(groupedProperty, destructReplacement),
-                      );
-
-                      if (
-                        groupedTarget.value.type === AST_NODE_TYPES.Identifier
-                      ) {
-                        fixes.push(
-                          fixer.replaceText(
-                            groupedTarget.value,
-                            groupedOriginal,
-                          ),
-                        );
-                      }
-                    }
-
-                    return fixes;
-                  },
-            });
-          });
-        }
+        const resolvedCandidates = resolveValidCandidates();
+        const candidatesByPattern = groupCandidatesByPattern(resolvedCandidates);
+        reportAndFixCandidates(candidatesByPattern);
       },
     };
   },
