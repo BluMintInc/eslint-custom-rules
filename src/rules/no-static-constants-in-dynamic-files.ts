@@ -99,7 +99,7 @@ const collectFromArrayPattern = (
 };
 
 /**
- * Traverses a binding pattern breadth-first and returns every leaf Identifier
+ * Traverses a binding pattern depth-first and returns every leaf Identifier
  * so exported destructuring binds are all checked for SCREAMING_SNAKE_CASE.
  */
 const collectBindingIdentifiers = (
