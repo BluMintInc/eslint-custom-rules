@@ -14,9 +14,11 @@ When writing Firestore security rules, avoid directly accessing nested fields wi
 - **Required**: Use `.get('<field>', <default>)` with a provided default value (e.g., `null`) and chain for deeper paths, e.g., `resource.data.get('user', null).get('name', null) != null`.
 
 This rule checks string and template literals that look like Firestore rules and:
+
 - Flags direct property access comparisons like `resource.data.foo.bar === null` or `request.resource.data.x.y != undefined`.
 - Flags `.get('<field>')` calls missing a default value.
-- Provides auto-fixes for string literals (not for template literals).
+- Provides auto-fixes for string literals (not for template literals). Fixes cover dotted access and bracketed string segments (e.g., `resource.data["field-x"].child`), but non-string bracket expressions are only reported, not auto-fixed.
+- Template literal detection is best-effort: embedded expressions are ignored when joining quasis, so violations that span expressions might not be detected.
 
 ## Examples
 
@@ -48,6 +50,10 @@ const rules = "allow read: if resource.data.get('fieldX', null) != null;";
 // Chained .get() for nested fields
 const rules = "allow update: if request.resource.data.get('fieldX', null).get('fieldY', null) != null;";
 ```
+
+## Options
+
+This rule has no options.
 
 ## When Not To Use It
 

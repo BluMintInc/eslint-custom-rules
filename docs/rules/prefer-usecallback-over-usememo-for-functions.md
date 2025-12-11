@@ -10,7 +10,12 @@ This rule enforces the use of `useCallback` instead of `useMemo` when memoizing 
 
 ## Rule Details
 
-This rule aims to improve code maintainability and follow React best practices by making the developer's intent explicit when memoizing functions.
+`useMemo` is intended for memoizing values. When it returns a function, the code hides that it depends on a stable callback reference. That makes it easy for someone to refactor the hook away and accidentally trigger prop-driven re-renders or effect loops. `useCallback` exists specifically to memoize callbacks and communicates that the function identity is part of the component contract. The fixer rewrites `useMemo` calls that return functions to `useCallback` while keeping the dependency array intact.
+
+Why this matters:
+- `useCallback` documents that callers depend on a stable function identity; `useMemo` suggests a computed value instead.
+- Removing or inlining a `useMemo` that returns a function often re-creates the callback on every render, causing child components that receive it as a prop to re-render unnecessarily.
+- Using the hook that matches the intent keeps code reviews, linting, and mental models aligned with React guidance.
 
 Examples of **incorrect** code for this rule:
 
@@ -34,6 +39,13 @@ const loadData = useMemo(() => {
     return response.json();
   };
 }, []);
+
+// Using useMemo with dependencies to return a function
+const handleClick = useMemo(() => {
+  return () => {
+    console.log('Button clicked', id);
+  };
+}, [id]);
 ```
 
 Examples of **correct** code for this rule:
