@@ -1,4 +1,4 @@
-# Enforce that parameters with types ending in "Props" should be named "props" (`@blumintinc/blumint/enforce-props-argument-name`)
+# Authoritative rule: parameters with types ending in "Props" should be named "props" (or prefixed variants when multiple Props params exist) (`@blumintinc/blumint/enforce-props-argument-name`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
