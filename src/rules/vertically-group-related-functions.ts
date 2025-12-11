@@ -53,13 +53,69 @@ const DEFAULT_OPTIONS: NormalizedOptions = {
 
 const DEFAULT_OPTIONS_ARRAY: Options = [DEFAULT_OPTIONS];
 
+const PATTERN_LENGTH_LIMIT = 200;
+const NESTED_QUANTIFIER_PATTERN = /\([^)]*[+*][^)]*\)\s*[\+\*{]/;
+const BROAD_QUANTIFIER_WITH_BACKREFERENCE_PATTERN =
+  /(?:\.\*|\.\+)[^)]*\\\d/;
+const REPEATED_BROAD_QUANTIFIER_PATTERN = /(?:\.\*|\.\+).*(?:\.\*|\.\+)/;
+
+function isPatternLikelySafe(pattern: string): { safe: boolean; reason?: string } {
+  if (pattern.length > PATTERN_LENGTH_LIMIT) {
+    return {
+      safe: false,
+      reason: `pattern longer than ${PATTERN_LENGTH_LIMIT} characters`,
+    };
+  }
+  if (NESTED_QUANTIFIER_PATTERN.test(pattern)) {
+    return {
+      safe: false,
+      reason:
+        'nested quantifiers can trigger catastrophic backtracking (e.g., "(.+)+")',
+    };
+  }
+  if (REPEATED_BROAD_QUANTIFIER_PATTERN.test(pattern)) {
+    return {
+      safe: false,
+      reason: 'multiple greedy wildcards in one pattern create heavy backtracking',
+    };
+  }
+  if (BROAD_QUANTIFIER_WITH_BACKREFERENCE_PATTERN.test(pattern)) {
+    return {
+      safe: false,
+      reason:
+        'combining greedy wildcards with backreferences is prone to ReDoS backtracking',
+    };
+  }
+
+  return { safe: true };
+}
+
 function createRegexWithFallback(
   pattern: string | undefined,
   fallback: string,
+  onUnsafe?: (value: string, reason: string) => void,
 ) {
+  if (pattern) {
+    const safety = isPatternLikelySafe(pattern);
+    if (!safety.safe) {
+      onUnsafe?.(
+        pattern,
+        safety.reason ||
+          'pattern rejected because it may cause catastrophic backtracking',
+      );
+      return new RegExp(fallback);
+    }
+  }
+
   try {
     return new RegExp(pattern ?? fallback);
-  } catch {
+  } catch (error) {
+    if (pattern) {
+      onUnsafe?.(
+        pattern,
+        (error as Error)?.message || 'pattern failed to compile',
+      );
+    }
     return new RegExp(fallback);
   }
 }
@@ -272,11 +328,7 @@ function collectDependencies(
     });
   };
 
-  if (fnNode.type === 'FunctionDeclaration' || fnNode.type === 'FunctionExpression') {
-    visit(fnNode.body);
-  } else {
-    visit(fnNode.body);
-  }
+  visit(fnNode.body);
 
   return [...dependencies];
 }
@@ -470,13 +522,30 @@ export const verticallyGroupRelatedFunctions: TSESLint.RuleModule<
       ...DEFAULT_OPTIONS,
       ...options,
     };
+    const warnUnsafePattern = (
+      key: 'eventHandlerPattern' | 'utilityPattern',
+      value: string,
+      reason: string,
+    ) => {
+      const truncatedValue =
+        value.length > 120 ? `${value.slice(0, 117)}...` : value;
+      console.warn(
+        `[vertically-group-related-functions] ${key} "${truncatedValue}" rejected: ${reason}. Falling back to safe defaults.`,
+      );
+    };
     const eventHandlerRegex = createRegexWithFallback(
       options?.eventHandlerPattern,
       DEFAULT_OPTIONS.eventHandlerPattern,
+      options?.eventHandlerPattern
+        ? (value, reason) => warnUnsafePattern('eventHandlerPattern', value, reason)
+        : undefined,
     );
     const utilityRegex = createRegexWithFallback(
       options?.utilityPattern,
       DEFAULT_OPTIONS.utilityPattern,
+      options?.utilityPattern
+        ? (value, reason) => warnUnsafePattern('utilityPattern', value, reason)
+        : undefined,
     );
 
     return {

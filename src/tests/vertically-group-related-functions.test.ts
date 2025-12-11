@@ -2,6 +2,8 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { verticallyGroupRelatedFunctions } from '../rules/vertically-group-related-functions';
 
+const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+
 ruleTesterTs.run(
   'vertically-group-related-functions',
   verticallyGroupRelatedFunctions,
@@ -354,6 +356,29 @@ function doWork() {}
 function helper() {}
         `,
       },
+      {
+        code: `
+        const helper = () => {};
+        const handleClick = () => helper();
+        `,
+        options: [
+          {
+            eventHandlerPattern: '(.+)+',
+            utilityPattern: '(.*)+\\1',
+          },
+        ],
+        errors: [{ messageId: 'misorderedFunction' }],
+        output: `
+        const handleClick = () => helper();
+
+const helper = () => {};
+        `,
+      },
     ],
   },
 );
+
+afterAll(() => {
+  expect(consoleWarnSpy).toHaveBeenCalled();
+  consoleWarnSpy.mockRestore();
+});

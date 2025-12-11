@@ -31,7 +31,7 @@ It reports when:
 - `exportPlacement` (default `ignore`): keep exported functions at the top or bottom of the function block.
 - `dependencyDirection` (default `callers-first`): if set to `callees-first`, helpers may precede callers.
 - `groupOrder` (default `["event-handlers", "other", "utilities"]`): preferred vertical grouping buckets.
-- `eventHandlerPattern` / `utilityPattern`: regex strings used to classify functions for grouping.
+- `eventHandlerPattern` / `utilityPattern`: regex strings used to classify functions for grouping. Patterns longer than 200 characters or containing nested greedy quantifiers are rejected with a warning and fall back to the safe defaults to avoid ReDoS-prone configurations.
 
 ### Examples of incorrect code for this rule
 
