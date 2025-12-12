@@ -135,6 +135,14 @@ ruleTesterTs.run('enforce-storage-context', enforceStorageContext, {
       };
       fn();
     `,
+    `
+      const Box = class localStorage {
+        value() {
+          return localStorage;
+        }
+      };
+      Box.prototype.value();
+    `,
   ],
   invalid: [
     {

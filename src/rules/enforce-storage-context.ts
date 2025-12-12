@@ -292,6 +292,9 @@ const identifierHasDeclarationParent = (node: TSESTree.Identifier): boolean => {
   if (parent.type === AST_NODE_TYPES.FunctionExpression && parent.id === node) {
     return true;
   }
+  if (parent.type === AST_NODE_TYPES.ClassExpression && parent.id === node) {
+    return true;
+  }
   if (
     (parent.type === AST_NODE_TYPES.FunctionDeclaration ||
       parent.type === AST_NODE_TYPES.FunctionExpression ||
@@ -481,12 +484,16 @@ const createStorageVisitors = (
   const storageAliases = aliases.stack;
 
   const handleIdentifier = (node: TSESTree.Identifier): void => {
+    const parent = node.parent;
     if (identifierRepresentsDeclaration(node)) {
+      if (
+        parent?.type === AST_NODE_TYPES.ClassExpression &&
+        parent.id === node
+      ) {
+        return;
+      }
       if (identifierIntroducesValueBinding(node) && !aliases.currentScope().has(node.name)) {
-        const outerAlias = getAliasFromStack(
-          storageAliases.slice(0, -1),
-          node.name,
-        );
+        const outerAlias = getAliasFromStack(storageAliases.slice(0, -1), node.name);
         const shadowsGlobal =
           STORAGE_NAMES.has(node.name as StorageKind) ||
           GLOBAL_NAMES.has(node.name);
@@ -645,7 +652,27 @@ const createStorageVisitors = (
     Program: aliases.reset,
     BlockStatement: (_node: TSESTree.BlockStatement) => aliases.pushScope(),
     'BlockStatement:exit': aliases.popScope,
-    ClassBody: (_node: TSESTree.ClassBody) => aliases.pushScope(),
+    ClassBody: (node: TSESTree.ClassBody) => {
+      aliases.pushScope();
+      const parent = node.parent;
+      if (
+        parent &&
+        (parent.type === AST_NODE_TYPES.ClassDeclaration ||
+          parent.type === AST_NODE_TYPES.ClassExpression) &&
+        parent.id
+      ) {
+        const name = parent.id.name;
+        const outerAlias = getAliasFromStack(storageAliases.slice(0, -1), name);
+        const shadowsGlobal =
+          STORAGE_NAMES.has(name as StorageKind) || GLOBAL_NAMES.has(name);
+        const shadowsOuterStorageAlias =
+          outerAlias === 'localStorage' || outerAlias === 'sessionStorage';
+
+        if (shadowsGlobal || shadowsOuterStorageAlias) {
+          aliases.setAlias(name, 'shadowed');
+        }
+      }
+    },
     'ClassBody:exit': aliases.popScope,
     StaticBlock: (_node: TSESTree.StaticBlock) => aliases.pushScope(),
     'StaticBlock:exit': aliases.popScope,
