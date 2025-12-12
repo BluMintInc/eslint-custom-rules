@@ -5,6 +5,8 @@ type AsyncCallbackNode =
   | TSESTree.FunctionExpression
   | TSESTree.FunctionDeclaration;
 
+type AsyncCallbackInfo = { callbackLabel: string };
+
 const getFunctionDescription = (
   node: AsyncCallbackNode,
   fallbackName?: string,
@@ -79,18 +81,118 @@ const getSourceCode = (
   return typedContext.sourceCode ?? context.getSourceCode();
 };
 
+const analyzeInlineCallback = (
+  callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
+): AsyncCallbackInfo | null => {
+  if (!callback.async) {
+    return null;
+  }
+
+  return {
+    callbackLabel: getFunctionDescription(callback),
+  };
+};
+
+const getAsyncFunctionDeclarationInfo = (
+  definition: TSESLint.Scope.Definition,
+  callbackName: string,
+): AsyncCallbackInfo | null => {
+  if (
+    definition.node.type === AST_NODE_TYPES.FunctionDeclaration &&
+    definition.node.async
+  ) {
+    return {
+      callbackLabel: getFunctionDescription(
+        definition.node,
+        definition.node.id?.name ?? callbackName,
+      ),
+    };
+  }
+
+  return null;
+};
+
+const getAsyncVariableDeclaratorInfo = (
+  definition: TSESLint.Scope.Definition,
+  callbackName: string,
+): AsyncCallbackInfo | null => {
+  if (definition.node.type !== AST_NODE_TYPES.VariableDeclarator) {
+    return null;
+  }
+
+  const initializerExpression = definition.node.init;
+  if (!isAsyncFunctionExpression(initializerExpression)) {
+    return null;
+  }
+
+  const name =
+    (definition.node.id.type === AST_NODE_TYPES.Identifier &&
+      definition.node.id.name) ||
+    callbackName;
+
+  return {
+    callbackLabel: getFunctionDescription(initializerExpression, name),
+  };
+};
+
+const analyzeVariableDefinition = (
+  definition: TSESLint.Scope.Definition,
+  callbackName: string,
+): AsyncCallbackInfo | null =>
+  getAsyncFunctionDeclarationInfo(definition, callbackName) ??
+  getAsyncVariableDeclaratorInfo(definition, callbackName);
+
+const getReferenceWriteExpression = (
+  reference: TSESLint.Scope.Reference,
+): TSESTree.Node | null => {
+  const parent = reference.identifier.parent;
+
+  if (reference.writeExpr) {
+    return reference.writeExpr;
+  }
+
+  if (parent?.type === AST_NODE_TYPES.AssignmentExpression) {
+    return parent.right;
+  }
+
+  if (parent?.type === AST_NODE_TYPES.VariableDeclarator && parent.init) {
+    return parent.init;
+  }
+
+  return null;
+};
+
+const analyzeVariableReference = (
+  reference: TSESLint.Scope.Reference,
+): AsyncCallbackInfo | null => {
+  if (typeof reference.isWrite === 'function' && !reference.isWrite()) {
+    return null;
+  }
+
+  const writeExpr = getReferenceWriteExpression(reference);
+  if (!isAsyncFunctionExpression(writeExpr)) {
+    return null;
+  }
+
+  const name =
+    (writeExpr.type === AST_NODE_TYPES.FunctionExpression &&
+      writeExpr.id?.name) ||
+    reference.identifier.name;
+
+  return {
+    callbackLabel: getFunctionDescription(writeExpr, name),
+  };
+};
+
 const analyzeCallbackAsyncStatus = (
   callback: TSESTree.CallExpressionArgument,
   scope: TSESLint.Scope.Scope | null,
-): { callbackLabel: string } | null => {
+): AsyncCallbackInfo | null => {
   if (
-    (callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-      callback.type === AST_NODE_TYPES.FunctionExpression) &&
-    callback.async
+    callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+    callback.type === AST_NODE_TYPES.FunctionExpression
   ) {
-    return {
-      callbackLabel: getFunctionDescription(callback),
-    };
+    return analyzeInlineCallback(callback);
   }
 
   if (callback.type !== AST_NODE_TYPES.Identifier) {
@@ -103,55 +205,20 @@ const analyzeCallbackAsyncStatus = (
   }
 
   for (const definition of variable.defs) {
-    if (
-      definition.node.type === AST_NODE_TYPES.FunctionDeclaration &&
-      definition.node.async
-    ) {
-      return {
-        callbackLabel: getFunctionDescription(
-          definition.node,
-          definition.node.id?.name ?? callback.name,
-        ),
-      };
-    }
+    const definitionResult = analyzeVariableDefinition(
+      definition,
+      callback.name,
+    );
 
-    if (definition.node.type === AST_NODE_TYPES.VariableDeclarator) {
-      const initializerExpression = definition.node.init;
-      if (isAsyncFunctionExpression(initializerExpression)) {
-        const name =
-          (definition.node.id.type === AST_NODE_TYPES.Identifier &&
-            definition.node.id.name) ||
-          callback.name;
-        return {
-          callbackLabel: getFunctionDescription(initializerExpression, name),
-        };
-      }
+    if (definitionResult) {
+      return definitionResult;
     }
   }
 
   for (const reference of variable.references) {
-    if (typeof reference.isWrite === 'function' && !reference.isWrite()) {
-      continue;
-    }
-
-    const parent = reference.identifier.parent;
-    const writeExpr =
-      reference.writeExpr ??
-      (parent &&
-        parent.type === AST_NODE_TYPES.AssignmentExpression &&
-        parent.right) ??
-      (parent &&
-        parent.type === AST_NODE_TYPES.VariableDeclarator &&
-        parent.init);
-
-    if (isAsyncFunctionExpression(writeExpr)) {
-      const name =
-        (writeExpr.type === AST_NODE_TYPES.FunctionExpression &&
-          writeExpr.id?.name) ||
-        reference.identifier.name;
-      return {
-        callbackLabel: getFunctionDescription(writeExpr, name),
-      };
+    const referenceResult = analyzeVariableReference(reference);
+    if (referenceResult) {
+      return referenceResult;
     }
   }
 
