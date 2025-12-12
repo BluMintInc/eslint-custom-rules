@@ -480,6 +480,34 @@ function Component() {
   {
     code: `
 import { useCallback } from 'react';
+function First() {
+  const handler = useCallback(() => console.log('first'), []);
+  return <button onClick={handler}>First</button>;
+}
+function Second() {
+  const handler = useCallback(() => console.log('second'), []);
+  return <button onClick={handler}>Second</button>;
+}
+    `,
+    errors: [
+      { messageId: 'preferUtilityFunction' as const },
+      { messageId: 'preferUtilityFunction' as const },
+    ],
+    output: `
+import { useCallback } from 'react';
+const handler = () => console.log('first');
+function First() {
+  return <button onClick={handler}>First</button>;
+}
+function Second() {
+  const handler = useCallback(() => console.log('second'), []);
+  return <button onClick={handler}>Second</button>;
+}
+    `,
+  },
+  {
+    code: `
+import { useCallback } from 'react';
 function Component() {
   let formatter = useCallback((value: number) => value.toFixed(2), []);
   formatter = (value) => formatter(value);

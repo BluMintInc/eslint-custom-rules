@@ -558,16 +558,19 @@ function buildHoistFixes(
   }
 
   const programNode = getProgramNode(hoistTarget);
+  let moduleBindings: Set<string> | null = null;
   if (programNode) {
     const cachedBindings = moduleBindingsCache.get(programNode);
-    const moduleBindings =
-      cachedBindings ?? getModuleScopeValueBindings(programNode);
+    moduleBindings = cachedBindings ?? getModuleScopeValueBindings(programNode);
     if (!cachedBindings) {
       moduleBindingsCache.set(programNode, moduleBindings);
     }
     if (moduleBindings.has(declarator.id.name)) {
       return null;
     }
+    // Reserve the identifier so later callbacks in the same file with the same
+    // name do not attempt to hoist and produce duplicate declarations.
+    moduleBindings.add(declarator.id.name);
   }
 
   const sourceCode = context.getSourceCode();
