@@ -580,6 +580,53 @@ export const Wrapped = memo(Comp, compareDeeply('payload'));
 `,
         errors: [{ messageId: 'useCompareDeeply' }],
       },
+      {
+        filename: 'src/components/MultipleMemoImports.tsx',
+        code: `
+import { memo } from '../util/memo';
+import { memo as memoFromSrc } from 'src/util/memo';
+type Props = { config: { theme: string } };
+const Comp = ({ config }: Props) => <div>{config.theme}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { memo, compareDeeply } from '../util/memo';
+import { memo as memoFromSrc } from 'src/util/memo';
+type Props = { config: { theme: string } };
+const Comp = ({ config }: Props) => <div>{config.theme}</div>;
+export const Wrapped = memo(Comp, compareDeeply('config'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      {
+        filename: 'src/components/ShadowedInitializer.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { settings: { theme: string } };
+const Comp = ({ settings }: Props) => <div>{settings.theme}</div>;
+
+function makeInner() {
+  const Comp = ({ flag }: { flag: boolean }) => <span>{flag}</span>;
+  return Comp;
+}
+
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Props = { settings: { theme: string } };
+const Comp = ({ settings }: Props) => <div>{settings.theme}</div>;
+
+function makeInner() {
+  const Comp = ({ flag }: { flag: boolean }) => <span>{flag}</span>;
+  return Comp;
+}
+
+export const Wrapped = memo(Comp, compareDeeply('settings'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
     ],
   },
 );

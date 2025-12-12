@@ -21,8 +21,11 @@ type MemoImportTracking = {
 };
 
 type ComponentInitializerTracker = {
-  recordComponentInitializer: (node: TSESTree.VariableDeclarator) => void;
-  getInitializer: (name: string) => TSESTree.Expression | null;
+  recordComponentInitializer: (
+    node: TSESTree.VariableDeclarator,
+    scope: TSESLint.Scope.Scope,
+  ) => void;
+  getInitializer: (name: string, scope: TSESLint.Scope.Scope) => TSESTree.Expression | null;
 };
 
 type TopLevelDeclaration =
@@ -332,14 +335,20 @@ function ensureCompareDeeplyImportFixes(
       ? 'compareDeeply'
       : `compareDeeply as ${preferredLocalName}`;
 
-  const importWithNamed = memoImports.find((memoImport) =>
-    memoImport.specifiers.some(
-      (spec): spec is TSESTree.ImportSpecifier =>
-        spec.type === AST_NODE_TYPES.ImportSpecifier,
-    ),
+  const importWithNamed = memoImports.find(
+    (memoImport) =>
+      memoImport.source.value === importSource &&
+      memoImport.specifiers.some(
+        (spec): spec is TSESTree.ImportSpecifier =>
+          spec.type === AST_NODE_TYPES.ImportSpecifier,
+      ),
   );
-  if (importWithNamed) {
-    const namedSpecifiers = importWithNamed.specifiers.filter(
+  const fallbackImportWithNamed = memoImports.find((memoImport) =>
+    memoImport.specifiers.some((spec) => spec.type === AST_NODE_TYPES.ImportSpecifier),
+  );
+  const namedImportTarget = importWithNamed ?? fallbackImportWithNamed;
+  if (namedImportTarget) {
+    const namedSpecifiers = namedImportTarget.specifiers.filter(
       (spec): spec is TSESTree.ImportSpecifier =>
         spec.type === AST_NODE_TYPES.ImportSpecifier,
     );
@@ -353,14 +362,23 @@ function ensureCompareDeeplyImportFixes(
     };
   }
 
-  const importWithDefault = memoImports.find((memoImport) =>
+  const importWithDefault = memoImports.find(
+    (memoImport) =>
+      memoImport.source.value === importSource &&
+      memoImport.specifiers.some(
+        (spec): spec is TSESTree.ImportDefaultSpecifier =>
+          spec.type === AST_NODE_TYPES.ImportDefaultSpecifier,
+      ),
+  );
+  const fallbackImportWithDefault = memoImports.find((memoImport) =>
     memoImport.specifiers.some(
       (spec): spec is TSESTree.ImportDefaultSpecifier =>
         spec.type === AST_NODE_TYPES.ImportDefaultSpecifier,
     ),
   );
-  if (importWithDefault) {
-    const defaultSpecifier = importWithDefault.specifiers.find(
+  const defaultImportTarget = importWithDefault ?? fallbackImportWithDefault;
+  if (defaultImportTarget) {
+    const defaultSpecifier = defaultImportTarget.specifiers.find(
       (spec): spec is TSESTree.ImportDefaultSpecifier =>
         spec.type === AST_NODE_TYPES.ImportDefaultSpecifier,
     );
@@ -374,11 +392,14 @@ function ensureCompareDeeplyImportFixes(
     }
   }
 
-  if (memoImports.length > 0) {
+  const importForInsertion =
+    memoImports.find((memoImport) => memoImport.source.value === importSource) ??
+    memoImports[0];
+  if (importForInsertion) {
     return {
       fixes: [
         fixer.insertTextAfter(
-          memoImports[0],
+          importForInsertion,
           `\nimport { ${compareDeeplySpecifierText} } from '${importSource}';`,
         ),
       ],
@@ -534,6 +555,76 @@ function extractComplexPropsFromSignature(
   );
 }
 
+function extractPropsFromTypeArguments(
+  paramTsNode: import('typescript').Node,
+  checker: import('typescript').TypeChecker,
+  ts: typeof import('typescript'),
+): string[] {
+  let cursor: import('typescript').Node | undefined = paramTsNode;
+  while (cursor && !ts.isCallExpression(cursor)) {
+    cursor = cursor.parent;
+  }
+  const parentCall = cursor && ts.isCallExpression(cursor) ? cursor : undefined;
+  const propsTypeArg = parentCall?.typeArguments?.[1];
+  if (propsTypeArg) {
+    const typeFromArg = checker.getTypeFromTypeNode(propsTypeArg);
+    return getComplexPropertiesFromType(
+      typeFromArg,
+      checker,
+      propsTypeArg,
+      ts,
+      true,
+      typeFromArg.flags ?? 0,
+    );
+  }
+  return [];
+}
+
+function extractPropsFromFunctionParam(
+  param: TSESTree.Parameter,
+  services: TSESLint.SourceCode['parserServices'],
+  ts: typeof import('typescript'),
+): string[] {
+  const checker = services.program.getTypeChecker();
+  const paramTsNode = services.esTreeNodeToTSNodeMap.get(param);
+  if (!paramTsNode) return [];
+
+  const paramType = checker.getTypeAtLocation(paramTsNode);
+  if (paramType.flags & ts.TypeFlags.Any) {
+    const propsFromTypeArgs = extractPropsFromTypeArguments(paramTsNode, checker, ts);
+    if (propsFromTypeArgs.length > 0) {
+      return propsFromTypeArgs;
+    }
+  }
+
+  const treatAnyAsComplex = Boolean(paramType.flags & ts.TypeFlags.Any);
+  return getComplexPropertiesFromType(
+    paramType,
+    checker,
+    paramTsNode,
+    ts,
+    treatAnyAsComplex,
+    paramType.flags ?? 0,
+  );
+}
+
+function extractPropsFromComponentSignatures(
+  tsNode: import('typescript').Node,
+  checker: import('typescript').TypeChecker,
+  ts: typeof import('typescript'),
+): string[] {
+  const componentType = checker.getTypeAtLocation(tsNode);
+  const signatures = componentType.getCallSignatures?.() ?? [];
+  const complexProps = new Set<string>();
+
+  for (const signature of signatures) {
+    const propsFromSignature = extractComplexPropsFromSignature(signature, checker, tsNode, ts);
+    propsFromSignature.forEach((prop) => complexProps.add(prop));
+  }
+
+  return Array.from(complexProps).sort();
+}
+
 function getComplexPropsFromComponent(
   componentExpr: TSESTree.Expression,
   services: TSESLint.SourceCode['parserServices'],
@@ -549,56 +640,10 @@ function getComplexPropsFromComponent(
       componentExpr.type === AST_NODE_TYPES.ArrowFunctionExpression) &&
     componentExpr.params[0]
   ) {
-    const paramTsNode = services.esTreeNodeToTSNodeMap.get(componentExpr.params[0]);
-    if (paramTsNode) {
-      const paramType = checker.getTypeAtLocation(paramTsNode);
-      if (paramType.flags & ts.TypeFlags.Any) {
-        let cursor: import('typescript').Node | undefined = paramTsNode;
-        while (cursor && !ts.isCallExpression(cursor)) {
-          cursor = cursor.parent;
-        }
-        const parentCall =
-          cursor && ts.isCallExpression(cursor) ? cursor : undefined;
-        const propsTypeArg = parentCall?.typeArguments?.[1];
-        if (propsTypeArg) {
-          const typeFromArg = checker.getTypeFromTypeNode(propsTypeArg);
-          return getComplexPropertiesFromType(
-            typeFromArg,
-            checker,
-            propsTypeArg,
-            ts,
-            true,
-            typeFromArg.flags ?? 0,
-          );
-        }
-      }
-      const treatAnyAsComplex = Boolean(paramType.flags & ts.TypeFlags.Any);
-      return getComplexPropertiesFromType(
-        paramType,
-        checker,
-        paramTsNode,
-        ts,
-        treatAnyAsComplex,
-        paramType.flags ?? 0,
-      );
-    }
+    return extractPropsFromFunctionParam(componentExpr.params[0], services, ts);
   }
 
-  const componentType = checker.getTypeAtLocation(tsNode);
-  const signatures = componentType.getCallSignatures?.() ?? [];
-  const complexProps = new Set<string>();
-
-  for (const signature of signatures) {
-    const propsFromSignature = extractComplexPropsFromSignature(
-      signature,
-      checker,
-      tsNode,
-      ts,
-    );
-    propsFromSignature.forEach((prop) => complexProps.add(prop));
-  }
-
-  return Array.from(complexProps).sort();
+  return extractPropsFromComponentSignatures(tsNode, checker, ts);
 }
 
 function collectComplexProps(
@@ -619,7 +664,7 @@ function collectComplexProps(
     complexPropsCache.set(componentExpr, result);
     return result;
   } catch (error) {
-    if (process.env.NODE_ENV !== 'production') {
+    if (process.env.ESLINT_CUSTOM_RULES_DEBUG === '1') {
       const componentText = sourceCode.getText(componentExpr);
       // Log to aid debugging when type analysis unexpectedly fails.
       // eslint-disable-next-line no-console
@@ -827,16 +872,29 @@ function createMemoImportTracking(): MemoImportTracking & {
 }
 
 function createComponentInitializerTracker(): ComponentInitializerTracker {
-  const componentInitializers = new Map<string, TSESTree.Expression>();
+  const componentInitializers = new WeakMap<TSESLint.Scope.Scope, Map<string, TSESTree.Expression>>();
 
-  function recordComponentInitializer(node: TSESTree.VariableDeclarator): void {
-    if (node.id.type === AST_NODE_TYPES.Identifier && node.init) {
-      componentInitializers.set(node.id.name, node.init as TSESTree.Expression);
-    }
+  function recordComponentInitializer(
+    node: TSESTree.VariableDeclarator,
+    scope: TSESLint.Scope.Scope,
+  ): void {
+    if (node.id.type !== AST_NODE_TYPES.Identifier || !node.init) return;
+    const currentScopeInitializers =
+      componentInitializers.get(scope) ?? new Map<string, TSESTree.Expression>();
+    currentScopeInitializers.set(node.id.name, node.init as TSESTree.Expression);
+    componentInitializers.set(scope, currentScopeInitializers);
   }
 
-  function getInitializer(name: string): TSESTree.Expression | null {
-    return componentInitializers.get(name) ?? null;
+  function getInitializer(name: string, scope: TSESLint.Scope.Scope): TSESTree.Expression | null {
+    let currentScope: TSESLint.Scope.Scope | null = scope;
+    while (currentScope) {
+      const initializerMap = componentInitializers.get(currentScope);
+      if (initializerMap?.has(name)) {
+        return initializerMap.get(name) ?? null;
+      }
+      currentScope = (currentScope.upper as TSESLint.Scope.Scope | null) ?? null;
+    }
+    return null;
   }
 
   return {
@@ -858,7 +916,7 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
     schema: [],
     messages: {
       useCompareDeeply:
-        "What's wrong: Memoized component \"{{componentName}}\" receives complex prop(s) {{propsList}} but memo still uses shallow reference comparison. Why it matters: Objects and arrays are recreated on each render so shallow compare treats them as \"changed\" even when values are stable, triggering avoidable re-renders. How to fix: Pass compareDeeply({{propsCall}}) as memo's second argument to compare those props by value and keep the component memoized.",
+        "What's wrong: Memoized component \"{{componentName}}\" receives complex prop(s) {{propsList}} but memo still uses shallow reference comparison → Why it matters: Objects/arrays are often recreated on each render, so shallow comparison treats them as \"changed\" and triggers avoidable re-renders → How to fix: Pass compareDeeply({{propsCall}}) as memo's second argument to compare those props by value.",
     },
   },
   defaultOptions: [],
@@ -870,7 +928,9 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
 
     return {
       ImportDeclaration: memoImportTracking.recordImport,
-      VariableDeclarator: initializerTracking.recordComponentInitializer,
+      VariableDeclarator(node) {
+        initializerTracking.recordComponentInitializer(node, context.getScope());
+      },
       CallExpression(node) {
         const memoCall = memoImportTracking.isMemoCall(node);
         if (!memoCall) return;
@@ -883,9 +943,9 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
         const comparatorArg = node.arguments[1];
         if (componentArg.type === AST_NODE_TYPES.SpreadElement) return;
 
-        const componentTargets = findComponentAnalysisTargets(
-          componentArg,
-          initializerTracking.getInitializer,
+        const currentScope = context.getScope();
+        const componentTargets = findComponentAnalysisTargets(componentArg, (name) =>
+          initializerTracking.getInitializer(name, currentScope),
         );
         if (!componentTargets) return;
 
