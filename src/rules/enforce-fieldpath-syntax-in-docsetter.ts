@@ -266,6 +266,59 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       return undefined;
     }
 
+    type ViolationDetails = {
+      topLevelKey: string;
+      exampleFieldPath: string;
+      flattenedProperties: Record<string, string>;
+    };
+
+    function extractViolationDetails(
+      firstArg: TSESTree.ObjectExpression,
+      sourceCode: TSESLint.SourceCode,
+    ): ViolationDetails | null {
+      const firstNestedPropertyWithoutDots = getFirstNestedObjectProperty(
+        firstArg,
+        (key) => !key.includes('.'),
+      );
+
+      const firstNestedProperty =
+        firstNestedPropertyWithoutDots ||
+        getFirstNestedObjectProperty(firstArg);
+
+      if (!firstNestedProperty) {
+        return null;
+      }
+
+      const propertyKeyText = getPropertyKeyText(firstNestedProperty);
+      const exampleFieldPathFromProperty =
+        propertyKeyText &&
+        flattenObject(
+          firstNestedProperty.value,
+          sourceCode,
+          propertyKeyText,
+        );
+
+      const flattenedProperties = flattenObject(firstArg, sourceCode);
+
+      const exampleFieldPath =
+        (exampleFieldPathFromProperty &&
+          Object.keys(exampleFieldPathFromProperty).find((key) =>
+            key.includes('.'),
+          )) ??
+        (propertyKeyText &&
+          Object.keys(flattenedProperties).find((key) =>
+            key.startsWith(`${propertyKeyText}.`),
+          )) ??
+        Object.keys(flattenedProperties).find((key) => key.includes('.')) ??
+        'field.nested';
+
+      return {
+        topLevelKey: propertyKeyText ?? 'nested field',
+        exampleFieldPath,
+        flattenedProperties,
+      };
+    }
+
     return {
       // Track DocSetter variable declarations
       VariableDeclarator(node) {
@@ -295,50 +348,11 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
 
         const sourceCode = context.getSourceCode();
 
-        const firstNestedPropertyWithoutDots = getFirstNestedObjectProperty(
-          firstArg,
-          (key) => !key.includes('.'),
-        );
+        const violationDetails = extractViolationDetails(firstArg, sourceCode);
 
-        const firstNestedProperty =
-          firstNestedPropertyWithoutDots ||
-          getFirstNestedObjectProperty(firstArg);
-
-        if (!firstNestedProperty) {
+        if (!violationDetails) {
           return;
         }
-
-        let flattenedProperties: Record<string, string> | undefined;
-        const getFlattenedProperties = () => {
-          if (!flattenedProperties) {
-            flattenedProperties = flattenObject(firstArg, sourceCode);
-          }
-          return flattenedProperties;
-        };
-
-        const propertyKeyText = getPropertyKeyText(firstNestedProperty);
-        const exampleFieldPathFromProperty =
-          propertyKeyText &&
-          flattenObject(
-            firstNestedProperty.value,
-            sourceCode,
-            propertyKeyText,
-          );
-        const exampleFieldPath =
-          (exampleFieldPathFromProperty &&
-            Object.keys(exampleFieldPathFromProperty).find((key) =>
-              key.includes('.'),
-            )) ??
-          (propertyKeyText &&
-            Object.keys(getFlattenedProperties()).find((key) =>
-              key.startsWith(`${propertyKeyText}.`),
-            )) ??
-          Object.keys(getFlattenedProperties()).find((key) =>
-            key.includes('.'),
-          ) ??
-          'field.nested';
-
-        const topLevelKey = propertyKeyText ?? 'nested field';
 
         // Report and fix the issue
         context.report({
@@ -346,14 +360,14 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
           messageId: 'enforceFieldPathSyntax',
           data: {
             methodName: getMethodName(node),
-            topLevelKey,
-            exampleFieldPath,
+            topLevelKey: violationDetails.topLevelKey,
+            exampleFieldPath: violationDetails.exampleFieldPath,
           },
           fix(fixer) {
             const newText = convertToFieldPathSyntax(
               firstArg,
               sourceCode,
-              getFlattenedProperties(),
+              violationDetails.flattenedProperties,
             );
             return fixer.replaceText(firstArg, newText);
           },
