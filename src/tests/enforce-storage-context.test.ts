@@ -54,10 +54,24 @@ ruleTesterTs.run('enforce-storage-context', enforceStorageContext, {
     },
     {
       code: `
+        window.localStorage.getItem('mock');
+      `,
+      filename: 'C:\\\\repo\\\\src\\\\__mocks__\\\\storage.ts',
+    },
+    {
+      code: `
         const polyfill = window.localStorage || createPolyfill();
         polyfill.setItem('key', 'value');
       `,
       filename: '/workspace/src/polyfills/storage.ts',
+      options: [{ allow: ['**/polyfills/**'] }],
+    },
+    {
+      code: `
+        const polyfill = window.sessionStorage || createPolyfill();
+        polyfill.getItem('key');
+      `,
+      filename: 'C:\\\\repo\\\\polyfills\\\\storage.ts',
       options: [{ allow: ['**/polyfills/**'] }],
     },
     `
@@ -248,6 +262,24 @@ store.setItem('k', 'v');
         { messageId: 'useStorageContext', line: 3, column: 4 },
         { messageId: 'useStorageContext', line: 4, column: 7 },
       ],
+    },
+    {
+      code: `
+        type localStorage = {};
+        const cache = localStorage;
+        cache.setItem('k', 'v');
+      `,
+      errors: [
+        { messageId: 'useStorageContext' },
+        { messageId: 'useStorageContext' },
+      ],
+    },
+    {
+      code: `
+        class StoreShim { localStorage = createStorage(); }
+        localStorage.getItem('k');
+      `,
+      errors: [{ messageId: 'useStorageContext' }],
     },
   ],
 });

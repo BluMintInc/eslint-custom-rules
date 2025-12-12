@@ -1,6 +1,6 @@
 import path from 'path';
 import { minimatch } from 'minimatch';
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type StorageKind = 'localStorage' | 'sessionStorage';
@@ -16,10 +16,57 @@ type MessageIds = 'useStorageContext';
 type AliasEntry = StorageKind | 'shadowed';
 type AliasStack = Array<Map<string, AliasEntry>>;
 
+type AliasState = {
+  stack: AliasStack;
+  currentScope: () => Map<string, AliasEntry>;
+  pushScope: () => void;
+  popScope: () => void;
+  reset: () => void;
+  setAlias: (name: string, value: AliasEntry) => void;
+  markShadowed: (name: string) => void;
+};
+
+type ReportUsage = (
+  node: TSESTree.Node,
+  storage: StorageKind,
+  accessType: string,
+) => void;
+
 const STORAGE_NAMES = new Set<StorageKind>(['localStorage', 'sessionStorage']);
 const GLOBAL_NAMES = new Set(['window', 'global', 'globalThis']);
 const CONTEXT_BASENAMES = new Set(['LocalStorage.tsx', 'SessionStorage.tsx']);
 const TEST_FILE_REGEX = /\.(test|spec)\.[jt]sx?$/i;
+
+const createAliasState = (): AliasState => {
+  const stack: AliasStack = [new Map()];
+  const currentScope = () => stack[stack.length - 1];
+  const pushScope = () => {
+    stack.push(new Map());
+  };
+  const popScope = () => {
+    if (stack.length > 1) {
+      stack.pop();
+    }
+  };
+  const setAlias = (name: string, value: AliasEntry) => {
+    currentScope().set(name, value);
+  };
+  const markShadowed = (name: string) => setAlias(name, 'shadowed');
+  const reset = () => {
+    stack.length = 1;
+    stack[0].clear();
+  };
+
+  return {
+    stack,
+    currentScope,
+    pushScope,
+    popScope,
+    reset,
+    setAlias,
+    markShadowed,
+  };
+};
 
 /**
  * Unwraps TypeScript-only wrappers and parentheses to expose the runtime
@@ -290,6 +337,66 @@ const identifierRepresentsDeclaration = (node: TSESTree.Identifier): boolean => 
   return false;
 };
 
+const identifierIntroducesValueBinding = (node: TSESTree.Identifier): boolean => {
+  const parent = node.parent;
+  if (!parent) return false;
+
+  if (
+    parent.type === AST_NODE_TYPES.Property &&
+    parent.value === node &&
+    parent.parent?.type === AST_NODE_TYPES.ObjectPattern
+  ) {
+    return true;
+  }
+
+  if (parent.type === AST_NODE_TYPES.ObjectPattern) return true;
+  if (parent.type === AST_NODE_TYPES.ArrayPattern) return true;
+  if (parent.type === AST_NODE_TYPES.RestElement && parent.argument === node) {
+    return true;
+  }
+  if (parent.type === AST_NODE_TYPES.VariableDeclarator && parent.id === node) {
+    return true;
+  }
+  if (
+    parent.type === AST_NODE_TYPES.AssignmentExpression &&
+    parent.left === node
+  ) {
+    return true;
+  }
+  if (
+    parent.type === AST_NODE_TYPES.AssignmentPattern &&
+    parent.left === node
+  ) {
+    return true;
+  }
+  if (parent.type === AST_NODE_TYPES.FunctionDeclaration && parent.id === node) {
+    return true;
+  }
+  if (
+    (parent.type === AST_NODE_TYPES.FunctionDeclaration ||
+      parent.type === AST_NODE_TYPES.FunctionExpression ||
+      parent.type === AST_NODE_TYPES.ArrowFunctionExpression) &&
+    parent.params.includes(node)
+  ) {
+    return true;
+  }
+  if (parent.type === AST_NODE_TYPES.CatchClause && parent.param === node) {
+    return true;
+  }
+  if (parent.type === AST_NODE_TYPES.ClassDeclaration && parent.id === node) {
+    return true;
+  }
+  if (
+    parent.type === AST_NODE_TYPES.ImportSpecifier ||
+    parent.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
+    parent.type === AST_NODE_TYPES.ImportNamespaceSpecifier
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
 const isMemberExpressionObject = (node: TSESTree.Identifier): boolean => {
   const parent = node.parent;
   return (
@@ -362,17 +469,243 @@ const shouldIgnoreFile = (
   filename: string,
   options: RuleOptions[0] | undefined,
 ): boolean => {
+  const normalizedFilename = filename.replace(/\\/g, '/');
   const base = path.basename(filename);
   if (CONTEXT_BASENAMES.has(base)) return true;
 
   const allowInTests = options?.allowInTests ?? true;
   const isTestFile =
-    TEST_FILE_REGEX.test(filename) || filename.includes('__mocks__/');
+    TEST_FILE_REGEX.test(normalizedFilename) ||
+    /(^|\/)__mocks__(\/|$)/.test(normalizedFilename);
 
   if (allowInTests && isTestFile) return true;
 
   const allowPatterns = options?.allow ?? [];
-  return allowPatterns.some((pattern) => minimatch(filename, pattern));
+  return allowPatterns.some((pattern) => minimatch(normalizedFilename, pattern));
+};
+
+const createUsageReporter = (
+  context: Readonly<TSESLint.RuleContext<MessageIds, RuleOptions>>,
+): ReportUsage => {
+  const reportedNodes = new WeakSet<TSESTree.Node>();
+  const reportedLocations = new Set<string>();
+
+  return (node, storage, accessType) => {
+    const locationKey = node.range ? `${node.range[0]}:${node.range[1]}` : null;
+    if (locationKey && reportedLocations.has(locationKey)) return;
+    if (locationKey) reportedLocations.add(locationKey);
+    if (reportedNodes.has(node)) return;
+    reportedNodes.add(node);
+    const hook =
+      storage === 'localStorage' ? 'useLocalStorage' : 'useSessionStorage';
+    context.report({
+      node,
+      messageId: 'useStorageContext',
+      data: {
+        storage,
+        accessType,
+        hook,
+      },
+    });
+  };
+};
+
+const createStorageVisitors = (
+  aliases: AliasState,
+  reportUsage: ReportUsage,
+): TSESLint.RuleListener => {
+  const storageAliases = aliases.stack;
+
+  const handleIdentifier = (node: TSESTree.Identifier): void => {
+    if (identifierRepresentsDeclaration(node)) {
+      if (identifierIntroducesValueBinding(node) && !aliases.currentScope().has(node.name)) {
+        const outerAlias = getAliasFromStack(
+          storageAliases.slice(0, -1),
+          node.name,
+        );
+        const shadowsGlobal =
+          STORAGE_NAMES.has(node.name as StorageKind) ||
+          GLOBAL_NAMES.has(node.name);
+        const shadowsOuterStorageAlias =
+          outerAlias === 'localStorage' || outerAlias === 'sessionStorage';
+
+        if (shadowsGlobal || shadowsOuterStorageAlias) {
+          aliases.markShadowed(node.name);
+        }
+      }
+      return;
+    }
+    const storageKind = resolveStorageObject(node, storageAliases);
+    if (!storageKind) return;
+    if (isMemberExpressionObject(node)) return;
+    if (
+      node.parent &&
+      node.parent.type === AST_NODE_TYPES.MemberExpression &&
+      node.parent.property === node
+    )
+      return;
+
+    reportUsage(node, storageKind, 'reference');
+  };
+
+  const handleMemberExpression = (node: TSESTree.MemberExpression): void => {
+    const object = node.object as TSESTree.Expression;
+    const storageKind = resolveStorageObject(object, storageAliases);
+
+    if (storageKind) {
+      if (
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.CallExpression &&
+        node.parent.callee === node
+      ) {
+        return;
+      }
+
+      if (
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.MemberExpression &&
+        node.parent.object === node
+      ) {
+        return;
+      }
+
+      const propName = getPropertyName(node.property);
+      reportUsage(
+        node,
+        storageKind,
+        propName ? `property "${propName}"` : 'property access',
+      );
+      return;
+    }
+
+    const propertyName = getPropertyName(node.property);
+    if (
+      propertyName &&
+      STORAGE_NAMES.has(propertyName as StorageKind) &&
+      isGlobalLike(object, storageAliases)
+    ) {
+      if (
+        node.parent &&
+        node.parent.type === AST_NODE_TYPES.MemberExpression &&
+        node.parent.object === node
+      ) {
+        return;
+      }
+
+      reportUsage(node.property, propertyName as StorageKind, 'reference');
+    }
+  };
+
+  const handleCallExpression = (node: TSESTree.CallExpression): void => {
+    const callee = unwrapExpression(node.callee as TSESTree.Expression);
+    if (callee.type !== AST_NODE_TYPES.MemberExpression) return;
+
+    const storageKind = resolveStorageObject(
+      callee.object as TSESTree.Expression,
+      storageAliases,
+    );
+    if (!storageKind) return;
+
+    const propName = getPropertyName(callee.property);
+    reportUsage(
+      callee.property,
+      storageKind,
+      propName ? `method "${propName}"` : 'storage method',
+    );
+  };
+
+  const handleVariableDeclarator = (
+    node: TSESTree.VariableDeclarator,
+  ): void => {
+    if (node.id.type === AST_NODE_TYPES.Identifier) {
+      const storageKind = node.init
+        ? resolveStorageObject(node.init as TSESTree.Expression, storageAliases)
+        : null;
+      if (storageKind) {
+        aliases.setAlias(node.id.name, storageKind);
+      } else {
+        const shadowsGlobal =
+          STORAGE_NAMES.has(node.id.name as StorageKind) ||
+          GLOBAL_NAMES.has(node.id.name);
+        if (shadowsGlobal) {
+          aliases.markShadowed(node.id.name);
+        }
+      }
+    } else if (node.id.type === AST_NODE_TYPES.ObjectPattern) {
+      const initExpr = (node.init as TSESTree.Expression | null) ?? null;
+      recordAliasFromPattern(
+        node.id,
+        initExpr,
+        storageAliases,
+        (propertyNode, storageKind, accessType) => {
+          reportUsage(propertyNode, storageKind, accessType);
+        },
+      );
+    }
+  };
+
+  const handleAssignmentExpression = (
+    node: TSESTree.AssignmentExpression,
+  ): void => {
+    if (node.left.type === AST_NODE_TYPES.Identifier) {
+      const right = node.right as TSESTree.Expression;
+      const storageKind = resolveStorageObject(right, storageAliases);
+      if (storageKind) {
+        aliases.setAlias(node.left.name, storageKind);
+      } else {
+        const existing = getAliasFromStack(storageAliases, node.left.name);
+        const isStorageOrGlobalName =
+          STORAGE_NAMES.has(node.left.name as StorageKind) ||
+          GLOBAL_NAMES.has(node.left.name);
+        if (
+          isStorageOrGlobalName ||
+          existing === 'localStorage' ||
+          existing === 'sessionStorage'
+        ) {
+          aliases.markShadowed(node.left.name);
+        }
+      }
+    } else if (node.left.type === AST_NODE_TYPES.ObjectPattern) {
+      recordAliasFromPattern(
+        node.left,
+        node.right as TSESTree.Expression,
+        storageAliases,
+        (propertyNode, storageKind, accessType) => {
+          reportUsage(propertyNode, storageKind, accessType);
+        },
+      );
+    }
+  };
+
+  return {
+    Program: aliases.reset,
+    BlockStatement: (_node: TSESTree.BlockStatement) => aliases.pushScope(),
+    'BlockStatement:exit': aliases.popScope,
+    SwitchStatement: (_node: TSESTree.SwitchStatement) => aliases.pushScope(),
+    'SwitchStatement:exit': aliases.popScope,
+    ForStatement: (_node: TSESTree.ForStatement) => aliases.pushScope(),
+    'ForStatement:exit': aliases.popScope,
+    ForInStatement: (_node: TSESTree.ForInStatement) => aliases.pushScope(),
+    'ForInStatement:exit': aliases.popScope,
+    ForOfStatement: (_node: TSESTree.ForOfStatement) => aliases.pushScope(),
+    'ForOfStatement:exit': aliases.popScope,
+    CatchClause: (_node: TSESTree.CatchClause) => aliases.pushScope(),
+    'CatchClause:exit': aliases.popScope,
+    FunctionDeclaration: (_node: TSESTree.FunctionDeclaration) =>
+      aliases.pushScope(),
+    'FunctionDeclaration:exit': aliases.popScope,
+    FunctionExpression: (_node: TSESTree.FunctionExpression) =>
+      aliases.pushScope(),
+    'FunctionExpression:exit': aliases.popScope,
+    ArrowFunctionExpression: (_node: TSESTree.ArrowFunctionExpression) =>
+      aliases.pushScope(),
+    'ArrowFunctionExpression:exit': aliases.popScope,
+    Identifier: handleIdentifier,
+    MemberExpression: handleMemberExpression,
+    CallExpression: handleCallExpression,
+    VariableDeclarator: handleVariableDeclarator,
+    AssignmentExpression: handleAssignmentExpression,
+  };
 };
 
 export const enforceStorageContext = createRule<RuleOptions, MessageIds>({
@@ -418,222 +751,9 @@ export const enforceStorageContext = createRule<RuleOptions, MessageIds>({
       return {};
     }
 
-    const storageAliases: AliasStack = [new Map()];
-    const reportedNodes = new WeakSet<TSESTree.Node>();
-    const reportedLocations = new Set<string>();
+    const aliases = createAliasState();
+    const reportUsage = createUsageReporter(context);
 
-    const currentScope = () => storageAliases[storageAliases.length - 1];
-    const pushScope = () => {
-      storageAliases.push(new Map());
-    };
-    const popScope = () => {
-      if (storageAliases.length > 1) {
-        storageAliases.pop();
-      }
-    };
-    const setAlias = (name: string, value: AliasEntry) => {
-      currentScope().set(name, value);
-    };
-    const markShadowed = (name: string) => setAlias(name, 'shadowed');
-
-    const reportUsage = (
-      node: TSESTree.Node,
-      storage: StorageKind,
-      accessType: string,
-    ) => {
-      const locationKey = node.range
-        ? `${node.range[0]}:${node.range[1]}`
-        : null;
-      if (locationKey && reportedLocations.has(locationKey)) return;
-      if (locationKey) reportedLocations.add(locationKey);
-      if (reportedNodes.has(node)) return;
-      reportedNodes.add(node);
-      const hook =
-        storage === 'localStorage' ? 'useLocalStorage' : 'useSessionStorage';
-      context.report({
-        node,
-        messageId: 'useStorageContext',
-        data: {
-          storage,
-          accessType,
-          hook,
-        },
-      });
-    };
-
-    const handleIdentifier = (node: TSESTree.Identifier): void => {
-      if (identifierRepresentsDeclaration(node)) {
-        if (STORAGE_NAMES.has(node.name as StorageKind) || GLOBAL_NAMES.has(node.name)) {
-          markShadowed(node.name);
-        }
-        return;
-      }
-      const storageKind = resolveStorageObject(node, storageAliases);
-      if (!storageKind) return;
-      if (isMemberExpressionObject(node)) return;
-      if (
-        node.parent &&
-        node.parent.type === AST_NODE_TYPES.MemberExpression &&
-        node.parent.property === node
-      )
-        return;
-
-      reportUsage(node, storageKind, 'reference');
-    };
-
-    const handleMemberExpression = (node: TSESTree.MemberExpression): void => {
-      const object = node.object as TSESTree.Expression;
-      const storageKind = resolveStorageObject(object, storageAliases);
-
-      if (storageKind) {
-        if (
-          node.parent &&
-          node.parent.type === AST_NODE_TYPES.CallExpression &&
-          node.parent.callee === node
-        ) {
-          return;
-        }
-
-        if (
-          node.parent &&
-          node.parent.type === AST_NODE_TYPES.MemberExpression &&
-          node.parent.object === node
-        ) {
-          return;
-        }
-
-        const propName = getPropertyName(node.property);
-        reportUsage(
-          node,
-          storageKind,
-          propName ? `property "${propName}"` : 'property access',
-        );
-        return;
-      }
-
-      const propertyName = getPropertyName(node.property);
-      if (
-        propertyName &&
-        STORAGE_NAMES.has(propertyName as StorageKind) &&
-        isGlobalLike(object, storageAliases)
-      ) {
-        if (
-          node.parent &&
-          node.parent.type === AST_NODE_TYPES.MemberExpression &&
-          node.parent.object === node
-        ) {
-          return;
-        }
-
-        reportUsage(node.property, propertyName as StorageKind, 'reference');
-      }
-    };
-
-    const handleCallExpression = (node: TSESTree.CallExpression): void => {
-      const callee = unwrapExpression(node.callee as TSESTree.Expression);
-      if (callee.type !== AST_NODE_TYPES.MemberExpression) return;
-
-      const storageKind = resolveStorageObject(
-        callee.object as TSESTree.Expression,
-        storageAliases,
-      );
-      if (!storageKind) return;
-
-      const propName = getPropertyName(callee.property);
-      reportUsage(
-        callee.property,
-        storageKind,
-        propName ? `method "${propName}"` : 'storage method',
-      );
-    };
-
-    const handleVariableDeclarator = (
-      node: TSESTree.VariableDeclarator,
-    ): void => {
-      if (node.id.type === AST_NODE_TYPES.Identifier) {
-        const storageKind = node.init
-          ? resolveStorageObject(node.init as TSESTree.Expression, storageAliases)
-          : null;
-        if (storageKind) {
-          setAlias(node.id.name, storageKind);
-        } else {
-          markShadowed(node.id.name);
-        }
-      } else if (node.id.type === AST_NODE_TYPES.ObjectPattern) {
-        const initExpr = (node.init as TSESTree.Expression | null) ?? null;
-        recordAliasFromPattern(
-          node.id,
-          initExpr,
-          storageAliases,
-          (propertyNode, storageKind, accessType) => {
-            reportUsage(propertyNode, storageKind, accessType);
-          },
-        );
-      }
-    };
-
-    const handleAssignmentExpression = (
-      node: TSESTree.AssignmentExpression,
-    ): void => {
-      if (node.left.type === AST_NODE_TYPES.Identifier) {
-        const right = node.right as TSESTree.Expression;
-        const storageKind = resolveStorageObject(right, storageAliases);
-        if (storageKind) {
-          setAlias(node.left.name, storageKind);
-        } else {
-          markShadowed(node.left.name);
-        }
-      } else if (node.left.type === AST_NODE_TYPES.ObjectPattern) {
-        recordAliasFromPattern(
-          node.left,
-          node.right as TSESTree.Expression,
-          storageAliases,
-          (propertyNode, storageKind, accessType) => {
-            reportUsage(propertyNode, storageKind, accessType);
-          },
-        );
-      }
-    };
-
-    const resetProgramScope = (_node: TSESTree.Program) => {
-      storageAliases.length = 1;
-      storageAliases[0].clear();
-    };
-
-    const enterScope = () => {
-      pushScope();
-    };
-
-    const exitScope = () => {
-      popScope();
-    };
-
-    return {
-      Program: resetProgramScope,
-      BlockStatement: (_node: TSESTree.BlockStatement) => enterScope(),
-      'BlockStatement:exit': exitScope,
-      SwitchStatement: (_node: TSESTree.SwitchStatement) => enterScope(),
-      'SwitchStatement:exit': exitScope,
-      ForStatement: (_node: TSESTree.ForStatement) => enterScope(),
-      'ForStatement:exit': exitScope,
-      ForInStatement: (_node: TSESTree.ForInStatement) => enterScope(),
-      'ForInStatement:exit': exitScope,
-      ForOfStatement: (_node: TSESTree.ForOfStatement) => enterScope(),
-      'ForOfStatement:exit': exitScope,
-      CatchClause: (_node: TSESTree.CatchClause) => enterScope(),
-      'CatchClause:exit': exitScope,
-      FunctionDeclaration: (_node: TSESTree.FunctionDeclaration) => enterScope(),
-      'FunctionDeclaration:exit': exitScope,
-      FunctionExpression: (_node: TSESTree.FunctionExpression) => enterScope(),
-      'FunctionExpression:exit': exitScope,
-      ArrowFunctionExpression: (_node: TSESTree.ArrowFunctionExpression) =>
-        enterScope(),
-      'ArrowFunctionExpression:exit': exitScope,
-      Identifier: handleIdentifier,
-      MemberExpression: handleMemberExpression,
-      CallExpression: handleCallExpression,
-      VariableDeclarator: handleVariableDeclarator,
-      AssignmentExpression: handleAssignmentExpression,
-    };
+    return createStorageVisitors(aliases, reportUsage);
   },
 });
