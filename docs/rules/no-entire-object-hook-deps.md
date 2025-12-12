@@ -1,4 +1,6 @@
-# Prevent entire objects in React hook dependency arrays; depend on the fields the hook actually reads to avoid noisy re-renders and stale memoized values (`@blumintinc/blumint/no-entire-object-hook-deps`)
+# Avoid entire objects in hook deps (`@blumintinc/blumint/no-entire-object-hook-deps`)
+
+Depend on the specific fields your hook reads; listing an entire object forces your hook to rerun when unrelated properties change and can leave memoized values stale.
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
@@ -10,15 +12,15 @@
 
 ## Why this rule matters
 
-- React hooks rerun when any dependency identity changes. Putting an entire object in the dependency array means unrelated property updates (or shallow re-creations) rerun the hook even when the hook only reads a few fields.
-- Extra rerenders and repeated effects can trigger duplicate network calls, animation glitches, or wasted memo computations.
-- Listing a dependency that is never read causes the hook to rerun for no effect and can hide the real missing dependency the hook relies on.
+- Your hooks rerun when any dependency identity changes. Listing an entire object means unrelated property updates (or shallow re-creations) rerun your hook even when you only read a few fields.
+- You risk duplicate network calls, animation glitches, or wasted memo computations when your hook fires unnecessarily.
+- Listing a dependency you never read reruns the hook for no effect and can hide the real missing dependency you rely on.
 
 ## What this rule checks
 
 - `useEffect`, `useMemo`, and `useCallback` dependency arrays.
-- Flags when an entire object is listed even though the hook body only reads specific properties (including optional chaining paths).
-- Flags dependencies that appear in the array but are never referenced in the hook body.
+- Flags when you list an entire object even though the hook body only reads specific properties (including optional chaining paths).
+- Flags dependencies you put in the array but never reference in the hook body.
 - Requires TypeScript with `parserOptions.project` so the rule can distinguish objects from primitives and arrays.
 
 ## Incorrect
@@ -31,7 +33,7 @@ function Component({ user }) {
 ```
 
 Message:
-`Dependency array includes entire object "user", so any change to its other properties reruns the hook even though only user.name is read inside. Depend on those fields instead to avoid extra renders and stale memoized values.`
+`What's wrong: Dependency array includes entire object "user". Why it matters: Any change to its other properties reruns the hook even though only user.name is read inside, creating extra renders and stale memoized values. How to fix: Depend on those fields instead.`
 
 ```typescript
 function Component({ channelGroupIdRouter, channelGroupActive }) {
@@ -43,7 +45,7 @@ function Component({ channelGroupIdRouter, channelGroupActive }) {
 ```
 
 Message:
-`Dependency "channelGroupActive" is listed in the array but never read inside the hook body, so the hook reruns when "channelGroupActive" changes without affecting the result. Remove it or add the specific value that actually drives the hook.`
+`What's wrong: Dependency "channelGroupActive" is listed in the array but never read inside the hook body. Why it matters: The hook reruns when "channelGroupActive" changes without affecting the result and can hide the real missing dependency. How to fix: Remove it or add the specific value that actually drives the hook.`
 
 ## Correct
 
@@ -64,10 +66,10 @@ function Component({ channelGroupIdRouter }) {
 
 ## Auto-fix
 
-- Rewrites dependency arrays to list the specific fields the hook reads.
-- Removes dependencies that are present in the array but unused in the hook body when it is safe to do so.
+- Rewrites your dependency arrays to list the specific fields your hook reads.
+- Removes dependencies you keep in the array but never use when it is safe to do so.
 
 ## When not to use it
 
-- You intentionally want the hook to rerun on any change to an object reference (for example, when the object is treated as an immutable snapshot).
-- You depend on dynamic computed property access where specifying individual fields is impossible or would reduce correctness.
+- You intentionally want your hook to rerun on any change to an object reference (for example, when you treat the object as an immutable snapshot).
+- You rely on dynamic computed property access where specifying individual fields is impossible or would reduce correctness.
