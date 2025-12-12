@@ -31,8 +31,7 @@ const PASS_BY_VALUE_FLAGS =
   ts.TypeFlags.BooleanLike |
   ts.TypeFlags.Undefined |
   ts.TypeFlags.Null |
-  ts.TypeFlags.Void |
-  ts.TypeFlags.ESSymbolLike;
+  ts.TypeFlags.Void;
 
 type FunctionContext = {
   isHook: boolean;
@@ -134,24 +133,6 @@ function getReturnedExpression(
   return callback.body;
 }
 
-function getArrayElementType(
-  type: ts.Type,
-  checker: ts.TypeChecker,
-): ts.Type | null {
-  if (
-    (type as ts.TypeReference).objectFlags &
-    ts.ObjectFlags.Reference
-  ) {
-    const typeArguments = checker.getTypeArguments(type as ts.TypeReference);
-    if (typeArguments.length > 0) {
-      return typeArguments[0];
-    }
-  }
-
-  const indexType = checker.getIndexTypeOfType(type, ts.IndexKind.Number);
-  return indexType ?? null;
-}
-
 function classifyPassByValue(
   type: ts.Type,
   checker: ts.TypeChecker,
@@ -185,43 +166,11 @@ function classifyPassByValue(
   }
 
   if (checker.isTupleType(type)) {
-    const elementTypes = checker.getTypeArguments(type as ts.TypeReference);
-    let sawIndeterminate = false;
-
-    for (const elementType of elementTypes) {
-      const result = classifyPassByValue(elementType, checker);
-      if (result.indeterminate) {
-        sawIndeterminate = true;
-        break;
-      }
-      if (!result.passByValue) {
-        return { passByValue: false, indeterminate: false, description };
-      }
-    }
-
-    if (sawIndeterminate) {
-      return { passByValue: false, indeterminate: true, description };
-    }
-
-    return { passByValue: true, indeterminate: false, description };
+    return { passByValue: false, indeterminate: false, description };
   }
 
   if (checker.isArrayType(type) || checker.isArrayLikeType(type)) {
-    const elementType = getArrayElementType(type, checker);
-    if (!elementType) {
-      return { passByValue: false, indeterminate: true, description };
-    }
-
-    const elementResult = classifyPassByValue(elementType, checker);
-    if (elementResult.indeterminate) {
-      return { passByValue: false, indeterminate: true, description };
-    }
-
-    if (!elementResult.passByValue) {
-      return { passByValue: false, indeterminate: false, description };
-    }
-
-    return { passByValue: true, indeterminate: false, description };
+    return { passByValue: false, indeterminate: false, description };
   }
 
   if (type.flags & PASS_BY_VALUE_FLAGS) {
@@ -531,7 +480,7 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Disallow returning useMemo results from custom hooks when the memoized value is pass-by-value (primitives or tuples/arrays of primitives). Memoizing primitives adds noise without referential benefits. Requires type information.',
+        'Disallow returning useMemo results from custom hooks when the memoized value is pass-by-value (primitives with value equality such as string, number, boolean, null, undefined, or bigint). Memoizing pass-by-value primitives adds noise without referential benefits. Requires type information.',
       recommended: 'error',
       requiresTypeChecking: true,
     },

@@ -8,7 +8,7 @@
 
 <!-- end auto-generated rule header -->
 
-This rule flags custom React hooks that return a `useMemo` result when the memoized value is pass-by-value: primitives (`string`, `number`, `boolean`, `null`, `undefined`, `symbol`, `bigint`) or tuples/arrays made only of primitives. Memoizing primitives does not provide referential stability, so the hook only adds noise and suggests a stability guarantee that does not exist.
+This rule flags custom React hooks that return a `useMemo` result when the memoized value is pass-by-value: primitives with value equality (`string`, `number`, `boolean`, `null`, `undefined`, `bigint`). Memoizing these primitives does not provide referential stability, so the hook only adds noise and suggests a stability guarantee that does not exist. Arrays/tuples and `symbol` values are excluded because their identity changes on each creation and memoization can legitimately stabilize them.
 
 The fixer replaces `useMemo(() => expr, deps)` with `expr` (when the callback is a single-expression return) and removes the unused `useMemo` import when possible.
 
@@ -23,14 +23,6 @@ Examples of **incorrect** code for this rule:
 
 ```ts
 import { useMemo } from 'react';
-
-export function useLabelAndHref(slug: string) {
-  return useMemo(() => {
-    const label = slug.toUpperCase();
-    const href = `/t/${slug}`;
-    return [label, href];
-  }, [slug]); // tuple of primitives
-}
 
 export function useIsReady(values: string[]) {
   return useMemo(() => values.every(Boolean), [values]); // boolean primitive
@@ -49,6 +41,16 @@ export function useLabelAndHref(slug: string) {
   const label = slug.toUpperCase();
   const href = `/t/${slug}`;
   return [label, href];
+}
+
+// Tuple/array identity can matter, so memoization is allowed
+export function useLabelTuple(slug: string) {
+  return useMemo(() => [slug, slug.toUpperCase()], [slug]);
+}
+
+// Symbols have unique identity per creation, so memoization can be useful
+export function useStableSymbol() {
+  return useMemo(() => Symbol('token'), []);
 }
 
 export function useActions(id: string) {

@@ -187,6 +187,39 @@ ${typedPrelude}
       }
       `,
     },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useTuple(slug: string) {
+        return useMemo(() => [slug, slug.toUpperCase()], [slug]);
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useTupleLiteral() {
+        return useMemo(() => [1, 2, 3] as const, []);
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useSymbolToken() {
+        return useMemo(() => Symbol('token'), []);
+      }
+      `,
+    },
   ],
   invalid: [
     {
@@ -256,23 +289,6 @@ ${typedPrelude}
 
       export function useNext(count: number) {
         return count + 1;
-      }
-      `,
-    },
-    {
-      ...baseOptions,
-      code: `
-${typedPrelude}
-      import { useMemo } from 'react';
-
-      export function useTuple(slug: string) {
-        return useMemo(() => [slug, slug.toUpperCase()], [slug]);
-      }
-      `,
-      errors: [{ messageId: 'primitiveMemo' }],
-      output: `
-${typedPrelude}export function useTuple(slug: string) {
-        return [slug, slug.toUpperCase()];
       }
       `,
     },
@@ -421,23 +437,6 @@ ${typedPrelude}
       output: `
 ${typedPrelude}export function useBlock(slug: string) {
         return slug;
-      }
-      `,
-    },
-    {
-      ...baseOptions,
-      code: `
-${typedPrelude}
-      import { useMemo } from 'react';
-
-      export function useTupleLiteral() {
-        return useMemo(() => [1, 2, 3] as const, []);
-      }
-      `,
-      errors: [{ messageId: 'primitiveMemo' }],
-      output: `
-${typedPrelude}export function useTupleLiteral() {
-        return [1, 2, 3] as const;
       }
       `,
     },
