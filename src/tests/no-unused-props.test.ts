@@ -211,6 +211,19 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         sourceType: 'module',
       },
     },
+    {
+      code: `
+        type BaseProps = { foo: string; bar: number; unused: boolean };
+        type Props = Pick<BaseProps, 'foo'>;
+        const Component = ({ foo }: Props) => <div>{foo}</div>;
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
   ],
   invalid: [
     {

@@ -270,6 +270,45 @@ export const noUnusedProps = createRule({
             }
           };
 
+          const handlePickType = (
+            baseType: TSESTree.TypeNode,
+            pickedProps: TSESTree.TypeNode,
+          ): void => {
+            if (
+              baseType.type !== AST_NODE_TYPES.TSTypeReference ||
+              baseType.typeName.type !== AST_NODE_TYPES.Identifier
+            ) {
+              return;
+            }
+
+            const baseTypeName = baseType.typeName.name;
+            const addPickedProp = (propName: string, node: TSESTree.Node) => {
+              props[propName] = node;
+              if (!spreadTypeProps[baseTypeName]) {
+                spreadTypeProps[baseTypeName] = [];
+              }
+              spreadTypeProps[baseTypeName].push(propName);
+            };
+
+            if (pickedProps.type === AST_NODE_TYPES.TSUnionType) {
+              pickedProps.types.forEach((type) => {
+                if (
+                  type.type === AST_NODE_TYPES.TSLiteralType &&
+                  type.literal.type === AST_NODE_TYPES.Literal &&
+                  typeof type.literal.value === 'string'
+                ) {
+                  addPickedProp(type.literal.value, type.literal);
+                }
+              });
+            } else if (
+              pickedProps.type === AST_NODE_TYPES.TSLiteralType &&
+              pickedProps.literal.type === AST_NODE_TYPES.Literal &&
+              typeof pickedProps.literal.value === 'string'
+            ) {
+              addPickedProp(pickedProps.literal.value, pickedProps.literal);
+            }
+          };
+
           function extractProps(typeNode: TSESTree.TypeNode) {
             if (typeNode.type === AST_NODE_TYPES.TSTypeLiteral) {
               typeNode.members.forEach((member) => {
@@ -289,44 +328,7 @@ export const noUnusedProps = createRule({
                       // Handle Pick utility type in intersection
                       const [baseType, pickedProps] =
                         type.typeParameters.params;
-                      if (
-                        baseType.type === AST_NODE_TYPES.TSTypeReference &&
-                        baseType.typeName.type === AST_NODE_TYPES.Identifier
-                      ) {
-                        const baseTypeName = baseType.typeName.name;
-                        // Extract the picked properties from the union type
-                        if (pickedProps.type === AST_NODE_TYPES.TSUnionType) {
-                          pickedProps.types.forEach((t) => {
-                            if (
-                              t.type === AST_NODE_TYPES.TSLiteralType &&
-                              t.literal.type === AST_NODE_TYPES.Literal &&
-                              typeof t.literal.value === 'string'
-                            ) {
-                              // Add each picked property as a regular prop
-                              const propName = t.literal.value;
-                              props[propName] = t.literal;
-                              // Track that this prop comes from the base type
-                              if (!spreadTypeProps[baseTypeName]) {
-                                spreadTypeProps[baseTypeName] = [];
-                              }
-                              spreadTypeProps[baseTypeName].push(propName);
-                            }
-                          });
-                        } else if (
-                          pickedProps.type === AST_NODE_TYPES.TSLiteralType &&
-                          pickedProps.literal.type === AST_NODE_TYPES.Literal &&
-                          typeof pickedProps.literal.value === 'string'
-                        ) {
-                          // Single property pick
-                          const propName = pickedProps.literal.value;
-                          props[propName] = pickedProps.literal;
-                          // Track that this prop comes from the base type
-                          if (!spreadTypeProps[baseTypeName]) {
-                            spreadTypeProps[baseTypeName] = [];
-                          }
-                          spreadTypeProps[baseTypeName].push(propName);
-                        }
-                      }
+                      handlePickType(baseType, pickedProps);
                     } else if (
                       typeName.name === 'Omit' &&
                       type.typeParameters &&
@@ -385,44 +387,7 @@ export const noUnusedProps = createRule({
                   // Handle Pick utility type
                   const [baseType, pickedProps] =
                     typeNode.typeParameters.params;
-                  if (
-                    baseType.type === AST_NODE_TYPES.TSTypeReference &&
-                    baseType.typeName.type === AST_NODE_TYPES.Identifier
-                  ) {
-                    const baseTypeName = baseType.typeName.name;
-                    // Extract the picked properties from the union type
-                    if (pickedProps.type === AST_NODE_TYPES.TSUnionType) {
-                      pickedProps.types.forEach((type) => {
-                        if (
-                          type.type === AST_NODE_TYPES.TSLiteralType &&
-                          type.literal.type === AST_NODE_TYPES.Literal &&
-                          typeof type.literal.value === 'string'
-                        ) {
-                          // Add each picked property as a regular prop
-                          const propName = type.literal.value;
-                          props[propName] = type.literal;
-                          // Track that this prop comes from the base type
-                          if (!spreadTypeProps[baseTypeName]) {
-                            spreadTypeProps[baseTypeName] = [];
-                          }
-                          spreadTypeProps[baseTypeName].push(propName);
-                        }
-                      });
-                    } else if (
-                      pickedProps.type === AST_NODE_TYPES.TSLiteralType &&
-                      pickedProps.literal.type === AST_NODE_TYPES.Literal &&
-                      typeof pickedProps.literal.value === 'string'
-                    ) {
-                      // Single property pick
-                      const propName = pickedProps.literal.value;
-                      props[propName] = pickedProps.literal;
-                      // Track that this prop comes from the base type
-                      if (!spreadTypeProps[baseTypeName]) {
-                        spreadTypeProps[baseTypeName] = [];
-                      }
-                      spreadTypeProps[baseTypeName].push(propName);
-                    }
-                  }
+                handlePickType(baseType, pickedProps);
                 } else if (
                   typeNode.typeName.name === 'Omit' &&
                   typeNode.typeParameters &&

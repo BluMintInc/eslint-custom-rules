@@ -453,5 +453,35 @@ class WrongDecorator {
   }
 }`,
     },
+    {
+      filename: 'file.tsx',
+      code: `class NestedFactory {
+  get renderer() {
+    if (enableNested) {
+      const build = () => () => <div>Nested</div>;
+      return build;
+    }
+    function makeInner() {
+      return <span>Alt</span>;
+    }
+    return makeInner;
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `import { Memoize } from '@blumintinc/typescript-memoize';
+class NestedFactory {
+  @Memoize()
+  get renderer() {
+    if (enableNested) {
+      const build = () => () => <div>Nested</div>;
+      return build;
+    }
+    function makeInner() {
+      return <span>Alt</span>;
+    }
+    return makeInner;
+  }
+}`,
+    },
   ],
 });
