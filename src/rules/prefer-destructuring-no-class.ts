@@ -221,17 +221,11 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
         return false;
       }
 
-      // Skip if this is a class instance or static class member
-      if (isSkippedClassMemberAccess(node)) {
-        return false;
-      }
-
-      // Skip if the object is 'this' and we're inside a class method
-      if (isThisMemberInClassMethod(node)) {
-        return false;
-      }
-
-      return canDestructureObjectProperty(node, leftNode);
+      return (
+        !isSkippedClassMemberAccess(node) &&
+        !isThisMemberInClassMethod(node) &&
+        canDestructureObjectProperty(node, leftNode)
+      );
     }
 
     /**
