@@ -733,10 +733,11 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         return callExpressionLooksBoolean(currentExpression);
       }
 
-      if (currentExpression.type === AST_NODE_TYPES.BinaryExpression) {
-        if (BOOLEAN_PRODUCING_OPERATORS.has(currentExpression.operator)) {
-          return 'boolean';
-        }
+      if (
+        currentExpression.type === AST_NODE_TYPES.BinaryExpression &&
+        BOOLEAN_PRODUCING_OPERATORS.has(currentExpression.operator)
+      ) {
+        return 'boolean';
       }
 
       if (

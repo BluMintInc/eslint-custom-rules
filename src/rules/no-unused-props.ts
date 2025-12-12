@@ -231,7 +231,7 @@ export const noUnusedProps = createRule({
         if (node.id.name.endsWith('Props')) {
           const props: Record<string, TSESTree.Node> = {};
           // Track which properties come from which spread type
-          const spreadTypeProps: Record<string, string[]> = {};
+          const spreadTypeProps: Record<string, Set<string>> = {};
           const typeParameterNames = new Set(
             node.typeParameters?.params.map((param) => param.name.name) ?? [],
           );
@@ -328,14 +328,13 @@ export const noUnusedProps = createRule({
             const addPropIfAllowed = (name: string, node: TSESTree.Node) => {
               if (shouldInclude(name)) {
                 props[name] = node;
-                if (originSpreadTypeName) {
-                  if (!spreadTypeProps[originSpreadTypeName]) {
-                    spreadTypeProps[originSpreadTypeName] = [];
-                  }
-                  if (!spreadTypeProps[originSpreadTypeName].includes(name)) {
-                    spreadTypeProps[originSpreadTypeName].push(name);
-                  }
+                if (!originSpreadTypeName) return;
+
+                if (!spreadTypeProps[originSpreadTypeName]) {
+                  spreadTypeProps[originSpreadTypeName] = new Set();
                 }
+
+                spreadTypeProps[originSpreadTypeName].add(name);
               }
             };
 
@@ -371,7 +370,7 @@ export const noUnusedProps = createRule({
                 const referenceName = node.typeName.name;
                 props[`...${referenceName}`] = node.typeName;
                 if (!spreadTypeProps[referenceName]) {
-                  spreadTypeProps[referenceName] = [];
+                  spreadTypeProps[referenceName] = new Set();
                 }
                 return [];
               }
@@ -508,7 +507,7 @@ export const noUnusedProps = createRule({
                 // If unresolved (likely imported/external), treat as a forwarded spread type
                 props[`...${referenceName}`] = typeNode.typeName;
                 if (!spreadTypeProps[referenceName]) {
-                  spreadTypeProps[referenceName] = [];
+                  spreadTypeProps[referenceName] = new Set();
                 }
                 return;
               }
@@ -574,7 +573,7 @@ export const noUnusedProps = createRule({
                     const referenceName = typeNode.objectType.typeName.name;
                     props[`...${referenceName}`] = typeNode.objectType.typeName;
                     if (!spreadTypeProps[referenceName]) {
-                      spreadTypeProps[referenceName] = [];
+                      spreadTypeProps[referenceName] = new Set();
                     }
                   }
                   return;
