@@ -70,9 +70,9 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     ],
     messages: {
       missingBooleanPrefix:
-        'Boolean {{type}} "{{name}}" is missing an approved boolean prefix ({{prefixes}}). ' +
+        'Boolean {{type}} "{{name}}" is missing a common approved boolean prefix ({{prefixes}}). ' +
         'Prefixes immediately communicate that the value is a true/false predicate; without one, checks like `if ({{name}})` read as generic truthiness guards and hide the boolean intent. ' +
-        'Rename by prepending any approved prefix so the name becomes `prefix{{capitalizedName}}`, making the boolean contract obvious at call sites and API boundaries.',
+        'Rename by prepending any approved prefix so the name becomes `<prefix>{{capitalizedName}}`, making the boolean contract obvious at call sites and API boundaries.',
     },
   },
   defaultOptions: [DEFAULT_OPTIONS],

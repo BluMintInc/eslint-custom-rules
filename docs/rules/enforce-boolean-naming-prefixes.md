@@ -6,27 +6,27 @@
 
 <!-- end auto-generated rule header -->
 
-Boolean names without a clear prefix read like generic nouns. When they appear in conditions, props, or configuration objects, readers cannot tell that they are true/false values and may treat them as strings or objects. This rule enforces an approved boolean prefix so every boolean value advertises its contract at the call site.
+When you name a boolean without a clear prefix, it reads like a generic noun. In conditions, props, or configuration objects, readers cannot tell that it is a true/false value and may treat it as a string or object. This rule helps you require an approved boolean prefix so every boolean value advertises its contract at the call site.
 
 ## Rule Details
 
-This rule requires boolean-typed or boolean-valued identifiers to start with an approved prefix. Without one, checks like `if (user.active)` read as generic truthiness guards; `if (user.isActive)` signals a boolean predicate and makes the intent obvious.
+This rule requires your boolean-typed or boolean-valued identifiers to start with an approved prefix. Without one, checks like `if (user.active)` read as generic truthiness guards; `if (user.isActive)` signals a boolean predicate and makes your intent obvious.
 
 ### Why this rule matters
 
-- Boolean prefixes make predicates self-documenting at call sites and in object literals, reducing misreads like treating a boolean as a string or object.
-- Truthiness checks become explicit: `if (user.isActive)` signals a boolean contract, while `if (user.active)` could mask non-boolean values.
-- Consistent prefixes keep public APIs and props easy to scan, especially when options objects cross module boundaries.
+- You make predicates self-documenting at call sites and in object literals, reducing misreads like treating a boolean as a string or object.
+- You keep truthiness checks explicit: `if (user.isActive)` signals a boolean contract, while `if (user.active)` can hide non-boolean values.
+- You keep public APIs and props easy to scan, especially when options objects cross module boundaries.
 
 ### What this rule checks
 
-- Variable declarations typed or inferred as boolean (including arrow functions returning boolean).
-- Functions and methods that return boolean values.
-- Function parameters typed as boolean and boolean properties inside parameter object type literals.
-- Object literal properties, class properties, and interface/type property signatures with boolean types or values.
-- Excludes type predicates and identifiers starting with `_`, which are treated as internal state.
+- Your variable declarations typed or inferred as boolean (including arrow functions returning boolean).
+- Your functions and methods that return boolean values.
+- Your function parameters typed as boolean and boolean properties inside parameter object type literals.
+- Your object literal properties, class properties, and interface/type property signatures with boolean types or values.
+- The rule excludes type predicates and identifiers starting with `_`, which are treated as internal state.
 
-### Approved prefixes
+### Common approved prefixes
 
 By default, the following prefixes are allowed:
 - `is` - indicates state (e.g., `isActive`)
@@ -44,6 +44,8 @@ By default, the following prefixes are allowed:
 - `supports` - indicates feature availability (e.g., `supportsVideo`)
 - `needs` - indicates requirement (e.g., `needsUpdate`)
 - `asserts` - indicates verification (e.g., `assertsValidity`)
+
+The rule also accepts additional prefixes such as `are` and `includes` for compatibility; the error message highlights the common set above so you know the typical choices.
 
 ### Examples of **incorrect** code for this rule
 
