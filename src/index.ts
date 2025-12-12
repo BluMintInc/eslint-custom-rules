@@ -140,6 +140,35 @@ import { verticallyGroupRelatedFunctions } from './rules/vertically-group-relate
 import { default as noStaticConstantsInDynamicFiles } from './rules/no-static-constants-in-dynamic-files';
 import { testFileLocationEnforcement } from './rules/test-file-location-enforcement';
 
+const NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_GROUP = [
+  'src/**',
+  '../src/**',
+  '../../src/**',
+  '../../../src/**',
+  '../../../../src/**',
+  '../../../../../src/**',
+  '../../../../../../src/**',
+];
+
+const NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_MESSAGE =
+  'Backend Cloud Functions (.f.ts under functions/) must not import frontend modules from src/**. Frontend code can depend on browser-only APIs and bundling it into Cloud Functions breaks server execution; move shared logic into functions/src or a shared package.';
+
+const NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_PATTERNS = [
+  {
+    /**
+     * no-restricted-imports needs explicit relative patterns. These cover up to
+     * six traversals from Cloud Functions entrypoints toward frontend src/.
+     * Depth-specific literals are a pragmatic guardrail: they can also match
+     * non-frontend modules with the same prefix and do not guarantee full
+     * isolation, but they keep the config readable. Projects using path aliases
+     * (e.g., @/src/**) or deeper nesting should add matching restrictions in
+     * their own configs.
+     */
+    group: NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_GROUP,
+    message: NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_MESSAGE,
+  },
+];
+
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
@@ -304,29 +333,7 @@ module.exports = {
             'no-restricted-imports': [
               'error',
               {
-                patterns: [
-                  {
-                    /**
-                     * ESLint's no-restricted-imports needs explicit patterns
-                    * for each relative depth. These entries cover up to six
-                    * directory traversals so functions/src code cannot escape
-                     * into the frontend src/. Projects using path aliases
-                     * (e.g., @/src/**) should add matching restrictions for
-                     * those aliases in their own configs.
-                     */
-                    group: [
-                      'src/**',
-                      '../src/**',
-                      '../../src/**',
-                      '../../../src/**',
-                      '../../../../src/**',
-                      '../../../../../src/**',
-                      '../../../../../../src/**',
-                    ],
-                    message:
-                      'Backend Cloud Functions (.f.ts under functions/) must not import frontend modules from src/**. Frontend code can depend on browser-only APIs and bundling it into Cloud Functions breaks server execution; move shared logic into functions/src or a shared package.',
-                  },
-                ],
+                patterns: NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_PATTERNS,
               },
             ],
           },
@@ -338,21 +345,7 @@ module.exports = {
             'no-restricted-imports': [
               'error',
               {
-                patterns: [
-                  {
-                    group: [
-                      'src/**',
-                      '../src/**',
-                      '../../src/**',
-                      '../../../src/**',
-                      '../../../../src/**',
-                      '../../../../../src/**',
-                      '../../../../../../src/**',
-                    ],
-                    message:
-                      'Backend Cloud Functions (.f.ts under functions/) must not import frontend modules from src/**. Frontend code can depend on browser-only APIs and bundling it into Cloud Functions breaks server execution; move shared logic into functions/src or a shared package.',
-                  },
-                ],
+                patterns: NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_PATTERNS,
               },
             ],
           },
