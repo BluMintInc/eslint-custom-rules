@@ -78,6 +78,13 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       );
     }
 
+    function hasRootNumericKey(node: TSESTree.ObjectExpression): boolean {
+      return node.properties.some(
+        (property) =>
+          property.type === AST_NODE_TYPES.Property && isNumericKey(property),
+      );
+    }
+
     // Helper function to flatten nested objects into FieldPath syntax
     function flattenObject(
       obj: TSESTree.ObjectExpression,
@@ -345,6 +352,10 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
         if (
           firstArg?.type !== AST_NODE_TYPES.ObjectExpression
         ) {
+          return;
+        }
+
+        if (hasRootNumericKey(firstArg)) {
           return;
         }
 

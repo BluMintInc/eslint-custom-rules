@@ -21,6 +21,7 @@ When you pass nested objects in a `DocSetter` payload, Firestore treats each nes
 - Object literals that are already flattened with dotted keys
 - Dynamic/computed/spread constructions where safe auto-flattening is ambiguous
 - Arrays of objects (Firestore cannot target nested array members with FieldPath keys)
+- Payloads whose top-level keys include numeric literals (these often model array-like buckets; the rule skips them entirely to avoid unsafe fixes that could drop those entries)
 
 ## Examples
 
