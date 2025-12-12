@@ -401,6 +401,42 @@ ${typedPrelude}
 ${typedPrelude}
       import { useMemo } from 'react';
 
+      export function useTernaryTest(flag: boolean) {
+        return useMemo(() => flag || 0, [flag]) ? 'yes' : 'no';
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useTernaryTest(flag: boolean) {
+        return (flag || 0) ? 'yes' : 'no';
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useNestedTernary(flag: boolean) {
+        return useMemo(() => (flag ? 1 : 2), [flag]) ? 'on' : 'off';
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useNestedTernary(flag: boolean) {
+        return (flag ? 1 : 2) ? 'on' : 'off';
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
       export function useLogicalLeft(value?: string) {
         return useMemo(() => value && value.toUpperCase(), [value]) || 'NONE';
       }

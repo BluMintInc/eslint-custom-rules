@@ -456,6 +456,14 @@ function shouldParenthesizeReplacement(
         parent.callee === node ||
         replacementExpression.type === AST_NODE_TYPES.SequenceExpression
       );
+    case AST_NODE_TYPES.ConditionalExpression:
+      if (parent.test !== node) {
+        return false;
+      }
+      return (
+        alreadyParenthesized ||
+        !isSafeAtomicExpression(replacementExpression)
+      );
     default:
       return false;
   }
@@ -721,56 +729,57 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
           }
           return;
         }
-        case AST_NODE_TYPES.ConditionalExpression:
-          analyzeReturnedValue(expression.consequent, currentContext);
-          analyzeReturnedValue(expression.alternate, currentContext);
-          return;
-        case AST_NODE_TYPES.LogicalExpression:
+      case AST_NODE_TYPES.ConditionalExpression:
+        analyzeReturnedValue(expression.test, currentContext);
+        analyzeReturnedValue(expression.consequent, currentContext);
+        analyzeReturnedValue(expression.alternate, currentContext);
+        return;
+      case AST_NODE_TYPES.LogicalExpression:
+        analyzeReturnedValue(expression.left, currentContext);
+        analyzeReturnedValue(expression.right, currentContext);
+        return;
+      case AST_NODE_TYPES.BinaryExpression:
+        if (expression.left.type !== AST_NODE_TYPES.PrivateIdentifier) {
           analyzeReturnedValue(expression.left, currentContext);
-          analyzeReturnedValue(expression.right, currentContext);
-          return;
-        case AST_NODE_TYPES.BinaryExpression:
-          if (expression.left.type !== AST_NODE_TYPES.PrivateIdentifier) {
-            analyzeReturnedValue(expression.left, currentContext);
-          }
-          analyzeReturnedValue(expression.right, currentContext);
-          return;
-        case AST_NODE_TYPES.SequenceExpression: {
-          const lastExpression =
-            expression.expressions[expression.expressions.length - 1];
-          analyzeReturnedValue(lastExpression, currentContext);
-          return;
         }
-        case AST_NODE_TYPES.ArrayExpression:
-          analyzeExpressionList(expression.elements, currentContext);
-          return;
-        case AST_NODE_TYPES.ObjectExpression: {
-          const propertyExpressions = expression.properties.map((property) => {
-            if (property.type === AST_NODE_TYPES.SpreadElement) {
-              return property.argument;
-            }
-            if (
-              property.type === AST_NODE_TYPES.Property &&
-              property.value
-            ) {
-              return property.value as TSESTree.Expression;
-            }
-            return null;
-          });
-          analyzeExpressionList(propertyExpressions, currentContext);
-          return;
-        }
-        case AST_NODE_TYPES.TSAsExpression:
-        case AST_NODE_TYPES.TSTypeAssertion:
-        case AST_NODE_TYPES.TSNonNullExpression:
-        case AST_NODE_TYPES.TSSatisfiesExpression:
-        case AST_NODE_TYPES.ChainExpression:
-          analyzeReturnedValue(expression.expression, currentContext);
-          return;
-        case AST_NODE_TYPES.AwaitExpression:
-          analyzeReturnedValue(expression.argument, currentContext);
-          return;
+        analyzeReturnedValue(expression.right, currentContext);
+        return;
+      case AST_NODE_TYPES.SequenceExpression: {
+        const lastExpression =
+          expression.expressions[expression.expressions.length - 1];
+        analyzeReturnedValue(lastExpression, currentContext);
+        return;
       }
+      case AST_NODE_TYPES.ArrayExpression:
+        analyzeExpressionList(expression.elements, currentContext);
+        return;
+      case AST_NODE_TYPES.ObjectExpression: {
+        const propertyExpressions = expression.properties.map((property) => {
+          if (property.type === AST_NODE_TYPES.SpreadElement) {
+            return property.argument;
+          }
+          if (
+            property.type === AST_NODE_TYPES.Property &&
+            property.value
+          ) {
+            return property.value as TSESTree.Expression;
+          }
+          return null;
+        });
+        analyzeExpressionList(propertyExpressions, currentContext);
+        return;
+      }
+      case AST_NODE_TYPES.TSAsExpression:
+      case AST_NODE_TYPES.TSTypeAssertion:
+      case AST_NODE_TYPES.TSNonNullExpression:
+      case AST_NODE_TYPES.TSSatisfiesExpression:
+      case AST_NODE_TYPES.ChainExpression:
+        analyzeReturnedValue(expression.expression, currentContext);
+        return;
+      case AST_NODE_TYPES.AwaitExpression:
+        analyzeReturnedValue(expression.argument, currentContext);
+        return;
+    }
     }
 
     return {
