@@ -8,7 +8,7 @@
 
 ## Rule Details
 
-Firestore treats nested objects in `DocSetter` payloads as whole sub-document writes. If you pass `{ roles: { contributor: ... } }` to `set()` or `updateIfExists()`, Firestore replaces the entire `roles` map and can silently drop siblings the payload did not include. FieldValue helpers (`arrayUnion`, `increment`, etc.) also expect dotted field paths for nested updates. This rule requires FieldPath (dot) notation so DocSetter only touches the intended leaf fields and avoids data loss during partial updates.
+When you pass nested objects in a `DocSetter` payload, Firestore treats each nested map as a whole sub-document write. If you pass `{ roles: { contributor: ... } }` to `set()` or `updateIfExists()`, Firestore replaces the entire `roles` map and can silently drop sibling fields you leave out. FieldValue helpers (`arrayUnion`, `increment`, etc.) expect dotted field paths for nested updates. This rule requires FieldPath (dot) notation so your DocSetter calls touch only the intended leaf fields and you avoid data loss during partial updates.
 
 ### What This Rule Checks
 

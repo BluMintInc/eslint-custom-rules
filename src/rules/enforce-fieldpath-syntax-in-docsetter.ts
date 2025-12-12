@@ -18,7 +18,7 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
     schema: [],
     messages: {
       enforceFieldPathSyntax:
-        'DocSetter {{methodName}} receives nested object data under "{{topLevelKey}}", which Firestore treats as a whole sub-document write and can overwrite siblings during partial updates. Use FieldPath dot notation so only the intended leaves are written (e.g., "{{exampleFieldPath}}"), flattening nested properties before passing documentData.',
+        'What is wrong: DocSetter {{methodName}} receives nested object data under "{{topLevelKey}}". Why it matters: Firestore treats that nested map as a whole sub-document write, so partial updates can overwrite sibling fields you did not include. How to fix: Flatten nested properties into FieldPath (dot) keys before passing documentData (e.g., "{{exampleFieldPath}}") so only the intended leaves are written.',
     },
   },
   defaultOptions: [],
@@ -153,6 +153,7 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
     function convertToFieldPathSyntax(
       node: TSESTree.ObjectExpression,
       sourceCode: TSESLint.SourceCode,
+      preflattened?: { [key: string]: string },
     ): string {
       const idProperty = node.properties.find(
         (prop) =>
@@ -161,7 +162,9 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
           prop.key.name === 'id',
       );
 
-      const flattenedProperties = flattenObject(node, sourceCode);
+      const flattenedProperties = {
+        ...(preflattened ?? flattenObject(node, sourceCode)),
+      };
       if (idProperty && idProperty.type === AST_NODE_TYPES.Property) {
         delete flattenedProperties['id'];
       }
@@ -305,7 +308,14 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
           return;
         }
 
-        const flattenedProperties = flattenObject(firstArg, sourceCode);
+        let flattenedProperties: Record<string, string> | undefined;
+        const getFlattenedProperties = () => {
+          if (!flattenedProperties) {
+            flattenedProperties = flattenObject(firstArg, sourceCode);
+          }
+          return flattenedProperties;
+        };
+
         const propertyKeyText = getPropertyKeyText(firstNestedProperty);
         const exampleFieldPathFromProperty =
           propertyKeyText &&
@@ -320,10 +330,12 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
               key.includes('.'),
             )) ??
           (propertyKeyText &&
-            Object.keys(flattenedProperties).find((key) =>
+            Object.keys(getFlattenedProperties()).find((key) =>
               key.startsWith(`${propertyKeyText}.`),
             )) ??
-          Object.keys(flattenedProperties).find((key) => key.includes('.')) ??
+          Object.keys(getFlattenedProperties()).find((key) =>
+            key.includes('.'),
+          ) ??
           'field.nested';
 
         const topLevelKey = propertyKeyText ?? 'nested field';
@@ -341,6 +353,7 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
             const newText = convertToFieldPathSyntax(
               firstArg,
               sourceCode,
+              getFlattenedProperties(),
             );
             return fixer.replaceText(firstArg, newText);
           },
