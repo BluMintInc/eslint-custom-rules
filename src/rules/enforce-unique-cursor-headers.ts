@@ -48,8 +48,8 @@ const DEFAULT_OPTIONS: NormalizedOptions = {
   ],
 };
 
-const normalizeArrayOption = <T>(provided: T[] | undefined, fallback: T[]): T[] =>
-  provided && provided.length > 0 ? provided : fallback;
+const normalizeArrayOption = <T>(values: T[] | undefined, fallback: T[]): T[] =>
+  values && values.length > 0 ? values : fallback;
 
 const normalizeArrayOptionAllowEmpty = <T>(provided: T[] | undefined, fallback: T[]): T[] =>
   provided === undefined ? fallback : provided;
