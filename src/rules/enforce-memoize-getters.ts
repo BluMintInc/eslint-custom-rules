@@ -62,27 +62,28 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
     // Only apply in TS/TSX files to avoid JS environments without decorators
     const filename = context.getFilename();
     if (!/\.tsx?$/i.test(filename)) {
-      return {} as unknown as TSESLint.RuleListener;
+      return {};
     }
 
     const sourceCode = context.getSourceCode();
     let hasMemoizeImport = false;
     let memoizeAlias = 'Memoize';
     let memoizeNamespace: string | null = null;
+    let memoizeDefaultImport: string | null = null;
     let hasNamedImport = false;
     let scheduledImportFix = false;
 
     return {
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
         if (MEMOIZE_MODULES.has(String(node.source.value))) {
-          node.specifiers.forEach((spec) => {
+          for (const spec of node.specifiers) {
             if (
               spec.type === AST_NODE_TYPES.ImportSpecifier &&
               spec.imported.name === 'Memoize'
             ) {
               hasMemoizeImport = true;
               hasNamedImport = true;
-              memoizeAlias = spec.local?.name ?? memoizeAlias;
+              memoizeAlias = spec.local.name;
             } else if (spec.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
               hasMemoizeImport = true;
               if (!hasNamedImport) {
@@ -91,10 +92,10 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
             } else if (spec.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
               hasMemoizeImport = true;
               if (!hasNamedImport) {
-                memoizeAlias = spec.local.name;
+                memoizeDefaultImport = spec.local.name;
               }
             }
-          });
+          }
         }
       },
 
@@ -106,11 +107,12 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
         // enforce only "private" accessibility (undefined => public)
         if (node.accessibility !== 'private') return;
 
-        const decoratorAliases = new Set<string>(['Memoize', memoizeAlias]);
+        const decoratorAliases =
+          memoizeAlias === 'Memoize'
+            ? ['Memoize']
+            : ['Memoize', memoizeAlias];
         const hasDecorator = node.decorators?.some((decorator) =>
-          Array.from(decoratorAliases).some((alias) =>
-            isMemoizeDecorator(decorator, alias),
-          ),
+          decoratorAliases.some((alias) => isMemoizeDecorator(decorator, alias)),
         );
         if (hasDecorator) return;
 
@@ -126,6 +128,8 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
               ? memoizeAlias
               : memoizeNamespace
               ? `${memoizeNamespace}.Memoize`
+              : memoizeDefaultImport
+              ? `${memoizeDefaultImport}.Memoize`
               : memoizeAlias;
 
             // Insert import if needed, at the top alongside other imports

@@ -347,7 +347,7 @@ ruleTesterTs.run('enforce-memoize-getters', enforceMemoizeGetters, {
       output: `
         import Memoize from 'typescript-memoize';
         class Example {
-          @Memoize()
+          @Memoize.Memoize()
           private get fetcher() { return {}; }
         }
       `,
