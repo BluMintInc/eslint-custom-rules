@@ -23,7 +23,7 @@ The rule reports when:
 ## How to Fix
 
 - Log the same message shown to the user with `console.error` or `console.warn` in the same function that calls `open()`.
-- When severity is dynamic (variables, expressions, computed keys), ensure both `console.error` and `console.warn` are present in the scope—either by branching on severity or by calling both—so every possible outcome leaves a breadcrumb without double-logging.
+- When severity is dynamic (variables, expressions, computed keys), branch on the severity value so only the matching console method runs (`console.error` for error paths, `console.warn` for warning paths), ensuring each possible outcome leaves a single breadcrumb without double-logging.
 
 ## Examples
 

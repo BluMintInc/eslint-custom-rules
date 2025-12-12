@@ -3,15 +3,15 @@ import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceConsoleError } from '../rules/enforce-console-error';
 
 const missingConsoleErrorMessage =
-  'useAlertDialog call with severity "error" shows an error dialog but this function never logs with console.error. Without the log the alert is invisible to monitoring and post-incident breadcrumbs. Add a console.error call in this function scope before or after the open() call so the dialog is paired with an observable error trail.';
+  'useAlertDialog call with severity "error" shows an error dialog but this function never logs with console.error. Without the log the alert is invisible to observability and post-incident breadcrumbs. Add a console.error call in this function scope before or after the open() call so the dialog is paired with an observable error trail.';
 const missingConsoleWarnMessage =
-  'useAlertDialog call with severity "warning" shows a warning dialog but this function never logs with console.warn. Without the log the warning lacks telemetry, making degraded states hard to diagnose. Add a console.warn call in this function scope before or after the open() call so the dialog is paired with an observable warning trail.';
+  'useAlertDialog call with severity "warning" shows a warning dialog but this function never logs with console.warn. Without the log the warning is invisible to observability, making degraded states hard to diagnose. Add a console.warn call in this function scope before or after the open() call so the dialog is paired with an observable warning trail.';
 
 const buildMissingConsoleBothMessage = (
   missingMethods: string,
   missingPaths: string,
 ) =>
-  `useAlertDialog call uses dynamic severity, so the function may show errors or warnings. It is missing ${missingMethods} in this function scope, leaving ${missingPaths} without monitoring breadcrumbs. Add ${missingMethods} before or after the open() call so each severity outcome leaves an observable log trail.`;
+  `useAlertDialog call uses dynamic severity, so the function may show errors or warnings. It is missing ${missingMethods} in this function scope, leaving ${missingPaths} without observability breadcrumbs. Add ${missingMethods} before or after the open() call so each severity outcome leaves an observable log trail.`;
 
 type MessageIds = 'missingConsoleError' | 'missingConsoleWarn' | 'missingConsoleBoth';
 
