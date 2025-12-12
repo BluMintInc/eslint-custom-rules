@@ -63,14 +63,17 @@ const normalizeCommentValue = (comment: TSESTree.Comment): string =>
     .join('\n')
     .trim();
 
-const isHeaderCandidate = (text: string, requiredTagsLower: string[]): boolean => {
+const hasRequiredTags = (text: string, requiredTagsLower: string[]): boolean => {
   const lowerText = text.toLowerCase();
-  if (requiredTagsLower.some((tag) => lowerText.includes(tag))) {
-    return true;
-  }
 
-  return text.split('\n').some((line) => line.trimStart().startsWith('@'));
+  return requiredTagsLower.some((tag) => lowerText.includes(tag));
 };
+
+const hasHeaderMarker = (text: string): boolean =>
+  text.split('\n').some((line) => line.trimStart().startsWith('@'));
+
+const isHeaderCandidate = (text: string, requiredTagsLower: string[]): boolean =>
+  hasRequiredTags(text, requiredTagsLower) || hasHeaderMarker(text);
 
 const collectHeaderGroups = (
   comments: TSESTree.Comment[],
@@ -217,22 +220,23 @@ export const enforceUniqueCursorHeaders = createRule<Options, MessageIds>({
     ],
     messages: {
       missingHeader:
-        'File "{{fileName}}" must start with a cursor header containing {{tags}} before any imports or code. Cursor headers keep ownership and metadata discoverable for automation; add the header at the top comment block.',
+        'File "{{fileName}}" is missing a cursor header before any imports or code → Cursor headers keep ownership and metadata discoverable for automation → Add one top-of-file cursor header containing: {{tags}}.',
       duplicateHeader:
-        'Multiple cursor headers detected before the first statement. Keep a single header so file metadata stays authoritative; remove the extra header starting on line {{line}}.',
+        'Multiple cursor headers detected before the first statement (extra header starts on line {{line}}) → Duplicate metadata blocks conflict and make ownership ambiguous → Keep exactly one cursor header at the top and remove the extra block.',
     },
   },
   defaultOptions: [DEFAULT_OPTIONS],
   create(context, [rawOptions]) {
     const options = normalizeOptions(rawOptions);
     const fileName = context.getFilename();
+    const matchPath = fileName.split(path.sep).join('/');
 
     if (fileName === '<input>') {
       return {};
     }
 
     const matchesRequired = options.requiredPatterns.some((pattern) =>
-      minimatch(fileName, pattern, { dot: true }),
+      minimatch(matchPath, pattern, { dot: true }),
     );
 
     if (!matchesRequired) {
@@ -240,7 +244,7 @@ export const enforceUniqueCursorHeaders = createRule<Options, MessageIds>({
     }
 
     const matchesExcluded = options.excludedPatterns.some((pattern) =>
-      minimatch(fileName, pattern, { dot: true }),
+      minimatch(matchPath, pattern, { dot: true }),
     );
 
     if (matchesExcluded) {
@@ -312,14 +316,24 @@ export const enforceUniqueCursorHeaders = createRule<Options, MessageIds>({
           return;
         }
 
-        const duplicateGroups = options.allowSplitHeaders
-          ? headerGroups.slice(1)
-          : candidateGroups.filter((group) => {
-              const startsAfterPrimary =
-                group.comments[0].loc.start.line >
-                primaryHeader.comments[primaryHeader.comments.length - 1].loc.end.line;
+        const duplicateGroups = headerGroups.slice(1);
 
-              return startsAfterPrimary && group !== primaryHeader;
+        const splitHeaderGroups = options.allowSplitHeaders
+          ? []
+          : candidateGroups.filter((group) => {
+              if (group === primaryHeader) {
+                return false;
+              }
+
+              const startLine = group.comments[0].loc.start.line;
+              const primaryStart = primaryHeader.comments[0].loc.start.line;
+              const primaryEnd = primaryHeader.comments[primaryHeader.comments.length - 1].loc.end.line;
+              const isAdjacentToPrimary = startLine >= primaryStart && startLine <= primaryEnd + 1;
+              const hasAllTags = requiredTagsLower.every((tag) =>
+                group.text.toLowerCase().includes(tag),
+              );
+
+              return isAdjacentToPrimary && !hasAllTags;
             });
 
         duplicateGroups.forEach((group) => {
@@ -336,6 +350,19 @@ export const enforceUniqueCursorHeaders = createRule<Options, MessageIds>({
               line: firstComment.loc.start.line.toString(),
             },
             fix: (fixer) => fixer.removeRange(removalRange),
+          });
+        });
+
+        splitHeaderGroups.forEach((group) => {
+          const firstComment = group.comments[0];
+
+          context.report({
+            loc: firstComment.loc,
+            messageId: 'duplicateHeader',
+            data: {
+              line: firstComment.loc.start.line.toString(),
+            },
+            fix: null,
           });
         });
       },

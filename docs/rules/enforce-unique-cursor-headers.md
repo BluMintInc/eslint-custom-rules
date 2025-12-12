@@ -9,7 +9,7 @@ Ensures each checked file has exactly one cursor header before any code, prevent
 - Flags files that match `requiredPatterns` but have no cursor header containing all `requiredTags` ahead of the first import or statement.
 - Flags multiple cursor headers before code; by default adjacent header fragments can be merged, but setting `allowSplitHeaders: false` requires metadata to live in a single block.
 - Respects `excludedPatterns` and skips files marked with generated markers (e.g., `auto-generated`, `@generated`) when `ignoreGeneratedFiles` is true.
-- Autofix removes duplicate headers and, when `headerTemplate` is provided, inserts a header at the top of the file.
+- Autofix removes duplicate headers that contain all required tags and, when `headerTemplate` is provided, inserts a header at the top of the file. When `allowSplitHeaders` is `false`, the rule still reports adjacent fragments but leaves them for manual consolidation to avoid dropping metadata (e.g., `@author` or directives). If you keep intentional split headers or non-required tags, avoid `--fix` and resolve warnings manually.
 
 ### Options
 
@@ -29,7 +29,7 @@ Ensures each checked file has exactly one cursor header before any code, prevent
 - `excludedPatterns`: Globs to skip (e.g., definition files or build outputs).
 - `requiredTags`: Tags that must appear in the header text.
 - Header detection relies on `requiredTags` and `@`-prefixed comment lines; no tag (including `@fileoverview`) is hardcoded beyond the defaults you configure.
-- `allowSplitHeaders`: When false, metadata spread across multiple adjacent comment blocks is reported as a duplicate header.
+- `allowSplitHeaders`: When false, metadata spread across multiple adjacent comment blocks is reported as a duplicate header, but the fixer does not delete those fragments. You must manually merge them into a single block; use caution with `--fix` if you intentionally keep separate metadata sections.
 - `headerTemplate`: Optional comment block to insert when a required header is missing.
 - When `headerTemplate` already ends with newline characters, the fixer preserves them and only adds the minimum extra whitespace to leave a clear blank line before code.
 - `ignoreGeneratedFiles`: When true, generated files identified by `generatedMarkers` are skipped.

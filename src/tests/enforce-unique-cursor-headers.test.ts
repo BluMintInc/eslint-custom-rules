@@ -77,6 +77,22 @@ export const generated = () => 1;
     },
     {
       code: `
+// @ts-nocheck
+/**
+ * @fileoverview Header with directive above
+ * @author BluMint
+ */
+export const withDirective = () => true;
+      `,
+      filename: '/workspace/src/with-directive.ts',
+      options: [
+        {
+          allowSplitHeaders: false,
+        },
+      ],
+    },
+    {
+      code: `
 /**
  * @fileoverview Header fragment
  */
@@ -133,6 +149,15 @@ declare const something: string;
 module.exports = {};
       `,
       filename: '/workspace/src/file.js',
+    },
+    {
+      code: `
+/**
+ * @fileoverview Works on Windows paths
+ */
+export const windows = () => null;
+      `,
+      filename: 'C:\\repo\\src\\windows-path.ts',
     },
   ],
   invalid: [
@@ -223,12 +248,7 @@ export const splitNotAllowed = () => true;
         },
       ],
       errors: [{ messageId: 'duplicateHeader' }],
-      output: `
-/**
- * @fileoverview Fragment one
- */
-export const splitNotAllowed = () => true;
-      `,
+      output: null,
     },
     {
       code: `
