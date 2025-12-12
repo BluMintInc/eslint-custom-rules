@@ -10,8 +10,9 @@ Memoized React components rely on stable prop references. Inline objects, arrays
 
 - Flags inline object/array literals and function expressions used as JSX props inside components wrapped with `React.memo`.
 - Flags identifiers bound to objects, arrays, or functions declared inside a memoized component unless they come from `useMemo`/`useCallback`.
-- Reports `useMemo` calls that simply return a primitive or pass-through value without creating a new reference.
+- Reports `useMemo` calls that simply return a primitive or pass-through value without creating a new reference, except when the dependency array is empty and the memoization intentionally freezes the initial value.
 - Unwraps TypeScript assertions (`as`, `satisfies`, non-null) before analysis so reference props stay flagged even when annotated.
+- Treats template literals as pass-through only when their interpolations are stable references; template literals that call functions are allowed because memoization can prevent repeated expensive computation.
 
 ### Examples of incorrect code
 

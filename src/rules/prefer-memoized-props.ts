@@ -299,11 +299,27 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
       });
     }
 
+    function isEnvironmentFreeLiteral(
+      expression: TSESTree.Expression,
+    ): boolean {
+      const unwrapped = unwrapExpression(expression);
+      if (unwrapped.type === AST_NODE_TYPES.Literal) return true;
+      if (
+        unwrapped.type === AST_NODE_TYPES.TemplateLiteral &&
+        unwrapped.expressions.length === 0
+      ) {
+        return true;
+      }
+      return false;
+    }
+
     function isStableReference(expression: TSESTree.Expression): boolean {
       const unwrapped = unwrapExpression(expression);
 
       if (unwrapped.type === AST_NODE_TYPES.Literal) return true;
-      if (unwrapped.type === AST_NODE_TYPES.TemplateLiteral) return true;
+      if (unwrapped.type === AST_NODE_TYPES.TemplateLiteral) {
+        return unwrapped.expressions.every((expr) => isStableReference(expr));
+      }
 
       if (unwrapped.type === AST_NODE_TYPES.Identifier) return true;
 
@@ -345,7 +361,7 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
         return;
       }
 
-      const [callback] = node.arguments;
+      const [callback, deps] = node.arguments;
       if (
         !callback ||
         (callback.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
@@ -356,6 +372,17 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
 
       const returnExpression = extractReturnExpression(callback);
       if (!returnExpression) return;
+
+      const dependencies =
+        deps && deps.type === AST_NODE_TYPES.ArrayExpression ? deps : null;
+
+      if (
+        dependencies &&
+        dependencies.elements.length === 0 &&
+        !isEnvironmentFreeLiteral(returnExpression)
+      ) {
+        return;
+      }
 
       if (isStableReference(returnExpression)) {
         const valueText = sourceCode.getText(returnExpression).slice(0, 80);

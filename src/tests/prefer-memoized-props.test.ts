@@ -101,6 +101,21 @@ ruleTesterJsx.run('prefer-memoized-props', preferMemoizedProps, {
         return <Child config={stable} />;
       });
     `,
+    `
+      import { memo, useMemo } from 'react';
+      const compute = (value: number) => value * 2;
+      const FancyResult = memo(({ value }: { value: number }) => {
+        const label = useMemo(() => \`Result: \${compute(value)}\`, [value]);
+        return <span>{label}</span>;
+      });
+    `,
+    `
+      import { memo, useMemo } from 'react';
+      const InitialOnly = memo(({ value }: { value: string }) => {
+        const initial = useMemo(() => value, []);
+        return <span>{initial}</span>;
+      });
+    `,
   ],
   invalid: [
     {
