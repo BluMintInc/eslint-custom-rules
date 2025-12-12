@@ -275,7 +275,7 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
       return null;
     }
 
-    function getPropName(name: TSESTree.JSXAttribute['name']): string {
+    function getAttributeName(name: TSESTree.JSXAttribute['name']): string {
       if (name.type === AST_NODE_TYPES.JSXIdentifier) {
         return name.name;
       }
@@ -382,7 +382,7 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
       }
 
       const expression = unwrapExpression(rawExpression);
-      const propName = getPropName(node.name);
+      const propName = getAttributeName(node.name);
 
       if (expression.type === AST_NODE_TYPES.ObjectExpression) {
         reportReference(expression, propName, 'object');
