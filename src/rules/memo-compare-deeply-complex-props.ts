@@ -1156,9 +1156,7 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
     }
 
     function generateReportData(complexProps: string[], componentName: string) {
-      const propsList = `[${complexProps
-        .map((prop) => escapeStringForCodeGeneration(prop))
-        .join(', ')}]`;
+      const propsList = `[${complexProps.join(', ')}]`;
       const propsCall = complexProps
         .map((prop) => escapeStringForCodeGeneration(prop))
         .join(', ');
