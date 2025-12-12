@@ -353,6 +353,22 @@ ruleTesterTs.run('no-redundant-this-params', noRedundantThisParams, {
     },
     {
       code: `
+      class ParenthesizedMember {
+        private config = { value: 1 };
+
+        private consume(input: number) {
+          return input + 1;
+        }
+
+        run() {
+          return this.consume((this.config).value);
+        }
+      }
+      `,
+      errors: [{ messageId: 'redundantInstanceArg' }],
+    },
+    {
+      code: `
       class Reporter {
         private ids: string[] = [];
 

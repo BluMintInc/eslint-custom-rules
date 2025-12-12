@@ -347,14 +347,21 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
         nested: boolean,
         transformed: boolean,
       ): void {
-        if ((node as { type?: string }).type === 'ParenthesizedExpression') {
-          visit((node as any).expression, nested || node !== normalized, transformed);
-          return;
-        }
-
+        const isParenthesized =
+          (node as { type?: string }).type === 'ParenthesizedExpression';
         const isMemberChainObject =
           node.parent?.type === AST_NODE_TYPES.MemberExpression &&
           (node.parent as TSESTree.MemberExpression).object === node;
+
+        if (isParenthesized) {
+          visit(
+            (node as any).expression,
+            nested || (node !== normalized && !isMemberChainObject),
+            transformed,
+          );
+          return;
+        }
+
         const nextNested = nested || (node !== normalized && !isMemberChainObject);
         const nextTransformed = transformed || isTransformingNode(node);
 
