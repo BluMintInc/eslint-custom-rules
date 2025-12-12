@@ -357,13 +357,6 @@ const identifierRepresentsDeclaration = (node: TSESTree.Identifier): boolean => 
   return false;
 };
 
-const identifierIntroducesValueBinding = (node: TSESTree.Identifier): boolean => {
-  const parent = node.parent;
-  if (!parent) return false;
-
-  return identifierHasDeclarationParent(node);
-};
-
 const isMemberExpressionObject = (node: TSESTree.Identifier): boolean => {
   const parent = node.parent;
   return (
@@ -399,7 +392,7 @@ const recordAliasFromPattern = (
   pattern: TSESTree.ObjectPattern,
   init: TSESTree.Expression | null,
   aliases: AliasStack,
-  handleStorageProperty?: (
+  reportStorageProperty?: (
     node: TSESTree.Node,
     storageKind: StorageKind,
     accessType: string,
@@ -415,7 +408,7 @@ const recordAliasFromPattern = (
     const keyName = getPropertyName(prop.key);
     if (!keyName || !STORAGE_NAMES.has(keyName as StorageKind)) continue;
 
-    handleStorageProperty?.(
+    reportStorageProperty?.(
       prop.key,
       keyName as StorageKind,
       `property "${keyName}"`,
@@ -491,7 +484,7 @@ const createIdentifierHandler = (
       ) {
         return;
       }
-      if (identifierIntroducesValueBinding(node) && !aliases.currentScope().has(node.name)) {
+      if (identifierHasDeclarationParent(node) && !aliases.currentScope().has(node.name)) {
         const outerAlias = getAliasFromStack(storageAliases.slice(0, -1), node.name);
         const shadowsGlobal =
           STORAGE_NAMES.has(node.name as StorageKind) ||
@@ -673,6 +666,8 @@ const createScopeListeners = (
   Program: aliases.reset,
   BlockStatement: (_node: TSESTree.BlockStatement) => aliases.pushScope(),
   'BlockStatement:exit': aliases.popScope,
+  TSModuleBlock: (_node: TSESTree.TSModuleBlock) => aliases.pushScope(),
+  'TSModuleBlock:exit': aliases.popScope,
   ClassBody: (node: TSESTree.ClassBody) => {
     aliases.pushScope();
     const parent = node.parent;

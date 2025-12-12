@@ -319,5 +319,15 @@ store.setItem('k', 'v');
       `,
       errors: [{ messageId: 'useStorageContext' }],
     },
+    {
+      code: `
+        namespace StorageScope {
+          const localStorage = createMockStorage();
+          localStorage.setItem('namespaced', 'v');
+        }
+        localStorage.setItem('outer', 'v');
+      `,
+      errors: [{ messageId: 'useStorageContext' }],
+    },
   ],
 });
