@@ -137,6 +137,58 @@ function hasNameCollision(
   });
 }
 
+function hasOverloadSignatures(node: MethodLikeDefinition): boolean {
+  const classBody = node.parent;
+  if (!classBody || classBody.type !== AST_NODE_TYPES.ClassBody) {
+    return false;
+  }
+
+  if (node.key.type !== AST_NODE_TYPES.Identifier) {
+    return false;
+  }
+
+  const targetName = node.key.name;
+  const targetIsStatic = (node as { static?: boolean }).static ?? false;
+
+  return classBody.body.some((member) => {
+    if (
+      member.type !== AST_NODE_TYPES.MethodDefinition &&
+      member.type !== AST_NODE_TYPES.TSAbstractMethodDefinition
+    ) {
+      return false;
+    }
+
+    if ((member as { computed?: boolean }).computed) {
+      return false;
+    }
+
+    const key = (member as { key?: TSESTree.PropertyName }).key;
+    if (!key || key.type !== AST_NODE_TYPES.Identifier) {
+      return false;
+    }
+
+    const memberIsStatic = (member as { static?: boolean }).static ?? false;
+    if (memberIsStatic !== targetIsStatic) {
+      return false;
+    }
+
+    if (
+      member.type === AST_NODE_TYPES.MethodDefinition &&
+      member.kind !== 'method'
+    ) {
+      return false;
+    }
+
+    const hasBody = (
+      member as
+        | TSESTree.MethodDefinition
+        | TSESTree.TSAbstractMethodDefinition
+    ).value?.body;
+
+    return !hasBody && key.name === targetName;
+  });
+}
+
 export const preferGetterOverParameterlessMethod = createRule<
   Options,
   MessageIds
@@ -564,6 +616,7 @@ export const preferGetterOverParameterlessMethod = createRule<
 
         const name = node.key.name;
         if (ignoredMethods.has(name)) return;
+        if (hasOverloadSignatures(node)) return;
 
         const body = node.value.body;
         if (computeBodyLineCount(body) < config.minBodyLines) {

@@ -79,6 +79,17 @@ ruleTesterTs.run(
       }
       `,
 
+      // Overload signatures keep the implementation as a method
+      `
+      class Overloaded {
+        value(input: string): string;
+        value(input: number): number;
+        value(input: string | number) {
+          return String(input);
+        }
+      }
+      `,
+
       // Existing getter remains valid
       `
       class Profile {

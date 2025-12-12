@@ -13,6 +13,8 @@ This rule reports parameterless, non-abstract, synchronous methods that return a
 
 The fixer is withheld when mutations are detected (assignments, `++/--`, or obvious mutating array calls including `fill`/`copyWithin`), when the method name is used as a callable or stored as a function reference (for example `instance.method()`, `instance.method.call(...)`, `bind`, `apply`, `const fn = this.method`, or `const { method } = this`), or when the suggested getter name would collide with an existing class member. In these cases the rule still reports but leaves the change to the developer to avoid breaking call sites or creating duplicate identifiers.
 
+Implementations that accompany overload signatures are skipped entirely because getters cannot have overload declarations; leaving those signatures in place would produce invalid TypeScript.
+
 ### Default Options
 
 ```json
