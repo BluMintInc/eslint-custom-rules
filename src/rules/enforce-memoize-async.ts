@@ -165,11 +165,8 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
               node.decorators && node.decorators.length > 0
                 ? node.decorators[0]
                 : node;
-            const insertionStart = insertionTarget.range
-              ? insertionTarget.range[0]
-              : node.range
-              ? node.range[0]
-              : 0;
+            const insertionStart =
+              insertionTarget.range?.[0] ?? node.range?.[0] ?? 0;
             const text = sourceCode.text;
             const lineStart = text.lastIndexOf('\n', insertionStart - 1) + 1;
             const leadingWhitespace =

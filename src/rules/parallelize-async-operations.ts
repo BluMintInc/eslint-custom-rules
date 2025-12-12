@@ -430,8 +430,8 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
             !areInTryCatchBlocks(awaitNodes) &&
             !areInLoop(awaitNodes)
           ) {
-            const key = `${awaitNodes[0].range?.[0]}-${
-              awaitNodes[awaitNodes.length - 1].range?.[1]
+            const key = `${awaitNodes[0].range[0]}-${
+              awaitNodes[awaitNodes.length - 1].range[1]
             }`;
             if (!reportedRanges.has(key)) {
               reportedRanges.add(key);
@@ -457,8 +457,8 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
           !areInTryCatchBlocks(awaitNodes) &&
           !areInLoop(awaitNodes)
         ) {
-          const key = `${awaitNodes[0].range?.[0]}-${
-            awaitNodes[awaitNodes.length - 1].range?.[1]
+          const key = `${awaitNodes[0].range[0]}-${
+            awaitNodes[awaitNodes.length - 1].range[1]
           }`;
           if (!reportedRanges.has(key)) {
             reportedRanges.add(key);

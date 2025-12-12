@@ -51,7 +51,8 @@ export default createRule<
     messages: {
       requireDynamicExtension:
         'File "{{fileName}}" disables "{{ruleName}}" but keeps the standard {{extension}} extension, hiding that dynamic-import safeguards are bypassed. Rename to "{{suggestedName}}" (or another *.dynamic.ts/tsx name) so the exception is visible and static-import hotspots stay easy to audit.',
-      requireDisableDirective: `File "{{fileName}}" uses the ".dynamic" suffix that signals dynamic-import rules are disabled, but it lacks a disable directive for "${ENFORCE_DYNAMIC_IMPORTS_RULE}" or "${REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE}". Add the matching disable comment for the static import you need, or rename the file to "{{standardName}}" so the rules keep protecting other files.`,
+      requireDisableDirective:
+        'File "{{fileName}}" uses the ".dynamic" suffix that signals dynamic-import rules are disabled, but it lacks a disable directive for {{rulesLabel}}. Add the matching disable comment for the static import you need, or rename the file to "{{standardName}}" so the rules keep protecting other files.',
     },
   },
   defaultOptions: [],
@@ -120,6 +121,7 @@ export default createRule<
             data: {
               fileName,
               standardName,
+              rulesLabel: DYNAMIC_RULES_LABEL,
             },
           });
         }

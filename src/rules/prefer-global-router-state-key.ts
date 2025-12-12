@@ -29,6 +29,7 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     const sourceCode = context.getSourceCode();
+    const scheduledNamedImports = new Set<string>();
     // Track imports from queryKeys.ts
     const queryKeyImports = new Map<
       string,
@@ -332,6 +333,9 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                               !alreadyImportedNamed &&
                               !hasNamespaceOrDefault
                             ) {
+                              if (scheduledNamedImports.has(suggestedConstant)) {
+                                return fixes;
+                              }
                               const importText = `import { ${suggestedConstant} } from '@/util/routing/queryKeys';\n`;
                               const firstImport = sourceCode.ast.body.find(
                                 (n): n is TSESTree.ImportDeclaration =>
@@ -353,6 +357,7 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                                   ),
                                 );
                               }
+                              scheduledNamedImports.add(suggestedConstant);
                             }
 
                             return fixes;

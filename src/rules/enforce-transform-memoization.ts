@@ -208,9 +208,7 @@ export const enforceTransformMemoization = createRule<[], MessageIds>({
       for (const element of depsArg.elements) {
         if (!element) continue;
         if (element.type === AST_NODE_TYPES.SpreadElement) continue;
-        addName(
-          extractFromExpression(element as unknown as TSESTree.Expression),
-        );
+        addName(extractFromExpression(element));
       }
 
       return dependencyNames;
