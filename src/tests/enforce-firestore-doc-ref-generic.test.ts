@@ -6,7 +6,7 @@ type MessageIds = 'missingGeneric' | 'invalidGeneric';
 
 const missingGenericMessage = (type: string) =>
   [
-    `What's wrong: ${type} is missing its document generic.`,
+    `What's wrong: ${type} is missing its document schema generic (the document data type).`,
     '',
     'Why it matters: Without the generic, Firestore references fall back to loose DocumentData, so TypeScript cannot catch field typos or missing required properties before they reach Firestore.',
     '',
@@ -15,7 +15,7 @@ const missingGenericMessage = (type: string) =>
 
 const invalidGenericMessage = (type: string) =>
   [
-    `What's wrong: ${type} uses "any" or an empty object ({}) in its generic.`,
+    `What's wrong: ${type} uses "any" or an empty object ({}) in its schema generic.`,
     '',
     'Why it matters: This erases the document schema and disables TypeScript checks on Firestore reads and writes, so malformed payloads and missing fields can pass silently.',
     '',
