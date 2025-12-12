@@ -64,6 +64,26 @@ function Component({ dep }) {
 }
       `,
     },
+    // Optional chaining on safe hooks should still skip literals
+    {
+      code: `
+function Component({ dep, value }) {
+  React?.useEffect(() => {
+    const payload = { value };
+    return () => console.log(dep, payload.value);
+  }, [dep, value]);
+}
+      `,
+    },
+    // Optional chaining on useMemo callbacks should be ignored
+    {
+      code: `
+function Component({ value }) {
+  const memoized = hooks?.useMemo(() => ({ value }), [value]);
+  return <div>{memoized?.value}</div>;
+}
+      `,
+    },
     // useEffect callback wrapped in a type assertion is allowed
     {
       code: `
@@ -710,6 +730,34 @@ function Component() {
           data: {
             literalType: 'object literal',
             hookName: 'useForm',
+          },
+        },
+      ],
+    },
+    // Optional chaining on hook calls still reports nested literals
+    {
+      code: `
+function Component() {
+  const client = getClient();
+  client?.useQuery({
+    queryKey: ['user'],
+    options: { staleTime: 5000 },
+  });
+}
+      `,
+      errors: [
+        {
+          messageId: 'nestedHookLiteral',
+          data: {
+            literalType: 'array literal',
+            hookName: 'useQuery',
+          },
+        },
+        {
+          messageId: 'nestedHookLiteral',
+          data: {
+            literalType: 'object literal',
+            hookName: 'useQuery',
           },
         },
       ],

@@ -248,16 +248,21 @@ function isFunctionNode(
 function getHookNameFromCallee(
   callee: TSESTree.LeftHandSideExpression,
 ): string | null {
-  if (callee.type === AST_NODE_TYPES.Identifier) {
-    return callee.name;
+  const resolvedCallee = unwrapExpression(
+    callee as unknown as TSESTree.Node,
+  ) as TSESTree.Node;
+
+  if (resolvedCallee.type === AST_NODE_TYPES.Identifier) {
+    return resolvedCallee.name;
   }
 
   if (
-    callee.type === AST_NODE_TYPES.MemberExpression &&
-    !callee.computed &&
-    callee.property.type === AST_NODE_TYPES.Identifier
+    resolvedCallee.type === AST_NODE_TYPES.MemberExpression &&
+    !resolvedCallee.computed &&
+    (resolvedCallee.property as TSESTree.Node).type === AST_NODE_TYPES.Identifier
   ) {
-    return callee.property.name;
+    const property = resolvedCallee.property as TSESTree.Identifier;
+    return property.name;
   }
 
   return null;
