@@ -131,6 +131,11 @@ function findNameInAncestors(startNode: TSESTree.Node | null): string | null {
   return null;
 }
 
+/**
+ * Resolves a function's display name from its declaration or surrounding
+ * assignment/property wrappers so HOC-wrapped and asserted components still map
+ * to their intended identifiers.
+ */
 function getFunctionName(
   fn:
     | TSESTree.FunctionDeclaration
@@ -158,6 +163,11 @@ function getFunctionName(
   return findNameInAncestors(parent);
 }
 
+/**
+ * Checks whether a function should be treated as a React component or hook
+ * based on naming conventions. Enables the rule to limit reports to user-facing
+ * components and hooks rather than arbitrary functions.
+ */
 function isComponentOrHookFunction(
   fn:
     | TSESTree.FunctionDeclaration
@@ -248,6 +258,10 @@ function isInsideAllowedHookCallback(node: TSESTree.Node): boolean {
   return false;
 }
 
+/**
+ * Unwraps TypeScript assertions, optional chaining, and parentheses to reach
+ * the underlying expression node for stable identity comparisons.
+ */
 function unwrapExpression(node: TSESTree.Node): TSESTree.Node {
   let current: TSESTree.Node = node;
   // eslint-disable-next-line no-constant-condition
@@ -276,6 +290,10 @@ function unwrapExpression(node: TSESTree.Node): TSESTree.Node {
   }
 }
 
+/**
+ * Finds the nearest enclosing hook call for a literal and whether the literal
+ * is passed directly as an argument (versus nested inside another expression).
+ */
 function findEnclosingHookCall(
   node: TSESTree.Node,
 ): { hookName: string; isDirectArgument: boolean } | null {
@@ -447,8 +465,6 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
         'Detect object, array, and function literals created in React components or hooks that create new references every render. Prefer memoized values (useMemo/useCallback) or module-level constants to keep referential stability.',
       recommended: 'error',
     },
-    fixable:
-      null as unknown as TSESLint.RuleMetaData<MessageIds>['fixable'],
     hasSuggestions: true,
     schema: [],
     messages: {
@@ -509,6 +525,8 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
       }
 
       const contextLabel = formatContextLabel(owner);
+      // Only emit auto-fix suggestions for simple variable initializers; other
+      // contexts (returns, JSX props, nested expressions) risk unsafe rewrites.
       const suggestions =
         node.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
         node.parent.init === node
