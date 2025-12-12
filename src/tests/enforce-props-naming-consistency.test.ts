@@ -127,15 +127,6 @@ ruleTesterTs.run(
         errors: [
           { messageId: 'usePropsName', data: { paramName: 'settings' } },
         ],
-        output: `
-        type UserProps = {
-          name: string;
-          age: number;
-        };
-        function User(props) {
-          return settings.name;
-        }
-      `,
       },
       // Arrow function with incorrect parameter name
       {
@@ -149,15 +140,6 @@ ruleTesterTs.run(
         };
       `,
         errors: [{ messageId: 'usePropsName', data: { paramName: 'options' } }],
-        output: `
-        type ButtonProps = {
-          label: string;
-          onClick: () => void;
-        };
-        const Button = (props) => {
-          return options.label;
-        };
-      `,
       },
       // Class with incorrect parameter name
       {
@@ -175,17 +157,6 @@ ruleTesterTs.run(
         errors: [
           { messageId: 'usePropsName', data: { paramName: 'settings' } },
         ],
-        output: `
-        type TournamentFactoryProps = {
-          tournament: Tournament;
-          match: MatchAggregated;
-        };
-        class TournamentFactory {
-          constructor(private readonly props) {
-            // ...
-          }
-        }
-      `,
       },
       // Function with incorrect parameter name
       {
@@ -199,15 +170,6 @@ ruleTesterTs.run(
         }
       `,
         errors: [{ messageId: 'usePropsName', data: { paramName: 'options' } }],
-        output: `
-        type GameCreationProps = {
-          players: Player[];
-          settings: GameSettings;
-        };
-        function createGame(props) {
-          // ...
-        }
-      `,
       },
       // We're skipping this test because our implementation doesn't handle multiple Props parameters
       // Class with multiple constructor parameters, one incorrect
@@ -223,14 +185,6 @@ ruleTesterTs.run(
         errors: [
           { messageId: 'usePropsName', data: { paramName: 'settings' } },
         ],
-        output: `
-        class DataManager {
-          constructor(
-            private readonly dataSource: DataSource,
-            private readonly props,
-          ) {}
-        }
-      `,
       },
     ],
   },

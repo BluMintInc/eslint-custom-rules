@@ -1,2 +1,1 @@
-import { TSESLint } from '@typescript-eslint/utils';
-export declare const enforcePropsNamingConsistency: TSESLint.RuleModule<"usePropsName", [], TSESLint.RuleListener>;
+export declare const enforcePropsNamingConsistency: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"usePropsName", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;

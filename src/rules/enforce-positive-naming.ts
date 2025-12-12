@@ -1,4 +1,5 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import type { TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'avoidNegativeNaming';
@@ -917,7 +918,10 @@ const BOOLEAN_POSITIVE_ALTERNATIVES: Record<string, string[]> = {
   DOES_NOT: ['DOES'],
 };
 
-export const enforcePositiveNaming = createRule<[], MessageIds>({
+export const enforcePositiveNaming: TSESLint.RuleModule<MessageIds, []> = createRule<
+  [],
+  MessageIds
+>({
   name: 'enforce-positive-naming',
   meta: {
     type: 'suggestion',

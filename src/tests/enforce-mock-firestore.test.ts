@@ -94,6 +94,14 @@ ruleTesterTs.run('enforce-mock-firestore', enforceFirestoreMock, {
         }));
       `,
     },
+    // Should not flag substrings of firebase-admin paths
+    {
+      code: `
+        jest.mock('firebase-admin-foo', () => ({
+          firestore: jest.fn(),
+        }));
+      `,
+    },
   ],
   invalid: [
     // Invalid use of mockFirebase
@@ -117,6 +125,32 @@ ruleTesterTs.run('enforce-mock-firestore', enforceFirestoreMock, {
             collection: jest.fn(),
           },
         }));
+      `,
+      errors: [{ messageId: 'noManualFirestoreMock' }],
+    },
+    // Invalid manual mock using block-bodied arrow function
+    {
+      code: `
+        jest.mock('firebase-admin', () => {
+          return {
+            firestore: () => ({
+              collection: jest.fn(),
+            }),
+          };
+        });
+      `,
+      errors: [{ messageId: 'noManualFirestoreMock' }],
+    },
+    // Invalid manual mock using function expression factory
+    {
+      code: `
+        jest.mock('firebase-admin/firestore', function () {
+          return {
+            getFirestore: () => ({
+              collection: jest.fn(),
+            }),
+          };
+        });
       `,
       errors: [{ messageId: 'noManualFirestoreMock' }],
     },

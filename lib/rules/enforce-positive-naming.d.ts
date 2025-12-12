@@ -1,1 +1,4 @@
-export declare const enforcePositiveNaming: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"avoidNegativeNaming", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;
+import type { TSESLint } from '@typescript-eslint/utils';
+type MessageIds = 'avoidNegativeNaming';
+export declare const enforcePositiveNaming: TSESLint.RuleModule<MessageIds, []>;
+export {};

@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'usePropsName';
@@ -13,7 +13,6 @@ export const enforcePropsNamingConsistency = createRule<Options, MessageIds>({
         'Prefer naming single "Props"-typed parameters as "props"; enforcement defers to enforce-props-argument-name for multi-Props cases',
       recommended: 'warn',
     },
-    fixable: 'code',
     schema: [],
     messages: {
       usePropsName:
@@ -62,14 +61,6 @@ export const enforcePropsNamingConsistency = createRule<Options, MessageIds>({
       return paramName.endsWith('Props') || paramName === 'props';
     }
 
-    // Fix parameter name to "props"
-    function fixParameterName(
-      fixer: TSESLint.RuleFixer,
-      param: TSESTree.Identifier,
-    ): TSESLint.RuleFix {
-      return fixer.replaceText(param, 'props');
-    }
-
     // Check function parameters
     function checkFunctionParams(
       node:
@@ -101,7 +92,6 @@ export const enforcePropsNamingConsistency = createRule<Options, MessageIds>({
             node: param,
             messageId: 'usePropsName',
             data: { paramName: param.name },
-            fix: (fixer) => fixParameterName(fixer, param),
           });
         }
       }
@@ -113,10 +103,10 @@ export const enforcePropsNamingConsistency = createRule<Options, MessageIds>({
         return;
       }
 
-      const constructor = node.value;
+      const constructorValue = node.value;
 
       // Skip constructors with multiple parameters that have Props types
-      const propsTypeParams = constructor.params.filter((param) => {
+      const propsTypeParams = constructorValue.params.filter((param) => {
         if (param.type === AST_NODE_TYPES.Identifier) {
           if (!param.typeAnnotation || !param.typeAnnotation.typeAnnotation)
             return false;
@@ -143,7 +133,7 @@ export const enforcePropsNamingConsistency = createRule<Options, MessageIds>({
         return; // Skip constructors with multiple Props parameters
       }
 
-      for (const param of constructor.params) {
+      for (const param of constructorValue.params) {
         if (
           shouldBeNamedProps(param) &&
           param.type === AST_NODE_TYPES.Identifier &&
@@ -153,7 +143,6 @@ export const enforcePropsNamingConsistency = createRule<Options, MessageIds>({
             node: param,
             messageId: 'usePropsName',
             data: { paramName: param.name },
-            fix: (fixer) => fixParameterName(fixer, param),
           });
         } else if (
           param.type === AST_NODE_TYPES.TSParameterProperty &&
@@ -165,11 +154,8 @@ export const enforcePropsNamingConsistency = createRule<Options, MessageIds>({
             node: param.parameter,
             messageId: 'usePropsName',
             data: { paramName: param.parameter.name },
-            fix: (fixer) =>
-              fixParameterName(
-                fixer,
-                param.parameter as TSESTree.Identifier,
-              ),
+            // TSParameterProperty may also require renaming property usages; avoid auto-fixing.
+            fix: undefined,
           });
         }
       }

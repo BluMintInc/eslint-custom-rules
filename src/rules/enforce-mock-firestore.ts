@@ -1,4 +1,5 @@
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
+import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'noManualFirestoreMock' | 'noMockFirebase';
@@ -9,7 +10,10 @@ const FIRESTORE_PATHS = [
   'firebase-admin/firestore',
 ];
 
-export const enforceFirestoreMock = createRule<[], MessageIds>({
+export const enforceFirestoreMock: TSESLint.RuleModule<MessageIds, []> = createRule<
+  [],
+  MessageIds
+>({
   name: 'enforce-mock-firestore',
   meta: {
     type: 'problem',
@@ -31,6 +35,7 @@ export const enforceFirestoreMock = createRule<[], MessageIds>({
     return {
       // Detect jest.mock() calls for firebaseAdmin
       CallExpression(node) {
+        const moduleArg = node.arguments[0];
         if (
           node.callee.type === AST_NODE_TYPES.MemberExpression &&
           node.callee.object.type === AST_NODE_TYPES.Identifier &&
@@ -38,23 +43,34 @@ export const enforceFirestoreMock = createRule<[], MessageIds>({
           node.callee.property.type === AST_NODE_TYPES.Identifier &&
           node.callee.property.name === 'mock' &&
           node.arguments.length > 0 &&
-          node.arguments[0].type === AST_NODE_TYPES.Literal &&
-          typeof node.arguments[0].value === 'string' &&
+          moduleArg?.type === AST_NODE_TYPES.Literal &&
+          typeof moduleArg.value === 'string' &&
           FIRESTORE_PATHS.some(
             (path) =>
-              node.arguments[0].type === AST_NODE_TYPES.Literal &&
-              typeof node.arguments[0].value === 'string' &&
-              node.arguments[0].value?.includes(path),
+              typeof moduleArg.value === 'string' &&
+              (moduleArg.value === path || moduleArg.value.endsWith(`/${path}`)),
           )
         ) {
           // Check if the mock includes Firestore-related properties
           const mockFn = node.arguments[1];
           if (
             mockFn &&
-            mockFn.type === AST_NODE_TYPES.ArrowFunctionExpression
+            (mockFn.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+              mockFn.type === AST_NODE_TYPES.FunctionExpression)
           ) {
-            const returnStmt = mockFn.body;
+            const returnStmt: TSESTree.Node | null =
+              mockFn.body.type === AST_NODE_TYPES.ObjectExpression
+                ? mockFn.body
+                : mockFn.body.type === AST_NODE_TYPES.BlockStatement
+                  ? (
+                      mockFn.body.body.find(
+                        (statement): statement is TSESTree.ReturnStatement =>
+                          statement.type === AST_NODE_TYPES.ReturnStatement && !!statement.argument,
+                      )?.argument ?? null
+                    )
+                  : null;
             if (
+              returnStmt &&
               returnStmt.type === AST_NODE_TYPES.ObjectExpression &&
               returnStmt.properties.some(
                 (prop) =>
