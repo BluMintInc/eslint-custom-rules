@@ -12,7 +12,7 @@ Developers occasionally combine a type annotation with a matching `as`/angle-bra
 
 ### Incorrect
 
-```
+```typescript
 type ResultSummary = { id: string };
 type DocumentReference<T> = { id: string; payload?: T };
 declare const resultSummaryCollectionRef: {
@@ -27,7 +27,7 @@ const docRef: DocumentReference<ResultSummary> =
 
 ### Correct
 
-```
+```typescript
 // ✅ Keep only one type source
 const docRef =
   resultSummaryCollectionRef.doc(teamId) as DocumentReference<ResultSummary>;
@@ -45,3 +45,4 @@ The fixer removes the explicit type annotation and leaves the assertion intact, 
 
 - Destructuring patterns are intentionally ignored to avoid surprising edits.
 - The rule only triggers when the annotation and assertion resolve to the **same** type; widening/narrowing pairs (e.g., `any` to `string`) are left untouched.
+- Functions with multiple `return` statements are skipped because different branches can assert different types.

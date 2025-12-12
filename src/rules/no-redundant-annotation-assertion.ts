@@ -30,13 +30,11 @@ function getAssertionTypeNode(
   return null;
 }
 
-function removeTypeAnnotation(
-  fixer: TSESLint.RuleFixer,
+function findTypeAnnotationStart(
   typeAnnotation: TSESTree.TSTypeAnnotation,
   sourceCode: TSESLint.SourceCode,
-): TSESLint.RuleFix {
+): number {
   const start = typeAnnotation.range[0];
-  const end = typeAnnotation.range[1];
   const text = sourceCode.getText();
 
   let removalStart = start;
@@ -55,6 +53,17 @@ function removeTypeAnnotation(
     }
     removalStart = i;
   }
+
+  return removalStart;
+}
+
+function removeTypeAnnotation(
+  fixer: TSESLint.RuleFixer,
+  typeAnnotation: TSESTree.TSTypeAnnotation,
+  sourceCode: TSESLint.SourceCode,
+): TSESLint.RuleFix {
+  const end = typeAnnotation.range[1];
+  const removalStart = findTypeAnnotationStart(typeAnnotation, sourceCode);
 
   return fixer.removeRange([removalStart, end]);
 }
@@ -204,11 +213,18 @@ function areTypesIdentical(
   assertionType: ts.Type,
   checker: ts.TypeChecker,
 ): boolean {
-  return (
-    annotationType === assertionType ||
-    (checker as { isTypeIdenticalTo?: (a: ts.Type, b: ts.Type) => boolean })
-      .isTypeIdenticalTo?.(annotationType, assertionType) === true
-  );
+  if (annotationType === assertionType) return true;
+
+  const isTypeIdenticalTo = (checker as {
+    isTypeIdenticalTo?: (a: ts.Type, b: ts.Type) => boolean;
+  }).isTypeIdenticalTo;
+
+  // Guard the internal TypeScript helper; newer compiler versions may drop or change it.
+  if (typeof isTypeIdenticalTo !== 'function') {
+    return false;
+  }
+
+  return isTypeIdenticalTo(annotationType, assertionType) === true;
 }
 
 function areTypesAssignableBothWays(
@@ -216,16 +232,18 @@ function areTypesAssignableBothWays(
   assertionType: ts.Type,
   checker: ts.TypeChecker,
 ): boolean {
-  const assignable =
-    (checker as ts.TypeChecker & {
-      isTypeAssignableTo?: (a: ts.Type, b: ts.Type) => boolean;
-    }).isTypeAssignableTo;
+  const isTypeAssignableTo = (checker as {
+    isTypeAssignableTo?: (a: ts.Type, b: ts.Type) => boolean;
+  }).isTypeAssignableTo;
 
-  if (!assignable) return false;
+  // TypeScript exposes isTypeAssignableTo on the checker, but some versions omit it from the d.ts surface; guard to stay compatible.
+  if (typeof isTypeAssignableTo !== 'function') {
+    return false;
+  }
 
   return (
-    assignable(annotationType, assertionType) &&
-    assignable(assertionType, annotationType)
+    isTypeAssignableTo(annotationType, assertionType) &&
+    isTypeAssignableTo(assertionType, annotationType)
   );
 }
 
@@ -319,6 +337,7 @@ function getReturnAssertion(
         Boolean(statement.argument),
     );
 
+    // Skip functions with multiple returns because different branches can assert different types.
     if (returns.length !== 1) return null;
 
     return getAssertionTypeNode(returns[0].argument);
