@@ -122,6 +122,13 @@ function hasNameCollision(
       return false;
     }
 
+    if (
+      member.type === AST_NODE_TYPES.MethodDefinition &&
+      member.kind === 'set'
+    ) {
+      return false;
+    }
+
     if (key.type === AST_NODE_TYPES.Identifier && key.name === newName) {
       return true;
     }
@@ -374,6 +381,8 @@ export const preferGetterOverParameterlessMethod = createRule<
           ) {
             callUsedNames.add(target.property.name);
           }
+        } else if (target.type === AST_NODE_TYPES.ThisExpression) {
+          callUsedNames.add(propName);
         }
         return;
       }

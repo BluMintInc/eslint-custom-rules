@@ -1,12 +1,12 @@
 # prefer-getter-over-parameterless-method
 
-Enforce using getter syntax for synchronous class methods that take no parameters and return a value. Methods with parentheses communicate an action, while getters communicate that a computed value is being accessed. Converting eligible methods to getters improves API ergonomics (`instance.value` instead of `instance.value()`) and avoids accidental omission of parentheses.
+This rule helps you use getter syntax for synchronous class methods that take no parameters and return a value. Methods with parentheses communicate an action, while getters communicate that you are accessing a computed value. Converting eligible methods to getters improves API ergonomics: you declare `methodName()` as `get <name>()` and then access it as `instance.<name>` with no parentheses, which avoids accidental omission of a call.
 
 ## Rule Details
 
 This rule reports parameterless, non-abstract, synchronous methods that return a value and are not in the ignore lists. It auto-fixes safe cases by:
 
-- Converting `methodName()` to `get <suggestedName>()`
+- Converting the method declaration `methodName()` to the getter declaration `get <suggestedName>()`, so you use it as `instance.<suggestedName>` without parentheses
 - Preserving access modifiers, `static`, decorators, and return type annotations
 - Stripping configurable verb prefixes (for example, `getUser()` → `get user()`)
 - Keeping boolean prefixes intact (`isValid()` → `get isValid()`)
@@ -63,7 +63,7 @@ The fixer is withheld when mutations are detected (assignments, `++/--`, or obvi
 - `ignoreAsync` (boolean): skip `async` methods. Default `true`.
 - `ignoreVoidReturn` (boolean): skip methods that only return `void`/`undefined`. Default `true`.
 - `ignoreAbstract` (boolean): skip abstract methods. Default `true`.
-- `respectJsDocSideEffects` (boolean): skip methods annotated with `@sideEffect`, `@mutates`, or `@returns` text mentioning side effects. Default `true`.
+- `respectJsDocSideEffects` (boolean): skip methods when the JSDoc block mentions side effects or mutation (including `@sideEffect`/`@mutates` tags and side-effect phrases anywhere in the block, @returns included). Default `true`.
 - `minBodyLines` (number): require at least this many body lines before reporting. Default `0`.
 
 ## Examples

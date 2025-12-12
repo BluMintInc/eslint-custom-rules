@@ -539,6 +539,40 @@ ruleTesterTs.run(
       },
       {
         code: `
+        class WithSetter {
+          private _name = 'x';
+
+          set name(value: string) {
+            this._name = value;
+          }
+
+          getName() {
+            return this._name;
+          }
+        }
+        `,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'getName', suggestedName: 'name' },
+          },
+        ],
+        output: `
+        class WithSetter {
+          private _name = 'x';
+
+          set name(value: string) {
+            this._name = value;
+          }
+
+          get name() {
+            return this._name;
+          }
+        }
+        `,
+      },
+      {
+        code: `
         class StaticVsInstance {
           count = 3;
 
@@ -593,6 +627,40 @@ ruleTesterTs.run(
 
           get invoke() {
             return this.value.apply(this);
+          }
+        }
+        `,
+      },
+      {
+        code: `
+        class CallableName {
+          call() {
+            return this.value;
+          }
+
+          use() {
+            return this.call();
+          }
+        }
+        `,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'call', suggestedName: 'call' },
+          },
+          {
+            messageId: 'preferGetter',
+            data: { name: 'use', suggestedName: 'use' },
+          },
+        ],
+        output: `
+        class CallableName {
+          call() {
+            return this.value;
+          }
+
+          get use() {
+            return this.call();
           }
         }
         `,
