@@ -32,10 +32,10 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
         '',
         'Why it matters: Without the generic, Firestore references fall back to loose DocumentData, so TypeScript cannot catch field typos or missing required properties before they reach Firestore.',
         '',
-        'How to fix: Add the document interface/type as the generic (e.g., const ref: {{ type }}<UserDoc> = ... or doc<UserDoc>(collection) ).',
+        'How to fix: Add the document interface/type as the generic (e.g., const ref: {{ type }}<UserDoc> = ... or doc<UserDoc>(collection)).',
       ].join('\n'),
       invalidGeneric: [
-        'What\'s wrong: {{ type }} uses "any" or an empty object ({}) in its generic.',
+        "What's wrong: {{ type }} uses \"any\" or an empty object ({}) in its generic.",
         '',
         'Why it matters: This erases the document schema and disables TypeScript checks on Firestore reads and writes, so malformed payloads and missing fields can pass silently.',
         '',
