@@ -184,9 +184,9 @@ export const preferGetterOverParameterlessMethod = createRule<
     ],
     messages: {
       preferGetter:
-        'Method "{{name}}" is a parameterless sync method that returns a value → Calling it like an action hides that it behaves like a computed property and risks callers forgetting the parentheses → Convert it to a getter such as "get {{suggestedName}}()".',
+        'Problem: Method "{{name}}" is a parameterless synchronous method that returns a value. → Impact: Calling it with parentheses disguises that it behaves like a computed property, increasing the chance callers omit parentheses or treat it like an action. → Solution: Convert it to a getter: "get {{suggestedName}}()" to signal property semantics and remove call-site parentheses.',
       preferGetterSideEffect:
-        'Method "{{name}}" looks like a computed value → But {{reason}}, so turning it into a getter would run side effects on property access → Keep it as a method, or remove the side effects before converting to "get {{suggestedName}}()".',
+        'Problem: Method "{{name}}" looks like a computed value. → Impact: However, {{reason}}, so converting it to a getter would execute side effects on every property access and violate the principle of least surprise. → Solution: Keep it as a method to indicate it performs work, or remove the side effects before converting to "get {{suggestedName}}()".',
     },
   },
   defaultOptions: [DEFAULT_OPTIONS],
@@ -296,6 +296,12 @@ export const preferGetterOverParameterlessMethod = createRule<
       const negationPattern =
         /\b(?:no|without|not|non|none|never|free of|lack|lacks|lacking|avoid|avoids|avoiding)\b/;
 
+      /**
+       * Detects matches that are not negated within a short preceding context.
+       * Uses a 24-character lookback to catch nearby negations like "no", "not",
+       * or "without" that typically appear immediately before side-effect wording,
+       * balancing coverage with keeping false positives low.
+       */
       const matchesAffirmative = (pattern: RegExp) => {
         const globalPattern = ensureGlobalPattern(pattern);
         const matches = normalized.matchAll(globalPattern);
@@ -623,6 +629,8 @@ export const preferGetterOverParameterlessMethod = createRule<
               ? (suggestedNameCounts.get(classBody)?.get(scopeKey) ?? 0) > 1
               : false;
 
+          const isAsync = node.value.async;
+
           context.report({
             node: node.key,
             messageId: sideEffectReason
@@ -635,6 +643,7 @@ export const preferGetterOverParameterlessMethod = createRule<
             },
             fix:
               sideEffectReason ||
+              isAsync ||
               !leftParen ||
               !rightParen ||
               hasCollision ||

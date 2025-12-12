@@ -850,6 +850,23 @@ ruleTesterTs.run(
         ],
         output: null,
       },
+      {
+        code: `
+        class AsyncExample {
+          async value() {
+            return this.total;
+          }
+        }
+        `,
+        options: [{ ignoreAsync: false }],
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'value', suggestedName: 'value' },
+          },
+        ],
+        output: null,
+      },
     ],
   },
 );
