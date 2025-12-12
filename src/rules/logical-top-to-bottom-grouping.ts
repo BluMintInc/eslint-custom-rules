@@ -299,12 +299,7 @@ function collectIifeDependencies(
   fn: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
   names: Set<string>,
 ): void {
-  fn.params.forEach((param) => collectUsedIdentifiers(param, names, { skipFunctions: false }));
-  if (fn.body.type === AST_NODE_TYPES.BlockStatement) {
-    collectUsedIdentifiers(fn.body, names, { skipFunctions: false });
-    return;
-  }
-  collectUsedIdentifiers(fn.body, names, { skipFunctions: false });
+  collectFunctionCaptures(fn, names, { skipFunctions: true, includeFunctionCaptures: true });
 }
 
 type CollectIdentifierOptions = {

@@ -399,6 +399,31 @@ const unrelated = 1;
 `,
       errors: [{ messageId: 'groupDerived' }],
     },
+    {
+      code: `
+const shadow = 1, unused = 0;
+const other = 2;
+
+(() => {
+  const shadow = 3;
+  console.log(shadow);
+})();
+
+use(other);
+      `,
+      output: `
+(() => {
+  const shadow = 3;
+  console.log(shadow);
+})();
+
+const shadow = 1, unused = 0;
+const other = 2;
+
+use(other);
+      `,
+      errors: [{ messageId: 'moveSideEffect' }],
+    },
   ],
 });
 
