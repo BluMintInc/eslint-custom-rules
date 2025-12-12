@@ -18,7 +18,7 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
     schema: [],
     messages: {
       enforceFieldPathSyntax:
-        'Use FieldPath syntax (dot notation) for nested fields in DocSetter. Instead of `{ roles: { contributor: value } }`, use `{ "roles.contributor": value }`.',
+        'What’s wrong: DocSetter {{methodName}} receives nested object data under "{{topLevelKey}}". → Why it matters: Firestore treats that nested map as a whole sub-document write, so partial updates can overwrite sibling fields you did not include. → How to fix: Flatten nested properties into FieldPath (dot) keys before passing documentData (e.g., "{{exampleFieldPath}}") so only the intended leaves are written.',
     },
   },
   defaultOptions: [],
@@ -69,60 +69,20 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       );
     }
 
-    // Helper function to check if an object has nested objects (excluding arrays)
-    function hasNestedObjects(
-      node: TSESTree.ObjectExpression,
-      prefix = '',
-    ): boolean {
-      for (const property of node.properties) {
-        // Skip spread elements
-        if (property.type === AST_NODE_TYPES.SpreadElement) {
-          continue;
-        }
+    function isNumericKey(property: TSESTree.Property): boolean {
+      return (
+        property.key.type === AST_NODE_TYPES.Literal &&
+        (typeof property.key.value === 'number' ||
+          (typeof property.key.value === 'string' &&
+            /^\d+$/.test(property.key.value)))
+      );
+    }
 
-        if (property.type !== AST_NODE_TYPES.Property) {
-          continue;
-        }
-
-        // Skip computed properties (dynamic keys)
-        if (property.computed) {
-          continue;
-        }
-
-        const isNumericKey =
-          property.key.type === AST_NODE_TYPES.Literal &&
-          (typeof property.key.value === 'number' ||
-            (typeof property.key.value === 'string' &&
-              /^\d+$/.test(property.key.value)));
-
-        // Allow top-level numeric keys (treated like array indexes)
-        if (prefix === '' && isNumericKey) {
-          continue;
-        }
-
-        const value = property.value;
-
-        // Skip if the property key is already using dot notation
-        if (
-          property.key.type === AST_NODE_TYPES.Literal &&
-          typeof property.key.value === 'string' &&
-          property.key.value.includes('.')
-        ) {
-          continue;
-        }
-
-        // Check if the value is an object (but not an array)
-        if (value.type === AST_NODE_TYPES.ObjectExpression) {
-          // Skip nested objects that contain spread elements or computed properties
-          const hasSpreadOrComputed = value.properties.some((prop) =>
-            isSpreadOrComputed(prop),
-          );
-          if (!hasSpreadOrComputed) {
-            return true;
-          }
-        }
-      }
-      return false;
+    function hasRootNumericKey(node: TSESTree.ObjectExpression): boolean {
+      return node.properties.some(
+        (property) =>
+          property.type === AST_NODE_TYPES.Property && isNumericKey(property),
+      );
     }
 
     // Helper function to flatten nested objects into FieldPath syntax
@@ -166,13 +126,9 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
           continue;
         }
 
-        const isNumericKey =
-          property.key.type === AST_NODE_TYPES.Literal &&
-          (typeof property.key.value === 'number' ||
-            (typeof property.key.value === 'string' &&
-              /^\d+$/.test(property.key.value)));
+        const numericKey = isNumericKey(property);
 
-        if (prefix === '' && isNumericKey) {
+        if (prefix === '' && numericKey) {
           continue;
         }
 
@@ -204,6 +160,7 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
     function convertToFieldPathSyntax(
       node: TSESTree.ObjectExpression,
       sourceCode: TSESLint.SourceCode,
+      preflattened?: { [key: string]: string },
     ): string {
       const idProperty = node.properties.find(
         (prop) =>
@@ -212,7 +169,9 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
           prop.key.name === 'id',
       );
 
-      const flattenedProperties = flattenObject(node, sourceCode);
+      const flattenedProperties = {
+        ...(preflattened ?? flattenObject(node, sourceCode)),
+      };
       if (idProperty && idProperty.type === AST_NODE_TYPES.Property) {
         delete flattenedProperties['id'];
       }
@@ -237,6 +196,138 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       return result;
     }
 
+    function getMethodName(node: TSESTree.CallExpression): string {
+      if (
+        node.callee.type === AST_NODE_TYPES.MemberExpression &&
+        node.callee.property.type === AST_NODE_TYPES.Identifier
+      ) {
+        return `${node.callee.property.name}()`;
+      }
+      return 'set()';
+    }
+
+    function getPropertyKeyText(
+      property: TSESTree.Property,
+    ): string | undefined {
+      if (property.key.type === AST_NODE_TYPES.Identifier) {
+        return property.key.name;
+      }
+      if (
+        property.key.type === AST_NODE_TYPES.Literal &&
+        (typeof property.key.value === 'string' ||
+          typeof property.key.value === 'number')
+      ) {
+        return String(property.key.value);
+      }
+      return undefined;
+    }
+
+    function getFirstNestedObjectProperty(
+      node: TSESTree.ObjectExpression,
+      keyPredicate?: (keyText: string) => boolean,
+    ):
+      | (TSESTree.Property & { value: TSESTree.ObjectExpression })
+      | undefined {
+      for (const property of node.properties) {
+        if (isSpreadOrComputed(property)) {
+          continue;
+        }
+
+        if (property.type !== AST_NODE_TYPES.Property) {
+          continue;
+        }
+
+        const propertyKeyText = getPropertyKeyText(property);
+        if (!propertyKeyText) {
+          continue;
+        }
+
+        if (keyPredicate && !keyPredicate(propertyKeyText)) {
+          continue;
+        }
+
+        // Root-level numeric keys typically model array-style buckets rather than
+        // Firestore document fields, so ignore them when identifying nested objects
+        if (
+          node.parent?.type !== AST_NODE_TYPES.Property &&
+          isNumericKey(property)
+        ) {
+          continue;
+        }
+
+        if (property.value.type !== AST_NODE_TYPES.ObjectExpression) {
+          continue;
+        }
+
+        const hasSpreadOrComputed = property.value.properties.some((prop) =>
+          isSpreadOrComputed(prop),
+        );
+
+        if (hasSpreadOrComputed) {
+          continue;
+        }
+
+        return property as TSESTree.Property & {
+          value: TSESTree.ObjectExpression;
+        };
+      }
+
+      return undefined;
+    }
+
+    type ViolationDetails = {
+      topLevelKey: string;
+      exampleFieldPath: string;
+      flattenedProperties: Record<string, string>;
+    };
+
+    function extractViolationDetails(
+      firstArg: TSESTree.ObjectExpression,
+      sourceCode: TSESLint.SourceCode,
+    ): ViolationDetails | null {
+      const firstNestedPropertyWithoutDots = getFirstNestedObjectProperty(
+        firstArg,
+        (key) => !key.includes('.'),
+      );
+
+      const firstNestedProperty =
+        firstNestedPropertyWithoutDots ||
+        getFirstNestedObjectProperty(firstArg);
+
+      if (!firstNestedProperty) {
+        return null;
+      }
+
+      const propertyKeyText = getPropertyKeyText(firstNestedProperty);
+      const exampleFieldPathFromProperty =
+        propertyKeyText &&
+        flattenObject(
+          firstNestedProperty.value,
+          sourceCode,
+          propertyKeyText,
+        );
+
+      const flattenedProperties = flattenObject(firstArg, sourceCode);
+
+      const exampleFieldPath =
+        (exampleFieldPathFromProperty &&
+          Object.keys(exampleFieldPathFromProperty).find((key) =>
+            key.includes('.'),
+          )) ??
+        (propertyKeyText &&
+          Object.keys(flattenedProperties).find((key) =>
+            key.startsWith(`${propertyKeyText}.`),
+          )) ??
+        Object.keys(flattenedProperties).find((key) => key.includes('.')) ??
+        'field.nested';
+
+      return {
+        topLevelKey: propertyKeyText ?? 'nested field',
+        exampleFieldPath,
+        flattenedProperties,
+      };
+    }
+
     return {
       // Track DocSetter variable declarations
       VariableDeclarator(node) {
@@ -259,9 +350,20 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
         // Check if the first argument is an object literal
         const firstArg = node.arguments[0];
         if (
-          firstArg?.type !== AST_NODE_TYPES.ObjectExpression ||
-          !hasNestedObjects(firstArg)
+          firstArg?.type !== AST_NODE_TYPES.ObjectExpression
         ) {
+          return;
+        }
+
+        if (hasRootNumericKey(firstArg)) {
+          return;
+        }
+
+        const sourceCode = context.getSourceCode();
+
+        const violationDetails = extractViolationDetails(firstArg, sourceCode);
+
+        if (!violationDetails) {
           return;
         }
 
@@ -269,10 +371,16 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
         context.report({
           node: firstArg,
           messageId: 'enforceFieldPathSyntax',
+          data: {
+            methodName: getMethodName(node),
+            topLevelKey: violationDetails.topLevelKey,
+            exampleFieldPath: violationDetails.exampleFieldPath,
+          },
           fix(fixer) {
             const newText = convertToFieldPathSyntax(
               firstArg,
-              context.getSourceCode(),
+              sourceCode,
+              violationDetails.flattenedProperties,
             );
             return fixer.replaceText(firstArg, newText);
           },
