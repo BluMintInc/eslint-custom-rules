@@ -14,8 +14,9 @@ function getMemberName(member: TSESTree.ClassElement): string | null {
 
 export const classMethodsReadTopToBottom: TSESLint.RuleModule<
   'classMethodsReadTopToBottom',
-  never[]
-> = createRule({
+  [],
+  TSESLint.RuleListener
+> = createRule<[], 'classMethodsReadTopToBottom'>({
   name: 'class-methods-read-top-to-bottom',
   meta: {
     type: 'suggestion',
@@ -30,24 +31,19 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
     },
     fixable: 'code', // To allow ESLint to autofix issues.
   },
-  defaultOptions: [],
+  defaultOptions: [] as const,
   create(context) {
-    let className: string;
     return {
-      ClassDeclaration(node: TSESTree.ClassDeclaration) {
-        className = node.id?.name || '';
-      },
       'ClassBody:exit'(node: TSESTree.ClassBody) {
+        if (!node.parent || node.parent.type !== 'ClassDeclaration') {
+          return;
+        }
+        const className = node.parent.id?.name || '';
         const graphBuilder = new ClassGraphBuilder(className, node);
         const sortedOrder = graphBuilder.memberNamesSorted;
         const actualOrder = node.body
-          .map((member) =>
-            member.type === 'MethodDefinition' ||
-            member.type === 'PropertyDefinition'
-              ? (member.key as TSESTree.Identifier).name
-              : null,
-          )
-          .filter(Boolean) as string[];
+          .map((member) => getMemberName(member))
+          .filter((name): name is string => Boolean(name));
 
         // Check if we have the same number of methods in both arrays
         // This prevents issues with similar method names being treated as duplicates

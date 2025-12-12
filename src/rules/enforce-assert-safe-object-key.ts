@@ -37,7 +37,20 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
   defaultOptions: [{}],
   create(context, [options]) {
     const importPath = options?.assertSafeImportPath || DEFAULT_IMPORT_PATH;
-    let hasAssertSafeImport = false;
+    const hasAssertSafeImport = (): boolean =>
+      context
+        .getSourceCode()
+        .ast.body.some(
+          (node) =>
+            node.type === AST_NODE_TYPES.ImportDeclaration &&
+            node.specifiers.some(
+              (specifier) =>
+                specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+                specifier.imported.name === 'assertSafe',
+            ),
+        );
+    const importAlreadyPresent = hasAssertSafeImport();
+    let importFixScheduled = false;
 
     /**
      * Helper function to add assertSafe import if needed
@@ -46,16 +59,18 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       fixer: TSESLint.RuleFixer,
     ): TSESLint.RuleFix => {
       const program = context.getSourceCode().ast;
+      const importStatement = `import { assertSafe } from '${importPath}';\n`;
+
       const firstImport = program.body.find(
         (node) => node.type === AST_NODE_TYPES.ImportDeclaration,
       );
-      const importStatement = `import { assertSafe } from '${importPath}';\n`;
-
       if (firstImport) {
         return fixer.insertTextBefore(firstImport, importStatement);
-      } else {
+      }
+      if (program.body[0]) {
         return fixer.insertTextBefore(program.body[0], importStatement);
       }
+      return fixer.insertTextBeforeRange([0, 0], importStatement);
     };
 
     /**
@@ -69,9 +84,9 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       const fixes: TSESLint.RuleFix[] = [];
 
       // Add import if not present
-      if (!hasAssertSafeImport) {
+      if (!importAlreadyPresent && !importFixScheduled) {
         fixes.push(addAssertSafeImport(fixer));
-        hasAssertSafeImport = true;
+        importFixScheduled = true;
       }
 
       // Replace the node with assertSafe(argText)
@@ -94,18 +109,6 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       });
 
     return {
-      ImportDeclaration(node: TSESTree.ImportDeclaration) {
-        // Check if assertSafe is already imported
-        if (
-          node.specifiers.some(
-            (specifier) =>
-              specifier.type === AST_NODE_TYPES.ImportSpecifier &&
-              specifier.imported.name === 'assertSafe',
-          )
-        ) {
-          hasAssertSafeImport = true;
-        }
-      },
       // Handle computed property in object destructuring
       Property(node: TSESTree.Property) {
         if (node.computed && node.key) {
