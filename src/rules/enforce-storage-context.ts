@@ -19,11 +19,18 @@ type AliasStack = Array<Map<string, AliasEntry>>;
 type AliasState = {
   stack: AliasStack;
   currentScope: () => Map<string, AliasEntry>;
-  pushScope: () => void;
+  pushScope: (kind?: 'function' | 'block') => void;
   popScope: () => void;
   reset: () => void;
-  setAlias: (name: string, value: AliasEntry) => void;
-  markShadowed: (name: string) => void;
+  setAlias: (
+    name: string,
+    value: AliasEntry,
+    options?: { hoistToFunctionScope?: boolean },
+  ) => void;
+  markShadowed: (
+    name: string,
+    options?: { hoistToFunctionScope?: boolean },
+  ) => void;
 };
 
 type ReportUsage = (
@@ -49,21 +56,43 @@ const isChainExpression = (
 
 const createAliasState = (): AliasState => {
   const stack: AliasStack = [new Map()];
+  const scopeKinds: Array<'function' | 'block'> = ['function'];
   const currentScope = () => stack[stack.length - 1];
-  const pushScope = () => {
+  const pushScope = (kind: 'function' | 'block' = 'block') => {
     stack.push(new Map());
+    scopeKinds.push(kind);
   };
   const popScope = () => {
     if (stack.length > 1) {
       stack.pop();
+      scopeKinds.pop();
     }
   };
-  const setAlias = (name: string, value: AliasEntry) => {
+  const setAlias = (
+    name: string,
+    value: AliasEntry,
+    options?: { hoistToFunctionScope?: boolean },
+  ) => {
+    if (options?.hoistToFunctionScope) {
+      for (let i = stack.length - 1; i >= 0; i -= 1) {
+        stack[i].set(name, value);
+        if (scopeKinds[i] === 'function') {
+          break;
+        }
+      }
+      return;
+    }
+
     currentScope().set(name, value);
   };
-  const markShadowed = (name: string) => setAlias(name, 'shadowed');
+  const markShadowed = (
+    name: string,
+    options?: { hoistToFunctionScope?: boolean },
+  ) => setAlias(name, 'shadowed', options);
   const reset = () => {
     stack.length = 1;
+    scopeKinds.length = 1;
+    scopeKinds[0] = 'function';
     stack[0].clear();
   };
 
@@ -124,50 +153,6 @@ const getPropertyName = (
   return null;
 };
 
-const leftmostIdentifier = (node: TSESTree.Node | null): TSESTree.Identifier | null => {
-  let current: TSESTree.Node | null = node;
-
-  while (current) {
-    if (current.type === AST_NODE_TYPES.Identifier) {
-      return current;
-    }
-
-    if (current.type === AST_NODE_TYPES.MemberExpression) {
-      current = current.object;
-      continue;
-    }
-
-    if (current.type === AST_NODE_TYPES.CallExpression) {
-      current = current.callee;
-      continue;
-    }
-
-    if (
-      current.type === AST_NODE_TYPES.TSAsExpression ||
-      current.type === AST_NODE_TYPES.TSSatisfiesExpression ||
-      current.type === AST_NODE_TYPES.TSTypeAssertion ||
-      current.type === AST_NODE_TYPES.TSNonNullExpression
-    ) {
-      current = current.expression;
-      continue;
-    }
-
-    if (isParenthesizedExpression(current)) {
-      current = current.expression;
-      continue;
-    }
-
-    if (isChainExpression(current)) {
-      current = current.expression;
-      continue;
-    }
-
-    return null;
-  }
-
-  return null;
-};
-
 const getAliasFromStack = (
   aliases: AliasStack,
   name: string,
@@ -183,11 +168,10 @@ const isGlobalLike = (
   node: TSESTree.Expression,
   aliases: AliasStack,
 ): boolean => {
-  const base = leftmostIdentifier(node);
-  if (!base) return false;
+  const base = unwrapExpression(node);
+  if (base.type !== AST_NODE_TYPES.Identifier) return false;
 
-  const alias = getAliasFromStack(aliases, base.name);
-  if (alias) return false;
+  if (getAliasFromStack(aliases, base.name)) return false;
 
   return GLOBAL_NAMES.has(base.name);
 };
@@ -357,6 +341,21 @@ const identifierRepresentsDeclaration = (node: TSESTree.Identifier): boolean => 
   return false;
 };
 
+const getVariableDeclarationKind = (
+  node: TSESTree.Identifier,
+): TSESTree.VariableDeclaration['kind'] | null => {
+  let current: TSESTree.Node | null = node.parent ?? null;
+
+  while (current) {
+    if (current.type === AST_NODE_TYPES.VariableDeclaration) {
+      return current.kind;
+    }
+    current = (current.parent as TSESTree.Node | null) ?? null;
+  }
+
+  return null;
+};
+
 const isMemberExpressionObject = (node: TSESTree.Identifier): boolean => {
   const parent = node.parent;
   return (
@@ -392,6 +391,7 @@ const recordAliasFromPattern = (
   pattern: TSESTree.ObjectPattern,
   init: TSESTree.Expression | null,
   aliases: AliasStack,
+  setAlias: (name: string, storageKind: StorageKind) => void,
   reportStorageProperty?: (
     node: TSESTree.Node,
     storageKind: StorageKind,
@@ -415,12 +415,12 @@ const recordAliasFromPattern = (
     );
 
     if (prop.value.type === AST_NODE_TYPES.Identifier) {
-      aliases[aliases.length - 1].set(prop.value.name, keyName as StorageKind);
+      setAlias(prop.value.name, keyName as StorageKind);
     } else if (
       prop.value.type === AST_NODE_TYPES.AssignmentPattern &&
       prop.value.left.type === AST_NODE_TYPES.Identifier
     ) {
-      aliases[aliases.length - 1].set(prop.value.left.name, keyName as StorageKind);
+      setAlias(prop.value.left.name, keyName as StorageKind);
     }
   }
 };
@@ -478,6 +478,8 @@ const createIdentifierHandler = (
   return (node) => {
     const parent = node.parent;
     if (identifierRepresentsDeclaration(node)) {
+      const declarationKind = getVariableDeclarationKind(node);
+      const hoistToFunctionScope = declarationKind === 'var';
       if (
         parent?.type === AST_NODE_TYPES.ClassExpression &&
         parent.id === node
@@ -493,7 +495,7 @@ const createIdentifierHandler = (
           outerAlias === 'localStorage' || outerAlias === 'sessionStorage';
 
         if (shadowsGlobal || shadowsOuterStorageAlias) {
-          aliases.markShadowed(node.name);
+          aliases.markShadowed(node.name, { hoistToFunctionScope });
         }
       }
       return;
@@ -594,18 +596,24 @@ const createVariableDeclaratorHandler = (
   reportUsage: ReportUsage,
 ): ((node: TSESTree.VariableDeclarator) => void) => {
   return (node) => {
+    const declaration =
+      node.parent && node.parent.type === AST_NODE_TYPES.VariableDeclaration
+        ? node.parent
+        : null;
+    const hoistToFunctionScope = declaration?.kind === 'var';
+
     if (node.id.type === AST_NODE_TYPES.Identifier) {
       const storageKind = node.init
         ? resolveStorageObject(node.init as TSESTree.Expression, storageAliases)
         : null;
       if (storageKind) {
-        aliases.setAlias(node.id.name, storageKind);
+        aliases.setAlias(node.id.name, storageKind, { hoistToFunctionScope });
       } else {
         const shadowsGlobal =
           STORAGE_NAMES.has(node.id.name as StorageKind) ||
           GLOBAL_NAMES.has(node.id.name);
         if (shadowsGlobal) {
-          aliases.markShadowed(node.id.name);
+          aliases.markShadowed(node.id.name, { hoistToFunctionScope });
         }
       }
     } else if (node.id.type === AST_NODE_TYPES.ObjectPattern) {
@@ -614,6 +622,8 @@ const createVariableDeclaratorHandler = (
         node.id,
         initExpr,
         storageAliases,
+        (name, storageKind) =>
+          aliases.setAlias(name, storageKind, { hoistToFunctionScope }),
         (propertyNode, storageKind, accessType) => {
           reportUsage(propertyNode, storageKind, accessType);
         },
@@ -651,6 +661,7 @@ const createAssignmentExpressionHandler = (
         node.left,
         node.right as TSESTree.Expression,
         storageAliases,
+        (name, storageKind) => aliases.setAlias(name, storageKind),
         (propertyNode, storageKind, accessType) => {
           reportUsage(propertyNode, storageKind, accessType);
         },
@@ -715,13 +726,14 @@ const createScopeListeners = (
         aliases.setAlias(name, 'shadowed');
       }
     }
-    aliases.pushScope();
+    aliases.pushScope('function');
   },
   'FunctionDeclaration:exit': aliases.popScope,
-  FunctionExpression: (_node: TSESTree.FunctionExpression) => aliases.pushScope(),
+  FunctionExpression: (_node: TSESTree.FunctionExpression) =>
+    aliases.pushScope('function'),
   'FunctionExpression:exit': aliases.popScope,
   ArrowFunctionExpression: (_node: TSESTree.ArrowFunctionExpression) =>
-    aliases.pushScope(),
+    aliases.pushScope('function'),
   'ArrowFunctionExpression:exit': aliases.popScope,
 });
 

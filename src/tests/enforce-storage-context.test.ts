@@ -143,6 +143,18 @@ ruleTesterTs.run('enforce-storage-context', enforceStorageContext, {
       };
       Box.prototype.value();
     `,
+    `
+      const storage = window.appConfig.localStorage;
+      storage.setItem('k', 'v');
+    `,
+    `
+      function shadowWithVar(flag: boolean) {
+        if (flag) {
+          var localStorage = createMockStorage();
+        }
+        localStorage.setItem('k', 'v');
+      }
+    `,
   ],
   invalid: [
     {
@@ -287,6 +299,20 @@ store.setItem('k', 'v');
       errors: [
         { messageId: 'useStorageContext', line: 3, column: 4 },
         { messageId: 'useStorageContext', line: 4, column: 7 },
+      ],
+    },
+    {
+      code: `
+        function hoistedAlias(cond: boolean) {
+          if (cond) {
+            var { localStorage: store } = window;
+          }
+          store.getItem('k');
+        }
+      `,
+      errors: [
+        { messageId: 'useStorageContext' },
+        { messageId: 'useStorageContext' },
       ],
     },
     {
