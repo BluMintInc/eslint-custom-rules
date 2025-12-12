@@ -4,7 +4,7 @@ import { createRule } from '../utils/createRule';
 
 type MessageIds = 'useCompareDeeply';
 
-function isMemoUtilityImportPath(path: string): boolean {
+function matchesUtilMemoPath(path: string): boolean {
   return /(?:^|\/|\\)util\/memo$/.test(path);
 }
 
@@ -80,7 +80,7 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
           specifier.type === AST_NODE_TYPES.ImportSpecifier &&
           specifier.imported.type === AST_NODE_TYPES.Identifier &&
           specifier.imported.name === 'memo' &&
-          (importPath === 'react' || isMemoUtilityImportPath(importPath))
+          (importPath === 'react' || matchesUtilMemoPath(importPath))
         ) {
           memoIdentifiers.set(specifier.local.name, importPath);
         }
@@ -91,7 +91,7 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
         ) {
           if (importPath === 'react') {
             memoNamespaces.set(specifier.local.name, importPath);
-          } else if (isMemoUtilityImportPath(importPath)) {
+          } else if (matchesUtilMemoPath(importPath)) {
             if (specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
               memoNamespaces.set(specifier.local.name, importPath);
             } else {
@@ -264,7 +264,7 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
         (node): node is TSESTree.ImportDeclaration =>
           node.type === AST_NODE_TYPES.ImportDeclaration &&
           typeof node.source.value === 'string' &&
-          isMemoUtilityImportPath(node.source.value as string),
+          matchesUtilMemoPath(node.source.value as string),
       );
 
       for (const memoImport of memoImports) {
@@ -283,7 +283,7 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
       }
 
       const importSource =
-        preferredSource && isMemoUtilityImportPath(preferredSource)
+        preferredSource && matchesUtilMemoPath(preferredSource)
           ? preferredSource
           : memoImports[0]?.source.value ?? 'src/util/memo';
 
