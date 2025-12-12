@@ -41,6 +41,12 @@ function isHookCallee(
   return false;
 }
 
+type RuleExecutionContext = {
+  context: TSESLint.RuleContext<MessageIds, never[]>;
+  sourceCode: TSESLint.SourceCode;
+  reportedStatements: WeakSet<TSESTree.Statement>;
+};
+
 function isTypeNode(node: TSESTree.Node | undefined): boolean {
   if (!node) {
     return false;
@@ -426,20 +432,20 @@ function statementMutatesAny(statement: TSESTree.Statement, names: Set<string>):
   return false;
 }
 
-  // Checks if any statement before the given index mutates the identifier, so reordering does not cross a mutation boundary.
-  function isIdentifierMutated(
-    body: TSESTree.Statement[],
-    name: string,
-    beforeIndex: number,
-  ): boolean {
-    const target = new Set([name]);
-    for (let index = 0; index < beforeIndex; index += 1) {
-      if (statementMutatesAny(body[index], target)) {
-        return true;
-      }
+// Checks if any statement before the given index mutates the identifier, so reordering does not cross a mutation boundary.
+function isIdentifierMutated(
+  body: TSESTree.Statement[],
+  name: string,
+  beforeIndex: number,
+): boolean {
+  const target = new Set([name]);
+  for (let index = 0; index < beforeIndex; index += 1) {
+    if (statementMutatesAny(body[index], target)) {
+      return true;
     }
-    return false;
   }
+  return false;
+}
 
 function initializerIsSafe(
   expression: TSESTree.Expression | TSESTree.PrivateIdentifier,
@@ -631,6 +637,20 @@ function truncateWithEllipsis(text: string, max = 60): string {
   return text.length <= max ? text : `${text.slice(0, max)}…`;
 }
 
+function reportOnce(
+  { context, reportedStatements }: RuleExecutionContext,
+  statement: TSESTree.Statement,
+  messageId: MessageIds,
+  data: Record<string, string>,
+  fix: (fixer: TSESLint.RuleFixer) => TSESLint.RuleFix | null,
+): void {
+  if (reportedStatements.has(statement)) {
+    return;
+  }
+  reportedStatements.add(statement);
+  context.report({ node: statement, messageId, data, fix });
+}
+
 function isGuardIfStatement(statement: TSESTree.Statement): statement is TSESTree.IfStatement {
   if (statement.type !== AST_NODE_TYPES.IfStatement || statement.alternate) {
     return false;
@@ -657,6 +677,580 @@ function isGuardIfStatement(statement: TSESTree.Statement): statement is TSESTre
   return false;
 }
 
+function handleGuardHoists(
+  ruleContext: RuleExecutionContext,
+  body: TSESTree.Statement[],
+  parent: BlockLike,
+): void {
+  const { sourceCode } = ruleContext;
+  body.forEach((statement, index) => {
+    if (!isGuardIfStatement(statement)) {
+      return;
+    }
+
+    const guardDependencies = new Set<string>();
+    collectUsedIdentifiers(statement.test, guardDependencies, { skipFunctions: true });
+    collectUsedIdentifiers(statement.consequent, guardDependencies, { skipFunctions: true });
+
+    const targetIndex = findEarliestSafeIndex(body, index, guardDependencies, {
+      allowHooks: false,
+    });
+
+    if (targetIndex === index) {
+      return;
+    }
+
+    reportOnce(
+      ruleContext,
+      statement,
+      'moveGuardUp',
+      { guard: truncateWithEllipsis(sourceCode.getText(statement.test)) },
+      (fixer) => buildMoveFix(body, index, targetIndex, parent, sourceCode, fixer),
+    );
+  });
+}
+
+function handleDerivedGrouping(
+  ruleContext: RuleExecutionContext,
+  body: TSESTree.Statement[],
+  parent: BlockLike,
+): void {
+  const declaredIndices = new Map<string, number>();
+  const { sourceCode } = ruleContext;
+
+  body.forEach((statement, index) => {
+    if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
+      const dependencies = new Set<string>();
+      statement.declarations.forEach((declarator) => {
+        collectPatternDependencies(
+          declarator.id as TSESTree.BindingName | TSESTree.AssignmentPattern,
+          dependencies,
+        );
+        if (declarator.init) {
+          collectUsedIdentifiers(declarator.init, dependencies, { skipFunctions: true });
+        }
+      });
+
+      const priorDependencies = Array.from(dependencies).filter((name) => declaredIndices.has(name));
+      if (priorDependencies.length > 0 && !ruleContext.reportedStatements.has(statement)) {
+        const lastDependencyIndex = Math.max(
+          ...priorDependencies.map((name) => declaredIndices.get(name) ?? -1),
+        );
+
+        if (lastDependencyIndex < index - 1) {
+          const declaredNames = getDeclaredNames(statement);
+          const priorDependencySet = new Set(priorDependencies);
+          // Avoid moving derived declarations across any impure or dependency-touching statement to keep evaluation order stable.
+          const blockerExists = body
+            .slice(lastDependencyIndex + 1, index)
+            .some(
+              (between) =>
+                !isPureDeclaration(between, { allowHooks: false }) ||
+                statementDeclaresAny(between, priorDependencySet) ||
+                statementReferencesAny(between, priorDependencySet) ||
+                statementDeclaresAny(between, declaredNames) ||
+                statementReferencesAny(between, declaredNames),
+            );
+
+          if (!blockerExists) {
+            const dependency = priorDependencies[0];
+            const name = declaredNames.values().next().value ?? 'value';
+            reportOnce(
+              ruleContext,
+              statement,
+              'groupDerived',
+              {
+                dependency,
+                name,
+              },
+              (fixer) =>
+                buildMoveFix(
+                  body,
+                  index,
+                  lastDependencyIndex + 1,
+                  parent,
+                  sourceCode,
+                  fixer,
+                ),
+            );
+          }
+        }
+      }
+    }
+
+    const declared = getDeclaredNames(statement);
+    declared.forEach((name) => declaredIndices.set(name, index));
+  });
+}
+
+function handleLateDeclarations(
+  ruleContext: RuleExecutionContext,
+  body: TSESTree.Statement[],
+  parent: BlockLike,
+): void {
+  const { sourceCode } = ruleContext;
+
+  body.forEach((statement, index) => {
+    if (statement.type !== AST_NODE_TYPES.VariableDeclaration || statement.declarations.length !== 1) {
+      return;
+    }
+    const [declarator] = statement.declarations;
+    if (
+      declarator.id.type !== AST_NODE_TYPES.Identifier ||
+      (declarator.init &&
+        declarator.init.type !== AST_NODE_TYPES.Identifier &&
+        declarator.init.type !== AST_NODE_TYPES.Literal)
+    ) {
+      return;
+    }
+    const name = declarator.id.name;
+    const dependencies = new Set<string>();
+    if (declarator.init && declarator.init.type === AST_NODE_TYPES.Identifier) {
+      dependencies.add(declarator.init.name);
+    }
+
+    const nameSet = new Set([name]);
+    let usageIndex = -1;
+    for (let cursor = index + 1; cursor < body.length; cursor += 1) {
+      if (statementReferencesAny(body[cursor], nameSet)) {
+        usageIndex = cursor;
+        break;
+      }
+    }
+
+    if (usageIndex === -1 || usageIndex <= index + 1) {
+      return;
+    }
+
+    const intervening = body.slice(index + 1, usageIndex);
+    // Only move across pure declarations that do not mention the placeholder or its initializer dependencies to avoid changing closure timing or TDZ behavior.
+    const crossesImpureOrTracked = intervening.some((stmt) => {
+      if (!isPureDeclaration(stmt, { allowHooks: false })) {
+        return true;
+      }
+      if (statementDeclaresAny(stmt, nameSet) || statementMutatesAny(stmt, nameSet)) {
+        return true;
+      }
+      if (
+        dependencies.size > 0 &&
+        (statementDeclaresAny(stmt, dependencies) ||
+          statementReferencesAny(stmt, dependencies) ||
+          statementMutatesAny(stmt, dependencies))
+      ) {
+        return true;
+      }
+      return false;
+    });
+    if (crossesImpureOrTracked) {
+      return;
+    }
+
+    reportOnce(
+      ruleContext,
+      statement,
+      'moveDeclarationCloser',
+      { name },
+      (fixer) => buildMoveFix(body, index, usageIndex, parent, sourceCode, fixer),
+    );
+  });
+}
+
+function extractCallExpression(
+  expression: TSESTree.Expression,
+): TSESTree.CallExpression | null {
+  if (expression.type === AST_NODE_TYPES.CallExpression) {
+    return expression;
+  }
+  if (
+    expression.type === AST_NODE_TYPES.ChainExpression &&
+    expression.expression.type === AST_NODE_TYPES.CallExpression
+  ) {
+    return expression.expression;
+  }
+  return null;
+}
+
+function collectFunctionBodyDependencies(
+  fn:
+    | TSESTree.FunctionDeclaration
+    | TSESTree.FunctionExpression
+    | TSESTree.ArrowFunctionExpression,
+  dependencies: Set<string>,
+  context: {
+    body: TSESTree.Statement[];
+    callIndex: number;
+    visitedCallees: Set<string>;
+  },
+): boolean {
+  if (!fn.body) {
+    return true;
+  }
+  collectUsedIdentifiers(fn.body, dependencies, { skipFunctions: true });
+
+  let resolved = true;
+  traverseAst(fn.body, {
+    skipFunctions: true,
+    visit(current) {
+      if (
+        current.type !== AST_NODE_TYPES.CallExpression &&
+        current.type !== AST_NODE_TYPES.ChainExpression
+      ) {
+        return undefined;
+      }
+
+      const callExpression =
+        current.type === AST_NODE_TYPES.CallExpression
+          ? current
+          : extractCallExpression(current as TSESTree.Expression);
+      if (!callExpression) {
+        return undefined;
+      }
+
+      const nestedResolved = collectCalleeDependencies(
+        context.body,
+        callExpression.callee,
+        dependencies,
+        context.callIndex,
+        context.visitedCallees,
+      );
+      if (!nestedResolved) {
+        resolved = false;
+        return { skipChildren: true };
+      }
+      return undefined;
+    },
+  });
+
+  return resolved;
+}
+
+function resolveValueForIdentifier(
+  body: TSESTree.Statement[],
+  name: string,
+  beforeIndex: number,
+): TSESTree.Expression | TSESTree.ClassDeclaration | TSESTree.ClassExpression | null {
+  for (let index = Math.min(beforeIndex, body.length) - 1; index >= 0; index -= 1) {
+    const statement = body[index];
+    if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
+      for (const declarator of statement.declarations) {
+        if (
+          declarator.id.type === AST_NODE_TYPES.Identifier &&
+          declarator.id.name === name &&
+          declarator.init &&
+          ASTHelpers.isNode(declarator.init)
+        ) {
+          return declarator.init as TSESTree.Expression;
+        }
+      }
+    }
+    if (statement.type === AST_NODE_TYPES.ClassDeclaration && statement.id?.name === name) {
+      return statement;
+    }
+    if (
+      statement.type === AST_NODE_TYPES.ExpressionStatement &&
+      statement.expression.type === AST_NODE_TYPES.AssignmentExpression &&
+      statement.expression.left.type === AST_NODE_TYPES.Identifier &&
+      statement.expression.left.name === name &&
+      ASTHelpers.isNode(statement.expression.right)
+    ) {
+      return statement.expression.right as TSESTree.Expression;
+    }
+  }
+  return null;
+}
+
+function resolveValueNode(
+  body: TSESTree.Statement[],
+  node: TSESTree.Expression | TSESTree.ClassDeclaration | TSESTree.ClassExpression,
+  visited: Set<string>,
+  beforeIndex: number,
+): TSESTree.Expression | TSESTree.ClassDeclaration | TSESTree.ClassExpression | null {
+  if (node.type === AST_NODE_TYPES.Identifier) {
+    if (visited.has(node.name)) {
+      return null;
+    }
+    visited.add(node.name);
+    const resolved = resolveValueForIdentifier(body, node.name, beforeIndex);
+    if (!resolved) {
+      return null;
+    }
+    return resolveValueNode(body, resolved as TSESTree.Expression, visited, beforeIndex);
+  }
+
+  if (node.type === AST_NODE_TYPES.NewExpression && node.callee.type === AST_NODE_TYPES.Identifier) {
+    const resolvedClass = resolveValueForIdentifier(body, node.callee.name, beforeIndex);
+    if (
+      resolvedClass &&
+      (resolvedClass.type === AST_NODE_TYPES.ClassDeclaration ||
+        resolvedClass.type === AST_NODE_TYPES.ClassExpression)
+    ) {
+      return resolvedClass;
+    }
+  }
+
+  return node;
+}
+
+function resolveMemberFunction(
+  body: TSESTree.Statement[],
+  member: TSESTree.MemberExpression,
+  beforeIndex: number,
+): TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression | null {
+  if (member.computed || member.property.type !== AST_NODE_TYPES.Identifier) {
+    return null;
+  }
+
+  const path: string[] = [];
+  let cursor:
+    | TSESTree.LeftHandSideExpression
+    | TSESTree.PrivateIdentifier
+    | TSESTree.Super
+    | null = member;
+
+  while (
+    cursor &&
+    cursor.type === AST_NODE_TYPES.MemberExpression &&
+    !cursor.computed &&
+    cursor.property.type === AST_NODE_TYPES.Identifier
+  ) {
+    path.unshift(cursor.property.name);
+    cursor = cursor.object as
+      | TSESTree.LeftHandSideExpression
+      | TSESTree.PrivateIdentifier
+      | TSESTree.Super
+      | null;
+  }
+
+  if (!cursor || cursor.type !== AST_NODE_TYPES.Identifier) {
+    return null;
+  }
+
+  path.unshift(cursor.name);
+  const [root, ...segments] = path;
+  const initialValue = resolveValueForIdentifier(body, root, beforeIndex);
+  if (!initialValue) {
+    return null;
+  }
+
+  const visited = new Set<string>([root]);
+  return descend(resolveValueNode(body, initialValue, visited, beforeIndex), segments, visited);
+
+  function descend(
+    value: TSESTree.Expression | TSESTree.ClassDeclaration | TSESTree.ClassExpression | null,
+    remaining: string[],
+    visitedNames: Set<string>,
+  ): TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression | null {
+    if (!value) {
+      return null;
+    }
+
+    if (remaining.length === 0) {
+      if (
+        value.type === AST_NODE_TYPES.FunctionExpression ||
+        value.type === AST_NODE_TYPES.ArrowFunctionExpression
+      ) {
+        return value;
+      }
+      return null;
+    }
+
+    const [segment, ...rest] = remaining;
+
+    if (value.type === AST_NODE_TYPES.ObjectExpression) {
+      const property = value.properties.find(
+        (prop) =>
+          prop.type === AST_NODE_TYPES.Property &&
+          !prop.computed &&
+          prop.key.type === AST_NODE_TYPES.Identifier &&
+          prop.key.name === segment,
+      ) as TSESTree.Property | undefined;
+
+      if (!property) {
+        return null;
+      }
+
+      const resolved = resolveValueNode(
+        body,
+        property.value as TSESTree.Expression,
+        visitedNames,
+        beforeIndex,
+      );
+      return descend(resolved, rest, visitedNames);
+    }
+
+    if (value.type === AST_NODE_TYPES.ClassDeclaration || value.type === AST_NODE_TYPES.ClassExpression) {
+      const method = value.body.body.find(
+        (memberDef) =>
+          memberDef.type === AST_NODE_TYPES.MethodDefinition &&
+          !memberDef.computed &&
+          memberDef.key.type === AST_NODE_TYPES.Identifier &&
+          memberDef.key.name === segment,
+      ) as TSESTree.MethodDefinition | undefined;
+
+      if (!method) {
+        return null;
+      }
+
+      const resolved = resolveValueNode(
+        body,
+        method.value as TSESTree.FunctionExpression,
+        visitedNames,
+        beforeIndex,
+      );
+      return descend(resolved, rest, visitedNames);
+    }
+
+    return null;
+  }
+}
+
+function collectCalleeDependencies(
+  body: TSESTree.Statement[],
+  callee: TSESTree.LeftHandSideExpression | TSESTree.PrivateIdentifier | TSESTree.Super,
+  dependencies: Set<string>,
+  callIndex: number,
+  visitedCallees: Set<string> = new Set<string>(),
+): boolean {
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    const name = callee.name;
+    if (visitedCallees.has(name)) {
+      return true;
+    }
+    visitedCallees.add(name);
+    if (isIdentifierMutated(body, name, callIndex)) {
+      return false;
+    }
+
+    const functionDeclaration = body.find(
+      (statement) =>
+        statement.type === AST_NODE_TYPES.FunctionDeclaration && statement.id?.name === name,
+    ) as TSESTree.FunctionDeclaration | undefined;
+    if (functionDeclaration && functionDeclaration.body) {
+      return collectFunctionBodyDependencies(functionDeclaration, dependencies, {
+        body,
+        callIndex,
+        visitedCallees,
+      });
+    }
+
+    for (let index = 0; index < callIndex; index += 1) {
+      const statement = body[index];
+      if (statement.type !== AST_NODE_TYPES.VariableDeclaration) {
+        continue;
+      }
+      for (const declarator of statement.declarations) {
+        if (
+          declarator.id.type === AST_NODE_TYPES.Identifier &&
+          declarator.id.name === name &&
+          declarator.init &&
+          (declarator.init.type === AST_NODE_TYPES.FunctionExpression ||
+            declarator.init.type === AST_NODE_TYPES.ArrowFunctionExpression)
+        ) {
+          return collectFunctionBodyDependencies(declarator.init, dependencies, {
+            body,
+            callIndex,
+            visitedCallees,
+          });
+        }
+      }
+    }
+    return true;
+  }
+
+  if (callee.type === AST_NODE_TYPES.MemberExpression) {
+    const rootName = callee.object.type === AST_NODE_TYPES.Identifier ? callee.object.name : null;
+    if (rootName && isIdentifierMutated(body, rootName, callIndex)) {
+      return false;
+    }
+    const memberFunction = resolveMemberFunction(body, callee, callIndex);
+    if (memberFunction) {
+      return collectFunctionBodyDependencies(memberFunction, dependencies, {
+        body,
+        callIndex,
+        visitedCallees,
+      });
+    }
+    if (rootName) {
+      const declaredBeforeCall = body
+        .slice(0, callIndex)
+        .some((statement) => statementDeclaresAny(statement, new Set([rootName])));
+      if (declaredBeforeCall) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  return true;
+}
+
+function isSideEffectExpression(
+  statement: TSESTree.Statement,
+): statement is TSESTree.ExpressionStatement {
+  if (statement.type !== AST_NODE_TYPES.ExpressionStatement) {
+    return false;
+  }
+  return Boolean(extractCallExpression(statement.expression));
+}
+
+function handleSideEffects(
+  ruleContext: RuleExecutionContext,
+  body: TSESTree.Statement[],
+  parent: BlockLike,
+): void {
+  const { sourceCode } = ruleContext;
+
+  body.forEach((statement, index) => {
+    if (!isSideEffectExpression(statement)) {
+      return;
+    }
+
+    const expression = statement.expression;
+    const callExpression = extractCallExpression(expression);
+    if (!callExpression) {
+      return;
+    }
+    if (isHookCallee(callExpression.callee)) {
+      return;
+    }
+
+    const dependencies = new Set<string>();
+    collectUsedIdentifiers(expression, dependencies, { skipFunctions: true });
+    const calleeResolved = collectCalleeDependencies(
+      body,
+      callExpression.callee,
+      dependencies,
+      index,
+    );
+    if (!calleeResolved) {
+      return;
+    }
+
+    const targetIndex = findEarliestSafeIndex(body, index, dependencies, { allowHooks: false });
+
+    if (targetIndex === index) {
+      return;
+    }
+
+    const effectText = truncateWithEllipsis(sourceCode.getText(statement).trim());
+    reportOnce(
+      ruleContext,
+      statement,
+      'moveSideEffect',
+      { effect: effectText },
+      (fixer) => buildMoveFix(body, index, targetIndex, parent, sourceCode, fixer),
+    );
+  });
+}
+
+function handleBlock(ruleContext: RuleExecutionContext, node: BlockLike): void {
+  const statements = node.body;
+  handleGuardHoists(ruleContext, statements, node);
+  handleDerivedGrouping(ruleContext, statements, node);
+  handleLateDeclarations(ruleContext, statements, node);
+  handleSideEffects(ruleContext, statements, node);
+}
+
 export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]> = createRule({
   name: 'logical-top-to-bottom-grouping',
   meta: {
@@ -681,596 +1275,17 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.getSourceCode();
-    const reportedStatements = new WeakSet<TSESTree.Statement>();
+    const ruleContext: RuleExecutionContext = {
+      context,
+      sourceCode: context.getSourceCode(),
+      reportedStatements: new WeakSet<TSESTree.Statement>(),
+    };
 
-    function reportOnce(
-      statement: TSESTree.Statement,
-      messageId: MessageIds,
-      data: Record<string, string>,
-      fix: (fixer: TSESLint.RuleFixer) => TSESLint.RuleFix | null,
-    ) {
-      if (reportedStatements.has(statement)) {
-        return;
-      }
-      reportedStatements.add(statement);
-      context.report({ node: statement, messageId, data, fix });
-    }
-
-    // Hoist guard clauses only across pure declarations that neither mention nor redefine guard inputs so early exits do not skip newly introduced work.
-    function handleGuardHoists(body: TSESTree.Statement[], parent: BlockLike): void {
-      body.forEach((statement, index) => {
-        if (!isGuardIfStatement(statement)) {
-          return;
-        }
-
-        const guardDependencies = new Set<string>();
-        collectUsedIdentifiers(statement.test, guardDependencies, { skipFunctions: true });
-        collectUsedIdentifiers(statement.consequent, guardDependencies, { skipFunctions: true });
-
-        const targetIndex = findEarliestSafeIndex(body, index, guardDependencies, {
-          allowHooks: false,
-        });
-
-        if (targetIndex === index) {
-          return;
-        }
-
-        reportOnce(
-          statement,
-          'moveGuardUp',
-          { guard: truncateWithEllipsis(sourceCode.getText(statement.test)) },
-          (fixer) => buildMoveFix(body, index, targetIndex, parent, sourceCode, fixer),
-        );
-      });
-    }
-
-    // Keep derived declarations adjacent to their inputs while stopping before anything impure or dependency-touching to avoid changing evaluation order.
-    function handleDerivedGrouping(body: TSESTree.Statement[], parent: BlockLike): void {
-      const declaredIndices = new Map<string, number>();
-
-      body.forEach((statement, index) => {
-        if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
-          const dependencies = new Set<string>();
-          statement.declarations.forEach((declarator) => {
-            collectPatternDependencies(
-              declarator.id as TSESTree.BindingName | TSESTree.AssignmentPattern,
-              dependencies,
-            );
-            if (declarator.init) {
-              collectUsedIdentifiers(declarator.init, dependencies, { skipFunctions: true });
-            }
-          });
-
-          const priorDependencies = Array.from(dependencies).filter((name) =>
-            declaredIndices.has(name),
-          );
-          if (priorDependencies.length > 0 && !reportedStatements.has(statement)) {
-            const lastDependencyIndex = Math.max(
-              ...priorDependencies.map((name) => declaredIndices.get(name) ?? -1),
-            );
-
-            if (lastDependencyIndex < index - 1) {
-              const declaredNames = getDeclaredNames(statement);
-              const priorDependencySet = new Set(priorDependencies);
-              // Avoid moving derived declarations across any impure or dependency-touching statement to keep evaluation order stable.
-              const blockerExists = body
-                .slice(lastDependencyIndex + 1, index)
-                .some(
-                  (between) =>
-                    !isPureDeclaration(between, { allowHooks: false }) ||
-                    statementDeclaresAny(between, priorDependencySet) ||
-                    statementReferencesAny(between, priorDependencySet) ||
-                    statementDeclaresAny(between, declaredNames) ||
-                    statementReferencesAny(between, declaredNames),
-                );
-
-              if (!blockerExists) {
-                const dependency = priorDependencies[0];
-                const name = declaredNames.values().next().value ?? 'value';
-                reportOnce(
-                  statement,
-                  'groupDerived',
-                  {
-                    dependency,
-                    name,
-                  },
-                  (fixer) =>
-                    buildMoveFix(
-                      body,
-                      index,
-                      lastDependencyIndex + 1,
-                      parent,
-                      sourceCode,
-                      fixer,
-                    ),
-                );
-              }
-            }
-          }
-        }
-
-        const declared = getDeclaredNames(statement);
-        declared.forEach((name) => declaredIndices.set(name, index));
-      });
-    }
-
-    // Only move placeholder declarations with trivial initializers so we do not shift computed or side-effectful bindings whose evaluation timing matters.
-    function handleLateDeclarations(body: TSESTree.Statement[], parent: BlockLike): void {
-      body.forEach((statement, index) => {
-        if (
-          statement.type !== AST_NODE_TYPES.VariableDeclaration ||
-          statement.declarations.length !== 1
-        ) {
-          return;
-        }
-        const [declarator] = statement.declarations;
-        if (
-          declarator.id.type !== AST_NODE_TYPES.Identifier ||
-          (declarator.init &&
-            declarator.init.type !== AST_NODE_TYPES.Identifier &&
-            declarator.init.type !== AST_NODE_TYPES.Literal)
-        ) {
-          return;
-        }
-        const name = declarator.id.name;
-        const dependencies = new Set<string>();
-        if (declarator.init && declarator.init.type === AST_NODE_TYPES.Identifier) {
-          dependencies.add(declarator.init.name);
-        }
-
-        const nameSet = new Set([name]);
-        let usageIndex = -1;
-        for (let cursor = index + 1; cursor < body.length; cursor += 1) {
-          if (statementReferencesAny(body[cursor], nameSet)) {
-            usageIndex = cursor;
-            break;
-          }
-        }
-
-        if (usageIndex === -1 || usageIndex <= index + 1) {
-          return;
-        }
-
-        const intervening = body.slice(index + 1, usageIndex);
-        // Only move across pure declarations that do not mention the placeholder or its initializer dependencies to avoid changing closure timing or TDZ behavior.
-        const crossesImpureOrTracked = intervening.some((stmt) => {
-          if (!isPureDeclaration(stmt, { allowHooks: false })) {
-            return true;
-          }
-          if (statementDeclaresAny(stmt, nameSet) || statementMutatesAny(stmt, nameSet)) {
-            return true;
-          }
-          if (
-            dependencies.size > 0 &&
-            (statementDeclaresAny(stmt, dependencies) ||
-              statementReferencesAny(stmt, dependencies) ||
-              statementMutatesAny(stmt, dependencies))
-          ) {
-            return true;
-          }
-          return false;
-        });
-        if (crossesImpureOrTracked) {
-          return;
-        }
-
-        reportOnce(
-          statement,
-          'moveDeclarationCloser',
-          { name },
-          (fixer) => buildMoveFix(body, index, usageIndex, parent, sourceCode, fixer),
-        );
-      });
-    }
-
-    function extractCallExpression(
-      expression: TSESTree.Expression,
-    ): TSESTree.CallExpression | null {
-      if (expression.type === AST_NODE_TYPES.CallExpression) {
-        return expression;
-      }
-      if (
-        expression.type === AST_NODE_TYPES.ChainExpression &&
-        expression.expression.type === AST_NODE_TYPES.CallExpression
-      ) {
-        return expression.expression;
-      }
-      return null;
-    }
-
-  function collectFunctionBodyDependencies(
-    fn:
-      | TSESTree.FunctionDeclaration
-      | TSESTree.FunctionExpression
-      | TSESTree.ArrowFunctionExpression,
-    dependencies: Set<string>,
-    context: {
-      body: TSESTree.Statement[];
-      callIndex: number;
-      visitedCallees: Set<string>;
-    },
-  ): boolean {
-    if (!fn.body) {
-      return true;
-    }
-    collectUsedIdentifiers(fn.body, dependencies, { skipFunctions: true });
-
-    let resolved = true;
-    traverseAst(fn.body, {
-      skipFunctions: true,
-      visit(current) {
-        if (
-          current.type !== AST_NODE_TYPES.CallExpression &&
-          current.type !== AST_NODE_TYPES.ChainExpression
-        ) {
-          return undefined;
-        }
-
-        const callExpression =
-          current.type === AST_NODE_TYPES.CallExpression
-            ? current
-            : extractCallExpression(current as TSESTree.Expression);
-        if (!callExpression) {
-          return undefined;
-        }
-
-        const nestedResolved = collectCalleeDependencies(
-          context.body,
-          callExpression.callee,
-          dependencies,
-          context.callIndex,
-          context.visitedCallees,
-        );
-        if (!nestedResolved) {
-          resolved = false;
-          return { skipChildren: true };
-        }
-        return undefined;
-      },
-    });
-
-    return resolved;
-  }
-
-  function resolveValueForIdentifier(
-    body: TSESTree.Statement[],
-    name: string,
-    beforeIndex: number,
-  ): TSESTree.Expression | TSESTree.ClassDeclaration | TSESTree.ClassExpression | null {
-    for (let index = Math.min(beforeIndex, body.length) - 1; index >= 0; index -= 1) {
-      const statement = body[index];
-      if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
-        for (const declarator of statement.declarations) {
-          if (
-            declarator.id.type === AST_NODE_TYPES.Identifier &&
-            declarator.id.name === name &&
-            declarator.init &&
-            ASTHelpers.isNode(declarator.init)
-          ) {
-            return declarator.init as TSESTree.Expression;
-          }
-        }
-      }
-      if (statement.type === AST_NODE_TYPES.ClassDeclaration && statement.id?.name === name) {
-        return statement;
-      }
-      if (
-        statement.type === AST_NODE_TYPES.ExpressionStatement &&
-        statement.expression.type === AST_NODE_TYPES.AssignmentExpression &&
-        statement.expression.left.type === AST_NODE_TYPES.Identifier &&
-        statement.expression.left.name === name &&
-        ASTHelpers.isNode(statement.expression.right)
-      ) {
-        return statement.expression.right as TSESTree.Expression;
-      }
-    }
-    return null;
-  }
-
-  function resolveValueNode(
-    body: TSESTree.Statement[],
-    node: TSESTree.Expression | TSESTree.ClassDeclaration | TSESTree.ClassExpression,
-    visited: Set<string>,
-    beforeIndex: number,
-  ): TSESTree.Expression | TSESTree.ClassDeclaration | TSESTree.ClassExpression | null {
-    if (node.type === AST_NODE_TYPES.Identifier) {
-      if (visited.has(node.name)) {
-        return null;
-      }
-      visited.add(node.name);
-      const resolved = resolveValueForIdentifier(body, node.name, beforeIndex);
-      if (!resolved) {
-        return null;
-      }
-      return resolveValueNode(body, resolved as TSESTree.Expression, visited, beforeIndex);
-    }
-
-    if (
-      node.type === AST_NODE_TYPES.NewExpression &&
-      node.callee.type === AST_NODE_TYPES.Identifier
-    ) {
-      const resolvedClass = resolveValueForIdentifier(body, node.callee.name, beforeIndex);
-      if (
-        resolvedClass &&
-        (resolvedClass.type === AST_NODE_TYPES.ClassDeclaration ||
-          resolvedClass.type === AST_NODE_TYPES.ClassExpression)
-      ) {
-        return resolvedClass;
-      }
-    }
-
-    return node;
-  }
-
-  function resolveMemberFunction(
-    body: TSESTree.Statement[],
-    member: TSESTree.MemberExpression,
-    beforeIndex: number,
-  ): TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression | null {
-    if (member.computed || member.property.type !== AST_NODE_TYPES.Identifier) {
-      return null;
-    }
-
-    const path: string[] = [];
-    let cursor:
-      | TSESTree.LeftHandSideExpression
-      | TSESTree.PrivateIdentifier
-      | TSESTree.Super
-      | null = member;
-
-    while (
-      cursor &&
-      cursor.type === AST_NODE_TYPES.MemberExpression &&
-      !cursor.computed &&
-      cursor.property.type === AST_NODE_TYPES.Identifier
-    ) {
-      path.unshift(cursor.property.name);
-      cursor = cursor.object as
-        | TSESTree.LeftHandSideExpression
-        | TSESTree.PrivateIdentifier
-        | TSESTree.Super
-        | null;
-    }
-
-    if (!cursor || cursor.type !== AST_NODE_TYPES.Identifier) {
-      return null;
-    }
-
-    path.unshift(cursor.name);
-    const [root, ...segments] = path;
-    const initialValue = resolveValueForIdentifier(body, root, beforeIndex);
-    if (!initialValue) {
-      return null;
-    }
-
-    const visited = new Set<string>([root]);
-    return descend(resolveValueNode(body, initialValue, visited, beforeIndex), segments, visited);
-
-    function descend(
-      value:
-        | TSESTree.Expression
-        | TSESTree.ClassDeclaration
-        | TSESTree.ClassExpression
-        | null,
-      remaining: string[],
-      visitedNames: Set<string>,
-    ): TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression | null {
-      if (!value) {
-        return null;
-      }
-
-      if (remaining.length === 0) {
-        if (
-          value.type === AST_NODE_TYPES.FunctionExpression ||
-          value.type === AST_NODE_TYPES.ArrowFunctionExpression
-        ) {
-          return value;
-        }
-        return null;
-      }
-
-      const [segment, ...rest] = remaining;
-
-      if (value.type === AST_NODE_TYPES.ObjectExpression) {
-        const property = value.properties.find(
-          (prop) =>
-            prop.type === AST_NODE_TYPES.Property &&
-            !prop.computed &&
-            prop.key.type === AST_NODE_TYPES.Identifier &&
-            prop.key.name === segment,
-        ) as TSESTree.Property | undefined;
-
-        if (!property) {
-          return null;
-        }
-
-        const resolved = resolveValueNode(
-          body,
-          property.value as TSESTree.Expression,
-          visitedNames,
-          beforeIndex,
-        );
-        return descend(resolved, rest, visitedNames);
-      }
-
-      if (
-        value.type === AST_NODE_TYPES.ClassDeclaration ||
-        value.type === AST_NODE_TYPES.ClassExpression
-      ) {
-        const method = value.body.body.find(
-          (memberDef) =>
-            memberDef.type === AST_NODE_TYPES.MethodDefinition &&
-            !memberDef.computed &&
-            memberDef.key.type === AST_NODE_TYPES.Identifier &&
-            memberDef.key.name === segment,
-        ) as TSESTree.MethodDefinition | undefined;
-
-        if (!method) {
-          return null;
-        }
-
-        const resolved = resolveValueNode(
-          body,
-          method.value as TSESTree.FunctionExpression,
-          visitedNames,
-          beforeIndex,
-        );
-        return descend(resolved, rest, visitedNames);
-      }
-
-      return null;
-    }
-  }
-
-  function collectCalleeDependencies(
-    body: TSESTree.Statement[],
-    callee: TSESTree.LeftHandSideExpression | TSESTree.PrivateIdentifier | TSESTree.Super,
-    dependencies: Set<string>,
-    callIndex: number,
-    visitedCallees: Set<string> = new Set<string>(),
-  ): boolean {
-    if (callee.type === AST_NODE_TYPES.Identifier) {
-      const name = callee.name;
-      if (visitedCallees.has(name)) {
-        return true;
-      }
-      visitedCallees.add(name);
-      if (isIdentifierMutated(body, name, callIndex)) {
-        return false;
-      }
-
-      const functionDeclaration = body.find(
-        (statement) =>
-          statement.type === AST_NODE_TYPES.FunctionDeclaration && statement.id?.name === name,
-      ) as TSESTree.FunctionDeclaration | undefined;
-      if (functionDeclaration && functionDeclaration.body) {
-        return collectFunctionBodyDependencies(functionDeclaration, dependencies, {
-          body,
-          callIndex,
-          visitedCallees,
-        });
-      }
-
-      for (let index = 0; index < callIndex; index += 1) {
-        const statement = body[index];
-        if (statement.type !== AST_NODE_TYPES.VariableDeclaration) {
-          continue;
-        }
-        for (const declarator of statement.declarations) {
-          if (
-            declarator.id.type === AST_NODE_TYPES.Identifier &&
-            declarator.id.name === name &&
-            declarator.init &&
-            (declarator.init.type === AST_NODE_TYPES.FunctionExpression ||
-              declarator.init.type === AST_NODE_TYPES.ArrowFunctionExpression)
-          ) {
-            return collectFunctionBodyDependencies(declarator.init, dependencies, {
-              body,
-              callIndex,
-              visitedCallees,
-            });
-          }
-        }
-      }
-      return true;
-    }
-
-    if (callee.type === AST_NODE_TYPES.MemberExpression) {
-      const rootName = callee.object.type === AST_NODE_TYPES.Identifier ? callee.object.name : null;
-      if (rootName && isIdentifierMutated(body, rootName, callIndex)) {
-        return false;
-      }
-      const memberFunction = resolveMemberFunction(body, callee, callIndex);
-      if (memberFunction) {
-        return collectFunctionBodyDependencies(memberFunction, dependencies, {
-          body,
-          callIndex,
-          visitedCallees,
-        });
-      }
-      if (rootName) {
-        const declaredBeforeCall = body
-          .slice(0, callIndex)
-          .some((statement) => statementDeclaresAny(statement, new Set([rootName])));
-        if (declaredBeforeCall) {
-          return false;
-        }
-      }
-      return true;
-    }
-
-    return true;
-  }
-
-    function isSideEffectExpression(
-      statement: TSESTree.Statement,
-    ): statement is TSESTree.ExpressionStatement {
-      if (statement.type !== AST_NODE_TYPES.ExpressionStatement) {
-        return false;
-      }
-      return Boolean(extractCallExpression(statement.expression));
-    }
-
-    // Lift observable side effects above unrelated setup while never crossing hook calls or dependency declarations to preserve execution order.
-    function handleSideEffects(body: TSESTree.Statement[], parent: BlockLike): void {
-      body.forEach((statement, index) => {
-        if (!isSideEffectExpression(statement)) {
-          return;
-        }
-
-        const expression = statement.expression;
-        const callExpression = extractCallExpression(expression);
-        if (!callExpression) {
-          return;
-        }
-        if (isHookCallee(callExpression.callee)) {
-          return;
-        }
-
-        const dependencies = new Set<string>();
-        collectUsedIdentifiers(expression, dependencies, { skipFunctions: true });
-        const calleeResolved = collectCalleeDependencies(
-          body,
-          callExpression.callee,
-          dependencies,
-          index,
-        );
-        if (!calleeResolved) {
-          return;
-        }
-
-        const targetIndex = findEarliestSafeIndex(body, index, dependencies, { allowHooks: false });
-
-        if (targetIndex === index) {
-          return;
-        }
-
-        const effectText = truncateWithEllipsis(sourceCode.getText(statement).trim());
-        reportOnce(
-          statement,
-          'moveSideEffect',
-          { effect: effectText },
-          (fixer) => buildMoveFix(body, index, targetIndex, parent, sourceCode, fixer),
-        );
-      });
-    }
-
-    function handleBlock(node: BlockLike): void {
-      const statements = node.body;
-      handleGuardHoists(statements, node);
-      handleDerivedGrouping(statements, node);
-      handleLateDeclarations(statements, node);
-      handleSideEffects(statements, node);
-    }
+    const visitBlock = (node: BlockLike) => handleBlock(ruleContext, node);
 
     return {
-      Program(node) {
-        handleBlock(node);
-      },
-      BlockStatement(node) {
-        handleBlock(node);
-      },
+      Program: visitBlock,
+      BlockStatement: visitBlock,
     };
   },
 });
