@@ -610,6 +610,10 @@ function getComplexPropertiesFromType(
   return complexProps;
 }
 
+function normalizePropsOrder(props: string[]): string[] {
+  return Array.from(new Set(props));
+}
+
 function extractComplexPropsFromSignature(
   signature: import('typescript').Signature,
   checker: TypeChecker,
@@ -675,13 +679,15 @@ function extractPropsFromFunctionParam(
   }
 
   const treatAnyAsComplex = Boolean(paramType.flags & ts.TypeFlags.Any);
-  return getComplexPropertiesFromType(
-    paramType,
-    checker,
-    paramTsNode,
-    ts,
-    treatAnyAsComplex,
-    paramType.flags ?? 0,
+  return normalizePropsOrder(
+    getComplexPropertiesFromType(
+      paramType,
+      checker,
+      paramTsNode,
+      ts,
+      treatAnyAsComplex,
+      paramType.flags ?? 0,
+    ),
   );
 }
 
@@ -699,7 +705,7 @@ function extractPropsFromComponentSignatures(
     propsFromSignature.forEach((prop) => complexProps.add(prop));
   }
 
-  return Array.from(complexProps).sort();
+  return normalizePropsOrder(Array.from(complexProps));
 }
 
 function loadTypeScriptModule(): typeof import('typescript') {
@@ -878,9 +884,14 @@ function buildMemoFixes(
   propsCall: string,
   memoSource: string,
   scope: TSESLint.Scope.Scope,
+  resolveCompareDeeplyImport: (
+    fixer: TSESLint.RuleFixer,
+    memoSource: string,
+    scope: TSESLint.Scope.Scope,
+  ) => { fixes: TSESLint.RuleFix[]; localName: string },
 ): TSESLint.RuleFix[] {
   const fixes: TSESLint.RuleFix[] = [];
-  const importResult = ensureCompareDeeplyImportFixes(sourceCode, fixer, scope, memoSource);
+  const importResult = resolveCompareDeeplyImport(fixer, memoSource, scope);
   if (
     comparatorArg &&
     comparatorArg.type !== AST_NODE_TYPES.SpreadElement &&
@@ -1040,6 +1051,21 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
     const complexPropsCache = new WeakMap<TSESTree.Expression, string[]>();
     const memoImportTracking = createMemoImportTracking();
     const initializerTracking = createComponentInitializerTracker();
+    let cachedCompareDeeplyImportLocalName: string | null = null;
+
+    function resolveCompareDeeplyImport(
+      fixer: TSESLint.RuleFixer,
+      memoSource: string,
+      scope: TSESLint.Scope.Scope,
+    ) {
+      if (cachedCompareDeeplyImportLocalName) {
+        return { fixes: [], localName: cachedCompareDeeplyImportLocalName };
+      }
+
+      const result = ensureCompareDeeplyImportFixes(sourceCode, fixer, scope, memoSource);
+      cachedCompareDeeplyImportLocalName = result.localName;
+      return result;
+    }
 
     function validateMemoCall(node: TSESTree.CallExpression) {
       const memoCall = memoImportTracking.isMemoCall(node);
@@ -1119,6 +1145,7 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
               propsCall,
               memoCall.source,
               currentScope,
+              resolveCompareDeeplyImport,
             );
           },
         });

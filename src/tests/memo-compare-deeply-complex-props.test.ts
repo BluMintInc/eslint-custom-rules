@@ -267,6 +267,25 @@ export const Wrapped = memo(Comp, compareDeeply('filters', 'settings'));
         errors: [{ messageId: 'useCompareDeeply' }],
       },
       {
+        filename: 'src/components/PropOrderConsistency.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { beta: { value: number }; alpha: { value: number } };
+const Named = ({ beta, alpha }: Props) => <div>{beta.value}{alpha.value}</div>;
+export const WrappedNamed = memo(Named);
+export const WrappedInline = memo(({ beta, alpha }: Props) => <section>{beta.value}{alpha.value}</section>);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Props = { beta: { value: number }; alpha: { value: number } };
+const Named = ({ beta, alpha }: Props) => <div>{beta.value}{alpha.value}</div>;
+export const WrappedNamed = memo(Named, compareDeeply('beta', 'alpha'));
+export const WrappedInline = memo(({ beta, alpha }: Props) => <section>{beta.value}{alpha.value}</section>, compareDeeply('beta', 'alpha'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }, { messageId: 'useCompareDeeply' }],
+      },
+      {
         filename: 'src/components/ArrayOnly.tsx',
         code: `
 import { memo } from 'react';
@@ -697,6 +716,27 @@ const Comp = ({ config }: Props) => <div>{config.theme}</div>;
 export const Wrapped = memo(Comp, compareDeeply('config'));
 `,
         errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      {
+        filename: 'src/components/MultipleMemoCalls.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { config: { theme: string } };
+const First = ({ config }: Props) => <div>{config.theme}</div>;
+const Second = ({ config }: Props) => <span>{config.theme}</span>;
+export const Wrapped = memo(First);
+export const WrappedAgain = memo(Second);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Props = { config: { theme: string } };
+const First = ({ config }: Props) => <div>{config.theme}</div>;
+const Second = ({ config }: Props) => <span>{config.theme}</span>;
+export const Wrapped = memo(First, compareDeeply('config'));
+export const WrappedAgain = memo(Second, compareDeeply('config'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }, { messageId: 'useCompareDeeply' }],
       },
       {
         filename: callSignatureMissingFile,
