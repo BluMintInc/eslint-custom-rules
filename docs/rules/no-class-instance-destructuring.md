@@ -14,11 +14,13 @@ Destructuring a class instance pulls methods and getters into standalone variabl
 
 ```ts
 class Example {
+  constructor(public name: string) {}
+
   getName() {
     return this.name;
   }
 }
-const example = new Example();
+const example = new Example('Ada');
 const { getName } = example;
 
 const { cohorts } = new BracketChunker(data);
@@ -27,8 +29,10 @@ const { cohorts } = new BracketChunker(data);
 ### ✅ Correct
 
 ```ts
-const example = new Example();
-const getName = example.getName; // bind when passing around: example.getName.bind(example)
+const example = new Example('Ada');
+const getName = example.getName.bind(example);
+// Or call through the instance when you do not need to pass it around:
+// const name = example.getName();
 
 const cohorts = new BracketChunker(data).cohorts;
 ```

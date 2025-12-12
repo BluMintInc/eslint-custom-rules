@@ -16,7 +16,11 @@ export const noClassInstanceDestructuring = createRule<[], MessageIds>({
     schema: [],
     messages: {
       noClassInstanceDestructuring:
-        'Destructuring {{members}} from class instance {{instance}} hides that these members rely on the instance and separates them from their `this` context, which leads to errors when methods run without binding and to stale getter snapshots. Access the members through the instance (for example, {{suggestion}}) and bind explicitly if you need to pass a method around.',
+        [
+          "What's wrong: Destructuring {{members}} from class instance {{instance}} detaches those members from the instance.",
+          "Why it matters: Methods can run with the wrong `this`, and getters become one-time snapshots that go stale when the instance changes.",
+          'How to fix: Access through the instance instead (for example, {{suggestion}}) and bind when you need to pass a method around.',
+        ].join('\n'),
     },
   },
   defaultOptions: [],
@@ -62,7 +66,7 @@ export const noClassInstanceDestructuring = createRule<[], MessageIds>({
       properties: TSESTree.ObjectPattern['properties'],
     ): string {
       const memberNames = properties.map(describeMember).filter(Boolean);
-      if (memberNames.length === 0) return '`members`';
+      if (memberNames.length === 0) return '`<members>`';
       return memberNames.map((name) => `\`${name}\``).join(', ');
     }
 
