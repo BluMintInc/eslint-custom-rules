@@ -29,6 +29,7 @@ const SAFE_HOOK_ARGUMENTS = new Set([
 ]);
 
 const TODO_REPLACE_WITH_ACTUAL_DEPENDENCIES = '__TODO_ADD_DEPENDENCIES__';
+const TODO_DEPS_COMMENT = `/* ${TODO_REPLACE_WITH_ACTUAL_DEPENDENCIES} */`;
 
 function isHookName(name: string | null | undefined): name is string {
   return !!name && /^use[A-Z]/.test(name);
@@ -173,7 +174,8 @@ function getLiteralDescriptor(node: TSESTree.Node): LiteralDescriptor | null {
   }
   if (
     node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-    node.type === AST_NODE_TYPES.FunctionExpression
+    node.type === AST_NODE_TYPES.FunctionExpression ||
+    node.type === AST_NODE_TYPES.FunctionDeclaration
   ) {
     return { literalType: 'inline function', memoHook: 'useCallback' };
   }
@@ -209,17 +211,46 @@ function isInsideAllowedHookCallback(node: TSESTree.Node): boolean {
   return false;
 }
 
+function unwrapExpression(node: TSESTree.Node): TSESTree.Node {
+  let current: TSESTree.Node = node;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    if (
+      current.type === AST_NODE_TYPES.TSAsExpression ||
+      current.type === AST_NODE_TYPES.TSTypeAssertion ||
+      current.type === AST_NODE_TYPES.TSNonNullExpression
+    ) {
+      current = current.expression;
+      continue;
+    }
+
+    if (current.type === AST_NODE_TYPES.ChainExpression) {
+      current = current.expression;
+      continue;
+    }
+
+    if ((current as { type?: string }).type === 'ParenthesizedExpression') {
+      current = (current as { expression: TSESTree.Node }).expression;
+      continue;
+    }
+
+    return current;
+  }
+}
+
 function findEnclosingHookCall(
   node: TSESTree.Node,
 ): { hookName: string; isDirectArgument: boolean } | null {
+  const unwrappedTarget = unwrapExpression(node);
   let current: TSESTree.Node | null = node.parent as TSESTree.Node | null;
   while (current) {
     if (current.type === AST_NODE_TYPES.CallExpression) {
       const hookName = isHookCall(current);
       if (hookName) {
-        const isDirectArgument = current.arguments.includes(
-          node as TSESTree.Expression,
-        );
+        const isDirectArgument = current.arguments.some((arg) => {
+          const unwrappedArg = unwrapExpression(arg as TSESTree.Node);
+          return unwrappedArg === unwrappedTarget;
+        });
         return { hookName, isDirectArgument };
       }
     }
@@ -294,7 +325,7 @@ function buildMemoSuggestions(
         fix(fixer) {
           return fixer.replaceText(
             node,
-            `${descriptor.memoHook}(${initializerText}, [${TODO_REPLACE_WITH_ACTUAL_DEPENDENCIES}])`,
+            `${descriptor.memoHook}(${initializerText}, [${TODO_DEPS_COMMENT}])`,
           );
         },
       },
@@ -311,7 +342,7 @@ function buildMemoSuggestions(
       fix(fixer) {
         return fixer.replaceText(
           node,
-          `${descriptor.memoHook}(() => ${wrappedInitializer}, [${TODO_REPLACE_WITH_ACTUAL_DEPENDENCIES}])`,
+          `${descriptor.memoHook}(() => ${wrappedInitializer}, [${TODO_DEPS_COMMENT}])`,
         );
       },
     },
@@ -359,6 +390,13 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
     const sourceCode = context.getSourceCode();
 
     function reportLiteral(node: TSESTree.Node) {
+      if (
+        node.type === AST_NODE_TYPES.FunctionDeclaration &&
+        isComponentOrHookFunction(node)
+      ) {
+        return;
+      }
+
       const descriptor = getLiteralDescriptor(node);
       if (!descriptor) return;
 
@@ -424,6 +462,7 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
       ArrayExpression: reportLiteral,
       ArrowFunctionExpression: reportLiteral,
       FunctionExpression: reportLiteral,
+      FunctionDeclaration: reportLiteral,
     };
   },
 });

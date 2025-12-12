@@ -118,6 +118,15 @@ function Component({ queryKey, resolver }) {
 }
       `,
     },
+    // Direct hook argument wrapped in assertion is allowed
+    {
+      code: `
+function Component({ queryKey }) {
+  useQuery({ queryKey } as const);
+  return null;
+}
+      `,
+    },
     // Inline JSX props handled by other rules; should not trigger here
     {
       code: `
@@ -170,8 +179,39 @@ function Component() {
               output:
                 '\n' +
                 'function Component() {\n' +
-                '  const options = useMemo(() => ({ debounce: 50 }), [__TODO_ADD_DEPENDENCIES__]);\n' +
+                '  const options = useMemo(() => ({ debounce: 50 }), [/* __TODO_ADD_DEPENDENCIES__ */]);\n' +
                 '  return <div>{options.debounce}</div>;\n' +
+                '}\n' +
+                '      ',
+            },
+          ],
+        },
+      ],
+    },
+    // Suggestions for inline function include dependency placeholder comment
+    {
+      code: `
+function Component({ onClick }) {
+  const handleClick = () => onClick();
+  return <button onClick={handleClick}>Click</button>;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'component "Component"',
+            memoHook: 'useCallback',
+          },
+          suggestions: [
+            {
+              messageId: 'memoizeLiteralSuggestion',
+              output:
+                '\n' +
+                'function Component({ onClick }) {\n' +
+                '  const handleClick = useCallback(() => onClick(), [/* __TODO_ADD_DEPENDENCIES__ */]);\n' +
+                '  return <button onClick={handleClick}>Click</button>;\n' +
                 '}\n' +
                 '      ',
             },
@@ -233,6 +273,27 @@ function Component({ condition }) {
             literalType: 'object literal',
             context: 'component "Component"',
             memoHook: 'useMemo',
+          },
+        },
+      ],
+    },
+    // Function declaration literal inside component
+    {
+      code: `
+function Component({ userId }) {
+  function load() {
+    return fetchUser(userId);
+  }
+  return <button onClick={load}>Load</button>;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'component "Component"',
+            memoHook: 'useCallback',
           },
         },
       ],

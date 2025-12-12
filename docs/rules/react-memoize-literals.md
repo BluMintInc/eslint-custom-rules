@@ -4,7 +4,7 @@
 
 <!-- end auto-generated rule header -->
 
-React re-runs component and hook bodies on every render. Inline object, array, and function literals create fresh references each time, which breaks referential equality checks inside hooks, cache layers, and child components. This rule guards against those accidental allocations by requiring literals in React components and hooks to be either memoized (via `useMemo`/`useCallback`) or hoisted to module-level constants. Direct top-level hook arguments remain allowed, but nested literals inside those arguments are flagged because they still change on every render.
+React re-runs your component and hook bodies on every render. Inline object, array, and function literals create fresh references each time, which breaks referential equality checks inside hooks, cache layers, and child components. This rule keeps those references stable by requiring literals in React components and hooks to be either memoized (via `useMemo`/`useCallback`) or hoisted to module-level constants. Direct top-level hook arguments remain allowed, but nested literals inside those arguments are flagged because they still change on every render.
 
 ## Rule Details
 
@@ -16,7 +16,7 @@ React re-runs component and hook bodies on every render. Inline object, array, a
 
 ### Examples of incorrect code
 
-```jsx
+```tsx
 function UserProfile({ userId }) {
   const userData = useQuery({
     queryKey: ['user', userId],
@@ -32,7 +32,7 @@ function UserProfile({ userId }) {
 }
 ```
 
-```jsx
+```tsx
 function useUserSettings() {
   return {
     theme: 'dark',
@@ -43,18 +43,21 @@ function useUserSettings() {
 
 ### Examples of correct code
 
-```jsx
+These examples show how you keep references stable by memoizing values with the right dependencies (or hoisting constants).
+
+```tsx
 const EMPTY_RESULTS: string[] = [];
 
-function UserProfile({ userId }) {
+function UserProfile({ userId, locale }) {
   const queryFn = useCallback(() => fetchUser(userId), [userId]);
   const queryKey = useMemo(() => ['user', userId], [userId]);
   const options = useMemo(
     () => ({
       staleTime: 5000,
       cacheOptions: { ttl: 60000 },
+      labels: buildLabels(locale),
     }),
-    [],
+    [locale],
   );
 
   const userData = useQuery({ queryKey, queryFn, options });
@@ -63,7 +66,7 @@ function UserProfile({ userId }) {
 }
 ```
 
-```jsx
+```tsx
 function useUserSettings() {
   const onChange = useCallback(() => updateTheme(), []);
   return useMemo(
@@ -75,6 +78,19 @@ function useUserSettings() {
   );
 }
 ```
+
+#### How the suggestion placeholder looks
+
+When the rule suggests a fix, it injects a dependency placeholder you must replace:
+
+```tsx
+const options = useMemo(
+  () => ({ debounce: 50 }),
+  [/* __TODO_ADD_DEPENDENCIES__ */],
+);
+```
+
+This placeholder must be replaced before committing.
 
 ## Options
 
