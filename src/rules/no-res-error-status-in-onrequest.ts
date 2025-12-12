@@ -42,14 +42,17 @@ const isIdentifierWithName = (
 const unwrapTypedExpression = (
   expression: TSESTree.Expression,
 ): TSESTree.Expression => {
-  if (
-    expression.type === AST_NODE_TYPES.TSAsExpression ||
-    expression.type === AST_NODE_TYPES.TSSatisfiesExpression
+  let current: TSESTree.Expression = expression;
+
+  while (
+    current.type === AST_NODE_TYPES.TSAsExpression ||
+    current.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+    current.type === AST_NODE_TYPES.TSTypeAssertion
   ) {
-    return expression.expression;
+    current = current.expression;
   }
 
-  return expression;
+  return current;
 };
 
 const getResponseParamNames = (node: FunctionNode): string[] => {
@@ -480,34 +483,24 @@ export const requireHttpsErrorInOnRequestHandlers: TSESLint.RuleModule<
                 | TSESTree.FunctionExpression
                 | TSESTree.Identifier
                 | TSESTree.TSAsExpression
-                | TSESTree.TSSatisfiesExpression =>
+                | TSESTree.TSSatisfiesExpression
+                | TSESTree.TSTypeAssertion =>
                 arg.type === AST_NODE_TYPES.ArrowFunctionExpression ||
                 arg.type === AST_NODE_TYPES.FunctionExpression ||
                 arg.type === AST_NODE_TYPES.Identifier ||
                 arg.type === AST_NODE_TYPES.TSAsExpression ||
-                arg.type === AST_NODE_TYPES.TSSatisfiesExpression,
+                arg.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+                arg.type === AST_NODE_TYPES.TSTypeAssertion,
             );
 
           if (handlerArg) {
-            if (isFunctionLike(handlerArg)) {
-              handlerFunctions.add(handlerArg);
-            } else if (handlerArg.type === AST_NODE_TYPES.Identifier) {
-              const resolvedHandler = resolveFunctionFromIdentifier(handlerArg);
+            const expression = unwrapTypedExpression(handlerArg);
+            if (isFunctionLike(expression)) {
+              handlerFunctions.add(expression);
+            } else if (expression.type === AST_NODE_TYPES.Identifier) {
+              const resolvedHandler = resolveFunctionFromIdentifier(expression);
               if (resolvedHandler) {
                 handlerFunctions.add(resolvedHandler);
-              }
-            } else if (
-              handlerArg.type === AST_NODE_TYPES.TSAsExpression ||
-              handlerArg.type === AST_NODE_TYPES.TSSatisfiesExpression
-            ) {
-              const expression = unwrapTypedExpression(handlerArg);
-              if (isFunctionLike(expression)) {
-                handlerFunctions.add(expression);
-              } else if (expression.type === AST_NODE_TYPES.Identifier) {
-                const resolvedHandler = resolveFunctionFromIdentifier(expression);
-                if (resolvedHandler) {
-                  handlerFunctions.add(resolvedHandler);
-                }
               }
             }
           }
