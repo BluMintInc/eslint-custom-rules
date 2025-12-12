@@ -29,7 +29,7 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
       classMethodsReadTopToBottom:
         [
           "What's wrong: In {{className}}, {{actualMember}} appears before {{expectedMember}}.",
-          'Why it matters: This breaks top-down reading; local reasoning depends on caller-to-helper flow, and upward jumps slow reviews, hide invariants, and risk calling helpers before state is ready.',
+          'Why it matters: Top-down flow enables local reasoning: you can verify each caller without scrolling back. Upward jumps make code reviews harder (must verify call chains in reverse), obscure which fields a helper assumes are initialized, and increase the risk of calling helpers before state is ready (leading to null reference errors or accessing uninitialized fields).',
           'How to fix: Move {{expectedMember}} above {{actualMember}} so the class reads top-to-bottom (fields to constructor to callers to helpers).',
         ].join('\n'),
     },
@@ -76,7 +76,13 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
 
           if (!actualMember || !expectedMember) {
             throw new Error(
-              `class-methods-read-top-to-bottom invariant violated while comparing members in ${className || 'an unnamed class'} at position ${i}`,
+              `class-methods-read-top-to-bottom invariant violated while comparing members in ${
+                className || 'an unnamed class'
+              } at position ${i}: actualMember=${String(
+                actualMember,
+              )}, expectedMember=${String(expectedMember)}, actualOrder.length=${
+                actualOrder.length
+              }, sortedOrder.length=${sortedOrder.length}`,
             );
           }
 
