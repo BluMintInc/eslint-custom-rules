@@ -29,6 +29,8 @@ The rule reports when:
 
 ### ✅ Correct
 
+The following example pairs static errors, static warnings, and dynamic severities with matching console logging in the same scope.
+
 ```tsx
 import { useAlertDialog } from '../useAlertDialog';
 
