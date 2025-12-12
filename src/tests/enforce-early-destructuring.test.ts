@@ -475,6 +475,46 @@ ruleTesterJsx.run(
         `,
         errors: [{ messageId: 'hoistDestructuring' }],
       },
+      {
+        code: `
+          const MyComponent = ({ user }) => {
+            const { name } = user ?? {};
+            useEffect(() => {
+              const { name } = user.profile;
+              log(name);
+            }, [user.profile]);
+          };
+        `,
+        output: null,
+        errors: [{ messageId: 'hoistDestructuring' }],
+      },
+      {
+        code: `
+          const MyComponent = ({ user }) => {
+            useEffect(() => {
+              const { name } = user;
+              logUser(name);
+            }, [user]);
+            useEffect(() => {
+              const { name } = user;
+              audit(name);
+            }, [user]);
+          };
+        `,
+        output: `
+          const MyComponent = ({ user }) => {
+            const { name } = (user) ?? {};
+            useEffect(() => {
+              logUser(name);
+            }, [name]);
+            useEffect(() => {
+              const { name } = user;
+              audit(name);
+            }, [user]);
+          };
+        `,
+        errors: [{ messageId: 'hoistDestructuring' }, { messageId: 'hoistDestructuring' }],
+      },
     ],
   },
 );

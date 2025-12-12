@@ -304,6 +304,20 @@ function collectExistingBindings(
   return names;
 }
 
+function collectBindingsInScope(scope: TSESLint.Scope.Scope): Set<string> {
+  const names = new Set<string>();
+  for (const variable of scope.variables) {
+    if (
+      variable.identifiers.length === 0 &&
+      (variable.name === 'arguments' || variable.name === 'this')
+    ) {
+      continue;
+    }
+    names.add(variable.name);
+  }
+  return names;
+}
+
 function collectProperties(
   pattern: TSESTree.ObjectPattern,
   sourceCode: TSESLint.SourceCode,
@@ -739,6 +753,7 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (context as any).visitorKeys ??
       {};
+    const reservedNamesByScope = new WeakMap<TSESLint.Scope.Scope, Set<string>>();
 
     return {
       CallExpression(node) {
@@ -749,6 +764,8 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
         if (!callback || !isFunctionNode(callback) || callback.body.type !== AST_NODE_TYPES.BlockStatement) {
           return;
         }
+
+        const scope = context.getScope();
 
         if (callback.async) return;
 
@@ -891,10 +908,19 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
             }
 
             const existingBindings = collectExistingBindings(callback, declarationsToRemove);
+            const scopeDeclaredNames = collectBindingsInScope(scope);
+            const reservedNames = reservedNamesByScope.get(scope) ?? new Set<string>();
+            const scopeNameCollisions = new Set<string>([
+              ...scopeDeclaredNames,
+              ...reservedNames,
+            ]);
 
             for (const group of groups.values()) {
               for (const name of group.names) {
                 if (existingBindings.has(name)) {
+                  return null;
+                }
+                if (scopeNameCollisions.has(name)) {
                   return null;
                 }
               }
@@ -921,6 +947,14 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
               if (!group) return true;
               return baseUsageByObject.get(text) ?? true;
             });
+
+            const updatedReservedNames = new Set(reservedNames);
+            for (const group of groups.values()) {
+              for (const name of group.names) {
+                updatedReservedNames.add(name);
+              }
+            }
+            reservedNamesByScope.set(scope, updatedReservedNames);
 
             for (const group of groups.values()) {
               const sortedProps = Array.from(group.properties.values()).sort(
