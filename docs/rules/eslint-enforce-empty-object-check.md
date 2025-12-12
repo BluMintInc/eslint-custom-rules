@@ -7,7 +7,7 @@
 
 Guard object existence checks against empty objects. `{}` is truthy in JavaScript, so `if (!obj)` lets empty API responses, configs, or payloads slip through and execute guarded branches with no data. The rule auto-fixes `!obj` to `!obj || Object.keys(obj).length === 0` for variables that are likely objects (based on TypeScript types when available and naming heuristics).
 
-The rule treats `Object.keys(obj).length` comparisons to zero (`===`, `==`, `<`, or `<=`) or approved emptiness helpers as valid empty checks; other comparisons (for example `> 5` or `=== 10`) do not count.
+The rule treats `Object.keys(obj).length` comparisons to zero (`===`, `==`, `<=`, or the reversed form `0 >= ...`), `!Object.keys(obj).length`, or approved emptiness helpers as valid empty checks; other comparisons (for example `> 5` or `=== 10`) do not count.
 
 ## Rule Details
 

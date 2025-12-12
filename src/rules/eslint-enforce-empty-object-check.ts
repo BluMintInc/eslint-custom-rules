@@ -223,6 +223,12 @@ function isLengthZeroComparison(node: TSESTree.BinaryExpression, name: string): 
   const leftIsZero = isZeroLiteral(left);
   const rightIsZero = isZeroLiteral(right);
 
+  /**
+   * Only zero-length checks signal emptiness: length never drops below zero, and
+   * `> 0` means data is present. Restrict operators to equality and zero-bound
+   * comparisons to avoid mistaking impossible `length < 0` or presence checks for
+   * valid emptiness guards.
+   */
   if (operator === '===' || operator === '==') {
     return (leftIsLength && rightIsZero) || (rightIsLength && leftIsZero);
   }
@@ -296,6 +302,11 @@ function conditionHasEmptyCheck(
       );
     }
     case AST_NODE_TYPES.MemberExpression:
+      /**
+       * `!Object.keys(name).length` counts as an emptiness check through negation
+       * depth; comparisons like `length < 0` or `length > 0` remain excluded because
+       * length is never negative and `> 0` signals presence rather than emptiness.
+       */
       if (isObjectKeysLengthExpression(node, name)) {
         return negationDepth % 2 === 1;
       }
@@ -384,7 +395,7 @@ export const eslintEnforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Opti
       ],
       messages: {
         missingEmptyObjectCheck:
-          'Object "{{name}}" is only checked for falsiness, so an empty object would pass and execute the guarded branch. Empty API payloads often behave like missing data—also verify Object.keys({{name}}).length === 0 to prevent silent fallthrough.',
+          'What\'s wrong: "{{name}}" is only checked for falsiness, so `{}` passes the guard. Why it matters: empty payloads or configs behave like missing data and can execute "has data" logic incorrectly. How to fix: also check emptiness (for example, Object.keys({{name}}).length === 0 or a configured empty-check helper).',
       },
     },
     defaultOptions: [{}] as Options,
