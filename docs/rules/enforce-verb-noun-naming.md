@@ -37,7 +37,7 @@ class Repo {
 
 Example message:
 
-```
+```text
 Function "userData" should start with an action verb followed by the thing it acts on. Verb-first names tell readers this symbol performs work instead of representing data, which keeps APIs predictable and prevents accidental misuse. Rename "userData" to a verb-noun phrase such as "fetchUsers" or "processRequest".
 ```
 
