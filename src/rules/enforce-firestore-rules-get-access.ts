@@ -114,7 +114,7 @@ export const enforceFirestoreRulesGetAccess = createRule<Options, MessageIds>({
             let newText = value;
             if (needsDirectFix) newText = applyDirectAccessFixes(newText);
             if (needsGetDefaultFix) newText = applyGetDefaultFixes(newText);
-            return fixer.replaceText(node, `"${newText.replace(/"/g, '\\"')}"`);
+            return fixer.replaceText(node, JSON.stringify(newText));
           },
         });
       },

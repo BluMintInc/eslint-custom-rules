@@ -128,6 +128,13 @@ ruleTesterTs.run(
         output:
           "const rules = \"allow read: if request.resource.data.get('profile', null).get('image', null) != undefined;\";",
       },
+      // Preserve escape sequences when serializing strings with newlines/backslashes
+      {
+        code: 'const rules = "allow read: if resource.data.field != null;\\nnext line";',
+        errors: [{ messageId: 'useGetAccess' }],
+        output:
+          "const rules = \"allow read: if resource.data.get('field', null) != null;\\nnext line\";",
+      },
       // Multiple problems resolved in one fix
       {
         code: 'const rules = "allow read: if request.resource.data.a.b != null || resource.data.get(\'x\') == null;";',

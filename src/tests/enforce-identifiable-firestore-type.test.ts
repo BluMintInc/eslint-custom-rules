@@ -72,6 +72,38 @@ ruleTesterTs.run(
       `,
         filename: 'functions/src/types/firestore/UserItem/index.ts',
       },
+      {
+        code: `
+        export type Connection = {
+          id: string;
+          userIdsConnected: string[];
+        };
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+      },
+      {
+        code: `
+        type Base = { id: string; createdAt: number };
+        export type Connection = Base;
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+      },
+      {
+        code: `
+        type Base = Identifiable & { createdAt: number };
+        export type Connection = Base;
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+      },
+      {
+        code: `
+        export type UserProfile = {
+          id: string;
+          displayName: string;
+        };
+      `,
+        filename: 'functions/src/types/firestore/user-profile/index.ts',
+      },
     ],
     invalid: [
       {
@@ -106,10 +138,22 @@ ruleTesterTs.run(
       },
       {
         code: `
-        export type Connection = {
-          id: string;
-          userIdsConnected: string[];
+        export const defaultConnection = {
+          id: '123',
+          userIdsConnected: ['user1', 'user2'],
         };
+      `,
+        filename: 'functions/src/types/firestore/Connection/index.ts',
+        errors: [
+          {
+            messageId: 'missingType',
+            data: { typeName: 'Connection', folderName: 'Connection' },
+          },
+        ],
+      },
+      {
+        code: `
+        export type Connection = Resolve;
       `,
         filename: 'functions/src/types/firestore/Connection/index.ts',
         errors: [
@@ -121,12 +165,27 @@ ruleTesterTs.run(
       },
       {
         code: `
-        export const defaultConnection = {
-          id: '123',
-          userIdsConnected: ['user1', 'user2'],
+        export type WrongName = Identifiable & {
+          userIdsConnected: string[];
+          documentPath: string;
         };
       `,
-        filename: 'functions/src/types/firestore/Connection/index.ts',
+        filename: 'functions/src/types/firestore/user-profile/index.ts',
+        errors: [
+          {
+            messageId: 'missingType',
+            data: { typeName: 'UserProfile', folderName: 'user-profile' },
+          },
+        ],
+      },
+      {
+        code: `
+        export type WrongName = Identifiable & {
+          id: string;
+        };
+      `,
+        filename:
+          'C:\\repo\\functions\\src\\types\\firestore\\Connection\\index.ts',
         errors: [
           {
             messageId: 'missingType',
