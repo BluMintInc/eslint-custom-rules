@@ -286,6 +286,25 @@ export const WrappedInline = memo(({ beta, alpha }: Props) => <section>{beta.val
         errors: [{ messageId: 'useCompareDeeply' }, { messageId: 'useCompareDeeply' }],
       },
       {
+        filename: 'src/components/TypeArgsAny.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { beta: { value: number }; alpha: { value: number } };
+export const Wrapped = memo<any, Props>(
+  ({ beta, alpha }: any) => <div>{beta.value}{alpha.value}</div>,
+);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Props = { beta: { value: number }; alpha: { value: number } };
+export const Wrapped = memo<any, Props>(
+  ({ beta, alpha }: any) => <div>{beta.value}{alpha.value}</div>, compareDeeply('alpha', 'beta')
+);
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      {
         filename: 'src/components/ArrayOnly.tsx',
         code: `
 import { memo } from 'react';

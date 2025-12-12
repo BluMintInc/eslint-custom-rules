@@ -668,7 +668,7 @@ function extractPropsFromFunctionParam(
   if (paramType.flags & ts.TypeFlags.Any) {
     const propsFromTypeArgs = extractPropsFromTypeArguments(paramTsNode, checker, ts);
     if (propsFromTypeArgs.length > 0) {
-      return propsFromTypeArgs;
+      return normalizePropsOrder(propsFromTypeArgs);
     }
   }
 
