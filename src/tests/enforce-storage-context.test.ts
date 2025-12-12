@@ -107,6 +107,11 @@ ruleTesterTs.run('enforce-storage-context', enforceStorageContext, {
       }
     `,
     `
+      function saveWithDefault(localStorage = createMockStorage()) {
+        localStorage.setItem('k', 'v');
+      }
+    `,
+    `
       if (featureFlag) {
         const sessionStorage = createMockStorage();
         sessionStorage.getItem('k');

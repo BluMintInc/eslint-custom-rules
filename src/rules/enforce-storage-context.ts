@@ -287,6 +287,9 @@ const identifierHasDeclarationParent = (node: TSESTree.Identifier): boolean => {
   ) {
     return true;
   }
+  if (parent.type === AST_NODE_TYPES.AssignmentPattern && parent.left === node) {
+    return true;
+  }
   if (parent.type === AST_NODE_TYPES.FunctionDeclaration && parent.id === node) {
     return true;
   }
