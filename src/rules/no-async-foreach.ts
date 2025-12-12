@@ -57,6 +57,11 @@ const findVariableInScope = (
   return null;
 };
 
+/**
+ * Function declarations are hoisted across their scope regardless of source order.
+ * Returning NEGATIVE_INFINITY makes hoisted declarations always "earlier" than any
+ * callback usage when we compare source positions.
+ */
 const getDefinitionStart = (definition: TSESLint.Scope.Definition): number =>
   definition.node.type === AST_NODE_TYPES.FunctionDeclaration
     ? Number.NEGATIVE_INFINITY
@@ -234,6 +239,14 @@ const analyzeCallbackAsyncStatus = (
     return null;
   }
 
+  /**
+   * Track every write to the callback identifier with its source position. Only
+   * the last write at or before the callback location determines whether the
+   * callback is async when it is passed to forEach. If the callback location is
+   * unknown, bail out to avoid blaming writes that might occur after the call
+   * (e.g., a later reassignment to async that should not retroactively flag an
+   * earlier forEach use).
+   */
   const callbackStart = callback.range?.[0];
   const writes: CallbackWrite[] = [];
 
@@ -264,7 +277,7 @@ const analyzeCallbackAsyncStatus = (
   }
 
   const relevantWrites = writes.filter(({ start }) =>
-    typeof callbackStart !== 'number' ? true : start <= callbackStart,
+    typeof callbackStart === 'number' && start <= callbackStart,
   );
 
   if (!relevantWrites.length) {
@@ -272,12 +285,7 @@ const analyzeCallbackAsyncStatus = (
   }
 
   const lastWrite = relevantWrites.reduce<CallbackWrite | null>(
-    (latest, current) => {
-      if (!latest || current.start > latest.start) {
-        return current;
-      }
-      return latest;
-    },
+    (latest, current) => (!latest || current.start > latest.start ? current : latest),
     null,
   );
 
