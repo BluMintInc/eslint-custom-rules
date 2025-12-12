@@ -150,22 +150,41 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       return FETCHER_CLASSES.has(className);
     }
 
+    function isTransactionKey(
+      key: TSESTree.Expression | TSESTree.PrivateIdentifier,
+    ): boolean {
+      if (key.type === AST_NODE_TYPES.Identifier) {
+        return key.name === 'transaction';
+      }
+
+      if (key.type === AST_NODE_TYPES.Literal) {
+        return key.value === 'transaction';
+      }
+
+      if (key.type === AST_NODE_TYPES.TemplateLiteral) {
+        return (
+          key.expressions.length === 0 &&
+          key.quasis.length === 1 &&
+          key.quasis[0].value.cooked === 'transaction'
+        );
+      }
+
+      return false;
+    }
+
     function isTransactionOptionObject(
       arg: TSESTree.CallExpressionArgument,
     ): arg is TSESTree.ObjectExpression {
       if (arg.type !== AST_NODE_TYPES.ObjectExpression) return false;
 
       return arg.properties.some((property) => {
-        if (property.type !== AST_NODE_TYPES.Property || property.computed) {
+        if (property.type !== AST_NODE_TYPES.Property) {
           return false;
         }
 
         const key = property.key;
 
-        return (
-          (key.type === AST_NODE_TYPES.Identifier && key.name === 'transaction') ||
-          (key.type === AST_NODE_TYPES.Literal && key.value === 'transaction')
-        );
+        return isTransactionKey(key);
       });
     }
 

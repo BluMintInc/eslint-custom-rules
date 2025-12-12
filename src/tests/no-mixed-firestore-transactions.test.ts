@@ -206,6 +206,24 @@ ruleTesterTs.run(
         });
       `,
       },
+      // Valid: Transaction option via computed literal key
+      {
+        code: `
+        await db.runTransaction(async (tx) => {
+          const fetcher = new FirestoreDocFetcher(ref);
+          await fetcher.fetch({ ['transaction']: tx });
+        });
+      `,
+      },
+      // Valid: Transaction option via computed template literal key
+      {
+        code: `
+        await db.runTransaction(async (tx) => {
+          const fetcher = new FirestoreDocFetcher(ref);
+          await fetcher.fetch({ [\`transaction\`]: tx });
+        });
+      `,
+      },
     ],
     invalid: [
       // Invalid: Using DocSetter inside transaction
