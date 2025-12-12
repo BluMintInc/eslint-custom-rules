@@ -210,12 +210,33 @@ export const preferGetterOverParameterlessMethod = createRule<
       if (!jsDoc) {
         return false;
       }
+
       const value = jsDoc.value;
       if (SIDE_EFFECT_TAGS.some((tag) => value.includes(`@${tag}`))) {
         return true;
       }
-      return /@returns?[^@]*side\s*effect/i.test(value) ||
-        /@returns?[^@]*mutat/i.test(value);
+
+      const normalized = value.toLowerCase().replace(/[-\s]+/g, ' ');
+      const negationPattern =
+        /\b(?:no|without|not|non|none|never|free of|lack|lacks|lacking|avoid|avoids|avoiding)\b/;
+
+      const matchesAffirmative = (pattern: RegExp) => {
+        const matches = normalized.matchAll(pattern);
+        for (const match of matches) {
+          const start = match.index ?? 0;
+          const windowStart = Math.max(0, start - 24);
+          const window = normalized.slice(windowStart, start);
+          if (!negationPattern.test(window)) {
+            return true;
+          }
+        }
+        return false;
+      };
+
+      return (
+        matchesAffirmative(/\bside effects?\b/) ||
+        matchesAffirmative(/\bmutat(?:e|es|ing|ion|ions|ed|ive|ively)?\b/)
+      );
     }
 
     function analyzeMutations(body: TSESTree.BlockStatement): string | null {

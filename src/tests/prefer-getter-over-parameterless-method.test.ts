@@ -261,6 +261,29 @@ ruleTesterTs.run(
       },
       {
         code: `
+        class Snapshotter {
+          /**
+           * @returns immutable snapshot without side effects
+           */
+          snapshot() {
+            return this.state.clone();
+          }
+        }
+        `,
+        output: `
+        class Snapshotter {
+          /**
+           * @returns immutable snapshot without side effects
+           */
+          get snapshot() {
+            return this.state.clone();
+          }
+        }
+        `,
+        errors: [{ messageId: 'preferGetter', data: { suggestedName: 'snapshot' } }],
+      },
+      {
+        code: `
         class Reporter {
           summary() {
             const title = this.title;
@@ -355,6 +378,21 @@ ruleTesterTs.run(
         }
         `,
         errors: [{ messageId: 'preferGetter', data: { suggestedName: 'name' } }],
+        output: null,
+      },
+      {
+        code: `
+        class Caller {
+          value() {
+            return this.result;
+          }
+
+          invoke() {
+            return this.value.apply(this);
+          }
+        }
+        `,
+        errors: [{ messageId: 'preferGetter', data: { suggestedName: 'value' } }],
         output: null,
       },
     ],
