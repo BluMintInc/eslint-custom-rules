@@ -1,4 +1,5 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import type { IntersectionType, Type, TypeChecker, UnionType } from 'typescript';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'useCompareDeeply';
@@ -39,10 +40,7 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
         return true;
       }
 
-      if (
-        arg.type === AST_NODE_TYPES.Literal &&
-        (arg.value === null || typeof arg.value === 'undefined')
-      ) {
+      if (arg.type === AST_NODE_TYPES.Literal && arg.value === null) {
         return true;
       }
 
@@ -123,23 +121,28 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
     }
 
     function isComplexType(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ts: any,
-      type: any,
-      checker: any,
-      visited = new Set<any>(),
+      ts: typeof import('typescript'),
+      type: Type,
+      checker: TypeChecker,
+      visited: Set<Type> = new Set<Type>(),
     ): boolean {
       if (visited.has(type)) return false;
       visited.add(type);
 
-      if (type.isUnion?.()) {
-        return type.types.some((t: any) => isComplexType(ts, t, checker, visited));
-      }
-      if (type.isIntersection?.()) {
-        return type.types.some((t: any) => isComplexType(ts, t, checker, visited));
-      }
-
       const flags = type.flags ?? 0;
+
+      if (flags & ts.TypeFlags.Union) {
+        const unionType = type as UnionType;
+        return unionType.types.some((t) =>
+          isComplexType(ts, t, checker, visited),
+        );
+      }
+      if (flags & ts.TypeFlags.Intersection) {
+        const intersectionType = type as IntersectionType;
+        return intersectionType.types.some((t) =>
+          isComplexType(ts, t, checker, visited),
+        );
+      }
       if (
         flags &
         (ts.TypeFlags.StringLike |
