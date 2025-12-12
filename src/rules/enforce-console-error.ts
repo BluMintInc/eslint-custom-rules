@@ -21,7 +21,7 @@ export const enforceConsoleError = createRule<[], MessageIds>({
       missingConsoleWarn:
         'useAlertDialog call with severity "{{severity}}" shows a warning dialog but this function never logs with {{consoleMethod}}. Without the log the warning lacks telemetry, making degraded states hard to diagnose. Add a {{consoleMethod}} call in this function scope before or after the open() call so the dialog is paired with an observable warning trail.',
       missingConsoleBoth:
-        'useAlertDialog call relies on a dynamic severity value, so the function may show either errors or warnings but it logs neither with {{consoleError}} nor {{consoleWarn}}. Monitoring misses whichever branch executes, leaving the dialog untraceable. Add both {{consoleError}} and {{consoleWarn}} in this function scope around the open() call so every severity path leaves a log trail.',
+        'useAlertDialog call uses dynamic severity, so the function may show errors or warnings. It is missing {{missingMethods}} in this function scope, leaving {{missingPaths}} without monitoring breadcrumbs. Add {{missingMethods}} before or after the open() call so each severity outcome leaves an observable log trail.',
     },
     schema: [],
   },
@@ -223,6 +223,28 @@ export const enforceConsoleError = createRule<[], MessageIds>({
           const needsConsoleWarn = hasWarning || hasDynamic;
 
           if (hasDynamic && (!hasConsoleError || !hasConsoleWarn)) {
+            const missingMethods: string[] = [];
+            const missingSeverities: string[] = [];
+
+            if (!hasConsoleError) {
+              missingMethods.push('console.error');
+              missingSeverities.push('error');
+            }
+
+            if (!hasConsoleWarn) {
+              missingMethods.push('console.warn');
+              missingSeverities.push('warning');
+            }
+
+            const missingMethodsLabel =
+              missingMethods.length === 2
+                ? 'console.error and console.warn'
+                : missingMethods[0];
+            const missingPathsLabel =
+              missingSeverities.length === 2
+                ? 'the error and warning severity paths'
+                : `the ${missingSeverities[0]} severity path`;
+
             const dynamicCall = group.openCalls.find(
               (call) => call.severity === 'dynamic',
             );
@@ -231,8 +253,8 @@ export const enforceConsoleError = createRule<[], MessageIds>({
                 node: dynamicCall.node,
                 messageId: 'missingConsoleBoth',
                 data: {
-                  consoleError: 'console.error',
-                  consoleWarn: 'console.warn',
+                  missingMethods: missingMethodsLabel,
+                  missingPaths: missingPathsLabel,
                 },
               });
             }

@@ -6,8 +6,12 @@ const missingConsoleErrorMessage =
   'useAlertDialog call with severity "error" shows an error dialog but this function never logs with console.error. Without the log the alert is invisible to monitoring and post-incident breadcrumbs. Add a console.error call in this function scope before or after the open() call so the dialog is paired with an observable error trail.';
 const missingConsoleWarnMessage =
   'useAlertDialog call with severity "warning" shows a warning dialog but this function never logs with console.warn. Without the log the warning lacks telemetry, making degraded states hard to diagnose. Add a console.warn call in this function scope before or after the open() call so the dialog is paired with an observable warning trail.';
-const missingConsoleBothMessage =
-  'useAlertDialog call relies on a dynamic severity value, so the function may show either errors or warnings but it logs neither with console.error nor console.warn. Monitoring misses whichever branch executes, leaving the dialog untraceable. Add both console.error and console.warn in this function scope around the open() call so every severity path leaves a log trail.';
+
+const buildMissingConsoleBothMessage = (
+  missingMethods: string,
+  missingPaths: string,
+) =>
+  `useAlertDialog call uses dynamic severity, so the function may show errors or warnings. It is missing ${missingMethods} in this function scope, leaving ${missingPaths} without monitoring breadcrumbs. Add ${missingMethods} before or after the open() call so each severity outcome leaves an observable log trail.`;
 
 type MessageIds = 'missingConsoleError' | 'missingConsoleWarn' | 'missingConsoleBoth';
 
@@ -19,9 +23,28 @@ const missingConsoleWarn = {
   message: missingConsoleWarnMessage,
 } as unknown as TSESLint.TestCaseError<MessageIds>;
 
-const missingConsoleBoth = {
-  message: missingConsoleBothMessage,
-} as unknown as TSESLint.TestCaseError<MessageIds>;
+const missingConsoleBoth = (
+  missingMethods: string,
+  missingPaths: string,
+) =>
+  ({
+    message: buildMissingConsoleBothMessage(missingMethods, missingPaths),
+  } as unknown as TSESLint.TestCaseError<MessageIds>);
+
+const missingConsoleBothErrorAndWarn = missingConsoleBoth(
+  'console.error and console.warn',
+  'the error and warning severity paths',
+);
+
+const missingConsoleWarnForDynamic = missingConsoleBoth(
+  'console.warn',
+  'the warning severity path',
+);
+
+const missingConsoleErrorForDynamic = missingConsoleBoth(
+  'console.error',
+  'the error severity path',
+);
 
 ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
   valid: [
@@ -1154,7 +1177,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { openDialog };
         };
       `,
-      errors: [missingConsoleBoth],
+      errors: [missingConsoleBothErrorAndWarn],
     },
 
     // Invalid: Dynamic severity with only console.error
@@ -1178,7 +1201,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { openDialog };
         };
       `,
-      errors: [missingConsoleBoth],
+      errors: [missingConsoleWarnForDynamic],
     },
 
     // Invalid: Dynamic severity with only console.warn
@@ -1202,7 +1225,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { openDialog };
         };
       `,
-      errors: [missingConsoleBoth],
+      errors: [missingConsoleErrorForDynamic],
     },
 
     // Invalid: Severity from variable
@@ -1226,7 +1249,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { openDialog };
         };
       `,
-      errors: [missingConsoleBoth],
+      errors: [missingConsoleBothErrorAndWarn],
     },
 
     // Invalid: Severity from object property
@@ -1250,7 +1273,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { openDialog };
         };
       `,
-      errors: [missingConsoleBoth],
+      errors: [missingConsoleBothErrorAndWarn],
     },
 
     // Invalid: Computed property for severity
@@ -1298,7 +1321,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { openDialog };
         };
       `,
-      errors: [missingConsoleBoth],
+      errors: [missingConsoleBothErrorAndWarn],
     },
 
     // Invalid: Arrow function without useCallback
@@ -1608,7 +1631,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [missingConsoleBoth],
+      errors: [missingConsoleBothErrorAndWarn],
     },
 
     // Invalid: Template literal severity without both console statements
@@ -1632,7 +1655,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError };
         };
       `,
-      errors: [missingConsoleBoth],
+      errors: [missingConsoleBothErrorAndWarn],
     },
 
     // Invalid: Recursive function without console.error
@@ -1850,7 +1873,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showDialog };
         };
       `,
-      errors: [missingConsoleBoth],
+      errors: [missingConsoleBothErrorAndWarn],
     },
 
     // Invalid: Logical AND operator without console.error

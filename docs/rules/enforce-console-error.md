@@ -18,12 +18,12 @@ The rule reports when:
 
 - An error dialog (`severity: 'error'`) is opened without a `console.error` in the containing function scope.
 - A warning dialog (`severity: 'warning'`) is opened without a `console.warn` in the containing function scope.
-- `severity` is dynamic or non-literal and the containing function scope has neither `console.error` nor `console.warn`.
+- `severity` is dynamic or non-literal and the containing function scope is missing either `console.error` or `console.warn`, so one of the severity branches would emit no telemetry.
 
 ## How to Fix
 
 - Log the same message shown to the user with `console.error` or `console.warn` in the same function that calls `open()`.
-- When severity is dynamic (variables, expressions, computed keys), log within each branch (e.g., `console.error` when `severity === 'error'`, `console.warn` otherwise) so whichever path runs leaves a breadcrumb without double-logging.
+- When severity is dynamic (variables, expressions, computed keys), ensure both `console.error` and `console.warn` are present in the scope—either by branching on severity or by calling both—so every possible outcome leaves a breadcrumb without double-logging.
 
 ## Examples
 
@@ -102,4 +102,16 @@ const showDialog = (severity: string, description: string) => {
     severity,
   });
 }; // ✖ Dynamic severity without console.error or console.warn, so one branch will stay unlogged
+```
+
+```tsx
+const { open } = useAlertDialog('DIALOG');
+const showDialog = (severity: string, description: string) => {
+  console.error('Logging only errors');
+  open({
+    title: 'Alert',
+    description,
+    severity,
+  });
+}; // ✖ Dynamic severity missing console.warn, so warning dialogs have no breadcrumb
 ```
