@@ -381,7 +381,16 @@ ruleTesterTs.run(
           methodB() {}
           methodC() {}
         }`,
-        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+        errors: [
+          {
+            messageId: 'classMethodsReadTopToBottom',
+            data: {
+              className: 'TestClass',
+              actualMember: 'methodA',
+              expectedMember: 'constructor',
+            },
+          },
+        ],
         output: `
         class TestClass {field1: string;
 field2: number;
@@ -394,6 +403,36 @@ methodA() {
           }
 methodB() {}
 methodC() {}}`,
+      },
+      {
+        code: `
+        const Holder = class Named {
+          methodA() {
+            return this.methodB();
+          }
+          constructor() {
+            this.methodA();
+          }
+          methodB() {}
+        };`,
+        errors: [
+          {
+            messageId: 'classMethodsReadTopToBottom',
+            data: {
+              className: 'Named',
+              actualMember: 'methodA',
+              expectedMember: 'constructor',
+            },
+          },
+        ],
+        output: `
+        const Holder = class Named {constructor() {
+            this.methodA();
+          }
+methodA() {
+            return this.methodB();
+          }
+methodB() {}};`,
       },
       {
         code: `
@@ -411,7 +450,16 @@ methodC() {}}`,
               return "foo";
             }
           }`,
-        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+        errors: [
+          {
+            messageId: 'classMethodsReadTopToBottom',
+            data: {
+              className: 'TestClass',
+              actualMember: 'methodB',
+              expectedMember: 'methodA',
+            },
+          },
+        ],
         output: `
         class TestClass {field1: string;
 field2: number;
@@ -425,6 +473,50 @@ methodA(): string {
 methodB() {
                 this.field2 = 5;
             }}`,
+      },
+      {
+        code: `
+        class Outer {
+          caller() {
+            class Inner {
+              methodInner() {}
+              constructor() {}
+            }
+            return new Inner();
+          }
+          constructor() {
+            this.caller();
+          }
+        }`,
+        errors: [
+          {
+            messageId: 'classMethodsReadTopToBottom',
+            data: {
+              className: 'Outer',
+              actualMember: 'caller',
+              expectedMember: 'constructor',
+            },
+          },
+          {
+            messageId: 'classMethodsReadTopToBottom',
+            data: {
+              className: 'Inner',
+              actualMember: 'methodInner',
+              expectedMember: 'constructor',
+            },
+          },
+        ],
+        output: `
+        class Outer {constructor() {
+            this.caller();
+          }
+caller() {
+            class Inner {
+              methodInner() {}
+              constructor() {}
+            }
+            return new Inner();
+          }}`,
       },
       {
         code: `export class TestClass {
@@ -459,7 +551,16 @@ methodB() {
              */
           }
         }`,
-        errors: [{ messageId: 'classMethodsReadTopToBottom' }],
+        errors: [
+          {
+            messageId: 'classMethodsReadTopToBottom',
+            data: {
+              className: 'TestClass',
+              actualMember: 'methodD',
+              expectedMember: 'methodB',
+            },
+          },
+        ],
         output: `export class TestClass {public field1: string;
 public fooBar: string;
 private field2: number;
