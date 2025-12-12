@@ -323,17 +323,9 @@ const findMemoReference = (
       }
 
       if (
-        specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier &&
-        specifier.local.name === 'memo'
+        specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
+        specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier
       ) {
-        return 'memo';
-      }
-
-      if (specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
-        reactIdentifier = specifier.local.name;
-      }
-
-      if (specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
         reactIdentifier = specifier.local.name;
       }
     }
@@ -380,7 +372,9 @@ export const memoNestedReactComponents = createRule<Options, MessageIds>({
     ],
     messages: {
       memoizeNestedComponent:
-        'React component "{{componentName}}" is created inside {{hookName}}. Components defined in callbacks get new identities whenever the callback changes, which forces React to remount them and drop their state. Move this component into {{replacementHook}} and wrap it in memo() so its identity stays stable across renders.',
+      `What's wrong: React component "{{componentName}}" is created inside {{hookName}}.
+Why it matters: Components defined inside callbacks get new identities when the callback changes, causing React to remount them and drop their state and effects.
+How to fix: Create the component via {{replacementHook}} and wrap it in memo() so its identity stays stable across renders.`,
     },
   },
   defaultOptions: [{}],
@@ -453,6 +447,14 @@ export const memoNestedReactComponents = createRule<Options, MessageIds>({
               if (
                 node.callee.type !== AST_NODE_TYPES.MemberExpression ||
                 node.callee.object.type !== AST_NODE_TYPES.Identifier
+              ) {
+                return null;
+              }
+
+              if (
+                memoReference &&
+                (!memoReference.includes('.') ||
+                  memoReference !== `${node.callee.object.name}.memo`)
               ) {
                 return null;
               }

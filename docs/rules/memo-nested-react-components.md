@@ -64,6 +64,7 @@ const CustomButton = useMemo(
     [],
   );
   ```
+
 - `forwardRef` wrappers returned from `useCallback` are flagged because they still create a component inside a callback.
 - Event handlers or callbacks that do not return JSX are allowed.
 - Components already built with `useMemo`/`useDeepCompareMemo` and `memo()` are unaffected.

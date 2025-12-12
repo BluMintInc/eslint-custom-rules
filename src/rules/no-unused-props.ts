@@ -154,7 +154,9 @@ export const noUnusedProps = createRule({
     ) => {
       let current: TSESLint.Scope.Scope | null = scope;
       while (current) {
-        const variable = current.variables.find((variable) => variable.name === name);
+        const variable =
+          current.set?.get(name) ??
+          current.variables.find((variable) => variable.name === name);
         if (variable) {
           return variable;
         }
