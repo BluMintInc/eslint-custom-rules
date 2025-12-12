@@ -40,8 +40,9 @@ const DEFAULT_OPTIONS: Required<Options[0]> = {
   ignoreOverriddenGetters: false,
 };
 
-const BOOLEAN_PRODUCING_OPERATORS =
-  new Set<TSESTree.BinaryExpression['operator']>([
+const BOOLEAN_PRODUCING_OPERATORS = new Set<
+  TSESTree.BinaryExpression['operator']
+>([
   '===',
   '!==',
   '==',
@@ -52,7 +53,7 @@ const BOOLEAN_PRODUCING_OPERATORS =
   '<=',
   'in',
   'instanceof',
-  ]);
+]);
 
 export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
   name: 'enforce-boolean-naming-prefixes',

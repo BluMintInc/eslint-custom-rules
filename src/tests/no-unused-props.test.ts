@@ -109,6 +109,20 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
     },
     {
       code: `
+        type Props = { 'data-testid': string; label: string };
+        const Component = ({ 'data-testid': testId, label }: Props) => (
+          <div data-testid={testId}>{label}</div>
+        );
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
         type CardProps = { title: string; content: string };
         const Card = (props: CardProps) => (
           <div {...props}>
@@ -325,6 +339,25 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
           messageId: 'unusedProp',
           data: { propName: 'subtitle' },
           type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type Props = { 'aria-label': string; label: string };
+        const Component = ({ label }: Props) => <div>{label}</div>;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'aria-label' },
+          type: AST_NODE_TYPES.Literal,
         },
       ],
       filename: 'test.tsx',

@@ -108,6 +108,30 @@ export const noUnusedProps = createRule({
       return false;
     };
 
+    const isUnknownSpreadTypeContributingUsedProps = (
+      propsType: Record<string, TSESTree.Node> | undefined,
+      used: Set<string>,
+    ) => {
+      if (!propsType) {
+        return false;
+      }
+
+      // When spread props are unknown (imported/external), treat any destructured
+      // identifier that is not declared in the current props type as a signal
+      // that the spread type contributes used properties.
+      const knownPropNames = new Set(
+        Object.keys(propsType).filter((name) => !name.startsWith('...')),
+      );
+
+      for (const usedProp of used) {
+        if (!knownPropNames.has(usedProp)) {
+          return true;
+        }
+      }
+
+      return false;
+    };
+
     const shouldSkipSpreadType = (
       prop: string,
       hasRestSpread: boolean,
@@ -129,24 +153,7 @@ export const noUnusedProps = createRule({
         return isAnyPropFromSpreadTypeUsed(spreadTypeName, used);
       }
 
-      if (!propsType) {
-        return false;
-      }
-
-      // When spread props are unknown (imported/external), treat any destructured
-      // identifier that is not declared in the current props type as a signal
-      // that the spread type contributes used properties.
-      const knownPropNames = new Set(
-        Object.keys(propsType).filter((name) => !name.startsWith('...')),
-      );
-
-      for (const usedProp of used) {
-        if (!knownPropNames.has(usedProp)) {
-          return true;
-        }
-      }
-
-      return false;
+      return isUnknownSpreadTypeContributingUsedProps(propsType, used);
     };
 
     const shouldSkipPropFromSpreadType = (
@@ -314,6 +321,23 @@ export const noUnusedProps = createRule({
             return null;
           };
 
+          const getPropertySignatureName = (
+            member: TSESTree.TSPropertySignature,
+          ): string | null => {
+            if (member.key.type === AST_NODE_TYPES.Identifier) {
+              return member.key.name;
+            }
+
+            if (
+              member.key.type === AST_NODE_TYPES.Literal &&
+              typeof member.key.value === 'string'
+            ) {
+              return member.key.value;
+            }
+
+            return null;
+          };
+
           const addBaseTypeProps = (
             typeNode: TSESTree.TypeNode,
             shouldInclude: (name: string) => boolean = () => true,
@@ -346,8 +370,7 @@ export const noUnusedProps = createRule({
                 const matchingMember = node.members.find(
                   (member): member is TSESTree.TSPropertySignature =>
                     member.type === AST_NODE_TYPES.TSPropertySignature &&
-                    member.key.type === AST_NODE_TYPES.Identifier &&
-                    member.key.name === propertyName,
+                    getPropertySignatureName(member) === propertyName,
                 );
                 if (
                   matchingMember?.typeAnnotation &&
@@ -412,10 +435,12 @@ export const noUnusedProps = createRule({
               if (typeNode.type === AST_NODE_TYPES.TSTypeLiteral) {
                 typeNode.members.forEach((member) => {
                   if (
-                    member.type === AST_NODE_TYPES.TSPropertySignature &&
-                    member.key.type === AST_NODE_TYPES.Identifier
+                    member.type === AST_NODE_TYPES.TSPropertySignature
                   ) {
-                    addPropIfAllowed(member.key.name, member.key);
+                    const propName = getPropertySignatureName(member);
+                    if (propName) {
+                      addPropIfAllowed(propName, member.key);
+                    }
                   }
                 });
                 return;
@@ -660,6 +685,12 @@ export const noUnusedProps = createRule({
                 let restUsed = false;
                 param.properties.forEach((prop) => {
                   if (
+                    prop.type === AST_NODE_TYPES.Property &&
+                    prop.key.type === AST_NODE_TYPES.Literal &&
+                    typeof prop.key.value === 'string'
+                  ) {
+                    used.add(prop.key.value);
+                  } else if (
                     prop.type === AST_NODE_TYPES.Property &&
                     prop.key.type === AST_NODE_TYPES.Identifier
                   ) {
