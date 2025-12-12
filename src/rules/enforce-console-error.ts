@@ -21,7 +21,7 @@ export const enforceConsoleError = createRule<[], MessageIds>({
       missingConsoleWarn:
         'useAlertDialog call with severity "{{severity}}" shows a warning dialog but this function never logs with {{consoleMethod}}. Without the log the warning is invisible to observability, making degraded states hard to diagnose. Add a {{consoleMethod}} call in this function scope before or after the open() call so the dialog is paired with an observable warning trail.',
       missingConsoleBoth:
-        'useAlertDialog call uses dynamic severity, so the function may show errors or warnings. It is missing {{missingMethods}} in this function scope, leaving {{missingPaths}} without observability breadcrumbs. Add {{missingMethods}} before or after the open() call so each severity outcome leaves an observable log trail.',
+        'useAlertDialog call uses dynamic severity, so runtime may render an error or a warning dialog. It is missing {{missingMethods}} in this function scope, leaving one or more runtime severity branches (error or warning) without observability breadcrumbs: {{missingPaths}}. Branch on the severity value and add the matching console method before or after the open() call (console.error for error branches, console.warn for warning branches), as in the conditional pattern shown in the rule docs, so each branch leaves a single appropriate log trail instead of double-logging both methods.',
     },
     schema: [],
   },
