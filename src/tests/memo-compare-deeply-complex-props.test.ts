@@ -106,6 +106,16 @@ export const Wrapped = React.memo(Comp, () => true);
 `,
       },
       {
+        filename: 'src/components/ShadowedUndefinedComparator.tsx',
+        code: `
+import { memo } from 'react';
+const undefined = (prev: unknown, next: unknown) => prev === next;
+type Props = { config: { theme: string } };
+const Comp = ({ config }: Props) => <div>{config.theme}</div>;
+export const Wrapped = memo(Comp, undefined);
+`,
+      },
+      {
         filename: 'src/components/CustomMemoCompareDeeply.tsx',
         code: `
 import { memo as customMemo, compareDeeply } from 'src/util/memo';
@@ -305,6 +315,23 @@ import { compareDeeply } from 'src/util/memo';
 import { memo } from 'react';
 type Props = { data: { id: string } };
 export const Wrapped = memo(({ data }: Props) => <span>{data.id}</span>, compareDeeply('data'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      {
+        filename: 'src/components/SatisfiesExpression.tsx',
+        code: `
+import React, { memo } from 'react';
+type Props = { settings: { theme: string } };
+const Comp: React.FC<Props> = ({ settings }) => <div>{settings.theme}</div>;
+export const Wrapped = memo((Comp satisfies React.FC<Props>));
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import React, { memo } from 'react';
+type Props = { settings: { theme: string } };
+const Comp: React.FC<Props> = ({ settings }) => <div>{settings.theme}</div>;
+export const Wrapped = memo((Comp satisfies React.FC<Props>), compareDeeply('settings'));
 `,
         errors: [{ messageId: 'useCompareDeeply' }],
       },

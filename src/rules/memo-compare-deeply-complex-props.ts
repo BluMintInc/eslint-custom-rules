@@ -44,20 +44,13 @@ function isUtilMemoModulePath(path: string): boolean {
 function unwrapExpression(expression: TSESTree.Expression): TSESTree.Expression {
   let node: TSESTree.Expression = expression;
   // Unwrap harmless wrappers so detection treats casted/parenthesized expressions the same.
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    if (
-      node.type === AST_NODE_TYPES.TSAsExpression ||
-      node.type === AST_NODE_TYPES.TSTypeAssertion
-    ) {
-      node = node.expression;
-      continue;
-    }
-    if (node.type === AST_NODE_TYPES.TSNonNullExpression) {
-      node = node.expression;
-      continue;
-    }
-    break;
+  while (
+    node.type === AST_NODE_TYPES.TSAsExpression ||
+    node.type === AST_NODE_TYPES.TSTypeAssertion ||
+    node.type === AST_NODE_TYPES.TSNonNullExpression ||
+    node.type === AST_NODE_TYPES.TSSatisfiesExpression
+  ) {
+    node = node.expression;
   }
   return node;
 }
@@ -99,12 +92,31 @@ function componentDisplayName(expr: TSESTree.Expression): string | null {
   return null;
 }
 
-function isNullishComparatorArgument(arg: TSESTree.CallExpressionArgument): boolean {
+function isUndefinedShadowed(scope: TSESLint.Scope.Scope | null): boolean {
+  let currentScope: TSESLint.Scope.Scope | null = scope;
+  while (currentScope) {
+    if (
+      currentScope.variables.some(
+        (variable) => variable.name === 'undefined' && variable.defs.length > 0,
+      )
+    ) {
+      return true;
+    }
+    currentScope = (currentScope.upper as TSESLint.Scope.Scope | null) ?? null;
+  }
+  return false;
+}
+
+function isNullishComparatorArgument(
+  arg: TSESTree.CallExpressionArgument,
+  scope?: TSESLint.Scope.Scope,
+): boolean {
   if (arg.type === AST_NODE_TYPES.SpreadElement) return false;
 
   const node = unwrapExpression(arg as TSESTree.Expression);
 
   if (node.type === AST_NODE_TYPES.Identifier && node.name === 'undefined') {
+    if (scope && isUndefinedShadowed(scope)) return false;
     return true;
   }
 
@@ -119,10 +131,13 @@ function isNullishComparatorArgument(arg: TSESTree.CallExpressionArgument): bool
   return false;
 }
 
-function isComparatorProvided(arg: TSESTree.CallExpressionArgument | undefined): boolean {
+function isComparatorProvided(
+  arg: TSESTree.CallExpressionArgument | undefined,
+  scope?: TSESLint.Scope.Scope,
+): boolean {
   if (!arg) return false;
   if (arg.type === AST_NODE_TYPES.SpreadElement) return true;
-  return !isNullishComparatorArgument(arg);
+  return !isNullishComparatorArgument(arg, scope);
 }
 
 function rangeWithParentheses(
@@ -492,6 +507,59 @@ function getTypeFromSymbol(
   return checker.getTypeOfSymbolAtLocation(symbol, decl ?? tsNode);
 }
 
+function extractPropertyDeclaration(
+  prop: import('typescript').Symbol,
+): import('typescript').Declaration | undefined {
+  return prop.valueDeclaration ??
+    (prop.declarations?.[0] as import('typescript').Declaration | undefined);
+}
+
+function extractAnnotationType(
+  propDeclaration?: import('typescript').Declaration,
+): import('typescript').TypeNode | undefined {
+  if (!propDeclaration) return undefined;
+  if ('type' in propDeclaration) {
+    return (propDeclaration as { type?: import('typescript').TypeNode }).type;
+  }
+  return undefined;
+}
+
+function shouldTreatAnyAsComplex(
+  prop: import('typescript').Symbol,
+  propType: Type,
+  ts: typeof import('typescript'),
+  treatAnyAsComplex: boolean,
+  parentTypeFlags: number,
+): boolean {
+  if (!(propType.flags & ts.TypeFlags.Any)) return false;
+  if (treatAnyAsComplex) return true;
+
+  const propDeclaration = extractPropertyDeclaration(prop);
+  const annotationType = extractAnnotationType(propDeclaration);
+
+  return (
+    (annotationType && annotationType.kind !== ts.SyntaxKind.AnyKeyword) ||
+    (!annotationType && Boolean(parentTypeFlags & ts.TypeFlags.Object))
+  );
+}
+
+function isPropertyComplex(
+  prop: import('typescript').Symbol,
+  checker: TypeChecker,
+  tsNode: import('typescript').Node,
+  ts: typeof import('typescript'),
+  treatAnyAsComplex: boolean,
+  parentTypeFlags: number,
+): boolean {
+  const propType = getTypeFromSymbol(prop, checker, tsNode);
+
+  if (isComplexType(ts, propType, checker)) {
+    return true;
+  }
+
+  return shouldTreatAnyAsComplex(prop, propType, ts, treatAnyAsComplex, parentTypeFlags);
+}
+
 function getComplexPropertiesFromType(
   type: Type,
   checker: TypeChecker,
@@ -506,25 +574,8 @@ function getComplexPropertiesFromType(
   for (const prop of properties) {
     if (prop.name === 'children') continue;
 
-    const propType = getTypeFromSymbol(prop, checker, tsNode);
-
-    const isAnyType = Boolean(propType.flags & ts.TypeFlags.Any);
-    const propDeclaration =
-      prop.valueDeclaration ??
-      (prop.declarations?.[0] as import('typescript').Declaration | undefined);
-    const annotationType =
-      propDeclaration &&
-      'type' in propDeclaration &&
-      (propDeclaration as { type?: import('typescript').TypeNode }).type;
-    const treatAnyOverride =
-      isAnyType &&
-      !treatAnyAsComplex &&
-      ((annotationType && annotationType.kind !== ts.SyntaxKind.AnyKeyword) ||
-        (!annotationType && Boolean(parentTypeFlags & ts.TypeFlags.Object)));
-
     if (
-      isComplexType(ts, propType, checker) ||
-      ((treatAnyAsComplex || treatAnyOverride) && isAnyType)
+      isPropertyComplex(prop, checker, tsNode, ts, treatAnyAsComplex, parentTypeFlags)
     ) {
       complexProps.push(prop.name);
     }
@@ -767,17 +818,18 @@ function resolveComponentName(
 function buildMemoFixes(
   sourceCode: TSESLint.SourceCode,
   fixer: TSESLint.RuleFixer,
-  componentArg: TSESTree.Expression,
+  callExpression: TSESTree.CallExpression,
   comparatorArg: TSESTree.CallExpressionArgument | undefined,
   propsCall: string,
   memoSource: string,
+  scope: TSESLint.Scope.Scope,
 ): TSESLint.RuleFix[] {
   const fixes: TSESLint.RuleFix[] = [];
   const importResult = ensureCompareDeeplyImportFixes(sourceCode, fixer, memoSource);
   if (
     comparatorArg &&
     comparatorArg.type !== AST_NODE_TYPES.SpreadElement &&
-    isNullishComparatorArgument(comparatorArg)
+    isNullishComparatorArgument(comparatorArg, scope)
   ) {
     fixes.push(
       fixer.replaceTextRange(
@@ -786,9 +838,15 @@ function buildMemoFixes(
       ),
     );
   } else {
-    fixes.push(
-      fixer.insertTextAfter(componentArg, `, ${importResult.localName}(${propsCall})`),
-    );
+    const closingParen = sourceCode.getLastToken(callExpression);
+    if (closingParen) {
+      fixes.push(
+        fixer.insertTextBefore(
+          closingParen,
+          `, ${importResult.localName}(${propsCall})`,
+        ),
+      );
+    }
   }
   fixes.push(...importResult.fixes);
   return fixes;
@@ -949,7 +1007,7 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
         );
         if (!componentTargets) return;
 
-        if (isComparatorProvided(comparatorArg)) return;
+        if (isComparatorProvided(comparatorArg, currentScope)) return;
 
         const complexProps = collectComplexPropsForTargets(componentTargets, (expr) =>
           collectComplexProps(expr, sourceCode, complexPropsCache),
@@ -977,10 +1035,11 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
             return buildMemoFixes(
               sourceCode,
               fixer,
-              componentArg,
+              node,
               comparatorArg,
               propsCall,
               memoCall.source,
+              currentScope,
             );
           },
         });
