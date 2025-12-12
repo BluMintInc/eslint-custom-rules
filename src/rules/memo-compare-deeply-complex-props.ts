@@ -136,7 +136,15 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
       ts: typeof import('typescript'),
       type: Type,
       checker: TypeChecker,
-      visited: Set<Type> = new Set<Type>(),
+    ): boolean {
+      return isComplexTypeInternal(ts, type, checker, new Set<Type>());
+    }
+
+    function isComplexTypeInternal(
+      ts: typeof import('typescript'),
+      type: Type,
+      checker: TypeChecker,
+      visited: Set<Type>,
     ): boolean {
       if (visited.has(type)) return false;
       visited.add(type);
@@ -146,13 +154,13 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
       if (flags & ts.TypeFlags.Union) {
         const unionType = type as UnionType;
         return unionType.types.some((t) =>
-          isComplexType(ts, t, checker, visited),
+          isComplexTypeInternal(ts, t, checker, visited),
         );
       }
       if (flags & ts.TypeFlags.Intersection) {
         const intersectionType = type as IntersectionType;
         return intersectionType.types.some((t) =>
-          isComplexType(ts, t, checker, visited),
+          isComplexTypeInternal(ts, t, checker, visited),
         );
       }
       if (
@@ -173,7 +181,9 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
 
       if (flags & ts.TypeFlags.TypeParameter) {
         const constraint = type.getConstraint?.();
-        return constraint ? isComplexType(ts, constraint, checker, visited) : false;
+        return constraint
+          ? isComplexTypeInternal(ts, constraint, checker, visited)
+          : false;
       }
 
       if (type.getCallSignatures?.().length) return false;
