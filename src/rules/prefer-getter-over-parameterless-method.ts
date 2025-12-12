@@ -184,9 +184,9 @@ export const preferGetterOverParameterlessMethod = createRule<
     ],
     messages: {
       preferGetter:
-        'Method "{{name}}" has no parameters and returns a value, which reads like a computed property. Use a getter (e.g., "get {{suggestedName}}()") to signal property access and avoid call-site parentheses.',
+        'Method "{{name}}" is a parameterless sync method that returns a value → Calling it like an action hides that it behaves like a computed property and risks callers forgetting the parentheses → Convert it to a getter such as "get {{suggestedName}}()".',
       preferGetterSideEffect:
-        'Method "{{name}}" looks like a computed value but {{reason}}. Keep it as a method or remove the side effects before converting to "get {{suggestedName}}()".',
+        'Method "{{name}}" looks like a computed value → But {{reason}}, so turning it into a getter would run side effects on property access → Keep it as a method, or remove the side effects before converting to "get {{suggestedName}}()".',
     },
   },
   defaultOptions: [DEFAULT_OPTIONS],
@@ -301,9 +301,17 @@ export const preferGetterOverParameterlessMethod = createRule<
           if (
             callee.type === AST_NODE_TYPES.MemberExpression &&
             callee.property.type === AST_NODE_TYPES.Identifier &&
-            ['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse'].includes(
-              callee.property.name,
-            )
+            [
+              'push',
+              'pop',
+              'shift',
+              'unshift',
+              'splice',
+              'sort',
+              'reverse',
+              'fill',
+              'copyWithin',
+            ].includes(callee.property.name)
           ) {
             return `it calls mutating method ${callee.property.name}()`;
           }
@@ -322,6 +330,9 @@ export const preferGetterOverParameterlessMethod = createRule<
           return false;
         }
         if (!isVoidishType(returnType)) {
+          return true;
+        }
+        if (!config.ignoreVoidReturn && isVoidishType(returnType)) {
           return true;
         }
       }
@@ -392,6 +403,19 @@ export const preferGetterOverParameterlessMethod = createRule<
       }
     }
 
+    function trackMemberReference(
+      member: TSESTree.MemberExpression,
+      callUsedNames: Set<string>,
+    ) {
+      if (member.computed || member.property.type !== AST_NODE_TYPES.Identifier) {
+        return;
+      }
+
+      if (member.object.type === AST_NODE_TYPES.ThisExpression) {
+        callUsedNames.add(member.property.name);
+      }
+    }
+
     const callUsedNames = new Set<string>();
     const candidates: Array<{
       node: MethodLikeDefinition;
@@ -410,6 +434,14 @@ export const preferGetterOverParameterlessMethod = createRule<
           if (expression.type === AST_NODE_TYPES.MemberExpression) {
             trackMemberCall(expression, callUsedNames);
           }
+        }
+      },
+      MemberExpression(node: TSESTree.MemberExpression) {
+        trackMemberReference(node, callUsedNames);
+      },
+      ChainExpression(node: TSESTree.ChainExpression) {
+        if (node.expression.type === AST_NODE_TYPES.MemberExpression) {
+          trackMemberReference(node.expression, callUsedNames);
         }
       },
       'MethodDefinition, TSAbstractMethodDefinition'(

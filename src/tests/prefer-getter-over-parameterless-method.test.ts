@@ -306,6 +306,26 @@ ruleTesterTs.run(
       },
       {
         code: `
+        class Buffer {
+          refill() {
+            return this.values.fill('x');
+          }
+        }
+        `,
+        errors: [
+          {
+            messageId: 'preferGetterSideEffect',
+            data: {
+              name: 'refill',
+              suggestedName: 'refill',
+              reason: 'it calls mutating method fill()',
+            },
+          },
+        ],
+        output: null,
+      },
+      {
+        code: `
         class Tracker {
           count() {
             const next = ++this.counter;
@@ -627,6 +647,65 @@ ruleTesterTs.run(
 
           get invoke() {
             return this.value.apply(this);
+          }
+        }
+        `,
+      },
+      {
+        code: `
+        class Storer {
+          getValue() {
+            return this.value;
+          }
+
+          keep() {
+            const fn = this.getValue;
+            return fn();
+          }
+        }
+        `,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'getValue', suggestedName: 'value' },
+          },
+          {
+            messageId: 'preferGetter',
+            data: { name: 'keep', suggestedName: 'keep' },
+          },
+        ],
+        output: `
+        class Storer {
+          getValue() {
+            return this.value;
+          }
+
+          get keep() {
+            const fn = this.getValue;
+            return fn();
+          }
+        }
+        `,
+      },
+      {
+        code: `
+        class VoidReturn {
+          result(): void {
+            return;
+          }
+        }
+        `,
+        options: [{ ignoreVoidReturn: false }],
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'result', suggestedName: 'result' },
+          },
+        ],
+        output: `
+        class VoidReturn {
+          get result(): void {
+            return;
           }
         }
         `,
