@@ -448,6 +448,40 @@ export const Wrapped = memo(Comp, compareDeeply('config'));
         errors: [{ messageId: 'useCompareDeeply' }],
       },
       {
+        filename: 'src/components/UndefinedAsAnyComparator.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { config: { theme: string } };
+const Comp = ({ config }: Props) => <div>{config.theme}</div>;
+export const Wrapped = memo(Comp, (undefined as any));
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Props = { config: { theme: string } };
+const Comp = ({ config }: Props) => <div>{config.theme}</div>;
+export const Wrapped = memo(Comp, compareDeeply('config'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      {
+        filename: 'src/components/ParenthesizedNullComparator.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { config: { theme: string } };
+const Comp = ({ config }: Props) => <div>{config.theme}</div>;
+export const Wrapped = memo(Comp, (null));
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Props = { config: { theme: string } };
+const Comp = ({ config }: Props) => <div>{config.theme}</div>;
+export const Wrapped = memo(Comp, compareDeeply('config'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      {
         filename: 'src/components/CompareDeeplyNameCollision.tsx',
         code: `
 import { memo } from 'react';
@@ -463,6 +497,86 @@ const compareDeeply = () => false;
 type Props = { config: { theme: string } };
 const Comp = ({ config }: Props) => <div>{config.theme}</div>;
 export const Wrapped = memo(Comp, compareDeeply2('config'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      {
+        filename: 'src/components/ForwardRefWrapper.tsx',
+        code: `
+import React, { memo } from 'react';
+type Props = { settings: { theme: string } };
+const Base = React.forwardRef<HTMLDivElement, Props>(({ settings }, ref) => (
+  <div ref={ref}>{settings.theme}</div>
+));
+export const Wrapped = memo(Base);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import React, { memo } from 'react';
+type Props = { settings: { theme: string } };
+const Base = React.forwardRef<HTMLDivElement, Props>(({ settings }, ref) => (
+  <div ref={ref}>{settings.theme}</div>
+));
+export const Wrapped = memo(Base, compareDeeply('settings'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      {
+        filename: 'src/components/BrandedTypeProp.tsx',
+        code: `
+import { memo } from 'react';
+type UserId = string & { readonly __brand: 'UserId' };
+type Props = { userId: UserId };
+const Comp = ({ userId }: Props) => <div>{userId}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type UserId = string & { readonly __brand: 'UserId' };
+type Props = { userId: UserId };
+const Comp = ({ userId }: Props) => <div>{userId}</div>;
+export const Wrapped = memo(Comp, compareDeeply('userId'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      {
+        filename: 'src/components/ClassInstanceProp.tsx',
+        code: `
+import { memo } from 'react';
+class Config {
+  mode = 'dark';
+}
+type Props = { config: Config };
+const Comp = ({ config }: Props) => <div>{config.mode}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+class Config {
+  mode = 'dark';
+}
+type Props = { config: Config };
+const Comp = ({ config }: Props) => <div>{config.mode}</div>;
+export const Wrapped = memo(Comp, compareDeeply('config'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      {
+        filename: 'src/components/UnionMixedProp.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { payload: { value: number } | string };
+const Comp = ({ payload }: Props) => <div>{String(payload)}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Props = { payload: { value: number } | string };
+const Comp = ({ payload }: Props) => <div>{String(payload)}</div>;
+export const Wrapped = memo(Comp, compareDeeply('payload'));
 `,
         errors: [{ messageId: 'useCompareDeeply' }],
       },

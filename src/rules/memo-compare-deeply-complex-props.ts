@@ -8,6 +8,31 @@ function isUtilMemoModulePath(path: string): boolean {
   return /(?:^|\/|\\)util\/memo$/.test(path);
 }
 
+function unwrapExpression(expression: TSESTree.Expression): TSESTree.Expression {
+  let node: TSESTree.Expression = expression;
+  // Unwrap harmless wrappers so detection treats casted/parenthesized expressions the same.
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    if (
+      node.type === AST_NODE_TYPES.TSAsExpression ||
+      node.type === AST_NODE_TYPES.TSTypeAssertion
+    ) {
+      node = node.expression;
+      continue;
+    }
+    if (node.type === AST_NODE_TYPES.TSNonNullExpression) {
+      node = node.expression;
+      continue;
+    }
+    if ((node as { type: string }).type === 'ParenthesizedExpression') {
+      node = (node as { expression: TSESTree.Expression }).expression;
+      continue;
+    }
+    break;
+  }
+  return node;
+}
+
 function escapeStringForCodeGeneration(value: string): string {
   const escaped = value
     .replace(/\\/g, '\\\\')
@@ -33,7 +58,7 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
     schema: [],
     messages: {
       useCompareDeeply:
-        'Memoized component "{{componentName}}" receives complex prop(s) {{propsList}} but memo uses shallow reference comparison. Object and array props create new references on every render, so shallow compare re-renders even when values are identical. Pass compareDeeply({{propsCall}}) as memo\'s second argument to compare these props by value and avoid unnecessary re-renders.',
+        "What's wrong: Memoized component \"{{componentName}}\" receives complex prop(s) {{propsList}} but memo still uses shallow reference comparison. Why it matters: Objects and arrays are recreated on each render so shallow compare treats them as \"changed\" even when values are stable, triggering avoidable re-renders. How to fix: Pass compareDeeply({{propsCall}}) as memo's second argument to compare those props by value and keep the component memoized.",
     },
   },
   defaultOptions: [],
@@ -42,22 +67,64 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
     const memoNamespaces = new Map<string, string>();
     const sourceCode = context.getSourceCode();
     const complexPropsCache = new WeakMap<TSESTree.Expression, string[]>();
+    const componentInitializers = new Map<string, TSESTree.Expression>();
+
+    function rangeWithParentheses(node: TSESTree.Expression): TSESTree.Range {
+      const previous = sourceCode.getTokenBefore(node);
+      const next = sourceCode.getTokenAfter(node);
+      if (previous?.value === '(' && next?.value === ')') {
+        return [previous.range[0], next.range[1]];
+      }
+      return node.range;
+    }
+
+    function isComponentExpression(expr: TSESTree.Expression): boolean {
+      return (
+        expr.type === AST_NODE_TYPES.Identifier ||
+        expr.type === AST_NODE_TYPES.FunctionExpression ||
+        expr.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+        expr.type === AST_NODE_TYPES.CallExpression ||
+        expr.type === AST_NODE_TYPES.MemberExpression
+      );
+    }
+
+    function componentDisplayName(expr: TSESTree.Expression): string | null {
+      if (expr.type === AST_NODE_TYPES.Identifier) return expr.name;
+      if (expr.type === AST_NODE_TYPES.FunctionExpression && expr.id) {
+        return expr.id.name;
+      }
+      if (
+        expr.type === AST_NODE_TYPES.MemberExpression &&
+        !expr.computed &&
+        expr.property.type === AST_NODE_TYPES.Identifier
+      ) {
+        return expr.property.name;
+      }
+      return null;
+    }
 
     function isNullishComparatorArgument(
       arg: TSESTree.CallExpressionArgument,
     ): boolean {
+      if (arg.type === AST_NODE_TYPES.SpreadElement) return false;
+
+      const node = unwrapExpression(arg as TSESTree.Expression);
+
       if (
-        arg.type === AST_NODE_TYPES.Identifier &&
-        arg.name === 'undefined'
+        node.type === AST_NODE_TYPES.Identifier &&
+        node.name === 'undefined'
       ) {
         return true;
       }
 
-      if (arg.type === AST_NODE_TYPES.Literal && arg.value === null) {
+      if (node.type === AST_NODE_TYPES.Literal && node.value === null) {
         return true;
       }
 
-      if (arg.type === AST_NODE_TYPES.UnaryExpression && arg.operator === 'void') {
+      if (
+        node.type === AST_NODE_TYPES.UnaryExpression &&
+        node.operator === 'void'
+      ) {
         return true;
       }
 
@@ -100,6 +167,15 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
             }
           }
         }
+      }
+    }
+
+    function recordComponentInitializer(node: TSESTree.VariableDeclarator): void {
+      if (
+        node.id.type === AST_NODE_TYPES.Identifier &&
+        node.init
+      ) {
+        componentInitializers.set(node.id.name, node.init as TSESTree.Expression);
       }
     }
 
@@ -226,6 +302,46 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
       const tsNode = services.esTreeNodeToTSNodeMap.get(componentExpr);
       if (!tsNode) return [];
 
+      if (
+        (componentExpr.type === AST_NODE_TYPES.FunctionExpression ||
+          componentExpr.type === AST_NODE_TYPES.ArrowFunctionExpression) &&
+        componentExpr.params[0]
+      ) {
+        const paramTsNode = services.esTreeNodeToTSNodeMap.get(
+          componentExpr.params[0],
+        );
+        if (paramTsNode) {
+          const paramType = checker.getTypeAtLocation(paramTsNode);
+          if (paramType.flags & ts.TypeFlags.Any) {
+            const parentCall =
+              paramTsNode.parent && ts.isCallExpression(paramTsNode.parent)
+                ? paramTsNode.parent
+                : undefined;
+            const propsTypeArg = parentCall?.typeArguments?.[1];
+            if (propsTypeArg) {
+              const typeFromArg = checker.getTypeFromTypeNode(propsTypeArg);
+              return getComplexPropertiesFromType(
+                typeFromArg,
+                checker,
+                propsTypeArg,
+                ts,
+                true,
+                typeFromArg.flags ?? 0,
+              );
+            }
+          }
+          const treatAnyAsComplex = Boolean(paramType.flags & ts.TypeFlags.Any);
+          return getComplexPropertiesFromType(
+            paramType,
+            checker,
+            paramTsNode,
+            ts,
+            treatAnyAsComplex,
+            paramType.flags ?? 0,
+          );
+        }
+      }
+
       const componentType = checker.getTypeAtLocation(tsNode);
       const signatures = componentType.getCallSignatures?.() ?? [];
       const complexProps = new Set<string>();
@@ -255,7 +371,14 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
       const propsSymbol = params[0];
       const propsType = getTypeFromSymbol(propsSymbol, checker, tsNode);
 
-      return getComplexPropertiesFromType(propsType, checker, tsNode, ts);
+      return getComplexPropertiesFromType(
+        propsType,
+        checker,
+        tsNode,
+        ts,
+        false,
+        propsType.flags ?? 0,
+      );
     }
 
     function getTypeFromSymbol(
@@ -277,6 +400,8 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
       checker: TypeChecker,
       tsNode: import('typescript').Node,
       ts: typeof import('typescript'),
+      treatAnyAsComplex = false,
+      parentTypeFlags = 0,
     ): string[] {
       const properties = checker.getPropertiesOfType(type);
       const complexProps: string[] = [];
@@ -286,7 +411,26 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
 
         const propType = getTypeFromSymbol(prop, checker, tsNode);
 
-        if (isComplexType(ts, propType, checker)) {
+        const isAnyType = Boolean(propType.flags & ts.TypeFlags.Any);
+        const propDeclaration =
+          prop.valueDeclaration ?? (prop.declarations?.[0] as
+            | import('typescript').Declaration
+            | undefined);
+        const annotationType =
+          propDeclaration &&
+          'type' in propDeclaration &&
+          (propDeclaration as { type?: import('typescript').TypeNode }).type;
+        const treatAnyOverride =
+          isAnyType &&
+          !treatAnyAsComplex &&
+          ((annotationType &&
+            annotationType.kind !== ts.SyntaxKind.AnyKeyword) ||
+            (!annotationType && Boolean(parentTypeFlags & ts.TypeFlags.Object)));
+
+        if (
+          isComplexType(ts, propType, checker) ||
+          ((treatAnyAsComplex || treatAnyOverride) && isAnyType)
+        ) {
           complexProps.push(prop.name);
         }
       }
@@ -577,6 +721,7 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
 
     return {
       ImportDeclaration: recordImport,
+      VariableDeclarator: recordComponentInitializer,
       CallExpression(node) {
         const memoCall = isMemoCall(node);
         if (!memoCall) return;
@@ -586,29 +731,82 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
 
         const componentArg = node.arguments[0];
         const comparatorArg = node.arguments[1];
+        if (componentArg.type === AST_NODE_TYPES.SpreadElement) return;
 
-        if (
-          componentArg.type !== AST_NODE_TYPES.Identifier &&
-          componentArg.type !== AST_NODE_TYPES.FunctionExpression &&
-          componentArg.type !== AST_NODE_TYPES.ArrowFunctionExpression
-        ) {
-          return;
-        }
+        const unwrappedComponent = unwrapExpression(componentArg);
+        const initializerExpression =
+          unwrappedComponent.type === AST_NODE_TYPES.Identifier
+            ? componentInitializers.get(unwrappedComponent.name)
+            : null;
+        const unwrappedInitializer = initializerExpression
+          ? unwrapExpression(initializerExpression)
+          : null;
+        const initializerWrappedCandidate =
+          unwrappedInitializer &&
+          unwrappedInitializer.type === AST_NODE_TYPES.CallExpression &&
+          unwrappedInitializer.arguments.length > 0 &&
+          unwrappedInitializer.arguments[0]?.type !== AST_NODE_TYPES.SpreadElement
+            ? unwrapExpression(
+                unwrappedInitializer.arguments[0] as TSESTree.Expression,
+              )
+            : null;
+        const wrappedInnerCandidate =
+          unwrappedComponent.type === AST_NODE_TYPES.CallExpression &&
+          unwrappedComponent.arguments.length > 0 &&
+          unwrappedComponent.arguments[0]?.type !== AST_NODE_TYPES.SpreadElement
+            ? unwrapExpression(
+                unwrappedComponent.arguments[0] as TSESTree.Expression,
+              )
+            : null;
+        const analysisTarget =
+          (initializerWrappedCandidate &&
+          isComponentExpression(initializerWrappedCandidate)
+            ? initializerWrappedCandidate
+            : null) ??
+          (unwrappedInitializer && isComponentExpression(unwrappedInitializer)
+            ? unwrappedInitializer
+            : null) ??
+          (isComponentExpression(unwrappedComponent) ? unwrappedComponent : null) ??
+          (wrappedInnerCandidate && isComponentExpression(wrappedInnerCandidate)
+            ? wrappedInnerCandidate
+            : null);
+        if (!analysisTarget) return;
 
         if (isComparatorProvided(comparatorArg)) return;
 
-        const complexProps = collectComplexProps(componentArg);
+        const preferredAnalysisTarget =
+          initializerWrappedCandidate ??
+          wrappedInnerCandidate ??
+          analysisTarget;
+
+        let complexProps = collectComplexProps(preferredAnalysisTarget);
+        if (
+          complexProps.length === 0 &&
+          preferredAnalysisTarget !== analysisTarget
+        ) {
+          complexProps = collectComplexProps(analysisTarget);
+        }
+        if (
+          complexProps.length === 0 &&
+          wrappedInnerCandidate &&
+          wrappedInnerCandidate !== preferredAnalysisTarget
+        ) {
+          complexProps = collectComplexProps(wrappedInnerCandidate);
+        }
         if (complexProps.length === 0) return;
 
         const componentName =
-          componentArg.type === AST_NODE_TYPES.Identifier
-            ? componentArg.name
-            : componentArg.type === AST_NODE_TYPES.FunctionExpression &&
-              componentArg.id
-            ? componentArg.id.name
-            : 'component';
+          (initializerWrappedCandidate
+            ? componentDisplayName(initializerWrappedCandidate)
+            : null) ??
+          (unwrappedInitializer ? componentDisplayName(unwrappedInitializer) : null) ??
+          componentDisplayName(unwrappedComponent) ??
+          (wrappedInnerCandidate ? componentDisplayName(wrappedInnerCandidate) : null) ??
+          'component';
 
-        const propsList = `[${complexProps.join(', ')}]`;
+        const propsList = `[${complexProps
+          .map((prop) => escapeStringForCodeGeneration(prop))
+          .join(', ')}]`;
         const propsCall = complexProps
           .map((prop) => escapeStringForCodeGeneration(prop))
           .join(', ');
@@ -633,8 +831,8 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
               isNullishComparatorArgument(comparatorArg)
             ) {
               fixes.push(
-                fixer.replaceText(
-                  comparatorArg,
+                fixer.replaceTextRange(
+                  rangeWithParentheses(comparatorArg as TSESTree.Expression),
                   `${importResult.localName}(${propsCall})`,
                 ),
               );

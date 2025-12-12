@@ -62,6 +62,7 @@ export const UserProfileCardMemo = memo(
 - Already supplying a comparison function (including `compareDeeply`) — rule does not report.
 - Props that are only primitives or callbacks — rule does not report because shallow comparison is sufficient.
 - `children` prop — ignored to avoid warnings on intentionally dynamic children.
+- Higher-order wrappers (e.g., `memo(forwardRef(...))`, `memo(connect(...)(Component))`) are analyzed; the comparator is added after the wrapped expression.
 - Immutable data structures — still reported; add an inline disable if deep comparison is not desired for that component.
 
 ## Version
