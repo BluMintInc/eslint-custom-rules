@@ -189,7 +189,7 @@ function Component() {
               output:
                 '\n' +
                 'function Component() {\n' +
-                '  const options = useMemo(() => ({ debounce: 50 }), [/* __TODO_ADD_DEPENDENCIES__ */]);\n' +
+                '  const options = useMemo(() => ({ debounce: 50 }), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);\n' +
                 '  return <div>{options.debounce}</div>;\n' +
                 '}\n' +
                 '      ',
@@ -220,7 +220,7 @@ function Component({ onClick }) {
               output:
                 '\n' +
                 'function Component({ onClick }) {\n' +
-                '  const handleClick = useCallback(() => onClick(), [/* __TODO_ADD_DEPENDENCIES__ */]);\n' +
+                '  const handleClick = useCallback(() => onClick(), [/* __TODO_MEMOIZATION_DEPENDENCIES__ */]);\n' +
                 '  return <button onClick={handleClick}>Click</button>;\n' +
                 '}\n' +
                 '      ',

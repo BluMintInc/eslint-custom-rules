@@ -53,26 +53,46 @@ const SAFE_HOOK_ARGUMENTS = new Set([
   'useId',
 ]);
 
-const TODO_REPLACE_WITH_ACTUAL_DEPENDENCIES = '__TODO_ADD_DEPENDENCIES__';
-const TODO_DEPS_COMMENT = `/* ${TODO_REPLACE_WITH_ACTUAL_DEPENDENCIES} */`;
+const MEMOIZATION_DEPS_TODO_PLACEHOLDER = '__TODO_MEMOIZATION_DEPENDENCIES__';
+const TODO_DEPS_COMMENT = `/* ${MEMOIZATION_DEPS_TODO_PLACEHOLDER} */`;
 const PARENTHESIZED_EXPRESSION_TYPE =
   (AST_NODE_TYPES as Record<string, string>).ParenthesizedExpression ??
   'ParenthesizedExpression';
 
+/**
+ * Detects React hook-style identifiers prefixed with "use".
+ * @param name Candidate identifier name.
+ * @returns True when the name follows the hook naming convention.
+ */
 function isHookName(name: string | null | undefined): name is string {
   return !!name && /^use[A-Z]/.test(name);
 }
 
+/**
+ * Detects PascalCase identifiers commonly used for React components.
+ * @param name Candidate identifier name.
+ * @returns True when the name begins with an uppercase character.
+ */
 function isComponentName(name: string | null | undefined): name is string {
   return !!name && /^[A-Z]/.test(name);
 }
 
+/**
+ * Type guard for parenthesized expressions to unwrap safely.
+ * @param node Node to evaluate.
+ * @returns True when the node is a parenthesized expression wrapper.
+ */
 function isParenthesizedExpression(
   node: TSESTree.Node,
 ): node is TSESTree.Node & { expression: TSESTree.Node } {
   return node.type === PARENTHESIZED_EXPRESSION_TYPE;
 }
 
+/**
+ * Extracts an identifier name from variable, assignment, or property nodes.
+ * @param node AST node that may carry an identifier.
+ * @returns Identifier name when present, otherwise null.
+ */
 function getNameFromNode(node: TSESTree.Node | null): string | null {
   if (!node) return null;
 
@@ -100,6 +120,11 @@ function getNameFromNode(node: TSESTree.Node | null): string | null {
   return null;
 }
 
+/**
+ * Determines whether a node should be traversed through when resolving names.
+ * @param node Node to evaluate for transparency.
+ * @returns True when the node does not introduce a binding boundary.
+ */
 function isTransparentNode(node: TSESTree.Node): boolean {
   return (
     node.type === AST_NODE_TYPES.CallExpression ||
@@ -112,6 +137,11 @@ function isTransparentNode(node: TSESTree.Node): boolean {
   );
 }
 
+/**
+ * Walks ancestors through transparent nodes to find the nearest identifier name.
+ * @param startNode Node where the search begins.
+ * @returns Resolved identifier name or null if none is located.
+ */
 function findNameInAncestors(startNode: TSESTree.Node | null): string | null {
   let current: TSESTree.Node | null = startNode;
 
@@ -178,6 +208,11 @@ function isComponentOrHookFunction(
   return isComponentName(name) || isHookName(name);
 }
 
+/**
+ * Checks whether a function node represents a hook by name.
+ * @param fn Function node to inspect.
+ * @returns True when the function follows hook naming.
+ */
 function isHookFunction(
   fn:
     | TSESTree.FunctionDeclaration
@@ -187,6 +222,11 @@ function isHookFunction(
   return isHookName(getFunctionName(fn));
 }
 
+/**
+ * Narrows nodes to the supported function-like shapes.
+ * @param node Node to test.
+ * @returns True when the node is any function declaration or expression.
+ */
 function isFunctionNode(
   node: TSESTree.Node,
 ): node is
@@ -200,6 +240,11 @@ function isFunctionNode(
   );
 }
 
+/**
+ * Extracts a hook name from simple identifier or member-expression callees.
+ * @param callee Callee expression from a call.
+ * @returns Hook name when available, otherwise null.
+ */
 function getHookNameFromCallee(
   callee: TSESTree.LeftHandSideExpression,
 ): string | null {
@@ -218,17 +263,32 @@ function getHookNameFromCallee(
   return null;
 }
 
+/**
+ * Detects hook call expressions and returns their hook name.
+ * @param node Call expression to inspect.
+ * @returns Hook name when the call targets a hook, otherwise null.
+ */
 function isHookCall(node: TSESTree.CallExpression): string | null {
   const hookName = getHookNameFromCallee(node.callee);
   return hookName && isHookName(hookName) ? hookName : null;
 }
 
+/**
+ * Maps literal node types to memoization metadata used for reporting.
+ * @param node Candidate literal node.
+ * @returns Descriptor with literal type and memo hook, or null.
+ */
 function getLiteralDescriptor(node: TSESTree.Node): LiteralDescriptor | null {
   const descriptor =
     LITERAL_DESCRIPTOR_BY_TYPE[node.type as AST_NODE_TYPES] ?? null;
   return descriptor;
 }
 
+/**
+ * Finds the nearest ancestor function considered a React component or hook.
+ * @param node Starting node for the search.
+ * @returns Owning component/hook function or null.
+ */
 function findEnclosingComponentOrHook(node: TSESTree.Node) {
   let current: TSESTree.Node | null = node.parent as TSESTree.Node | null;
   while (current) {
@@ -240,6 +300,11 @@ function findEnclosingComponentOrHook(node: TSESTree.Node) {
   return null;
 }
 
+/**
+ * Checks whether a node is inside an allowed hook callback that should be skipped.
+ * @param node Starting node for traversal.
+ * @returns True when enclosed by a callback to an allowed hook.
+ */
 function isInsideAllowedHookCallback(node: TSESTree.Node): boolean {
   let current: TSESTree.Node | null = node;
   while (current) {
@@ -315,6 +380,11 @@ function findEnclosingHookCall(
   return null;
 }
 
+/**
+ * Finds the nearest owning function for the provided node.
+ * @param node Node to start from.
+ * @returns Enclosing function declaration/expression or null.
+ */
 function findOwningFunction(
   node: TSESTree.Node,
 ):
@@ -332,6 +402,11 @@ function findOwningFunction(
   return null;
 }
 
+/**
+ * Locates the closest return statement ancestor, skipping assertion wrappers.
+ * @param node Node to start from.
+ * @returns Enclosing return statement or null.
+ */
 function findEnclosingReturnStatement(
   node: TSESTree.Node,
 ): TSESTree.ReturnStatement | null {
@@ -358,6 +433,12 @@ function findEnclosingReturnStatement(
   return null;
 }
 
+/**
+ * Determines whether a node is returned from the provided hook function.
+ * @param node Expression candidate for return.
+ * @param owner Hook function candidate.
+ * @returns True when the expression is the hook's return value.
+ */
 function isReturnValueFromHook(
   node: TSESTree.Node,
   owner:
@@ -398,6 +479,13 @@ function isReturnValueFromHook(
   return owningFunction === owner;
 }
 
+/**
+ * Builds memoization suggestions with dependency placeholders for developers.
+ * @param node Literal node to wrap.
+ * @param descriptor Literal metadata including memo hook.
+ * @param sourceCode Source code utility for text extraction.
+ * @returns Suggestion array encouraging memoization with explicit deps TODO.
+ */
 function buildMemoSuggestions(
   node: TSESTree.Node,
   descriptor: LiteralDescriptor,
@@ -444,6 +532,11 @@ function buildMemoSuggestions(
   ];
 }
 
+/**
+ * Formats a readable label for diagnostics based on the owning function.
+ * @param fn Owning component or hook function.
+ * @returns Human-friendly label for error messages.
+ */
 function formatContextLabel(
   fn:
     | TSESTree.FunctionDeclaration

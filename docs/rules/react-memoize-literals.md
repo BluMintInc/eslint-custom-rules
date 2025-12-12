@@ -12,7 +12,7 @@ React re-runs your component and hook bodies on every render. Inline object, arr
 - Flags nested literals inside hook argument objects/arrays (e.g., `useQuery({ options: { cache: {...} } })`) while allowing the top-level argument itself.
 - Detects custom hooks that return object/array/function literals directly, since callers receive a fresh reference each render.
 - Skips literals already inside `useMemo`/`useCallback` (or other stable hook callbacks) and module-level constants.
-- Offers suggestions to wrap component-level literals in `useMemo`/`useCallback` for a stable reference and injects a `__TODO_ADD_DEPENDENCIES__` placeholder so callers must supply real dependencies instead of accidentally shipping an empty array.
+- Offers suggestions to wrap component-level literals in `useMemo`/`useCallback` for a stable reference and injects a `__TODO_MEMOIZATION_DEPENDENCIES__` placeholder so callers must supply real dependencies instead of accidentally shipping an empty array.
 
 ### Examples of incorrect code
 
@@ -86,7 +86,7 @@ When the rule suggests a fix, it injects a dependency placeholder you must repla
 ```tsx
 const options = useMemo(
   () => ({ debounce: 50 }),
-  [/* __TODO_ADD_DEPENDENCIES__ */],
+  [/* __TODO_MEMOIZATION_DEPENDENCIES__ */],
 );
 ```
 
