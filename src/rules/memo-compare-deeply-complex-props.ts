@@ -262,26 +262,21 @@ function addNamesFromDeclaration(
   }
 }
 
-function collectNamesFromScopeChain(
-  scope: TSESLint.Scope.Scope | null,
-  target: Set<string>,
-): void {
-  let currentScope: TSESLint.Scope.Scope | null = scope;
-  while (currentScope) {
-    for (const variable of currentScope.variables) {
-      target.add(variable.name);
-    }
-    currentScope = (currentScope.upper as TSESLint.Scope.Scope | null) ?? null;
+function pickAvailableCompareDeeplyLocalName(
+  used: ReadonlySet<string>,
+): string {
+  if (!used.has('compareDeeply')) return 'compareDeeply';
+
+  for (let i = 2; ; i += 1) {
+    const candidate = `compareDeeply${i}`;
+    if (!used.has(candidate)) return candidate;
   }
 }
 
-function pickAvailableCompareDeeplyLocalName(
-  program: TSESTree.Program,
-  scope: TSESLint.Scope.Scope,
-): string {
+function collectUsedNames(sourceCode: TSESLint.SourceCode): Set<string> {
   const used = new Set<string>();
 
-  for (const stmt of program.body) {
+  for (const stmt of sourceCode.ast.body) {
     if (stmt.type === AST_NODE_TYPES.ImportDeclaration) {
       for (const spec of stmt.specifiers) {
         used.add(spec.local.name);
@@ -316,24 +311,23 @@ function pickAvailableCompareDeeplyLocalName(
     }
   }
 
-  collectNamesFromScopeChain(scope, used);
-
-  if (!used.has('compareDeeply')) return 'compareDeeply';
-
-  for (let i = 2; ; i += 1) {
-    const candidate = `compareDeeply${i}`;
-    if (!used.has(candidate)) return candidate;
+  for (const scope of sourceCode.scopeManager?.scopes ?? []) {
+    for (const variable of scope.variables) {
+      used.add(variable.name);
+    }
   }
+
+  return used;
 }
 
 function ensureCompareDeeplyImportFixes(
   sourceCode: TSESLint.SourceCode,
   fixer: TSESLint.RuleFixer,
-  scope: TSESLint.Scope.Scope,
+  usedNames: ReadonlySet<string>,
   preferredSource?: string,
 ): { fixes: TSESLint.RuleFix[]; localName: string } {
   const program = sourceCode.ast;
-  const preferredLocalName = pickAvailableCompareDeeplyLocalName(program, scope);
+  const preferredLocalName = pickAvailableCompareDeeplyLocalName(usedNames);
   const memoImports = program.body.filter(
     (node): node is TSESTree.ImportDeclaration =>
       node.type === AST_NODE_TYPES.ImportDeclaration &&
@@ -611,7 +605,7 @@ function getComplexPropertiesFromType(
 }
 
 function normalizePropsOrder(props: string[]): string[] {
-  return Array.from(new Set(props));
+  return Array.from(new Set(props)).sort((a, b) => a.localeCompare(b));
 }
 
 function extractComplexPropsFromSignature(
@@ -887,11 +881,10 @@ function buildMemoFixes(
   resolveCompareDeeplyImport: (
     fixer: TSESLint.RuleFixer,
     memoSource: string,
-    scope: TSESLint.Scope.Scope,
   ) => { fixes: TSESLint.RuleFix[]; localName: string },
 ): TSESLint.RuleFix[] {
   const fixes: TSESLint.RuleFix[] = [];
-  const importResult = resolveCompareDeeplyImport(fixer, memoSource, scope);
+  const importResult = resolveCompareDeeplyImport(fixer, memoSource);
   if (
     comparatorArg &&
     comparatorArg.type !== AST_NODE_TYPES.SpreadElement &&
@@ -1048,6 +1041,7 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     const sourceCode = context.getSourceCode();
+    const usedNames = collectUsedNames(sourceCode);
     const complexPropsCache = new WeakMap<TSESTree.Expression, string[]>();
     const memoImportTracking = createMemoImportTracking();
     const initializerTracking = createComponentInitializerTracker();
@@ -1056,13 +1050,12 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
     function resolveCompareDeeplyImport(
       fixer: TSESLint.RuleFixer,
       memoSource: string,
-      scope: TSESLint.Scope.Scope,
     ) {
       if (cachedCompareDeeplyImportLocalName) {
         return { fixes: [], localName: cachedCompareDeeplyImportLocalName };
       }
 
-      const result = ensureCompareDeeplyImportFixes(sourceCode, fixer, scope, memoSource);
+      const result = ensureCompareDeeplyImportFixes(sourceCode, fixer, usedNames, memoSource);
       cachedCompareDeeplyImportLocalName = result.localName;
       return result;
     }

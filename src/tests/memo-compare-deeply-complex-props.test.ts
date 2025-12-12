@@ -280,8 +280,8 @@ import { compareDeeply } from 'src/util/memo';
 import { memo } from 'react';
 type Props = { beta: { value: number }; alpha: { value: number } };
 const Named = ({ beta, alpha }: Props) => <div>{beta.value}{alpha.value}</div>;
-export const WrappedNamed = memo(Named, compareDeeply('beta', 'alpha'));
-export const WrappedInline = memo(({ beta, alpha }: Props) => <section>{beta.value}{alpha.value}</section>, compareDeeply('beta', 'alpha'));
+export const WrappedNamed = memo(Named, compareDeeply('alpha', 'beta'));
+export const WrappedInline = memo(({ beta, alpha }: Props) => <section>{beta.value}{alpha.value}</section>, compareDeeply('alpha', 'beta'));
 `,
         errors: [{ messageId: 'useCompareDeeply' }, { messageId: 'useCompareDeeply' }],
       },
@@ -735,6 +735,35 @@ const First = ({ config }: Props) => <div>{config.theme}</div>;
 const Second = ({ config }: Props) => <span>{config.theme}</span>;
 export const Wrapped = memo(First, compareDeeply('config'));
 export const WrappedAgain = memo(Second, compareDeeply('config'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }, { messageId: 'useCompareDeeply' }],
+      },
+      {
+        filename: 'src/components/MultipleCallsWithShadow.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { config: { theme: string } };
+const One = ({ config }: Props) => <div>{config.theme}</div>;
+export const WrappedOne = memo(One);
+function makeWrapper() {
+  const compareDeeply = () => false;
+  const Two = ({ config }: Props) => <span>{config.theme}</span>;
+  return memo(Two);
+}
+export const WrappedTwo = makeWrapper();
+`,
+        output: `
+import { compareDeeply as compareDeeply2 } from 'src/util/memo';
+import { memo } from 'react';
+type Props = { config: { theme: string } };
+const One = ({ config }: Props) => <div>{config.theme}</div>;
+export const WrappedOne = memo(One, compareDeeply2('config'));
+function makeWrapper() {
+  const compareDeeply = () => false;
+  const Two = ({ config }: Props) => <span>{config.theme}</span>;
+  return memo(Two, compareDeeply2('config'));
+}
+export const WrappedTwo = makeWrapper();
 `,
         errors: [{ messageId: 'useCompareDeeply' }, { messageId: 'useCompareDeeply' }],
       },
