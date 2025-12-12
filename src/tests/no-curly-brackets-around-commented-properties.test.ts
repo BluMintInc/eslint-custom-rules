@@ -78,6 +78,11 @@ namespace Nested {
       `,
       `
 {
+  // remarks about module usage, not a type member
+}
+      `,
+      `
+{
   //   
 }
       `,
@@ -206,6 +211,37 @@ type After = { active: boolean };
 type Before = { id: string };
 // format(): string;
 type After = { active: boolean };
+        `,
+        errors: [{ messageId: 'removeCommentWrappedBlock' }],
+      },
+      {
+        code: `
+namespace Example {
+  {
+    /**
+     * @remarks explanation spans
+     * multiple lines with indentation
+     */
+    // deprecatedField: string;
+  }
+
+  export interface Item {
+    value: string;
+  }
+}
+        `,
+        output: `
+namespace Example {
+  /**
+   * @remarks explanation spans
+   * multiple lines with indentation
+   */
+  // deprecatedField: string;
+
+  export interface Item {
+    value: string;
+  }
+}
         `,
         errors: [{ messageId: 'removeCommentWrappedBlock' }],
       },

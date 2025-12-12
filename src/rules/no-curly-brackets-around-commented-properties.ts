@@ -14,7 +14,7 @@ function looksLikeTypeMemberComment(rawComment: string): boolean {
     return false;
   }
 
-  if (normalized.startsWith('@') || normalized.startsWith('remarks')) {
+  if (normalized.startsWith('@')) {
     return true;
   }
 
@@ -168,17 +168,19 @@ function calculateMinAdditionalIndent(lines: string[]): number {
 
 function normalizeLineIndentation(
   lines: string[],
-  extraIndent: number,
+  targetIndent: string,
+  indentDelta: number,
   minAdditionalIndent: number,
 ): string[] {
-  const indentPrefix = extraIndent > 0 ? ' '.repeat(extraIndent) : '';
+  const firstLinePrefix = indentDelta > 0 ? ' '.repeat(indentDelta) : '';
 
-  return lines.map((line) => {
+  return lines.map((line, index) => {
     const currentIndent = line.match(/^\s*/)?.[0].length ?? 0;
     const removeLength = Math.min(currentIndent, minAdditionalIndent);
     const withoutIndent =
       removeLength > 0 ? line.slice(Math.min(removeLength, line.length)) : line;
-    return `${indentPrefix}${withoutIndent.trimEnd()}`;
+    const baseIndent = index === 0 ? firstLinePrefix : targetIndent;
+    return `${baseIndent}${withoutIndent.trimEnd()}`;
   });
 }
 
@@ -211,6 +213,7 @@ function computeReplacement(
 
   const normalizedLines = normalizeLineIndentation(
     trimmedLines,
+    targetIndent,
     indentDelta,
     minAdditionalIndent,
   );

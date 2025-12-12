@@ -8,7 +8,7 @@ Rule ID: `@blumintinc/blumint/no-curly-brackets-around-commented-properties`
 
 ## Rule Details
 
-This rule flags standalone curly-brace blocks that contain only comments inside type-focused files (interfaces, type aliases, enums, and namespace/type declaration sections). Wrapping commented-out members in their own brace block makes the surrounding type syntactically invalid, hides the intent of the comments, and breaks editor tooling. Remove the braces and leave the comments inline so type declarations stay readable and compilable.
+This rule flags standalone curly-brace blocks that contain only comments inside type declarations (interfaces, type aliases, enums, and namespace/module sections). Wrapping commented-out members in their own brace block makes the surrounding type syntactically invalid, hides the intent of the comments, and breaks editor tooling. Remove the braces and leave the comments inline so type declarations stay readable and compilable.
 
 ## Examples
 
@@ -77,7 +77,7 @@ This rule has no options.
 
 ## When Not To Use It
 
-If your codebase intentionally uses empty brace blocks to create manual scopes (without any commented-out members inside), you can disable this rule for those files.
+If your codebase intentionally uses curly-brace blocks that wrap only comments (and you rely on that pattern), you can disable this rule for those files.
 
 ## Related Resources
 
