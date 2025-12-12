@@ -689,6 +689,42 @@ ruleTesterTs.run(
       },
       {
         code: `
+        class Container {
+          getValue() {
+            return this.value;
+          }
+
+          callValue() {
+            const { getValue } = this;
+            return getValue();
+          }
+        }
+        `,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'getValue', suggestedName: 'value' },
+          },
+          {
+            messageId: 'preferGetter',
+            data: { name: 'callValue', suggestedName: 'callValue' },
+          },
+        ],
+        output: `
+        class Container {
+          getValue() {
+            return this.value;
+          }
+
+          get callValue() {
+            const { getValue } = this;
+            return getValue();
+          }
+        }
+        `,
+      },
+      {
+        code: `
         class VoidReturn {
           result(): void {
             return;

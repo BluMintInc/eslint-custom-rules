@@ -238,12 +238,12 @@ export const preferGetterOverParameterlessMethod = createRule<
       return null;
     }
 
-    function addCallUseForMember(
-      member: TSESTree.MemberExpression,
+    function addCallUse(
+      node: TSESTree.Node,
       propName: string,
       callUsedNamesByClass: WeakMap<TSESTree.ClassBody, Set<string>>,
     ) {
-      const classBody = getEnclosingClassBody(member);
+      const classBody = getEnclosingClassBody(node);
       if (!classBody) {
         return;
       }
@@ -255,6 +255,14 @@ export const preferGetterOverParameterlessMethod = createRule<
       }
 
       names.add(propName);
+    }
+
+    function addCallUseForMember(
+      member: TSESTree.MemberExpression,
+      propName: string,
+      callUsedNamesByClass: WeakMap<TSESTree.ClassBody, Set<string>>,
+    ) {
+      addCallUse(member, propName, callUsedNamesByClass);
     }
 
     function getJsDoc(node: MethodLikeDefinition) {
@@ -456,6 +464,32 @@ export const preferGetterOverParameterlessMethod = createRule<
       }
     }
 
+    function trackThisDestructuring(
+      pattern: TSESTree.ObjectPattern,
+      init: TSESTree.Node | null | undefined,
+      callUsedNamesByClass: WeakMap<TSESTree.ClassBody, Set<string>>,
+    ) {
+      if (!init || init.type !== AST_NODE_TYPES.ThisExpression) {
+        return;
+      }
+
+      for (const prop of pattern.properties) {
+        if (prop.type === AST_NODE_TYPES.Property) {
+          if (prop.computed) continue;
+
+          const key = prop.key;
+          if (key.type === AST_NODE_TYPES.Identifier) {
+            addCallUse(pattern, key.name, callUsedNamesByClass);
+          } else if (
+            key.type === AST_NODE_TYPES.Literal &&
+            typeof key.value === 'string'
+          ) {
+            addCallUse(pattern, key.value, callUsedNamesByClass);
+          }
+        }
+      }
+    }
+
     const callUsedNamesByClass = new WeakMap<TSESTree.ClassBody, Set<string>>();
     const candidates: Array<{
       node: MethodLikeDefinition;
@@ -482,6 +516,24 @@ export const preferGetterOverParameterlessMethod = createRule<
       ChainExpression(node: TSESTree.ChainExpression) {
         if (node.expression.type === AST_NODE_TYPES.MemberExpression) {
           trackMemberReference(node.expression, callUsedNamesByClass);
+        }
+      },
+      VariableDeclarator(node: TSESTree.VariableDeclarator) {
+        if (node.id.type === AST_NODE_TYPES.ObjectPattern) {
+          trackThisDestructuring(
+            node.id,
+            node.init ?? null,
+            callUsedNamesByClass,
+          );
+        }
+      },
+      AssignmentExpression(node: TSESTree.AssignmentExpression) {
+        if (node.left.type === AST_NODE_TYPES.ObjectPattern) {
+          trackThisDestructuring(
+            node.left,
+            node.right,
+            callUsedNamesByClass,
+          );
         }
       },
       'MethodDefinition, TSAbstractMethodDefinition'(
