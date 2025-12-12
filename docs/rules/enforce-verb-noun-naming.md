@@ -31,7 +31,7 @@ const user = () => fetchUser();          // name is noun-only
 class Service { data() {} }
 class Repo {
   items() { return this.cache; }         // method lacks verb
-  handle() {}                            // ambiguous noun
+  handler() {}                           // method name is noun-only
 }
 ```
 
@@ -67,7 +67,7 @@ This rule does not have any options.
 ## When not to use it
 
 - If your project intentionally names command functions with nouns or uses a different naming convention for functions and methods.
-- Files that intentionally expose React components or values only—disable locally if necessary.
+- Files that intentionally expose React components or values only—disable locally with ESLint directives when needed: use `/* eslint-disable @blumintinc/blumint/enforce-verb-noun-naming */` for a file or `/* eslint-disable-next-line @blumintinc/blumint/enforce-verb-noun-naming */` for a single line. Repository-wide exceptions can be added through `.eslintrc` overrides when entire paths should be exempt.
 
 ## Further reading
 
