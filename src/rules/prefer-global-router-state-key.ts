@@ -310,10 +310,19 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                           if (suggestedConstant) {
                             const fixes: TSESLint.RuleFix[] = [];
 
-                            // 1) Replace the literal with the constant
-                            fixes.push(
-                              fixer.replaceText(keyValue, suggestedConstant),
-                            );
+                            const namespaceAlias = Array.from(
+                              namespaceImports.entries(),
+                            ).find(([, source]) => isQueryKeysSource(source))?.[0];
+                            const defaultAlias = Array.from(
+                              defaultImports.entries(),
+                            ).find(([, source]) => isQueryKeysSource(source))?.[0];
+                            const importAlias = namespaceAlias ?? defaultAlias;
+                            const replacementText = importAlias
+                              ? `${importAlias}.${suggestedConstant}`
+                              : suggestedConstant;
+
+                            // 1) Replace the literal with the constant (qualify if alias exists)
+                            fixes.push(fixer.replaceText(keyValue, replacementText));
 
                             // 2) Ensure an import exists for the suggested constant
                             const sourceCode = context.getSourceCode();
@@ -324,9 +333,7 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                                 isQueryKeysSource(info.source) &&
                                 info.imported === suggestedConstant,
                             );
-                            const hasNamespaceOrDefault =
-                              namespaceImports.size > 0 ||
-                              defaultImports.size > 0;
+                            const hasNamespaceOrDefault = Boolean(importAlias);
 
                             if (
                               !alreadyImportedNamed &&
