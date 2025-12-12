@@ -208,57 +208,90 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
       }
 
       try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const ts: typeof import('typescript') = require('typescript');
-        const checker = services.program.getTypeChecker();
-        const tsNode = services.esTreeNodeToTSNodeMap.get(componentExpr);
-        if (!tsNode) return [];
-
-        const componentType = checker.getTypeAtLocation(tsNode);
-        const signatures = componentType.getCallSignatures?.() ?? [];
-        const complexProps = new Set<string>();
-
-        for (const signature of signatures) {
-          const params = signature.getParameters?.() ?? [];
-          if (params.length === 0) continue;
-
-          const propsSymbol = params[0];
-          const decl =
-            propsSymbol.valueDeclaration ??
-            (propsSymbol.declarations?.[0] as
-              | import('typescript').Declaration
-              | undefined);
-          const propsType = checker.getTypeOfSymbolAtLocation(
-            propsSymbol,
-            decl ?? tsNode,
-          );
-
-          const properties = checker.getPropertiesOfType(propsType);
-          for (const prop of properties) {
-            if (prop.name === 'children') continue;
-
-            const propDecl =
-              prop.valueDeclaration ??
-              (prop.declarations?.[0] as
-                | import('typescript').Declaration
-                | undefined);
-            const propType = checker.getTypeOfSymbolAtLocation(
-              prop,
-              propDecl ?? tsNode,
-            );
-
-            if (isComplexType(ts, propType, checker)) {
-              complexProps.add(prop.name);
-            }
-          }
-        }
-
-        const result = Array.from(complexProps).sort();
+        const result = getComplexPropsFromComponent(componentExpr, services);
         complexPropsCache.set(componentExpr, result);
         return result;
       } catch {
         return [];
       }
+    }
+
+    function getComplexPropsFromComponent(
+      componentExpr: TSESTree.Expression,
+      services: TSESLint.SourceCode['parserServices'],
+    ): string[] {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const ts: typeof import('typescript') = require('typescript');
+      const checker = services.program.getTypeChecker();
+      const tsNode = services.esTreeNodeToTSNodeMap.get(componentExpr);
+      if (!tsNode) return [];
+
+      const componentType = checker.getTypeAtLocation(tsNode);
+      const signatures = componentType.getCallSignatures?.() ?? [];
+      const complexProps = new Set<string>();
+
+      for (const signature of signatures) {
+        const propsFromSignature = extractComplexPropsFromSignature(
+          signature,
+          checker,
+          tsNode,
+          ts,
+        );
+        propsFromSignature.forEach((prop) => complexProps.add(prop));
+      }
+
+      return Array.from(complexProps).sort();
+    }
+
+    function extractComplexPropsFromSignature(
+      signature: import('typescript').Signature,
+      checker: TypeChecker,
+      tsNode: import('typescript').Node,
+      ts: typeof import('typescript'),
+    ): string[] {
+      const params = signature.getParameters?.() ?? [];
+      if (params.length === 0) return [];
+
+      const propsSymbol = params[0];
+      const propsType = getTypeFromSymbol(propsSymbol, checker, tsNode);
+
+      return getComplexPropertiesFromType(propsType, checker, tsNode, ts);
+    }
+
+    function getTypeFromSymbol(
+      symbol: import('typescript').Symbol,
+      checker: TypeChecker,
+      tsNode: import('typescript').Node,
+    ): Type {
+      const decl =
+        symbol.valueDeclaration ??
+        (symbol.declarations?.[0] as
+          | import('typescript').Declaration
+          | undefined);
+
+      return checker.getTypeOfSymbolAtLocation(symbol, decl ?? tsNode);
+    }
+
+    function getComplexPropertiesFromType(
+      type: Type,
+      checker: TypeChecker,
+      tsNode: import('typescript').Node,
+      ts: typeof import('typescript'),
+    ): string[] {
+      const properties = checker.getPropertiesOfType(type);
+      const complexProps: string[] = [];
+
+      for (const prop of properties) {
+        if (prop.name === 'children') continue;
+
+        const propType = getTypeFromSymbol(prop, checker, tsNode);
+
+        if (isComplexType(ts, propType, checker)) {
+          complexProps.push(prop.name);
+        }
+      }
+
+      return complexProps;
     }
 
     function addBindingNames(
