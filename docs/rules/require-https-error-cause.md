@@ -5,6 +5,7 @@
 <!-- end auto-generated rule header -->
 
 This rule ensures any `HttpsError` created inside a `catch` block includes the caught error as the fourth `cause` argument. Passing the original error preserves the stack trace so monitoring can deduplicate issues reliably and keep the root cause available for debugging. The third `details` argument remains optional, but the cause must always be provided when an error is rethrown from a `catch` block.
+Always bind the full error object (for example, `catch (error)`) so it can be forwarded. Destructuring (such as `catch ({ message })`) drops the original error reference and cannot satisfy the required cause argument.
 
 ## Rule Details
 
@@ -31,6 +32,13 @@ try {
   // Cause is not the catch binding
   const otherError = new Error('other');
   throw new HttpsError('internal', 'Operation failed', undefined, otherError);
+}
+
+try {
+  await doWork();
+} catch ({ message }) {
+  // Destructuring drops the original error object, so there is no catch binding
+  throw new HttpsError('internal', 'Operation failed', undefined, message);
 }
 ```
 

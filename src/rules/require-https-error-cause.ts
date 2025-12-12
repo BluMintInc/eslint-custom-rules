@@ -1,7 +1,7 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
-type MessageIds = 'missingCause' | 'causeNotCatchBinding';
+type MessageIds = 'missingCause' | 'causeNotCatchBinding' | 'missingCatchBinding';
 type Options = [];
 
 type CatchFrame = {
@@ -59,6 +59,8 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
         'HttpsError inside a catch block must pass the caught error as the fourth "cause" argument. Without the original error, the stack is lost and monitoring fingerprints degrade. Add {{catchName}} as the cause argument after the optional details parameter.',
       causeNotCatchBinding:
         'The fourth HttpsError argument should be the catch binding {{catchName}} so the original error stack is preserved for monitoring. Pass the catch variable instead of {{actual}}.',
+      missingCatchBinding:
+        'HttpsError inside a catch block needs a named catch binding so the original error can be forwarded as the fourth "cause" argument. Bind the error value (e.g., `catch (error)`) and pass that variable as the cause to keep the upstream stack trace.',
     },
   },
   defaultOptions: [],
@@ -141,7 +143,16 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
       }
 
       const activeCatch = catchStack[catchStack.length - 1];
-      const catchName = activeCatch.paramName ?? 'the caught error';
+
+      if (!activeCatch.paramName) {
+        context.report({
+          node,
+          messageId: 'missingCatchBinding',
+        });
+        return;
+      }
+
+      const catchName = activeCatch.paramName;
 
       if (node.arguments.length < 4) {
         reportMissingCause(node, catchName);
@@ -149,11 +160,6 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
       }
 
       const causeArg = node.arguments[3];
-
-      if (!activeCatch.paramName) {
-        reportMissingCause(node, catchName);
-        return;
-      }
 
       if (!causeArg || causeArg.type !== AST_NODE_TYPES.Identifier) {
         reportWrongCause(
