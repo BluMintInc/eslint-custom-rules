@@ -448,5 +448,60 @@ ${typedPrelude}declare function wrap<T>(value: T): T;
       }
       `,
     },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useAssert(flag: boolean, fallback: boolean) {
+        return useMemo(() => flag || fallback, [flag, fallback]) as boolean;
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}export function useAssert(flag: boolean, fallback: boolean) {
+        return (flag || fallback) as boolean;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useSequence(first: number, second: number) {
+        const memoized = useMemo(() => {
+          return first, second;
+        }, [first, second]);
+        return memoized;
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}export function useSequence(first: number, second: number) {
+        const memoized = (first, second);
+        return memoized;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export const useArrowSequence = (first: number, second: number) =>
+        useMemo(() => {
+          return first, second;
+        }, [first, second]);
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}export const useArrowSequence = (first: number, second: number) =>
+        (first, second);
+      `,
+    },
   ],
 });

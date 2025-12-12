@@ -449,6 +449,13 @@ function shouldParenthesizeReplacement(
     return false;
   }
 
+  if (
+    (replacementExpression as TSESTree.SequenceExpression).type ===
+    AST_NODE_TYPES.SequenceExpression
+  ) {
+    return true;
+  }
+
   switch (parent.type) {
     case AST_NODE_TYPES.LogicalExpression:
     case AST_NODE_TYPES.BinaryExpression:
@@ -460,6 +467,9 @@ function shouldParenthesizeReplacement(
     case AST_NODE_TYPES.TSNonNullExpression:
     case AST_NODE_TYPES.ChainExpression:
       return true;
+    case AST_NODE_TYPES.TSAsExpression:
+    case AST_NODE_TYPES.TSTypeAssertion:
+      return !isSafeAtomicExpression(replacementExpression);
     case AST_NODE_TYPES.CallExpression:
     case AST_NODE_TYPES.NewExpression:
       return (
