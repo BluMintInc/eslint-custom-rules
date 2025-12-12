@@ -14,7 +14,7 @@ export const noMemoizeOnStatic = createRule<[], MessageIds>({
     schema: [],
     messages: {
       noMemoizeOnStatic:
-        'Static member "{{methodName}}" uses @Memoize(), which shares one cache across every caller instead of per instance. Static memoization leaks stale or cross-tenant data because the cache survives between requests and deployments. Remove @Memoize() or move the logic into an instance method so each consumer gets its own cache lifecycle.',
+        'Static member "{{methodName}}" uses @Memoize(), which shares one cache across every caller instead of per instance. Static memoization can leak stale or cross-tenant data because the cache survives across requests for the lifetime of the process. Remove @Memoize() or move the logic into an instance method so each consumer gets its own cache lifecycle.',
     },
   },
   defaultOptions: [],
@@ -22,14 +22,9 @@ export const noMemoizeOnStatic = createRule<[], MessageIds>({
     // Track renamed imports of Memoize
     const memoizeAliases = new Set(['Memoize']);
 
-    const getMethodName = (decoratorNode: TSESTree.Decorator): string => {
-      const parent = decoratorNode.parent;
-      if (
-        parent &&
-        parent.type === AST_NODE_TYPES.MethodDefinition &&
-        parent.key
-      ) {
-        const key = parent.key;
+    const getMethodName = (methodNode: TSESTree.MethodDefinition): string => {
+      const key = methodNode.key;
+      if (key) {
         if (key.type === AST_NODE_TYPES.Identifier) {
           return key.name;
         }
@@ -49,7 +44,7 @@ export const noMemoizeOnStatic = createRule<[], MessageIds>({
         }
       }
 
-      return 'this static member';
+      return '<unknown>';
     };
 
     return {
@@ -79,7 +74,7 @@ export const noMemoizeOnStatic = createRule<[], MessageIds>({
                 node: decorator,
                 messageId: 'noMemoizeOnStatic',
                 data: {
-                  methodName: getMethodName(decorator),
+                  methodName: getMethodName(node),
                 },
               });
             }

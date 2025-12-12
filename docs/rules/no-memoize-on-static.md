@@ -6,11 +6,11 @@
 
 ## Why
 
-Static memoization shares one cache across every caller for the lifetime of the process. When a static method depends on request-specific context (tenant, locale, user role, or environment flags), caching the result at the class level leaks data between callers and hides configuration changes because the cache never resets with a new instance. Memoization belongs on per-request or per-instance code paths where the lifecycle is scoped and cache invalidation is predictable.
+When you memoize a static member, you share one cache across every caller for the lifetime of the process. If your static method depends on request-specific context (tenant, locale, user role, or environment flags), caching the result at the class level leaks data between callers and hides configuration changes because the cache never resets with a new instance. Memoization belongs on per-request or per-instance code paths where the lifecycle is scoped and cache invalidation is predictable.
 
 ## Rule Details
 
-The rule reports any `@Memoize` decorator (with or without parentheses and including imported aliases) applied to static methods, getters, or setters. Static memoization is treated as unsafe because the cache outlives the callers that produced it. Prefer instance methods or explicit static caches with intentional invalidation.
+This rule reports when you apply a `@Memoize` decorator (with or without parentheses and including imported aliases) to static methods, getters, or setters. Static memoization is treated as unsafe because the cache outlives the callers that produced it. Prefer instance methods or explicit static caches with intentional invalidation.
 
 ### ❌ Bad
 
@@ -25,7 +25,7 @@ class ConfigLoader {
 }
 ```
 
-### ✅ Good
+### ✅ Good (Explicit static cache)
 
 ```ts
 import { Memoize } from 'typescript-memoize';
