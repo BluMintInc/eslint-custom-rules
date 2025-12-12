@@ -76,30 +76,69 @@ function isBindableIdentifier(name: string): boolean {
   );
 }
 
+function hasIdentifierKey(
+  property: TSESTree.Property,
+): property is TSESTree.Property & { key: TSESTree.Identifier } {
+  return !property.computed && property.key.type === AST_NODE_TYPES.Identifier;
+}
+
+function extractAliasFromIdentifierValue(
+  value: TSESTree.Property['value'],
+  originalName: string,
+): TSESTree.Identifier | null {
+  if (value.type !== AST_NODE_TYPES.Identifier) {
+    return null;
+  }
+
+  if (value.name === originalName) {
+    return null;
+  }
+
+  return value;
+}
+
+function extractAliasFromAssignmentPattern(
+  value: TSESTree.Property['value'],
+  originalName: string,
+): TSESTree.Identifier | null {
+  if (value.type !== AST_NODE_TYPES.AssignmentPattern) {
+    return null;
+  }
+
+  if (value.left.type !== AST_NODE_TYPES.Identifier) {
+    return null;
+  }
+
+  if (value.left.name === originalName) {
+    return null;
+  }
+
+  return value.left;
+}
+
 function getRenamedPropertyInfo(
   property: TSESTree.Property,
 ): { originalName: string; aliasIdentifier: TSESTree.Identifier } | null {
-  if (property.computed || property.key.type !== AST_NODE_TYPES.Identifier) {
+  if (!hasIdentifierKey(property)) {
     return null;
   }
 
   const originalName = property.key.name;
 
-  if (property.value.type === AST_NODE_TYPES.Identifier) {
-    if (property.value.name === originalName) {
-      return null;
-    }
-    return { originalName, aliasIdentifier: property.value };
+  const identifierAlias = extractAliasFromIdentifierValue(
+    property.value,
+    originalName,
+  );
+  if (identifierAlias) {
+    return { originalName, aliasIdentifier: identifierAlias };
   }
 
-  if (
-    property.value.type === AST_NODE_TYPES.AssignmentPattern &&
-    property.value.left.type === AST_NODE_TYPES.Identifier
-  ) {
-    if (property.value.left.name === originalName) {
-      return null;
-    }
-    return { originalName, aliasIdentifier: property.value.left };
+  const assignmentAlias = extractAliasFromAssignmentPattern(
+    property.value,
+    originalName,
+  );
+  if (assignmentAlias) {
+    return { originalName, aliasIdentifier: assignmentAlias };
   }
 
   return null;
@@ -435,6 +474,8 @@ export const noUnnecessaryDestructuringRename = createRule<[], MessageIds>({
             : groupedOriginal;
 
         fixes.push(fixer.replaceText(groupedProperty, destructReplacement));
+        // findMatchingReference constrains groupedTarget.value to the matched identifier,
+        // so replacing it directly avoids extra defensive branching in the fixer.
         fixes.push(fixer.replaceText(groupedTarget.value, groupedOriginal));
       }
 
