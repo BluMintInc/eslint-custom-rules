@@ -35,6 +35,14 @@ ruleTesterTs.run(
         const ds = new DocSetter();
         ds.set({ '1': { id: 2 } });
       `,
+      // Mixed numeric and nested keys should be ignored entirely
+      `
+        const ds = new DocSetter();
+        ds.set({
+          0: { id: 1 },
+          profile: { name: profileName },
+        });
+      `,
       // Nested array should not be flattened
       `
         const ds = new DocSetter();
