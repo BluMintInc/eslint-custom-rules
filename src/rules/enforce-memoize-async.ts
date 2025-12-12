@@ -113,7 +113,7 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
           messageId: 'requireMemoize',
           fix(fixer) {
             const fixes: TSESLint.RuleFix[] = [];
-            const sourceCode = context.getSourceCode();
+            const sourceCode = context.sourceCode;
             const decoratorIdent = memoizeNamespace
               ? `${memoizeNamespace}.Memoize`
               : memoizeAlias;

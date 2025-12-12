@@ -262,7 +262,7 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
             fix(fixer) {
               const newText = convertUpdateToSetMerge(
                 node,
-                context.getSourceCode(),
+                context.sourceCode,
               );
               return fixer.replaceText(node, newText);
             },

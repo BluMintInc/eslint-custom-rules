@@ -61,7 +61,7 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
       'MethodDefinition[static=true][accessibility="private"]'(
         node: TSESTree.MethodDefinition,
       ) {
-        const sourceCode = context.getSourceCode();
+        const sourceCode = context.sourceCode;
         const methodBody = node.value.body;
 
         if (!methodBody) {

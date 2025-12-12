@@ -31,7 +31,7 @@ export const noStaleStateAcrossAwait = createRule<[], MessageIds>({
           | TSESTree.FunctionExpression
           | TSESTree.ArrowFunctionExpression,
       ) {
-        const sourceCode = context.getSourceCode();
+        const sourceCode = context.sourceCode;
         const scopeManager = sourceCode.scopeManager;
         if (!scopeManager) return;
         const acquiredScope = scopeManager.acquire(node);

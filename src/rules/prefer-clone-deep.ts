@@ -81,7 +81,7 @@ export const preferCloneDeep = createRule<[], MessageIds>({
     }
 
     function generateCloneDeepFix(node: TSESTree.ObjectExpression): string {
-      const sourceCode = context.getSourceCode();
+      const sourceCode = context.sourceCode;
 
       // Find the base object (first spread element)
       let baseObj: string | null = null;
@@ -284,7 +284,7 @@ export const preferCloneDeep = createRule<[], MessageIds>({
 
     // Helper function to extract nested overrides without spread elements
     function extractNestedOverrides(node: TSESTree.ObjectExpression): string {
-      const sourceCode = context.getSourceCode();
+      const sourceCode = context.sourceCode;
       const overrides: string[] = [];
 
       for (const prop of node.properties) {

@@ -28,7 +28,7 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode;
     // Track imports from queryKeys.ts
     const queryKeyImports = new Map<
       string,
@@ -316,7 +316,7 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                             );
 
                             // 2) Ensure an import exists for the suggested constant
-                            const sourceCode = context.getSourceCode();
+                            const sourceCode = context.sourceCode;
                             const alreadyImportedNamed = Array.from(
                               queryKeyImports.values(),
                             ).some(

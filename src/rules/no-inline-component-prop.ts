@@ -261,7 +261,7 @@ function findVariableInScopes(
   context: Readonly<TSESLint.RuleContext<MessageIds, Options>>,
   identifier: TSESTree.Identifier,
 ): TSESLint.Scope.Variable | undefined {
-  const sourceCode = context.getSourceCode() as TSESLint.SourceCode & {
+  const sourceCode = context.sourceCode as TSESLint.SourceCode & {
     getScope?: (node: TSESTree.Node) => TSESLint.Scope.Scope | null;
   };
   let scope: TSESLint.Scope.Scope | null =

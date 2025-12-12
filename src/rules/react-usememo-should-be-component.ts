@@ -64,7 +64,7 @@ const isUsedAsComponentProp = (
     }
   }
 
-  const sourceCode = context.getSourceCode();
+  const sourceCode = context.sourceCode;
   const scopeManager = sourceCode.scopeManager;
   const scope =
     scopeManager &&
@@ -105,7 +105,7 @@ const isUsedAsJsxChild = (
 ): boolean => {
   // Traverse the nearest function (or program) to see if the identifier appears
   // as a JSX child expression.
-  const sourceCode = context.getSourceCode();
+  const sourceCode = context.sourceCode;
 
   let container: TSESTree.Node = sourceCode.ast;
   let current: TSESTree.Node | undefined = node;

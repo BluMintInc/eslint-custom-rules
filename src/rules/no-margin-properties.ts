@@ -298,7 +298,7 @@ export const noMarginProperties = createRule<Options, MessageIds>({
           node.id.type === AST_NODE_TYPES.Identifier
         ) {
           const variableName = node.id.name;
-          const sourceCode = context.getSourceCode().getText();
+          const sourceCode = context.sourceCode.getText();
 
           // Check for margin properties in the object
           node.init.properties.forEach((prop) => {

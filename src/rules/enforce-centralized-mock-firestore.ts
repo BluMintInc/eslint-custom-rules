@@ -184,7 +184,7 @@ export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
 
       'Program:exit'() {
         if (mockFirestoreNodes.size > 0) {
-          const sourceCode = context.getSourceCode();
+          const sourceCode = context.sourceCode;
 
           // Report only once for the entire file
           context.report({

@@ -63,7 +63,7 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
 
         for (let i = 0; i < actualOrder.length; i++) {
           if (actualOrder[i] !== sortedOrder[i]) {
-            const sourceCode = context.getSourceCode();
+            const sourceCode = context.sourceCode;
             const newClassBody = sortedOrder
               .map((n) => {
                 // Fetch the actual AST node corresponding to the name

@@ -69,7 +69,7 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
             }
             // Prevent infinite recursion
             typeCache.set(typeName, false);
-            const program = context.getSourceCode().ast;
+            const program = context.sourceCode.ast;
             const interfaceDecl = program.body.find(
               (n): n is TSESTree.TSInterfaceDeclaration =>
                 n.type === AST_NODE_TYPES.TSInterfaceDeclaration &&

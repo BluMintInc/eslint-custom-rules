@@ -135,6 +135,7 @@ import { preferUseDeepCompareMemo } from './rules/prefer-use-deep-compare-memo';
 import { noCircularReferences } from './rules/no-circular-references';
 import { noPassthroughGetters } from './rules/no-passthrough-getters';
 import { noTryCatchAlreadyExistsInTransaction } from './rules/no-try-catch-already-exists-in-transaction';
+import { noUselessUsememoPrimitives } from './rules/no-useless-usememo-primitives';
 import { enforceTransformMemoization } from './rules/enforce-transform-memoization';
 import { verticallyGroupRelatedFunctions } from './rules/vertically-group-related-functions';
 import { default as noStaticConstantsInDynamicFiles } from './rules/no-static-constants-in-dynamic-files';
@@ -190,6 +191,7 @@ module.exports = {
         '@blumintinc/blumint/no-unused-props': 'error',
         '@blumintinc/blumint/no-uuidv4-base62-as-key': 'error',
         '@blumintinc/blumint/no-useless-fragment': 'error',
+        '@blumintinc/blumint/no-useless-usememo-primitives': 'error',
         '@blumintinc/blumint/prefer-fragment-shorthand': 'error',
         '@blumintinc/blumint/prefer-type-over-interface': 'error',
         '@blumintinc/blumint/prefer-type-alias-over-typeof-constant': 'error',
@@ -421,6 +423,7 @@ module.exports = {
     'omit-index-html': omitIndexHtml,
     'enforce-id-capitalization': enforceIdCapitalization,
     'no-unused-usestate': noUnusedUseState,
+    'no-useless-usememo-primitives': noUselessUsememoPrimitives,
     'prefer-usecallback-over-usememo-for-functions':
       preferUseCallbackOverUseMemoForFunctions,
     'no-margin-properties': noMarginProperties,

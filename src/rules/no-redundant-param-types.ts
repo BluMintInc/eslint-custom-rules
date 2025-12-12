@@ -144,7 +144,7 @@ export const noRedundantParamTypes = createRule<[], MessageIds>({
                 return removeTypeAnnotation(
                   fixer,
                   param.typeAnnotation,
-                  context.getSourceCode(),
+                  context.sourceCode,
                 );
               },
             });
@@ -156,7 +156,7 @@ export const noRedundantParamTypes = createRule<[], MessageIds>({
                 return removeTypeAnnotation(
                   fixer,
                   param.typeAnnotation,
-                  context.getSourceCode(),
+                  context.sourceCode,
                 );
               },
             });
@@ -168,7 +168,7 @@ export const noRedundantParamTypes = createRule<[], MessageIds>({
                 return removeTypeAnnotation(
                   fixer,
                   param.typeAnnotation,
-                  context.getSourceCode(),
+                  context.sourceCode,
                 );
               },
             });
@@ -180,7 +180,7 @@ export const noRedundantParamTypes = createRule<[], MessageIds>({
                 return removeTypeAnnotation(
                   fixer,
                   param.typeAnnotation,
-                  context.getSourceCode(),
+                  context.sourceCode,
                 );
               },
             });
@@ -193,7 +193,7 @@ export const noRedundantParamTypes = createRule<[], MessageIds>({
                 return removeTypeAnnotation(
                   fixer,
                   left.typeAnnotation,
-                  context.getSourceCode(),
+                  context.sourceCode,
                 );
               },
             });

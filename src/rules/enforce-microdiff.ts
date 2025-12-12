@@ -23,7 +23,7 @@ export const enforceMicrodiff = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode;
     const importedDiffLibraries = new Map<string, TSESTree.ImportDeclaration>();
     const importedFunctions = new Map<string, string>(); // Map of imported function names to their sources
     let hasMicrodiffImport = false;

@@ -47,7 +47,7 @@ export default createRule<
     return {
       Program() {
         // Get the source code
-        const sourceCode = context.getSourceCode();
+        const sourceCode = context.sourceCode;
         const comments = sourceCode.getAllComments();
 
         // Check all comments for disable directives

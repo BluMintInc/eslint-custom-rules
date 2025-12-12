@@ -136,7 +136,7 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
     const firestoreTransactionVariables = new Set<string>();
     const docSetterVariables = new Set<string>();
     const batchManagerVariables = new Set<string>();
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode;
 
     const clearFirestoreTrackingFor = (name: string): void => {
       firestoreDocRefVariables.delete(name);

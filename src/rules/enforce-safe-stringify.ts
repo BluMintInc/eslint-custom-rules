@@ -52,7 +52,7 @@ export const enforceStableStringify = createRule<Options, MessageIds>({
 
               // Add import if not present
               if (!hasStringifyImport) {
-                const program = context.getSourceCode().ast;
+                const program = context.sourceCode.ast;
                 const firstImport = program.body.find(
                   (node) => node.type === AST_NODE_TYPES.ImportDeclaration,
                 );

@@ -56,7 +56,7 @@ export const noClassInstanceDestructuring = createRule<[], MessageIds>({
             node,
             messageId: 'noClassInstanceDestructuring',
             fix(fixer) {
-              const sourceCode = context.getSourceCode();
+              const sourceCode = context.sourceCode;
               const properties = objectPattern.properties;
 
               // Skip if there's no init expression

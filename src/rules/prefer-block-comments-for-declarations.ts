@@ -81,7 +81,7 @@ export const preferBlockCommentsForDeclarations: TSESLint.RuleModule<
         return;
       }
 
-      const sourceCode = context.getSourceCode();
+      const sourceCode = context.sourceCode;
       const comments = sourceCode.getCommentsBefore(node);
 
       // Find the closest comment to the node

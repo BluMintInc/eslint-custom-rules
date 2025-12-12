@@ -23,7 +23,7 @@ export const preferFragmentComponent = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode;
     let hasFragmentImport = false;
     let reactImportNode: TSESTree.ImportDeclaration | null = null;
     let defaultReactImportNode: TSESTree.ImportDeclaration | null = null;

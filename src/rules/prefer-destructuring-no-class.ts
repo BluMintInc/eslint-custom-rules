@@ -216,7 +216,7 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
         if (node.init.type !== AST_NODE_TYPES.MemberExpression) return;
 
         if (shouldUseDestructuring(node.init, node.id)) {
-          const sourceCode = context.getSourceCode();
+          const sourceCode = context.sourceCode;
           const objectText = sourceCode.getText(node.init.object);
           const propertyText = getPropertyText(
             node.init.property,
@@ -267,7 +267,7 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
           node.right.type === AST_NODE_TYPES.MemberExpression
         ) {
           if (shouldUseDestructuring(node.right, node.left)) {
-            const sourceCode = context.getSourceCode();
+            const sourceCode = context.sourceCode;
             const objectText = sourceCode.getText(node.right.object);
             const propertyText = getPropertyText(
               node.right.property,

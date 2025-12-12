@@ -248,7 +248,7 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
           }
 
           // Get references from global scope
-          const sourceCode = context.getSourceCode();
+          const sourceCode = context.sourceCode;
           if (sourceCode.scopeManager?.globalScope) {
             const globalVar =
               sourceCode.scopeManager.globalScope.variables.find(

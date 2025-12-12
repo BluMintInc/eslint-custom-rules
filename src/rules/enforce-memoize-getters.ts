@@ -103,7 +103,7 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
           messageId: 'requireMemoizeGetter',
           fix(fixer) {
             const fixes: TSESLint.RuleFix[] = [];
-            const sourceCode = context.getSourceCode();
+            const sourceCode = context.sourceCode;
 
             // Insert import if needed, at the top alongside other imports
             if (!hasMemoizeImport && !scheduledImportFix) {

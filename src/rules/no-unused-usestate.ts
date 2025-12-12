@@ -57,7 +57,7 @@ export const noUnusedUseState = createRule({
                 messageId: 'unusedUseState',
                 fix: (fixer) => {
                   // Remove the entire useState declaration
-                  const sourceCode = context.getSourceCode();
+                  const sourceCode = context.sourceCode;
                   const parentStatement = node.parent;
 
                   if (

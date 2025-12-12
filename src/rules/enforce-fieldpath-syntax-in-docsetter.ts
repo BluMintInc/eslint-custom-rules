@@ -272,7 +272,7 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
           fix(fixer) {
             const newText = convertToFieldPathSyntax(
               firstArg,
-              context.getSourceCode(),
+              context.sourceCode,
             );
             return fixer.replaceText(firstArg, newText);
           },
