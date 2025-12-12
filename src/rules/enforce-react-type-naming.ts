@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds =
@@ -30,7 +30,174 @@ export const enforceReactTypeNaming = createRule<[], MessageIds>({
     },
   },
   defaultOptions: [],
-  create(context) {
+  create(context, _options): TSESLint.RuleListener {
+    const sourceCode = context.getSourceCode();
+    type AnyIdentifier = TSESTree.Identifier | TSESTree.JSXIdentifier;
+
+    function getScopeForNode(node: TSESTree.Node): TSESLint.Scope.Scope | null {
+      const scopeManager = sourceCode.scopeManager;
+      if (!scopeManager) return context.getScope();
+
+      let current: TSESTree.Node | undefined = node;
+      while (current) {
+        const scope = scopeManager.acquire(current);
+        if (scope) return scope;
+        current = current.parent;
+      }
+
+      return scopeManager.scopes[0] ?? context.getScope();
+    }
+
+    function findVariable(
+      identifier: AnyIdentifier,
+    ): TSESLint.Scope.Variable | null {
+      let scope: TSESLint.Scope.Scope | null = getScopeForNode(identifier);
+
+      for (; scope; scope = scope.upper) {
+        const variable = scope.variables.find((candidate) => {
+          if (candidate.name !== identifier.name) return false;
+          return (
+            candidate.identifiers.some(
+              (id) =>
+                id.range[0] === identifier.range[0] &&
+                id.range[1] === identifier.range[1],
+            ) ||
+            candidate.references.some(
+              (ref) =>
+                ref.identifier.range[0] === identifier.range[0] &&
+                ref.identifier.range[1] === identifier.range[1],
+            )
+          );
+        });
+        if (variable) return variable;
+      }
+      return null;
+    }
+
+    function collectRenameTargets(variable: TSESLint.Scope.Variable): AnyIdentifier[] {
+      const targets = new Map<string, AnyIdentifier>();
+      const addTarget = (node: AnyIdentifier) => {
+        const key = `${node.range[0]}:${node.range[1]}`;
+        if (!targets.has(key)) {
+          targets.set(key, node);
+        }
+      };
+
+      for (const id of variable.identifiers) {
+        if (
+          id.type === AST_NODE_TYPES.Identifier ||
+          id.type === AST_NODE_TYPES.JSXIdentifier
+        ) {
+          addTarget(id);
+        }
+      }
+
+      for (const ref of variable.references) {
+        const id = ref.identifier;
+        if (
+          id.type === AST_NODE_TYPES.Identifier ||
+          id.type === AST_NODE_TYPES.JSXIdentifier
+        ) {
+          addTarget(id);
+        }
+      }
+
+      const visit = (node: TSESTree.Node) => {
+        if (
+          (node.type === AST_NODE_TYPES.Identifier ||
+            node.type === AST_NODE_TYPES.JSXIdentifier) &&
+          node.name === variable.name
+        ) {
+          const resolvedVariable = findVariable(node);
+          if (resolvedVariable === variable) {
+            addTarget(node);
+        }
+        }
+
+        const keys = sourceCode.visitorKeys[node.type] ?? [];
+        for (const key of keys) {
+          const value = (node as unknown as Record<string, unknown>)[key];
+          if (Array.isArray(value)) {
+            for (const child of value) {
+              if (child && typeof (child as TSESTree.Node).type === 'string') {
+                visit(child as TSESTree.Node);
+              }
+            }
+          } else if (
+            value &&
+            typeof (value as TSESTree.Node).type === 'string'
+          ) {
+            visit(value as TSESTree.Node);
+          }
+        }
+      };
+
+      visit(sourceCode.ast);
+
+      const collectedTargets = Array.from(targets.values());
+
+      if (process.env.DEBUG_REACT_NAMING === 'true') {
+        // eslint-disable-next-line no-console
+        console.log(
+          'rename targets',
+          variable.name,
+          collectedTargets.map((target) => ({
+            type: target.type,
+            text: sourceCode.getText(target),
+            range: target.range,
+          })),
+        );
+      }
+
+      return collectedTargets;
+    }
+
+    function isJsxElementName(node: AnyIdentifier): boolean {
+      const parent = node.parent;
+      return (
+        parent?.type === AST_NODE_TYPES.JSXOpeningElement ||
+        parent?.type === AST_NODE_TYPES.JSXClosingElement ||
+        parent?.type === AST_NODE_TYPES.JSXIdentifier ||
+        parent?.type === AST_NODE_TYPES.JSXMemberExpression
+      );
+    }
+
+    function buildRenameFix(
+      variable: TSESLint.Scope.Variable | null,
+      newName: string,
+      { allowJsx }: { allowJsx: boolean },
+    ): TSESLint.ReportFixFunction | undefined {
+      if (!variable) return undefined;
+      const targets = collectRenameTargets(variable);
+
+      if (!allowJsx && targets.some(isJsxElementName)) {
+        return undefined;
+      }
+
+      if (process.env.DEBUG_REACT_NAMING === 'true') {
+        // eslint-disable-next-line no-console
+        console.log(
+          'build fix',
+          variable.name,
+          newName,
+          targets.map((identifier) => ({
+            type: identifier.type,
+            text: sourceCode.getText(identifier),
+            range: identifier.range,
+          })),
+        );
+      }
+
+      const orderedTargets = [...targets].sort(
+        (left, right) => right.range[0] - left.range[0],
+      );
+
+      return (fixer) =>
+        orderedTargets.map((identifier) =>
+          fixer.replaceText(identifier, newName),
+        );
+    }
+
     /**
      * Checks if a string starts with an uppercase letter
      */
@@ -155,29 +322,64 @@ export const enforceReactTypeNaming = createRule<[], MessageIds>({
       // Check if it's a ReactNode or JSX.Element (should be lowercase)
       if (LOWERCASE_TYPES.includes(typeName) && isUppercase(variableName)) {
         const suggestion = toLowercase(variableName);
-        context.report({
-          node: node.id,
-          messageId: 'reactNodeShouldBeLowercase',
-          data: {
-            type: typeName,
-            suggestion,
-          },
-          fix: (fixer) => fixer.replaceText(node.id, suggestion),
-        });
+        const variable =
+          context.getDeclaredVariables(node)[0] ?? findVariable(node.id);
+        const fix = buildRenameFix(variable, suggestion, { allowJsx: false });
+
+        const report: TSESLint.ReportDescriptor<MessageIds> = fix
+          ? {
+              node: node.id,
+              messageId: 'reactNodeShouldBeLowercase',
+              data: {
+                type: typeName,
+                suggestion,
+              },
+              fix,
+            }
+          : {
+              node: node.id,
+              messageId: 'reactNodeShouldBeLowercase',
+              data: {
+                type: typeName,
+                suggestion,
+              },
+            };
+
+        context.report(report);
       }
 
       // Check if it's a ComponentType or FC (should be uppercase)
       if (UPPERCASE_TYPES.includes(typeName) && !isUppercase(variableName)) {
         const suggestion = toUppercase(variableName);
-        context.report({
-          node: node.id,
-          messageId: 'componentTypeShouldBeUppercase',
-          data: {
-            type: typeName,
-            suggestion,
-          },
-          fix: (fixer) => fixer.replaceText(node.id, suggestion),
-        });
+        const variable =
+          context.getDeclaredVariables(node)[0] ?? findVariable(node.id);
+        const fix = buildRenameFix(variable, suggestion, { allowJsx: true });
+
+        const report: TSESLint.ReportDescriptor<MessageIds> = fix
+          ? {
+              node: node.id,
+              messageId: 'componentTypeShouldBeUppercase',
+              data: {
+                type: typeName,
+                suggestion,
+              },
+              fix,
+            }
+          : {
+              node: node.id,
+              messageId: 'componentTypeShouldBeUppercase',
+              data: {
+                type: typeName,
+                suggestion,
+              },
+            };
+
+        if (process.env.DEBUG_REACT_NAMING === 'true') {
+          // eslint-disable-next-line no-console
+          console.log('report variable uppercase', variableName, Boolean(fix));
+        }
+
+        context.report(report);
       }
     }
 
@@ -199,29 +401,62 @@ export const enforceReactTypeNaming = createRule<[], MessageIds>({
       // Check if it's a ReactNode or JSX.Element (should be lowercase)
       if (LOWERCASE_TYPES.includes(typeName) && isUppercase(paramName)) {
         const suggestion = toLowercase(paramName);
-        context.report({
-          node,
-          messageId: 'reactNodeShouldBeLowercase',
-          data: {
-            type: typeName,
-            suggestion,
-          },
-          fix: (fixer) => fixer.replaceText(node, suggestion),
-        });
+        const variable = findVariable(node);
+        const fix = buildRenameFix(variable, suggestion, { allowJsx: false });
+
+        const report: TSESLint.ReportDescriptor<MessageIds> = fix
+          ? {
+              node,
+              messageId: 'reactNodeShouldBeLowercase',
+              data: {
+                type: typeName,
+                suggestion,
+              },
+              fix,
+            }
+          : {
+              node,
+              messageId: 'reactNodeShouldBeLowercase',
+              data: {
+                type: typeName,
+                suggestion,
+              },
+            };
+
+        context.report(report);
       }
 
       // Check if it's a ComponentType or FC (should be uppercase)
       if (UPPERCASE_TYPES.includes(typeName) && !isUppercase(paramName)) {
         const suggestion = toUppercase(paramName);
-        context.report({
-          node,
-          messageId: 'componentTypeShouldBeUppercase',
-          data: {
-            type: typeName,
-            suggestion,
-          },
-          fix: (fixer) => fixer.replaceText(node, suggestion),
-        });
+        const variable = findVariable(node);
+        const fix = buildRenameFix(variable, suggestion, { allowJsx: true });
+
+        const report: TSESLint.ReportDescriptor<MessageIds> = fix
+          ? {
+              node,
+              messageId: 'componentTypeShouldBeUppercase',
+              data: {
+                type: typeName,
+                suggestion,
+              },
+              fix,
+            }
+          : {
+              node,
+              messageId: 'componentTypeShouldBeUppercase',
+              data: {
+                type: typeName,
+                suggestion,
+              },
+            };
+
+        if (process.env.DEBUG_REACT_NAMING === 'true') {
+          // eslint-disable-next-line no-console
+          console.log('report param uppercase', paramName, Boolean(fix));
+        }
+
+        context.report(report);
       }
     }
 

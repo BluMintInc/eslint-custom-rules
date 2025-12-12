@@ -1,6 +1,22 @@
 import { TSESTree, AST_NODE_TYPES } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
+type Options = [
+  {
+    additionalNonSerializableTypes: string[];
+    functionTypes: string[];
+  },
+];
+
+type MessageIds = 'nonSerializableParam' | 'nonSerializableProperty';
+
+const defaultOptions: Options = [
+  {
+    additionalNonSerializableTypes: [] as string[],
+    functionTypes: ['CallableRequest'],
+  },
+];
+
 const NON_SERIALIZABLE_TYPES = new Set([
   'Date',
   'DocumentReference',
@@ -12,7 +28,7 @@ const NON_SERIALIZABLE_TYPES = new Set([
   'undefined',
 ]);
 
-export default createRule({
+export default createRule<Options, MessageIds>({
   name: 'enforce-serializable-params',
   meta: {
     type: 'problem',
@@ -45,12 +61,7 @@ export default createRule({
         'Property "{{ prop }}" has non-serializable type "{{ type }}". Use JSON-serializable types. For example, instead of `{ timestamp: Date }`, use `{ timestamp: string }` with ISO format.',
     },
   },
-  defaultOptions: [
-    {
-      additionalNonSerializableTypes: [],
-      functionTypes: ['CallableRequest'],
-    },
-  ],
+  defaultOptions,
   create(context, [options]) {
     const allNonSerializableTypes = new Set([
       ...NON_SERIALIZABLE_TYPES,

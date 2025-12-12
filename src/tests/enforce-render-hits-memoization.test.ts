@@ -133,6 +133,32 @@ ruleTesterJsx.run(
         };
       `,
       },
+      // Valid: memoized helpers declared outside component scope
+      {
+        code: `
+        const transformBefore = useCallback((hits) => hits, []);
+        const render = useCallback((hit) => <HitComponent hit={hit} />, []);
+
+        function Component() {
+          useRenderHits({ hits, transformBefore, render });
+        }
+      `,
+      },
+      // Valid: renderHits result reused inside memo hook
+      {
+        code: `
+        const renderer = renderHits(hits, (hit) => <HitComponent hit={hit} />);
+        const memoizedRenderer = useMemo(() => renderer, [renderer]);
+
+        memoizedRenderer();
+      `,
+      },
+      // Valid: renderHits passed as argument to memo hook
+      {
+        code: `
+        useMemo(renderHits(hits, (hit) => <HitComponent hit={hit} />), [hits]);
+      `,
+      },
     ],
     invalid: [
       // Invalid: transformBefore not memoized

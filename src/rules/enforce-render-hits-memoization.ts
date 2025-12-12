@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds =
@@ -29,6 +29,8 @@ export const enforceRenderHitsMemoization = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
+    const memoHookNames = new Set(['useCallback', 'useMemo']);
+
     const isReactComponent = (node: TSESTree.Node): boolean => {
       if (node.type !== AST_NODE_TYPES.Identifier) return false;
       return /^[A-Z]/.test(node.name);
@@ -38,125 +40,164 @@ export const enforceRenderHitsMemoization = createRule<[], MessageIds>({
       if (node.type !== AST_NODE_TYPES.CallExpression) return false;
       if (!node.callee || node.callee.type !== AST_NODE_TYPES.Identifier)
         return false;
-      return (
-        node.callee.name === 'useCallback' || node.callee.name === 'useMemo'
-      );
+      return memoHookNames.has(node.callee.name);
     };
+
+    const findVariable = (name: string): TSESLint.Scope.Variable | null => {
+      for (
+        let scope: TSESLint.Scope.Scope | null = context.getScope();
+        scope;
+        scope = scope.upper
+      ) {
+        const variable = scope.variables.find(
+          (candidate) => candidate.name === name,
+        );
+        if (variable) return variable;
+      }
+      return null;
+    };
+
+    const variableHasMemoizedDefinition = (
+      variable: TSESLint.Scope.Variable,
+    ): boolean =>
+      variable.defs.some(
+        (def) =>
+          def.node.type === AST_NODE_TYPES.VariableDeclarator &&
+          def.node.init &&
+          isMemoizedCall(def.node.init),
+      );
+
+    const variableIsUsedInsideMemo = (
+      variable: TSESLint.Scope.Variable,
+    ): boolean =>
+      variable.references.some((ref) => {
+        let current: TSESTree.Node | undefined = ref.identifier;
+        while (current?.parent) {
+          if (
+            current.parent.type === AST_NODE_TYPES.CallExpression &&
+            current.parent.callee.type === AST_NODE_TYPES.Identifier &&
+            memoHookNames.has(current.parent.callee.name)
+          ) {
+            return true;
+          }
+          current = current.parent;
+        }
+        return false;
+      });
 
     const isMemoizedVariable = (node: TSESTree.Node): boolean => {
       if (node.type !== AST_NODE_TYPES.Identifier) return false;
-
-      // Get the variable declaration for this identifier
-      const variable = context
-        .getScope()
-        .variables.find((v) => v.name === (node as TSESTree.Identifier).name);
+      const variable = findVariable(node.name);
       if (!variable) return false;
+      return (
+        variableHasMemoizedDefinition(variable) ||
+        variableIsUsedInsideMemo(variable)
+      );
+    };
 
-      // Check if the variable is initialized with a memoized call
-      for (const def of variable.defs) {
-        if (!def || !def.node) continue;
+    const isInsideMemoizedCall = (node: TSESTree.Node): boolean => {
+      if (isMemoizedCall(node)) return true;
 
+      if (node.type === AST_NODE_TYPES.Identifier && isMemoizedVariable(node)) {
+        return true;
+      }
+
+      let current: TSESTree.Node | undefined = node;
+      while (current?.parent) {
         if (
-          def.node.type === AST_NODE_TYPES.VariableDeclarator &&
-          def.node.init
+          current.parent.type === AST_NODE_TYPES.CallExpression &&
+          current.parent.callee.type === AST_NODE_TYPES.Identifier &&
+          memoHookNames.has(current.parent.callee.name)
         ) {
-          if (isMemoizedCall(def.node.init)) {
+          return true;
+        }
+        current = current.parent;
+      }
+
+      if (
+        node.parent?.type === AST_NODE_TYPES.Property &&
+        node.parent.parent?.type === AST_NODE_TYPES.ObjectExpression
+      ) {
+        let objectCurrent: TSESTree.Node | undefined = node.parent.parent;
+        while (objectCurrent?.parent) {
+          if (
+            objectCurrent.parent.type === AST_NODE_TYPES.CallExpression &&
+            objectCurrent.parent.callee.type === AST_NODE_TYPES.Identifier &&
+            memoHookNames.has(objectCurrent.parent.callee.name)
+          ) {
             return true;
           }
+          objectCurrent = objectCurrent.parent;
         }
       }
 
       return false;
     };
 
-    const isInsideMemoizedCall = (node: TSESTree.Node): boolean => {
-      // Handle the case when node is already a memoized call
-      if (isMemoizedCall(node)) return true;
+    const getAssignedIdentifier = (
+      node: TSESTree.CallExpression,
+    ): TSESTree.Identifier | null => {
+      const parent = node.parent;
+      if (
+        parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+        parent.id.type === AST_NODE_TYPES.Identifier
+      ) {
+        return parent.id;
+      }
+      if (
+        parent?.type === AST_NODE_TYPES.AssignmentExpression &&
+        parent.left.type === AST_NODE_TYPES.Identifier
+      ) {
+        return parent.left;
+      }
+      return null;
+    };
 
-      // Check if the node is a reference to a memoized variable
-      if (isMemoizedVariable(node)) return true;
-
-      // Check if the node is inside a memoization hook call
+    const nearestFunctionAncestor = (
+      node: TSESTree.Node,
+    ): TSESTree.FunctionDeclaration | TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression | null => {
       let current: TSESTree.Node | undefined = node;
-      while (current?.parent) {
-        if (current.parent.type === AST_NODE_TYPES.CallExpression) {
-          const callee = current.parent.callee;
-          if (
-            callee.type === AST_NODE_TYPES.Identifier &&
-            (callee.name === 'useCallback' || callee.name === 'useMemo')
-          ) {
-            return true;
-          }
+      while (current) {
+        if (
+          current.type === AST_NODE_TYPES.FunctionDeclaration ||
+          current.type === AST_NODE_TYPES.FunctionExpression ||
+          current.type === AST_NODE_TYPES.ArrowFunctionExpression
+        ) {
+          return current;
         }
         current = current.parent;
       }
+      return null;
+    };
 
-      // Check if the node is a reference to a memoized value
-      const scope = context.getScope();
-      // Make sure node is an Identifier before accessing name property
-      if (node.type !== AST_NODE_TYPES.Identifier) {
-        return false;
-      }
-      const variable = scope.variables.find((v) => v.name === node.name);
-
-      if (!variable) {
-        return false;
+    const isRenderHitsMemoized = (node: TSESTree.CallExpression): boolean => {
+      if (isInsideMemoizedCall(node)) {
+        return true;
       }
 
-      // Check if any definition is a memoized value
-      for (const def of variable.defs) {
-        const parent = def.node.parent;
+      const assignedIdentifier = getAssignedIdentifier(node);
+      if (assignedIdentifier) {
+        const variable = findVariable(assignedIdentifier.name);
         if (
-          parent?.type === AST_NODE_TYPES.VariableDeclarator &&
-          parent.init?.type === AST_NODE_TYPES.CallExpression
+          variable &&
+          (variableHasMemoizedDefinition(variable) ||
+            variableIsUsedInsideMemo(variable))
         ) {
-          const callee = parent.init.callee;
-          if (
-            callee.type === AST_NODE_TYPES.Identifier &&
-            (callee.name === 'useCallback' || callee.name === 'useMemo')
-          ) {
-            return true;
-          }
+          return true;
         }
       }
 
-      // Check if any reference is inside a memoized call
-      for (const ref of variable.references) {
-        let current: TSESTree.Node | undefined = ref.identifier;
-        while (current?.parent) {
-          if (current.parent.type === AST_NODE_TYPES.CallExpression) {
-            const callee = current.parent.callee;
-            if (
-              callee.type === AST_NODE_TYPES.Identifier &&
-              (callee.name === 'useCallback' || callee.name === 'useMemo')
-            ) {
-              return true;
-            }
-          }
-          current = current.parent;
-        }
+      const enclosingFunction = nearestFunctionAncestor(node);
+      if (enclosingFunction && isInsideMemoizedCall(enclosingFunction)) {
+        return true;
       }
 
-      // Check if the node is a property of an object that is memoized
-      const parent = node.parent;
       if (
-        parent?.type === AST_NODE_TYPES.Property &&
-        parent.parent?.type === AST_NODE_TYPES.ObjectExpression
+        node.parent?.type === AST_NODE_TYPES.CallExpression &&
+        node.parent.callee.type === AST_NODE_TYPES.Identifier &&
+        memoHookNames.has(node.parent.callee.name)
       ) {
-        const objectExpression = parent.parent;
-        let current: TSESTree.Node | undefined = objectExpression;
-        while (current?.parent) {
-          if (current.parent.type === AST_NODE_TYPES.CallExpression) {
-            const callee = current.parent.callee;
-            if (
-              callee.type === AST_NODE_TYPES.Identifier &&
-              (callee.name === 'useCallback' || callee.name === 'useMemo')
-            ) {
-              return true;
-            }
-          }
-          current = current.parent;
-        }
+        return true;
       }
 
       return false;
@@ -277,18 +318,8 @@ export const enforceRenderHitsMemoization = createRule<[], MessageIds>({
           node.callee.type === AST_NODE_TYPES.Identifier &&
           node.callee.name === renderHitsName
         ) {
-          let current: TSESTree.Node | undefined = node;
-          while (current?.parent) {
-            if (current.parent.type === AST_NODE_TYPES.CallExpression) {
-              const callee = current.parent.callee;
-              if (
-                callee.type === AST_NODE_TYPES.Identifier &&
-                (callee.name === 'useCallback' || callee.name === 'useMemo')
-              ) {
-                return;
-              }
-            }
-            current = current.parent;
+          if (isRenderHitsMemoized(node)) {
+            return;
           }
 
           context.report({

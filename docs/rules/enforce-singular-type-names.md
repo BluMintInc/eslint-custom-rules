@@ -8,7 +8,7 @@ Type names should describe a single concept. Plural identifiers imply the declar
 
 ## Rule Details
 
-The rule checks TypeScript type aliases, interfaces, and enums. It uses `pluralize` to detect plural identifiers and reports names that are not singular. To avoid false positives on accepted conventions and mass nouns, the rule ignores names ending with `Props`, `Params`, `Options`, `Settings`, or `Data` (any casing).
+The rule checks TypeScript type aliases, interfaces, and enums. It uses `pluralize` to detect plural identifiers and reports names that are not singular. To avoid false positives on accepted conventions and mass nouns, the rule ignores names ending with `Props`, `Params`, `Options`, `Settings`, `Data`, `Config`, `Metadata`, `Utils`, `Status`, `Info`, `Context`, or `Schema` (any casing).
 
 Why singular names matter:
 - Plural identifiers hide whether the symbol models one value or many, which leads to misuse as a container type.
@@ -65,6 +65,44 @@ type UsersListProps = { users: User[] };
 type SearchParams = { query: string };
 type RequestOptions = { timeout: number };
 type UserData = { name: string; age: number };
+type AppConfig = { env: string };
+type RequestMetadata = { id: string };
+type RenderUtils = { format: () => string };
+type PaymentStatus = 'pending' | 'done';
+```
+
+## Options
+
+`allowedSuffixes` (array, default shown below): Suffixes that should be treated as singular even if the overall name looks plural. Provide this option to extend or override the defaults.
+
+```json
+{
+  "allowedSuffixes": [
+    "Props",
+    "Params",
+    "Options",
+    "Settings",
+    "Data",
+    "Config",
+    "Metadata",
+    "Utils",
+    "Status",
+    "Info",
+    "Context",
+    "Schema"
+  ]
+}
+```
+
+Example configuration to allow an additional suffix:
+
+```json
+{
+  "@blumintinc/blumint/enforce-singular-type-names": [
+    "error",
+    { "allowedSuffixes": ["Props", "Params", "Options", "Settings", "Data", "Config", "Metadata", "Utils", "Status", "Info", "Context", "Schema", "Payloads"] }
+  ]
+}
 ```
 
 ## When Not To Use It

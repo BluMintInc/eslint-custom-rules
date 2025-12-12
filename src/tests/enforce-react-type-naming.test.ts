@@ -252,7 +252,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
           },
         },
       ],
-      output: 'function renderContent(element) { return Element; }',
+      output: 'function renderContent(element) { return element; }',
     },
     {
       code: 'function useCustomHook(Component: ReactNode) { return <Component />; }',
@@ -265,7 +265,6 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
           },
         },
       ],
-      output: 'function useCustomHook(component) { return <Component />; }',
     },
     {
       code: `
@@ -284,7 +283,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
       ],
       output: `
         function render(element) {
-          return Element;
+          return element;
         }
       `,
     },
@@ -300,7 +299,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
         },
       ],
       output:
-        'const createComponent = (Component) => { return <component />; };',
+        'const createComponent = (Component) => { return <Component />; };',
     },
     {
       code: 'const withHOC = (wrapper: ComponentType) => (props) => <wrapper {...props} />;',
@@ -313,7 +312,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
           },
         },
       ],
-      output: 'const withHOC = (Wrapper) => (props) => <wrapper {...props} />;',
+      output: 'const withHOC = (Wrapper) => (props) => <Wrapper {...props} />;',
     },
     {
       code: 'const components: FC[] = [];',
@@ -385,7 +384,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
         const button = <button>Click</button>;
         const Card = () => <div>Card</div>;
         function render(element, Component) {
-          return <component>{Element}</component>;
+          return <Component>{element}</Component>;
         }
       `,
     },
@@ -415,7 +414,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
         class MyComponent extends React.Component {
           private renderElement(): JSX.Element {
             const element = <div>Element</div>;
-            return Element;
+            return element;
           }
         }
       `,
@@ -450,7 +449,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
         function useCustomHook() {
           const element = <div>Element</div>;
           const Component = () => <div>Component</div>;
-          return { Element, component };
+          return { element, Component };
         }
       `,
     },
@@ -473,7 +472,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
       ],
       output: `
         const renderElement = function(element) {
-          return Element;
+          return element;
         };
       `,
     },
@@ -504,8 +503,8 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
       ],
       output: `
         const utils = {
-          renderContent: (element) => Element,
-          createComponent: (Component) => <component />
+          renderContent: (element) => element,
+          createComponent: (Component) => <Component />
         };
       `,
     },
@@ -579,7 +578,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
         const forwardedComponent = React.forwardRef<HTMLDivElement, Props>(
           function(props, ref): JSX.Element {
             const element = <div ref={ref}>{props.children}</div>;
-            return Element;
+            return element;
           }
         );
       `,
@@ -615,7 +614,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
         function withData(Component) {
           return function WithData(props: Props) {
             const data = <div>Data</div>;
-            return <component {...props} data={Data} />;
+            return <Component {...props} data={data} />;
           };
         }
       `,
@@ -669,8 +668,8 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
 
           return (
             <>
-              {Element}
-              <component />
+              {element}
+              <Component />
             </>
           );
         }
@@ -740,7 +739,7 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
           render: (item: string) => ReactNode;
         }) {
           const element = <div>Test</div>;
-          return <div>{Element}</div>;
+          return <div>{element}</div>;
         }
       `,
     },

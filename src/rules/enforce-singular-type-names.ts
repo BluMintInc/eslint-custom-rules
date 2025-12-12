@@ -2,19 +2,39 @@ import { createRule } from '../utils/createRule';
 import { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import * as pluralize from 'pluralize';
 
-const NON_PLURALIZABLE_SUFFIXES = [
+const DEFAULT_SUFFIXES = [
   'Props',
   'Params',
   'Options',
   'Settings',
   'Data',
+  'Config',
+  'Metadata',
+  'Utils',
+  'Status',
+  'Info',
+  'Context',
+  'Schema',
 ];
 
+type Options = [
+  {
+    allowedSuffixes: string[];
+  },
+];
+
+type MessageIds = 'typeShouldBeSingular';
+
 export const enforceSingularTypeNames: TSESLint.RuleModule<
-  'typeShouldBeSingular',
-  never[]
-> = createRule({
-  create(context) {
+  MessageIds,
+  Options
+> = createRule<Options, MessageIds>({
+  create(context, [options]) {
+    const allowedSuffixes = new Set(
+      (options.allowedSuffixes ?? DEFAULT_SUFFIXES).map((suffix) =>
+        suffix.toLowerCase(),
+      ),
+    );
     /**
      * Check if a name is plural
      * @param name The name to check
@@ -25,12 +45,14 @@ export const enforceSingularTypeNames: TSESLint.RuleModule<
       if (name.length < 3) return false;
 
       // Skip checking if name ends with 'Props', 'Params', 'Data', etc.
+      const lowerCased = name.toLowerCase();
       if (
-        NON_PLURALIZABLE_SUFFIXES.some((suffix) =>
-          name.toLowerCase().endsWith(suffix.toLowerCase()),
+        Array.from(allowedSuffixes).some((suffix) =>
+          lowerCased.endsWith(suffix),
         )
-      )
+      ) {
         return false;
+      }
 
       // Skip checking if name is already singular according to pluralize
       if (pluralize.isSingular(name)) return false;
@@ -104,11 +126,27 @@ export const enforceSingularTypeNames: TSESLint.RuleModule<
       description: 'Enforce TypeScript type names to be singular',
       recommended: 'error',
     },
-    schema: [],
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          allowedSuffixes: {
+            type: 'array',
+            items: { type: 'string' },
+            default: DEFAULT_SUFFIXES,
+          },
+        },
+        additionalProperties: false,
+      },
+    ],
     messages: {
       typeShouldBeSingular:
         "Type name '{{name}}' is plural, which signals a collection and hides whether this alias, interface, or enum represents one value or many. Plural type identifiers push callers to misuse the symbol for arrays or maps. Rename it to a singular noun such as '{{suggestedName}}' so the declaration clearly models a single instance and leaves plural names for container types.",
     },
   },
-  defaultOptions: [],
+  defaultOptions: [
+    {
+      allowedSuffixes: DEFAULT_SUFFIXES,
+    },
+  ],
 });

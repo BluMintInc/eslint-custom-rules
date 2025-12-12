@@ -83,6 +83,15 @@ ruleTesterTs.run('enforce-singular-type-names', enforceSingularTypeNames, {
     'type SessionData = { userId: string; token: string; };',
     'type CacheData = { key: string; value: any; };',
 
+    // Newly allowed suffixes to avoid false positives
+    'type ErrorConfig = { retry: number; };',
+    'type RequestMetadata = { id: string; source: string; };',
+    'type RenderUtils = { format: () => string; };',
+    'type PaymentStatus = "pending" | "done";',
+    'type UserInfo = { name: string; };',
+    'type RequestContext = { traceId: string; };',
+    'type ValidationSchema = { fields: string[]; };',
+
     // Specific test case from bug report
     'type AuthenticationEnterPhonePageUserData = { phoneNumber: string; /* other properties */ };',
 
@@ -240,6 +249,30 @@ ruleTesterTs.run('enforce-singular-type-names', enforceSingularTypeNames, {
     'type DataContainer = { items: any[]; };', // starts with Data
     'type ContainerData = { items: any[]; };', // ends with Data
     'type DataProcessorData = { input: any; output: any; };', // both starts and ends with Data
+
+    // Custom allowed suffix configuration
+    {
+      code: 'type Payloads = { value: string; };',
+      options: [
+        {
+          allowedSuffixes: [
+            'Props',
+            'Params',
+            'Options',
+            'Settings',
+            'Data',
+            'Config',
+            'Metadata',
+            'Utils',
+            'Status',
+            'Info',
+            'Context',
+            'Schema',
+            'Payloads',
+          ],
+        },
+      ],
+    },
   ],
   invalid: [
     // Basic plural type alias
@@ -565,6 +598,13 @@ ruleTesterTs.run('enforce-singular-type-names', enforceSingularTypeNames, {
     {
       code: 'type BigDatas = { volume: number; };',
       errors: [error('BigDatas', 'BigData')],
+    },
+
+    // Invalid when configuration removes default suffix allowances
+    {
+      code: 'type RequestUtils = { format(): string; };',
+      options: [{ allowedSuffixes: [] }],
+      errors: [error('RequestUtils', 'RequestUtil')],
     },
   ],
 });
