@@ -127,6 +127,16 @@ function Component({ queryKey }) {
 }
       `,
     },
+    // Direct hook argument wrapped in satisfies expression is allowed
+    {
+      code: `
+type QueryOptions = { queryKey: string[] };
+function Component({ queryKey }: { queryKey: string[] }) {
+  useQuery({ queryKey } satisfies QueryOptions);
+  return null;
+}
+      `,
+    },
     // Inline JSX props handled by other rules; should not trigger here
     {
       code: `

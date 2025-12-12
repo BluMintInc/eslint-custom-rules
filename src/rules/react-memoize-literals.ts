@@ -218,6 +218,7 @@ function unwrapExpression(node: TSESTree.Node): TSESTree.Node {
     if (
       current.type === AST_NODE_TYPES.TSAsExpression ||
       current.type === AST_NODE_TYPES.TSTypeAssertion ||
+      current.type === AST_NODE_TYPES.TSSatisfiesExpression ||
       current.type === AST_NODE_TYPES.TSNonNullExpression
     ) {
       current = current.expression;
