@@ -289,6 +289,9 @@ const identifierHasDeclarationParent = (node: TSESTree.Identifier): boolean => {
   if (parent.type === AST_NODE_TYPES.FunctionDeclaration && parent.id === node) {
     return true;
   }
+  if (parent.type === AST_NODE_TYPES.FunctionExpression && parent.id === node) {
+    return true;
+  }
   if (
     (parent.type === AST_NODE_TYPES.FunctionDeclaration ||
       parent.type === AST_NODE_TYPES.FunctionExpression ||
@@ -656,8 +659,21 @@ const createStorageVisitors = (
     'ForOfStatement:exit': aliases.popScope,
     CatchClause: (_node: TSESTree.CatchClause) => aliases.pushScope(),
     'CatchClause:exit': aliases.popScope,
-    FunctionDeclaration: (_node: TSESTree.FunctionDeclaration) =>
-      aliases.pushScope(),
+    FunctionDeclaration: (node: TSESTree.FunctionDeclaration) => {
+      if (node.id) {
+        const name = node.id.name;
+        const shadowsGlobal =
+          STORAGE_NAMES.has(name as StorageKind) || GLOBAL_NAMES.has(name);
+        const outerAlias = getAliasFromStack(storageAliases, name);
+        const shadowsOuterStorageAlias =
+          outerAlias === 'localStorage' || outerAlias === 'sessionStorage';
+
+        if (shadowsGlobal || shadowsOuterStorageAlias) {
+          aliases.setAlias(name, 'shadowed');
+        }
+      }
+      aliases.pushScope();
+    },
     'FunctionDeclaration:exit': aliases.popScope,
     FunctionExpression: (_node: TSESTree.FunctionExpression) =>
       aliases.pushScope(),

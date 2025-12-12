@@ -123,6 +123,18 @@ ruleTesterTs.run('enforce-storage-context', enforceStorageContext, {
         localStorage.message;
       }
     `,
+    `
+      function localStorage() {
+        return 'shadowed';
+      }
+      localStorage();
+    `,
+    `
+      const fn = function localStorage() {
+        return 'shadowed';
+      };
+      fn();
+    `,
   ],
   invalid: [
     {
