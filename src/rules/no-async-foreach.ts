@@ -5,7 +5,7 @@ type AsyncCallbackNode =
   | TSESTree.FunctionExpression
   | TSESTree.FunctionDeclaration;
 
-const getCallbackLabel = (
+const getFunctionDescription = (
   node: AsyncCallbackNode,
   fallbackName?: string,
 ): string => {
@@ -57,7 +57,7 @@ const analyzeCallbackAsyncStatus = (
     callback.async
   ) {
     return {
-      callbackLabel: getCallbackLabel(callback),
+      callbackLabel: getFunctionDescription(callback),
     };
   }
 
@@ -73,7 +73,7 @@ const analyzeCallbackAsyncStatus = (
   for (const def of variable.defs) {
     if (def.node.type === 'FunctionDeclaration' && def.node.async) {
       return {
-        callbackLabel: getCallbackLabel(
+        callbackLabel: getFunctionDescription(
           def.node,
           def.node.id?.name ?? callback.name,
         ),
@@ -91,7 +91,7 @@ const analyzeCallbackAsyncStatus = (
         const name =
           (def.node.id.type === 'Identifier' && def.node.id.name) || callback.name;
         return {
-          callbackLabel: getCallbackLabel(init, name),
+          callbackLabel: getFunctionDescription(init, name),
         };
       }
     }
