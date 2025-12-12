@@ -145,6 +145,16 @@ ${typedPrelude}
       }
       `,
     },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      export function useLocalMemo(flag: boolean) {
+        const useMemo = <T,>(factory: () => T, deps: unknown[]) => factory();
+        return useMemo(() => (flag ? 1 : 0), [flag]);
+      }
+      `,
+    },
   ],
   invalid: [
     {
@@ -159,7 +169,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}      export function useUpper(value: string) {
+${typedPrelude}export function useUpper(value: string) {
         return value.toUpperCase();
       }
       `,
@@ -177,7 +187,7 @@ ${typedPrelude}
       options: [{ allowExpensiveCalleePatterns: ['('] }],
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}      export function useInvalidPattern(value: string) {
+${typedPrelude}export function useInvalidPattern(value: string) {
         return value;
       }
       `,
@@ -193,7 +203,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}      export const useFlag = (values: string[]) =>
+${typedPrelude}export const useFlag = (values: string[]) =>
         values.every(Boolean);
       `,
     },
@@ -229,7 +239,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}      export function useTuple(slug: string) {
+${typedPrelude}export function useTuple(slug: string) {
         return [slug, slug.toUpperCase()];
       }
       `,
@@ -246,7 +256,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}      export function useUnion(flag: boolean) {
+${typedPrelude}export function useUnion(flag: boolean) {
         return flag ? 'ready' : false;
       }
       `,
@@ -263,7 +273,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}      export function useReadonly(values: ReadonlyArray<number>) {
+${typedPrelude}export function useReadonly(values: ReadonlyArray<number>) {
         return values[0] ?? 0;
       }
       `,
@@ -281,7 +291,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}      export function useStored(slug: string) {
+${typedPrelude}export function useStored(slug: string) {
         const memoized = slug;
         return memoized;
       }
@@ -301,7 +311,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}      export function useAssigned(flag: boolean) {
+${typedPrelude}export function useAssigned(flag: boolean) {
         let result: boolean;
         result = flag;
         return result;
@@ -322,7 +332,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}      export function useConditional(flag: boolean, fallback: string) {
+${typedPrelude}export function useConditional(flag: boolean, fallback: string) {
         return flag
           ? 'on'
           : fallback;
@@ -341,7 +351,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}      export function useLogicalLeft(value?: string) {
+${typedPrelude}export function useLogicalLeft(value?: string) {
         return (value && value.toUpperCase()) || 'NONE';
       }
       `,
@@ -358,7 +368,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}      export function useLogicalAnd(flag: boolean, label: string) {
+${typedPrelude}export function useLogicalAnd(flag: boolean, label: string) {
         return (flag || label.length > 0) && label;
       }
       `,
@@ -377,7 +387,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}      export function useBlock(slug: string) {
+${typedPrelude}export function useBlock(slug: string) {
         return slug;
       }
       `,
@@ -394,7 +404,7 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}      export function useTupleLiteral() {
+${typedPrelude}export function useTupleLiteral() {
         return [1, 2, 3] as const;
       }
       `,
@@ -411,8 +421,30 @@ ${typedPrelude}
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
-${typedPrelude}      export function useParenthesized(value: string) {
+${typedPrelude}export function useParenthesized(value: string) {
         return value;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+      declare function wrap<T>(value: T): T;
+
+      export function useWrapped(flag: boolean) {
+        return wrap(useMemo(() => {
+          return flag, flag ? 1 : 2;
+        }, [flag]));
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}declare function wrap<T>(value: T): T;
+
+      export function useWrapped(flag: boolean) {
+        return wrap((flag, flag ? 1 : 2));
       }
       `,
     },

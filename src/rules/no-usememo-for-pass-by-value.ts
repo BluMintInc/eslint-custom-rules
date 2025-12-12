@@ -32,8 +32,7 @@ const PASS_BY_VALUE_FLAGS =
   ts.TypeFlags.Undefined |
   ts.TypeFlags.Null |
   ts.TypeFlags.Void |
-  ts.TypeFlags.ESSymbolLike |
-  ts.TypeFlags.Never;
+  ts.TypeFlags.ESSymbolLike;
 
 type FunctionContext = {
   isHook: boolean;
@@ -277,7 +276,7 @@ function isUseMemoCall(
 ): boolean {
   if (
     node.callee.type === AST_NODE_TYPES.Identifier &&
-    (node.callee.name === 'useMemo' || imports.useMemoNames.has(node.callee.name))
+    imports.useMemoNames.has(node.callee.name)
   ) {
     return true;
   }
@@ -315,23 +314,45 @@ function buildImportRemovalFix(
     const text = sourceCode.getText();
     let [start, end] = importDeclaration.range;
 
-    while (start > 0 && (text[start - 1] === ' ' || text[start - 1] === '\t')) {
-      start -= 1;
+    let scan = start;
+    while (scan > 0 && (text[scan - 1] === ' ' || text[scan - 1] === '\t')) {
+      scan -= 1;
     }
-    if (start > 0 && text[start - 1] === '\n') {
-      start -= 1;
+    if (scan > 0 && text[scan - 1] === '\n') {
+      start = scan - 1;
+      if (start > 0 && text[start - 1] === '\r') {
+        start -= 1;
+      }
+    } else {
+      start = scan;
+      if (start > 0 && text[start - 1] === '\r') {
+        start -= 1;
+      }
     }
 
     while (end < text.length && (text[end] === ' ' || text[end] === '\t')) {
       end += 1;
     }
-    if (end < text.length && text[end] === '\n') {
-      end += 1;
+    const consumeLineBreak = () => {
+      if (end < text.length && text[end] === '\r' && text[end + 1] === '\n') {
+        end += 2;
+        return true;
+      }
+      if (end < text.length && (text[end] === '\n' || text[end] === '\r')) {
+        end += 1;
+        return true;
+      }
+      return false;
+    };
+
+    if (consumeLineBreak()) {
       while (end < text.length && (text[end] === ' ' || text[end] === '\t')) {
         end += 1;
       }
-      if (end < text.length && text[end] === '\n') {
-        end += 1;
+      if (consumeLineBreak()) {
+        while (end < text.length && (text[end] === ' ' || text[end] === '\t')) {
+          end += 1;
+        }
       }
     }
 
@@ -441,7 +462,10 @@ function shouldParenthesizeReplacement(
       return true;
     case AST_NODE_TYPES.CallExpression:
     case AST_NODE_TYPES.NewExpression:
-      return parent.callee === node;
+      return (
+        parent.callee === node ||
+        replacementExpression.type === AST_NODE_TYPES.SequenceExpression
+      );
     default:
       return false;
   }
@@ -509,7 +533,7 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
     ],
     messages: {
       primitiveMemo:
-        'Custom hook "{{hookName}}" returns useMemo wrapping a pass-by-value type ({{valueType}}). Memoizing primitives does not change identity or prevent re-renders—it only suggests stability that is not there. Return the value directly and remove the useMemo import to keep the hook clear and lightweight.',
+        'What’s wrong: custom hook "{{hookName}}" returns useMemo wrapping a pass-by-value value ({{valueType}}) → Why it matters: memoizing pass-by-value results cannot change identity and implies stability that is not real, which misleads callers and adds noise → How to fix: inline the returned expression and remove the useMemo import if it becomes unused.',
     },
   },
   defaultOptions: [{}],
@@ -638,6 +662,23 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
         case AST_NODE_TYPES.CallExpression:
           if (isUseMemoCall(expression, imports)) {
             handleUseMemoCall(expression, currentContext);
+            return;
+          }
+          for (const argument of expression.arguments) {
+            if (argument.type === AST_NODE_TYPES.SpreadElement) {
+              analyzeReturnedValue(argument.argument, currentContext);
+              continue;
+            }
+            analyzeReturnedValue(argument, currentContext);
+          }
+          return;
+        case AST_NODE_TYPES.NewExpression:
+          for (const argument of expression.arguments ?? []) {
+            if (argument.type === AST_NODE_TYPES.SpreadElement) {
+              analyzeReturnedValue(argument.argument, currentContext);
+              continue;
+            }
+            analyzeReturnedValue(argument, currentContext);
           }
           return;
         case AST_NODE_TYPES.Identifier: {
