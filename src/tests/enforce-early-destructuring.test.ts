@@ -323,6 +323,27 @@ ruleTesterJsx.run(
       },
       {
         code: `
+          const MyComponent = ({ user, extra }) => {
+            const deps = useDeps();
+            useEffect(() => {
+              const { name } = user;
+              doSomething(name, extra);
+            }, [...deps, user, extra]);
+          };
+        `,
+        output: `
+          const MyComponent = ({ user, extra }) => {
+            const deps = useDeps();
+            const { name } = (user) ?? {};
+            useEffect(() => {
+              doSomething(name, extra);
+            }, [...deps, extra, name]);
+          };
+        `,
+        errors: [{ messageId: 'hoistDestructuring' }],
+      },
+      {
+        code: `
           const MyComponent = ({ user }) => {
             useCallback(() => {
               const { name = 'Anonymous', age: userAge } = user;
