@@ -18,7 +18,7 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
     schema: [],
     messages: {
       enforceFieldPathSyntax:
-        'What is wrong: DocSetter {{methodName}} receives nested object data under "{{topLevelKey}}". Why it matters: Firestore treats that nested map as a whole sub-document write, so partial updates can overwrite sibling fields you did not include. How to fix: Flatten nested properties into FieldPath (dot) keys before passing documentData (e.g., "{{exampleFieldPath}}") so only the intended leaves are written.',
+        'What’s wrong: DocSetter {{methodName}} receives nested object data under "{{topLevelKey}}". → Why it matters: Firestore treats that nested map as a whole sub-document write, so partial updates can overwrite sibling fields you did not include. → How to fix: Flatten nested properties into FieldPath (dot) keys before passing documentData (e.g., "{{exampleFieldPath}}") so only the intended leaves are written.',
     },
   },
   defaultOptions: [],

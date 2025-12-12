@@ -1,7 +1,7 @@
 import { ruleTesterTs } from '../../utils/ruleTester';
 import { enforceFieldPathSyntaxInDocSetter } from '../../rules/enforce-fieldpath-syntax-in-docsetter';
 
-const buildData = (
+const createViolationMessageData = (
   methodName: string,
   topLevelKey: string,
   exampleFieldPath: string,
@@ -385,7 +385,11 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData('set()', 'roles', 'roles.contributor'),
+            data: createViolationMessageData(
+              'set()',
+              'roles',
+              'roles.contributor',
+            ),
           },
         ],
         output: `
@@ -408,7 +412,7 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData(
+            data: createViolationMessageData(
               'set()',
               'metadata',
               'metadata.createdAt',
@@ -441,7 +445,7 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData(
+            data: createViolationMessageData(
               'set()',
               'settings',
               'settings.display.theme',
@@ -469,7 +473,7 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData(
+            data: createViolationMessageData(
               'updateIfExists()',
               'roles',
               'roles.contributor',
@@ -498,7 +502,7 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData(
+            data: createViolationMessageData(
               'set()',
               'metadata',
               'metadata.createdAt',
@@ -527,7 +531,11 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData('set()', 'roles', 'roles.contributor'),
+            data: createViolationMessageData(
+              'set()',
+              'roles',
+              'roles.contributor',
+            ),
           },
         ],
         output: `
@@ -551,7 +559,11 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData('set()', 'metadata', 'metadata.description'),
+            data: createViolationMessageData(
+              'set()',
+              'metadata',
+              'metadata.description',
+            ),
           },
         ],
         output: `
@@ -579,7 +591,11 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData('set()', 'config', 'config.ui.theme'),
+            data: createViolationMessageData(
+              'set()',
+              'config',
+              'config.ui.theme',
+            ),
           },
         ],
         output: `
@@ -607,7 +623,7 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData('set()', 'stats', 'stats.views'),
+            data: createViolationMessageData('set()', 'stats', 'stats.views'),
           },
         ],
         output: `
@@ -635,7 +651,11 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData('set()', 'metadata', 'metadata.description'),
+            data: createViolationMessageData(
+              'set()',
+              'metadata',
+              'metadata.description',
+            ),
           },
         ],
         output: `
@@ -664,7 +684,7 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData('set()', 'scores', 'scores.total'),
+            data: createViolationMessageData('set()', 'scores', 'scores.total'),
           },
         ],
         output: `
@@ -693,7 +713,7 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData('set()', 'flags', 'flags.active'),
+            data: createViolationMessageData('set()', 'flags', 'flags.active'),
           },
         ],
         output: `
@@ -721,7 +741,7 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData('set()', 'data', 'data.tags'),
+            data: createViolationMessageData('set()', 'data', 'data.tags'),
           },
         ],
         output: `
@@ -748,7 +768,11 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData('set()', 'timestamps', 'timestamps.created'),
+            data: createViolationMessageData(
+              'set()',
+              'timestamps',
+              'timestamps.created',
+            ),
           },
         ],
         output: `
@@ -778,7 +802,7 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData(
+            data: createViolationMessageData(
               'set()',
               'deep',
               'deep.level1.level2.level3',
@@ -807,7 +831,7 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData(
+            data: createViolationMessageData(
               'set()',
               'metadata',
               'metadata.version',
@@ -836,7 +860,7 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData(
+            data: createViolationMessageData(
               'set()',
               'metadata',
               'metadata.version',
@@ -867,7 +891,7 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData(
+            data: createViolationMessageData(
               'set()',
               'data',
               'data.string-key',
@@ -900,7 +924,7 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData('set()', 'text', 'text.title'),
+            data: createViolationMessageData('set()', 'text', 'text.title'),
           },
         ],
         output: `
@@ -925,7 +949,11 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData('set()', 'roles', 'roles.contributor'),
+            data: createViolationMessageData(
+              'set()',
+              'roles',
+              'roles.contributor',
+            ),
           },
         ],
         output: `
@@ -948,7 +976,11 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData('set()', 'profile', 'profile.name'),
+            data: createViolationMessageData(
+              'set()',
+              'profile',
+              'profile.name',
+            ),
           },
         ],
         output: `
@@ -972,7 +1004,7 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData(
+            data: createViolationMessageData(
               'set()',
               'metadata',
               'metadata.version',
@@ -1002,7 +1034,7 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData(
+            data: createViolationMessageData(
               'set()',
               'metadata',
               'metadata.version',
@@ -1035,7 +1067,7 @@ ruleTesterTs.run(
         errors: [
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData(
+            data: createViolationMessageData(
               'set()',
               'metadata',
               'metadata.version',
@@ -1043,7 +1075,11 @@ ruleTesterTs.run(
           },
           {
             messageId: 'enforceFieldPathSyntax',
-            data: buildData('set()', 'profile', 'profile.name'),
+            data: createViolationMessageData(
+              'set()',
+              'profile',
+              'profile.name',
+            ),
           },
         ],
         output: `
