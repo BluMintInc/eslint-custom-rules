@@ -55,7 +55,10 @@ ruleTesterTs.run(
           return [];
         }
         `,
-        filename: path.join(tsconfigRootDir, 'src/tests/fixtures/type-aware-array.ts'),
+        filename: path.join(
+          tsconfigRootDir,
+          'src/tests/fixtures/type-aware-array.ts',
+        ),
         parserOptions: {
           project: './tsconfig.json',
           tsconfigRootDir,
@@ -118,6 +121,25 @@ ruleTesterTs.run(
         `,
         options: [{ emptyCheckFunctions: ['customIsEmpty'] }],
       },
+      {
+        code: `
+        type Config = { required: string } & { optional?: string };
+        const config: Config | undefined = getConfig();
+        if (!config) {
+          return;
+        }
+        const value = config.required;
+        return value;
+        `,
+        filename: path.join(
+          tsconfigRootDir,
+          'src/tests/fixtures/type-aware-object.ts',
+        ),
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+      },
     ],
     invalid: [
       {
@@ -150,7 +172,9 @@ ruleTesterTs.run(
           applyConfig(config);
         }
         `,
-        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'config' } }],
+        errors: [
+          { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+        ],
         output: `
         const config = getConfig();
         if ((!config || Object.keys(config).length === 0)) {
@@ -166,7 +190,9 @@ ruleTesterTs.run(
           logResponse(response);
         }
         `,
-        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'response' } }],
+        errors: [
+          { messageId: 'missingEmptyObjectCheck', data: { name: 'response' } },
+        ],
         output: `
         if ((!response || Object.keys(response).length === 0) && shouldLog) {
           logResponse(response);
@@ -178,7 +204,10 @@ ruleTesterTs.run(
         const name = !userProfile ? 'anonymous' : userProfile.name;
         `,
         errors: [
-          { messageId: 'missingEmptyObjectCheck', data: { name: 'userProfile' } },
+          {
+            messageId: 'missingEmptyObjectCheck',
+            data: { name: 'userProfile' },
+          },
         ],
         output: `
         const name = (!userProfile || Object.keys(userProfile).length === 0) ? 'anonymous' : userProfile.name;
@@ -191,7 +220,9 @@ ruleTesterTs.run(
           options = retry();
         }
         `,
-        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'options' } }],
+        errors: [
+          { messageId: 'missingEmptyObjectCheck', data: { name: 'options' } },
+        ],
         output: `
         let options = load();
         while ((!options || Object.keys(options).length === 0)) {
@@ -206,7 +237,9 @@ ruleTesterTs.run(
           data = read();
         } while (!data);
         `,
-        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'data' } }],
+        errors: [
+          { messageId: 'missingEmptyObjectCheck', data: { name: 'data' } },
+        ],
         output: `
         let data;
         do {
@@ -221,7 +254,9 @@ ruleTesterTs.run(
           config = getConfig();
         }
         `,
-        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'config' } }],
+        errors: [
+          { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+        ],
         output: `
         let config;
         for (; (!config || Object.keys(config).length === 0); ) {
@@ -237,7 +272,9 @@ ruleTesterTs.run(
         }
         `,
         filename: 'src/payload.ts',
-        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } }],
+        errors: [
+          { messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } },
+        ],
         output: `
         const payload: Record<string, unknown> | undefined = getPayload();
         if ((!payload || Object.keys(payload).length === 0)) {
@@ -253,7 +290,10 @@ ruleTesterTs.run(
         }
         `,
         errors: [
-          { messageId: 'missingEmptyObjectCheck', data: { name: 'requestContext' } },
+          {
+            messageId: 'missingEmptyObjectCheck',
+            data: { name: 'requestContext' },
+          },
         ],
         output: `
         const requestContext = getContext();
@@ -270,7 +310,9 @@ ruleTesterTs.run(
         }
         `,
         options: [{ objectNamePattern: ['Bag'] }],
-        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'resultBag' } }],
+        errors: [
+          { messageId: 'missingEmptyObjectCheck', data: { name: 'resultBag' } },
+        ],
         output: `
         const resultBag = getBag();
         if ((!resultBag || Object.keys(resultBag).length === 0)) {
@@ -287,7 +329,10 @@ ruleTesterTs.run(
         `,
         options: [{ emptyCheckFunctions: ['isEmpty'] }],
         errors: [
-          { messageId: 'missingEmptyObjectCheck', data: { name: 'responsePayload' } },
+          {
+            messageId: 'missingEmptyObjectCheck',
+            data: { name: 'responsePayload' },
+          },
         ],
         output: `
         const responsePayload = getResponse();
@@ -303,12 +348,17 @@ ruleTesterTs.run(
           return handle(count);
         }
         `,
-        filename: path.join(tsconfigRootDir, 'src/tests/fixtures/type-aware-object.ts'),
+        filename: path.join(
+          tsconfigRootDir,
+          'src/tests/fixtures/type-aware-object.ts',
+        ),
         parserOptions: {
           project: './tsconfig.json',
           tsconfigRootDir,
         },
-        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'count' } }],
+        errors: [
+          { messageId: 'missingEmptyObjectCheck', data: { name: 'count' } },
+        ],
         output: `
         const count: Record<string, unknown> | undefined = getCount();
         if ((!count || Object.keys(count).length === 0)) {
@@ -318,11 +368,40 @@ ruleTesterTs.run(
       },
       {
         code: `
+        type Payload = { a?: string } & { b?: string };
+        const payload: Payload | undefined = getPayload();
+        if (!payload) {
+          return handle(payload);
+        }
+        `,
+        filename: path.join(
+          tsconfigRootDir,
+          'src/tests/fixtures/type-aware-object.ts',
+        ),
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+        errors: [
+          { messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } },
+        ],
+        output: `
+        type Payload = { a?: string } & { b?: string };
+        const payload: Payload | undefined = getPayload();
+        if ((!payload || Object.keys(payload).length === 0)) {
+          return handle(payload);
+        }
+        `,
+      },
+      {
+        code: `
         if (!payload ? handleEmpty() : handlePayload(payload)) {
           process();
         }
         `,
-        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } }],
+        errors: [
+          { messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } },
+        ],
         output: `
         if ((!payload || Object.keys(payload).length === 0) ? handleEmpty() : handlePayload(payload)) {
           process();
@@ -335,7 +414,9 @@ ruleTesterTs.run(
           apply(config);
         }
         `,
-        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'config' } }],
+        errors: [
+          { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+        ],
         output: `
         if (flag ? (!config || Object.keys(config).length === 0) : hasConfig(config)) {
           apply(config);
@@ -348,7 +429,9 @@ ruleTesterTs.run(
           apply(config);
         }
         `,
-        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'config' } }],
+        errors: [
+          { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+        ],
         output: `
         if (flag ? hasConfig(config) : (!config || Object.keys(config).length === 0)) {
           apply(config);
@@ -363,7 +446,9 @@ ruleTesterTs.run(
         }
         `,
         options: [{ objectNamePattern: ['Bag'] }],
-        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'config' } }],
+        errors: [
+          { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+        ],
         output: `
         const config = getConfig();
         if ((!config || Object.keys(config).length === 0)) {
@@ -377,7 +462,9 @@ ruleTesterTs.run(
           handle(payload);
         }
         `,
-        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } }],
+        errors: [
+          { messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } },
+        ],
         output: `
         if ((!payload || Object.keys(payload).length === 0) || Object.keys(payload).length > 5) {
           handle(payload);
@@ -391,7 +478,9 @@ ruleTesterTs.run(
           handle(payload);
         }
         `,
-        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } }],
+        errors: [
+          { messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } },
+        ],
         output: `
         const payload = getPayload();
         if ((!payload || Object.keys(payload).length === 0) || Object.keys(payload).length < 0) {
@@ -406,7 +495,9 @@ ruleTesterTs.run(
           handle(payload);
         }
         `,
-        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } }],
+        errors: [
+          { messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } },
+        ],
         output: `
         const payload = getPayload();
         if ((!payload || Object.keys(payload).length === 0) || 0 > Object.keys(payload).length) {
@@ -421,7 +512,9 @@ ruleTesterTs.run(
           return config;
         }
         `,
-        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'config' } }],
+        errors: [
+          { messageId: 'missingEmptyObjectCheck', data: { name: 'config' } },
+        ],
         output: `
         const config = load();
         if ((!config || Object.keys(config).length === 0) || Object.keys(config).length === 10) {
@@ -436,7 +529,9 @@ ruleTesterTs.run(
           return handle(payload);
         }
         `,
-        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } }],
+        errors: [
+          { messageId: 'missingEmptyObjectCheck', data: { name: 'payload' } },
+        ],
         output: `
         const payload = getPayload();
         if ((!payload || Object.keys(payload).length === 0) || !!Object.keys(payload).length) {
@@ -451,7 +546,12 @@ ruleTesterTs.run(
           return islandData;
         }
         `,
-        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'islandData' } }],
+        errors: [
+          {
+            messageId: 'missingEmptyObjectCheck',
+            data: { name: 'islandData' },
+          },
+        ],
         output: `
         const islandData = fetchIsland();
         if ((!islandData || Object.keys(islandData).length === 0)) {
