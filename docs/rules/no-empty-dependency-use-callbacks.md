@@ -176,6 +176,14 @@ function Component() {
 }
 ```
 
-Callbacks that reference component scope, return JSX, or are declared in multi-variable statements are reported without an auto-fix to avoid unsafe refactors. If a callback must stay for memoization or HMR reasons, add an `eslint-disable-next-line @blumintinc/blumint/no-empty-dependency-use-callbacks` comment with a short justification.
+Callbacks that reference component scope or return JSX are not reported to avoid false positives. Callbacks declared in multi-variable statements may be reported without an auto-fix to avoid unsafe refactors. If a callback must stay for memoization or HMR reasons, add an `eslint-disable-next-line @blumintinc/blumint/no-empty-dependency-use-callbacks` comment with a short justification.
 Callbacks that rely on type aliases or interfaces defined in any enclosing block scope are treated as component-bound and will not be hoisted.
 If the module already defines a value with the same name, the fixer is skipped to avoid introducing duplicate declarations.
+
+## Warnings & Considerations
+
+- Security/Privacy: If a hoisted callback touches sensitive values, review the `--fix` diff to ensure it does not become callable from unintended places.
+- Performance: Hoisting removes hook overhead; make sure this does not conflict with deliberate memoization patterns in hot render paths.
+- Scalability: When multiple components reuse a hoisted helper, prefer moving it to a shared module instead of growing a single file.
+- Platform/Tooling: Validate `--fix` output on Windows/macOS/Linux when path separators or newlines could affect how fixes apply.
+- React semantics: If `useLatestCallback` is intentionally kept for HMR or stale-closure handling, disable the rule locally with a short note.

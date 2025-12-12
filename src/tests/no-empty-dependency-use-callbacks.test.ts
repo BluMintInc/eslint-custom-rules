@@ -151,6 +151,26 @@ function Component({ id }) {
   return <button onClick={report}>Report</button>;
 }
 `,
+  {
+    filename: 'C:\\project\\components\\Component.test.tsx',
+    code: `
+import { useCallback } from 'react';
+const Component = () => {
+  const handler = useCallback(() => 'static', []);
+  return <div onClick={handler} />;
+};
+    `,
+  },
+  `
+import { useCallback } from 'react';
+class Service {
+  value = 1;
+  handle = useCallback(() => this.value + 1, []);
+}
+class Child extends Service {
+  run = useCallback(() => super.handle(), []);
+}
+`,
 ];
 
 const invalid = [

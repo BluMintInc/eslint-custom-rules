@@ -235,10 +235,46 @@ function isTestFile(
   filename: string,
   patterns: string[],
 ): boolean {
-  const basename = filename.split('/').pop() ?? filename;
+  const normalized = filename.replace(/\\/g, '/');
+  const basename = normalized.split('/').pop() ?? normalized;
   return patterns.some(
-    (pattern) => minimatch(filename, pattern) || minimatch(basename, pattern),
+    (pattern) =>
+      minimatch(normalized, pattern) || minimatch(basename, pattern),
   );
+}
+
+function usesThisOrSuper(
+  node: TSESTree.Node,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+): boolean {
+  const visitorKeys = sourceCode.visitorKeys;
+  const stack = [node];
+
+  while (stack.length) {
+    const current = stack.pop() as TSESTree.Node;
+    if (
+      current.type === AST_NODE_TYPES.ThisExpression ||
+      current.type === AST_NODE_TYPES.Super
+    ) {
+      return true;
+    }
+    const keys = visitorKeys[current.type];
+    if (!keys) continue;
+    for (const key of keys) {
+      const value = (current as unknown as Record<string, unknown>)[key];
+      if (Array.isArray(value)) {
+        for (const element of value) {
+          if (element && typeof (element as TSESTree.Node).type === 'string') {
+            stack.push(element as TSESTree.Node);
+          }
+        }
+      } else if (value && typeof (value as TSESTree.Node).type === 'string') {
+        stack.push(value as TSESTree.Node);
+      }
+    }
+  }
+
+  return false;
 }
 
 function analyzeExternalReferences(
@@ -246,6 +282,7 @@ function analyzeExternalReferences(
   fn: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
 ): { hasComponentScopeRef: boolean } {
   const sourceCode = context.getSourceCode();
+  let hasComponentScopeRef = usesThisOrSuper(fn.body, sourceCode);
   const scopeManager = sourceCode.scopeManager;
   if (!scopeManager) {
     return { hasComponentScopeRef: true };
@@ -255,55 +292,62 @@ function analyzeExternalReferences(
     return { hasComponentScopeRef: true };
   }
 
-  let hasComponentScopeRef = false;
+  if (!hasComponentScopeRef) {
+    for (const ref of scope.through) {
+      const identifier = ref.identifier;
+      if (isPropertyKey(identifier.parent, identifier)) {
+        continue;
+      }
+      const resolved = ref.resolved;
+      if (!resolved) {
+        continue;
+      }
 
-  for (const ref of scope.through) {
-    const identifier = ref.identifier;
-    if (isPropertyKey(identifier.parent, identifier)) {
-      continue;
-    }
-    const resolved = ref.resolved;
-    if (!resolved) {
-      continue;
-    }
+      const def = resolved.defs[0];
+      const scopeType = resolved.scope.type;
+      const isImport = def?.type === 'ImportBinding';
+      const isModuleOrGlobal =
+        scopeType === 'module' || scopeType === 'global';
 
-    const def = resolved.defs[0];
-    const scopeType = resolved.scope.type;
-    const isImport = def?.type === 'ImportBinding';
-    const isModuleOrGlobal =
-      scopeType === 'module' || scopeType === 'global';
-
-    if (!isImport && !isModuleOrGlobal) {
-      hasComponentScopeRef = true;
-      break;
+      if (!isImport && !isModuleOrGlobal) {
+        hasComponentScopeRef = true;
+        break;
+      }
     }
   }
 
   if (!hasComponentScopeRef) {
-    const localTypes = collectNearestBlockTypeBindings(fn);
-    if (localTypes.size > 0) {
-      const typeRoots: TSESTree.Node[] = [];
-      if (fn.returnType) {
-        typeRoots.push(fn.returnType.typeAnnotation);
+    const typeRoots: TSESTree.Node[] = [];
+    if (fn.returnType) {
+      typeRoots.push(fn.returnType.typeAnnotation);
+    }
+    if (fn.typeParameters) {
+      typeRoots.push(fn.typeParameters);
+    }
+    for (const param of fn.params) {
+      if ('typeAnnotation' in param && param.typeAnnotation) {
+        typeRoots.push(param.typeAnnotation.typeAnnotation);
+      } else if (
+        param.type === AST_NODE_TYPES.AssignmentPattern &&
+        'typeAnnotation' in param.left &&
+        param.left.typeAnnotation
+      ) {
+        typeRoots.push(param.left.typeAnnotation.typeAnnotation);
       }
-      if (fn.typeParameters) {
-        typeRoots.push(fn.typeParameters);
-      }
-      for (const param of fn.params) {
-        if ('typeAnnotation' in param && param.typeAnnotation) {
-          typeRoots.push(param.typeAnnotation.typeAnnotation);
-        } else if (
-          param.type === AST_NODE_TYPES.AssignmentPattern &&
-          'typeAnnotation' in param.left &&
-          param.left.typeAnnotation
-        ) {
-          typeRoots.push(param.left.typeAnnotation.typeAnnotation);
-        }
-      }
+    }
 
-      typeRoots.push(...collectBodyTypeAnnotations(fn.body, sourceCode));
+    typeRoots.push(...collectBodyTypeAnnotations(fn.body, sourceCode));
 
-      if (usesLocalTypeBindings(typeRoots, localTypes, sourceCode)) {
+    if (typeRoots.some((typeRoot) => usesThisOrSuper(typeRoot, sourceCode))) {
+      hasComponentScopeRef = true;
+    }
+
+    if (!hasComponentScopeRef) {
+      const localTypes = collectNearestBlockTypeBindings(fn);
+      if (
+        localTypes.size > 0 &&
+        usesLocalTypeBindings(typeRoots, localTypes, sourceCode)
+      ) {
         hasComponentScopeRef = true;
       }
     }
@@ -512,9 +556,9 @@ export const noEmptyDependencyUseCallbacks = createRule<Options, MessageIds>({
     ],
     messages: {
       preferUtilityFunction:
-        'This callback uses useCallback([]) but never reads component/hook state. Hook overhead is wasted when dependencies are empty. Move "{{name}}" to a module-level utility instead of wrapping it in useCallback([]) so it stays stable without React hook bookkeeping. If this must remain to satisfy memoized children, add an eslint-disable comment explaining the dependency.',
+        'What\'s wrong: "{{name}}" uses useCallback([]) but never reads component/hook state -> Why it matters: empty-deps callbacks are already stable, so hook bookkeeping adds overhead without benefit -> How to fix: move "{{name}}" to a module-level utility (or add an eslint-disable with a short justification if you intentionally keep it for memoized children).',
       preferUtilityLatest:
-        'useLatestCallback wraps a function that never reads component/hook state. Extract "{{name}}" to a module-level utility to avoid the extra hook wrapper. If you rely on useLatestCallback for memoization or HMR, disable this rule with a short comment.',
+        'What\'s wrong: useLatestCallback wraps "{{name}}" even though it never reads component/hook state -> Why it matters: the hook wrapper adds indirection without preventing stale closures -> How to fix: extract "{{name}}" to a module-level utility (or disable with a brief note if you rely on HMR or a stale-closure pattern).',
     },
   },
   defaultOptions: [{}],
