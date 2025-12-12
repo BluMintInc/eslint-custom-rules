@@ -33,7 +33,7 @@ function Component({ user }) {
 ```
 
 Message:
-`What's wrong: Dependency array includes entire object "user". Why it matters: Any change to its other properties reruns the hook even though only user.name is read inside, creating extra renders and stale memoized values. How to fix: Depend on those fields instead.`
+`What's wrong: Dependency array includes entire object "user". Why it matters: Any change to its other properties reruns the hook even though the hook reads only user.name, creating extra renders and stale memoized values. How to fix: Depend on those fields instead.`
 
 ```typescript
 function Component({ channelGroupIdRouter, channelGroupActive }) {
