@@ -251,7 +251,7 @@ jobs:
         run: |
           echo "::add-mask::${CURSOR_API_KEY}"
 
-          JSON_PAYLOAD=$(jq -n \
+          jq -n \
             --rawfile prompt_text /tmp/pr-review-prompt.txt \
             --arg repository "https://github.com/${{ github.repository }}" \
             --arg source_ref "${{ steps.checks.outputs.head_ref }}" \
@@ -264,14 +264,14 @@ jobs:
               prompt: { text: $prompt_text },
               source: { repository: $repository, ref: $source_ref },
               target: { branchName: $target_branch, autoCreatePr: false, skipReviewerRequest: true }
-            } + (if $webhook_url != "" then { webhook: { url: $webhook_url, secret: $webhook_secret } } else {} end)')
+            } + (if $webhook_url != "" then { webhook: { url: $webhook_url, secret: $webhook_secret } } else {} end)' > /tmp/cursor-agent-payload.json
 
           HTTP_RESPONSE=$(curl --silent --show-error --write-out "HTTPSTATUS:%{http_code}" \
             --request POST \
             --url https://api.cursor.com/v0/agents \
             --header "Authorization: Bearer ${CURSOR_API_KEY}" \
             --header "Content-Type: application/json" \
-            --data "$JSON_PAYLOAD")
+            --data-binary "@/tmp/cursor-agent-payload.json")
 
           HTTP_STATUS="${HTTP_RESPONSE##*HTTPSTATUS:}"
           HTTP_BODY="${HTTP_RESPONSE%HTTPSTATUS:*}"

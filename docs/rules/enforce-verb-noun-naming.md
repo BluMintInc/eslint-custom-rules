@@ -4,7 +4,7 @@
 
 <!-- end auto-generated rule header -->
 
-Functions and methods are actions, so their names should start with an action verb followed by the thing they act on. Verb-first naming makes callable APIs predictable, keeps them distinct from data holders, and prevents teams from shipping symbols whose purpose is unclear at the call site.
+Functions and methods are actions, so their names should start with an action verb followed by the thing they act on. Verb-first naming keeps callable APIs predictable, separates behaviors from data holders, and prevents teams from shipping symbols whose purpose is unclear at the call site.
 
 ## Why this rule?
 
@@ -14,13 +14,11 @@ Functions and methods are actions, so their names should start with an action ve
 
 ## What this rule checks
 
-- Function declarations.
-- Functions or arrow functions assigned to identifiers.
-- Class methods (excluding getters and constructors).
+- Function declarations, function expressions, and arrow functions assigned to identifiers.
+- Class and object methods (excluding constructors and getters).
+- Converter and wrapper patterns starting with prepositions such as `to`, `with`, `by`, `from`, `of`, or `at` are allowed (e.g., `toNumber`, `withLogging`).
 - React components are exempted based on PascalCase + JSX heuristics so component names can stay noun-based.
-- Converter and wrapper patterns starting with prepositions such as `to` or `with` are allowed (e.g., `toNumber`, `withLogging`).
-
-The rule validates the first word against a curated verb list and falls back to NLP tagging; it only reports when a verb phrase is not detected.
+- The rule validates the first word against a curated verb list and falls back to NLP tagging; it only reports when a verb phrase is not detected.
 
 ## Examples
 
@@ -29,7 +27,12 @@ The rule validates the first word against a curated verb list and falls back to 
 ```ts
 function userData() { return null; }
 const data = () => null;
+const user = () => fetchUser();          // name is noun-only
 class Service { data() {} }
+class Repo {
+  items() { return this.cache; }         // method lacks verb
+  handle() {}                            // ambiguous noun
+}
 ```
 
 Example message:
@@ -43,10 +46,29 @@ Function "userData" should start with an action verb followed by the thing it ac
 ```ts
 function fetchUserData() { return null; }
 const processRequest = () => null;
+const buildUser = () => fetchUser();
+const withRetry = (fn: () => Promise<void>) => { /* ... */ }; // helper pattern allowed
 class Service { processData() {} }
+class Repo {
+  loadItems() { return this.cache; }
+  updateCache() { /* ... */ }
+  get items() { return this.cache; } // getter is allowed
+}
+
+// React components are allowed
+const UserCard = ({ user }: { user: User }) => <Card>{user.name}</Card>;
 function toNumber(value) { return +value; } // converter pattern allowed
 ```
+
+## Options
+
+This rule does not have any options.
 
 ## When not to use it
 
 - If your project intentionally names command functions with nouns or uses a different naming convention for functions and methods.
+- Files that intentionally expose React components or values only—disable locally if necessary.
+
+## Further reading
+
+- [Clean Code: Meaningful Names](https://learning.oreilly.com/library/view/clean-code/9780136083238/chapter02.html)
