@@ -54,7 +54,8 @@ export default createRule<Options, 'dynamicImportRequired'>({
       return libraries.some((lib) => {
         // Simple glob pattern matching
         if (lib.includes('*')) {
-          const pattern = lib.replace(/\*/g, '.*');
+          const escaped = lib.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const pattern = escaped.replace(/\\\*/g, '.*');
           const regex = new RegExp(`^${pattern}$`);
           return regex.test(source);
         }
