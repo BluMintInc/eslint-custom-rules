@@ -226,6 +226,26 @@ const config = getConfig();
 const instance = create();
 instance.method();
     `,
+    `
+const value = 1;
+if (shouldExit) {
+  return (() => value)();
+}
+`,
+    `
+const value = 1;
+console.log((() => value)());
+`,
+    `
+const { value = record() } = source;
+if (shouldStop) {
+  return;
+}
+`,
+    `
+const { [getKey()]: value } = source;
+console.log('ready');
+`,
   ],
   invalid: [
     {

@@ -6,7 +6,7 @@
 
 <!-- end auto-generated rule header -->
 
-Keep related statements grouped in a logical, top-to-bottom order. The rule hoists guard clauses above skipped setup, places derived declarations next to their dependencies, keeps placeholder declarations near their first use, and lifts side effects (like logging) above unrelated initialization. Hook calls are left in place so React's Rules of Hooks are not broken.
+Keep related statements grouped in a logical, top-to-bottom order. The rule hoists guard clauses above skipped setup, places derived declarations next to their dependencies, keeps placeholder declarations near their first use, and lifts side effects (like logging) above unrelated initialization. Hook calls are treated as boundaries and stay in place so React's Rules of Hooks are preserved; non-hook statements do not move across hook calls.
 
 Placeholder declarations only move across pure declarations that do not reference the placeholder or its initializer, so closure timing and TDZ behavior remain unchanged.
 
@@ -17,6 +17,7 @@ This rule rearranges statements inside a block to keep the execution flow readab
 ### Examples of incorrect code for this rule:
 
 ```typescript
+const { id } = props;
 const { a } = props.group;
 if (id !== null) {
   return null;
@@ -27,6 +28,7 @@ const b = a;
 ```typescript
 const group = useGroupDoc();
 const { groupTabState } = useGroupRouter();
+const extra = readExtra();
 const { id } = group || {};
 ```
 
@@ -43,6 +45,7 @@ for (const item of items) {
 ### Examples of correct code for this rule:
 
 ```typescript
+const { id } = props;
 if (id !== null) {
   return null;
 }
@@ -53,8 +56,9 @@ const b = a;
 
 ```typescript
 const group = useGroupDoc();
-const { id } = group || {};
 const { groupTabState } = useGroupRouter();
+const { id } = group || {};
+const extra = readExtra();
 ```
 
 ```typescript

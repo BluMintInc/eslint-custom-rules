@@ -255,6 +255,42 @@ function traverseAst(
   }
 }
 
+function unwrapIifeCallee(
+  callee: TSESTree.LeftHandSideExpression | TSESTree.PrivateIdentifier | TSESTree.Super,
+): TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression | null {
+  const node = callee as TSESTree.Node;
+  if (
+    node.type === AST_NODE_TYPES.FunctionExpression ||
+    node.type === AST_NODE_TYPES.ArrowFunctionExpression
+  ) {
+    return node as TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression;
+  }
+
+  if (TYPE_EXPRESSION_WRAPPERS.has(node.type) && 'expression' in node) {
+    return unwrapIifeCallee((node as TSESTree.TSAsExpression).expression as TSESTree.LeftHandSideExpression);
+  }
+
+  if (node.type === AST_NODE_TYPES.ChainExpression && 'expression' in node) {
+    return unwrapIifeCallee(
+      (node as TSESTree.ChainExpression).expression as TSESTree.LeftHandSideExpression,
+    );
+  }
+
+  return null;
+}
+
+function collectIifeDependencies(
+  fn: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
+  names: Set<string>,
+): void {
+  fn.params.forEach((param) => collectUsedIdentifiers(param, names, { skipFunctions: false }));
+  if (fn.body.type === AST_NODE_TYPES.BlockStatement) {
+    collectUsedIdentifiers(fn.body, names, { skipFunctions: false });
+    return;
+  }
+  collectUsedIdentifiers(fn.body, names, { skipFunctions: false });
+}
+
 function collectUsedIdentifiers(
   node: TSESTree.Node,
   names: Set<string>,
@@ -266,6 +302,12 @@ function collectUsedIdentifiers(
       if (current.type === AST_NODE_TYPES.Identifier) {
         processIdentifier(current, names);
         return { skipChildren: true };
+      }
+      if (skipFunctions && current.type === AST_NODE_TYPES.CallExpression) {
+        const iife = unwrapIifeCallee(current.callee);
+        if (iife) {
+          collectIifeDependencies(iife, names);
+        }
       }
       return undefined;
     },
@@ -432,7 +474,11 @@ function statementMutatesAny(statement: TSESTree.Statement, names: Set<string>):
   return false;
 }
 
-// Checks if any statement before the given index mutates the identifier, so reordering does not cross a mutation boundary.
+/**
+ * Mutations create ordering barriers: once a name is reassigned, moving statements
+ * across that mutation can change observable state. Guard moves stop before the
+ * first mutation to keep evaluation order stable.
+ */
 function isIdentifierMutated(
   body: TSESTree.Statement[],
   name: string,
@@ -532,6 +578,47 @@ function initializerIsSafe(
   }
 }
 
+function patternIsSafe(
+  pattern: TSESTree.BindingName | TSESTree.RestElement | TSESTree.AssignmentPattern,
+  { allowHooks }: { allowHooks: boolean },
+): boolean {
+  switch (pattern.type) {
+    case AST_NODE_TYPES.Identifier:
+      return true;
+    case AST_NODE_TYPES.RestElement:
+      return patternIsSafe(pattern.argument as TSESTree.BindingName, { allowHooks });
+    case AST_NODE_TYPES.AssignmentPattern:
+      return (
+        initializerIsSafe(pattern.right as TSESTree.Expression, { allowHooks }) &&
+        patternIsSafe(pattern.left as TSESTree.BindingName, { allowHooks })
+      );
+    case AST_NODE_TYPES.ArrayPattern:
+      return pattern.elements.every(
+        (element) => !element || patternIsSafe(element as TSESTree.BindingName, { allowHooks }),
+      );
+    case AST_NODE_TYPES.ObjectPattern:
+      return pattern.properties.every((prop) => {
+        if (prop.type === AST_NODE_TYPES.RestElement) {
+          return patternIsSafe(prop.argument as TSESTree.BindingName, { allowHooks });
+        }
+        if (prop.type !== AST_NODE_TYPES.Property) {
+          return false;
+        }
+        if (prop.computed && ASTHelpers.isNode(prop.key)) {
+          if (!initializerIsSafe(prop.key as TSESTree.Expression, { allowHooks })) {
+            return false;
+          }
+        }
+        return patternIsSafe(
+          prop.value as TSESTree.BindingName | TSESTree.AssignmentPattern,
+          { allowHooks },
+        );
+      });
+    default:
+      return false;
+  }
+}
+
 function isPureDeclaration(
   statement: TSESTree.Statement,
   { allowHooks }: { allowHooks: boolean },
@@ -541,6 +628,16 @@ function isPureDeclaration(
   }
 
   return statement.declarations.every((declarator) => {
+    if (
+      declarator.id &&
+      ASTHelpers.isNode(declarator.id) &&
+      !patternIsSafe(
+        declarator.id as TSESTree.BindingName | TSESTree.RestElement | TSESTree.AssignmentPattern,
+        { allowHooks },
+      )
+    ) {
+      return false;
+    }
     if (!declarator.init) {
       return true;
     }
@@ -1264,13 +1361,13 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
     schema: [],
     messages: {
       moveGuardUp:
-        'Early exit "{{guard}}" should appear before setup it skips. Hoist guard clauses so readers see the exit path first and avoid doing work that is immediately abandoned.',
+        `What's wrong: the guard "{{guard}}" appears after setup it can skip. Why it matters: readers miss the early-exit path and unnecessary work may execute; unsafe reordering can also introduce TDZ errors when guards reference values declared below. How to fix: place the guard immediately before the setup it protects.`,
       groupDerived:
-        'Declaration "{{name}}" depends on "{{dependency}}" but is separated by unrelated statements. Keep derived values adjacent to their source so the flow reads from input to result without jumping.',
+        `What's wrong: "{{name}}" depends on "{{dependency}}" but is separated by unrelated statements. Why it matters: scattered dependencies make the input→output flow harder to follow and increase cognitive load; grouping them clarifies the logical relationship. How to fix: move "{{name}}" next to "{{dependency}}" so they form a cohesive unit.`,
       moveDeclarationCloser:
-        'Move declaration "{{name}}" next to its first use. Keeping placeholders far above their usage scatters the flow and makes the execution order harder to follow.',
+        `What's wrong: "{{name}}" is declared far from its first use. Why it matters: distant declarations scatter the flow and make the execution order harder to follow; readers must mentally track when the variable becomes available. How to fix: move "{{name}}" next to its first usage.`,
       moveSideEffect:
-        'Side effect "{{effect}}" is buried after later setup. Emit observable effects before unrelated initialization to keep the chronological flow obvious.',
+        `What's wrong: the side effect "{{effect}}" is buried after unrelated setup. Why it matters: chronological flow becomes unclear and readers may assume the effect happens later than it actually does. How to fix: emit observable effects before unrelated initialization to keep the temporal order obvious.`,
     },
   },
   defaultOptions: [],
