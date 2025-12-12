@@ -65,11 +65,11 @@ function getParams(
   node: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
 ): string[] {
   const names = new Set<string>();
-  for (const p of node.params) {
-    if (p.type === AST_NODE_TYPES.Identifier) {
-      names.add(p.name);
-    } else if (p.type === AST_NODE_TYPES.ObjectPattern) {
-      for (const prop of p.properties) {
+  for (const param of node.params) {
+    if (param.type === AST_NODE_TYPES.Identifier) {
+      names.add(param.name);
+    } else if (param.type === AST_NODE_TYPES.ObjectPattern) {
+      for (const prop of param.properties) {
         if (prop.type === AST_NODE_TYPES.Property) {
           // Collect bound identifier names (aliases/defaults)
           if (prop.value.type === AST_NODE_TYPES.Identifier) {
@@ -86,8 +86,8 @@ function getParams(
           }
         }
       }
-    } else if (p.type === AST_NODE_TYPES.ArrayPattern) {
-      for (const element of p.elements) {
+    } else if (param.type === AST_NODE_TYPES.ArrayPattern) {
+      for (const element of param.elements) {
         if (!element) continue;
         if (element.type === AST_NODE_TYPES.Identifier) {
           names.add(element.name);

@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 export const noUnusedProps = createRule({
@@ -148,6 +148,21 @@ export const noUnusedProps = createRule({
       return false;
     };
 
+    const findVariableInScopeChain = (
+      scope: TSESLint.Scope.Scope,
+      name: string,
+    ) => {
+      let current: TSESLint.Scope.Scope | null = scope;
+      while (current) {
+        const variable = current.variables.find((variable) => variable.name === name);
+        if (variable) {
+          return variable;
+        }
+        current = current.upper;
+      }
+      return null;
+    };
+
     const reportUnusedProps = (
       typeName: string,
       used: Set<string>,
@@ -250,9 +265,7 @@ export const noUnusedProps = createRule({
             }
 
             const scope = context.getScope();
-            const variable = scope.variables.find(
-              (v) => v.name === baseTypeName,
-            );
+            const variable = findVariableInScopeChain(scope, baseTypeName);
 
             if (
               variable &&
@@ -340,8 +353,9 @@ export const noUnusedProps = createRule({
                     } else {
                       // For referenced types in intersections, we need to find their type declaration
                       const scope = context.getScope();
-                      const variable = scope.variables.find(
-                        (v) => v.name === typeName.name,
+                      const variable = findVariableInScopeChain(
+                        scope,
+                        typeName.name,
                       );
                       if (
                         variable &&
@@ -448,9 +462,7 @@ export const noUnusedProps = createRule({
 
                     // Find the base type definition
                     const scope = context.getScope();
-                    const variable = scope.variables.find(
-                      (v) => v.name === baseTypeName,
-                    );
+                    const variable = findVariableInScopeChain(scope, baseTypeName);
 
                     if (
                       variable &&

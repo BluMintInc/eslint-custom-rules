@@ -384,13 +384,17 @@ export const memoNestedReactComponents = createRule<Options, MessageIds>({
   defaultOptions: [{}],
   create(context, [options]) {
     const ignorePatterns = options?.ignorePatterns ?? [];
-    const filename = context.getFilename();
+    const filename =
+      (Reflect.get(context, 'filename') as string | undefined) ??
+      context.getFilename();
 
     if (ignorePatterns.length && shouldIgnoreFile(filename, ignorePatterns)) {
       return {};
     }
 
-    const sourceCode = context.getSourceCode();
+    const sourceCode =
+      (Reflect.get(context, 'sourceCode') as Readonly<TSESLint.SourceCode> | null | undefined) ??
+      context.getSourceCode();
     const memoReference = findMemoReference(sourceCode);
 
     return {
