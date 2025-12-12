@@ -18,7 +18,7 @@ export default createRule({
     type: 'problem',
     docs: {
       description:
-        'Ensure Firebase Callable/HTTPS request parameters use JSON-serializable types so payloads survive transport. Non-serializable values such as Date, DocumentReference, Map, or Set cause runtime serialization failures and drop data; convert complex values to strings or plain objects before including them.',
+        'Keep Firebase Callable/HTTPS request parameters JSON-safe. Values such as Date, Timestamp, DocumentReference, Map, Set, Symbol, Function, or undefined may be coerced, dropped, or lose semantic type when serialized by Firebase. Convert complex values to JSON-safe primitives, arrays, or plain objects before including them in request types.',
       recommended: 'error',
     },
     schema: [
@@ -40,9 +40,9 @@ export default createRule({
     ],
     messages: {
       nonSerializableParam:
-        'Parameter type "{{ type }}" cannot be serialized by Firebase Callable/HTTPS functions. Firebase only transfers JSON-safe primitives, arrays, and plain objects; passing {{ type }} causes runtime serialization failures and drops values. Convert {{ type }} to a JSON-safe shape (for example, use an ISO date string, a document path string, or a plain object) before adding it to the request type.',
+        'Parameter type "{{ type }}" is not JSON-safe for Firebase Callable/HTTPS functions. Firebase transports payloads as JSON, so {{ type }} values may be coerced, dropped, or lose their semantic type in transit. Convert {{ type }} to a JSON-safe primitive, array, or plain object (for example, use an ISO date string, a document path string, or flatten Map/Set into arrays/objects) before adding it to the request type.',
       nonSerializableProperty:
-        'Property "{{ prop }}" uses non-serializable type "{{ type }}", which Firebase cannot encode when sending callable/HTTPS request payloads. Non-JSON values fail at runtime and silently lose data. Accept only JSON-safe primitives, arrays, or plain objects, and convert {{ type }} to a safe representation (e.g., Date -> ISO string, DocumentReference -> document path string, Map/Set -> plain array or object).',
+        'Property "{{ prop }}" uses a not JSON-safe type "{{ type }}", which Firebase may coerce, drop, or strip of its semantic type when serializing callable/HTTPS payloads. Accept only JSON-safe primitives, arrays, or plain objects, and convert {{ type }} to a safe representation (e.g., Date/Timestamp -> ISO string, DocumentReference -> document path string, Map/Set -> an array or object).',
     },
   },
   defaultOptions: [

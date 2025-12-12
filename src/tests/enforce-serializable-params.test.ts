@@ -42,10 +42,10 @@ ruleTesterTs.run('enforce-serializable-params', rule, {
       `,
       errors: [
         propertyError(
-          'Property "userRef" uses non-serializable type "DocumentReference", which Firebase cannot encode when sending callable/HTTPS request payloads. Non-JSON values fail at runtime and silently lose data. Accept only JSON-safe primitives, arrays, or plain objects, and convert DocumentReference to a safe representation (e.g., Date -> ISO string, DocumentReference -> document path string, Map/Set -> plain array or object).',
+          'Property "userRef" uses a not JSON-safe type "DocumentReference", which Firebase may coerce, drop, or strip of its semantic type when serializing callable/HTTPS payloads. Accept only JSON-safe primitives, arrays, or plain objects, and convert DocumentReference to a safe representation (e.g., Date/Timestamp -> ISO string, DocumentReference -> document path string, Map/Set -> an array or object).',
         ),
         propertyError(
-          'Property "createdAt" uses non-serializable type "Date", which Firebase cannot encode when sending callable/HTTPS request payloads. Non-JSON values fail at runtime and silently lose data. Accept only JSON-safe primitives, arrays, or plain objects, and convert Date to a safe representation (e.g., Date -> ISO string, DocumentReference -> document path string, Map/Set -> plain array or object).',
+          'Property "createdAt" uses a not JSON-safe type "Date", which Firebase may coerce, drop, or strip of its semantic type when serializing callable/HTTPS payloads. Accept only JSON-safe primitives, arrays, or plain objects, and convert Date to a safe representation (e.g., Date/Timestamp -> ISO string, DocumentReference -> document path string, Map/Set -> an array or object).',
         ),
       ],
     },
@@ -64,10 +64,10 @@ ruleTesterTs.run('enforce-serializable-params', rule, {
       `,
       errors: [
         propertyError(
-          'Property "timestamp" uses non-serializable type "Timestamp", which Firebase cannot encode when sending callable/HTTPS request payloads. Non-JSON values fail at runtime and silently lose data. Accept only JSON-safe primitives, arrays, or plain objects, and convert Timestamp to a safe representation (e.g., Date -> ISO string, DocumentReference -> document path string, Map/Set -> plain array or object).',
+          'Property "timestamp" uses a not JSON-safe type "Timestamp", which Firebase may coerce, drop, or strip of its semantic type when serializing callable/HTTPS payloads. Accept only JSON-safe primitives, arrays, or plain objects, and convert Timestamp to a safe representation (e.g., Date/Timestamp -> ISO string, DocumentReference -> document path string, Map/Set -> an array or object).',
         ),
         propertyError(
-          'Property "users" uses non-serializable type "DocumentReference", which Firebase cannot encode when sending callable/HTTPS request payloads. Non-JSON values fail at runtime and silently lose data. Accept only JSON-safe primitives, arrays, or plain objects, and convert DocumentReference to a safe representation (e.g., Date -> ISO string, DocumentReference -> document path string, Map/Set -> plain array or object).',
+          'Property "users" uses a not JSON-safe type "DocumentReference", which Firebase may coerce, drop, or strip of its semantic type when serializing callable/HTTPS payloads. Accept only JSON-safe primitives, arrays, or plain objects, and convert DocumentReference to a safe representation (e.g., Date/Timestamp -> ISO string, DocumentReference -> document path string, Map/Set -> an array or object).',
         ),
       ],
     },
@@ -85,10 +85,10 @@ ruleTesterTs.run('enforce-serializable-params', rule, {
       `,
       errors: [
         propertyError(
-          'Property "cache" uses non-serializable type "Map", which Firebase cannot encode when sending callable/HTTPS request payloads. Non-JSON values fail at runtime and silently lose data. Accept only JSON-safe primitives, arrays, or plain objects, and convert Map to a safe representation (e.g., Date -> ISO string, DocumentReference -> document path string, Map/Set -> plain array or object).',
+          'Property "cache" uses a not JSON-safe type "Map", which Firebase may coerce, drop, or strip of its semantic type when serializing callable/HTTPS request payloads. Accept only JSON-safe primitives, arrays, or plain objects, and convert Map to a safe representation (e.g., Date/Timestamp -> ISO string, DocumentReference -> document path string, Map/Set -> an array or object).',
         ),
         propertyError(
-          'Property "set" uses non-serializable type "Set", which Firebase cannot encode when sending callable/HTTPS request payloads. Non-JSON values fail at runtime and silently lose data. Accept only JSON-safe primitives, arrays, or plain objects, and convert Set to a safe representation (e.g., Date -> ISO string, DocumentReference -> document path string, Map/Set -> plain array or object).',
+          'Property "set" uses a not JSON-safe type "Set", which Firebase may coerce, drop, or strip of its semantic type when serializing callable/HTTPS request payloads. Accept only JSON-safe primitives, arrays, or plain objects, and convert Set to a safe representation (e.g., Date/Timestamp -> ISO string, DocumentReference -> document path string, Map/Set -> an array or object).',
         ),
       ],
     },
