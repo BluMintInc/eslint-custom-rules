@@ -511,7 +511,8 @@ function isComplexTypeInternal(
     return constraint ? isComplexTypeInternal(ts, constraint, checker, visited) : false;
   }
 
-  if (type.getCallSignatures?.().length) return false;
+  const callSignatures = type.getCallSignatures?.() ?? [];
+  if (callSignatures.length > 0) return false;
 
   if (checker.isArrayType?.(type) || checker.isTupleType?.(type)) return true;
 

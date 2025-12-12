@@ -2,6 +2,35 @@ import path from 'path';
 import { ESLintUtils } from '@typescript-eslint/utils';
 import { memoCompareDeeplyComplexProps } from '../rules/memo-compare-deeply-complex-props';
 
+const callSignatureMissingFile = 'src/components/CallSignatureMissing.tsx';
+
+jest.mock('typescript', () => {
+  const actual = jest.requireActual<typeof import('typescript')>('typescript');
+  const originalCreateProgram = actual.createProgram;
+
+  return {
+    ...actual,
+    createProgram(...args: Parameters<typeof originalCreateProgram>) {
+      const program = originalCreateProgram(...args);
+      const checker = program.getTypeChecker();
+      const originalGetTypeAtLocation = checker.getTypeAtLocation.bind(checker);
+
+      // Simulate a type without getCallSignatures to ensure the rule handles it safely.
+      checker.getTypeAtLocation = ((node: import('typescript').Node) => {
+        const type = originalGetTypeAtLocation(node);
+        if (node.getSourceFile().fileName.includes(callSignatureMissingFile)) {
+          const clonedType = Object.assign(Object.create(Object.getPrototypeOf(type)), type);
+          delete (clonedType as { getCallSignatures?: unknown }).getCallSignatures;
+          return clonedType as import('typescript').Type;
+        }
+        return type;
+      }) as typeof checker.getTypeAtLocation;
+
+      return program;
+    },
+  };
+});
+
 const ruleTester = new ESLintUtils.RuleTester({
   parser: '@typescript-eslint/parser',
   parserOptions: {
@@ -666,6 +695,23 @@ import { memo as memoFromSrc } from 'src/util/memo';
 type Props = { config: { theme: string } };
 const Comp = ({ config }: Props) => <div>{config.theme}</div>;
 export const Wrapped = memo(Comp, compareDeeply('config'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      {
+        filename: callSignatureMissingFile,
+        code: `
+import { memo } from 'react';
+type Props = { payload: { value: number } };
+const Comp = ({ payload }: Props) => <div>{payload.value}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Props = { payload: { value: number } };
+const Comp = ({ payload }: Props) => <div>{payload.value}</div>;
+export const Wrapped = memo(Comp, compareDeeply('payload'));
 `,
         errors: [{ messageId: 'useCompareDeeply' }],
       },
