@@ -8,6 +8,18 @@ function isMemoUtilityImportPath(path: string): boolean {
   return /(?:^|\/|\\)util\/memo$/.test(path);
 }
 
+function toSingleQuotedStringLiteral(value: string): string {
+  const escaped = value
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
+    .replace(/\t/g, '\\t')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+  return `'${escaped}'`;
+}
+
 export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
   name: 'memo-compare-deeply-complex-props',
   meta: {
@@ -238,20 +250,15 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
       preferredSource?: string,
     ): { fixes: TSESLint.RuleFix[]; localName: string } {
       const program = sourceCode.ast;
-      const existingImport = program.body.find(
+      const memoImports = program.body.filter(
         (node): node is TSESTree.ImportDeclaration =>
           node.type === AST_NODE_TYPES.ImportDeclaration &&
           typeof node.source.value === 'string' &&
           isMemoUtilityImportPath(node.source.value as string),
       );
 
-      const importSource =
-        preferredSource && isMemoUtilityImportPath(preferredSource)
-          ? preferredSource
-          : existingImport?.source.value ?? 'src/util/memo';
-
-      if (existingImport) {
-        const compareDeeplySpecifier = existingImport.specifiers.find(
+      for (const memoImport of memoImports) {
+        const compareDeeplySpecifier = memoImport.specifiers.find(
           (spec): spec is TSESTree.ImportSpecifier =>
             spec.type === AST_NODE_TYPES.ImportSpecifier &&
             spec.imported.type === AST_NODE_TYPES.Identifier &&
@@ -263,20 +270,40 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
             localName: compareDeeplySpecifier.local.name,
           };
         }
+      }
 
-        const hasNamedSpecifier = existingImport.specifiers.some(
-          (spec) => spec.type === AST_NODE_TYPES.ImportSpecifier,
+      const importSource =
+        preferredSource && isMemoUtilityImportPath(preferredSource)
+          ? preferredSource
+          : memoImports[0]?.source.value ?? 'src/util/memo';
+
+      const importWithNamed = memoImports.find((memoImport) =>
+        memoImport.specifiers.some(
+          (spec): spec is TSESTree.ImportSpecifier =>
+            spec.type === AST_NODE_TYPES.ImportSpecifier,
+        ),
+      );
+      if (importWithNamed) {
+        const namedSpecifiers = importWithNamed.specifiers.filter(
+          (spec): spec is TSESTree.ImportSpecifier =>
+            spec.type === AST_NODE_TYPES.ImportSpecifier,
         );
-        if (hasNamedSpecifier) {
-          const lastSpecifier =
-            existingImport.specifiers[existingImport.specifiers.length - 1];
-          return {
-            fixes: [fixer.insertTextAfter(lastSpecifier, ', compareDeeply')],
-            localName: 'compareDeeply',
-          };
-        }
+        const lastNamedSpecifier =
+          namedSpecifiers[namedSpecifiers.length - 1] ?? namedSpecifiers[0];
+        return {
+          fixes: [fixer.insertTextAfter(lastNamedSpecifier, ', compareDeeply')],
+          localName: 'compareDeeply',
+        };
+      }
 
-        const defaultSpecifier = existingImport.specifiers.find(
+      const importWithDefault = memoImports.find((memoImport) =>
+        memoImport.specifiers.some(
+          (spec): spec is TSESTree.ImportDefaultSpecifier =>
+            spec.type === AST_NODE_TYPES.ImportDefaultSpecifier,
+        ),
+      );
+      if (importWithDefault) {
+        const defaultSpecifier = importWithDefault.specifiers.find(
           (spec): spec is TSESTree.ImportDefaultSpecifier =>
             spec.type === AST_NODE_TYPES.ImportDefaultSpecifier,
         );
@@ -288,11 +315,13 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
             localName: 'compareDeeply',
           };
         }
+      }
 
+      if (memoImports.length > 0) {
         return {
           fixes: [
             fixer.insertTextAfter(
-              existingImport,
+              memoImports[0],
               `\nimport { compareDeeply } from '${importSource}';`,
             ),
           ],
@@ -353,7 +382,7 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
 
         const propsList = `[${complexProps.join(', ')}]`;
         const propsCall = complexProps
-          .map((prop) => `'${prop}'`)
+          .map((prop) => toSingleQuotedStringLiteral(prop))
           .join(', ');
 
         context.report({

@@ -396,6 +396,41 @@ export const Wrapped = memo(Comp, compareDeeply('ids'));
         errors: [{ messageId: 'useCompareDeeply' }],
       },
       {
+        filename: 'src/components/QuotedProp.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { "user'sData": { id: string } };
+const Comp = ({ ["user'sData"]: usersData }: Props) => <div>{usersData.id}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Props = { "user'sData": { id: string } };
+const Comp = ({ ["user'sData"]: usersData }: Props) => <div>{usersData.id}</div>;
+export const Wrapped = memo(Comp, compareDeeply('user\\'sData'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      {
+        filename: 'src/components/DuplicateImport.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+import { compareDeeply } from 'src/util/memo';
+type Props = { config: { theme: string } };
+const Comp = ({ config }: Props) => <div>{config.theme}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { memo } from 'src/util/memo';
+import { compareDeeply } from 'src/util/memo';
+type Props = { config: { theme: string } };
+const Comp = ({ config }: Props) => <div>{config.theme}</div>;
+export const Wrapped = memo(Comp, compareDeeply('config'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      {
         filename: 'src/components/UndefinedComparator.tsx',
         code: `
 import { memo } from 'react';
