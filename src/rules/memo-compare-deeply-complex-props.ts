@@ -287,7 +287,17 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
         const result = getComplexPropsFromComponent(componentExpr, services);
         complexPropsCache.set(componentExpr, result);
         return result;
-      } catch {
+      } catch (error) {
+        if (process.env.NODE_ENV !== 'production') {
+          const componentText = sourceCode.getText(componentExpr);
+          // Log to aid debugging when type analysis unexpectedly fails.
+          // eslint-disable-next-line no-console
+          console.warn(
+            '[memo-compare-deeply-complex-props] Type analysis failed for component expression:',
+            componentText,
+            error instanceof Error ? error.stack ?? error.message : String(error),
+          );
+        }
         return [];
       }
     }
@@ -719,6 +729,144 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
       };
     }
 
+    type ComponentAnalysisResult = {
+      unwrappedComponent: TSESTree.Expression;
+      unwrappedInitializer: TSESTree.Expression | null;
+      initializerWrappedCandidate: TSESTree.Expression | null;
+      wrappedInnerCandidate: TSESTree.Expression | null;
+      analysisTarget: TSESTree.Expression;
+      preferredAnalysisTarget: TSESTree.Expression;
+    };
+
+    function findComponentAnalysisTargets(
+      componentArg: TSESTree.Expression,
+    ): ComponentAnalysisResult | null {
+      const unwrappedComponent = unwrapExpression(componentArg);
+      const initializerExpression =
+        unwrappedComponent.type === AST_NODE_TYPES.Identifier
+          ? componentInitializers.get(unwrappedComponent.name)
+          : null;
+      const unwrappedInitializer = initializerExpression
+        ? unwrapExpression(initializerExpression)
+        : null;
+      const initializerWrappedCandidate =
+        unwrappedInitializer &&
+        unwrappedInitializer.type === AST_NODE_TYPES.CallExpression &&
+        unwrappedInitializer.arguments.length > 0 &&
+        unwrappedInitializer.arguments[0]?.type !== AST_NODE_TYPES.SpreadElement
+          ? unwrapExpression(
+              unwrappedInitializer.arguments[0] as TSESTree.Expression,
+            )
+          : null;
+      const wrappedInnerCandidate =
+        unwrappedComponent.type === AST_NODE_TYPES.CallExpression &&
+        unwrappedComponent.arguments.length > 0 &&
+        unwrappedComponent.arguments[0]?.type !== AST_NODE_TYPES.SpreadElement
+          ? unwrapExpression(
+              unwrappedComponent.arguments[0] as TSESTree.Expression,
+            )
+          : null;
+      const analysisTarget =
+        (initializerWrappedCandidate &&
+        isComponentExpression(initializerWrappedCandidate)
+          ? initializerWrappedCandidate
+          : null) ??
+        (unwrappedInitializer && isComponentExpression(unwrappedInitializer)
+          ? unwrappedInitializer
+          : null) ??
+        (isComponentExpression(unwrappedComponent) ? unwrappedComponent : null) ??
+        (wrappedInnerCandidate && isComponentExpression(wrappedInnerCandidate)
+          ? wrappedInnerCandidate
+          : null);
+      if (!analysisTarget) return null;
+
+      const preferredAnalysisTarget =
+        initializerWrappedCandidate ??
+        wrappedInnerCandidate ??
+        analysisTarget;
+
+      return {
+        unwrappedComponent,
+        unwrappedInitializer,
+        initializerWrappedCandidate,
+        wrappedInnerCandidate,
+        analysisTarget,
+        preferredAnalysisTarget,
+      };
+    }
+
+    function collectComplexPropsForTargets(
+      targets: ComponentAnalysisResult,
+    ): string[] {
+      let complexProps = collectComplexProps(targets.preferredAnalysisTarget);
+      if (
+        complexProps.length === 0 &&
+        targets.preferredAnalysisTarget !== targets.analysisTarget
+      ) {
+        complexProps = collectComplexProps(targets.analysisTarget);
+      }
+      if (
+        complexProps.length === 0 &&
+        targets.wrappedInnerCandidate &&
+        targets.wrappedInnerCandidate !== targets.preferredAnalysisTarget
+      ) {
+        complexProps = collectComplexProps(targets.wrappedInnerCandidate);
+      }
+      return complexProps;
+    }
+
+    function resolveComponentName(
+      targets: ComponentAnalysisResult,
+      componentArg: TSESTree.Expression,
+    ): string {
+      return (
+        (targets.initializerWrappedCandidate
+          ? componentDisplayName(targets.initializerWrappedCandidate)
+          : null) ??
+        (targets.unwrappedInitializer
+          ? componentDisplayName(targets.unwrappedInitializer)
+          : null) ??
+        componentDisplayName(targets.unwrappedComponent) ??
+        (targets.wrappedInnerCandidate
+          ? componentDisplayName(targets.wrappedInnerCandidate)
+          : null) ??
+        componentDisplayName(componentArg) ??
+        'component'
+      );
+    }
+
+    function buildMemoFixes(
+      fixer: TSESLint.RuleFixer,
+      componentArg: TSESTree.Expression,
+      comparatorArg: TSESTree.CallExpressionArgument | undefined,
+      propsCall: string,
+      memoSource: string,
+    ): TSESLint.RuleFix[] {
+      const fixes: TSESLint.RuleFix[] = [];
+      const importResult = ensureCompareDeeplyImportFixes(fixer, memoSource);
+      if (
+        comparatorArg &&
+        comparatorArg.type !== AST_NODE_TYPES.SpreadElement &&
+        isNullishComparatorArgument(comparatorArg)
+      ) {
+        fixes.push(
+          fixer.replaceTextRange(
+            rangeWithParentheses(comparatorArg as TSESTree.Expression),
+            `${importResult.localName}(${propsCall})`,
+          ),
+        );
+      } else {
+        fixes.push(
+          fixer.insertTextAfter(
+            componentArg,
+            `, ${importResult.localName}(${propsCall})`,
+          ),
+        );
+      }
+      fixes.push(...importResult.fixes);
+      return fixes;
+    }
+
     return {
       ImportDeclaration: recordImport,
       VariableDeclarator: recordComponentInitializer,
@@ -727,82 +875,22 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
         if (!memoCall) return;
         if (node.arguments.length === 0) return;
 
+        // memo() only accepts (Component, compare?); skip malformed calls
         if (node.arguments.length > 2) return;
 
         const componentArg = node.arguments[0];
         const comparatorArg = node.arguments[1];
         if (componentArg.type === AST_NODE_TYPES.SpreadElement) return;
 
-        const unwrappedComponent = unwrapExpression(componentArg);
-        const initializerExpression =
-          unwrappedComponent.type === AST_NODE_TYPES.Identifier
-            ? componentInitializers.get(unwrappedComponent.name)
-            : null;
-        const unwrappedInitializer = initializerExpression
-          ? unwrapExpression(initializerExpression)
-          : null;
-        const initializerWrappedCandidate =
-          unwrappedInitializer &&
-          unwrappedInitializer.type === AST_NODE_TYPES.CallExpression &&
-          unwrappedInitializer.arguments.length > 0 &&
-          unwrappedInitializer.arguments[0]?.type !== AST_NODE_TYPES.SpreadElement
-            ? unwrapExpression(
-                unwrappedInitializer.arguments[0] as TSESTree.Expression,
-              )
-            : null;
-        const wrappedInnerCandidate =
-          unwrappedComponent.type === AST_NODE_TYPES.CallExpression &&
-          unwrappedComponent.arguments.length > 0 &&
-          unwrappedComponent.arguments[0]?.type !== AST_NODE_TYPES.SpreadElement
-            ? unwrapExpression(
-                unwrappedComponent.arguments[0] as TSESTree.Expression,
-              )
-            : null;
-        const analysisTarget =
-          (initializerWrappedCandidate &&
-          isComponentExpression(initializerWrappedCandidate)
-            ? initializerWrappedCandidate
-            : null) ??
-          (unwrappedInitializer && isComponentExpression(unwrappedInitializer)
-            ? unwrappedInitializer
-            : null) ??
-          (isComponentExpression(unwrappedComponent) ? unwrappedComponent : null) ??
-          (wrappedInnerCandidate && isComponentExpression(wrappedInnerCandidate)
-            ? wrappedInnerCandidate
-            : null);
-        if (!analysisTarget) return;
+        const componentTargets = findComponentAnalysisTargets(componentArg);
+        if (!componentTargets) return;
 
         if (isComparatorProvided(comparatorArg)) return;
 
-        const preferredAnalysisTarget =
-          initializerWrappedCandidate ??
-          wrappedInnerCandidate ??
-          analysisTarget;
-
-        let complexProps = collectComplexProps(preferredAnalysisTarget);
-        if (
-          complexProps.length === 0 &&
-          preferredAnalysisTarget !== analysisTarget
-        ) {
-          complexProps = collectComplexProps(analysisTarget);
-        }
-        if (
-          complexProps.length === 0 &&
-          wrappedInnerCandidate &&
-          wrappedInnerCandidate !== preferredAnalysisTarget
-        ) {
-          complexProps = collectComplexProps(wrappedInnerCandidate);
-        }
+        const complexProps = collectComplexPropsForTargets(componentTargets);
         if (complexProps.length === 0) return;
 
-        const componentName =
-          (initializerWrappedCandidate
-            ? componentDisplayName(initializerWrappedCandidate)
-            : null) ??
-          (unwrappedInitializer ? componentDisplayName(unwrappedInitializer) : null) ??
-          componentDisplayName(unwrappedComponent) ??
-          (wrappedInnerCandidate ? componentDisplayName(wrappedInnerCandidate) : null) ??
-          'component';
+        const componentName = resolveComponentName(componentTargets, componentArg);
 
         const propsList = `[${complexProps
           .map((prop) => escapeStringForCodeGeneration(prop))
@@ -820,32 +908,13 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
             propsCall,
           },
           fix(fixer) {
-            const fixes: TSESLint.RuleFix[] = [];
-            const importResult = ensureCompareDeeplyImportFixes(
+            return buildMemoFixes(
               fixer,
+              componentArg,
+              comparatorArg,
+              propsCall,
               memoCall.source,
             );
-            if (
-              comparatorArg &&
-              comparatorArg.type !== AST_NODE_TYPES.SpreadElement &&
-              isNullishComparatorArgument(comparatorArg)
-            ) {
-              fixes.push(
-                fixer.replaceTextRange(
-                  rangeWithParentheses(comparatorArg as TSESTree.Expression),
-                  `${importResult.localName}(${propsCall})`,
-                ),
-              );
-            } else {
-              fixes.push(
-                fixer.insertTextAfter(
-                  componentArg,
-                  `, ${importResult.localName}(${propsCall})`,
-                ),
-              );
-            }
-            fixes.push(...importResult.fixes);
-            return fixes;
           },
         });
       },
