@@ -6,7 +6,7 @@ type Options = [];
 
 type JsxFactoryContext = {
   reactMemoIdentifiers: Set<string>;
-  reactMemoNamespaces: Set<string>;
+  reactNamespaceIdentifiers: Set<string>;
   reactCreateElementIdentifiers: Set<string>;
 };
 
@@ -270,7 +270,7 @@ function expressionReturnsJSX(
         if (
           propertyName === 'createElement' &&
           callee.object.type === AST_NODE_TYPES.Identifier &&
-          factoryContext.reactMemoNamespaces.has(callee.object.name)
+          factoryContext.reactNamespaceIdentifiers.has(callee.object.name)
         ) {
           return true;
         }
@@ -278,7 +278,7 @@ function expressionReturnsJSX(
         if (
           propertyName === 'memo' &&
           callee.object.type === AST_NODE_TYPES.Identifier &&
-          factoryContext.reactMemoNamespaces.has(callee.object.name) &&
+          factoryContext.reactNamespaceIdentifiers.has(callee.object.name) &&
           firstNonSpreadArgument &&
           expressionReturnsJSX(
             firstNonSpreadArgument,
@@ -537,7 +537,7 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
     schema: [],
     messages: {
       requireMemoizeJsxReturner:
-        '"{{name}}" returns JSX (or a JSX-producing factory) without @Memoize() → Each access creates a new component/function reference that can trigger avoidable React re-renders or remounts → Add @Memoize() to "{{name}}" and import { Memoize } from "@blumintinc/typescript-memoize".',
+        '"{{name}}" returns JSX (or a JSX-producing factory) without @Memoize() → Each call/access creates a new component/function reference that can trigger avoidable React re-renders or remounts → Add @Memoize() to "{{name}}" and import { Memoize } from "@blumintinc/typescript-memoize".',
     },
   },
   defaultOptions: [],
@@ -554,11 +554,11 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
     let scheduledImportFix = false;
     const jsxReturnCache = new WeakMap<FunctionLike, JsxReturnCacheState>();
     const reactMemoIdentifiers = new Set<string>();
-    const reactMemoNamespaces = new Set<string>();
+    const reactNamespaceIdentifiers = new Set<string>();
     const reactCreateElementIdentifiers = new Set<string>();
     const factoryContext: JsxFactoryContext = {
       reactMemoIdentifiers,
-      reactMemoNamespaces,
+      reactNamespaceIdentifiers,
       reactCreateElementIdentifiers,
     };
 
@@ -583,11 +583,11 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
                 specifier.local?.name ?? specifier.imported.name,
               );
             } else if (specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
-              reactMemoNamespaces.add(specifier.local.name);
+              reactNamespaceIdentifiers.add(specifier.local.name);
             } else if (
               specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier
             ) {
-              reactMemoNamespaces.add(specifier.local.name);
+              reactNamespaceIdentifiers.add(specifier.local.name);
             }
           });
         }

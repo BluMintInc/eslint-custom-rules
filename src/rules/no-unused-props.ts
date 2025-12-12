@@ -386,6 +386,12 @@ export const noUnusedProps = createRule({
                 typeNode.type === AST_NODE_TYPES.TSTypeReference &&
                 typeNode.typeName.type === AST_NODE_TYPES.Identifier
               ) {
+              if (
+                typeNode.typeName.name.length === 1 &&
+                /^[A-Z]$/.test(typeNode.typeName.name)
+              ) {
+                return;
+              }
                 const referenceName = typeNode.typeName.name;
 
                 if (
@@ -490,7 +496,16 @@ export const noUnusedProps = createRule({
                 );
 
                 if (indexNames.size === 0) {
-                  addBaseTypeProps(typeNode.objectType, shouldInclude);
+              if (
+                typeNode.objectType.type === AST_NODE_TYPES.TSTypeReference &&
+                typeNode.objectType.typeName.type === AST_NODE_TYPES.Identifier
+              ) {
+                const referenceName = typeNode.objectType.typeName.name;
+                props[`...${referenceName}`] = typeNode.objectType.typeName;
+                if (!spreadTypeProps[referenceName]) {
+                  spreadTypeProps[referenceName] = [];
+                }
+              }
                   return;
                 }
 
@@ -523,210 +538,9 @@ export const noUnusedProps = createRule({
             }
           };
 
-          const handleOmitType = (
-            baseType: TSESTree.TypeNode,
-            omittedProps: TSESTree.TypeNode,
-          ): void => {
-            const omittedPropNames = new Set<string>();
-
-            collectStringLiterals(omittedProps, (value) =>
-              omittedPropNames.add(value),
-            );
-
-            if (
-              baseType.type !== AST_NODE_TYPES.TSTypeReference ||
-              baseType.typeName.type !== AST_NODE_TYPES.Identifier
-            ) {
-              addBaseTypeProps(baseType, (name) => !omittedPropNames.has(name));
-              return;
-            }
-
-            const baseTypeName = baseType.typeName.name;
-
-            const scope = context.getScope();
-            const variable = scope.variables.find(
-              (v) => v.name === baseTypeName,
-            );
-
-            if (
-              variable &&
-              variable.defs[0]?.node.type ===
-                AST_NODE_TYPES.TSTypeAliasDeclaration
-            ) {
-              addBaseTypeProps(
-                variable.defs[0].node.typeAnnotation,
-                (name) => !omittedPropNames.has(name),
-              );
-            } else {
-              props[`...${baseTypeName}`] = baseType.typeName;
-              if (!spreadTypeProps[baseTypeName]) {
-                spreadTypeProps[baseTypeName] = [];
-              }
-            }
+          const extractProps = (typeNode: TSESTree.TypeNode) => {
+            addBaseTypeProps(typeNode);
           };
-
-          const handlePickType = (
-            baseType: TSESTree.TypeNode,
-            pickedProps: TSESTree.TypeNode,
-          ): void => {
-            const baseTypeName =
-              baseType.type === AST_NODE_TYPES.TSTypeReference &&
-              baseType.typeName.type === AST_NODE_TYPES.Identifier
-                ? baseType.typeName.name
-                : null;
-
-            const addPickedProp = (propName: string, node: TSESTree.Node) => {
-              props[propName] = node;
-              if (!baseTypeName) {
-                return;
-              }
-              if (!spreadTypeProps[baseTypeName]) {
-                spreadTypeProps[baseTypeName] = [];
-              }
-              spreadTypeProps[baseTypeName].push(propName);
-            };
-
-            collectStringLiterals(pickedProps, (value, literal) =>
-              addPickedProp(value, literal),
-            );
-          };
-
-          function extractProps(typeNode: TSESTree.TypeNode) {
-            if (typeNode.type === AST_NODE_TYPES.TSTypeLiteral) {
-              typeNode.members.forEach((member) => {
-                if (
-                  member.type === AST_NODE_TYPES.TSPropertySignature &&
-                  member.key.type === AST_NODE_TYPES.Identifier
-                ) {
-                  props[member.key.name] = member.key;
-                }
-              });
-            } else if (typeNode.type === AST_NODE_TYPES.TSIntersectionType) {
-              typeNode.types.forEach((type) => {
-                if (type.type === AST_NODE_TYPES.TSTypeReference) {
-                  const typeName = type.typeName;
-                  if (typeName.type === AST_NODE_TYPES.Identifier) {
-                    if (typeName.name === 'Pick' && type.typeParameters) {
-                      // Handle Pick utility type in intersection
-                      const [baseType, pickedProps] =
-                        type.typeParameters.params;
-                      handlePickType(baseType, pickedProps);
-                    } else if (
-                      typeName.name === 'Omit' &&
-                      type.typeParameters &&
-                      type.typeParameters.params.length === 2
-                    ) {
-                      // Handle Omit utility type in intersection
-                      const [baseType, omittedProps] =
-                        type.typeParameters.params;
-                      handleOmitType(baseType, omittedProps);
-                    } else {
-                      // For referenced types in intersections, we need to find their type declaration
-                      const scope = context.getScope();
-                      const variable = scope.variables.find(
-                        (v) => v.name === typeName.name,
-                      );
-                      if (
-                        variable &&
-                        variable.defs[0]?.node.type ===
-                          AST_NODE_TYPES.TSTypeAliasDeclaration
-                      ) {
-                        extractProps(variable.defs[0].node.typeAnnotation);
-                      } else {
-                        // If we can't find the type declaration, it's likely an imported type
-                        // Mark it as a forwarded prop
-                        const spreadTypeName = typeName.name;
-                        props[`...${spreadTypeName}`] = typeName;
-
-                        // For imported types, we need to track individual properties that might be used
-                        // from this spread type, even if we don't know what they are yet
-                        if (!spreadTypeProps[spreadTypeName]) {
-                          spreadTypeProps[spreadTypeName] = [];
-                        }
-                      }
-                    }
-                  }
-                } else {
-                  extractProps(type);
-                }
-              });
-            } else if (typeNode.type === AST_NODE_TYPES.TSTypeReference) {
-              if (typeNode.typeName.type === AST_NODE_TYPES.Identifier) {
-                // Skip checking for utility type parameters (T, K, etc.) as they're not actual props
-                if (
-                  typeNode.typeName.name.length === 1 &&
-                  /^[A-Z]$/.test(typeNode.typeName.name)
-                ) {
-                  // This is likely a generic type parameter (T, K, etc.), not a real type
-                  // Skip it to avoid false positives
-                  return;
-                }
-
-                if (
-                  typeNode.typeName.name === 'Pick' &&
-                  typeNode.typeParameters
-                ) {
-                  // Handle Pick utility type
-                  const [baseType, pickedProps] =
-                    typeNode.typeParameters.params;
-                handlePickType(baseType, pickedProps);
-                } else if (
-                  typeNode.typeName.name === 'Omit' &&
-                  typeNode.typeParameters &&
-                  typeNode.typeParameters.params.length === 2
-                ) {
-                  // Handle Omit<T, K> utility type
-                  const [baseType, omittedProps] =
-                    typeNode.typeParameters.params;
-                  handleOmitType(baseType, omittedProps);
-                } else if (
-                  // Handle other utility types like Required, Partial, etc.
-                  UTILITY_TYPES.has(typeNode.typeName.name) &&
-                  typeNode.typeParameters
-                ) {
-                  // For utility types like Required<T>, Partial<T>, we need to handle the base type
-                  const baseType = typeNode.typeParameters.params[0];
-                  if (
-                    baseType.type === AST_NODE_TYPES.TSTypeReference &&
-                    baseType.typeName.type === AST_NODE_TYPES.Identifier
-                  ) {
-                    const baseTypeName = baseType.typeName.name;
-
-                    // Find the base type definition
-                    const scope = context.getScope();
-                    const variable = scope.variables.find(
-                      (v) => v.name === baseTypeName,
-                    );
-
-                    if (
-                      variable &&
-                      variable.defs[0]?.node.type ===
-                        AST_NODE_TYPES.TSTypeAliasDeclaration
-                    ) {
-                      // For Partial<T>, Required<T>, etc., add all properties from the base type
-                      addBaseTypeProps(variable.defs[0].node.typeAnnotation);
-                    } else {
-                      // If we can't find the base type definition, treat it as a spread type
-                      props[`...${baseTypeName}`] = baseType.typeName;
-                      if (!spreadTypeProps[baseTypeName]) {
-                        spreadTypeProps[baseTypeName] = [];
-                      }
-                    }
-                  }
-                } else {
-                  // For referenced types like FormControlLabelProps, we need to track that these props should be forwarded
-                  const spreadTypeName = typeNode.typeName.name;
-                  props[`...${spreadTypeName}`] = typeNode.typeName;
-
-                  // For imported types, we need to track individual properties that might be used
-                  // from this spread type, even if we don't know what they are yet
-                  if (!spreadTypeProps[spreadTypeName]) {
-                    spreadTypeProps[spreadTypeName] = [];
-                  }
-                }
-              }
-            }
-          }
 
           extractProps(node.typeAnnotation);
           propsTypes.set(node.id.name, props);
