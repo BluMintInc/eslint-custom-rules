@@ -258,10 +258,13 @@ export const noUnusedProps = createRule({
               variable.defs[0]?.node.type ===
                 AST_NODE_TYPES.TSTypeAliasDeclaration
             ) {
-              addBaseTypeProps(
-                variable.defs[0].node.typeAnnotation,
-                (name) => !omittedPropNames.has(name),
-              );
+              const resolved = variable.defs[0].node.typeAnnotation;
+              if (resolved.type === AST_NODE_TYPES.TSTypeLiteral) {
+                addBaseTypeProps(resolved, (name) => !omittedPropNames.has(name));
+              } else {
+                props[`...${baseTypeName}`] = baseType.typeName;
+                spreadTypeProps[baseTypeName] ??= [];
+              }
             } else {
               props[`...${baseTypeName}`] = baseType.typeName;
               if (!spreadTypeProps[baseTypeName]) {

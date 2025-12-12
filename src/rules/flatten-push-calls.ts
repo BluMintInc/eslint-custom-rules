@@ -99,10 +99,6 @@ function getExpressionIdentity(expression: TSESTree.Expression): string | null {
         return `lit:${String(node.value)}`;
       }
       return null;
-    case AST_NODE_TYPES.ChainExpression:
-      return getExpressionIdentity(
-        (node as TSESTree.ChainExpression).expression as TSESTree.Expression,
-      );
     case AST_NODE_TYPES.MemberExpression: {
       if (node.property.type === AST_NODE_TYPES.PrivateIdentifier) return null;
       const objectKey = getExpressionIdentity(

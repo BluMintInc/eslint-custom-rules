@@ -307,6 +307,28 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
     },
     {
       code: `
+        type External = { external: string };
+        type Base = External & { local: string };
+        type Props = Omit<Base, 'local'>;
+
+        const Component = ({ external }: Props) => <div>{external}</div>;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: '...Base' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
         type FooProps = { used: string; unused: string };
 
         const helper = ({ used }: FooProps) => {

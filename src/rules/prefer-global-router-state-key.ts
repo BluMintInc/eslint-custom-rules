@@ -333,12 +333,32 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                               !hasNamespaceOrDefault
                             ) {
                               const importText = `import { ${suggestedConstant} } from '@/util/routing/queryKeys';\n`;
+                              const queryKeysImport = sourceCode.ast.body.find(
+                                (n): n is TSESTree.ImportDeclaration =>
+                                  n.type === AST_NODE_TYPES.ImportDeclaration &&
+                                  n.source.type === AST_NODE_TYPES.Literal &&
+                                  typeof n.source.value === 'string' &&
+                                  isQueryKeysSource(n.source.value),
+                              );
                               const firstImport = sourceCode.ast.body.find(
                                 (n): n is TSESTree.ImportDeclaration =>
                                   n.type === AST_NODE_TYPES.ImportDeclaration,
                               );
 
-                              if (firstImport) {
+                              if (queryKeysImport) {
+                                const lastSpecifier =
+                                  queryKeysImport.specifiers[
+                                    queryKeysImport.specifiers.length - 1
+                                  ];
+                                if (lastSpecifier) {
+                                  fixes.push(
+                                    fixer.insertTextAfter(
+                                      lastSpecifier,
+                                      `, ${suggestedConstant}`,
+                                    ),
+                                  );
+                                }
+                              } else if (firstImport) {
                                 fixes.push(
                                   fixer.insertTextBefore(
                                     firstImport,

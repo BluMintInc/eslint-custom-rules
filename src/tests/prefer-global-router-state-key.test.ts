@@ -330,6 +330,27 @@ ruleTesterJsx.run(
         `,
       },
 
+      // 2a. Merge with existing queryKeys import
+      {
+        code: `
+        import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: 'user-settings' });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [stringLiteralError("'user-settings'")],
+        output: `
+        import { QUERY_KEY_USER_PROFILE, QUERY_KEY_USER_SETTINGS } from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: QUERY_KEY_USER_SETTINGS });
+          return <div>{value}</div>;
+        }
+        `,
+      },
+
       // 2. String literals in template expressions
       {
         code: `
