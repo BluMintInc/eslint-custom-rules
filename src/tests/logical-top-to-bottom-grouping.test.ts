@@ -138,6 +138,15 @@ function doNotJumpOverRedeclaredDerived() {
 }
     `,
     `
+function avoidMovingCallsAcrossRedeclaredFunctions() {
+  var fn = () => first;
+  const first = 1;
+  var fn = () => second;
+  const second = 2;
+  fn();
+}
+    `,
+    `
 function preserveClosureTiming() {
   let x;
   inner();

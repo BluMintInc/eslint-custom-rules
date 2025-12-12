@@ -647,9 +647,30 @@ function isIdentifierMutated(
   beforeIndex: number,
 ): boolean {
   const target = new Set([name]);
+  let seenDeclaration = false;
   for (let index = 0; index < beforeIndex; index += 1) {
-    if (statementMutatesAny(body[index], target)) {
+    const statement = body[index];
+    if (statementMutatesAny(statement, target)) {
       return true;
+    }
+    if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
+      for (const declarator of statement.declarations) {
+        const declaredNames = new Set<string>();
+        collectDeclaredNamesFromPattern(
+          declarator.id as
+            | TSESTree.BindingName
+            | TSESTree.RestElement
+            | TSESTree.AssignmentPattern,
+          declaredNames,
+        );
+        if (!declaredNames.has(name)) {
+          continue;
+        }
+        if (seenDeclaration && declarator.init) {
+          return true;
+        }
+        seenDeclaration = true;
+      }
     }
   }
   return false;
@@ -1516,7 +1537,7 @@ function collectCalleeDependencies(
       });
     }
 
-    for (let index = 0; index < callIndex; index += 1) {
+    for (let index = callIndex - 1; index >= 0; index -= 1) {
       const statement = body[index];
       if (statement.type !== AST_NODE_TYPES.VariableDeclaration) {
         continue;
