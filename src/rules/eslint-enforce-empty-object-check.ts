@@ -405,19 +405,12 @@ export const eslintEnforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Opti
       const checker = parserServices?.program?.getTypeChecker();
 
       const options: Options[0] = context.options[0] ?? {};
-      const {
-        objectNamePattern = DEFAULT_OBJECT_SUFFIXES,
-        ignoreInLoops = false,
-        emptyCheckFunctions = DEFAULT_EMPTY_CHECK_FUNCTIONS,
-      } = options;
+      const { objectNamePattern = [], ignoreInLoops = false, emptyCheckFunctions = [] } = options;
 
-      const patternSet: Set<string> = new Set([
-        ...DEFAULT_OBJECT_SUFFIXES,
-        ...(objectNamePattern || []),
-      ]);
+      const patternSet: Set<string> = new Set([...DEFAULT_OBJECT_SUFFIXES, ...objectNamePattern]);
       const emptyCheckFunctionsSet: Set<string> = new Set([
         ...DEFAULT_EMPTY_CHECK_FUNCTIONS,
-        ...(emptyCheckFunctions || []),
+        ...emptyCheckFunctions,
       ]);
       const processedExpressions = new WeakSet<TSESTree.Expression>();
       const processedNegations = new WeakSet<TSESTree.UnaryExpression>();
