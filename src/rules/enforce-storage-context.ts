@@ -313,6 +313,7 @@ const identifierHasDeclarationParent = (node: TSESTree.Identifier): boolean => {
   if (parent.type === AST_NODE_TYPES.ImportSpecifier) return true;
   if (parent.type === AST_NODE_TYPES.ImportDefaultSpecifier) return true;
   if (parent.type === AST_NODE_TYPES.ImportNamespaceSpecifier) return true;
+  if (parent.type === AST_NODE_TYPES.ExportSpecifier) return true;
   return false;
 };
 
@@ -652,18 +653,28 @@ const createAssignmentExpressionHandler = (
   storageAliases: AliasStack,
   reportUsage: ReportUsage,
 ): ((node: TSESTree.AssignmentExpression) => void) => {
+  const setAliasInBindingScope = (name: string, value: AliasEntry) => {
+    for (let i = aliases.stack.length - 1; i >= 0; i -= 1) {
+      if (aliases.stack[i].has(name)) {
+        aliases.stack[i].set(name, value);
+        return;
+      }
+    }
+    aliases.setAlias(name, value);
+  };
+
   return (node) => {
     if (node.left.type === AST_NODE_TYPES.Identifier) {
       const right = node.right as TSESTree.Expression;
       const storageKind = resolveStorageObject(right, storageAliases);
       if (storageKind) {
-        aliases.setAlias(node.left.name, storageKind);
+        setAliasInBindingScope(node.left.name, storageKind);
       } else {
         const shadowsStorage = checkIfNameShadowsStorage(node.left.name, storageAliases, {
           includeCurrentScope: true,
         });
         if (shadowsStorage) {
-          aliases.markShadowed(node.left.name);
+          setAliasInBindingScope(node.left.name, 'shadowed');
         }
       }
     } else if (node.left.type === AST_NODE_TYPES.ObjectPattern) {
@@ -671,7 +682,7 @@ const createAssignmentExpressionHandler = (
         node.left,
         node.right as TSESTree.Expression,
         storageAliases,
-        (name, storageKind) => aliases.setAlias(name, storageKind),
+        (name, storageKind) => setAliasInBindingScope(name, storageKind),
         (propertyNode, storageKind, accessType) => {
           reportUsage(propertyNode, storageKind, accessType);
         },

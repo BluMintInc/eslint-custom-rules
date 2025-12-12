@@ -155,6 +155,10 @@ ruleTesterTs.run('enforce-storage-context', enforceStorageContext, {
         localStorage.setItem('k', 'v');
       }
     `,
+    `
+      export { localStorage } from './storage-polyfill';
+      export { sessionStorage as browserSession } from './storage-polyfill';
+    `,
   ],
   invalid: [
     {
@@ -365,6 +369,16 @@ store.setItem('k', 'v');
           localStorage.setItem('namespaced', 'v');
         }
         localStorage.setItem('outer', 'v');
+      `,
+      errors: [{ messageId: 'useStorageContext' }],
+    },
+    {
+      code: `
+        let storage = localStorage;
+        if (cond) {
+          storage = createMockStorage();
+        }
+        storage.getItem('k');
       `,
       errors: [{ messageId: 'useStorageContext' }],
     },
