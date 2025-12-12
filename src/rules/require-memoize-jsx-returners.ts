@@ -4,12 +4,16 @@ import { createRule } from '../utils/createRule';
 type MessageIds = 'requireMemoizeJsxReturner';
 type Options = [];
 
+type JsxFactoryContext = {
+  reactMemoIdentifiers: Set<string>;
+  reactMemoNamespaces: Set<string>;
+};
+
 const MEMOIZE_PREFERRED_MODULE = '@blumintinc/typescript-memoize';
 const MEMOIZE_MODULES = new Set([
   MEMOIZE_PREFERRED_MODULE,
   'typescript-memoize',
 ]);
-const JSX_FACTORY_CALLEES = new Set(['memo']);
 
 type FunctionLike =
   | TSESTree.ArrowFunctionExpression
@@ -178,6 +182,7 @@ function expressionReturnsJSX(
   expression: TSESTree.Expression | null | undefined,
   knownFunctions: Map<string, FunctionLike>,
   cache: WeakMap<FunctionLike, boolean>,
+  factoryContext: JsxFactoryContext,
 ): boolean {
   if (!expression) return false;
 
@@ -189,6 +194,7 @@ function expressionReturnsJSX(
       (expression as { expression: TSESTree.Expression }).expression,
       knownFunctions,
       cache,
+      factoryContext,
     );
   }
 
@@ -199,11 +205,19 @@ function expressionReturnsJSX(
 
     case AST_NODE_TYPES.ArrowFunctionExpression:
     case AST_NODE_TYPES.FunctionExpression:
-      return functionReturnsJSX(expression, knownFunctions, cache);
+      return functionReturnsJSX(
+        expression,
+        knownFunctions,
+        cache,
+        factoryContext,
+      );
 
     case AST_NODE_TYPES.Identifier: {
       const targetFn = knownFunctions.get(expression.name);
-      if (targetFn && functionReturnsJSX(targetFn, knownFunctions, cache)) {
+      if (
+        targetFn &&
+        functionReturnsJSX(targetFn, knownFunctions, cache, factoryContext)
+      ) {
         return true;
       }
       return false;
@@ -217,14 +231,22 @@ function expressionReturnsJSX(
 
       if (callee.type === AST_NODE_TYPES.Identifier) {
         const targetFn = knownFunctions.get(callee.name);
-        if (targetFn && functionReturnsJSX(targetFn, knownFunctions, cache)) {
+        if (
+          targetFn &&
+          functionReturnsJSX(targetFn, knownFunctions, cache, factoryContext)
+        ) {
           return true;
         }
 
         if (
-          JSX_FACTORY_CALLEES.has(callee.name) &&
+          factoryContext.reactMemoIdentifiers.has(callee.name) &&
           firstNonSpreadArgument &&
-          expressionReturnsJSX(firstNonSpreadArgument, knownFunctions, cache)
+          expressionReturnsJSX(
+            firstNonSpreadArgument,
+            knownFunctions,
+            cache,
+            factoryContext,
+          )
         ) {
           return true;
         }
@@ -237,15 +259,26 @@ function expressionReturnsJSX(
       ) {
         const propertyName = callee.property.name;
 
-        // Treat React.createElement style calls as JSX-producing
-        if (propertyName === 'createElement') {
+        /** Treat React.createElement style calls as JSX-producing. */
+        if (
+          propertyName === 'createElement' &&
+          callee.object.type === AST_NODE_TYPES.Identifier &&
+          factoryContext.reactMemoNamespaces.has(callee.object.name)
+        ) {
           return true;
         }
 
         if (
-          JSX_FACTORY_CALLEES.has(propertyName) &&
+          propertyName === 'memo' &&
+          callee.object.type === AST_NODE_TYPES.Identifier &&
+          factoryContext.reactMemoNamespaces.has(callee.object.name) &&
           firstNonSpreadArgument &&
-          expressionReturnsJSX(firstNonSpreadArgument, knownFunctions, cache)
+          expressionReturnsJSX(
+            firstNonSpreadArgument,
+            knownFunctions,
+            cache,
+            factoryContext,
+          )
         ) {
           return true;
         }
@@ -255,7 +288,10 @@ function expressionReturnsJSX(
           callee.object.type === AST_NODE_TYPES.Identifier
         ) {
           const targetFn = knownFunctions.get(callee.object.name);
-          if (targetFn && functionReturnsJSX(targetFn, knownFunctions, cache)) {
+          if (
+            targetFn &&
+            functionReturnsJSX(targetFn, knownFunctions, cache, factoryContext)
+          ) {
             return true;
           }
         }
@@ -267,14 +303,34 @@ function expressionReturnsJSX(
 
     case AST_NODE_TYPES.ConditionalExpression:
       return (
-        expressionReturnsJSX(expression.consequent, knownFunctions, cache) ||
-        expressionReturnsJSX(expression.alternate, knownFunctions, cache)
+        expressionReturnsJSX(
+          expression.consequent,
+          knownFunctions,
+          cache,
+          factoryContext,
+        ) ||
+        expressionReturnsJSX(
+          expression.alternate,
+          knownFunctions,
+          cache,
+          factoryContext,
+        )
       );
 
     case AST_NODE_TYPES.LogicalExpression:
       return (
-        expressionReturnsJSX(expression.left, knownFunctions, cache) ||
-        expressionReturnsJSX(expression.right, knownFunctions, cache)
+        expressionReturnsJSX(
+          expression.left,
+          knownFunctions,
+          cache,
+          factoryContext,
+        ) ||
+        expressionReturnsJSX(
+          expression.right,
+          knownFunctions,
+          cache,
+          factoryContext,
+        )
       );
 
     case AST_NODE_TYPES.SequenceExpression:
@@ -283,6 +339,7 @@ function expressionReturnsJSX(
             expression.expressions[expression.expressions.length - 1],
             knownFunctions,
             cache,
+            factoryContext,
           )
         : false;
 
@@ -290,10 +347,20 @@ function expressionReturnsJSX(
     case AST_NODE_TYPES.TSTypeAssertion:
     case AST_NODE_TYPES.TSNonNullExpression:
     case AST_NODE_TYPES.TSSatisfiesExpression:
-      return expressionReturnsJSX(expression.expression, knownFunctions, cache);
+      return expressionReturnsJSX(
+        expression.expression,
+        knownFunctions,
+        cache,
+        factoryContext,
+      );
 
     case AST_NODE_TYPES.ChainExpression:
-      return expressionReturnsJSX(expression.expression, knownFunctions, cache);
+      return expressionReturnsJSX(
+        expression.expression,
+        knownFunctions,
+        cache,
+        factoryContext,
+      );
 
     default:
       return false;
@@ -304,40 +371,73 @@ function statementReturnsJSX(
   statement: TSESTree.Statement,
   knownFunctions: Map<string, FunctionLike>,
   cache: WeakMap<FunctionLike, boolean>,
+  factoryContext: JsxFactoryContext,
 ): boolean {
   switch (statement.type) {
     case AST_NODE_TYPES.ReturnStatement:
-      return expressionReturnsJSX(statement.argument, knownFunctions, cache);
+      return expressionReturnsJSX(
+        statement.argument,
+        knownFunctions,
+        cache,
+        factoryContext,
+      );
     case AST_NODE_TYPES.BlockStatement:
       return statement.body.some((child) =>
-        statementReturnsJSX(child, knownFunctions, cache),
+        statementReturnsJSX(child, knownFunctions, cache, factoryContext),
       );
     case AST_NODE_TYPES.IfStatement:
       return (
-        statementReturnsJSX(statement.consequent, knownFunctions, cache) ||
+        statementReturnsJSX(
+          statement.consequent,
+          knownFunctions,
+          cache,
+          factoryContext,
+        ) ||
         (statement.alternate
-          ? statementReturnsJSX(statement.alternate, knownFunctions, cache)
+          ? statementReturnsJSX(
+              statement.alternate,
+              knownFunctions,
+              cache,
+              factoryContext,
+            )
           : false)
       );
     case AST_NODE_TYPES.SwitchStatement:
       return statement.cases.some((caseNode) =>
         caseNode.consequent.some((consequent) =>
-          statementReturnsJSX(consequent, knownFunctions, cache),
+          statementReturnsJSX(
+            consequent,
+            knownFunctions,
+            cache,
+            factoryContext,
+          ),
         ),
       );
     case AST_NODE_TYPES.TryStatement:
-      if (statementReturnsJSX(statement.block, knownFunctions, cache)) {
+      if (
+        statementReturnsJSX(statement.block, knownFunctions, cache, factoryContext)
+      ) {
         return true;
       }
       if (
         statement.handler &&
-        statementReturnsJSX(statement.handler.body, knownFunctions, cache)
+        statementReturnsJSX(
+          statement.handler.body,
+          knownFunctions,
+          cache,
+          factoryContext,
+        )
       ) {
         return true;
       }
       if (
         statement.finalizer &&
-        statementReturnsJSX(statement.finalizer, knownFunctions, cache)
+        statementReturnsJSX(
+          statement.finalizer,
+          knownFunctions,
+          cache,
+          factoryContext,
+        )
       ) {
         return true;
       }
@@ -349,7 +449,12 @@ function statementReturnsJSX(
     case AST_NODE_TYPES.DoWhileStatement:
     case AST_NODE_TYPES.LabeledStatement:
     case AST_NODE_TYPES.WithStatement:
-      return statementReturnsJSX(statement.body, knownFunctions, cache);
+      return statementReturnsJSX(
+        statement.body,
+        knownFunctions,
+        cache,
+        factoryContext,
+      );
     default:
       return false;
   }
@@ -359,6 +464,7 @@ function functionReturnsJSX(
   fn: FunctionLike,
   knownFunctions: Map<string, FunctionLike>,
   cache: WeakMap<FunctionLike, boolean>,
+  factoryContext: JsxFactoryContext,
 ): boolean {
   const cached = cache.get(fn);
   if (cached !== undefined) {
@@ -392,8 +498,15 @@ function functionReturnsJSX(
   }
 
   if (fn.body.type === AST_NODE_TYPES.BlockStatement) {
-    returnsJSX = statementReturnsJSX(fn.body, extendedFunctions, cache);
-  } else if (expressionReturnsJSX(fn.body, extendedFunctions, cache)) {
+    returnsJSX = statementReturnsJSX(
+      fn.body,
+      extendedFunctions,
+      cache,
+      factoryContext,
+    );
+  } else if (
+    expressionReturnsJSX(fn.body, extendedFunctions, cache, factoryContext)
+  ) {
     returnsJSX = true;
   }
 
@@ -429,10 +542,37 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
     let memoizeNamespace: string | null = null;
     let scheduledImportFix = false;
     const jsxReturnCache = new WeakMap<FunctionLike, boolean>();
+    const reactMemoIdentifiers = new Set<string>();
+    const reactMemoNamespaces = new Set<string>();
+    const factoryContext: JsxFactoryContext = {
+      reactMemoIdentifiers,
+      reactMemoNamespaces,
+    };
 
     return {
       ImportDeclaration(node) {
-        if (!MEMOIZE_MODULES.has(String(node.source.value))) {
+        const sourceValue = String(node.source.value);
+
+        if (sourceValue === 'react') {
+          node.specifiers.forEach((specifier) => {
+            if (
+              specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+              specifier.imported.name === 'memo'
+            ) {
+              reactMemoIdentifiers.add(
+                specifier.local?.name ?? specifier.imported.name,
+              );
+            } else if (specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
+              reactMemoNamespaces.add(specifier.local.name);
+            } else if (
+              specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier
+            ) {
+              reactMemoNamespaces.add(specifier.local.name);
+            }
+          });
+        }
+
+        if (!MEMOIZE_MODULES.has(sourceValue)) {
           return;
         }
 
@@ -479,6 +619,7 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
             node.value as FunctionLike,
             localFunctions,
             jsxReturnCache,
+            factoryContext,
           )
         ) {
           return;

@@ -70,6 +70,19 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
     },
     {
       code: `
+        type BaseProps = { keep: string } & { drop: number };
+        type Props = Omit<BaseProps, 'drop'>;
+        const Component = ({ keep }: Props) => <div>{keep}</div>;
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
         type ImageOptimizedProps = { src: string; alt: string };
         const ImageOptimized = ({ src, alt }: ImageOptimizedProps) => <img src={src} alt={alt} />;
       `,
@@ -353,6 +366,26 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         ecmaVersion: 2018,
         sourceType: 'module',
         jsx: true,
+      },
+    },
+    {
+      code: `
+        type SharedProps = { used: string } & { missing: number };
+        type Props = Partial<SharedProps>;
+        const Component = ({ used }: Props) => <div>{used}</div>;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'missing' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
       },
     },
   ],

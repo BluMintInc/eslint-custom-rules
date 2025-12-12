@@ -198,22 +198,187 @@ export const noUnusedProps = createRule({
           // Track which properties come from which spread type
           const spreadTypeProps: Record<string, string[]> = {};
 
+          const collectStringLiterals = (
+            node: TSESTree.TypeNode,
+            callback: (value: string, literalNode: TSESTree.Node) => void,
+          ) => {
+            if (node.type === AST_NODE_TYPES.TSUnionType) {
+              node.types.forEach((type) =>
+                collectStringLiterals(type, callback),
+              );
+              return;
+            }
+
+            if (
+              node.type === AST_NODE_TYPES.TSLiteralType &&
+              node.literal.type === AST_NODE_TYPES.Literal &&
+              typeof node.literal.value === 'string'
+            ) {
+              callback(node.literal.value, node.literal);
+            }
+          };
+
+          const processingTypeNodes = new Set<TSESTree.TypeNode>();
+
+          const resolveTypeAlias = (typeName: string) => {
+            const scope = context.getScope();
+            const variable = scope.variables.find((v) => v.name === typeName);
+
+            if (
+              variable &&
+              variable.defs[0]?.node.type ===
+                AST_NODE_TYPES.TSTypeAliasDeclaration
+            ) {
+              return variable.defs[0].node.typeAnnotation;
+            }
+
+            return null;
+          };
+
           const addBaseTypeProps = (
             typeNode: TSESTree.TypeNode,
             shouldInclude: (name: string) => boolean = () => true,
           ) => {
-            if (typeNode.type !== AST_NODE_TYPES.TSTypeLiteral) {
+            if (processingTypeNodes.has(typeNode)) {
               return;
             }
-            typeNode.members.forEach((member) => {
-              if (
-                member.type === AST_NODE_TYPES.TSPropertySignature &&
-                member.key.type === AST_NODE_TYPES.Identifier &&
-                shouldInclude(member.key.name)
-              ) {
-                props[member.key.name] = member.key;
+
+            processingTypeNodes.add(typeNode);
+
+            const addPropIfAllowed = (name: string, node: TSESTree.Node) => {
+              if (shouldInclude(name)) {
+                props[name] = node;
               }
-            });
+            };
+
+            try {
+              if (typeNode.type === AST_NODE_TYPES.TSTypeLiteral) {
+                typeNode.members.forEach((member) => {
+                  if (
+                    member.type === AST_NODE_TYPES.TSPropertySignature &&
+                    member.key.type === AST_NODE_TYPES.Identifier
+                  ) {
+                    addPropIfAllowed(member.key.name, member.key);
+                  }
+                });
+                return;
+              }
+
+              if (
+                typeNode.type === AST_NODE_TYPES.TSTypeReference &&
+                typeNode.typeName.type === AST_NODE_TYPES.Identifier
+              ) {
+                const referenceName = typeNode.typeName.name;
+
+                if (
+                  referenceName === 'Pick' &&
+                  typeNode.typeParameters &&
+                  typeNode.typeParameters.params.length >= 2
+                ) {
+                  const [baseType, pickedProps] = typeNode.typeParameters.params;
+                  const picked = new Set<string>();
+                  collectStringLiterals(pickedProps, (value) =>
+                    picked.add(value),
+                  );
+                  addBaseTypeProps(
+                    baseType,
+                    (name) => picked.has(name) && shouldInclude(name),
+                  );
+                  return;
+                }
+
+                if (
+                  referenceName === 'Omit' &&
+                  typeNode.typeParameters &&
+                  typeNode.typeParameters.params.length >= 2
+                ) {
+                  const [baseType, omittedProps] =
+                    typeNode.typeParameters.params;
+                  const omitted = new Set<string>();
+                  collectStringLiterals(omittedProps, (value) =>
+                    omitted.add(value),
+                  );
+                  addBaseTypeProps(
+                    baseType,
+                    (name) => !omitted.has(name) && shouldInclude(name),
+                  );
+                  return;
+                }
+
+                if (
+                  UTILITY_TYPES.has(referenceName) &&
+                  typeNode.typeParameters?.params.length
+                ) {
+                  addBaseTypeProps(
+                    typeNode.typeParameters.params[0],
+                    shouldInclude,
+                  );
+                  return;
+                }
+
+                const resolvedType = resolveTypeAlias(referenceName);
+                if (resolvedType) {
+                  addBaseTypeProps(resolvedType, shouldInclude);
+                }
+                return;
+              }
+
+              if (typeNode.type === AST_NODE_TYPES.TSIntersectionType) {
+                typeNode.types.forEach((type) =>
+                  addBaseTypeProps(type, shouldInclude),
+                );
+                return;
+              }
+
+              if (typeNode.type === AST_NODE_TYPES.TSUnionType) {
+                typeNode.types.forEach((type) =>
+                  addBaseTypeProps(type, shouldInclude),
+                );
+                return;
+              }
+
+              if (
+                (typeNode as { type?: string }).type === 'TSParenthesizedType'
+              ) {
+                const parenthesized = typeNode as {
+                  typeAnnotation?: TSESTree.TypeNode;
+                };
+                if (parenthesized.typeAnnotation) {
+                  addBaseTypeProps(
+                    parenthesized.typeAnnotation,
+                    shouldInclude,
+                  );
+                }
+                return;
+              }
+
+              if (typeNode.type === AST_NODE_TYPES.TSTypeOperator) {
+                if (typeNode.typeAnnotation) {
+                  addBaseTypeProps(typeNode.typeAnnotation, shouldInclude);
+                }
+                return;
+              }
+
+              if (typeNode.type === AST_NODE_TYPES.TSIndexedAccessType) {
+                addBaseTypeProps(typeNode.objectType, shouldInclude);
+                collectStringLiterals(typeNode.indexType, (value, literal) =>
+                  addPropIfAllowed(value, literal),
+                );
+                return;
+              }
+
+              if (typeNode.type === AST_NODE_TYPES.TSMappedType) {
+                const { typeParameter } = typeNode;
+                if (typeParameter.constraint) {
+                  collectStringLiterals(
+                    typeParameter.constraint,
+                    (value, literal) => addPropIfAllowed(value, literal),
+                  );
+                }
+              }
+            } finally {
+              processingTypeNodes.delete(typeNode);
+            }
           };
 
           const handleOmitType = (
@@ -230,23 +395,9 @@ export const noUnusedProps = createRule({
             const baseTypeName = baseType.typeName.name;
             const omittedPropNames = new Set<string>();
 
-            if (omittedProps.type === AST_NODE_TYPES.TSUnionType) {
-              omittedProps.types.forEach((type) => {
-                if (
-                  type.type === AST_NODE_TYPES.TSLiteralType &&
-                  type.literal.type === AST_NODE_TYPES.Literal &&
-                  typeof type.literal.value === 'string'
-                ) {
-                  omittedPropNames.add(type.literal.value);
-                }
-              });
-            } else if (
-              omittedProps.type === AST_NODE_TYPES.TSLiteralType &&
-              omittedProps.literal.type === AST_NODE_TYPES.Literal &&
-              typeof omittedProps.literal.value === 'string'
-            ) {
-              omittedPropNames.add(omittedProps.literal.value);
-            }
+            collectStringLiterals(omittedProps, (value) =>
+              omittedPropNames.add(value),
+            );
 
             const scope = context.getScope();
             const variable = scope.variables.find(
@@ -290,23 +441,9 @@ export const noUnusedProps = createRule({
               spreadTypeProps[baseTypeName].push(propName);
             };
 
-            if (pickedProps.type === AST_NODE_TYPES.TSUnionType) {
-              pickedProps.types.forEach((type) => {
-                if (
-                  type.type === AST_NODE_TYPES.TSLiteralType &&
-                  type.literal.type === AST_NODE_TYPES.Literal &&
-                  typeof type.literal.value === 'string'
-                ) {
-                  addPickedProp(type.literal.value, type.literal);
-                }
-              });
-            } else if (
-              pickedProps.type === AST_NODE_TYPES.TSLiteralType &&
-              pickedProps.literal.type === AST_NODE_TYPES.Literal &&
-              typeof pickedProps.literal.value === 'string'
-            ) {
-              addPickedProp(pickedProps.literal.value, pickedProps.literal);
-            }
+            collectStringLiterals(pickedProps, (value, literal) =>
+              addPickedProp(value, literal),
+            );
           };
 
           function extractProps(typeNode: TSESTree.TypeNode) {

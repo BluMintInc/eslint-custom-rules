@@ -72,6 +72,17 @@ class NamespaceUsage {
     },
     {
       filename: 'file.tsx',
+      code: `import { memo } from './memo';
+
+class LocalMemoHelper {
+  get ProviderComponent() {
+    const Inner = () => <div>Wrapped</div>;
+    return memo(Inner);
+  }
+}`,
+    },
+    {
+      filename: 'file.tsx',
       code: `class NoJsxFactory {
   build() {
     return () => 42;
@@ -225,7 +236,7 @@ class RendererFactory {
     },
     {
       filename: 'file.tsx',
-      code: `import { memo } from './memo';
+      code: `import { memo } from 'react';
 
 class Provider {
   public get ProviderComponent() {
@@ -235,7 +246,7 @@ class Provider {
 }`,
       errors: [{ messageId: 'requireMemoizeJsxReturner' }],
       output: `import { Memoize } from '@blumintinc/typescript-memoize';
-import { memo } from './memo';
+import { memo } from 'react';
 
 class Provider {
   @Memoize()
@@ -247,13 +258,17 @@ class Provider {
     },
     {
       filename: 'file.tsx',
-      code: `class NamespacedMemo {
+      code: `import React from 'react';
+
+class NamespacedMemo {
   get Component() {
     return React.memo(() => <div>Namespaced</div>);
   }
 }`,
       errors: [{ messageId: 'requireMemoizeJsxReturner' }],
       output: `import { Memoize } from '@blumintinc/typescript-memoize';
+import React from 'react';
+
 class NamespacedMemo {
   @Memoize()
   get Component() {
@@ -297,13 +312,17 @@ class ConditionalRenderer {
     },
     {
       filename: 'file.tsx',
-      code: `class ElementFactory {
+      code: `import React from 'react';
+
+class ElementFactory {
   get element() {
     return React.createElement('div', null, 'hi');
   }
 }`,
       errors: [{ messageId: 'requireMemoizeJsxReturner' }],
       output: `import { Memoize } from '@blumintinc/typescript-memoize';
+import React from 'react';
+
 class ElementFactory {
   @Memoize()
   get element() {
