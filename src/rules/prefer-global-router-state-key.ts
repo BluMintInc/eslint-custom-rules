@@ -354,6 +354,14 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                                     (s) => s.type === AST_NODE_TYPES.ImportSpecifier,
                                   ),
                               );
+                              const sideEffectImport = sourceCode.ast.body.find(
+                                (n): n is TSESTree.ImportDeclaration =>
+                                  n.type === AST_NODE_TYPES.ImportDeclaration &&
+                                  n.source.type === AST_NODE_TYPES.Literal &&
+                                  typeof n.source.value === 'string' &&
+                                  isQueryKeysSource(n.source.value) &&
+                                  n.specifiers.length === 0,
+                              );
                               const firstImport = sourceCode.ast.body.find(
                                 (n): n is TSESTree.ImportDeclaration =>
                                   n.type === AST_NODE_TYPES.ImportDeclaration,
@@ -369,36 +377,21 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                                   );
                                 const lastSpecifier =
                                   importSpecifiers[importSpecifiers.length - 1];
-                                if (lastSpecifier) {
-                                  fixes.push(
-                                    fixer.insertTextAfter(
-                                      lastSpecifier,
-                                      `, ${suggestedConstant}`,
-                                    ),
-                                  );
-                                } else {
-                                  const importStart =
-                                    queryKeysImport.range?.[0] ??
-                                    sourceCode.getIndexFromLoc(
-                                      queryKeysImport.loc.start,
-                                    );
-                                  const importIndent = sourceCode.text.slice(
-                                    sourceCode.text.lastIndexOf(
-                                      '\n',
-                                      importStart - 1,
-                                    ) + 1,
-                                    importStart,
-                                  );
-                                  const importTextWithIndent = `${importIndent}${importText}`;
-                                  const importTextWithoutTrailingNewline =
-                                    importTextWithIndent.trimEnd();
-                                  fixes.push(
-                                    fixer.insertTextAfter(
-                                      queryKeysImport,
-                                      `\n${importTextWithoutTrailingNewline}`,
-                                    ),
-                                  );
-                                }
+                                fixes.push(
+                                  fixer.insertTextAfter(
+                                    lastSpecifier,
+                                    `, ${suggestedConstant}`,
+                                  ),
+                                );
+                              } else if (sideEffectImport) {
+                                const importTextWithoutTrailingNewline =
+                                  importText.trimEnd();
+                                fixes.push(
+                                  fixer.replaceText(
+                                    sideEffectImport,
+                                    importTextWithoutTrailingNewline,
+                                  ),
+                                );
                               } else if (firstImport) {
                                 const firstImportStart =
                                   firstImport.range?.[0] ??

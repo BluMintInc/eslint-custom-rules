@@ -721,7 +721,6 @@ ruleTesterJsx.run(
         `,
         output: `
         import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
-        import '@/util/routing/queryKeys';
 
         function Component() {
           const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
