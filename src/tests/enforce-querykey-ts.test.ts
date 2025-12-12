@@ -3,7 +3,6 @@ import { enforceQueryKeyTs } from '../rules/enforce-querykey-ts';
 
 ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
   valid: [
-    // 1. Basic valid cases - using imported QUERY_KEY constants
     {
       code: `
         import { QUERY_KEY_PLAYBACK_ID } from '@/util/routing/queryKeys';
@@ -25,8 +24,6 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         }
       `,
     },
-
-    // 2. Aliased imports
     {
       code: `
         import { QUERY_KEY_NOTIFICATION as NOTIFICATION_KEY } from '@/util/routing/queryKeys';
@@ -37,8 +34,6 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         }
       `,
     },
-
-    // 3. Conditional usage with valid constants
     {
       code: `
         import { QUERY_KEY_NOTIFICATION, QUERY_KEY_CHANNEL } from '@/util/routing/queryKeys';
@@ -50,51 +45,6 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         }
       `,
     },
-
-    // 4. Template literals with query key variables
-    {
-      code: `
-        import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
-
-        function Component({ userId }) {
-          const key = \`\${QUERY_KEY_USER_PROFILE}-\${userId}\`;
-          const [profile] = useRouterState({ key });
-          return <div>{profile}</div>;
-        }
-      `,
-    },
-
-    // 5. Binary expressions with query keys
-    {
-      code: `
-        import { QUERY_KEY_MATCH } from '@/util/routing/queryKeys';
-
-        function Component({ matchId }) {
-          const [match] = useRouterState({ key: QUERY_KEY_MATCH + '-' + matchId });
-          return <div>{match}</div>;
-        }
-      `,
-    },
-
-    // 6. Function calls (permissive approach)
-    {
-      code: `
-        import { QUERY_KEY_TOURNAMENT } from '@/util/routing/queryKeys';
-
-        function generateKey(base, suffix) {
-          return \`\${base}-\${suffix}\`;
-        }
-
-        function Component({ tournamentId }) {
-          const [tournament] = useRouterState({
-            key: generateKey(QUERY_KEY_TOURNAMENT, tournamentId)
-          });
-          return <div>{tournament}</div>;
-        }
-      `,
-    },
-
-    // 7. Relative imports
     {
       code: `
         import { QUERY_KEY_SESSION } from './util/routing/queryKeys';
@@ -117,18 +67,6 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
     },
     {
       code: `
-        import { QUERY_KEY_MODAL } from '../../util/routing/queryKeys';
-
-        function Component() {
-          const [modal] = useRouterState({ key: QUERY_KEY_MODAL });
-          return <div>{modal}</div>;
-        }
-      `,
-    },
-
-    // 8. Multiple imports in single statement
-    {
-      code: `
         import {
           QUERY_KEY_NOTIFICATION,
           QUERY_KEY_CHANNEL,
@@ -143,8 +81,6 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         }
       `,
     },
-
-    // 9. Variables derived from query key constants
     {
       code: `
         import { QUERY_KEY_USER } from '@/util/routing/queryKeys';
@@ -156,8 +92,6 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         }
       `,
     },
-
-    // 10. Conditional expressions with valid constants
     {
       code: `
         import { QUERY_KEY_ADMIN, QUERY_KEY_USER } from '@/util/routing/queryKeys';
@@ -170,46 +104,26 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         }
       `,
     },
-
-    // 11. Template literals with only separators
-    {
-      code: `
-        import { QUERY_KEY_SECTION } from '@/util/routing/queryKeys';
-
-        function Component({ id }) {
-          const [section] = useRouterState({ key: \`\${QUERY_KEY_SECTION}-\${id}\` });
-          return <div>{section}</div>;
-        }
-      `,
-    },
-
-    // 12. Complex nested usage
-    {
-      code: `
-        import { QUERY_KEY_WORKSPACE, QUERY_KEY_PROJECT } from '@/util/routing/queryKeys';
-
-        function Component({ workspaceId, projectId, isWorkspace }) {
-          const baseKey = isWorkspace ? QUERY_KEY_WORKSPACE : QUERY_KEY_PROJECT;
-          const id = isWorkspace ? workspaceId : projectId;
-          const [data] = useRouterState({ key: \`\${baseKey}-\${id}\` });
-          return <div>{data}</div>;
-        }
-      `,
-    },
-
-    // 13. Member expression access (for namespaced constants)
     {
       code: `
         import { QueryKeys } from '@/util/routing/queryKeys';
 
         function Component() {
-          const [data] = useRouterState({ key: QueryKeys.MATCH });
+          const [data] = useRouterState({ key: QueryKeys.QUERY_KEY_MATCH });
           return <div>{data}</div>;
         }
       `,
     },
+    {
+      code: `
+        import * as QueryKeys from '@/util/routing/queryKeys';
 
-    // 14. Different relative path depths
+        function Component() {
+          const [data] = useRouterState({ key: QueryKeys.QUERY_KEY_MATCH });
+          return <div>{data}</div>;
+        }
+      `,
+    },
     {
       code: `
         import { QUERY_KEY_SETTINGS } from '../../../util/routing/queryKeys';
@@ -222,26 +136,12 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
     },
     {
       code: `
-        import { QUERY_KEY_PREFERENCES } from '../../../../util/routing/queryKeys';
-
-        function Component() {
-          const [preferences] = useRouterState({ key: QUERY_KEY_PREFERENCES });
-          return <div>{preferences}</div>;
-        }
-      `,
-    },
-
-    // 15. Edge case: no key property (should not trigger rule)
-    {
-      code: `
         function Component() {
           const [value] = useRouterState({ location: 'queryParam' });
           return <div>{value}</div>;
         }
       `,
     },
-
-    // 16. Edge case: empty useRouterState call
     {
       code: `
         function Component() {
@@ -250,8 +150,6 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         }
       `,
     },
-
-    // 17. Edge case: non-object argument
     {
       code: `
         import { QUERY_KEY_DATA } from '@/util/routing/queryKeys';
@@ -262,8 +160,6 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         }
       `,
     },
-
-    // 18. Complex variable assignment chain
     {
       code: `
         import { QUERY_KEY_ANALYTICS } from '@/util/routing/queryKeys';
@@ -276,40 +172,9 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         }
       `,
     },
-
-    // 19. Function that returns query key
-    {
-      code: `
-        import { QUERY_KEY_REPORT } from '@/util/routing/queryKeys';
-
-        function getReportKey() {
-          return QUERY_KEY_REPORT;
-        }
-
-        function Component() {
-          const [report] = useRouterState({ key: getReportKey() });
-          return <div>{report}</div>;
-        }
-      `,
-    },
-
-    // 20. Template literal with multiple query key expressions
-    {
-      code: `
-        import { QUERY_KEY_TEAM, QUERY_KEY_MEMBER } from '@/util/routing/queryKeys';
-
-        function Component({ teamId, memberId }) {
-          const [data] = useRouterState({
-            key: \`\${QUERY_KEY_TEAM}-\${teamId}-\${QUERY_KEY_MEMBER}-\${memberId}\`
-          });
-          return <div>{data}</div>;
-        }
-      `,
-    },
   ],
 
   invalid: [
-    // 1. Basic invalid cases - string literals
     {
       code: `
         function Component() {
@@ -318,15 +183,7 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         }
       `,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
-      output: `
-        function Component() {
-          const [playbackId] = useRouterState({ key: QUERY_KEY_PLAYBACK_ID });
-          return <div>{playbackId}</div>;
-        }
-      `,
     },
-
-    // 2. String literal with other properties
     {
       code: `
         function Component() {
@@ -338,18 +195,7 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         }
       `,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
-      output: `
-        function Component() {
-          const [value] = useRouterState({
-            key: QUERY_KEY_TOURNAMENT_DETAILS,
-            location: 'queryParam'
-          });
-          return <div>{value}</div>;
-        }
-      `,
     },
-
-    // 3. Multiple string literals in different components
     {
       code: `
         function MatchComponent() {
@@ -366,20 +212,7 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
-      output: `
-        function MatchComponent() {
-          const [value] = useRouterState({ key: QUERY_KEY_MATCH_VIEW });
-          return <div>{value}</div>;
-        }
-
-        function TournamentComponent() {
-          const [value] = useRouterState({ key: QUERY_KEY_TOURNAMENT_VIEW });
-          return <div>{value}</div>;
-        }
-      `,
     },
-
-    // 4. String literals in custom hook
     {
       code: `
         function useCustomRouterState(id) {
@@ -392,16 +225,7 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
-      output: `
-        function useCustomRouterState(id) {
-          const [matchValue] = useRouterState({ key: QUERY_KEY_MATCH_DETAILS });
-          const [tournamentValue] = useRouterState({ key: QUERY_KEY_TOURNAMENT_DETAILS });
-          return { match: matchValue, tournament: tournamentValue };
-        }
-      `,
     },
-
-    // 5. String concatenation with literals
     {
       code: `
         function Component({ id }) {
@@ -411,8 +235,6 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
       `,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
     },
-
-    // 6. Conditional expressions with string literals
     {
       code: `
         function Component({ isAdmin }) {
@@ -424,8 +246,6 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
       `,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
     },
-
-    // 7. Template literal with static content
     {
       code: `
         function Component({ id }) {
@@ -435,8 +255,6 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
       `,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
     },
-
-    // 8. Variable not from queryKeys.ts
     {
       code: `
         const MY_KEY = 'custom-key';
@@ -453,8 +271,6 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         },
       ],
     },
-
-    // 9. Import from wrong source
     {
       code: `
         import { QUERY_KEY_WRONG } from './wrong/path';
@@ -471,8 +287,6 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         },
       ],
     },
-
-    // 10. Constant not following QUERY_KEY_ pattern
     {
       code: `
         import { WRONG_PATTERN } from '@/util/routing/queryKeys';
@@ -489,8 +303,6 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         },
       ],
     },
-
-    // 11. Mixed valid and invalid usage
     {
       code: `
         import { QUERY_KEY_VALID } from '@/util/routing/queryKeys';
@@ -502,18 +314,7 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         }
       `,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
-      output: `
-        import { QUERY_KEY_VALID } from '@/util/routing/queryKeys';
-
-        function Component() {
-          const [valid] = useRouterState({ key: QUERY_KEY_VALID });
-          const [invalid] = useRouterState({ key: QUERY_KEY_INVALID_LITERAL });
-          return <div>{valid} {invalid}</div>;
-        }
-      `,
     },
-
-    // 12. Complex string literal patterns
     {
       code: `
         function Component() {
@@ -528,17 +329,7 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
-      output: `
-        function Component() {
-          const [value1] = useRouterState({ key: QUERY_KEY_SECTION_SUBSECTION });
-          const [value2] = useRouterState({ key: QUERY_KEY_USER_PROFILE_SETTINGS });
-          const [value3] = useRouterState({ key: QUERY_KEY_APP_MODULE_COMPONENT });
-          return <div>{value1} {value2} {value3}</div>;
-        }
-      `,
     },
-
-    // 13. Nested component with string literal
     {
       code: `
         function ParentComponent() {
@@ -551,19 +342,7 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         }
       `,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
-      output: `
-        function ParentComponent() {
-          return <ChildComponent />;
-        }
-
-        function ChildComponent() {
-          const [value] = useRouterState({ key: QUERY_KEY_CHILD_COMPONENT });
-          return <div>{value}</div>;
-        }
-      `,
     },
-
-    // 14. Array mapping with string literals
     {
       code: `
         function MultiComponent({ sections }) {
@@ -579,8 +358,6 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
       `,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
     },
-
-    // 15. Variable assignment from string literal
     {
       code: `
         function Component() {
@@ -596,8 +373,6 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         },
       ],
     },
-
-    // 16. Template literal with significant static content
     {
       code: `
         function Component({ userId }) {
@@ -607,8 +382,6 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
       `,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
     },
-
-    // 17. Binary expression with string literal
     {
       code: `
         function Component({ id }) {
@@ -618,8 +391,6 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
       `,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
     },
-
-    // 18. Conditional with mixed valid/invalid
     {
       code: `
         import { QUERY_KEY_ADMIN } from '@/util/routing/queryKeys';
@@ -633,8 +404,6 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
       `,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
     },
-
-    // 19. Special characters in string literals
     {
       code: `
         function Component() {
@@ -649,17 +418,7 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         { messageId: 'enforceQueryKeyImport' },
         { messageId: 'enforceQueryKeyImport' },
       ],
-      output: `
-        function Component() {
-          const [value1] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
-          const [value2] = useRouterState({ key: QUERY_KEY_SECTION_DETAILS });
-          const [value3] = useRouterState({ key: QUERY_KEY_APP_MODULE });
-          return <div>{value1} {value2} {value3}</div>;
-        }
-      `,
     },
-
-    // 20. Empty string literal
     {
       code: `
         function Component() {
@@ -668,12 +427,70 @@ ruleTesterJsx.run('enforce-querykey-ts', enforceQueryKeyTs, {
         }
       `,
       errors: [{ messageId: 'enforceQueryKeyImport' }],
-      output: `
+    },
+    {
+      code: `
+        import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+        function Component({ userId }) {
+          const [profile] = useRouterState({ key: \`\${QUERY_KEY_USER_PROFILE}-\${userId}\` });
+          return <div>{profile}</div>;
+        }
+      `,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+    },
+    {
+      code: `
+        import { QUERY_KEY_MATCH } from '@/util/routing/queryKeys';
+
+        function Component({ matchId }) {
+          const [match] = useRouterState({ key: QUERY_KEY_MATCH + matchId });
+          return <div>{match}</div>;
+        }
+      `,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+    },
+    {
+      code: `
+        import { QUERY_KEY_REPORT } from '@/util/routing/queryKeys';
+
+        function getReportKey() {
+          return QUERY_KEY_REPORT;
+        }
+
         function Component() {
-          const [value] = useRouterState({ key: QUERY_KEY_ });
+          const [report] = useRouterState({ key: getReportKey() });
+          return <div>{report}</div>;
+        }
+      `,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
+    },
+    {
+      code: `
+        function Component() {
+          const a = b;
+          const b = a;
+          const [value] = useRouterState({ key: a });
           return <div>{value}</div>;
         }
       `,
+      errors: [
+        {
+          messageId: 'enforceQueryKeyConstant',
+          data: { variableName: 'a' },
+        },
+      ],
+    },
+    {
+      code: `
+        const QueryKeys = { OTHER: 'other' };
+
+        function Component() {
+          const [value] = useRouterState({ key: QueryKeys.OTHER });
+          return <div>{value}</div>;
+        }
+      `,
+      errors: [{ messageId: 'enforceQueryKeyImport' }],
     },
   ],
 });

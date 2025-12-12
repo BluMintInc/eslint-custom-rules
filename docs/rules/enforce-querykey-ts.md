@@ -2,8 +2,6 @@
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
-
 <!-- end auto-generated rule header -->
 
 ## Rule Details
@@ -17,7 +15,8 @@ As BluMint transitions to centralized router state management with the new query
 1. **Targets the `key` property** in objects passed to the `useRouterState` hook
 2. **Ensures that key parameters** are imported from `src/util/routing/queryKeys.ts` and use the `QUERY_KEY_*` constants
 3. **Allows for computed values or variables** that are derived from the imported constants
-4. **Provides auto-fix suggestions** when possible to replace string literals with appropriate constant imports
+
+Auto-fix is intentionally disabled because generating `QUERY_KEY_*` names without verifying imports can introduce undefined identifiers. Update keys manually or introduce explicit constants before using them.
 
 ## Examples
 
@@ -109,37 +108,6 @@ function Component({ isNotification }) {
   return <div>{queryValue}</div>;
 }
 
-// Template literals with query key variables
-import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
-
-function Component({ userId }) {
-  const key = `${QUERY_KEY_USER_PROFILE}-${userId}`;
-  const [profile] = useRouterState({ key });
-  return <div>{profile}</div>;
-}
-
-// Binary expressions with query keys
-import { QUERY_KEY_MATCH } from '@/util/routing/queryKeys';
-
-function Component({ matchId }) {
-  const [match] = useRouterState({ key: QUERY_KEY_MATCH + '-' + matchId });
-  return <div>{match}</div>;
-}
-
-// Function calls (permissive approach)
-import { QUERY_KEY_TOURNAMENT } from '@/util/routing/queryKeys';
-
-function generateKey(base, suffix) {
-  return `${base}-${suffix}`;
-}
-
-function Component({ tournamentId }) {
-  const [tournament] = useRouterState({
-    key: generateKey(QUERY_KEY_TOURNAMENT, tournamentId)
-  });
-  return <div>{tournament}</div>;
-}
-
 // Variables derived from query key constants
 import { QUERY_KEY_USER } from '@/util/routing/queryKeys';
 
@@ -200,20 +168,6 @@ The rule recognizes the following import sources as valid:
 - `../../../util/routing/queryKeys`
 - `../../../../util/routing/queryKeys`
 - Any path ending with `/util/routing/queryKeys`
-
-## Auto-fix Capability
-
-The rule provides automatic fixes for simple string literals by converting them to suggested `QUERY_KEY_*` constant names:
-
-```typescript
-// Before (auto-fixable)
-const [value] = useRouterState({ key: 'user-profile' });
-
-// After auto-fix
-const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
-```
-
-Note: Auto-fix only works for simple string literals. Complex expressions require manual refactoring.
 
 ## When Not to Use
 

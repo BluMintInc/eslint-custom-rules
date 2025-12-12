@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'enforceQueryKeyImport' | 'enforceQueryKeyConstant';
@@ -17,7 +17,6 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
         'Enforce using centralized router state key constants from queryKeys.ts for useRouterState key parameter',
       recommended: 'error',
     },
-    fixable: 'code',
     schema: [],
     messages: {
       enforceQueryKeyImport:
@@ -40,17 +39,6 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
     ]);
 
     const allowedQueryKeyFactories = new Set(['makeQueryKey', 'getQueryKey']);
-
-    /**
-     * Ensure a suggested constant is imported from queryKeys.ts and return combined fixes
-     */
-    function buildImportFixes(
-      fixer: TSESLint.RuleFixer,
-      keyNode: TSESTree.Literal,
-      suggestedConstant: string,
-    ) {
-      return [fixer.replaceText(keyNode, suggestedConstant)];
-    }
 
     /**
      * Check if a source path refers to queryKeys.ts
@@ -77,8 +65,15 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
     /**
      * Check if a node represents a valid query key usage
      */
-    function isValidQueryKeyUsage(node: TSESTree.Node): boolean {
+    function isValidQueryKeyUsage(
+      node: TSESTree.Node,
+      seen: Set<string> = new Set(),
+    ): boolean {
       if (node.type === AST_NODE_TYPES.Identifier) {
+        if (seen.has(node.name)) {
+          return false;
+        }
+        seen.add(node.name);
         const importInfo = queryKeyImports.get(node.name);
         if (importInfo && isQueryKeysSource(importInfo.source)) {
           return isValidQueryKeyConstant(importInfo.imported);
@@ -87,7 +82,7 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
         // Check if it's a variable derived from a query key constant
         const assignment = variableAssignments.get(node.name);
         if (assignment) {
-          return isValidQueryKeyUsage(assignment);
+          return isValidQueryKeyUsage(assignment, seen);
         }
       }
 
@@ -125,7 +120,9 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
           return false;
         }
 
-        return node.expressions.some((expr) => isValidQueryKeyUsage(expr));
+        return node.expressions.every((expr) =>
+          isValidQueryKeyUsage(expr, new Set(seen)),
+        );
       }
 
       if (
@@ -133,7 +130,8 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
         node.operator === '+'
       ) {
         return (
-          isValidQueryKeyUsage(node.left) || isValidQueryKeyUsage(node.right)
+          isValidQueryKeyUsage(node.left, new Set(seen)) &&
+          isValidQueryKeyUsage(node.right, new Set(seen))
         );
       }
 
@@ -219,20 +217,6 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
       return false;
     }
 
-    /**
-     * Generate auto-fix suggestion for string literals
-     */
-    function generateAutoFix(keyValue: string): string | null {
-      // Simple heuristic to suggest query key constant names
-      const normalizedKey = keyValue
-        .toUpperCase()
-        .replace(/[^A-Z0-9]/g, '_')
-        .replace(/_+/g, '_')
-        .replace(/^_|_$/g, '');
-
-      return `QUERY_KEY_${normalizedKey}`;
-    }
-
     return {
       // Track imports from queryKeys.ts
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
@@ -313,25 +297,6 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
                     context.report({
                       node: keyValue,
                       messageId: 'enforceQueryKeyImport',
-                      fix(fixer) {
-                        // Only provide auto-fix for simple string literals
-                        if (
-                          keyValue.type === AST_NODE_TYPES.Literal &&
-                          typeof keyValue.value === 'string'
-                        ) {
-                          const suggestedConstant = generateAutoFix(
-                            keyValue.value,
-                          );
-                          if (suggestedConstant) {
-                            return buildImportFixes(
-                              fixer,
-                              keyValue,
-                              suggestedConstant,
-                            );
-                          }
-                        }
-                        return null;
-                      },
                     });
                   } else if (keyValue.type === AST_NODE_TYPES.Identifier) {
                     // Report variables that aren't from the correct source
@@ -341,6 +306,11 @@ export const enforceQueryKeyTs = createRule<[], MessageIds>({
                       data: {
                         variableName: keyValue.name,
                       },
+                    });
+                  } else {
+                    context.report({
+                      node: keyValue,
+                      messageId: 'enforceQueryKeyImport',
                     });
                   }
                 }
