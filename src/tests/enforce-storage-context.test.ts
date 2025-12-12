@@ -317,6 +317,19 @@ store.setItem('k', 'v');
     },
     {
       code: `
+        function catchDoesNotHoist() {
+          try {
+            doThing();
+          } catch (localStorage) {
+            localStorage.message;
+          }
+          localStorage.setItem('k', 'v');
+        }
+      `,
+      errors: [{ messageId: 'useStorageContext' }],
+    },
+    {
+      code: `
         type localStorage = {};
         const cache = localStorage;
         cache.setItem('k', 'v');

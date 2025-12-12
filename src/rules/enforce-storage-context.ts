@@ -164,6 +164,23 @@ const getAliasFromStack = (
   return null;
 };
 
+const checkIfNameShadowsStorage = (
+  name: string,
+  storageAliases: AliasStack,
+  options: { includeCurrentScope?: boolean } = {},
+): boolean => {
+  const lookupStack = options.includeCurrentScope
+    ? storageAliases
+    : storageAliases.slice(0, -1);
+  const outerAlias = getAliasFromStack(lookupStack, name);
+  const shadowsGlobal =
+    STORAGE_NAMES.has(name as StorageKind) || GLOBAL_NAMES.has(name);
+  const shadowsOuterStorageAlias =
+    outerAlias === 'localStorage' || outerAlias === 'sessionStorage';
+
+  return shadowsGlobal || shadowsOuterStorageAlias;
+};
+
 const isGlobalLike = (
   node: TSESTree.Expression,
   aliases: AliasStack,
@@ -341,19 +358,24 @@ const identifierRepresentsDeclaration = (node: TSESTree.Identifier): boolean => 
   return false;
 };
 
-const getVariableDeclarationKind = (
-  node: TSESTree.Identifier,
-): TSESTree.VariableDeclaration['kind'] | null => {
-  let current: TSESTree.Node | null = node.parent ?? null;
+const isVarBinding = (node: TSESTree.Identifier): boolean => {
+  let child: TSESTree.Node = node;
+  let parent: TSESTree.Node | null = node.parent ?? null;
 
-  while (current) {
-    if (current.type === AST_NODE_TYPES.VariableDeclaration) {
-      return current.kind;
+  while (parent) {
+    if (parent.type === AST_NODE_TYPES.VariableDeclarator) {
+      if (parent.init === child) return false;
+      const declaration =
+        parent.parent?.type === AST_NODE_TYPES.VariableDeclaration
+          ? parent.parent
+          : null;
+      return declaration?.kind === 'var';
     }
-    current = (current.parent as TSESTree.Node | null) ?? null;
+    child = parent;
+    parent = (parent.parent as TSESTree.Node | null) ?? null;
   }
 
-  return null;
+  return false;
 };
 
 const isMemberExpressionObject = (node: TSESTree.Identifier): boolean => {
@@ -478,8 +500,7 @@ const createIdentifierHandler = (
   return (node) => {
     const parent = node.parent;
     if (identifierRepresentsDeclaration(node)) {
-      const declarationKind = getVariableDeclarationKind(node);
-      const hoistToFunctionScope = declarationKind === 'var';
+      const hoistToFunctionScope = isVarBinding(node);
       if (
         parent?.type === AST_NODE_TYPES.ClassExpression &&
         parent.id === node
@@ -487,14 +508,8 @@ const createIdentifierHandler = (
         return;
       }
       if (identifierHasDeclarationParent(node) && !aliases.currentScope().has(node.name)) {
-        const outerAlias = getAliasFromStack(storageAliases.slice(0, -1), node.name);
-        const shadowsGlobal =
-          STORAGE_NAMES.has(node.name as StorageKind) ||
-          GLOBAL_NAMES.has(node.name);
-        const shadowsOuterStorageAlias =
-          outerAlias === 'localStorage' || outerAlias === 'sessionStorage';
-
-        if (shadowsGlobal || shadowsOuterStorageAlias) {
+        const shadowsStorage = checkIfNameShadowsStorage(node.name, storageAliases);
+        if (shadowsStorage) {
           aliases.markShadowed(node.name, { hoistToFunctionScope });
         }
       }
@@ -609,10 +624,10 @@ const createVariableDeclaratorHandler = (
       if (storageKind) {
         aliases.setAlias(node.id.name, storageKind, { hoistToFunctionScope });
       } else {
-        const shadowsGlobal =
-          STORAGE_NAMES.has(node.id.name as StorageKind) ||
-          GLOBAL_NAMES.has(node.id.name);
-        if (shadowsGlobal) {
+        const shadowsStorage = checkIfNameShadowsStorage(node.id.name, storageAliases, {
+          includeCurrentScope: true,
+        });
+        if (shadowsStorage) {
           aliases.markShadowed(node.id.name, { hoistToFunctionScope });
         }
       }
@@ -644,15 +659,10 @@ const createAssignmentExpressionHandler = (
       if (storageKind) {
         aliases.setAlias(node.left.name, storageKind);
       } else {
-        const existing = getAliasFromStack(storageAliases, node.left.name);
-        const isStorageOrGlobalName =
-          STORAGE_NAMES.has(node.left.name as StorageKind) ||
-          GLOBAL_NAMES.has(node.left.name);
-        if (
-          isStorageOrGlobalName ||
-          existing === 'localStorage' ||
-          existing === 'sessionStorage'
-        ) {
+        const shadowsStorage = checkIfNameShadowsStorage(node.left.name, storageAliases, {
+          includeCurrentScope: true,
+        });
+        if (shadowsStorage) {
           aliases.markShadowed(node.left.name);
         }
       }
@@ -689,13 +699,7 @@ const createScopeListeners = (
       parent.id
     ) {
       const name = parent.id.name;
-      const outerAlias = getAliasFromStack(storageAliases.slice(0, -1), name);
-      const shadowsGlobal =
-        STORAGE_NAMES.has(name as StorageKind) || GLOBAL_NAMES.has(name);
-      const shadowsOuterStorageAlias =
-        outerAlias === 'localStorage' || outerAlias === 'sessionStorage';
-
-      if (shadowsGlobal || shadowsOuterStorageAlias) {
+      if (checkIfNameShadowsStorage(name, storageAliases)) {
         aliases.setAlias(name, 'shadowed');
       }
     }
@@ -716,13 +720,11 @@ const createScopeListeners = (
   FunctionDeclaration: (node: TSESTree.FunctionDeclaration) => {
     if (node.id) {
       const name = node.id.name;
-      const shadowsGlobal =
-        STORAGE_NAMES.has(name as StorageKind) || GLOBAL_NAMES.has(name);
-      const outerAlias = getAliasFromStack(storageAliases, name);
-      const shadowsOuterStorageAlias =
-        outerAlias === 'localStorage' || outerAlias === 'sessionStorage';
-
-      if (shadowsGlobal || shadowsOuterStorageAlias) {
+      if (
+        checkIfNameShadowsStorage(name, storageAliases, {
+          includeCurrentScope: true,
+        })
+      ) {
         aliases.setAlias(name, 'shadowed');
       }
     }
@@ -789,7 +791,7 @@ export const enforceStorageContext = createRule<RuleOptions, MessageIds>({
     ],
     messages: {
       useStorageContext:
-        'Direct {{storage}} {{accessType}} bypasses the storage context provider and causes three failures: (1) UI will not re-render when storage changes because React state is never updated, (2) code can crash during server-side rendering when `window` is undefined, and (3) storage errors go unhandled and break user flows. Call {{hook}}() at the component top level and use its returned methods (getItem, setItem, removeItem, clear) to keep storage access reactive and safe.',
+        "What's wrong: Direct {{storage}} {{accessType}} bypasses the LocalStorage/SessionStorage context providers.\n\nWhy it matters: (1) UI will not re-render when storage changes because React state is never updated, (2) code can crash during server-side rendering when `window` is undefined, and (3) storage errors go unhandled and break user flows.\n\nHow to fix: Call {{hook}}() at the component top level and use its returned methods (getItem, setItem, removeItem, clear) instead of accessing {{storage}} directly.",
     },
   },
   defaultOptions: [{}],
