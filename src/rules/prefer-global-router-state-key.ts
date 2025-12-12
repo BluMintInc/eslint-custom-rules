@@ -310,12 +310,6 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                           if (suggestedConstant) {
                             const fixes: TSESLint.RuleFix[] = [];
 
-                            // 1) Replace the literal with the constant
-                            fixes.push(
-                              fixer.replaceText(keyValue, suggestedConstant),
-                            );
-
-                            // 2) Ensure an import exists for the suggested constant
                             const sourceCode = context.getSourceCode();
                             const alreadyImportedNamed = Array.from(
                               queryKeyImports.values(),
@@ -324,21 +318,41 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                                 isQueryKeysSource(info.source) &&
                                 info.imported === suggestedConstant,
                             );
-                            const hasNamespaceOrDefault =
-                              namespaceImports.size > 0 ||
-                              defaultImports.size > 0;
+                            const namespaceLocal =
+                              namespaceImports.keys().next().value;
+                            const defaultLocal =
+                              defaultImports.keys().next().value;
 
-                            if (
-                              !alreadyImportedNamed &&
-                              !hasNamespaceOrDefault
-                            ) {
+                            let replacementText = suggestedConstant;
+                            let needsNamedImport = false;
+
+                            if (!alreadyImportedNamed) {
+                              if (namespaceLocal) {
+                                replacementText = `${namespaceLocal}.${suggestedConstant}`;
+                              } else if (defaultLocal) {
+                                replacementText = `${defaultLocal}.${suggestedConstant}`;
+                              } else {
+                                needsNamedImport = true;
+                              }
+                            }
+
+                            // 1) Replace the literal with the chosen reference
+                            fixes.push(
+                              fixer.replaceText(keyValue, replacementText),
+                            );
+
+                            // 2) Ensure an import exists for the suggested constant when needed
+                            if (needsNamedImport) {
                               const importText = `import { ${suggestedConstant} } from '@/util/routing/queryKeys';\n`;
                               const queryKeysImport = sourceCode.ast.body.find(
                                 (n): n is TSESTree.ImportDeclaration =>
                                   n.type === AST_NODE_TYPES.ImportDeclaration &&
                                   n.source.type === AST_NODE_TYPES.Literal &&
                                   typeof n.source.value === 'string' &&
-                                  isQueryKeysSource(n.source.value),
+                                  isQueryKeysSource(n.source.value) &&
+                                  n.specifiers.some(
+                                    (s) => s.type === AST_NODE_TYPES.ImportSpecifier,
+                                  ),
                               );
                               const firstImport = sourceCode.ast.body.find(
                                 (n): n is TSESTree.ImportDeclaration =>
@@ -346,10 +360,15 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                               );
 
                               if (queryKeysImport) {
+                                const importSpecifiers =
+                                  queryKeysImport.specifiers.filter(
+                                    (
+                                      spec,
+                                    ): spec is TSESTree.ImportSpecifier =>
+                                      spec.type === AST_NODE_TYPES.ImportSpecifier,
+                                  );
                                 const lastSpecifier =
-                                  queryKeysImport.specifiers[
-                                    queryKeysImport.specifiers.length - 1
-                                  ];
+                                  importSpecifiers[importSpecifiers.length - 1];
                                 if (lastSpecifier) {
                                   fixes.push(
                                     fixer.insertTextAfter(
@@ -381,10 +400,25 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                                   );
                                 }
                               } else if (firstImport) {
+                                const firstImportStart =
+                                  firstImport.range?.[0] ??
+                                  sourceCode.getIndexFromLoc(
+                                    firstImport.loc.start,
+                                  );
+                                const firstImportLineStart =
+                                  sourceCode.text.lastIndexOf(
+                                    '\n',
+                                    firstImportStart - 1,
+                                  ) + 1;
+                                const firstImportIndent = sourceCode.text.slice(
+                                  firstImportLineStart,
+                                  firstImportStart,
+                                );
+                                const importTextWithIndent = `${firstImportIndent}${importText}`;
                                 fixes.push(
-                                  fixer.insertTextBefore(
-                                    firstImport,
-                                    importText,
+                                  fixer.insertTextBeforeRange(
+                                    [firstImportLineStart, firstImportLineStart],
+                                    importTextWithIndent,
                                   ),
                                 );
                               } else {

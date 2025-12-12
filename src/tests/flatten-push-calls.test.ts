@@ -100,6 +100,21 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
     store['list'].push(first);
     store['list'].push(second);
     `,
+    `
+    const arr: Array<string | number> = [];
+    arr.push(value = getValue());
+    arr.push(other);
+    `,
+    `
+    const arr = [];
+    arr.push(import('./module'));
+    arr.push(other);
+    `,
+    `
+    const arr = [];
+    arr.push(getValue() satisfies number);
+    arr.push(other);
+    `,
   ],
   invalid: [
     {

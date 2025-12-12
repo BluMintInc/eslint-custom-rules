@@ -163,6 +163,8 @@ function hasForbiddenSideEffects(
     case AST_NODE_TYPES.AwaitExpression:
     case AST_NODE_TYPES.YieldExpression:
     case AST_NODE_TYPES.TaggedTemplateExpression:
+    case AST_NODE_TYPES.ImportExpression:
+    case AST_NODE_TYPES.AssignmentExpression:
       return true;
     case AST_NODE_TYPES.UnaryExpression:
       if (node.operator === 'delete') return true;
@@ -214,6 +216,7 @@ function hasForbiddenSideEffects(
     case AST_NODE_TYPES.TSTypeAssertion:
     case AST_NODE_TYPES.TSNonNullExpression:
     case AST_NODE_TYPES.TSInstantiationExpression:
+    case AST_NODE_TYPES.TSSatisfiesExpression:
       return hasForbiddenSideEffects(node.expression);
     default:
       return false;

@@ -350,6 +350,46 @@ ruleTesterJsx.run(
         }
         `,
       },
+      // 2b. Namespace import should qualify constant
+      {
+        code: `
+        import * as QueryKeys from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: 'user-profile' });
+          return <div>{value}</div>;
+        }
+        `,
+        output: `
+        import * as QueryKeys from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: QueryKeys.QUERY_KEY_USER_PROFILE });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+      // 2c. Default import should qualify constant
+      {
+        code: `
+        import queryKeys from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: 'user-settings' });
+          return <div>{value}</div>;
+        }
+        `,
+        output: `
+        import queryKeys from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: queryKeys.QUERY_KEY_USER_SETTINGS });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [stringLiteralError("'user-settings'")],
+      },
 
       // 2. String literals in template expressions
       {
@@ -680,8 +720,8 @@ ruleTesterJsx.run(
         }
         `,
         output: `
-        import '@/util/routing/queryKeys';
         import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+        import '@/util/routing/queryKeys';
 
         function Component() {
           const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
