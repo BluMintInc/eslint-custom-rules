@@ -18,11 +18,8 @@ const getFunctionDescription = (
       ? node.id.name
       : null;
 
-  const functionName =
-    declaredName ??
-    (node.type !== AST_NODE_TYPES.ArrowFunctionExpression
-      ? fallbackName
-      : undefined);
+  const isArrowFunction = node.type === AST_NODE_TYPES.ArrowFunctionExpression;
+  const functionName = declaredName ?? (isArrowFunction ? undefined : fallbackName);
 
   if (functionName) {
     return `function "${functionName}"`;
@@ -79,6 +76,18 @@ const getSourceCode = (
   };
 
   return typedContext.sourceCode ?? context.getSourceCode();
+};
+
+const getScope = (
+  context: TSESLint.RuleContext<'noAsyncForEach', []>,
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.Node,
+): TSESLint.Scope.Scope | null => {
+  const typedSourceCode = sourceCode as TSESLint.SourceCode & {
+    getScope?: (scopedNode: TSESTree.Node) => TSESLint.Scope.Scope | null;
+  };
+
+  return typedSourceCode.getScope?.(node) ?? context.getScope();
 };
 
 const analyzeInlineCallback = (
@@ -240,14 +249,7 @@ export const noAsyncForEach: TSESLint.RuleModule<'noAsyncForEach', []> = {
           callee.property.name === 'forEach' &&
           callback
         ) {
-          const scope =
-            (
-              sourceCode as TSESLint.SourceCode & {
-                getScope?: (
-                  node: TSESTree.Node,
-                ) => TSESLint.Scope.Scope | null;
-              }
-            ).getScope?.(callback) ?? context.getScope();
+          const scope = getScope(context, sourceCode, callback);
           const asyncCallbackInfo = analyzeCallbackAsyncStatus(
             callback,
             scope,
