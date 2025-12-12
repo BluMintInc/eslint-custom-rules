@@ -34,6 +34,12 @@ ruleTesterTs.run('enforce-storage-context', enforceStorageContext, {
     },
     {
       code: `
+        localStorage.setItem('mock', 'value');
+      `,
+      filename: 'C:\\\\repo\\\\src\\\\contexts\\\\LocalStorage.tsx',
+    },
+    {
+      code: `
         sessionStorage.setItem('mock', 'value');
         localStorage.getItem('mock');
       `,

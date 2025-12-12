@@ -470,7 +470,7 @@ const shouldIgnoreFile = (
   options: RuleOptions[0] | undefined,
 ): boolean => {
   const normalizedFilename = filename.replace(/\\/g, '/');
-  const base = path.basename(filename);
+  const base = path.basename(normalizedFilename);
   if (CONTEXT_BASENAMES.has(base)) return true;
 
   const allowInTests = options?.allowInTests ?? true;
