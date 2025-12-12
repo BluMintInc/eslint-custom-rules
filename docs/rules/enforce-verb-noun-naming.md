@@ -72,3 +72,5 @@ This rule does not have any options.
 ## Further reading
 
 - [Clean Code: Meaningful Names](https://learning.oreilly.com/library/view/clean-code/9780136083238/chapter02.html)
+- [Google JavaScript Style Guide: Naming](https://google.github.io/styleguide/jsguide.html#naming)
+- [TypeScript Deep Dive: Naming conventions](https://basarat.gitbook.io/typescript/styleguide#naming)
