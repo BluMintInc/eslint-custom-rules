@@ -138,7 +138,7 @@ import { testFileLocationEnforcement } from './rules/test-file-location-enforcem
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
-    version: '1.12.6',
+    version: '1.13.0',
   },
   parseOptions: {
     ecmaVersion: 2020,

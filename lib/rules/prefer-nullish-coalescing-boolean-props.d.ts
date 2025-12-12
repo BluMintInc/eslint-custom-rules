@@ -1,0 +1,1 @@
+export declare const preferNullishCoalescingBooleanProps: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"preferNullishCoalescing", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;
