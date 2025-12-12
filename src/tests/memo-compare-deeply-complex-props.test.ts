@@ -492,6 +492,23 @@ export const Wrapped = memo(Comp, compareDeeply('config'));
         errors: [{ messageId: 'useCompareDeeply' }],
       },
       {
+        filename: 'src/components/TrailingCommaMemo.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { config: { theme: string } };
+const Comp = ({ config }: Props) => <div>{config.theme}</div>;
+export const Wrapped = memo(Comp,);
+`,
+        output: `
+import { compareDeeply } from 'src/util/memo';
+import { memo } from 'react';
+type Props = { config: { theme: string } };
+const Comp = ({ config }: Props) => <div>{config.theme}</div>;
+export const Wrapped = memo(Comp, compareDeeply('config'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      {
         filename: 'src/components/ParenthesizedNullComparator.tsx',
         code: `
 import { memo } from 'react';
@@ -505,6 +522,33 @@ import { memo } from 'react';
 type Props = { config: { theme: string } };
 const Comp = ({ config }: Props) => <div>{config.theme}</div>;
 export const Wrapped = memo(Comp, compareDeeply('config'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
+      {
+        filename: 'src/components/InnerScopeCompareDeeplyShadow.tsx',
+        code: `
+import { memo } from 'react';
+type Props = { config: { theme: string } };
+function makeWrapper() {
+  const compareDeeply = () => false;
+  return memo(function Comp({ config }: Props) {
+    return <div>{config.theme}</div>;
+  });
+}
+export const Wrapped = makeWrapper();
+`,
+        output: `
+import { compareDeeply as compareDeeply2 } from 'src/util/memo';
+import { memo } from 'react';
+type Props = { config: { theme: string } };
+function makeWrapper() {
+  const compareDeeply = () => false;
+  return memo(function Comp({ config }: Props) {
+    return <div>{config.theme}</div>;
+  }, compareDeeply2('config'));
+}
+export const Wrapped = makeWrapper();
 `,
         errors: [{ messageId: 'useCompareDeeply' }],
       },

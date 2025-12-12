@@ -262,7 +262,23 @@ function addNamesFromDeclaration(
   }
 }
 
-function pickAvailableCompareDeeplyLocalName(program: TSESTree.Program): string {
+function collectNamesFromScopeChain(
+  scope: TSESLint.Scope.Scope | null,
+  target: Set<string>,
+): void {
+  let currentScope: TSESLint.Scope.Scope | null = scope;
+  while (currentScope) {
+    for (const variable of currentScope.variables) {
+      target.add(variable.name);
+    }
+    currentScope = (currentScope.upper as TSESLint.Scope.Scope | null) ?? null;
+  }
+}
+
+function pickAvailableCompareDeeplyLocalName(
+  program: TSESTree.Program,
+  scope: TSESLint.Scope.Scope,
+): string {
   const used = new Set<string>();
 
   for (const stmt of program.body) {
@@ -300,6 +316,8 @@ function pickAvailableCompareDeeplyLocalName(program: TSESTree.Program): string 
     }
   }
 
+  collectNamesFromScopeChain(scope, used);
+
   if (!used.has('compareDeeply')) return 'compareDeeply';
 
   for (let i = 2; ; i += 1) {
@@ -311,10 +329,11 @@ function pickAvailableCompareDeeplyLocalName(program: TSESTree.Program): string 
 function ensureCompareDeeplyImportFixes(
   sourceCode: TSESLint.SourceCode,
   fixer: TSESLint.RuleFixer,
+  scope: TSESLint.Scope.Scope,
   preferredSource?: string,
 ): { fixes: TSESLint.RuleFix[]; localName: string } {
   const program = sourceCode.ast;
-  const preferredLocalName = pickAvailableCompareDeeplyLocalName(program);
+  const preferredLocalName = pickAvailableCompareDeeplyLocalName(program, scope);
   const memoImports = program.body.filter(
     (node): node is TSESTree.ImportDeclaration =>
       node.type === AST_NODE_TYPES.ImportDeclaration &&
@@ -860,7 +879,7 @@ function buildMemoFixes(
   scope: TSESLint.Scope.Scope,
 ): TSESLint.RuleFix[] {
   const fixes: TSESLint.RuleFix[] = [];
-  const importResult = ensureCompareDeeplyImportFixes(sourceCode, fixer, memoSource);
+  const importResult = ensureCompareDeeplyImportFixes(sourceCode, fixer, scope, memoSource);
   if (
     comparatorArg &&
     comparatorArg.type !== AST_NODE_TYPES.SpreadElement &&
@@ -875,12 +894,13 @@ function buildMemoFixes(
   } else {
     const closingParen = sourceCode.getLastToken(callExpression);
     if (closingParen) {
-      fixes.push(
-        fixer.insertTextBefore(
-          closingParen,
-          `, ${importResult.localName}(${propsCall})`,
-        ),
-      );
+      const tokenBeforeParen = sourceCode.getTokenBefore(closingParen);
+      const comparatorText = `${importResult.localName}(${propsCall})`;
+      if (tokenBeforeParen?.value === ',') {
+        fixes.push(fixer.replaceText(tokenBeforeParen, `, ${comparatorText}`));
+      } else {
+        fixes.push(fixer.insertTextBefore(closingParen, `, ${comparatorText}`));
+      }
     }
   }
   fixes.push(...importResult.fixes);
@@ -1004,6 +1024,7 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
       description:
         'Suggest compareDeeply for memoized components that receive object/array props to avoid shallow comparison re-renders.',
       recommended: 'error',
+      requiresTypeChecking: true,
     },
     fixable: 'code',
     schema: [],
@@ -1019,44 +1040,66 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
     const memoImportTracking = createMemoImportTracking();
     const initializerTracking = createComponentInitializerTracker();
 
+    function validateMemoCall(node: TSESTree.CallExpression) {
+      const memoCall = memoImportTracking.isMemoCall(node);
+      if (!memoCall) return null;
+      if (node.arguments.length === 0 || node.arguments.length > 2) return null;
+
+      const componentArg = node.arguments[0];
+      if (!componentArg || componentArg.type === AST_NODE_TYPES.SpreadElement) return null;
+
+      const comparatorArg = node.arguments[1];
+      return { memoCall, componentArg, comparatorArg };
+    }
+
+    function analyzeComponentAndProps(
+      componentArg: TSESTree.Expression,
+      comparatorArg: TSESTree.CallExpressionArgument | undefined,
+      currentScope: TSESLint.Scope.Scope,
+    ) {
+      const componentTargets = findComponentAnalysisTargets(componentArg, (name) =>
+        initializerTracking.getInitializer(name, currentScope),
+      );
+      if (!componentTargets) return null;
+
+      if (isComparatorProvided(comparatorArg, currentScope)) return null;
+
+      const complexProps = collectComplexPropsForTargets(componentTargets, (expr) =>
+        collectComplexProps(expr, sourceCode, complexPropsCache),
+      );
+      if (complexProps.length === 0) return null;
+
+      const componentName = resolveComponentName(componentTargets, componentArg);
+      return { complexProps, componentName };
+    }
+
+    function generateReportData(complexProps: string[], componentName: string) {
+      const propsList = `[${complexProps
+        .map((prop) => escapeStringForCodeGeneration(prop))
+        .join(', ')}]`;
+      const propsCall = complexProps
+        .map((prop) => escapeStringForCodeGeneration(prop))
+        .join(', ');
+
+      return { componentName, propsList, propsCall };
+    }
+
     return {
       ImportDeclaration: memoImportTracking.recordImport,
       VariableDeclarator(node) {
         initializerTracking.recordComponentInitializer(node, context.getScope());
       },
       CallExpression(node) {
-        const memoCall = memoImportTracking.isMemoCall(node);
-        if (!memoCall) return;
-        if (node.arguments.length === 0) return;
+        const validationResult = validateMemoCall(node);
+        if (!validationResult) return;
 
-        // memo() only accepts (Component, compare?); skip malformed calls
-        if (node.arguments.length > 2) return;
-
-        const componentArg = node.arguments[0];
-        const comparatorArg = node.arguments[1];
-        if (componentArg.type === AST_NODE_TYPES.SpreadElement) return;
-
+        const { memoCall, componentArg, comparatorArg } = validationResult;
         const currentScope = context.getScope();
-        const componentTargets = findComponentAnalysisTargets(componentArg, (name) =>
-          initializerTracking.getInitializer(name, currentScope),
-        );
-        if (!componentTargets) return;
+        const analysisResult = analyzeComponentAndProps(componentArg, comparatorArg, currentScope);
+        if (!analysisResult) return;
 
-        if (isComparatorProvided(comparatorArg, currentScope)) return;
-
-        const complexProps = collectComplexPropsForTargets(componentTargets, (expr) =>
-          collectComplexProps(expr, sourceCode, complexPropsCache),
-        );
-        if (complexProps.length === 0) return;
-
-        const componentName = resolveComponentName(componentTargets, componentArg);
-
-        const propsList = `[${complexProps
-          .map((prop) => escapeStringForCodeGeneration(prop))
-          .join(', ')}]`;
-        const propsCall = complexProps
-          .map((prop) => escapeStringForCodeGeneration(prop))
-          .join(', ');
+        const { complexProps, componentName } = analysisResult;
+        const { propsList, propsCall } = generateReportData(complexProps, componentName);
 
         context.report({
           node,
