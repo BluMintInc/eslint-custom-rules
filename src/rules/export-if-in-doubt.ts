@@ -9,21 +9,34 @@ export const exportIfInDoubt: TSESLint.RuleModule<'exportIfInDoubt', never[]> =
       type: 'suggestion',
       docs: {
         description:
-          'All top-level const definitions, type definitions, and functions should be exported',
+          'All top-level variable declarations, type definitions, and functions should be exported',
         recommended: 'error',
       },
       schema: [],
       messages: {
         exportIfInDoubt:
-          'Top-level const definitions, type definitions, and functions should be exported.',
+          'What\'s wrong: Top-level {{kind}} "{{name}}" is not exported. Why it matters: Top-level declarations define your module\'s public API; leaving this unexported makes it unusable from other files and hides reusable utilities (often resulting in dead code or duplicated implementations). How to fix: Export it (for example: {{exportExample}}) or move it into a narrower scope if it is intentionally private.',
       },
     },
     defaultOptions: [],
     create(context) {
-      // List of top-level declarations
-      // List of exported identifiers
       const topLevelDeclarations: TSESTree.Node[] = [];
       const exportedIdentifiers: string[] = [];
+      const getDeclarationKind = (
+        node: TSESTree.Node,
+      ): TSESTree.VariableDeclaration['kind'] | 'function' | 'type' => {
+        if (node.type === 'VariableDeclarator') {
+          const variableParent = node.parent;
+          if (variableParent?.type === 'VariableDeclaration') {
+            return variableParent.kind;
+          }
+          return 'const';
+        }
+        if (node.type === 'FunctionDeclaration') {
+          return 'function';
+        }
+        return 'type';
+      };
 
       return {
         'Program > VariableDeclaration > VariableDeclarator, Program > FunctionDeclaration, Program > TSTypeAliasDeclaration'(
@@ -62,9 +75,22 @@ export const exportIfInDoubt: TSESLint.RuleModule<'exportIfInDoubt', never[]> =
               node.id.type === 'Identifier' &&
               !exportedIdentifiers.includes(node.id.name)
             ) {
+              const name = node.id.name;
+              const kind = getDeclarationKind(node);
+              const exportExample =
+                node.type === 'VariableDeclarator'
+                  ? `export ${kind} ${name} = undefined;`
+                  : node.type === 'FunctionDeclaration'
+                  ? `export function ${name}() {}`
+                  : `export type ${name} = unknown;`;
               context.report({
                 node,
                 messageId: 'exportIfInDoubt',
+                data: {
+                  name,
+                  kind,
+                  exportExample,
+                },
               });
             }
           });
