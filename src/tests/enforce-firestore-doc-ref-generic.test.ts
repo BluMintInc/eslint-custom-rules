@@ -10,7 +10,7 @@ const missingGenericMessage = (type: string) =>
     '',
     'Why it matters: Without the generic, Firestore references fall back to loose DocumentData, so TypeScript cannot catch field typos or missing required properties before they reach Firestore.',
     '',
-    `How to fix: Add the document interface/type as the generic (e.g., const ref: ${type}<UserDoc> = ... or doc<UserDoc>(collection) ).`,
+    `How to fix: Add the document interface/type as the generic (e.g., const ref: ${type}<UserDoc> = ... or doc<UserDoc>(collection)).`,
   ].join('\n');
 
 const invalidGenericMessage = (type: string) =>
