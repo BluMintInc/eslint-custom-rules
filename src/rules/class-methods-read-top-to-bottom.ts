@@ -29,8 +29,8 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
       classMethodsReadTopToBottom:
         [
           "What's wrong: In {{className}}, {{actualMember}} appears before {{expectedMember}}.",
-          'Why it matters: This forces you to scroll upward to understand the call chain and control flow.',
-          'How to fix: Move {{expectedMember}} above {{actualMember}} so the class reads top-to-bottom (fields -> constructor -> callers -> helpers).',
+          'Why it matters: This breaks top-down reading; local reasoning depends on caller-to-helper flow, and upward jumps slow reviews, hide invariants, and risk calling helpers before state is ready.',
+          'How to fix: Move {{expectedMember}} above {{actualMember}} so the class reads top-to-bottom (fields to constructor to callers to helpers).',
         ].join('\n'),
     },
     fixable: 'code', // To allow ESLint to autofix issues.
@@ -71,10 +71,17 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
         }
 
         for (let i = 0; i < actualOrder.length; i++) {
-          if (actualOrder[i] !== sortedOrder[i]) {
+          const actualMember = actualOrder[i];
+          const expectedMember = sortedOrder[i];
+
+          if (!actualMember || !expectedMember) {
+            throw new Error(
+              `class-methods-read-top-to-bottom invariant violated while comparing members in ${className || 'an unnamed class'} at position ${i}`,
+            );
+          }
+
+          if (actualMember !== expectedMember) {
             const classNameReport = className || 'this class';
-            const actualMember = actualOrder[i] || 'this member';
-            const expectedMember = sortedOrder[i] || 'the expected member';
             const sourceCode = context.getSourceCode();
             const newClassBody = sortedOrder
               .map((n) => {
