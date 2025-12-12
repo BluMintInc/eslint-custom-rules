@@ -6,39 +6,39 @@
 
 <!-- end auto-generated rule header -->
 
-This rule requires every Firestore `DocumentReference`, `CollectionReference`, and `CollectionGroup` to declare the document shape via their generic type and rejects generics that resolve to `any` or `{}` (including nested usages). Firestore does not enforce schemas at runtime; without a typed generic, TypeScript treats the data as loose `DocumentData`, so field typos and missing properties compile and ship to production unchecked.
+This rule requires every Firestore `DocumentReference`, `CollectionReference`, and `CollectionGroup` to declare the document shape via their generic type and rejects generics that are `any` or `{}` (and flags nested `any`/`{}` where they can be statically detected). Firestore does not enforce schemas at runtime; without a typed generic, TypeScript treats the data as loose `DocumentData`, so field typos and missing properties compile and ship to production unchecked.
 
 ## Rule Details
 
 - Provide a concrete document interface or type whenever you create a Firestore reference or call `doc`, `collection`, or `collectionGroup`.
-- Calls on an already typed `CollectionReference<T>` may omit the `doc` generic because the collection supplies the document shape.
-- Generics that collapse to `any` or `{}` (directly or through nested properties) are disallowed because they erase the schema and disable compile-time checks on reads and writes.
+- Calls on an already typed `CollectionReference<T>` may omit the generic on `collectionRef.doc(...)` because the collection supplies the document shape.
+- Generics that use `any` or `{}` erase the schema and disable compile-time checks; nested `any`/`{}` are flagged when the rule can see them inline or via same-file types.
 
 Examples of **incorrect** code for this rule:
 
 ```ts
 // Missing generic type argument on a reference
-const docRef: DocumentReference = db.doc('users/123');
+const userDocRef: DocumentReference = db.doc('users/123');
 
 // Missing generic when creating a collection
-const users = db.collection('users');
+const usersCollectionUntyped = db.collection('users');
 
 // Using `any` erases the schema
-const docRef: DocumentReference<any> = db.doc('users/123');
+const productDocRef: DocumentReference<any> = db.doc('products/123');
 
 // Using empty object type
-const docRef: DocumentReference<{}> = db.doc('users/123');
+const auditLogDocRef: DocumentReference<{}> = db.doc('audit/123');
 
 // Nested `any` still erases the document type
-interface UserData {
+interface UserProfile {
   name: string;
   metadata: { audit: any };
 }
-const docRef: DocumentReference<UserData> = db.doc('users/123');
+const userProfileDocRef: DocumentReference<UserProfile> = db.doc('users/123');
 
 // Overriding a typed collection with an unsafe generic
-const usersCollection = db.collection<UserData>('users');
-const userDoc = usersCollection.doc<any>('user123');
+const customerCollection = db.collection<UserProfile>('customers');
+const unsafeCustomerDoc = customerCollection.doc<any>('cust123');
 ```
 
 Examples of **correct** code for this rule:
@@ -51,7 +51,7 @@ interface UserData {
 }
 
 // Using proper interface as generic type
-const docRef: DocumentReference<UserData> = db.doc('users/123');
+const userDocRef: DocumentReference<UserData> = db.doc('users/123');
 
 // Using type alias as generic type
 type ProductData = {
@@ -59,16 +59,16 @@ type ProductData = {
   price: number;
   stock: number;
 };
-const docRef: DocumentReference<ProductData> = db.doc('products/456');
+const productDocRef: DocumentReference<ProductData> = db.doc('products/456');
 
-// Typed collection supplies the generic to doc()
-const users = db.collection<UserData>('users');
-const userDoc = users.doc('123');
+// Typed collection supplies the generic to collectionRef.doc()
+const typedUsersCollection = db.collection<UserData>('users');
+const typedUserDoc = typedUsersCollection.doc('123');
 
 // Using intersection types keeps the schema intact
 type BaseData = { id: string; createdAt: Date };
 type UserWithBase = UserData & BaseData;
-const docRef: DocumentReference<UserWithBase> = db.doc('users/123');
+const userWithBaseDoc: DocumentReference<UserWithBase> = db.doc('users/123');
 ```
 
 ## When Not To Use It

@@ -5,10 +5,22 @@ import { enforceFirestoreDocRefGeneric } from '../rules/enforce-firestore-doc-re
 type MessageIds = 'missingGeneric' | 'invalidGeneric';
 
 const missingGenericMessage = (type: string) =>
-  `${type} is missing its document generic. Without the generic Firestore references fall back to loose DocumentData, so TypeScript cannot catch field typos or missing required properties before they reach Firestore. Add the document interface as the generic (e.g., doc<UserDoc>(collection) or const ref: ${type}<UserDoc> = ...) to enforce the schema at compile time.`;
+  [
+    `What's wrong: ${type} is missing its document generic.`,
+    '',
+    'Why it matters: Without the generic, Firestore references fall back to loose DocumentData, so TypeScript cannot catch field typos or missing required properties before they reach Firestore.',
+    '',
+    `How to fix: Add the document interface/type as the generic (e.g., const ref: ${type}<UserDoc> = ... or doc<UserDoc>(collection) ).`,
+  ].join('\n');
 
 const invalidGenericMessage = (type: string) =>
-  `${type} uses "any" or an empty object in its generic, which erases the document schema and disables TypeScript checks on Firestore reads and writes. That lets malformed payloads and missing fields pass silently. Define a concrete interface or type for the document (e.g., UserDoc { name: string }) and use it as the generic instead of "any" or {}.`;
+  [
+    `What's wrong: ${type} uses "any" or an empty object ({}) in its generic.`,
+    '',
+    'Why it matters: This erases the document schema and disables TypeScript checks on Firestore reads and writes, so malformed payloads and missing fields can pass silently.',
+    '',
+    'How to fix: Define a concrete interface/type for the document (e.g., interface UserDoc { name: string }) and use it as the generic instead of "any" or {}.',
+  ].join('\n');
 
 const missingGenericError = (
   type: string,
