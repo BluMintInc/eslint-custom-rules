@@ -14,6 +14,28 @@ handle = (letter: string) => {
 
 ['a', 'b'].forEach(handle);
     `,
+    `
+let handle = async (letter: string) => {
+  await someAsyncFunction(letter);
+};
+
+handle = (letter: string) => {
+  someSyncFunction(letter);
+};
+
+['a', 'b'].forEach(handle);
+    `,
+    `
+let handle = (letter: string) => {
+  someSyncFunction(letter);
+};
+
+['a', 'b'].forEach(handle);
+
+handle = async (letter: string) => {
+  await someAsyncFunction(letter);
+};
+    `,
   ],
   invalid: [
     {
@@ -77,6 +99,25 @@ handle = async (letter: string) => {
         {
           messageId: 'noAsyncForEach',
           data: { callbackLabel: 'arrow function "handle"' },
+        },
+      ],
+    },
+    {
+      code: `
+let handle = (letter: string) => {
+  someSyncFunction(letter);
+};
+
+handle = async function renamed(letter: string) {
+  await someAsyncFunction(letter);
+};
+
+['a', 'b'].forEach(handle);
+      `,
+      errors: [
+        {
+          messageId: 'noAsyncForEach',
+          data: { callbackLabel: 'function "renamed"' },
         },
       ],
     },

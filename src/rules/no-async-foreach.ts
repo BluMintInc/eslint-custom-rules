@@ -6,6 +6,14 @@ type AsyncCallbackNode =
   | TSESTree.FunctionDeclaration;
 
 type AsyncCallbackInfo = { callbackLabel: string };
+type CallbackWrite = {
+  start: number;
+  isAsync: boolean;
+  info: AsyncCallbackInfo | null;
+};
+
+const getNodeStart = (node: TSESTree.Node | null | undefined): number =>
+  node?.range?.[0] ?? Number.POSITIVE_INFINITY;
 
 const getFunctionDescription = (
   node: AsyncCallbackNode,
@@ -48,6 +56,19 @@ const findVariableInScope = (
   }
   return null;
 };
+
+const getDefinitionStart = (definition: TSESLint.Scope.Definition): number =>
+  definition.node.type === AST_NODE_TYPES.FunctionDeclaration
+    ? Number.NEGATIVE_INFINITY
+    : getNodeStart(definition.node);
+
+const getReferenceStart = (reference: TSESLint.Scope.Reference): number =>
+  getNodeStart(reference.identifier);
+
+const isWriteReference = (reference: TSESLint.Scope.Reference): boolean =>
+  typeof reference.isWrite === 'function'
+    ? reference.isWrite()
+    : Boolean(reference.isWrite);
 
 const isAsyncFunctionExpression = (
   node: unknown,
@@ -174,7 +195,7 @@ const getReferenceWriteExpression = (
 const analyzeVariableReference = (
   reference: TSESLint.Scope.Reference,
 ): AsyncCallbackInfo | null => {
-  if (typeof reference.isWrite === 'function' && !reference.isWrite()) {
+  if (!isWriteReference(reference)) {
     return null;
   }
 
@@ -213,25 +234,54 @@ const analyzeCallbackAsyncStatus = (
     return null;
   }
 
+  const callbackStart = callback.range?.[0];
+  const writes: CallbackWrite[] = [];
+
   for (const definition of variable.defs) {
     const definitionResult = analyzeVariableDefinition(
       definition,
       callback.name,
     );
 
-    if (definitionResult) {
-      return definitionResult;
-    }
+    writes.push({
+      start: getDefinitionStart(definition),
+      isAsync: Boolean(definitionResult),
+      info: definitionResult,
+    });
   }
 
   for (const reference of variable.references) {
-    const referenceResult = analyzeVariableReference(reference);
-    if (referenceResult) {
-      return referenceResult;
+    if (!isWriteReference(reference)) {
+      continue;
     }
+
+    const referenceResult = analyzeVariableReference(reference);
+    writes.push({
+      start: getReferenceStart(reference),
+      isAsync: Boolean(referenceResult),
+      info: referenceResult,
+    });
   }
 
-  return null;
+  const relevantWrites = writes.filter(({ start }) =>
+    typeof callbackStart !== 'number' ? true : start <= callbackStart,
+  );
+
+  if (!relevantWrites.length) {
+    return null;
+  }
+
+  const lastWrite = relevantWrites.reduce<CallbackWrite | null>(
+    (latest, current) => {
+      if (!latest || current.start > latest.start) {
+        return current;
+      }
+      return latest;
+    },
+    null,
+  );
+
+  return lastWrite && lastWrite.isAsync ? lastWrite.info : null;
 };
 
 export const noAsyncForEach: TSESLint.RuleModule<'noAsyncForEach', []> = {
