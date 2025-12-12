@@ -102,29 +102,6 @@ function isDeclarationIdentifier(
   return false;
 }
 
-function collectUsedIdentifiers(
-  node: TSESTree.Node,
-  names: Set<string>,
-  { skipFunctions }: { skipFunctions: boolean },
-): void {
-  const stack: Array<TSESTree.Node> = [node];
-
-  while (stack.length > 0) {
-    const current = stack.pop()!;
-
-    if (current.type === AST_NODE_TYPES.Identifier) {
-      processIdentifier(current, names);
-      continue;
-    }
-
-    if (shouldSkipFunction(current, skipFunctions)) {
-      continue;
-    }
-
-    addChildNodesToStack(current, stack);
-  }
-}
-
 function collectPatternDependencies(
   pattern: TSESTree.BindingName | TSESTree.RestElement | TSESTree.AssignmentPattern,
   names: Set<string>,
@@ -231,6 +208,62 @@ function addChildNodesToStack(node: TSESTree.Node, stack: Array<TSESTree.Node>):
       stack.push(value);
     }
   }
+}
+
+type TraverseResult = {
+  skipChildren?: boolean;
+  push?: TSESTree.Node[];
+};
+
+function traverseAst(
+  node: TSESTree.Node,
+  {
+    skipFunctions,
+    visit,
+  }: { skipFunctions: boolean; visit: (node: TSESTree.Node) => TraverseResult | void },
+): void {
+  const stack: Array<TSESTree.Node> = [node];
+
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+
+    if (shouldSkipFunction(current, skipFunctions)) {
+      continue;
+    }
+
+    const result = visit(current) ?? {};
+
+    if (result.push) {
+      result.push.forEach((child) => {
+        if (ASTHelpers.isNode(child)) {
+          stack.push(child);
+        }
+      });
+    }
+
+    if (result.skipChildren) {
+      continue;
+    }
+
+    addChildNodesToStack(current, stack);
+  }
+}
+
+function collectUsedIdentifiers(
+  node: TSESTree.Node,
+  names: Set<string>,
+  { skipFunctions }: { skipFunctions: boolean },
+): void {
+  traverseAst(node, {
+    skipFunctions,
+    visit(current) {
+      if (current.type === AST_NODE_TYPES.Identifier) {
+        processIdentifier(current, names);
+        return { skipChildren: true };
+      }
+      return undefined;
+    },
+  });
 }
 
 function collectDeclaredNamesFromPattern(
@@ -358,49 +391,25 @@ function collectMutatedIdentifiers(
   names: Set<string>,
   { skipFunctions }: { skipFunctions: boolean },
 ): void {
-  const stack: Array<TSESTree.Node> = [node];
-
-  while (stack.length > 0) {
-    const current = stack.pop()!;
-
-    if (current.type === AST_NODE_TYPES.AssignmentExpression) {
-      collectAssignedNamesFromPattern(current.left as TSESTree.Node, names);
-      if (ASTHelpers.isNode(current.right)) {
-        stack.push(current.right);
+  traverseAst(node, {
+    skipFunctions,
+    visit(current) {
+      if (current.type === AST_NODE_TYPES.AssignmentExpression) {
+        const push = ASTHelpers.isNode(current.right)
+          ? ([current.right] as TSESTree.Node[])
+          : undefined;
+        collectAssignedNamesFromPattern(current.left as TSESTree.Node, names);
+        return { skipChildren: true, push };
       }
-      continue;
-    }
 
-    if (current.type === AST_NODE_TYPES.UpdateExpression) {
-      collectAssignedNamesFromPattern(current.argument as TSESTree.Node, names);
-      continue;
-    }
-
-    if (
-      skipFunctions &&
-      (current.type === AST_NODE_TYPES.FunctionDeclaration ||
-        current.type === AST_NODE_TYPES.FunctionExpression ||
-        current.type === AST_NODE_TYPES.ArrowFunctionExpression)
-    ) {
-      continue;
-    }
-
-    for (const key of Object.keys(current)) {
-      if (key === 'parent') {
-        continue;
+      if (current.type === AST_NODE_TYPES.UpdateExpression) {
+        collectAssignedNamesFromPattern(current.argument as TSESTree.Node, names);
+        return { skipChildren: true };
       }
-      const value = (current as unknown as Record<string, unknown>)[key];
-      if (Array.isArray(value)) {
-        for (const element of value) {
-          if (ASTHelpers.isNode(element)) {
-            stack.push(element);
-          }
-        }
-      } else if (ASTHelpers.isNode(value)) {
-        stack.push(value);
-      }
-    }
-  }
+
+      return undefined;
+    },
+  });
 }
 
 function statementMutatesAny(statement: TSESTree.Statement, names: Set<string>): boolean {
