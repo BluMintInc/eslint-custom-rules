@@ -462,6 +462,25 @@ function Component() {
     errors: [{ messageId: 'preferUtilityFunction' as const }],
     output: null,
   },
+  {
+    code: `
+import { useCallback } from 'react';
+type Formatter = (value: string) => number;
+function Component() {
+  const format: Formatter = useCallback((value: string) => value.length, []);
+  return format('ok');
+}
+    `,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+import { useCallback } from 'react';
+type Formatter = (value: string) => number;
+const format: Formatter = (value: string) => value.length;
+function Component() {
+  return format('ok');
+}
+    `,
+  },
 ];
 
 ruleTesterJsx.run(

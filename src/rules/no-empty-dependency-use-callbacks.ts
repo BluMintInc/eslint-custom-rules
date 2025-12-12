@@ -545,8 +545,9 @@ function buildHoistFixes(
   }
 
   const sourceCode = context.getSourceCode();
+  const identifierText = sourceCode.getText(declarator.id);
   const functionText = sourceCode.getText(callback);
-  const hoisted = `const ${declarator.id.name} = ${functionText};\n`;
+  const hoisted = `const ${identifierText} = ${functionText};\n`;
   const fileText = sourceCode.getText();
   let removeStart = varDecl.range[0];
   const lineStart = fileText.lastIndexOf('\n', removeStart - 1) + 1;
