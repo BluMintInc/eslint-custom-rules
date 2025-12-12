@@ -453,8 +453,8 @@ How to fix: Create the component via {{replacementHook}} and wrap it in memo() s
 
               if (
                 memoReference &&
-                (!memoReference.includes('.') ||
-                  memoReference !== `${node.callee.object.name}.memo`)
+                memoReference.includes('.') &&
+                memoReference !== `${node.callee.object.name}.memo`
               ) {
                 return null;
               }

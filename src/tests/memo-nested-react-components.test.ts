@@ -190,6 +190,34 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
     },
     {
       code: `
+        import React, { useCallback } from 'react';
+        import { memo } from 'react';
+
+        const Inline = React.useCallback(() => {
+          return <span>inline</span>;
+        }, []);
+      `,
+      output: `
+        import React, { useCallback } from 'react';
+        import { memo } from 'react';
+
+        const Inline = React.useMemo(() => memo(() => {
+          return <span>inline</span>;
+        }), []);
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'Inline',
+            hookName: 'useCallback()',
+            replacementHook: 'useMemo()',
+          },
+        },
+      ],
+    },
+    {
+      code: `
         import { useCallback, useMemo, memo } from 'react';
 
         const Conditional = useCallback((flag) => {
