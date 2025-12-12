@@ -46,10 +46,10 @@ ruleTesterJsx.run(
       {
         code: `
           const MyComponent = ({ value }) => {
+            const { current } = value ?? {};
             useLayoutEffect(() => {
-              const { current } = value;
               doSomething(current);
-            }, [value]);
+            }, [current]);
           };
         `,
       },
@@ -145,6 +145,25 @@ ruleTesterJsx.run(
               if (!canPlayAudio) return;
               startAudio();
             }, [canPlayAudio, startAudio]);
+          };
+        `,
+        errors: [{ messageId: 'hoistDestructuring' }],
+      },
+      {
+        code: `
+          const MyComponent = ({ value }) => {
+            useLayoutEffect(() => {
+              const { current } = value;
+              doSomething(current);
+            }, [value]);
+          };
+        `,
+        output: `
+          const MyComponent = ({ value }) => {
+            const { current } = (value) ?? {};
+            useLayoutEffect(() => {
+              doSomething(current);
+            }, [current]);
           };
         `,
         errors: [{ messageId: 'hoistDestructuring' }],

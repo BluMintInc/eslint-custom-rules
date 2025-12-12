@@ -8,11 +8,11 @@
 
 ## Rule Details
 
-Destructuring inside `useEffect`, `useCallback`, or `useMemo` forces the dependency array to include the whole object. That dependency re-triggers when any field changes, even if the hook only reads a few properties. Hoisting destructuring to the nearest outer scope allows the dependency array to reference the specific fields actually used, avoiding extra renders and keeping dependency tracking precise.
+Destructuring inside `useEffect`, `useLayoutEffect`, `useCallback`, or `useMemo` forces the dependency array to include the whole object. That dependency re-triggers when any field changes, even if the hook only reads a few properties. Hoisting destructuring to the nearest outer scope allows the dependency array to reference the specific fields actually used, avoiding extra renders and keeping dependency tracking precise.
 
 The fixer:
 - Hoists object destructuring out of the hook callback.
-- Adds `?? {}` plus `= {}` / `= []` defaults for nested object or array patterns so hoisted destructuring is safe when inputs are nullish.
+- Adds `?? {}` plus `= {}` / `= []` defaults for nested object or array patterns so hoisted destructuring tolerates missing/undefined inputs (nested properties that are explicitly `null` still throw).
 - Replaces the object dependency with the destructured bindings.
 - Merges multiple destructures of the same object into a single hoisted pattern.
 - Skips destructuring inside async callbacks or nested async helpers.

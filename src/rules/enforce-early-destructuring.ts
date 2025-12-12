@@ -17,7 +17,7 @@ type DestructuringGroup = {
   declarations: TSESTree.VariableDeclaration[];
 };
 
-const HOOK_NAMES = new Set(['useEffect', 'useMemo', 'useCallback']);
+const HOOK_NAMES = new Set(['useEffect', 'useMemo', 'useCallback', 'useLayoutEffect']);
 
 function isFunctionNode(
   node: TSESTree.Node,
@@ -72,6 +72,84 @@ function getBaseIdentifier(init: TSESTree.Expression): string | null {
   return null;
 }
 
+function addNameIfAbsent(
+  name: string,
+  names: Set<string>,
+  orderedNames: string[],
+): void {
+  if (names.has(name)) return;
+  names.add(name);
+  orderedNames.push(name);
+}
+
+function handleAssignmentPatternNames(
+  node: TSESTree.AssignmentPattern,
+  names: Set<string>,
+  orderedNames: string[],
+): void {
+  const left = node.left;
+  if (left.type === AST_NODE_TYPES.Identifier) {
+    addNameIfAbsent(left.name, names, orderedNames);
+    return;
+  }
+
+  if (left.type === AST_NODE_TYPES.ObjectPattern) {
+    collectNamesFromPattern(left, names, orderedNames);
+    return;
+  }
+
+  if (left.type === AST_NODE_TYPES.ArrayPattern) {
+    collectNamesFromArrayPattern(left, names, orderedNames);
+  }
+}
+
+function handlePropertyNodeNames(
+  property: TSESTree.Property,
+  names: Set<string>,
+  orderedNames: string[],
+): void {
+  const value = property.value;
+  if (value.type === AST_NODE_TYPES.Identifier) {
+    addNameIfAbsent(value.name, names, orderedNames);
+    return;
+  }
+
+  if (value.type === AST_NODE_TYPES.AssignmentPattern) {
+    handleAssignmentPatternNames(value, names, orderedNames);
+    return;
+  }
+
+  if (value.type === AST_NODE_TYPES.ObjectPattern) {
+    collectNamesFromPattern(value, names, orderedNames);
+    return;
+  }
+
+  if (value.type === AST_NODE_TYPES.ArrayPattern) {
+    collectNamesFromArrayPattern(value, names, orderedNames);
+  }
+}
+
+function handleRestElementNodeNames(
+  rest: TSESTree.RestElement,
+  names: Set<string>,
+  orderedNames: string[],
+): void {
+  const argument = rest.argument;
+  if (argument.type === AST_NODE_TYPES.Identifier) {
+    addNameIfAbsent(argument.name, names, orderedNames);
+    return;
+  }
+
+  if (argument.type === AST_NODE_TYPES.ObjectPattern) {
+    collectNamesFromPattern(argument, names, orderedNames);
+    return;
+  }
+
+  if (argument.type === AST_NODE_TYPES.ArrayPattern) {
+    collectNamesFromArrayPattern(argument, names, orderedNames);
+  }
+}
+
 function collectNamesFromPattern(
   pattern: TSESTree.ObjectPattern,
   names: Set<string>,
@@ -79,39 +157,9 @@ function collectNamesFromPattern(
 ): void {
   for (const property of pattern.properties) {
     if (property.type === AST_NODE_TYPES.Property) {
-      const value = property.value;
-      if (value.type === AST_NODE_TYPES.Identifier) {
-        if (!names.has(value.name)) {
-          names.add(value.name);
-          orderedNames.push(value.name);
-        }
-      } else if (value.type === AST_NODE_TYPES.AssignmentPattern) {
-        if (value.left.type === AST_NODE_TYPES.Identifier) {
-          if (!names.has(value.left.name)) {
-            names.add(value.left.name);
-            orderedNames.push(value.left.name);
-          }
-        } else if (value.left.type === AST_NODE_TYPES.ObjectPattern) {
-          collectNamesFromPattern(value.left, names, orderedNames);
-        } else if (value.left.type === AST_NODE_TYPES.ArrayPattern) {
-          collectNamesFromArrayPattern(value.left, names, orderedNames);
-        }
-      } else if (value.type === AST_NODE_TYPES.ObjectPattern) {
-        collectNamesFromPattern(value, names, orderedNames);
-      } else if (value.type === AST_NODE_TYPES.ArrayPattern) {
-        collectNamesFromArrayPattern(value, names, orderedNames);
-      }
+      handlePropertyNodeNames(property, names, orderedNames);
     } else if (property.type === AST_NODE_TYPES.RestElement) {
-      if (property.argument.type === AST_NODE_TYPES.Identifier) {
-        if (!names.has(property.argument.name)) {
-          names.add(property.argument.name);
-          orderedNames.push(property.argument.name);
-        }
-      } else if (property.argument.type === AST_NODE_TYPES.ObjectPattern) {
-        collectNamesFromPattern(property.argument, names, orderedNames);
-      } else if (property.argument.type === AST_NODE_TYPES.ArrayPattern) {
-        collectNamesFromArrayPattern(property.argument, names, orderedNames);
-      }
+      handleRestElementNodeNames(property, names, orderedNames);
     }
   }
 }
@@ -124,36 +172,15 @@ function collectNamesFromArrayPattern(
   for (const element of pattern.elements) {
     if (!element) continue;
     if (element.type === AST_NODE_TYPES.Identifier) {
-      if (!names.has(element.name)) {
-        names.add(element.name);
-        orderedNames.push(element.name);
-      }
+      addNameIfAbsent(element.name, names, orderedNames);
     } else if (element.type === AST_NODE_TYPES.AssignmentPattern) {
-      if (element.left.type === AST_NODE_TYPES.Identifier) {
-        if (!names.has(element.left.name)) {
-          names.add(element.left.name);
-          orderedNames.push(element.left.name);
-        }
-      } else if (element.left.type === AST_NODE_TYPES.ObjectPattern) {
-        collectNamesFromPattern(element.left, names, orderedNames);
-      } else if (element.left.type === AST_NODE_TYPES.ArrayPattern) {
-        collectNamesFromArrayPattern(element.left, names, orderedNames);
-      }
+      handleAssignmentPatternNames(element, names, orderedNames);
     } else if (element.type === AST_NODE_TYPES.ObjectPattern) {
       collectNamesFromPattern(element, names, orderedNames);
     } else if (element.type === AST_NODE_TYPES.ArrayPattern) {
       collectNamesFromArrayPattern(element, names, orderedNames);
     } else if (element.type === AST_NODE_TYPES.RestElement) {
-      if (element.argument.type === AST_NODE_TYPES.Identifier) {
-        if (!names.has(element.argument.name)) {
-          names.add(element.argument.name);
-          orderedNames.push(element.argument.name);
-        }
-      } else if (element.argument.type === AST_NODE_TYPES.ObjectPattern) {
-        collectNamesFromPattern(element.argument, names, orderedNames);
-      } else if (element.argument.type === AST_NODE_TYPES.ArrayPattern) {
-        collectNamesFromArrayPattern(element.argument, names, orderedNames);
-      }
+      handleRestElementNodeNames(element, names, orderedNames);
     }
   }
 }
@@ -447,10 +474,10 @@ function fullLineRange(
 }
 
 function shouldSkipNestedFunction(
-  node: TSESTree.Node,
+  candidateNode: TSESTree.Node,
   callback: TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression,
 ): boolean {
-  return isFunctionNode(node) && node !== callback;
+  return isFunctionNode(candidateNode) && candidateNode !== callback;
 }
 
 function hasPriorConditionalGuard(
@@ -488,7 +515,7 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
     schema: [],
     messages: {
       hoistDestructuring:
-        'Destructure "{{objectName}}" before calling {{hookName}}. Keeping destructuring inside the hook forces the dependency array to track the whole object, triggering rerenders when unrelated fields change. Hoist the destructuring (or memoize/nullish-guard it) and depend on the specific fields: {{dependencies}}.',
+        'Destructure "{{objectName}}" before calling {{hookName}}. Keeping destructuring inside the hook forces the dependency array to track the whole object, triggering rerenders when unrelated fields change. Hoist the destructuring (or memoize/guard for missing values) and depend on the specific fields: {{dependencies}}.',
     },
   },
   defaultOptions: [],
