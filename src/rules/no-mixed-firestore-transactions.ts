@@ -309,7 +309,7 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       });
     }
 
-    function isInlineFetchFromNew(node: TSESTree.NewExpression): boolean {
+    function isNewExpressionUsedForFetchCall(node: TSESTree.NewExpression): boolean {
       return (
         node.parent?.type === AST_NODE_TYPES.MemberExpression &&
         node.parent.object === node &&
@@ -324,7 +324,7 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       constructorHasTransaction: boolean,
     ): void {
       if (constructorHasTransaction) return;
-      if (isInlineFetchFromNew(node)) return;
+      if (isNewExpressionUsedForFetchCall(node)) return;
 
       reportNonFetcherInTransaction(node, className);
     }
