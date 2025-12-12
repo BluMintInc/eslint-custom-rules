@@ -13,7 +13,7 @@ Firebase Callable/HTTPS functions send and receive data over JSON. Some values (
 
 ### Why this matters
 
-Firebase callable/HTTPS functions run over JSON. If parameters include not JSON-safe values, Firebase either fails to encode them (for example, `undefined` or `NaN`) or coerces them to plain JSON objects that lose their semantic type (for example, `Timestamp` and `Date` become plain objects that must be reconstructed on the client). Declaring parameters as JSON-safe shapes makes request/response contracts reliable and avoids hidden data loss.
+Firebase callable/HTTPS functions run over JSON. If parameters include not JSON-safe values, Firebase either fails to encode them (for example, `undefined`) or coerces them to plain JSON objects that lose their semantic type (for example, `Timestamp` and `Date` become plain objects that must be reconstructed on the client). Some runtime-only values such as `NaN` or `Infinity` also fail JSON encoding even though they are typed as `number`; validate or normalize those at runtime because the type-based rule cannot flag them. Declaring parameters as JSON-safe shapes makes request/response contracts reliable and avoids hidden data loss.
 
 ## Examples
 
