@@ -20,6 +20,8 @@ type FunctionLike =
   | TSESTree.FunctionExpression
   | TSESTree.FunctionDeclaration;
 
+type JsxReturnCacheState = 'pending' | boolean;
+
 function isMemoizeDecorator(
   decorator: TSESTree.Decorator,
   alias: string,
@@ -181,7 +183,7 @@ function collectLocalFunctions(
 function expressionReturnsJSX(
   expression: TSESTree.Expression | null | undefined,
   knownFunctions: Map<string, FunctionLike>,
-  cache: WeakMap<FunctionLike, boolean>,
+  cache: WeakMap<FunctionLike, JsxReturnCacheState>,
   factoryContext: JsxFactoryContext,
 ): boolean {
   if (!expression) return false;
@@ -370,7 +372,7 @@ function expressionReturnsJSX(
 function statementReturnsJSX(
   statement: TSESTree.Statement,
   knownFunctions: Map<string, FunctionLike>,
-  cache: WeakMap<FunctionLike, boolean>,
+  cache: WeakMap<FunctionLike, JsxReturnCacheState>,
   factoryContext: JsxFactoryContext,
 ): boolean {
   switch (statement.type) {
@@ -463,15 +465,18 @@ function statementReturnsJSX(
 function functionReturnsJSX(
   fn: FunctionLike,
   knownFunctions: Map<string, FunctionLike>,
-  cache: WeakMap<FunctionLike, boolean>,
+  cache: WeakMap<FunctionLike, JsxReturnCacheState>,
   factoryContext: JsxFactoryContext,
 ): boolean {
   const cached = cache.get(fn);
-  if (cached !== undefined) {
+  if (cached === true || cached === false) {
     return cached;
   }
+  if (cached === 'pending') {
+    return false;
+  }
 
-  cache.set(fn, false);
+  cache.set(fn, 'pending');
 
   const extendedFunctions = new Map(knownFunctions);
   if (
@@ -527,13 +532,14 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
     schema: [],
     messages: {
       requireMemoizeJsxReturner:
-        'Method or getter "{{name}}" returns JSX or a component factory without @Memoize(). Each access recreates a new component function, causing avoidable rerenders and remounts. Decorate it with @Memoize() and import Memoize from "@blumintinc/typescript-memoize".',
+        '"{{name}}" returns JSX (or a JSX-producing factory) without @Memoize() → Each access creates a new component/function reference that can trigger avoidable React re-renders or remounts → Add @Memoize() to "{{name}}" and import { Memoize } from "@blumintinc/typescript-memoize".',
     },
   },
   defaultOptions: [],
   create(context) {
     const filename = context.getFilename();
-    if (!/\.tsx?$/i.test(filename)) {
+    const isVirtualFile = filename.startsWith('<');
+    if (!isVirtualFile && !/\.tsx?$/i.test(filename)) {
       return {} as TSESLint.RuleListener;
     }
 
@@ -541,7 +547,7 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
     let memoizeAlias = 'Memoize';
     let memoizeNamespace: string | null = null;
     let scheduledImportFix = false;
-    const jsxReturnCache = new WeakMap<FunctionLike, boolean>();
+    const jsxReturnCache = new WeakMap<FunctionLike, JsxReturnCacheState>();
     const reactMemoIdentifiers = new Set<string>();
     const reactMemoNamespaces = new Set<string>();
     const factoryContext: JsxFactoryContext = {
@@ -587,9 +593,6 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
           ) {
             hasMemoizeImport = true;
             memoizeNamespace = specifier.local.name;
-          } else if (specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
-            hasMemoizeImport = true;
-            memoizeAlias = specifier.local.name;
           }
         }
       },

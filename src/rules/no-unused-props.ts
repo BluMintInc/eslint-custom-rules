@@ -25,6 +25,7 @@ export const noUnusedProps = createRule({
       ((context.settings && context.settings['no-unused-props']) as {
         reactLikeExtensions?: string[];
       }) ?? {};
+    const sourceCode = context.getSourceCode();
     const reactLikeExtensions = (
       ruleSettings.reactLikeExtensions ?? ['.tsx']
     ).map((ext) => ext.toLowerCase());
@@ -209,6 +210,28 @@ export const noUnusedProps = createRule({
               return;
             }
 
+            if (node.type === AST_NODE_TYPES.TSIntersectionType) {
+              node.types.forEach((type) => collectStringLiterals(type, callback));
+              return;
+            }
+
+            if (node.type === AST_NODE_TYPES.TSTypeOperator) {
+              if (node.typeAnnotation) {
+                collectStringLiterals(node.typeAnnotation, callback);
+              }
+              return;
+            }
+
+            if ((node as { type?: string }).type === 'TSParenthesizedType') {
+              const parenthesized = node as {
+                typeAnnotation?: TSESTree.TypeNode;
+              };
+              if (parenthesized.typeAnnotation) {
+                collectStringLiterals(parenthesized.typeAnnotation, callback);
+              }
+              return;
+            }
+
             if (
               node.type === AST_NODE_TYPES.TSLiteralType &&
               node.literal.type === AST_NODE_TYPES.Literal &&
@@ -230,6 +253,15 @@ export const noUnusedProps = createRule({
                 AST_NODE_TYPES.TSTypeAliasDeclaration
             ) {
               return variable.defs[0].node.typeAnnotation;
+            }
+
+            const programAlias = (sourceCode.ast as TSESTree.Program).body.find(
+              (statement) =>
+                statement.type === AST_NODE_TYPES.TSTypeAliasDeclaration &&
+                statement.id.name === typeName,
+            ) as TSESTree.TSTypeAliasDeclaration | undefined;
+            if (programAlias) {
+              return programAlias.typeAnnotation;
             }
 
             return null;
@@ -432,18 +464,9 @@ export const noUnusedProps = createRule({
               return;
             }
 
-            const baseTypeName = baseType.typeName.name;
-            const addPickedProp = (propName: string, node: TSESTree.Node) => {
-              props[propName] = node;
-              if (!spreadTypeProps[baseTypeName]) {
-                spreadTypeProps[baseTypeName] = [];
-              }
-              spreadTypeProps[baseTypeName].push(propName);
-            };
-
-            collectStringLiterals(pickedProps, (value, literal) =>
-              addPickedProp(value, literal),
-            );
+            collectStringLiterals(pickedProps, (value, literal) => {
+              props[value] = literal;
+            });
           };
 
           function extractProps(typeNode: TSESTree.TypeNode) {

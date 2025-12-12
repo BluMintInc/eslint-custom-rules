@@ -388,5 +388,45 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         sourceType: 'module',
       },
     },
+    {
+      code: `
+        type Base = { used: string; missing: string };
+        type Props = Pick<Base, ('used' | 'missing') & string>;
+        const Component = ({ used }: Props) => <div>{used}</div>;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'missing' },
+          type: AST_NODE_TYPES.Literal,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type Base = { consumed: string; skipped: string };
+        type Props = Pick<Base, (('consumed') | ('skipped'))>;
+        const Component = ({ consumed }: Props) => <div>{consumed}</div>;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'skipped' },
+          type: AST_NODE_TYPES.Literal,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
   ],
 });
