@@ -28,6 +28,12 @@ type ComponentInitializerTracker = {
   getInitializer: (name: string, scope: TSESLint.Scope.Scope) => TSESTree.Expression | null;
 };
 
+type ComponentTypeAnalysis = {
+  ts: typeof import('typescript');
+  tsNode: import('typescript').Node;
+  checker: TypeChecker;
+};
+
 type TopLevelDeclaration =
   | TSESTree.FunctionDeclaration
   | TSESTree.ClassDeclaration
@@ -676,21 +682,50 @@ function extractPropsFromComponentSignatures(
   return Array.from(complexProps).sort();
 }
 
+function loadTypeScriptModule(): typeof import('typescript') {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  return require('typescript');
+}
+
+function toComponentTsNode(
+  componentExpr: TSESTree.Expression,
+  services: TSESLint.SourceCode['parserServices'],
+): import('typescript').Node | null {
+  return services.esTreeNodeToTSNodeMap.get(componentExpr) ?? null;
+}
+
+function isFunctionComponentWithProps(
+  componentExpr: TSESTree.Expression,
+): componentExpr is TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression {
+  return (
+    (componentExpr.type === AST_NODE_TYPES.FunctionExpression ||
+      componentExpr.type === AST_NODE_TYPES.ArrowFunctionExpression) &&
+    Boolean(componentExpr.params[0])
+  );
+}
+
+function analyzeComponentTypes(
+  componentExpr: TSESTree.Expression,
+  services: TSESLint.SourceCode['parserServices'],
+): ComponentTypeAnalysis | null {
+  const tsNode = toComponentTsNode(componentExpr, services);
+  if (!tsNode) return null;
+
+  const ts = loadTypeScriptModule();
+  const checker = services.program.getTypeChecker();
+  return { ts, tsNode, checker };
+}
+
 function getComplexPropsFromComponent(
   componentExpr: TSESTree.Expression,
   services: TSESLint.SourceCode['parserServices'],
 ): string[] {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const ts: typeof import('typescript') = require('typescript');
-  const checker = services.program.getTypeChecker();
-  const tsNode = services.esTreeNodeToTSNodeMap.get(componentExpr);
-  if (!tsNode) return [];
+  const analysis = analyzeComponentTypes(componentExpr, services);
+  if (!analysis) return [];
 
-  if (
-    (componentExpr.type === AST_NODE_TYPES.FunctionExpression ||
-      componentExpr.type === AST_NODE_TYPES.ArrowFunctionExpression) &&
-    componentExpr.params[0]
-  ) {
+  const { ts, tsNode, checker } = analysis;
+
+  if (isFunctionComponentWithProps(componentExpr)) {
     return extractPropsFromFunctionParam(componentExpr.params[0], services, ts);
   }
 
