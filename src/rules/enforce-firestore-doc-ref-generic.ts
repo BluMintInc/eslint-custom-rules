@@ -155,10 +155,21 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
         }
         // Return statements in functions with return type annotations
         if (current.type === AST_NODE_TYPES.ReturnStatement) {
-          const func = current.parent?.parent;
+        let func = current.parent as TSESTree.Node | undefined;
+        while (
+          func &&
+          func.type !== AST_NODE_TYPES.FunctionDeclaration &&
+          func.type !== AST_NODE_TYPES.FunctionExpression &&
+          func.type !== AST_NODE_TYPES.ArrowFunctionExpression
+        ) {
+          func = func.parent as TSESTree.Node;
+        }
           if (
-            func?.type === AST_NODE_TYPES.FunctionDeclaration &&
-            func.returnType
+          func &&
+          (func.type === AST_NODE_TYPES.FunctionDeclaration ||
+            func.type === AST_NODE_TYPES.FunctionExpression ||
+            func.type === AST_NODE_TYPES.ArrowFunctionExpression) &&
+          func.returnType
           ) {
             nodeCache.set(node, true);
             return true;

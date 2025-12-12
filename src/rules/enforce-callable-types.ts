@@ -59,6 +59,26 @@ export const enforceCallableTypes = createRule<Options, MessageIds>({
             hasResponseExport = true;
           }
         }
+        const isTypeExport =
+          node.exportKind === 'type' || node.declaration?.type === AST_NODE_TYPES.TSTypeAliasDeclaration;
+        for (const specifier of node.specifiers ?? []) {
+          const specIsTypeExport =
+            isTypeExport || specifier.exportKind === 'type';
+          if (!specIsTypeExport) continue;
+
+          const exportedName =
+            specifier.exported.type === AST_NODE_TYPES.Identifier
+              ? specifier.exported.name
+              : specifier.local.type === AST_NODE_TYPES.Identifier
+                ? specifier.local.name
+                : undefined;
+
+          if (exportedName === 'Props') {
+            hasPropsExport = true;
+          } else if (exportedName === 'Response') {
+            hasResponseExport = true;
+          }
+        }
       },
 
       // Check for onCall usage

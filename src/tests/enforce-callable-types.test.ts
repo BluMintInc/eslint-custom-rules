@@ -67,6 +67,24 @@ ruleTester.run('enforce-callable-types', enforceCallableTypes, {
       filename: 'src/callable/myFunction.f.ts',
     },
     {
+      // Type-only re-export through specifiers
+      code: `
+        import { onCall } from '../../v2/https/onCall';
+
+        type Props = { userId: string };
+        type Response = { success: boolean };
+
+        export type { Props, Response };
+
+        const myCallableFunction = async (request: CallableRequest<Props>): Promise<Response> => {
+          return { success: true };
+        };
+
+        export default onCall(myCallableFunction);
+      `,
+      filename: 'src/callable/myFunction.f.ts',
+    },
+    {
       // Non-callable file should be ignored
       code: `
         export const helper = () => {
