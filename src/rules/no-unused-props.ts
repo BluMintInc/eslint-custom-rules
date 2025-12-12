@@ -27,7 +27,10 @@ export const noUnusedProps = createRule({
       }) ?? {};
     const reactLikeExtensions = (
       ruleSettings.reactLikeExtensions ?? ['.tsx']
-    ).map((ext) => ext.toLowerCase());
+    ).map((ext) => {
+      const normalized = ext.toLowerCase();
+      return normalized.startsWith('.') ? normalized : `.${normalized}`;
+    });
     const fileExtension = filename.includes('.')
       ? filename.slice(filename.lastIndexOf('.')).toLowerCase()
       : '';
@@ -246,6 +249,12 @@ export const noUnusedProps = createRule({
               typeof omittedProps.literal.value === 'string'
             ) {
               omittedPropNames.add(omittedProps.literal.value);
+            }
+
+            if (omittedPropNames.size === 0) {
+              props[`...${baseTypeName}`] = baseType.typeName;
+              spreadTypeProps[baseTypeName] ??= [];
+              return;
             }
 
             const scope = context.getScope();

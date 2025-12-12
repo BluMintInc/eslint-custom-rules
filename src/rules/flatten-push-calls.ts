@@ -113,6 +113,142 @@ function getExpressionIdentity(expression: TSESTree.Expression): string | null {
   }
 }
 
+function isSafeMemberChain(expression: TSESTree.Expression): boolean {
+  const node = unwrapExpression(expression);
+
+  if (
+    node.type === AST_NODE_TYPES.Identifier ||
+    node.type === AST_NODE_TYPES.ThisExpression ||
+    node.type === AST_NODE_TYPES.Super
+  ) {
+    return true;
+  }
+
+  if (node.type === AST_NODE_TYPES.MemberExpression) {
+    if (node.property.type === AST_NODE_TYPES.PrivateIdentifier) {
+      return false;
+    }
+
+    if (node.computed || node.property.type !== AST_NODE_TYPES.Identifier) {
+      return false;
+    }
+
+    return isSafeMemberChain(node.object as TSESTree.Expression);
+  }
+
+  return false;
+}
+
+function hasForbiddenSideEffects(
+  node: TSESTree.Node | null | undefined,
+): boolean {
+  if (!node) return false;
+
+  const nodeType = (node as { type: string }).type;
+  if (nodeType === 'ParenthesizedExpression') {
+    return hasForbiddenSideEffects(
+      (node as { expression: TSESTree.Expression }).expression,
+    );
+  }
+
+  switch (node.type) {
+    case AST_NODE_TYPES.Identifier:
+    case AST_NODE_TYPES.Literal:
+    case AST_NODE_TYPES.ThisExpression:
+    case AST_NODE_TYPES.Super:
+      return false;
+    case AST_NODE_TYPES.CallExpression:
+    case AST_NODE_TYPES.NewExpression:
+    case AST_NODE_TYPES.UpdateExpression:
+    case AST_NODE_TYPES.AwaitExpression:
+    case AST_NODE_TYPES.YieldExpression:
+    case AST_NODE_TYPES.TaggedTemplateExpression:
+      return true;
+    case AST_NODE_TYPES.UnaryExpression:
+      if (node.operator === 'delete') return true;
+      return hasForbiddenSideEffects(node.argument);
+    case AST_NODE_TYPES.BinaryExpression:
+    case AST_NODE_TYPES.LogicalExpression:
+      return (
+        hasForbiddenSideEffects(node.left) ||
+        hasForbiddenSideEffects(node.right)
+      );
+    case AST_NODE_TYPES.ConditionalExpression:
+      return (
+        hasForbiddenSideEffects(node.test) ||
+        hasForbiddenSideEffects(node.consequent) ||
+        hasForbiddenSideEffects(node.alternate)
+      );
+    case AST_NODE_TYPES.MemberExpression:
+      return (
+        hasForbiddenSideEffects(node.object as TSESTree.Node) ||
+        (node.computed && hasForbiddenSideEffects(node.property as TSESTree.Node))
+      );
+    case AST_NODE_TYPES.ChainExpression:
+      return hasForbiddenSideEffects(node.expression);
+    case AST_NODE_TYPES.SequenceExpression:
+      return node.expressions.some((expr) => hasForbiddenSideEffects(expr));
+    case AST_NODE_TYPES.TemplateLiteral:
+      return node.expressions.some((expr) => hasForbiddenSideEffects(expr));
+    case AST_NODE_TYPES.ArrayExpression:
+      return node.elements.some((elem) =>
+        elem ? hasForbiddenSideEffects(elem as TSESTree.Node) : false,
+      );
+    case AST_NODE_TYPES.ObjectExpression:
+      return node.properties.some((prop) => {
+        if (prop.type === AST_NODE_TYPES.Property) {
+          return (
+            (prop.computed &&
+              hasForbiddenSideEffects(prop.key as TSESTree.Node)) ||
+            hasForbiddenSideEffects(prop.value as TSESTree.Node)
+          );
+        }
+        if (prop.type === AST_NODE_TYPES.SpreadElement) {
+          return hasForbiddenSideEffects(prop.argument);
+        }
+        return false;
+      });
+    case AST_NODE_TYPES.SpreadElement:
+      return hasForbiddenSideEffects(node.argument);
+    case AST_NODE_TYPES.TSAsExpression:
+    case AST_NODE_TYPES.TSTypeAssertion:
+    case AST_NODE_TYPES.TSNonNullExpression:
+    case AST_NODE_TYPES.TSInstantiationExpression:
+      return hasForbiddenSideEffects(node.expression);
+    default:
+      return false;
+  }
+}
+
+function canSafelyFix(group: PushCallStatement[]): boolean {
+  return group.every((entry) => {
+    const callee = entry.call.callee as TSESTree.MemberExpression;
+    if (
+      callee.property.type === AST_NODE_TYPES.PrivateIdentifier ||
+      callee.computed ||
+      callee.property.type !== AST_NODE_TYPES.Identifier
+    ) {
+      return false;
+    }
+
+    if (!isSafeMemberChain(callee.object as TSESTree.Expression)) {
+      return false;
+    }
+
+    if (hasForbiddenSideEffects(callee.object as TSESTree.Node)) {
+      return false;
+    }
+
+    return entry.call.arguments.every((arg) => {
+      if (arg.type === AST_NODE_TYPES.SpreadElement) {
+        return !hasForbiddenSideEffects(arg.argument);
+      }
+
+      return !hasForbiddenSideEffects(arg);
+    });
+  });
+}
+
 function isPushCallStatement(
   statement: TSESTree.Statement,
   sourceCode: TSESLint.SourceCode,
@@ -226,7 +362,11 @@ export const flattenPushCalls = createRule<[], MessageIds>({
     schema: [],
     messages: {
       flattenPushCalls:
-        'Combine consecutive push calls on "{{target}}" into a single push with all items. One batched call preserves left-to-right evaluation, reduces call overhead, and makes the intent to add several items obvious.',
+        [
+          'What’s wrong: "{{target}}" is pushed to using multiple consecutive ".push(...)" calls.',
+          'Why it matters: repeated calls add property-access overhead and obscure that these values belong to one append operation.',
+          'How to fix: merge them into a single ".push(...)" call with multiple arguments (for example, "{{target}}.push(a, b, c)").',
+        ].join(' '),
     },
   },
   defaultOptions: [],
@@ -397,6 +537,11 @@ export const flattenPushCalls = createRule<[], MessageIds>({
 
           const firstArgs = group[0].call.arguments.length;
           if (totalArgs > firstArgs) {
+            if (!canSafelyFix(group)) {
+              i = cursor - 1;
+              continue;
+            }
+
             context.report({
               node: group[0].call.callee,
               messageId: 'flattenPushCalls',

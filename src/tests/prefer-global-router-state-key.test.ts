@@ -669,6 +669,27 @@ ruleTesterJsx.run(
         `,
         errors: [invalidSourceError('key')],
       },
+      // 21. Side-effect queryKeys import should still add named import
+      {
+        code: `
+        import '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: 'user-profile' });
+          return <div>{value}</div>;
+        }
+        `,
+        output: `
+        import '@/util/routing/queryKeys';
+        import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [stringLiteralError("'user-profile'")],
+      },
     ],
   },
 );

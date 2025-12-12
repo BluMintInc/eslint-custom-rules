@@ -211,6 +211,21 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         sourceType: 'module',
       },
     },
+    {
+      code: `
+        type Base = { kept: string; dropped: string };
+        type Keys = keyof Base;
+        type Props = Omit<Base, Keys>;
+
+        const Component = (_props: Props) => <div />;
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
   ],
   invalid: [
     {
@@ -250,6 +265,30 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         },
       ],
       filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type Props = { used: string; unused: string };
+        const Component = ({ used }: Props) => <div>{used}</div>;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'component.tsx',
+      settings: {
+        'no-unused-props': {
+          reactLikeExtensions: ['tsx'],
+        },
+      },
       parserOptions: {
         ecmaFeatures: { jsx: true },
         ecmaVersion: 2018,

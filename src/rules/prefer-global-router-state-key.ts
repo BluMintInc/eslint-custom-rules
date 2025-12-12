@@ -357,6 +357,28 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                                       `, ${suggestedConstant}`,
                                     ),
                                   );
+                                } else {
+                                  const importStart =
+                                    queryKeysImport.range?.[0] ??
+                                    sourceCode.getIndexFromLoc(
+                                      queryKeysImport.loc.start,
+                                    );
+                                  const importIndent = sourceCode.text.slice(
+                                    sourceCode.text.lastIndexOf(
+                                      '\n',
+                                      importStart - 1,
+                                    ) + 1,
+                                    importStart,
+                                  );
+                                  const importTextWithIndent = `${importIndent}${importText}`;
+                                  const importTextWithoutTrailingNewline =
+                                    importTextWithIndent.trimEnd();
+                                  fixes.push(
+                                    fixer.insertTextAfter(
+                                      queryKeysImport,
+                                      `\n${importTextWithoutTrailingNewline}`,
+                                    ),
+                                  );
                                 }
                               } else if (firstImport) {
                                 fixes.push(

@@ -90,6 +90,16 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
       arr.push(extra);
     }
     `,
+    `
+    const arr = [];
+    arr.push(doWork());
+    arr.push(other);
+    `,
+    `
+    const store: Record<string, string[]> = { list: [] };
+    store['list'].push(first);
+    store['list'].push(second);
+    `,
   ],
   invalid: [
     {
@@ -298,22 +308,6 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
       output: `
       let arr: string[];
       (arr as string[]).push(first, second);
-      `,
-      errors: [{ messageId: 'flattenPushCalls' }],
-    },
-    {
-      code: `
-      const store: Record<string, string[]> = { list: [] };
-      store['list'].push(itemA);
-      store['list'].push(itemB, itemC);
-      `,
-      output: `
-      const store: Record<string, string[]> = { list: [] };
-      store['list'].push(
-        itemA,
-        itemB,
-        itemC
-      );
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
     },

@@ -10,7 +10,7 @@ Combine consecutive `push` calls on the same array into a single call so the bat
 
 ## Rule Details
 
-Array `push` accepts multiple arguments. Spreading consecutive calls into one call keeps evaluation order intact, preserves spreads, and makes it clear which items are added together.
+Array `push` accepts multiple arguments. Batching consecutive calls reduces repeated property access/call overhead and clarifies which values are appended together. The auto-fix only runs when the target is a simple identifier/member chain (no computed properties) and when the target/arguments have no side effects such as calls, `await`/`yield`, updates, or `delete`.
 
 ### ❌ Incorrect
 
@@ -52,7 +52,7 @@ Skip this rule if your style guide prefers one-argument pushes for logging or tr
 
 ## Limitations
 
-- Computed property accesses that rely on mutable identifiers (for example, `items[index].push(...)`) are skipped because batching would evaluate the index only once and can change behavior when arguments mutate that index (such as `index++` inside a pushed value).
+- Targets that rely on computed properties (for example, `items[index].push(...)`) or that contain side-effectful evaluation are skipped because batching could change when getters, proxies, or argument side effects run.
 
 ## Implementation
 
