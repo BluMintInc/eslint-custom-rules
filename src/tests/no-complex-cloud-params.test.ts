@@ -1,5 +1,10 @@
+import type { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noComplexCloudParams } from '../rules/no-complex-cloud-params';
+
+const message =
+  'Cloud function "exitChannelGroupExternal" receives a value that is not JSON-serializable. Cloud params must stay plain data; class instances, functions, RegExp/BigInt/TypedArray values, or nested complex properties are dropped or cause runtime errors during transport to Firebase. Send only primitives and plain objects/arrays, or serialize the value first (for example, convert a RegExp to a string or JSON.stringify the payload) before calling "exitChannelGroupExternal".';
+const error = { message } as unknown as TSESLint.TestCaseError<'noComplexObjects'>;
 
 ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
   valid: [
@@ -159,7 +164,7 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
           await exitChannelGroupExternal({ groupFilter });
         };
       `,
-      errors: [{ messageId: 'noComplexObjects' }],
+      errors: [error],
     },
     // Object with BigInt literal (invalid since it's not serializable)
     {
@@ -170,7 +175,7 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
           await exitChannelGroupExternal({ groupFilter });
         };
       `,
-      errors: [{ messageId: 'noComplexObjects' }],
+      errors: [error],
     },
     // Object with typed array (invalid since it's not serializable)
     {
@@ -181,7 +186,7 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
           await exitChannelGroupExternal({ groupFilter });
         };
       `,
-      errors: [{ messageId: 'noComplexObjects' }],
+      errors: [error],
     },
     // Object with method
     {
@@ -195,7 +200,7 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
           await exitChannelGroupExternal({ groupFilter });
         };
       `,
-      errors: [{ messageId: 'noComplexObjects' }],
+      errors: [error],
     },
     // Object with arrow function
     {
@@ -209,7 +214,7 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
           await exitChannelGroupExternal({ groupFilter });
         };
       `,
-      errors: [{ messageId: 'noComplexObjects' }],
+      errors: [error],
     },
     // Class instance
     {
@@ -228,7 +233,7 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
           await exitChannelGroupExternal({ groupFilter });
         };
       `,
-      errors: [{ messageId: 'noComplexObjects' }],
+      errors: [error],
     },
     // Nested complex object
     {
@@ -244,7 +249,7 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
           await exitChannelGroupExternal({ groupFilter });
         };
       `,
-      errors: [{ messageId: 'noComplexObjects' }],
+      errors: [error],
     },
     // Array with complex objects
     {
@@ -260,7 +265,7 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
           await exitChannelGroupExternal({ groupFilters });
         };
       `,
-      errors: [{ messageId: 'noComplexObjects' }],
+      errors: [error],
     },
     // Object with getter/setter
     {
@@ -275,7 +280,7 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
           await exitChannelGroupExternal({ groupFilter });
         };
       `,
-      errors: [{ messageId: 'noComplexObjects' }],
+      errors: [error],
     },
     // Object with Symbol property
     {
@@ -289,7 +294,7 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
           await exitChannelGroupExternal({ groupFilter });
         };
       `,
-      errors: [{ messageId: 'noComplexObjects' }],
+      errors: [error],
     },
     // Object with inherited methods
     {
@@ -304,7 +309,7 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
           await exitChannelGroupExternal({ groupFilter });
         };
       `,
-      errors: [{ messageId: 'noComplexObjects' }],
+      errors: [error],
     },
     // Object with bound function
     {
@@ -319,7 +324,7 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
           await exitChannelGroupExternal({ groupFilter });
         };
       `,
-      errors: [{ messageId: 'noComplexObjects' }],
+      errors: [error],
     },
     // Object with async method
     {
@@ -333,7 +338,7 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
           await exitChannelGroupExternal({ groupFilter });
         };
       `,
-      errors: [{ messageId: 'noComplexObjects' }],
+      errors: [error],
     },
     // Object with generator function
     {
@@ -347,7 +352,7 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
           await exitChannelGroupExternal({ groupFilter });
         };
       `,
-      errors: [{ messageId: 'noComplexObjects' }],
+      errors: [error],
     },
     // Object with Proxy
     {
@@ -362,7 +367,7 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
           await exitChannelGroupExternal({ groupFilter });
         };
       `,
-      errors: [{ messageId: 'noComplexObjects' }],
+      errors: [error],
     },
     // Object with WeakMap/WeakSet
     {
@@ -377,7 +382,7 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
           await exitChannelGroupExternal({ groupFilter });
         };
       `,
-      errors: [{ messageId: 'noComplexObjects' }],
+      errors: [error],
     },
     // Object with Promise
     {
@@ -391,7 +396,7 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
           await exitChannelGroupExternal({ groupFilter });
         };
       `,
-      errors: [{ messageId: 'noComplexObjects' }],
+      errors: [error],
     },
     // Object with Error instance
     {
@@ -405,7 +410,7 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
           await exitChannelGroupExternal({ groupFilter });
         };
       `,
-      errors: [{ messageId: 'noComplexObjects' }],
+      errors: [error],
     },
     // Array with function elements
     {
@@ -419,7 +424,7 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
           await exitChannelGroupExternal({ groupFilter });
         };
       `,
-      errors: [{ messageId: 'noComplexObjects' }],
+      errors: [error],
     },
     // PascalCase identifier that could be a class instance (should still be flagged)
     {
@@ -435,7 +440,7 @@ ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {
           await exitChannelGroupExternal({ instance });
         };
       `,
-      errors: [{ messageId: 'noComplexObjects' }],
+      errors: [error],
     },
   ],
 });
