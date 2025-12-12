@@ -287,5 +287,17 @@ store.setItem('k', 'v');
       `,
       errors: [{ messageId: 'useStorageContext' }],
     },
+    {
+      code: `
+        class Scoped {
+          static {
+            const localStorage = createMockStorage();
+            localStorage.setItem('temp', 'v');
+          }
+        }
+        localStorage.setItem('final', 'v');
+      `,
+      errors: [{ messageId: 'useStorageContext' }],
+    },
   ],
 });

@@ -37,6 +37,16 @@ const GLOBAL_NAMES = new Set(['window', 'global', 'globalThis']);
 const CONTEXT_BASENAMES = new Set(['LocalStorage.tsx', 'SessionStorage.tsx']);
 const TEST_FILE_REGEX = /\.(test|spec)\.[jt]sx?$/i;
 
+const isParenthesizedExpression = (
+  node: TSESTree.Node,
+): node is TSESTree.Node & { expression: TSESTree.Expression } =>
+  (node as { type?: string }).type === 'ParenthesizedExpression';
+
+const isChainExpression = (
+  node: TSESTree.Node,
+): node is TSESTree.Node & { expression: TSESTree.Expression } =>
+  (node as { type?: string }).type === 'ChainExpression';
+
 const createAliasState = (): AliasState => {
   const stack: AliasStack = [new Map()];
   const currentScope = () => stack[stack.length - 1];
@@ -88,13 +98,12 @@ const unwrapExpression = (expression: TSESTree.Expression): TSESTree.Expression 
       continue;
     }
 
-    if ((current as { type: string }).type === 'ParenthesizedExpression') {
-      current = (current as unknown as { expression: TSESTree.Expression })
-        .expression;
+    if (isParenthesizedExpression(current)) {
+      current = current.expression as TSESTree.Expression;
       continue;
     }
 
-    if (current.type === AST_NODE_TYPES.ChainExpression) {
+    if (isChainExpression(current)) {
       current = current.expression as TSESTree.Expression;
       continue;
     }
@@ -143,12 +152,12 @@ const leftmostIdentifier = (node: TSESTree.Node | null): TSESTree.Identifier | n
       continue;
     }
 
-    if ((current as { type: string }).type === 'ParenthesizedExpression') {
-      current = (current as unknown as { expression: TSESTree.Node }).expression;
+    if (isParenthesizedExpression(current)) {
+      current = current.expression;
       continue;
     }
 
-    if (current.type === AST_NODE_TYPES.ChainExpression) {
+    if (isChainExpression(current)) {
       current = current.expression;
       continue;
     }
@@ -246,21 +255,13 @@ const resolveStorageObject = (
   return null;
 };
 
-/**
- * Distinguishes declaration sites (bindings) from usage sites. The rule reports
- * reads of storage, not the act of declaring a variable/property/parameter, so
- * declarations across destructuring, params, imports, class members, and
- * assignment targets must be ignored.
- */
-const identifierRepresentsDeclaration = (node: TSESTree.Identifier): boolean => {
+const identifierHasDeclarationParent = (node: TSESTree.Identifier): boolean => {
   const parent = node.parent;
   if (!parent) return false;
 
   if (
     parent.type === AST_NODE_TYPES.Property &&
-    parent.value === node &&
-    parent.parent &&
-    parent.parent.type === AST_NODE_TYPES.ObjectPattern
+    parent.parent?.type === AST_NODE_TYPES.ObjectPattern
   ) {
     return true;
   }
@@ -305,16 +306,23 @@ const identifierRepresentsDeclaration = (node: TSESTree.Identifier): boolean => 
   if (parent.type === AST_NODE_TYPES.ImportSpecifier) return true;
   if (parent.type === AST_NODE_TYPES.ImportDefaultSpecifier) return true;
   if (parent.type === AST_NODE_TYPES.ImportNamespaceSpecifier) return true;
-  if (parent.type === AST_NODE_TYPES.TSTypeAliasDeclaration && parent.id === node) {
-    return true;
-  }
-  if (parent.type === AST_NODE_TYPES.TSInterfaceDeclaration && parent.id === node) {
+  return false;
+};
+
+/**
+ * Distinguishes declaration sites (bindings) from usage sites. The rule reports
+ * reads of storage, not the act of declaring a variable/property/parameter, so
+ * declarations across destructuring, params, imports, class members, and
+ * assignment targets must be ignored.
+ */
+const identifierRepresentsDeclaration = (node: TSESTree.Identifier): boolean => {
+  const parent = node.parent;
+  if (!parent) return false;
+
+  if (identifierHasDeclarationParent(node)) {
     return true;
   }
   if (parent.type === AST_NODE_TYPES.Property) {
-    if (parent.parent && parent.parent.type === AST_NODE_TYPES.ObjectPattern) {
-      return true;
-    }
     // For object literals, shorthand properties are runtime reads; non-shorthand
     // keys are just property names and should not be treated as storage usage.
     if (parent.shorthand) return false;
@@ -333,6 +341,12 @@ const identifierRepresentsDeclaration = (node: TSESTree.Identifier): boolean => 
   ) {
     return true;
   }
+  if (parent.type === AST_NODE_TYPES.TSTypeAliasDeclaration && parent.id === node) {
+    return true;
+  }
+  if (parent.type === AST_NODE_TYPES.TSInterfaceDeclaration && parent.id === node) {
+    return true;
+  }
 
   return false;
 };
@@ -341,60 +355,7 @@ const identifierIntroducesValueBinding = (node: TSESTree.Identifier): boolean =>
   const parent = node.parent;
   if (!parent) return false;
 
-  if (
-    parent.type === AST_NODE_TYPES.Property &&
-    parent.value === node &&
-    parent.parent?.type === AST_NODE_TYPES.ObjectPattern
-  ) {
-    return true;
-  }
-
-  if (parent.type === AST_NODE_TYPES.ObjectPattern) return true;
-  if (parent.type === AST_NODE_TYPES.ArrayPattern) return true;
-  if (parent.type === AST_NODE_TYPES.RestElement && parent.argument === node) {
-    return true;
-  }
-  if (parent.type === AST_NODE_TYPES.VariableDeclarator && parent.id === node) {
-    return true;
-  }
-  if (
-    parent.type === AST_NODE_TYPES.AssignmentExpression &&
-    parent.left === node
-  ) {
-    return true;
-  }
-  if (
-    parent.type === AST_NODE_TYPES.AssignmentPattern &&
-    parent.left === node
-  ) {
-    return true;
-  }
-  if (parent.type === AST_NODE_TYPES.FunctionDeclaration && parent.id === node) {
-    return true;
-  }
-  if (
-    (parent.type === AST_NODE_TYPES.FunctionDeclaration ||
-      parent.type === AST_NODE_TYPES.FunctionExpression ||
-      parent.type === AST_NODE_TYPES.ArrowFunctionExpression) &&
-    parent.params.includes(node)
-  ) {
-    return true;
-  }
-  if (parent.type === AST_NODE_TYPES.CatchClause && parent.param === node) {
-    return true;
-  }
-  if (parent.type === AST_NODE_TYPES.ClassDeclaration && parent.id === node) {
-    return true;
-  }
-  if (
-    parent.type === AST_NODE_TYPES.ImportSpecifier ||
-    parent.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
-    parent.type === AST_NODE_TYPES.ImportNamespaceSpecifier
-  ) {
-    return true;
-  }
-
-  return false;
+  return identifierHasDeclarationParent(node);
 };
 
 const isMemberExpressionObject = (node: TSESTree.Identifier): boolean => {
@@ -681,6 +642,10 @@ const createStorageVisitors = (
     Program: aliases.reset,
     BlockStatement: (_node: TSESTree.BlockStatement) => aliases.pushScope(),
     'BlockStatement:exit': aliases.popScope,
+    ClassBody: (_node: TSESTree.ClassBody) => aliases.pushScope(),
+    'ClassBody:exit': aliases.popScope,
+    StaticBlock: (_node: TSESTree.StaticBlock) => aliases.pushScope(),
+    'StaticBlock:exit': aliases.popScope,
     SwitchStatement: (_node: TSESTree.SwitchStatement) => aliases.pushScope(),
     'SwitchStatement:exit': aliases.popScope,
     ForStatement: (_node: TSESTree.ForStatement) => aliases.pushScope(),
