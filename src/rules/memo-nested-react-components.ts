@@ -309,6 +309,9 @@ const findMemoReference = (
     if (statement.type !== AST_NODE_TYPES.ImportDeclaration) continue;
 
     const isReactImport = statement.source.value === 'react';
+    if (!isReactImport) {
+      continue;
+    }
 
     for (const specifier of statement.specifiers) {
       if (
@@ -321,17 +324,16 @@ const findMemoReference = (
 
       if (
         specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier &&
-        specifier.local.name === 'memo' &&
-        isReactImport
+        specifier.local.name === 'memo'
       ) {
         return 'memo';
       }
 
-      if (isReactImport && specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
+      if (specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
         reactIdentifier = specifier.local.name;
       }
 
-      if (isReactImport && specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
+      if (specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
         reactIdentifier = specifier.local.name;
       }
     }
