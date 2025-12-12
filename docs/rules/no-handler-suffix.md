@@ -69,7 +69,7 @@ const validateUserInput = (input: string) => {};
 - `ignoreInterfaceImplementations` (boolean): Skip names that appear on classes implementing any interface or names typed with an interface/type alias (e.g., `const fn: EventHandler = ...`).
 - `interfaceAllowlist` (string[]): Skip when the class implements, or the identifier is annotated with, a listed interface name. Useful when external contracts require a `handler` name.
 - `allowNames` (string[]): Explicit name allowlist (e.g., `["errorBoundaryHandler"]`).
-- `allowPatterns` (string[]): Regex allowlist applied to the full name (e.g., `["BoundaryHandler$"]`).
+- `allowPatterns` (string[]): Regex allowlist applied to the full name (e.g., `["BoundaryHandler$"]`). Patterns must compile and avoid nested quantifiers (e.g., `(a+)+`) to prevent ReDoS; invalid or unsafe patterns throw during lint startup.
 - `allowFilePatterns` (string[]): Glob patterns (minimatch syntax) for paths to ignore, e.g., `["**/pages/api/**"]` for Next.js API route defaults.
 
 ### Configured examples

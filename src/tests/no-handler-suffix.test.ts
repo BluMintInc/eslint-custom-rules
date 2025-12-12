@@ -247,5 +247,42 @@ ruleTesterTs.run('no-handler-suffix', noHandlerSuffix, {
       `,
       errors: [{ messageId: 'handlerSuffix' }],
     },
+    {
+      code: `
+        const callbacks = {
+          "saveHandler": () => {},
+        };
+      `,
+      errors: [{ messageId: 'handlerSuffix' }],
+    },
   ],
+});
+
+describe('no-handler-suffix configuration validation', () => {
+  const baseContext = {
+    getFilename: () => 'src/file.ts',
+    report: jest.fn(),
+  } as unknown as Parameters<typeof noHandlerSuffix.create>[0];
+
+  it('throws when allowPatterns contains invalid regex', () => {
+    expect(() =>
+      noHandlerSuffix.create(
+        {
+          ...baseContext,
+          options: [{ allowPatterns: ['[invalid'] }],
+        } as Parameters<typeof noHandlerSuffix.create>[0],
+      ),
+    ).toThrow(/invalid allowPatterns/i);
+  });
+
+  it('throws when allowPatterns contains unsafe regex', () => {
+    expect(() =>
+      noHandlerSuffix.create(
+        {
+          ...baseContext,
+          options: [{ allowPatterns: ['(a+)+$'] }],
+        } as Parameters<typeof noHandlerSuffix.create>[0],
+      ),
+    ).toThrow(/unsafe allowPatterns/i);
+  });
 });

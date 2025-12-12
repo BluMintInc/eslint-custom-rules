@@ -28,12 +28,34 @@ function toEntityName(entity: TSESTree.EntityName): string {
   if (entity.type === AST_NODE_TYPES.Identifier) {
     return entity.name;
   }
-  if ('left' in entity && 'right' in entity) {
-    return `${toEntityName(entity.left as TSESTree.EntityName)}.${
-      (entity.right as TSESTree.Identifier).name
-    }`;
+  if (entity.type === AST_NODE_TYPES.TSQualifiedName) {
+    return `${toEntityName(entity.left)}.${entity.right.name}`;
   }
   return '';
+}
+
+function isUnsafeAllowPattern(pattern: string): boolean {
+  // Flag nested quantifiers that commonly lead to catastrophic backtracking
+  const nestedQuantifierPattern = /\((?:[^()\\]|\\.)*[+*{][^)]*\)\s*[+*{]/;
+  return nestedQuantifierPattern.test(pattern);
+}
+
+function getStaticKeyName(
+  key:
+    | TSESTree.Expression
+    | TSESTree.PrivateIdentifier
+    | TSESTree.Identifier
+    | TSESTree.Literal,
+): string | null {
+  if (key.type === AST_NODE_TYPES.Identifier) {
+    return key.name;
+  }
+
+  if (key.type === AST_NODE_TYPES.Literal && typeof key.value === 'string') {
+    return key.value;
+  }
+
+  return null;
 }
 
 function getHandlerSuffix(name: string):
@@ -165,15 +187,43 @@ export const noHandlerSuffix = createRule<Options, MessageIds>({
     const resolvedOptions = { ...DEFAULT_OPTIONS, ...(options ?? {}) };
     const allowNames = new Set(resolvedOptions.allowNames);
     const interfaceAllowlist = new Set(resolvedOptions.interfaceAllowlist);
+    const invalidAllowPatterns: string[] = [];
+    const unsafeAllowPatterns: string[] = [];
     const allowPatterns = (resolvedOptions.allowPatterns ?? []).flatMap(
       (pattern) => {
         try {
+          if (isUnsafeAllowPattern(pattern)) {
+            unsafeAllowPatterns.push(pattern);
+            return [];
+          }
           return [new RegExp(pattern)];
-        } catch {
+        } catch (error: unknown) {
+          const reason =
+            error && typeof error === 'object' && 'message' in error
+              ? ` (${String((error as { message?: string }).message)})`
+              : '';
+          invalidAllowPatterns.push(`${pattern}${reason}`);
           return [];
         }
       },
     );
+
+    if (invalidAllowPatterns.length > 0 || unsafeAllowPatterns.length > 0) {
+      const errorParts: string[] = [];
+      if (invalidAllowPatterns.length > 0) {
+        errorParts.push(
+          `invalid allowPatterns: ${invalidAllowPatterns.join(', ')}`,
+        );
+      }
+      if (unsafeAllowPatterns.length > 0) {
+        errorParts.push(
+          `unsafe allowPatterns (avoid nested quantifiers that risk catastrophic backtracking): ${unsafeAllowPatterns.join(
+            ', ',
+          )}`,
+        );
+      }
+      throw new Error(`no-handler-suffix: ${errorParts.join('; ')}`);
+    }
 
     if (
       isInAllowedFile(filename, resolvedOptions.allowFilePatterns ?? [])
@@ -200,7 +250,9 @@ export const noHandlerSuffix = createRule<Options, MessageIds>({
           node.type === AST_NODE_TYPES.PropertyDefinition) &&
         !node.computed &&
         (node.key.type === AST_NODE_TYPES.Identifier ||
-          node.key.type === AST_NODE_TYPES.PrivateIdentifier)
+          node.key.type === AST_NODE_TYPES.PrivateIdentifier ||
+          (node.key.type === AST_NODE_TYPES.Literal &&
+            typeof node.key.value === 'string'))
       ) {
         const classNode = getClassFromMember(node);
         if (!classNode) return false;
@@ -249,9 +301,9 @@ export const noHandlerSuffix = createRule<Options, MessageIds>({
           parent.type === AST_NODE_TYPES.MethodDefinition ||
           parent.type === AST_NODE_TYPES.PropertyDefinition) &&
         !parent.computed &&
-        parent.key.type === AST_NODE_TYPES.Identifier
+        parent.key.type !== AST_NODE_TYPES.PrivateIdentifier
       ) {
-        return parent.key.name;
+        return getStaticKeyName(parent.key);
       }
 
       return null;
@@ -323,28 +375,35 @@ export const noHandlerSuffix = createRule<Options, MessageIds>({
         }
       },
       MethodDefinition(node) {
-        if (!node.computed && node.key.type === AST_NODE_TYPES.Identifier) {
-          reportIfHandlerName(node.key.name, node.key, node);
+        if (!node.computed) {
+          const name = getStaticKeyName(node.key);
+          if (name) {
+            reportIfHandlerName(name, node.key, node);
+          }
         }
       },
       PropertyDefinition(node) {
         if (
           !node.computed &&
-          node.key.type === AST_NODE_TYPES.Identifier &&
           (node.value?.type === AST_NODE_TYPES.FunctionExpression ||
             node.value?.type === AST_NODE_TYPES.ArrowFunctionExpression)
         ) {
-          reportIfHandlerName(node.key.name, node.key, node);
+          const name = getStaticKeyName(node.key);
+          if (name) {
+            reportIfHandlerName(name, node.key, node);
+          }
         }
       },
       Property(node) {
         if (
           !node.computed &&
-          node.key.type === AST_NODE_TYPES.Identifier &&
           (node.value.type === AST_NODE_TYPES.FunctionExpression ||
             node.value.type === AST_NODE_TYPES.ArrowFunctionExpression)
         ) {
-          reportIfHandlerName(node.key.name, node.key, node);
+          const name = getStaticKeyName(node.key);
+          if (name) {
+            reportIfHandlerName(name, node.key, node);
+          }
         }
       },
       FunctionExpression(node) {
