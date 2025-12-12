@@ -72,10 +72,16 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
     return {
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
         if (MEMOIZE_MODULES.has(String(node.source.value))) {
+          // Type-only imports cannot supply a runtime decorator
+          if (node.importKind === 'type') {
+            return;
+          }
           const spec = node.specifiers.find(
             (s) =>
               s.type === AST_NODE_TYPES.ImportSpecifier &&
-              s.imported.name === 'Memoize',
+              s.imported.type === AST_NODE_TYPES.Identifier &&
+              s.imported.name === 'Memoize' &&
+              s.importKind !== 'type',
           ) as TSESTree.ImportSpecifier | undefined;
           if (spec) {
             hasMemoizeImport = true;

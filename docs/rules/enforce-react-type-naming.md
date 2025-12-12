@@ -8,8 +8,10 @@
 
 This rule enforces naming conventions for variables and parameters based on their React-related type annotations:
 
-- Variables and parameters of type `ReactNode` or `JSX.Element` must have **lowercase** names.
-- Variables and parameters of type `ComponentType` or `FC` (FunctionComponent) must have **uppercase** names.
+- Variables and parameters of type `ReactNode` or `JSX.Element` must start with a **lowercase** letter so they read as rendered values.
+- Variables and parameters of type `ComponentType` or `FC` (FunctionComponent) must start with an **uppercase** letter so JSX treats them as components.
+
+The rule unwraps unions, intersections, `readonly` wrappers, arrays (e.g., `ReactNode[]`), and generic wrappers like `ReadonlyArray<ReactNode>` to find the underlying React type before applying the naming rule.
 
 This ensures consistency with React's conventions, improving readability and maintainability. By distinguishing between rendered elements (which should be treated as values) and component definitions (which are typically PascalCase), the rule helps prevent common mistakes and aligns with best practices.
 

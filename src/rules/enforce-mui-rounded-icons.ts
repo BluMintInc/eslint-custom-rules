@@ -63,3 +63,5 @@ export const enforceMuiRoundedIcons = createRule<Options, MessageIds>({
     };
   },
 });
+
+export {};

@@ -33,6 +33,9 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
     'const data: string = "text";',
     'const count: number = 5;',
     'const items: Array<string> = [];',
+    'const element: ReactNode | null = maybeNode;',
+    'const ComponentMaybe: ComponentType<Props> | null = getComponent();',
+    'function renderList(elements: ReadonlyArray<ReactNode>) { return elements; }',
 
     // No type annotation (should be ignored)
     'const component = () => <div />;',
@@ -182,6 +185,19 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
       ],
       output: 'const element = <div>Hello</div>;',
     },
+    {
+      code: 'const Element: ReactNode | null = getNode();',
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: {
+            type: 'ReactNode',
+            suggestion: 'element',
+          },
+        },
+      ],
+      output: 'const element = getNode();',
+    },
 
     // Invalid lowercase names for ComponentType and FC
     {
@@ -252,6 +268,27 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
       output: 'function useCustomHook(component) { return <Component />; }',
     },
     {
+      code: `
+        function render(Element: Readonly<ReactNode>) {
+          return Element;
+        }
+      `,
+      errors: [
+        {
+          messageId: 'reactNodeShouldBeLowercase',
+          data: {
+            type: 'ReactNode',
+            suggestion: 'element',
+          },
+        },
+      ],
+      output: `
+        function render(element) {
+          return Element;
+        }
+      `,
+    },
+    {
       code: 'const createComponent = (component: FC) => { return <component />; };',
       errors: [
         {
@@ -277,6 +314,32 @@ ruleTesterJsx.run('enforce-react-type-naming', enforceReactTypeNaming, {
         },
       ],
       output: 'const withHOC = (Wrapper) => (props) => <wrapper {...props} />;',
+    },
+    {
+      code: 'const components: FC[] = [];',
+      errors: [
+        {
+          messageId: 'componentTypeShouldBeUppercase',
+          data: {
+            type: 'FC',
+            suggestion: 'Components',
+          },
+        },
+      ],
+      output: 'const Components = [];',
+    },
+    {
+      code: 'const wrapper: ComponentType & WithRef = createWrapper();',
+      errors: [
+        {
+          messageId: 'componentTypeShouldBeUppercase',
+          data: {
+            type: 'ComponentType',
+            suggestion: 'Wrapper',
+          },
+        },
+      ],
+      output: 'const Wrapper = createWrapper();',
     },
 
     // Multiple errors in one file

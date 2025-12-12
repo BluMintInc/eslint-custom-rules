@@ -10,6 +10,7 @@ const LOWERCASE_TYPES = ['ReactNode', 'JSX.Element'];
 
 // Types that should have uppercase variable names
 const UPPERCASE_TYPES = ['ComponentType', 'FC', 'FunctionComponent'];
+const TARGET_TYPES = new Set([...LOWERCASE_TYPES, ...UPPERCASE_TYPES]);
 
 export const enforceReactTypeNaming = createRule<[], MessageIds>({
   name: 'enforce-react-type-naming',
@@ -23,9 +24,9 @@ export const enforceReactTypeNaming = createRule<[], MessageIds>({
     schema: [],
     messages: {
       reactNodeShouldBeLowercase:
-        'Variables or parameters of type "{{type}}" should use lowercase naming (e.g., "{{suggestion}}").',
+        'Type "{{type}}" holds rendered output; start names with a lowercase letter (e.g., "{{suggestion}}") so it reads as a value rather than a component.',
       componentTypeShouldBeUppercase:
-        'Variables or parameters of type "{{type}}" should use uppercase naming (e.g., "{{suggestion}}").',
+        'Type "{{type}}" represents a component; start names with an uppercase letter (e.g., "{{suggestion}}") so JSX treats it as a component instead of a DOM tag.',
     },
   },
   defaultOptions: [],
@@ -54,53 +55,83 @@ export const enforceReactTypeNaming = createRule<[], MessageIds>({
     }
 
     /**
-     * Extracts the type name from a type annotation
+     * Builds a qualified name (e.g., JSX.Element) from a type reference
+     */
+    function getQualifiedName(
+      typeName: TSESTree.TSTypeReference['typeName'],
+    ): string | null {
+      if (typeName.type === AST_NODE_TYPES.Identifier) {
+        return typeName.name;
+      }
+      if (typeName.type === AST_NODE_TYPES.TSQualifiedName) {
+        const left =
+          typeName.left.type === AST_NODE_TYPES.Identifier
+            ? typeName.left.name
+            : getQualifiedName(typeName.left);
+        if (!left) return null;
+        return `${left}.${typeName.right.name}`;
+      }
+      return null;
+    }
+
+    /**
+     * Extracts the React-related type name from a type annotation, unwrapping
+     * unions/intersections, readonly/array wrappers, and generic wrappers.
      */
     function getTypeName(
       typeAnnotation: TSESTree.TypeNode | undefined,
     ): string | null {
       if (!typeAnnotation) return null;
 
-      // Handle TSTypeReference (e.g., ReactNode, ComponentType)
-      if (typeAnnotation.type === AST_NODE_TYPES.TSTypeReference) {
-        if (typeAnnotation.typeName.type === AST_NODE_TYPES.Identifier) {
-          return typeAnnotation.typeName.name;
-        }
-        // Handle qualified names like JSX.Element
-        if (typeAnnotation.typeName.type === AST_NODE_TYPES.TSQualifiedName) {
-          const left =
-            typeAnnotation.typeName.left.type === AST_NODE_TYPES.Identifier
-              ? typeAnnotation.typeName.left.name
-              : '';
-          const right = typeAnnotation.typeName.right.name;
-          return `${left}.${right}`;
-        }
+      const maybeParenthesized = typeAnnotation as unknown as {
+        type?: string;
+        typeAnnotation?: TSESTree.TypeNode;
+      };
+      if (maybeParenthesized.type === 'TSParenthesizedType') {
+        return getTypeName(maybeParenthesized.typeAnnotation);
       }
 
-      return null;
+      switch (typeAnnotation.type) {
+        case AST_NODE_TYPES.TSUnionType:
+        case AST_NODE_TYPES.TSIntersectionType: {
+          for (const inner of typeAnnotation.types) {
+            const name = getTypeName(inner);
+            if (name) return name;
+          }
+          return null;
+        }
+        case AST_NODE_TYPES.TSArrayType:
+          return getTypeName(typeAnnotation.elementType);
+        case AST_NODE_TYPES.TSTypeOperator:
+          return getTypeName(typeAnnotation.typeAnnotation);
+        case AST_NODE_TYPES.TSTypeReference: {
+          const qualified = getQualifiedName(typeAnnotation.typeName);
+          if (qualified && TARGET_TYPES.has(qualified)) {
+            return qualified;
+          }
+
+          const typeParams = typeAnnotation.typeParameters?.params ?? [];
+          for (const param of typeParams) {
+            const name = getTypeName(param);
+            if (name) return name;
+          }
+          return null;
+        }
+        default:
+          return null;
+      }
     }
 
     /**
      * Checks if a node is a destructured variable
      */
-    function isDestructured(node: TSESTree.Node): boolean {
+    function isDestructured(node: TSESTree.Identifier): boolean {
       return (
         node.parent?.type === AST_NODE_TYPES.Property ||
         node.parent?.type === AST_NODE_TYPES.ArrayPattern ||
         (node.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
           (node.parent.id.type === AST_NODE_TYPES.ObjectPattern ||
             node.parent.id.type === AST_NODE_TYPES.ArrayPattern))
-      );
-    }
-
-    /**
-     * Checks if a node is a default import
-     */
-    function isDefaultImport(node: TSESTree.Node): boolean {
-      return (
-        node.parent?.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
-        (node.parent?.type === AST_NODE_TYPES.ImportSpecifier &&
-          node.parent.local.name !== node.parent.imported?.name)
       );
     }
 
@@ -153,14 +184,9 @@ export const enforceReactTypeNaming = createRule<[], MessageIds>({
     /**
      * Check function parameters for React type naming conventions
      */
-    function checkParameter(node: TSESTree.Parameter) {
-      if (node.type !== AST_NODE_TYPES.Identifier) return;
-
+    function checkParameter(node: TSESTree.Identifier) {
       // Skip destructured parameters
       if (isDestructured(node)) return;
-
-      // Skip default imports
-      if (isDefaultImport(node)) return;
 
       const paramName = node.name;
 

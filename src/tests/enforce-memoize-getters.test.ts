@@ -172,6 +172,24 @@ ruleTesterTs.run('enforce-memoize-getters', enforceMemoizeGetters, {
         }
       `,
     },
+    // Type-only import should still schedule runtime import
+    {
+      code: `
+        import type { Memoize } from '@blumintinc/typescript-memoize';
+        class Example {
+          private get fetcher() { return {}; }
+        }
+      `,
+      errors: [{ messageId: 'requireMemoizeGetter' }],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        import type { Memoize } from '@blumintinc/typescript-memoize';
+        class Example {
+          @Memoize()
+          private get fetcher() { return {}; }
+        }
+      `,
+    },
     // Use existing legacy import
     {
       code: `
