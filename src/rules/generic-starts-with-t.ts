@@ -3,7 +3,8 @@ import { TSESLint, TSESTree } from '@typescript-eslint/utils';
 
 export const genericStartsWithT: TSESLint.RuleModule<
   'genericStartsWithT',
-  never[]
+  never[],
+  TSESLint.RuleListener
 > = createRule({
   create(context) {
     return {

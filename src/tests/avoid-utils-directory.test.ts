@@ -42,6 +42,11 @@ ruleTesterTs.run('avoid-utils-directory', avoidUtilsDirectory, {
     },
     {
       code: 'const x = 1;',
+      filename: 'src/utils/date/helper.ts',
+      errors: [formatError('src/utils/date/helper.ts')],
+    },
+    {
+      code: 'const x = 1;',
       filename: 'src/Utils/helper.ts', // Case insensitive check
       errors: [formatError('src/Utils/helper.ts')],
     },

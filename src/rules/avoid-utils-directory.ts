@@ -32,8 +32,8 @@ export const avoidUtilsDirectory = createRule<[], MessageIds>({
           return;
         }
 
-        // Match /utils/ directory (case insensitive) but not as part of another word
-        const utilsPattern = /(?:^|\/)utils\/(?!.*\/)/i;
+        // Match any /utils/ directory (case insensitive) but not as part of another word
+        const utilsPattern = /(?:^|\/)utils\//i;
 
         if (utilsPattern.test(filename)) {
           context.report({

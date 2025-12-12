@@ -38,21 +38,51 @@ export const firestoreTransactionReadsBeforeWrites: TSESLint.RuleModule<
         }
       >();
 
-      // Helper to check if a node is a transaction parameter
-      function isTransactionParameter(param: TSESTree.Parameter): boolean {
-        if (param.type !== AST_NODE_TYPES.Identifier) return false;
+    function isRunTransactionCallback(
+      fn:
+        | TSESTree.FunctionExpression
+        | TSESTree.ArrowFunctionExpression
+        | TSESTree.FunctionDeclaration,
+    ): boolean {
+      const parent = fn.parent;
+      if (!parent || parent.type !== AST_NODE_TYPES.CallExpression) {
+        return false;
+      }
 
-        // Check for type annotation
-        const typeAnnotation = param.typeAnnotation;
-        if (
-          !typeAnnotation ||
-          typeAnnotation.type !== AST_NODE_TYPES.TSTypeAnnotation
-        ) {
-          // If no type annotation, check the parameter name for common patterns
-          // Include 't' as a valid transaction parameter name
-          return /^(transaction|tx|t)$/i.test(param.name);
-        }
+      const callee = parent.callee;
+      if (
+        callee.type === AST_NODE_TYPES.MemberExpression &&
+        !callee.computed &&
+        callee.property.type === AST_NODE_TYPES.Identifier &&
+        callee.property.name === 'runTransaction'
+      ) {
+        return parent.arguments[0] === fn;
+      }
 
+      if (
+        callee.type === AST_NODE_TYPES.Identifier &&
+        callee.name === 'runTransaction'
+      ) {
+        return parent.arguments[1] === fn;
+      }
+
+      return false;
+    }
+
+    // Helper to check if a node is a transaction parameter
+    function isTransactionParameter(
+      param: TSESTree.Parameter,
+      options: { allowUntypedT?: boolean } = {},
+    ): boolean {
+      if (param.type !== AST_NODE_TYPES.Identifier) return false;
+
+      const allowUntypedT = options.allowUntypedT ?? false;
+      const typeAnnotation = param.typeAnnotation;
+
+      if (
+        typeAnnotation &&
+        typeAnnotation.type === AST_NODE_TYPES.TSTypeAnnotation
+      ) {
         const type = typeAnnotation.typeAnnotation;
 
         // Check for Transaction type
@@ -75,8 +105,16 @@ export const firestoreTransactionReadsBeforeWrites: TSESLint.RuleModule<
           }
         }
 
-        return false;
+        // Typed parameters fall back to name heuristics including bare "t"
+        return /^(transaction|tx|t)$/i.test(param.name);
       }
+
+      const namePattern = allowUntypedT
+        ? /^(transaction|tx|t)$/i
+        : /^(transaction|tx)$/i;
+
+      return namePattern.test(param.name);
+    }
 
       // Helper to find the transaction scope for a node
       function findTransactionScope(node: TSESTree.Node): TSESTree.Node | null {
@@ -93,11 +131,18 @@ export const firestoreTransactionReadsBeforeWrites: TSESLint.RuleModule<
             current.type === AST_NODE_TYPES.FunctionExpression ||
             current.type === AST_NODE_TYPES.ArrowFunctionExpression
           ) {
+            const allowUntypedT = isRunTransactionCallback(current);
             const params = current.params;
-            if (params.some(isTransactionParameter)) {
+            if (
+              params.some((param) =>
+                isTransactionParameter(param, { allowUntypedT }),
+              )
+            ) {
               // If this function has a transaction parameter, track it
               if (!transactionScopes.has(current.body)) {
-                const transactionParam = params.find(isTransactionParameter);
+                const transactionParam = params.find((param) =>
+                  isTransactionParameter(param, { allowUntypedT }),
+                );
                 const transactionVariables = new Set<string>();
                 if (
                   transactionParam &&
@@ -195,8 +240,8 @@ export const firestoreTransactionReadsBeforeWrites: TSESLint.RuleModule<
             (callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
               callback.type === AST_NODE_TYPES.FunctionExpression)
           ) {
-            const transactionParam = callback.params.find(
-              isTransactionParameter,
+            const transactionParam = callback.params.find((param) =>
+              isTransactionParameter(param, { allowUntypedT: true }),
             );
             const transactionVariables = new Set<string>();
             if (

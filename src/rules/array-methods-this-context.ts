@@ -9,6 +9,9 @@ export const ARRAY_METHODS = [
   'every',
 ];
 
+const isArrayMethodName = (value: string): boolean =>
+  (ARRAY_METHODS as string[]).includes(value);
+
 export const arrayMethodsThisContext: TSESLint.RuleModule<
   'preferArrow' | 'unexpected',
   never[]
@@ -18,17 +21,29 @@ export const arrayMethodsThisContext: TSESLint.RuleModule<
 
     return {
       CallExpression(node: TSESTree.CallExpression) {
+        if (node.callee.type !== 'MemberExpression') {
+          return;
+        }
+
+        const property = node.callee.property;
+        if (property.type !== 'Identifier') {
+          return;
+        }
+
+        if (!isArrayMethodName(property.name)) {
+          return;
+        }
+
+        const [firstArg] = node.arguments;
+
         // Array method called with a class method reference
         if (
-          node.callee.type === 'MemberExpression' &&
-          node.callee.property.type === 'Identifier' &&
-          ARRAY_METHODS.includes(node.callee.property.name) &&
-          node.arguments.length > 0 &&
-          node.arguments[0].type === 'MemberExpression' &&
-          node.arguments[0].object.type === 'ThisExpression'
+          firstArg &&
+          firstArg.type === 'MemberExpression' &&
+          firstArg.object.type === 'ThisExpression'
         ) {
-          const methodProperty = node.arguments[0].property;
-          const methodAccessor = node.arguments[0].computed
+          const methodProperty = firstArg.property;
+          const methodAccessor = firstArg.computed
             ? `[${sourceCode.getText(methodProperty)}]`
             : methodProperty.type === 'Identifier'
               ? `.${methodProperty.name}`
@@ -39,35 +54,33 @@ export const arrayMethodsThisContext: TSESLint.RuleModule<
           const methodReference = `this${methodAccessor}`;
 
           context.report({
-            node: node.arguments[0],
+            node: firstArg,
             messageId: 'unexpected',
             data: {
-              arrayMethod: node.callee.property.name,
+              arrayMethod: property.name,
               methodAccessor,
               methodReference,
             },
           });
+          return;
         }
 
         // Function expression bound to `this` in array method
-        else if (
-          node.callee.type === 'MemberExpression' &&
-          node.callee.property.type === 'Identifier' &&
-          ARRAY_METHODS.includes(node.callee.property.name) &&
-          node.arguments.length > 0 &&
-          node.arguments[0].type === 'CallExpression' &&
-          node.arguments[0].callee.type === 'MemberExpression' &&
-          node.arguments[0].callee.object.type === 'FunctionExpression' &&
-          node.arguments[0].callee.property.type === 'Identifier' &&
-          node.arguments[0].callee.property.name === 'bind' &&
-          node.arguments[0].arguments.length > 0 &&
-          node.arguments[0].arguments[0].type === 'ThisExpression'
+        if (
+          firstArg &&
+          firstArg.type === 'CallExpression' &&
+          firstArg.callee.type === 'MemberExpression' &&
+          firstArg.callee.object.type === 'FunctionExpression' &&
+          firstArg.callee.property.type === 'Identifier' &&
+          firstArg.callee.property.name === 'bind' &&
+          firstArg.arguments.length > 0 &&
+          firstArg.arguments[0].type === 'ThisExpression'
         ) {
           context.report({
-            node: node.arguments[0],
+            node: firstArg,
             messageId: 'preferArrow',
             data: {
-              arrayMethod: node.callee.property.name,
+              arrayMethod: property.name,
             },
           });
         }

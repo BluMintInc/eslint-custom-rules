@@ -1,7 +1,7 @@
 # [1.13.0](https://github.com/BluMintInc/eslint-custom-rules/compare/v1.12.6...v1.13.0) (2025-12-11)
 
 
-### Bug Fixes
+## Bug Fixes
 
 * **enforce-positive-naming.ts:** add intersect & intersecting ([dc06ab6](https://github.com/BluMintInc/eslint-custom-rules/commit/dc06ab6718bb7468b2d8d5e917f2c44ff844eeaa))
 * enhance check run validation in cursor-bot PR review workflow ([4ac5e48](https://github.com/BluMintInc/eslint-custom-rules/commit/4ac5e487ddea594f492fec29ac6878b686fa2219))
@@ -31,7 +31,7 @@
 * update regex in GitHub workflow for issue linking ([dbe9884](https://github.com/BluMintInc/eslint-custom-rules/commit/dbe98847846b962f368644f8028eab99463ad12b))
 
 
-### Features
+## Features
 
 * add code investigation and solution design command documentation ([bdbf7a8](https://github.com/BluMintInc/eslint-custom-rules/commit/bdbf7a8aa4e2f65fdc4787d457d44058bd12dddb))
 * Add collectBindingIdentifiers helper function ([fd7e878](https://github.com/BluMintInc/eslint-custom-rules/commit/fd7e878e1ceaebe93023495ee36691b02cf332e0))
@@ -60,7 +60,7 @@
 * Make no-static-constants-in-dynamic-files rule fixable ([84537b5](https://github.com/BluMintInc/eslint-custom-rules/commit/84537b570eea2c65c1938e8da9f79b2a2aeacd71))
 
 
-### Reverts
+## Reverts
 
 * Revert "Merge pull request [#678](https://github.com/BluMintInc/eslint-custom-rules/issues/678) from BluMintInc/openhands-fix-issue-677" ([4170af6](https://github.com/BluMintInc/eslint-custom-rules/commit/4170af6690aeb67f23f95b1a1d59e2d37ba98d34))
 

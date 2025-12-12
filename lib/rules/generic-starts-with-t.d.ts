@@ -1,2 +1,3 @@
 import { TSESLint } from '@typescript-eslint/utils';
-export declare const genericStartsWithT: TSESLint.RuleModule<'genericStartsWithT', never[]>;
+export declare const genericStartsWithT: TSESLint.RuleModule<'genericStartsWithT', never[], TSESLint.RuleListener>;
+export {};

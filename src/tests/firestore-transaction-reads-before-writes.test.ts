@@ -451,6 +451,15 @@ ruleTesterTs.run(
         });
         `,
       },
+      // Valid: Unrelated callbacks using parameter "t" should not be treated as transactions
+      {
+        code: `
+        const results = items.map((t) => {
+          t.set('value', 1);
+          return t.get('value');
+        });
+        `,
+      },
     ],
     invalid: [
       // Invalid: Read after write
