@@ -12,16 +12,16 @@ export const enforceConsoleError = createRule<[], MessageIds>({
     type: 'problem',
     docs: {
       description:
-        'Enforce proper logging for useAlertDialog based on severity. When severity is "error", console.error must be included. When severity is "warning", console.warn must be included. This ensures all user-facing errors and warnings are properly logged to monitoring systems.',
+        'Enforce proper logging for useAlertDialog based on severity. When severity is "error", console.error must be included. When severity is "warning", console.warn must be included. This ensures all user-facing errors and warnings are properly logged to observability systems.',
       recommended: 'error',
     },
     messages: {
       missingConsoleError:
-        'useAlertDialog with severity "error" requires a console.error statement in the same function scope for proper monitoring.',
+        'useAlertDialog call with severity "{{severity}}" shows an error dialog but this function never logs with {{consoleMethod}}. Without the log the alert is invisible to observability and post-incident breadcrumbs. Add a {{consoleMethod}} call in this function scope before or after the open() call so the dialog is paired with an observable error trail.',
       missingConsoleWarn:
-        'useAlertDialog with severity "warning" requires a console.warn statement in the same function scope for proper monitoring.',
+        'useAlertDialog call with severity "{{severity}}" shows a warning dialog but this function never logs with {{consoleMethod}}. Without the log the warning is invisible to observability, making degraded states hard to diagnose. Add a {{consoleMethod}} call in this function scope before or after the open() call so the dialog is paired with an observable warning trail.',
       missingConsoleBoth:
-        'useAlertDialog with dynamic severity requires both console.error and console.warn statements in the same function scope for proper monitoring.',
+        'useAlertDialog call uses dynamic severity, so runtime may render an error or a warning dialog. It is missing {{missingMethods}} in this function scope, leaving one or more runtime severity branches (error or warning) without observability breadcrumbs: {{missingPaths}}. Branch on the severity value and add the matching console method before or after the open() call (console.error for error branches, console.warn for warning branches), as in the conditional pattern shown in the rule docs, so each branch leaves a single appropriate log trail instead of double-logging both methods.',
     },
     schema: [],
   },
@@ -223,15 +223,41 @@ export const enforceConsoleError = createRule<[], MessageIds>({
           const needsConsoleWarn = hasWarning || hasDynamic;
 
           if (hasDynamic && (!hasConsoleError || !hasConsoleWarn)) {
-            const dynamicCall = group.openCalls.find(
+            const missingMethods: string[] = [];
+            const missingSeverities: string[] = [];
+
+            if (!hasConsoleError) {
+              missingMethods.push('console.error');
+              missingSeverities.push('error');
+            }
+
+            if (!hasConsoleWarn) {
+              missingMethods.push('console.warn');
+              missingSeverities.push('warning');
+            }
+
+            const missingMethodsLabel =
+              missingMethods.length === 2
+                ? 'console.error and console.warn'
+                : missingMethods[0];
+            const missingPathsLabel =
+              missingSeverities.length === 2
+                ? 'the error and warning severity paths'
+                : `the ${missingSeverities[0]} severity path`;
+
+            const dynamicCalls = group.openCalls.filter(
               (call) => call.severity === 'dynamic',
             );
-            if (dynamicCall) {
+            dynamicCalls.forEach((dynamicCall) => {
               context.report({
                 node: dynamicCall.node,
                 messageId: 'missingConsoleBoth',
+                data: {
+                  missingMethods: missingMethodsLabel,
+                  missingPaths: missingPathsLabel,
+                },
               });
-            }
+            });
           } else {
             if (needsConsoleError && !hasConsoleError) {
               const errorCall = group.openCalls.find(
@@ -241,6 +267,10 @@ export const enforceConsoleError = createRule<[], MessageIds>({
                 context.report({
                   node: errorCall.node,
                   messageId: 'missingConsoleError',
+                  data: {
+                    severity: 'error',
+                    consoleMethod: 'console.error',
+                  },
                 });
               }
             }
@@ -253,6 +283,10 @@ export const enforceConsoleError = createRule<[], MessageIds>({
                 context.report({
                   node: warningCall.node,
                   messageId: 'missingConsoleWarn',
+                  data: {
+                    severity: 'warning',
+                    consoleMethod: 'console.warn',
+                  },
                 });
               }
             }
