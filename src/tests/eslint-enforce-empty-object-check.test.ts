@@ -331,6 +331,32 @@ ruleTesterTs.run(
       },
       {
         code: `
+        if (flag ? !config : hasConfig(config)) {
+          apply(config);
+        }
+        `,
+        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'config' } }],
+        output: `
+        if (flag ? (!config || Object.keys(config).length === 0) : hasConfig(config)) {
+          apply(config);
+        }
+        `,
+      },
+      {
+        code: `
+        if (flag ? hasConfig(config) : !config) {
+          apply(config);
+        }
+        `,
+        errors: [{ messageId: 'missingEmptyObjectCheck', data: { name: 'config' } }],
+        output: `
+        if (flag ? hasConfig(config) : (!config || Object.keys(config).length === 0)) {
+          apply(config);
+        }
+        `,
+      },
+      {
+        code: `
         const config = getConfig();
         if (!config) {
           apply(config);

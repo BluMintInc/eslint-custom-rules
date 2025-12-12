@@ -333,6 +333,8 @@ function collectNegations(
     collectNegations(node.right as TSESTree.Expression, results);
   } else if (node.type === AST_NODE_TYPES.ConditionalExpression) {
     collectNegations(node.test, results);
+    collectNegations(node.consequent, results);
+    collectNegations(node.alternate, results);
   }
 }
 
