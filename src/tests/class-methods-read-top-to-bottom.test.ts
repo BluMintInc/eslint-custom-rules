@@ -406,6 +406,36 @@ methodC() {}}`,
       },
       {
         code: `
+        const Holder = class Named {
+          methodA() {
+            return this.methodB();
+          }
+          constructor() {
+            this.methodA();
+          }
+          methodB() {}
+        };`,
+        errors: [
+          {
+            messageId: 'classMethodsReadTopToBottom',
+            data: {
+              className: 'Named',
+              actualMember: 'methodA',
+              expectedMember: 'constructor',
+            },
+          },
+        ],
+        output: `
+        const Holder = class Named {constructor() {
+            this.methodA();
+          }
+methodA() {
+            return this.methodB();
+          }
+methodB() {}};`,
+      },
+      {
+        code: `
         class TestClass {
             field1: string;
             field2: number;

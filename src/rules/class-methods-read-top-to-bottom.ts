@@ -42,6 +42,9 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
       ClassDeclaration(node: TSESTree.ClassDeclaration) {
         classNames.set(node.body, node.id?.name || '');
       },
+      ClassExpression(node: TSESTree.ClassExpression) {
+        classNames.set(node.body, node.id?.name || '');
+      },
       'ClassBody:exit'(node: TSESTree.ClassBody) {
         const className = classNames.get(node) || '';
         const graphBuilder = new ClassGraphBuilder(className, node);
