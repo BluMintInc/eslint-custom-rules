@@ -69,7 +69,7 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       );
     }
 
-    function isNumericLiteralKey(property: TSESTree.Property): boolean {
+    function isNumericKey(property: TSESTree.Property): boolean {
       return (
         property.key.type === AST_NODE_TYPES.Literal &&
         (typeof property.key.value === 'number' ||
@@ -119,9 +119,9 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
           continue;
         }
 
-        const isNumericKey = isNumericLiteralKey(property);
+        const numericKey = isNumericKey(property);
 
-        if (prefix === '' && isNumericKey) {
+        if (prefix === '' && numericKey) {
           continue;
         }
 
@@ -243,7 +243,7 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
         // Firestore document fields, so ignore them when identifying nested objects
         if (
           node.parent?.type !== AST_NODE_TYPES.Property &&
-          isNumericLiteralKey(property)
+          isNumericKey(property)
         ) {
           continue;
         }
