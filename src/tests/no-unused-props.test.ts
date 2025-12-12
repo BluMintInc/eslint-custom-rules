@@ -148,6 +148,27 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
     },
     {
       code: `
+        import { FormControlLabelProps } from '@mui/material';
+        type GroupModeTogglesProps = {
+          mode: string;
+          preferences: Record<string, any>;
+        } & FormControlLabelProps;
+        const GroupModeToggles = ({ mode, preferences, label }: GroupModeTogglesProps) => (
+          <FormControlLabel
+            control={<div />}
+            label={label}
+          />
+        );
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
         type ChannelGroupProps = {
           sortGroups: ({ groupNameA, groupNameB }: { groupNameA: string; groupNameB: string }) => number;
           sortChannels: ({ channelA, channelB }: { channelA: any; channelB: any }) => number;
@@ -256,6 +277,26 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
     },
     {
       code: `
+        import { ExternalProps } from './external';
+
+        type Props = { label: string } & ExternalProps;
+
+        const Component = ({ label, externalOnly }: Props) => (
+          <div>
+            {label}
+            {externalOnly}
+          </div>
+        );
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
         type Parent = { child: { foo: string; bar: number } };
         type Props = Parent['child'];
         const Component = ({ foo, bar }: Props) => (
@@ -340,34 +381,6 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
     },
     {
       code: `
-        import { FormControlLabelProps } from '@mui/material';
-        type GroupModeTogglesProps = {
-          mode: string;
-          preferences: Record<string, any>;
-        } & FormControlLabelProps;
-        const GroupModeToggles = ({ mode, preferences, label }: GroupModeTogglesProps) => (
-          <FormControlLabel
-            control={<div />}
-            label={label}
-          />
-        );
-      `,
-      errors: [
-        {
-          messageId: 'unusedProp',
-          data: { propName: '...FormControlLabelProps' },
-          type: AST_NODE_TYPES.Identifier,
-        },
-      ],
-      filename: 'test.tsx',
-      parserOptions: {
-        ecmaFeatures: { jsx: true },
-        ecmaVersion: 2018,
-        sourceType: 'module',
-      },
-    },
-    {
-      code: `
         type FooProps = { used: string; unused: string };
 
         const helper = ({ used }: FooProps) => {
@@ -433,7 +446,7 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         {
           messageId: 'unusedProp',
           data: { propName: 'missing' },
-          type: AST_NODE_TYPES.Literal,
+          type: AST_NODE_TYPES.Identifier,
         },
       ],
       filename: 'test.tsx',
@@ -453,7 +466,27 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         {
           messageId: 'unusedProp',
           data: { propName: 'skipped' },
-          type: AST_NODE_TYPES.Literal,
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type X = { unused: string };
+        type Props = X;
+        const Component = ({ }: Props) => <div />;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
         },
       ],
       filename: 'test.tsx',

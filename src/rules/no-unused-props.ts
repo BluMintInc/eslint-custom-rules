@@ -112,6 +112,7 @@ export const noUnusedProps = createRule({
       prop: string,
       hasRestSpread: boolean,
       used: Set<string>,
+      propsType: Record<string, TSESTree.Node> | undefined,
     ) => {
       if (hasRestSpread) {
         return true;
@@ -123,7 +124,29 @@ export const noUnusedProps = createRule({
         return true;
       }
 
-      return isAnyPropFromSpreadTypeUsed(spreadTypeName, used);
+      const spreadProps = usedSpreadTypes.get(spreadTypeName);
+      if (spreadProps && spreadProps.size > 0) {
+        return isAnyPropFromSpreadTypeUsed(spreadTypeName, used);
+      }
+
+      if (!propsType) {
+        return false;
+      }
+
+      // When spread props are unknown (imported/external), treat any destructured
+      // identifier that is not declared in the current props type as a signal
+      // that the spread type contributes used properties.
+      const knownPropNames = new Set(
+        Object.keys(propsType).filter((name) => !name.startsWith('...')),
+      );
+
+      for (const usedProp of used) {
+        if (!knownPropNames.has(usedProp)) {
+          return true;
+        }
+      }
+
+      return false;
     };
 
     const shouldSkipPropFromSpreadType = (
@@ -182,7 +205,12 @@ export const noUnusedProps = createRule({
           if (isGenericTypeSpread(prop)) {
             shouldReport = false;
           } else if (prop.startsWith('...')) {
-            shouldReport = !shouldSkipSpreadType(prop, hasRestSpread, used);
+            shouldReport = !shouldSkipSpreadType(
+              prop,
+              hasRestSpread,
+              used,
+              propsType,
+            );
           } else {
             shouldReport = !shouldSkipPropFromSpreadType(prop, typeName, used);
           }
@@ -204,6 +232,9 @@ export const noUnusedProps = createRule({
           const props: Record<string, TSESTree.Node> = {};
           // Track which properties come from which spread type
           const spreadTypeProps: Record<string, string[]> = {};
+          const typeParameterNames = new Set(
+            node.typeParameters?.params.map((param) => param.name.name) ?? [],
+          );
 
           const collectStringLiterals = (
             node: TSESTree.TypeNode,
@@ -286,6 +317,7 @@ export const noUnusedProps = createRule({
           const addBaseTypeProps = (
             typeNode: TSESTree.TypeNode,
             shouldInclude: (name: string) => boolean = () => true,
+            originSpreadTypeName?: string,
           ) => {
             if (processingTypeNodes.has(typeNode)) {
               return;
@@ -296,6 +328,14 @@ export const noUnusedProps = createRule({
             const addPropIfAllowed = (name: string, node: TSESTree.Node) => {
               if (shouldInclude(name)) {
                 props[name] = node;
+                if (originSpreadTypeName) {
+                  if (!spreadTypeProps[originSpreadTypeName]) {
+                    spreadTypeProps[originSpreadTypeName] = [];
+                  }
+                  if (!spreadTypeProps[originSpreadTypeName].includes(name)) {
+                    spreadTypeProps[originSpreadTypeName].push(name);
+                  }
+                }
               }
             };
 
@@ -386,13 +426,11 @@ export const noUnusedProps = createRule({
                 typeNode.type === AST_NODE_TYPES.TSTypeReference &&
                 typeNode.typeName.type === AST_NODE_TYPES.Identifier
               ) {
-              if (
-                typeNode.typeName.name.length === 1 &&
-                /^[A-Z]$/.test(typeNode.typeName.name)
-              ) {
-                return;
-              }
+                if (typeParameterNames.has(typeNode.typeName.name)) {
+                  return;
+                }
                 const referenceName = typeNode.typeName.name;
+                const nextOrigin = originSpreadTypeName ?? referenceName;
 
                 if (
                   referenceName === 'Pick' &&
@@ -401,12 +439,19 @@ export const noUnusedProps = createRule({
                 ) {
                   const [baseType, pickedProps] = typeNode.typeParameters.params;
                   const picked = new Set<string>();
+                  const baseTypeOrigin =
+                    originSpreadTypeName ||
+                    (baseType.type === AST_NODE_TYPES.TSTypeReference &&
+                    baseType.typeName.type === AST_NODE_TYPES.Identifier
+                      ? baseType.typeName.name
+                      : referenceName);
                   collectStringLiterals(pickedProps, (value) =>
                     picked.add(value),
                   );
                   addBaseTypeProps(
                     baseType,
                     (name) => picked.has(name) && shouldInclude(name),
+                    baseTypeOrigin,
                   );
                   return;
                 }
@@ -419,12 +464,19 @@ export const noUnusedProps = createRule({
                   const [baseType, omittedProps] =
                     typeNode.typeParameters.params;
                   const omitted = new Set<string>();
+                  const baseTypeOrigin =
+                    originSpreadTypeName ||
+                    (baseType.type === AST_NODE_TYPES.TSTypeReference &&
+                    baseType.typeName.type === AST_NODE_TYPES.Identifier
+                      ? baseType.typeName.name
+                      : referenceName);
                   collectStringLiterals(omittedProps, (value) =>
                     omitted.add(value),
                   );
                   addBaseTypeProps(
                     baseType,
                     (name) => !omitted.has(name) && shouldInclude(name),
+                    baseTypeOrigin,
                   );
                   return;
                 }
@@ -433,16 +485,24 @@ export const noUnusedProps = createRule({
                   UTILITY_TYPES.has(referenceName) &&
                   typeNode.typeParameters?.params.length
                 ) {
+                  const [baseType] = typeNode.typeParameters.params;
+                  const baseTypeOrigin =
+                    originSpreadTypeName ||
+                    (baseType.type === AST_NODE_TYPES.TSTypeReference &&
+                    baseType.typeName.type === AST_NODE_TYPES.Identifier
+                      ? baseType.typeName.name
+                      : referenceName);
                   addBaseTypeProps(
-                    typeNode.typeParameters.params[0],
+                    baseType,
                     shouldInclude,
+                    baseTypeOrigin,
                   );
                   return;
                 }
 
                 const resolvedType = resolveTypeAlias(referenceName);
                 if (resolvedType) {
-                  addBaseTypeProps(resolvedType, shouldInclude);
+                  addBaseTypeProps(resolvedType, shouldInclude, nextOrigin);
                   return;
                 }
                 // If unresolved (likely imported/external), treat as a forwarded spread type
@@ -455,14 +515,14 @@ export const noUnusedProps = createRule({
 
               if (typeNode.type === AST_NODE_TYPES.TSIntersectionType) {
                 typeNode.types.forEach((type) =>
-                  addBaseTypeProps(type, shouldInclude),
+                  addBaseTypeProps(type, shouldInclude, originSpreadTypeName),
                 );
                 return;
               }
 
               if (typeNode.type === AST_NODE_TYPES.TSUnionType) {
                 typeNode.types.forEach((type) =>
-                  addBaseTypeProps(type, shouldInclude),
+                  addBaseTypeProps(type, shouldInclude, originSpreadTypeName),
                 );
                 return;
               }
@@ -477,6 +537,7 @@ export const noUnusedProps = createRule({
                   addBaseTypeProps(
                     parenthesized.typeAnnotation,
                     shouldInclude,
+                    originSpreadTypeName,
                   );
                 }
                 return;
@@ -484,7 +545,11 @@ export const noUnusedProps = createRule({
 
               if (typeNode.type === AST_NODE_TYPES.TSTypeOperator) {
                 if (typeNode.typeAnnotation) {
-                  addBaseTypeProps(typeNode.typeAnnotation, shouldInclude);
+                  addBaseTypeProps(
+                    typeNode.typeAnnotation,
+                    shouldInclude,
+                    originSpreadTypeName,
+                  );
                 }
                 return;
               }
@@ -494,18 +559,24 @@ export const noUnusedProps = createRule({
                 collectStringLiterals(typeNode.indexType, (value) =>
                   indexNames.add(value),
                 );
+                const indexedOrigin =
+                  originSpreadTypeName ||
+                  (typeNode.objectType.type === AST_NODE_TYPES.TSTypeReference &&
+                  typeNode.objectType.typeName.type === AST_NODE_TYPES.Identifier
+                    ? typeNode.objectType.typeName.name
+                    : undefined);
 
                 if (indexNames.size === 0) {
-              if (
-                typeNode.objectType.type === AST_NODE_TYPES.TSTypeReference &&
-                typeNode.objectType.typeName.type === AST_NODE_TYPES.Identifier
-              ) {
-                const referenceName = typeNode.objectType.typeName.name;
-                props[`...${referenceName}`] = typeNode.objectType.typeName;
-                if (!spreadTypeProps[referenceName]) {
-                  spreadTypeProps[referenceName] = [];
-                }
-              }
+                  if (
+                    typeNode.objectType.type === AST_NODE_TYPES.TSTypeReference &&
+                    typeNode.objectType.typeName.type === AST_NODE_TYPES.Identifier
+                  ) {
+                    const referenceName = typeNode.objectType.typeName.name;
+                    props[`...${referenceName}`] = typeNode.objectType.typeName;
+                    if (!spreadTypeProps[referenceName]) {
+                      spreadTypeProps[referenceName] = [];
+                    }
+                  }
                   return;
                 }
 
@@ -518,7 +589,11 @@ export const noUnusedProps = createRule({
                     return;
                   }
                   propertyTypes.forEach((propType) =>
-                    addBaseTypeProps(propType, shouldInclude),
+                    addBaseTypeProps(
+                      propType,
+                      shouldInclude,
+                      indexedOrigin,
+                    ),
                   );
                 });
                 return;
