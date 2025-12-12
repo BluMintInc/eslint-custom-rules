@@ -12,6 +12,31 @@ type LiteralDescriptor = {
   memoHook: 'useMemo' | 'useCallback';
 };
 
+const LITERAL_DESCRIPTOR_BY_TYPE: Partial<
+  Record<AST_NODE_TYPES, LiteralDescriptor>
+> = {
+  [AST_NODE_TYPES.ObjectExpression]: {
+    literalType: 'object literal',
+    memoHook: 'useMemo',
+  },
+  [AST_NODE_TYPES.ArrayExpression]: {
+    literalType: 'array literal',
+    memoHook: 'useMemo',
+  },
+  [AST_NODE_TYPES.ArrowFunctionExpression]: {
+    literalType: 'inline function',
+    memoHook: 'useCallback',
+  },
+  [AST_NODE_TYPES.FunctionExpression]: {
+    literalType: 'inline function',
+    memoHook: 'useCallback',
+  },
+  [AST_NODE_TYPES.FunctionDeclaration]: {
+    literalType: 'inline function',
+    memoHook: 'useCallback',
+  },
+};
+
 const SAFE_HOOK_ARGUMENTS = new Set([
   'useMemo',
   'useCallback',
@@ -39,6 +64,62 @@ function isComponentName(name: string | null | undefined): name is string {
   return !!name && /^[A-Z]/.test(name);
 }
 
+function getNameFromNode(node: TSESTree.Node | null): string | null {
+  if (!node) return null;
+
+  if (
+    node.type === AST_NODE_TYPES.VariableDeclarator &&
+    node.id.type === AST_NODE_TYPES.Identifier
+  ) {
+    return node.id.name;
+  }
+
+  if (
+    node.type === AST_NODE_TYPES.AssignmentExpression &&
+    node.left.type === AST_NODE_TYPES.Identifier
+  ) {
+    return node.left.name;
+  }
+
+  if (
+    node.type === AST_NODE_TYPES.Property &&
+    node.key.type === AST_NODE_TYPES.Identifier
+  ) {
+    return node.key.name;
+  }
+
+  return null;
+}
+
+function isTransparentNode(node: TSESTree.Node): boolean {
+  return (
+    node.type === AST_NODE_TYPES.CallExpression ||
+    node.type === AST_NODE_TYPES.MemberExpression ||
+    node.type === AST_NODE_TYPES.ChainExpression ||
+    node.type === AST_NODE_TYPES.TSAsExpression ||
+    node.type === AST_NODE_TYPES.TSTypeAssertion
+  );
+}
+
+function findNameInAncestors(startNode: TSESTree.Node | null): string | null {
+  let current: TSESTree.Node | null = startNode;
+
+  while (current) {
+    const name = getNameFromNode(current);
+    if (name) {
+      return name;
+    }
+
+    if (!isTransparentNode(current)) {
+      break;
+    }
+
+    current = current.parent as TSESTree.Node | null;
+  }
+
+  return null;
+}
+
 function getFunctionName(
   fn:
     | TSESTree.FunctionDeclaration
@@ -54,60 +135,16 @@ function getFunctionName(
   }
 
   const parent = fn.parent;
-  if (
-    parent &&
-    parent.type === AST_NODE_TYPES.VariableDeclarator &&
-    parent.id.type === AST_NODE_TYPES.Identifier
-  ) {
-    return parent.id.name;
+  if (!parent) {
+    return null;
   }
 
-  if (
-    parent &&
-    parent.type === AST_NODE_TYPES.Property &&
-    parent.key.type === AST_NODE_TYPES.Identifier
-  ) {
-    return parent.key.name;
+  const immediateName = getNameFromNode(parent);
+  if (immediateName) {
+    return immediateName;
   }
 
-  let current: TSESTree.Node | null = parent ?? null;
-  while (current) {
-    if (
-      current.type === AST_NODE_TYPES.VariableDeclarator &&
-      current.id.type === AST_NODE_TYPES.Identifier
-    ) {
-      return current.id.name;
-    }
-
-    if (
-      current.type === AST_NODE_TYPES.AssignmentExpression &&
-      current.left.type === AST_NODE_TYPES.Identifier
-    ) {
-      return current.left.name;
-    }
-
-    if (
-      current.type === AST_NODE_TYPES.Property &&
-      current.key.type === AST_NODE_TYPES.Identifier
-    ) {
-      return current.key.name;
-    }
-
-    if (
-      current.type === AST_NODE_TYPES.CallExpression ||
-      current.type === AST_NODE_TYPES.MemberExpression ||
-      current.type === AST_NODE_TYPES.ChainExpression ||
-      current.type === AST_NODE_TYPES.TSAsExpression ||
-      current.type === AST_NODE_TYPES.TSTypeAssertion
-    ) {
-      current = current.parent as TSESTree.Node | null;
-      continue;
-    }
-
-    break;
-  }
-
-  return null;
+  return findNameInAncestors(parent);
 }
 
 function isComponentOrHookFunction(
@@ -166,20 +203,9 @@ function isHookCall(node: TSESTree.CallExpression): string | null {
 }
 
 function getLiteralDescriptor(node: TSESTree.Node): LiteralDescriptor | null {
-  if (node.type === AST_NODE_TYPES.ObjectExpression) {
-    return { literalType: 'object literal', memoHook: 'useMemo' };
-  }
-  if (node.type === AST_NODE_TYPES.ArrayExpression) {
-    return { literalType: 'array literal', memoHook: 'useMemo' };
-  }
-  if (
-    node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-    node.type === AST_NODE_TYPES.FunctionExpression ||
-    node.type === AST_NODE_TYPES.FunctionDeclaration
-  ) {
-    return { literalType: 'inline function', memoHook: 'useCallback' };
-  }
-  return null;
+  const descriptor =
+    LITERAL_DESCRIPTOR_BY_TYPE[node.type as AST_NODE_TYPES] ?? null;
+  return descriptor;
 }
 
 function findEnclosingComponentOrHook(node: TSESTree.Node) {
