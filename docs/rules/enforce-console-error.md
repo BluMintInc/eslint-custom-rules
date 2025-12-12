@@ -4,11 +4,11 @@
 
 <!-- end auto-generated rule header -->
 
-Pair every user-facing alert opened via `useAlertDialog` with console logging so monitoring captures the underlying error or warning.
+Pair every user-facing alert opened via `useAlertDialog` with console logging so observability captures the underlying error or warning.
 
 ## Why
 
-- Error and warning dialogs without console logs leave no breadcrumbs in monitoring tools, making triage and correlation difficult.
+- Error and warning dialogs without console logs leave no breadcrumbs in observability tools, making triage and correlation difficult.
 - Logging inside the same function scope ensures the log corresponds to the exact `open()` call, even inside nested callbacks or async flows.
 - Dynamic severity values can render either an error or a warning; logging each branch prevents silent paths and keeps observability aligned to severity.
 
@@ -32,7 +32,7 @@ The rule reports when:
 The following example pairs static errors, static warnings, and dynamic severities with matching console logging in the same scope.
 
 ```tsx
-import { useAlertDialog } from '../useAlertDialog';
+import { useAlertDialog } from '@blumintinc/blumint/alerts';
 
 export const useDialogs = () => {
   const { open } = useAlertDialog('DIALOGS');
@@ -81,7 +81,7 @@ open({
   title: 'Error',
   description: 'An error occurred',
   severity: 'error',
-}); // ✖ No console.error, monitoring has no breadcrumb
+}); // ✖ No console.error, observability has no breadcrumb
 ```
 
 ```tsx
@@ -101,5 +101,5 @@ const showDialog = (severity: string, description: string) => {
     description,
     severity,
   });
-}; // ✖ Dynamic severity without console.error and console.warn, so one branch will stay unlogged
+}; // ✖ Dynamic severity without console.error or console.warn, so one branch will stay unlogged
 ```
