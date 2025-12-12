@@ -196,6 +196,26 @@ const service = new Service();
 const config = loadConfig();
 service.run();
     `,
+    `
+let obj = {};
+obj = {
+  method() {
+    return data;
+  },
+};
+const data = loadData();
+obj.method();
+    `,
+    `
+const create = () => ({
+  method() {
+    return config;
+  },
+});
+const config = getConfig();
+const instance = create();
+instance.method();
+    `,
   ],
   invalid: [
     {

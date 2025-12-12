@@ -426,6 +426,20 @@ function statementMutatesAny(statement: TSESTree.Statement, names: Set<string>):
   return false;
 }
 
+  function isIdentifierMutatedBeforeIndex(
+    body: TSESTree.Statement[],
+    name: string,
+    beforeIndex: number,
+  ): boolean {
+    const target = new Set([name]);
+    for (let index = 0; index < beforeIndex; index += 1) {
+      if (statementMutatesAny(body[index], target)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
 function initializerIsSafe(
   expression: TSESTree.Expression | TSESTree.PrivateIdentifier,
   { allowHooks }: { allowHooks: boolean },
@@ -880,8 +894,10 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
   function resolveValueForIdentifier(
     body: TSESTree.Statement[],
     name: string,
+    beforeIndex: number,
   ): TSESTree.Expression | TSESTree.ClassDeclaration | TSESTree.ClassExpression | null {
-    for (const statement of body) {
+    for (let index = Math.min(beforeIndex, body.length) - 1; index >= 0; index -= 1) {
+      const statement = body[index];
       if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
         for (const declarator of statement.declarations) {
           if (
@@ -897,6 +913,15 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
       if (statement.type === AST_NODE_TYPES.ClassDeclaration && statement.id?.name === name) {
         return statement;
       }
+      if (
+        statement.type === AST_NODE_TYPES.ExpressionStatement &&
+        statement.expression.type === AST_NODE_TYPES.AssignmentExpression &&
+        statement.expression.left.type === AST_NODE_TYPES.Identifier &&
+        statement.expression.left.name === name &&
+        ASTHelpers.isNode(statement.expression.right)
+      ) {
+        return statement.expression.right as TSESTree.Expression;
+      }
     }
     return null;
   }
@@ -905,24 +930,25 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
     body: TSESTree.Statement[],
     node: TSESTree.Expression | TSESTree.ClassDeclaration | TSESTree.ClassExpression,
     visited: Set<string>,
+    beforeIndex: number,
   ): TSESTree.Expression | TSESTree.ClassDeclaration | TSESTree.ClassExpression | null {
     if (node.type === AST_NODE_TYPES.Identifier) {
       if (visited.has(node.name)) {
         return null;
       }
       visited.add(node.name);
-      const resolved = resolveValueForIdentifier(body, node.name);
+      const resolved = resolveValueForIdentifier(body, node.name, beforeIndex);
       if (!resolved) {
         return null;
       }
-      return resolveValueNode(body, resolved as TSESTree.Expression, visited);
+      return resolveValueNode(body, resolved as TSESTree.Expression, visited, beforeIndex);
     }
 
     if (
       node.type === AST_NODE_TYPES.NewExpression &&
       node.callee.type === AST_NODE_TYPES.Identifier
     ) {
-      const resolvedClass = resolveValueForIdentifier(body, node.callee.name);
+      const resolvedClass = resolveValueForIdentifier(body, node.callee.name, beforeIndex);
       if (
         resolvedClass &&
         (resolvedClass.type === AST_NODE_TYPES.ClassDeclaration ||
@@ -938,6 +964,7 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
   function resolveMemberFunction(
     body: TSESTree.Statement[],
     member: TSESTree.MemberExpression,
+    beforeIndex: number,
   ): TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression | null {
     if (member.computed || member.property.type !== AST_NODE_TYPES.Identifier) {
       return null;
@@ -970,13 +997,13 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
 
     path.unshift(cursor.name);
     const [root, ...segments] = path;
-    const initialValue = resolveValueForIdentifier(body, root);
+    const initialValue = resolveValueForIdentifier(body, root, beforeIndex);
     if (!initialValue) {
       return null;
     }
 
     const visited = new Set<string>([root]);
-    return descend(resolveValueNode(body, initialValue, visited), segments, visited);
+    return descend(resolveValueNode(body, initialValue, visited, beforeIndex), segments, visited);
 
     function descend(
       value:
@@ -1020,6 +1047,7 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
           body,
           property.value as TSESTree.Expression,
           visitedNames,
+          beforeIndex,
         );
         return descend(resolved, rest, visitedNames);
       }
@@ -1044,6 +1072,7 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
           body,
           method.value as TSESTree.FunctionExpression,
           visitedNames,
+          beforeIndex,
         );
         return descend(resolved, rest, visitedNames);
       }
@@ -1056,9 +1085,13 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
     body: TSESTree.Statement[],
     callee: TSESTree.LeftHandSideExpression | TSESTree.PrivateIdentifier | TSESTree.Super,
     dependencies: Set<string>,
-  ): void {
+    callIndex: number,
+  ): boolean {
     if (callee.type === AST_NODE_TYPES.Identifier) {
       const name = callee.name;
+      if (isIdentifierMutatedBeforeIndex(body, name, callIndex)) {
+        return false;
+      }
 
       const functionDeclaration = body.find(
         (statement) =>
@@ -1066,10 +1099,11 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
       ) as TSESTree.FunctionDeclaration | undefined;
       if (functionDeclaration && functionDeclaration.body) {
         collectFunctionBodyDependencies(functionDeclaration, dependencies);
-        return;
+        return true;
       }
 
-      for (const statement of body) {
+      for (let index = 0; index < callIndex; index += 1) {
+        const statement = body[index];
         if (statement.type !== AST_NODE_TYPES.VariableDeclaration) {
           continue;
         }
@@ -1082,19 +1116,35 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
               declarator.init.type === AST_NODE_TYPES.ArrowFunctionExpression)
           ) {
             collectFunctionBodyDependencies(declarator.init, dependencies);
-            return;
+            return true;
           }
         }
       }
-      return;
+      return true;
     }
 
     if (callee.type === AST_NODE_TYPES.MemberExpression) {
-      const memberFunction = resolveMemberFunction(body, callee);
+      const rootName = callee.object.type === AST_NODE_TYPES.Identifier ? callee.object.name : null;
+      if (rootName && isIdentifierMutatedBeforeIndex(body, rootName, callIndex)) {
+        return false;
+      }
+      const memberFunction = resolveMemberFunction(body, callee, callIndex);
       if (memberFunction) {
         collectFunctionBodyDependencies(memberFunction, dependencies);
+        return true;
       }
+      if (rootName) {
+        const declaredBeforeCall = body
+          .slice(0, callIndex)
+          .some((statement) => statementDeclaresAny(statement, new Set([rootName])));
+        if (declaredBeforeCall) {
+          return false;
+        }
+      }
+      return true;
     }
+
+    return true;
   }
 
     function isSideEffectExpression(
@@ -1124,7 +1174,15 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
 
         const dependencies = new Set<string>();
         collectUsedIdentifiers(expression, dependencies, { skipFunctions: true });
-        collectCalleeDependencies(body, callExpression.callee, dependencies);
+        const calleeResolved = collectCalleeDependencies(
+          body,
+          callExpression.callee,
+          dependencies,
+          index,
+        );
+        if (!calleeResolved) {
+          return;
+        }
 
         const targetIndex = findEarliestSafeIndex(body, index, dependencies, { allowHooks: false });
 
