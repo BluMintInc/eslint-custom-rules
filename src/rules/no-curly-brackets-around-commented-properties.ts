@@ -235,6 +235,54 @@ function getAncestors(
   return context.getAncestors();
 }
 
+type TopLevelParent = TSESTree.Program | TSESTree.TSModuleBlock;
+
+type ReportableBlockContext = {
+  parent: TopLevelParent;
+  ancestors: TSESTree.Node[];
+  siblingIndent: string | null;
+};
+
+function isEmptyTopLevelBlock(
+  node: TSESTree.BlockStatement,
+  parent: TSESTree.Node | null | undefined,
+): parent is TopLevelParent {
+  return (
+    node.body.length === 0 &&
+    !!parent &&
+    (parent.type === AST_NODE_TYPES.Program ||
+      parent.type === AST_NODE_TYPES.TSModuleBlock)
+  );
+}
+
+function hasTypeMemberComments(comments: TSESTree.Comment[]): boolean {
+  return comments.some((comment) => looksLikeTypeMemberComment(comment.value));
+}
+
+function getReportableBlockContext(
+  context: Readonly<TSESLint.RuleContext<MessageIds, []>>,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  node: TSESTree.BlockStatement,
+): ReportableBlockContext | null {
+  const parent = node.parent;
+
+  if (!isEmptyTopLevelBlock(node, parent)) {
+    return null;
+  }
+
+  const comments = getBlockComments(sourceCode, node);
+
+  if (!hasTypeMemberComments(comments)) {
+    return null;
+  }
+
+  return {
+    parent,
+    ancestors: getAncestors(context, sourceCode, node),
+    siblingIndent: getSiblingIndent(sourceCode, parent, node),
+  };
+}
+
 export const noCurlyBracketsAroundCommentedProperties = createRule<
   [],
   MessageIds
@@ -260,35 +308,13 @@ export const noCurlyBracketsAroundCommentedProperties = createRule<
 
     return {
       BlockStatement(node) {
-        if (node.body.length > 0) {
-          return;
-        }
-
-        const parent = node.parent;
-
-        if (
-          !parent ||
-          (parent.type !== AST_NODE_TYPES.Program &&
-            parent.type !== AST_NODE_TYPES.TSModuleBlock)
-        ) {
-          return;
-        }
-
-        const ancestors = getAncestors(context, sourceCode, node);
-
-        const comments = getBlockComments(sourceCode, node);
-
-        const siblingIndent = getSiblingIndent(sourceCode, parent, node);
-
-        if (!comments.length) {
-          return;
-        }
-
-        const hasMemberShapedComment = comments.some((comment) =>
-          looksLikeTypeMemberComment(comment.value),
+        const reportableContext = getReportableBlockContext(
+          context,
+          sourceCode,
+          node,
         );
 
-        if (!hasMemberShapedComment) {
+        if (!reportableContext) {
           return;
         }
 
@@ -296,13 +322,16 @@ export const noCurlyBracketsAroundCommentedProperties = createRule<
           node,
           messageId: 'removeCommentWrappedBlock',
           data: {
-            context: describeContext(ancestors, parent),
+            context: describeContext(
+              reportableContext.ancestors,
+              reportableContext.parent,
+            ),
           },
           fix: (fixer) => {
             const replacement = computeReplacement(
               sourceCode,
               node,
-              siblingIndent,
+              reportableContext.siblingIndent,
             );
 
             /* istanbul ignore next -- replacement only null when tokens are missing */
