@@ -177,6 +177,27 @@ function collectBodyTypeAnnotations(
       typeNodes.push(current.typeAnnotation);
     }
 
+    const typeAnnotation = (current as { typeAnnotation?: TSESTree.Node }).typeAnnotation;
+    if (typeAnnotation) {
+      if (typeAnnotation.type === AST_NODE_TYPES.TSTypeAnnotation) {
+        typeNodes.push(typeAnnotation.typeAnnotation);
+      } else {
+        typeNodes.push(typeAnnotation);
+      }
+    }
+
+    const typeParameters = (current as {
+      typeParameters?: TSESTree.TSTypeParameterDeclaration | TSESTree.TSTypeParameterInstantiation;
+    }).typeParameters;
+    if (typeParameters) {
+      typeNodes.push(typeParameters);
+    }
+
+    const returnType = (current as { returnType?: TSESTree.Node }).returnType;
+    if (returnType) {
+      typeNodes.push(returnType);
+    }
+
     const keys = visitorKeys[current.type];
     if (!keys) continue;
     for (const key of keys) {

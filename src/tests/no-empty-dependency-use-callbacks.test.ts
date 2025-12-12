@@ -2,6 +2,41 @@ import { noEmptyDependencyUseCallbacks } from '../rules/no-empty-dependency-use-
 import { ruleTesterJsx } from '../utils/ruleTester';
 
 const valid = [
+`
+import { useCallback } from 'react';
+function getValue<T>() {
+  return {} as T;
+}
+function Component() {
+  type LocalType = { value: number };
+  const handler = useCallback(() => getValue<LocalType>(), []);
+  return handler();
+}
+`,
+`
+import { useCallback } from 'react';
+function Component() {
+  type LocalType = { id: string };
+  const handler = useCallback(() => {
+    const value: LocalType = { id: 'a' };
+    return value.id;
+  }, []);
+  return handler();
+}
+`,
+`
+import { useCallback } from 'react';
+function Component() {
+  type LocalType = { id: number };
+  const handler = useCallback(() => {
+    function format(input: LocalType): LocalType {
+      return input;
+    }
+    return format({ id: 1 });
+  }, []);
+  return handler();
+}
+`,
   `
 import { useCallback } from 'react';
 function Component() {
