@@ -383,7 +383,7 @@ export const preferGetterOverParameterlessMethod = createRule<
       const stack: TSESTree.Node[] = [...body.body];
       while (stack.length) {
         const current = stack.pop() as TSESTree.Node;
-        if (isFunctionLikeNode(current) && current !== body) {
+        if (isFunctionLikeNode(current)) {
           continue;
         }
         if (
