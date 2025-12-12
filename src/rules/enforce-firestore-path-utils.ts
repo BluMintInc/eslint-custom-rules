@@ -23,24 +23,41 @@ export const enforceFirestorePathUtils = createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     function isFirestoreCall(node: TSESTree.CallExpression): boolean {
-      if (node.callee.type !== AST_NODE_TYPES.MemberExpression) {
-        return false;
+      if (
+        node.callee.type === AST_NODE_TYPES.MemberExpression &&
+        node.callee.property.type === AST_NODE_TYPES.Identifier
+      ) {
+        return FIRESTORE_METHODS.has(node.callee.property.name);
       }
 
-      const property = node.callee.property;
-      if (property.type !== AST_NODE_TYPES.Identifier) {
-        return false;
+      if (
+        node.callee.type === AST_NODE_TYPES.Identifier &&
+        FIRESTORE_METHODS.has(node.callee.name)
+      ) {
+        return true;
       }
 
-      return FIRESTORE_METHODS.has(property.name);
+      return false;
     }
 
     function isStringLiteralOrTemplate(node: TSESTree.Node): boolean {
-      return (
-        (node.type === AST_NODE_TYPES.Literal &&
-          typeof node.value === 'string') ||
+      if (
+        (node.type === AST_NODE_TYPES.Literal && typeof node.value === 'string') ||
         node.type === AST_NODE_TYPES.TemplateLiteral
-      );
+      ) {
+        return true;
+      }
+
+      if (
+        node.type === AST_NODE_TYPES.BinaryExpression &&
+        node.operator === '+' &&
+        (isStringLiteralOrTemplate(node.left) ||
+          isStringLiteralOrTemplate(node.right))
+      ) {
+        return true;
+      }
+
+      return false;
     }
 
     function isUtilityFunction(node: TSESTree.Node): boolean {
@@ -63,19 +80,20 @@ export const enforceFirestorePathUtils = createRule<[], MessageIds>({
           return;
         }
 
-        // Check first argument of doc() or collection() call
-        const pathArg = node.arguments[0];
-        if (!pathArg) {
+        const pathArgs = node.arguments;
+        if (pathArgs.length === 0) {
           return;
         }
+
+        const [firstPathArg] = pathArgs;
 
         // Skip if it's already using a utility function
-        if (isUtilityFunction(pathArg)) {
+        if (isUtilityFunction(firstPathArg)) {
           return;
         }
 
-        // Skip if it's a variable or other non-literal expression
-        if (!isStringLiteralOrTemplate(pathArg)) {
+        const pathArg = pathArgs.find((arg) => isStringLiteralOrTemplate(arg));
+        if (!pathArg) {
           return;
         }
 

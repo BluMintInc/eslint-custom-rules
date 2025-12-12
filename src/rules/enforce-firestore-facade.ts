@@ -138,6 +138,30 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
     const batchManagerVariables = new Set<string>();
     const sourceCode = context.getSourceCode();
 
+    const recordRunTransactionCallbackParams = (
+      node: TSESTree.CallExpression,
+    ): void => {
+      const isRunTransaction =
+        (isMemberExpression(node.callee) &&
+          isIdentifier(node.callee.property) &&
+          node.callee.property.name === 'runTransaction') ||
+        (isIdentifier(node.callee) && node.callee.name === 'runTransaction');
+
+      if (!isRunTransaction) return;
+
+      const [callback] = node.arguments;
+      if (
+        callback &&
+        (callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+          callback.type === AST_NODE_TYPES.FunctionExpression)
+      ) {
+        const [transactionParam] = callback.params;
+        if (transactionParam && transactionParam.type === AST_NODE_TYPES.Identifier) {
+          firestoreTransactionVariables.add(transactionParam.name);
+        }
+      }
+    };
+
     const clearFirestoreTrackingFor = (name: string): void => {
       firestoreDocRefVariables.delete(name);
       firestoreCollectionVariables.delete(name);
@@ -220,7 +244,7 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
 
       if (
         target.type === AST_NODE_TYPES.Identifier &&
-        (target.name === 'transaction' || target.name === 'tx' || target.name === 't')
+        firestoreTransactionVariables.has(target.name)
       ) {
         firestoreTransactionVariables.add(varName);
         return true;
@@ -403,13 +427,16 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
           return true;
         }
 
-        if (/^(batch|transaction)$/i.test(name)) {
-          return true;
-        }
+        const lowerName = name.toLowerCase();
+        const looksLikeRefName =
+          name === 'ref' ||
+          name.endsWith('Ref') ||
+          lowerName.endsWith('docref') ||
+          lowerName.endsWith('documentref') ||
+          /doc(ument)?ref/i.test(name);
 
         if (
-          (name.toLowerCase().includes('doc') ||
-            name.toLowerCase().includes('ref')) &&
+          looksLikeRefName &&
           !name.includes('realtimeDb') &&
           !realtimeDbRefVariables.has(name) &&
           !realtimeDbChildVariables.has(name)
@@ -528,6 +555,7 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
         handleAssignmentExpression(node);
       },
       CallExpression(node) {
+        recordRunTransactionCallbackParams(node);
         if (!isFirestoreMethodCall(node)) return;
 
         const callee = node.callee;

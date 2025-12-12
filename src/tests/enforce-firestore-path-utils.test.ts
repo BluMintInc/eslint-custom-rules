@@ -35,6 +35,11 @@ ruleTesterTs.run('enforce-firestore-path-utils', enforceFirestorePathUtils, {
       code: 'db.doc(getPath());',
       filename: 'src/components/User.tsx',
     },
+    // Modular API with utility function should be allowed
+    {
+      code: 'doc(firestore, toUserPath(userId));',
+      filename: 'src/components/User.tsx',
+    },
   ],
   invalid: [
     // String literals
@@ -59,6 +64,23 @@ ruleTesterTs.run('enforce-firestore-path-utils', enforceFirestorePathUtils, {
       code: `db.doc(\`Items/\${
         getItemId()
       }/SubItems/\${subItemId}\`);`,
+      filename: 'src/components/Items.tsx',
+      errors: [{ messageId: 'requirePathUtil' }],
+    },
+    // Binary string concatenation
+    {
+      code: 'doc("users/" + userId);',
+      filename: 'src/components/User.tsx',
+      errors: [{ messageId: 'requirePathUtil' }],
+    },
+    // Modular API with inline string paths
+    {
+      code: 'doc(firestore, "users/" + userId);',
+      filename: 'src/components/User.tsx',
+      errors: [{ messageId: 'requirePathUtil' }],
+    },
+    {
+      code: 'collection(firestore, "users");',
       filename: 'src/components/Items.tsx',
       errors: [{ messageId: 'requirePathUtil' }],
     },
