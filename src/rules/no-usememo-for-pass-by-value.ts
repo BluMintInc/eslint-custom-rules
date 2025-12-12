@@ -37,7 +37,7 @@ const PASS_BY_VALUE_FLAGS =
 type FunctionContext = {
   isHook: boolean;
   hookName?: string;
-  memoVariables: Map<string, TSESTree.CallExpression>;
+  memoVariables: WeakMap<TSESLint.Scope.Variable, TSESTree.CallExpression>;
 };
 
 type UseMemoImports = {
@@ -48,7 +48,7 @@ type UseMemoImports = {
 
 function isCustomHookName(name: string | undefined): boolean {
   if (!name) return false;
-  return name.startsWith('use') && name.length > 3 && /[A-Z0-9]/.test(name[3]);
+  return name.startsWith('use') && name.length > 3;
 }
 
 function getFunctionName(
@@ -440,10 +440,10 @@ function shouldParenthesizeReplacement(
   replacementExpression: TSESTree.Expression,
   sourceCode: Readonly<TSESLint.SourceCode>,
 ): boolean {
-  if (ASTUtils.isParenthesized(replacementExpression, sourceCode)) {
-    return false;
-  }
-
+  const alreadyParenthesized = ASTUtils.isParenthesized(
+    replacementExpression,
+    sourceCode,
+  );
   const parent = node.parent;
   if (!parent) {
     return false;
@@ -459,7 +459,10 @@ function shouldParenthesizeReplacement(
   switch (parent.type) {
     case AST_NODE_TYPES.LogicalExpression:
     case AST_NODE_TYPES.BinaryExpression:
-      return !isSafeAtomicExpression(replacementExpression);
+      return (
+        alreadyParenthesized ||
+        !isSafeAtomicExpression(replacementExpression)
+      );
     case AST_NODE_TYPES.UnaryExpression:
     case AST_NODE_TYPES.AwaitExpression:
     case AST_NODE_TYPES.MemberExpression:
@@ -469,10 +472,14 @@ function shouldParenthesizeReplacement(
       return true;
     case AST_NODE_TYPES.TSAsExpression:
     case AST_NODE_TYPES.TSTypeAssertion:
-      return !isSafeAtomicExpression(replacementExpression);
+      return (
+        alreadyParenthesized ||
+        !isSafeAtomicExpression(replacementExpression)
+      );
     case AST_NODE_TYPES.CallExpression:
     case AST_NODE_TYPES.NewExpression:
       return (
+        alreadyParenthesized ||
         parent.callee === node ||
         replacementExpression.type === AST_NODE_TYPES.SequenceExpression
       );
@@ -572,6 +579,8 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
 
     const functionStack: FunctionContext[] = [];
     const reported = new WeakSet<TSESTree.CallExpression>();
+    const resolveVariable = (identifier: TSESTree.Identifier) =>
+      ASTUtils.findVariable(context.getScope(), identifier) ?? null;
 
     function handleUseMemoCall(
       node: TSESTree.CallExpression,
@@ -590,6 +599,9 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
         return;
       }
       const returnedExpression = getReturnedExpression(callback);
+      if (!returnedExpression) {
+        return;
+      }
 
       if (isExpensiveComputation(callback, expensiveMatchers)) {
         return;
@@ -692,7 +704,10 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
           }
           return;
         case AST_NODE_TYPES.Identifier: {
-          const memoCall = currentContext.memoVariables.get(expression.name);
+          const variable = resolveVariable(expression);
+          const memoCall = variable
+            ? currentContext.memoVariables.get(variable)
+            : undefined;
           if (memoCall) {
             handleUseMemoCall(memoCall, currentContext);
           }
@@ -706,6 +721,12 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
           analyzeReturnedValue(expression.left, currentContext);
           analyzeReturnedValue(expression.right, currentContext);
           return;
+        case AST_NODE_TYPES.BinaryExpression:
+          if (expression.left.type !== AST_NODE_TYPES.PrivateIdentifier) {
+            analyzeReturnedValue(expression.left, currentContext);
+          }
+          analyzeReturnedValue(expression.right, currentContext);
+          return;
         case AST_NODE_TYPES.SequenceExpression: {
           const lastExpression =
             expression.expressions[expression.expressions.length - 1];
@@ -715,6 +736,7 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
         case AST_NODE_TYPES.TSAsExpression:
         case AST_NODE_TYPES.TSTypeAssertion:
         case AST_NODE_TYPES.TSNonNullExpression:
+        case AST_NODE_TYPES.TSSatisfiesExpression:
         case AST_NODE_TYPES.ChainExpression:
           analyzeReturnedValue(expression.expression, currentContext);
           return;
@@ -730,7 +752,7 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
         functionStack.push({
           isHook: isCustomHookName(name),
           hookName: name,
-          memoVariables: new Map(),
+          memoVariables: new WeakMap(),
         });
       },
       'FunctionDeclaration:exit'() {
@@ -741,7 +763,7 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
         functionStack.push({
           isHook: isCustomHookName(name),
           hookName: name,
-          memoVariables: new Map(),
+          memoVariables: new WeakMap(),
         });
       },
       'FunctionExpression:exit'() {
@@ -752,7 +774,7 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
         functionStack.push({
           isHook: isCustomHookName(name),
           hookName: name,
-          memoVariables: new Map(),
+          memoVariables: new WeakMap(),
         });
       },
       'ArrowFunctionExpression:exit'(node: TSESTree.ArrowFunctionExpression) {
@@ -774,21 +796,35 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
           return;
         }
 
-        currentContext.memoVariables.set(node.id.name, node.init);
+        const variable = resolveVariable(node.id);
+        if (variable) {
+          currentContext.memoVariables.set(variable, node.init);
+        }
       },
       AssignmentExpression(node: TSESTree.AssignmentExpression) {
         const currentContext = functionStack[functionStack.length - 1];
         if (
           !currentContext?.isHook ||
           node.operator !== '=' ||
-          node.left.type !== AST_NODE_TYPES.Identifier ||
-          node.right.type !== AST_NODE_TYPES.CallExpression ||
-          !isUseMemoCall(node.right, imports)
+          node.left.type !== AST_NODE_TYPES.Identifier
         ) {
           return;
         }
 
-        currentContext.memoVariables.set(node.left.name, node.right);
+        const variable = resolveVariable(node.left);
+        if (!variable) {
+          return;
+        }
+
+        if (
+          node.right.type === AST_NODE_TYPES.CallExpression &&
+          isUseMemoCall(node.right, imports)
+        ) {
+          currentContext.memoVariables.set(variable, node.right);
+          return;
+        }
+
+        currentContext.memoVariables.delete(variable);
       },
       ReturnStatement(node: TSESTree.ReturnStatement) {
         const currentContext = functionStack[functionStack.length - 1];

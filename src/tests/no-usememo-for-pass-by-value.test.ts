@@ -155,6 +155,49 @@ ${typedPrelude}
       }
       `,
     },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useReassigned(flag: boolean) {
+        let memoized = useMemo(() => flag, [flag]);
+        memoized = flag ? 1 : 0;
+        return memoized;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useShadowed(value: string, flag: boolean) {
+        const memo = useMemo(() => ({ label: value }), [value]);
+        if (flag) {
+          const memo = useMemo(() => value.length, [value]);
+          console.log(memo);
+        }
+        return memo;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useBlockWithStatements(slug: string) {
+        return useMemo(() => {
+          const value = slug.toUpperCase();
+          return value;
+        }, [slug]);
+      }
+      `,
+    },
   ],
   invalid: [
     {
@@ -501,6 +544,57 @@ ${typedPrelude}
       output: `
 ${typedPrelude}export const useArrowSequence = (first: number, second: number) =>
         (first, second);
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function usevalue(slug: string) {
+        return useMemo(() => slug, [slug]);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}export function usevalue(slug: string) {
+        return slug;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useMath(value: number) {
+        return useMemo(() => (value + 1), [value]) * 2;
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}export function useMath(value: number) {
+        return (value + 1) * 2;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useSatisfies(value: string) {
+        return useMemo(() => value, [value]) satisfies string;
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}export function useSatisfies(value: string) {
+        return value satisfies string;
+      }
       `,
     },
   ],
