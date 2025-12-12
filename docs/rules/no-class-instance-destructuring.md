@@ -8,7 +8,7 @@
 
 ## Rule Details
 
-Destructuring a class instance pulls methods and getters into standalone variables. Once detached, those members lose their implicit `this` context and getters become one-time snapshots, which leads to runtime errors or stale reads when they are invoked later. This rule keeps member access tied to the originating instance so the dependency on `this` stays obvious and you can bind methods explicitly when you need to pass them around.
+Destructuring a class instance pulls methods and getters into standalone variables. Once detached, those members lose their implicit `this` context and getters become one-time snapshots. This leads to runtime errors or stale reads when they are invoked later. This rule keeps member access tied to the originating instance so the dependency on `this` stays obvious, and you can bind methods explicitly when you need to pass them around.
 
 ### ❌ Incorrect
 

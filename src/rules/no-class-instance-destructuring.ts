@@ -133,7 +133,6 @@ export const noClassInstanceDestructuring = createRule<[], MessageIds>({
 
               // Skip if there's no init expression
               if (!node.init) return null;
-              const initValueText = sourceCode.getText(node.init as TSESTree.Node);
 
               // For single property, use simple replacement
               if (properties.length === 1) {
@@ -143,7 +142,7 @@ export const noClassInstanceDestructuring = createRule<[], MessageIds>({
                     prop.value.type === AST_NODE_TYPES.Identifier
                       ? prop.value.name
                       : sourceCode.getText(prop.value);
-                  const accessPath = buildAccessPath(initValueText, prop);
+                  const accessPath = buildAccessPath(initText, prop);
                   return fixer.replaceText(
                     node,
                     `${value} = ${accessPath}`,
@@ -163,7 +162,7 @@ export const noClassInstanceDestructuring = createRule<[], MessageIds>({
                     prop.value.type === AST_NODE_TYPES.Identifier
                       ? prop.value.name
                       : sourceCode.getText(prop.value);
-                  const accessPath = buildAccessPath(initValueText, prop);
+                  const accessPath = buildAccessPath(initText, prop);
                   return `${value} = ${accessPath}`;
                 })
                 .join(';\nconst ');
