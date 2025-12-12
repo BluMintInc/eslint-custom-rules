@@ -12,7 +12,7 @@ type RuleError = {
 };
 
 const avoidEntireObjectMessage =
-  'What\'s wrong: Dependency array includes entire object "{{objectName}}". Why it matters: Any change to its other properties reruns the hook even though only {{fields}} are read inside, creating extra renders and stale memoized values. How to fix: Depend on those fields instead.';
+  'What\'s wrong: Dependency array includes entire object "{{objectName}}". Why it matters: Any change to its other properties reruns the hook even though the hook reads only {{fields}}, creating extra renders and stale memoized values. How to fix: Depend on those fields instead.';
 
 const removeUnusedDependencyMessage =
   'What\'s wrong: Dependency "{{objectName}}" is listed in the array but never read inside the hook body. Why it matters: The hook reruns when "{{objectName}}" changes without affecting the result and can hide the real missing dependency. How to fix: Remove it or add the specific value that actually drives the hook.';
