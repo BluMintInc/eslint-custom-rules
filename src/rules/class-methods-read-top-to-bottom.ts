@@ -27,7 +27,11 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
     schema: [],
     messages: {
       classMethodsReadTopToBottom:
-        'Class "{{className}}" breaks top-to-bottom flow: "{{actualMember}}" appears before "{{expectedMember}}", which forces readers to jump backward to understand the call chain. Place "{{expectedMember}}" above "{{actualMember}}" so properties, constructors, and the helpers they rely on read downward without backtracking.',
+        [
+          "What's wrong: In {{className}}, {{actualMember}} appears before {{expectedMember}}.",
+          'Why it matters: This forces you to scroll upward to understand the call chain and control flow.',
+          'How to fix: Move {{expectedMember}} above {{actualMember}} so the class reads top-to-bottom (fields -> constructor -> callers -> helpers).',
+        ].join('\n'),
     },
     fixable: 'code', // To allow ESLint to autofix issues.
   },

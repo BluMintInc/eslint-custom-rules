@@ -6,13 +6,13 @@
 
 <!-- end auto-generated rule header -->
 
-Classes should read like a top-to-bottom story: fields establish state, the constructor introduces the entry path, and each caller appears before the helper it relies on. When members appear out of that sequence, readers must jump backward to rediscover dependencies and control flow. This rule keeps the class layout linear so callers lead into the helpers they rely on.
+Your classes should read like a top-to-bottom story: your fields (properties) establish state, your constructor introduces the entry path, and each caller appears before the helper it relies on. When members fall out of that sequence, you force readers to jump backward to rediscover dependencies and control flow. This rule keeps your class layout linear so callers lead into the helpers they rely on.
 
 ## Rule Details
 
-- Fields belong at the top, ordered by static and accessibility priority.
-- Constructors come before other methods.
-- Callers stay above the methods they invoke so readers can scan downward without backtracking.
+- Keep your fields at the top so state is established first.
+- Place the constructor before other methods.
+- Keep callers above the methods they invoke so you can scan downward without backtracking.
 
 ### Examples of incorrect code for this rule:
 
@@ -54,4 +54,4 @@ class CorrectlyOrdered {
 }
 ```
 
-In the correct version, properties lead, the constructor sets the initial flow, and each caller appears before the helper it relies on, allowing the class to be read straight down. When the rule reports a violation, move the reported dependency above the caller so the class flows from state, to constructor, to callers, and finally to helpers—no backward scrolling required.
+In the correct version, fields lead, the constructor sets the initial flow, and each caller appears before the helper it relies on, allowing the class to be read straight down. When the rule reports a violation, move the reported dependency above the caller so the class flows from state, to constructor, to callers, and finally to helpers—no backward scrolling required.
