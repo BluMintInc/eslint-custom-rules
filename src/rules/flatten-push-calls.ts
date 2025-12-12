@@ -153,10 +153,12 @@ function isPushCallStatement(
 }
 
 function getLineIndent(
-  node: TSESTree.Node,
+  targetNode: TSESTree.Node,
   sourceCode: TSESLint.SourceCode,
 ): string {
-  const start = node.range?.[0] ?? sourceCode.getIndexFromLoc(node.loc.start);
+  const start =
+    targetNode.range?.[0] ??
+    sourceCode.getIndexFromLoc(targetNode.loc.start);
   const text = sourceCode.text;
   const lineStart = text.lastIndexOf('\n', start - 1) + 1;
   const indentMatch = text.slice(lineStart, start).match(/^[\t ]*/u);
