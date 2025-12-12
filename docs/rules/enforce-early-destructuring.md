@@ -90,3 +90,4 @@ useEffect(() => {
 
 - Destructuring relies on a type-narrowed branch and cannot be safely hoisted.
 - The hook callback is intentionally async and depends on values resolved inside it.
+- Hoisting would introduce scope/name collisions or change runtime behavior; in these cases the rule reports but withholds the autofix to avoid unsafe rewrites.

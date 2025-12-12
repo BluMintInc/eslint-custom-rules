@@ -21,6 +21,43 @@ type DestructuringGroup = {
 
 const HOOK_NAMES = new Set(['useEffect', 'useMemo', 'useCallback', 'useLayoutEffect']);
 
+type ParenthesizedExpressionLike = TSESTree.Expression & {
+  type: 'ParenthesizedExpression';
+  expression: TSESTree.Expression;
+};
+
+function isParenthesizedExpression(
+  expression: TSESTree.Expression,
+): expression is ParenthesizedExpressionLike {
+  return (expression as { type: string }).type === 'ParenthesizedExpression';
+}
+
+function unwrapTsExpression(expression: TSESTree.Expression): TSESTree.Expression {
+  let current: TSESTree.Expression = expression;
+  // Loop to peel off TS/paren wrappers that do not change the underlying value.
+  // The explicit loop keeps TypeScript aware that `current` always has an
+  // `.expression` property inside the branch.
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    if (
+      current.type === AST_NODE_TYPES.TSNonNullExpression ||
+      current.type === AST_NODE_TYPES.TSAsExpression ||
+      current.type === AST_NODE_TYPES.TSTypeAssertion ||
+      isParenthesizedExpression(current)
+    ) {
+      const nodeWithExpression = current as
+        | TSESTree.TSNonNullExpression
+        | TSESTree.TSAsExpression
+        | TSESTree.TSTypeAssertion
+        | ParenthesizedExpressionLike;
+      current = nodeWithExpression.expression as TSESTree.Expression;
+      continue;
+    }
+    break;
+  }
+  return current;
+}
+
 function isFunctionNode(
   node: TSESTree.Node,
 ): node is TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression {
@@ -37,38 +74,39 @@ function isHookCall(node: TSESTree.CallExpression): string | null {
 }
 
 function isAllowedInit(init: TSESTree.Expression): boolean {
-  if (init.type === AST_NODE_TYPES.Identifier) return true;
-  if (init.type === AST_NODE_TYPES.MemberExpression) return true;
-  if (init.type === AST_NODE_TYPES.ChainExpression) {
-    return init.expression.type === AST_NODE_TYPES.MemberExpression;
-  }
-  if (init.type === AST_NODE_TYPES.TSNonNullExpression) {
-    return isAllowedInit(init.expression);
+  const unwrapped = unwrapTsExpression(init);
+  if (unwrapped.type === AST_NODE_TYPES.Identifier) return true;
+  if (unwrapped.type === AST_NODE_TYPES.MemberExpression) return true;
+  if (unwrapped.type === AST_NODE_TYPES.ChainExpression) {
+    const inner = unwrapTsExpression(unwrapped.expression as TSESTree.Expression);
+    return inner.type === AST_NODE_TYPES.MemberExpression;
   }
   return false;
 }
 
 function getBaseIdentifier(init: TSESTree.Expression): string | null {
-  if (init.type === AST_NODE_TYPES.Identifier) {
-    return init.name;
+  const unwrapped = unwrapTsExpression(init);
+  if (unwrapped.type === AST_NODE_TYPES.Identifier) {
+    return unwrapped.name;
   }
 
-  if (init.type === AST_NODE_TYPES.MemberExpression) {
-    let current: TSESTree.Node = init.object;
+  if (unwrapped.type === AST_NODE_TYPES.MemberExpression) {
+    let current: TSESTree.Expression = unwrapTsExpression(
+      unwrapped.object as TSESTree.Expression,
+    );
     while (current.type === AST_NODE_TYPES.MemberExpression) {
-      current = current.object;
+      current = unwrapTsExpression(current.object as TSESTree.Expression);
     }
     if (current.type === AST_NODE_TYPES.Identifier) {
       return current.name;
     }
+    if (current.type === AST_NODE_TYPES.ChainExpression) {
+      return getBaseIdentifier(current.expression);
+    }
   }
 
-  if (init.type === AST_NODE_TYPES.ChainExpression) {
-    return getBaseIdentifier(init.expression);
-  }
-
-  if (init.type === AST_NODE_TYPES.TSNonNullExpression) {
-    return getBaseIdentifier(init.expression);
+  if (unwrapped.type === AST_NODE_TYPES.ChainExpression) {
+    return getBaseIdentifier(unwrapped.expression);
   }
 
   return null;
@@ -185,6 +223,85 @@ function collectNamesFromArrayPattern(
       handleRestElementNodeNames(element, names, orderedNames);
     }
   }
+}
+
+function collectBindingNamesFromBindingName(
+  binding: TSESTree.BindingName,
+  names: Set<string>,
+): void {
+  if (binding.type === AST_NODE_TYPES.Identifier) {
+    names.add(binding.name);
+    return;
+  }
+  if (binding.type === AST_NODE_TYPES.ObjectPattern) {
+    collectNamesFromPattern(binding, names, []);
+    return;
+  }
+  collectNamesFromArrayPattern(binding, names, []);
+}
+
+function collectBindingNamesFromParamLike(
+  node: TSESTree.BindingName | TSESTree.AssignmentPattern | TSESTree.RestElement,
+  names: Set<string>,
+): void {
+  if (node.type === AST_NODE_TYPES.AssignmentPattern) {
+    collectBindingNamesFromParamLike(
+      node.left as TSESTree.BindingName | TSESTree.AssignmentPattern | TSESTree.RestElement,
+      names,
+    );
+    return;
+  }
+  if (node.type === AST_NODE_TYPES.RestElement) {
+    collectBindingNamesFromParamLike(
+      node.argument as TSESTree.BindingName | TSESTree.AssignmentPattern,
+      names,
+    );
+    return;
+  }
+  collectBindingNamesFromBindingName(node, names);
+}
+
+function collectExistingBindings(
+  callback: TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression,
+  declarationsToRemove: Set<TSESTree.Node>,
+): Set<string> {
+  const names = new Set<string>();
+
+  for (const param of callback.params) {
+    if (param) {
+      collectBindingNamesFromParamLike(
+        param as TSESTree.BindingName | TSESTree.AssignmentPattern | TSESTree.RestElement,
+        names,
+      );
+    }
+  }
+
+  if (callback.body.type !== AST_NODE_TYPES.BlockStatement) {
+    return names;
+  }
+
+  for (const statement of callback.body.body) {
+    if (statement.type === AST_NODE_TYPES.FunctionDeclaration && statement.id) {
+      names.add(statement.id.name);
+    }
+
+    if (
+      statement.type === AST_NODE_TYPES.VariableDeclaration &&
+      !declarationsToRemove.has(statement)
+    ) {
+      for (const declarator of statement.declarations) {
+        collectBindingNamesFromParamLike(
+          declarator.id as
+            | TSESTree.BindingName
+            | TSESTree.AssignmentPattern
+            | TSESTree.RestElement,
+          names,
+        );
+      }
+    }
+  }
+
+  return names;
 }
 
 function collectProperties(
@@ -518,22 +635,58 @@ function getIndentation(
   return match ? match[0] : '';
 }
 
-function fullLineRange(
+function removalRange(
   node: TSESTree.Node,
   sourceCode: TSESLint.SourceCode,
 ): [number, number] {
   const text = sourceCode.getText();
-  const start = text.lastIndexOf('\n', node.range![0] - 1) + 1;
-  const lineEnd = text.indexOf('\n', node.range![1]);
-  const end = lineEnd === -1 ? text.length : lineEnd + 1;
-  return [start, end];
+  const range = node.range!;
+  const lineStart = text.lastIndexOf('\n', range[0] - 1) + 1;
+  const lineEnd = text.indexOf('\n', range[1]);
+  const endOfLine = lineEnd === -1 ? text.length : lineEnd;
+  const leading = text.slice(lineStart, range[0]);
+  const trailing = text.slice(range[1], endOfLine);
+  if (/^[\t ]*$/.test(leading) && /^[\t ;]*$/.test(trailing)) {
+    return [lineStart, lineEnd === -1 ? text.length : lineEnd + 1];
+  }
+  if (/^[\t ;]*$/.test(trailing)) {
+    return [range[0], lineEnd === -1 ? text.length : lineEnd + 1];
+  }
+  if (text[range[1]] === ' ') {
+    return [range[0], range[1] + 1];
+  }
+  return [range[0], range[1]];
+}
+
+function isAnyFunctionLikeNode(node: TSESTree.Node): boolean {
+  return (
+    node.type === AST_NODE_TYPES.FunctionExpression ||
+    node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+    node.type === AST_NODE_TYPES.FunctionDeclaration ||
+    node.type === AST_NODE_TYPES.TSDeclareFunction
+  );
 }
 
 function shouldSkipNestedFunction(
   candidateNode: TSESTree.Node,
   callback: TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression,
 ): boolean {
-  return isFunctionNode(candidateNode) && candidateNode !== callback;
+  return isAnyFunctionLikeNode(candidateNode) && candidateNode !== callback;
+}
+
+function hasCrossGroupNameCollision(groups: Map<string, DestructuringGroup>): boolean {
+  const nameToObjects = new Map<string, Set<string>>();
+  for (const group of groups.values()) {
+    for (const name of group.names) {
+      const seen = nameToObjects.get(name) ?? new Set<string>();
+      seen.add(group.objectText);
+      nameToObjects.set(name, seen);
+      if (seen.size > 1) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function hasPriorConditionalGuard(
@@ -633,8 +786,15 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
                   (prop) => prop.type === AST_NODE_TYPES.RestElement,
                 )
               ) {
-                const objectText = sourceCode.getText(declarator.init);
-                if (!depTextSet.has(objectText)) continue;
+                const initText = sourceCode.getText(declarator.init);
+                const normalizedInit = unwrapTsExpression(declarator.init);
+                const normalizedText = sourceCode.getText(normalizedInit);
+                const depKey = depTextSet.has(initText)
+                  ? initText
+                  : depTextSet.has(normalizedText)
+                  ? normalizedText
+                  : null;
+                if (!depKey) continue;
 
                 const baseName = getBaseIdentifier(declarator.init);
                 if (
@@ -644,7 +804,7 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
                   continue;
                 }
 
-                const existingGroup = groups.get(objectText);
+                const existingGroup = groups.get(depKey);
                 const properties = existingGroup?.properties ?? new Map();
                 collectProperties(declarator.id, sourceCode, properties);
 
@@ -658,8 +818,8 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
                 const inits = existingGroup?.inits ?? [];
                 inits.push(declarator.init);
 
-                groups.set(objectText, {
-                  objectText,
+                groups.set(depKey, {
+                  objectText: initText,
                   properties,
                   names,
                   orderedNames,
@@ -714,6 +874,10 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
             dependencies: dependencyList,
           },
           fix(fixer) {
+            if (hasCrossGroupNameCollision(groups)) {
+              return null;
+            }
+
             const indent = getIndentation(node, sourceCode);
 
             const hoistedLines: string[] = [];
@@ -726,9 +890,19 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
               group.inits.forEach((init) => initsToIgnore.add(init));
             }
 
+            const existingBindings = collectExistingBindings(callback, declarationsToRemove);
+
             for (const group of groups.values()) {
+              for (const name of group.names) {
+                if (existingBindings.has(name)) {
+                  return null;
+                }
+              }
+            }
+
+            for (const [depKey, group] of groups.entries()) {
               if (!group.baseName) {
-                baseUsageByObject.set(group.objectText, true);
+                baseUsageByObject.set(depKey, true);
                 continue;
               }
 
@@ -739,7 +913,7 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
                 initsToIgnore,
                 visitorKeys,
               );
-              baseUsageByObject.set(group.objectText, usesBase);
+              baseUsageByObject.set(depKey, usesBase);
             }
 
             const newDepTexts = depTexts.filter((text) => {
@@ -779,7 +953,7 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
 
             for (const decl of declarationsToRemove) {
               fixes.push(
-                fixer.removeRange(fullLineRange(decl, sourceCode)),
+                fixer.removeRange(removalRange(decl, sourceCode)),
               );
             }
 

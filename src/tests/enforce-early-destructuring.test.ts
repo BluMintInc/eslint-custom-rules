@@ -122,6 +122,19 @@ ruleTesterJsx.run(
           };
         `,
       },
+      {
+        code: `
+          const MyComponent = ({ user }) => {
+            useEffect(() => {
+              function helper() {
+                const { name } = user;
+                log(name);
+              }
+              helper();
+            }, [user]);
+          };
+        `,
+      },
     ],
     invalid: [
       {
@@ -407,6 +420,57 @@ ruleTesterJsx.run(
               logUser(name);
               console.log(user.status);
             }, [user, name]);
+          };
+        `,
+        errors: [{ messageId: 'hoistDestructuring' }],
+      },
+      {
+        code: `
+          const MyComponent = ({ user }) => {
+            useEffect(() => {
+              const { name } = user as User;
+              logUser(name);
+            }, [user]);
+          };
+        `,
+        output: `
+          const MyComponent = ({ user }) => {
+            const { name } = (user as User) ?? {};
+            useEffect(() => {
+              logUser(name);
+            }, [name]);
+          };
+        `,
+        errors: [{ messageId: 'hoistDestructuring' }],
+      },
+      {
+        code: `
+          const MyComponent = ({ obj1, obj2 }) => {
+            useEffect(() => {
+              if (conditionA) {
+                const { id } = obj1;
+                use(id);
+              }
+              if (conditionB) {
+                const { id } = obj2;
+                use(id);
+              }
+            }, [obj1, obj2]);
+          };
+        `,
+        output: null,
+        errors: [{ messageId: 'hoistDestructuring' }],
+      },
+      {
+        code: `
+          const MyComponent = ({ user }) => {
+            useEffect(() => { const { name } = user; const extra = 1; log(name, extra); }, [user]);
+          };
+        `,
+        output: `
+          const MyComponent = ({ user }) => {
+            const { name } = (user) ?? {};
+            useEffect(() => { const extra = 1; log(name, extra); }, [name]);
           };
         `,
         errors: [{ messageId: 'hoistDestructuring' }],
