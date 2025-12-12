@@ -6,10 +6,19 @@
 
 <!-- end auto-generated rule header -->
 
-**You must not use `array.length` in React hook dependency arrays. Instead, memoize `stableHash(array)` with `useMemo` and depend on that hash.**
+**Prevent using `array.length` in React hook dependency arrays. Track the array contents via a memoized `stableHash(array)` and depend on the hash instead so hooks rerun when values change, not just when the array size changes.**
 
-- Why: Using only the length of an array in a deps array fails when the contents change but the length stays the same. This causes stale effects and subtle bugs.
-- Fix: Create a memoized hash with `useMemo(() => stableHash(array), [array])` and use that variable as the dependency.
+## Why this rule matters
+
+- `length` only changes when items are added or removed. Sorting, replacing items in place, or mutating objects leaves `length` untouched, so effects and callbacks keep stale closures.
+- Depending on a stable hash of the array content forces hooks to rerun when values change without relying on array identity. This prevents silent failures where UI or side effects fall behind data.
+- The fixer wires in `stableHash` and `useMemo` so the dependency remains referentially stable and safe to share across hooks.
+
+## How to fix
+
+- Memoize a content hash: `const itemsHash = useMemo(() => stableHash(items), [items]);`
+- Use the hash in dependency arrays: `[itemsHash]` instead of `[items.length]`.
+- Imports for `useMemo` and `stableHash` are added automatically by the fixer.
 
 ## Rule Details
 
