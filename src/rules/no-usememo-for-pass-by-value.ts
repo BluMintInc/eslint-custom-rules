@@ -472,6 +472,7 @@ function shouldParenthesizeReplacement(
       return true;
     case AST_NODE_TYPES.TSAsExpression:
     case AST_NODE_TYPES.TSTypeAssertion:
+    case AST_NODE_TYPES.TSSatisfiesExpression:
       return (
         alreadyParenthesized ||
         !isSafeAtomicExpression(replacementExpression)
@@ -733,6 +734,35 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
           analyzeReturnedValue(lastExpression, currentContext);
           return;
         }
+        case AST_NODE_TYPES.ArrayExpression:
+          for (const element of expression.elements) {
+            if (!element) {
+              continue;
+            }
+            if (element.type === AST_NODE_TYPES.SpreadElement) {
+              analyzeReturnedValue(element.argument, currentContext);
+              continue;
+            }
+            analyzeReturnedValue(element, currentContext);
+          }
+          return;
+        case AST_NODE_TYPES.ObjectExpression:
+          for (const property of expression.properties) {
+            if (property.type === AST_NODE_TYPES.SpreadElement) {
+              analyzeReturnedValue(property.argument, currentContext);
+              continue;
+            }
+            if (
+              property.type === AST_NODE_TYPES.Property &&
+              property.value
+            ) {
+              analyzeReturnedValue(
+                property.value as TSESTree.Expression,
+                currentContext,
+              );
+            }
+          }
+          return;
         case AST_NODE_TYPES.TSAsExpression:
         case AST_NODE_TYPES.TSTypeAssertion:
         case AST_NODE_TYPES.TSNonNullExpression:

@@ -74,17 +74,6 @@ ${typedPrelude}
       code: `
 ${typedPrelude}
       import { useMemo } from 'react';
-
-      export function useWrapper(value: string) {
-        const memoized = useMemo(() => value.toUpperCase(), [value]);
-        return { memoized };
-      }
-      `,
-    },
-    {
-      ...baseOptions,
-      code: `
-${typedPrelude}
       export function useDirect(value: number) {
         return value + 1;
       }
@@ -586,6 +575,40 @@ ${typedPrelude}export function useMath(value: number) {
 ${typedPrelude}
       import { useMemo } from 'react';
 
+      export function useArrayWrapper(flag: boolean) {
+        return [useMemo(() => flag || !flag, [flag])];
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}export function useArrayWrapper(flag: boolean) {
+        return [flag || !flag];
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useObjectWrapper(flag: boolean) {
+        return { value: useMemo(() => (flag ? 1 : 2), [flag]) };
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}export function useObjectWrapper(flag: boolean) {
+        return { value: flag ? 1 : 2 };
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
       export function useSatisfies(value: string) {
         return useMemo(() => value, [value]) satisfies string;
       }
@@ -594,6 +617,23 @@ ${typedPrelude}
       output: `
 ${typedPrelude}export function useSatisfies(value: string) {
         return value satisfies string;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useSatisfiesLogical(flag: boolean, fallback: boolean) {
+        return useMemo(() => flag || fallback, [flag, fallback]) satisfies boolean;
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}export function useSatisfiesLogical(flag: boolean, fallback: boolean) {
+        return (flag || fallback) satisfies boolean;
       }
       `,
     },
