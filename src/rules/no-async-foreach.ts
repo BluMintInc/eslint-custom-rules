@@ -47,7 +47,7 @@ const findVariableInScope = (
   return null;
 };
 
-const getAsyncCallbackInfo = (
+const analyzeCallbackAsyncStatus = (
   callback: TSESTree.CallExpressionArgument,
   scope: TSESLint.Scope.Scope | null,
 ): { callbackLabel: string } | null => {
@@ -126,7 +126,7 @@ export const noAsyncForEach: TSESLint.RuleModule<'noAsyncForEach', []> = {
                 ) => TSESLint.Scope.Scope | null;
               }
             ).getScope?.(callback) ?? context.getScope();
-          const asyncCallbackInfo = getAsyncCallbackInfo(
+          const asyncCallbackInfo = analyzeCallbackAsyncStatus(
             callback,
             scope,
           );
