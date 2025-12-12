@@ -10,20 +10,20 @@ Pair every user-facing alert opened via `useAlertDialog` with console logging so
 
 - Error and warning dialogs without console logs leave no breadcrumbs in monitoring tools, making triage and correlation difficult.
 - Logging inside the same function scope ensures the log corresponds to the exact `open()` call, even inside nested callbacks or async flows.
-- Dynamic severity values can render either an error or a warning; logging both prevents silent branches that hide production issues.
+- Dynamic severity values can render either an error or a warning; logging each branch prevents silent paths and keeps observability aligned to severity.
 
 ## Rule Details
 
 The rule reports when:
 
-- `open()` receives `severity: 'error'` but the containing function scope has no `console.error`.
-- `open()` receives `severity: 'warning'` but the containing function scope has no `console.warn`.
-- `open()` receives a non-literal or dynamic severity and the containing function scope has neither `console.error` nor `console.warn`.
+- An error dialog (`severity: 'error'`) is opened without a `console.error` in the containing function scope.
+- A warning dialog (`severity: 'warning'`) is opened without a `console.warn` in the containing function scope.
+- `severity` is dynamic or non-literal and the containing function scope has neither `console.error` nor `console.warn`.
 
 ## How to Fix
 
 - Log the same message shown to the user with `console.error` or `console.warn` in the same function that calls `open()`.
-- When severity is dynamic (variables, expressions, computed keys), include both `console.error` and `console.warn` so any branch that renders is logged.
+- When severity is dynamic (variables, expressions, computed keys), log within each branch (e.g., `console.error` when `severity === 'error'`, `console.warn` otherwise) so whichever path runs leaves a breadcrumb without double-logging.
 
 ## Examples
 
@@ -54,8 +54,12 @@ export const useDialogs = () => {
   };
 
   const showDynamic = (severity: 'error' | 'warning', message: string) => {
-    console.error('Potential error dialog', message);
-    console.warn('Potential warning dialog', message);
+    if (severity === 'error') {
+      console.error('Error dialog', message);
+    } else {
+      console.warn('Warning dialog', message);
+    }
+
     open({
       title: 'Alert',
       description: message,
