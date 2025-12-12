@@ -280,7 +280,7 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
             if (
               isUtilityType(currentType) &&
               currentType.typeParameters?.params?.[0] &&
-              checkIdField(currentType.typeParameters.params[0])
+              checkIdField(currentType.typeParameters.params[0], visitedTypes)
             ) {
               return true;
             }
