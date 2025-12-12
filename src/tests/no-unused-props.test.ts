@@ -327,6 +327,23 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         sourceType: 'module',
       },
     },
+    {
+      code: `
+        type Props = Record<'foo' | 'bar', string>;
+        const Component = ({ foo, bar }: Props) => (
+          <div>
+            {foo}
+            {bar}
+          </div>
+        );
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
   ],
   invalid: [
     {
@@ -460,6 +477,25 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
           messageId: 'unusedProp',
           data: { propName: 'missing' },
           type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type Props = Record<'foo' | 'bar', string>;
+        const Component = ({ foo }: Props) => <div>{foo}</div>;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'bar' },
+          type: AST_NODE_TYPES.Literal,
         },
       ],
       filename: 'test.tsx',

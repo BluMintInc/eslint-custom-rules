@@ -37,19 +37,7 @@ export const noUnusedProps = createRule({
 
     const shouldCheckFile = () => isTsxFile || hasJsxInFile;
 
-    const UTILITY_TYPES = new Set([
-      'Pick',
-      'Omit',
-      'Partial',
-      'Required',
-      'Record',
-      'Exclude',
-      'Extract',
-      'NonNullable',
-      'ReturnType',
-      'InstanceType',
-      'ThisType',
-    ]);
+    const UTILITY_TYPES = new Set(['Partial', 'Required', 'NonNullable', 'Readonly']);
 
     const propsTypes: Map<string, Record<string, TSESTree.Node>> = new Map();
     // Track which spread types have been used in a component
@@ -455,6 +443,7 @@ export const noUnusedProps = createRule({
                 }
                 const referenceName = typeNode.typeName.name;
                 const nextOrigin = originSpreadTypeName ?? referenceName;
+                const typeParameters = typeNode.typeParameters?.params;
 
                 if (
                   referenceName === 'Pick' &&
@@ -506,10 +495,23 @@ export const noUnusedProps = createRule({
                 }
 
                 if (
-                  UTILITY_TYPES.has(referenceName) &&
-                  typeNode.typeParameters?.params.length
+                  referenceName === 'Record' &&
+                  typeParameters &&
+                  typeParameters.length >= 2
                 ) {
-                  const [baseType] = typeNode.typeParameters.params;
+                  const [keysType] = typeParameters;
+                  collectStringLiterals(keysType, (value, literal) =>
+                    addPropIfAllowed(value, literal),
+                  );
+                  return;
+                }
+
+                if (
+                  UTILITY_TYPES.has(referenceName) &&
+                  typeParameters &&
+                  typeParameters.length
+                ) {
+                  const [baseType] = typeParameters;
                   const baseTypeOrigin =
                     originSpreadTypeName ||
                     (baseType.type === AST_NODE_TYPES.TSTypeReference &&
