@@ -247,6 +247,16 @@ const { [getKey()]: value } = source;
 console.log('ready');
     `,
     `
+const ready = readReady();
+const removal = delete window.cache;
+console.log('done');
+    `,
+    `
+const obj = build();
+(obj as any).state.value = 1;
+console.log(obj.state.value);
+    `,
+    `
 const source = 1;
 const data = source;
 doSideEffect((value = data) => value);

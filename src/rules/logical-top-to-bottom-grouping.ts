@@ -316,10 +316,14 @@ function collectFunctionScopedDeclarations(
     visit(current) {
       if (
         current !== node &&
-        (current.type === AST_NODE_TYPES.FunctionDeclaration ||
-          current.type === AST_NODE_TYPES.FunctionExpression ||
+        (current.type === AST_NODE_TYPES.FunctionExpression ||
           current.type === AST_NODE_TYPES.ArrowFunctionExpression)
       ) {
+        return { skipChildren: true };
+      }
+
+      if (current.type === AST_NODE_TYPES.FunctionDeclaration && current.id) {
+        declared.add(current.id.name);
         return { skipChildren: true };
       }
 
@@ -333,11 +337,6 @@ function collectFunctionScopedDeclarations(
             declared,
           ),
         );
-      }
-
-      if (current.type === AST_NODE_TYPES.FunctionDeclaration && current.id) {
-        declared.add(current.id.name);
-        return { skipChildren: true };
       }
 
       if (current.type === AST_NODE_TYPES.ClassDeclaration && current.id) {
@@ -410,15 +409,7 @@ function collectUsedIdentifiers(
   traverseAst(node, {
     skipFunctions,
     onSkipFunction: includeFunctionCaptures
-      ? (fnNode) => {
-          if (
-            fnNode.type === AST_NODE_TYPES.FunctionDeclaration ||
-            fnNode.type === AST_NODE_TYPES.FunctionExpression ||
-            fnNode.type === AST_NODE_TYPES.ArrowFunctionExpression
-          ) {
-            collectFunctionCaptures(fnNode, names, { skipFunctions: true, includeFunctionCaptures });
-          }
-        }
+      ? createFunctionCaptureHandler(names, { skipFunctions, includeFunctionCaptures })
       : undefined,
     visit(current) {
       if (current.type === AST_NODE_TYPES.Identifier) {
@@ -426,14 +417,36 @@ function collectUsedIdentifiers(
         return { skipChildren: true };
       }
       if (skipFunctions && current.type === AST_NODE_TYPES.CallExpression) {
-        const iife = unwrapIifeCallee(current.callee);
-        if (iife) {
-          collectIifeDependencies(iife, names);
-        }
+        processCallExpression(current, names);
       }
       return undefined;
     },
   });
+}
+
+function createFunctionCaptureHandler(
+  names: Set<string>,
+  options: CollectIdentifierOptions,
+): (fnNode: TSESTree.Node) => void {
+  return (fnNode) => {
+    if (
+      fnNode.type === AST_NODE_TYPES.FunctionDeclaration ||
+      fnNode.type === AST_NODE_TYPES.FunctionExpression ||
+      fnNode.type === AST_NODE_TYPES.ArrowFunctionExpression
+    ) {
+      collectFunctionCaptures(fnNode, names, {
+        skipFunctions: true,
+        includeFunctionCaptures: options.includeFunctionCaptures,
+      });
+    }
+  };
+}
+
+function processCallExpression(node: TSESTree.CallExpression, names: Set<string>): void {
+  const iife = unwrapIifeCallee(node.callee);
+  if (iife) {
+    collectIifeDependencies(iife, names);
+  }
 }
 
 function collectDeclaredNamesFromPattern(
@@ -520,30 +533,57 @@ function statementReferencesAny(statement: TSESTree.Statement, names: Set<string
 }
 
 function collectAssignedNamesFromPattern(target: TSESTree.Node, names: Set<string>): void {
+  if (TYPE_EXPRESSION_WRAPPERS.has(target.type) && 'expression' in (target as { expression?: unknown })) {
+    collectAssignedNamesFromPattern(
+      (target as { expression: TSESTree.Node }).expression as TSESTree.Node,
+      names,
+    );
+    return;
+  }
+
   switch (target.type) {
     case AST_NODE_TYPES.Identifier:
-      names.add(target.name);
+      names.add((target as TSESTree.Identifier).name);
       return;
-    case AST_NODE_TYPES.MemberExpression:
-      if (target.object.type === AST_NODE_TYPES.Identifier) {
-        names.add(target.object.name);
+    case AST_NODE_TYPES.MemberExpression: {
+      let cursor = (target as TSESTree.MemberExpression).object as TSESTree.Expression;
+      while (true) {
+        if (TYPE_EXPRESSION_WRAPPERS.has(cursor.type) && 'expression' in (cursor as { expression?: unknown })) {
+          cursor = (cursor as { expression: TSESTree.Expression }).expression as TSESTree.Expression;
+          continue;
+        }
+        if (cursor.type === AST_NODE_TYPES.MemberExpression) {
+          cursor = (cursor as TSESTree.MemberExpression).object as TSESTree.Expression;
+          continue;
+        }
+        break;
+      }
+      if (cursor.type === AST_NODE_TYPES.Identifier) {
+        names.add((cursor as TSESTree.Identifier).name);
       }
       return;
+    }
     case AST_NODE_TYPES.AssignmentPattern:
-      collectAssignedNamesFromPattern(target.left as TSESTree.Node, names);
+      collectAssignedNamesFromPattern(
+        (target as TSESTree.AssignmentPattern).left as TSESTree.Node,
+        names,
+      );
       return;
     case AST_NODE_TYPES.RestElement:
-      collectAssignedNamesFromPattern(target.argument as TSESTree.Node, names);
+      collectAssignedNamesFromPattern(
+        (target as TSESTree.RestElement).argument as TSESTree.Node,
+        names,
+      );
       return;
     case AST_NODE_TYPES.ArrayPattern:
-      target.elements.forEach((element) => {
+      (target as TSESTree.ArrayPattern).elements.forEach((element) => {
         if (element) {
           collectAssignedNamesFromPattern(element as TSESTree.Node, names);
         }
       });
       return;
     case AST_NODE_TYPES.ObjectPattern:
-      target.properties.forEach((prop) => {
+      (target as TSESTree.ObjectPattern).properties.forEach((prop) => {
         if (prop.type === AST_NODE_TYPES.Property) {
           collectAssignedNamesFromPattern(prop.value as TSESTree.Node, names);
         } else if (prop.type === AST_NODE_TYPES.RestElement) {
@@ -666,6 +706,9 @@ function initializerIsSafe(
         return initializerIsSafe(prop.value as TSESTree.Expression, { allowHooks });
       });
     case AST_NODE_TYPES.UnaryExpression:
+      if (expression.operator === 'delete') {
+        return false;
+      }
       return initializerIsSafe(expression.argument as TSESTree.Expression, { allowHooks });
     case AST_NODE_TYPES.BinaryExpression:
     case AST_NODE_TYPES.LogicalExpression:
@@ -944,71 +987,157 @@ function handleDerivedGrouping(
   const { sourceCode } = ruleContext;
 
   body.forEach((statement, index) => {
-    if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
-      const dependencies = new Set<string>();
-      statement.declarations.forEach((declarator) => {
-        collectPatternDependencies(
-          declarator.id as TSESTree.BindingName | TSESTree.AssignmentPattern,
-          dependencies,
-        );
-        if (declarator.init) {
-          collectUsedIdentifiers(declarator.init, dependencies, {
-            skipFunctions: true,
-            includeFunctionCaptures: true,
-          });
-        }
-      });
-
-      const priorDependencies = Array.from(dependencies).filter((name) => declaredIndices.has(name));
-      if (priorDependencies.length > 0 && !ruleContext.reportedStatements.has(statement)) {
-        const lastDependencyIndex = Math.max(
-          ...priorDependencies.map((name) => declaredIndices.get(name) ?? -1),
-        );
-
-        if (lastDependencyIndex < index - 1) {
-          const declaredNames = getDeclaredNames(statement);
-          const priorDependencySet = new Set(priorDependencies);
-          // Avoid moving derived declarations across any impure or dependency-touching statement to keep evaluation order stable.
-          const blockerExists = body
-            .slice(lastDependencyIndex + 1, index)
-            .some(
-              (between) =>
-                !isPureDeclaration(between, { allowHooks: false }) ||
-                statementDeclaresAny(between, priorDependencySet) ||
-                statementReferencesAny(between, priorDependencySet) ||
-                statementDeclaresAny(between, declaredNames) ||
-                statementReferencesAny(between, declaredNames),
-            );
-
-          if (!blockerExists) {
-            const dependency = priorDependencies[0];
-            const name = declaredNames.values().next().value ?? 'value';
-            reportOnce(
-              ruleContext,
-              statement,
-              'groupDerived',
-              {
-                dependency,
-                name,
-              },
-              (fixer) =>
-                buildMoveFix(
-                  body,
-                  index,
-                  lastDependencyIndex + 1,
-                  parent,
-                  sourceCode,
-                  fixer,
-                ),
-            );
-          }
-        }
-      }
+    if (isVariableDeclaration(statement)) {
+      processVariableDeclaration(
+        ruleContext,
+        statement,
+        index,
+        body,
+        declaredIndices,
+        parent,
+        sourceCode,
+      );
     }
 
-    const declared = getDeclaredNames(statement);
-    declared.forEach((name) => declaredIndices.set(name, index));
+    trackDeclaredNames(statement, index, declaredIndices);
   });
+}
+
+function isVariableDeclaration(statement: TSESTree.Statement): statement is TSESTree.VariableDeclaration {
+  return statement.type === AST_NODE_TYPES.VariableDeclaration;
+}
+
+function processVariableDeclaration(
+  ruleContext: RuleExecutionContext,
+  statement: TSESTree.VariableDeclaration,
+  index: number,
+  body: TSESTree.Statement[],
+  declaredIndices: Map<string, number>,
+  parent: BlockLike,
+  sourceCode: TSESLint.SourceCode,
+): void {
+  const dependencies = collectDependencies(statement);
+  const priorDependencies = findPriorDependencies(dependencies, declaredIndices);
+
+  if (priorDependencies.length === 0 || ruleContext.reportedStatements.has(statement)) {
+    return;
+  }
+
+  const lastDependencyIndex = findLastDependencyIndex(priorDependencies, declaredIndices);
+
+  if (lastDependencyIndex >= index - 1) {
+    return;
+  }
+
+  const declaredNames = getDeclaredNames(statement);
+  const priorDependencySet = new Set(priorDependencies);
+
+  if (hasBlockers(body, lastDependencyIndex, index, priorDependencySet, declaredNames)) {
+    return;
+  }
+
+  reportDerivedGroupingViolation(
+    ruleContext,
+    statement,
+    priorDependencies,
+    declaredNames,
+    body,
+    index,
+    lastDependencyIndex,
+    parent,
+    sourceCode,
+  );
+}
+
+function collectDependencies(statement: TSESTree.VariableDeclaration): Set<string> {
+  const dependencies = new Set<string>();
+
+  statement.declarations.forEach((declarator) => {
+    collectPatternDependencies(
+      declarator.id as TSESTree.BindingName | TSESTree.AssignmentPattern,
+      dependencies,
+    );
+    if (declarator.init) {
+      collectUsedIdentifiers(declarator.init, dependencies, {
+        skipFunctions: true,
+        includeFunctionCaptures: true,
+      });
+    }
+  });
+
+  return dependencies;
+}
+
+function findPriorDependencies(dependencies: Set<string>, declaredIndices: Map<string, number>): string[] {
+  return Array.from(dependencies).filter((name) => declaredIndices.has(name));
+}
+
+function findLastDependencyIndex(priorDependencies: string[], declaredIndices: Map<string, number>): number {
+  return Math.max(
+    ...priorDependencies.map((name) => declaredIndices.get(name) ?? -1),
+  );
+}
+
+function hasBlockers(
+  body: TSESTree.Statement[],
+  lastDependencyIndex: number,
+  currentIndex: number,
+  priorDependencySet: Set<string>,
+  declaredNames: Set<string>,
+): boolean {
+  return body
+    .slice(lastDependencyIndex + 1, currentIndex)
+    .some(
+      (between) =>
+        !isPureDeclaration(between, { allowHooks: false }) ||
+        statementDeclaresAny(between, priorDependencySet) ||
+        statementReferencesAny(between, priorDependencySet) ||
+        statementDeclaresAny(between, declaredNames) ||
+        statementReferencesAny(between, declaredNames),
+    );
+}
+
+function reportDerivedGroupingViolation(
+  ruleContext: RuleExecutionContext,
+  statement: TSESTree.Statement,
+  priorDependencies: string[],
+  declaredNames: Set<string>,
+  body: TSESTree.Statement[],
+  currentIndex: number,
+  lastDependencyIndex: number,
+  parent: BlockLike,
+  sourceCode: TSESLint.SourceCode,
+): void {
+  const dependency = priorDependencies[0];
+  const name = declaredNames.values().next().value ?? 'value';
+
+  reportOnce(
+    ruleContext,
+    statement,
+    'groupDerived',
+    {
+      dependency,
+      name,
+    },
+    (fixer) =>
+      buildMoveFix(
+        body,
+        currentIndex,
+        lastDependencyIndex + 1,
+        parent,
+        sourceCode,
+        fixer,
+      ),
+  );
+}
+
+function trackDeclaredNames(
+  statement: TSESTree.Statement,
+  index: number,
+  declaredIndices: Map<string, number>,
+): void {
+  const declared = getDeclaredNames(statement);
+  declared.forEach((name) => declaredIndices.set(name, index));
 }
 
 function handleLateDeclarations(
