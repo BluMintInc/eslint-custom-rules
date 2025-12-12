@@ -19,8 +19,7 @@ declare namespace React {
 }
 declare module 'react' {
   export function useMemo<T>(factory: () => T, deps: unknown[]): T;
-}
-`;
+}`;
 
 ruleTesterTs.run('no-usememo-for-pass-by-value', noUsememoForPassByValue, {
   valid: [
@@ -237,6 +236,25 @@ ${typedPrelude}
 ${typedPrelude}
       export function useUpper(value: string) {
         return value.toUpperCase();
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+
+      import { useMemo } from 'react';
+
+      export function useLeadingBlank(value: number) {
+        return useMemo(() => value, [value]);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useLeadingBlank(value: number) {
+        return value;
       }
       `,
     },

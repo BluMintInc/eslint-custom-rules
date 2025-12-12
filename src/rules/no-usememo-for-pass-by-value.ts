@@ -304,9 +304,23 @@ function buildImportRemovalFix(
     let [start, end] = importDeclaration.range;
 
     const beforeImport = scanBackwardOverWhitespace(text, start);
-    if (beforeImport > 0 && (text[beforeImport - 1] === '\n' || text[beforeImport - 1] === '\r')) {
-      const { newPosition } = consumeLineBreak(text, beforeImport - 1);
-      start = newPosition;
+    const lineBreakIndex = beforeImport - 1;
+    if (lineBreakIndex >= 0 && (text[lineBreakIndex] === '\n' || text[lineBreakIndex] === '\r')) {
+      const lineBreakStart =
+        text[lineBreakIndex] === '\n' &&
+        lineBreakIndex > 0 &&
+        text[lineBreakIndex - 1] === '\r'
+          ? lineBreakIndex - 1
+          : lineBreakIndex;
+
+      const whitespaceBeforeLineBreak = scanBackwardOverWhitespace(text, lineBreakStart);
+      const precedingCharIndex = whitespaceBeforeLineBreak - 1;
+      const lineIsWhitespaceOnly =
+        whitespaceBeforeLineBreak === 0 ||
+        (precedingCharIndex >= 0 &&
+          (text[precedingCharIndex] === '\n' || text[precedingCharIndex] === '\r'));
+
+      start = lineIsWhitespaceOnly ? whitespaceBeforeLineBreak : beforeImport;
     } else {
       start = beforeImport;
     }
