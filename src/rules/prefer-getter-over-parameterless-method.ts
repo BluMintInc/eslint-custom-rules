@@ -188,6 +188,28 @@ export const preferGetterOverParameterlessMethod = createRule<
     const ignoredMethods = new Set(config.ignoredMethods);
     const prefixList = config.stripPrefixes;
     const sourceCode = context.getSourceCode();
+    const ignoredTraversalKeys = new Set(['parent', 'loc', 'range']);
+
+    function ensureGlobalPattern(pattern: RegExp) {
+      const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
+      return new RegExp(pattern.source, flags);
+    }
+
+    function pushChildNodes(current: TSESTree.Node, stack: TSESTree.Node[]) {
+      for (const [key, value] of Object.entries(current)) {
+        if (ignoredTraversalKeys.has(key)) continue;
+        if (!value) continue;
+        if (Array.isArray(value)) {
+          for (const item of value) {
+            if (item && typeof (item as any).type === 'string') {
+              stack.push(item as TSESTree.Node);
+            }
+          }
+        } else if (typeof (value as any).type === 'string') {
+          stack.push(value as TSESTree.Node);
+        }
+      }
+    }
 
     function getJsDoc(node: MethodLikeDefinition) {
       const comments = sourceCode.getCommentsBefore(node);
@@ -221,7 +243,8 @@ export const preferGetterOverParameterlessMethod = createRule<
         /\b(?:no|without|not|non|none|never|free of|lack|lacks|lacking|avoid|avoids|avoiding)\b/;
 
       const matchesAffirmative = (pattern: RegExp) => {
-        const matches = normalized.matchAll(pattern);
+        const globalPattern = ensureGlobalPattern(pattern);
+        const matches = normalized.matchAll(globalPattern);
         for (const match of matches) {
           const start = match.index ?? 0;
           const windowStart = Math.max(0, start - 24);
@@ -272,18 +295,7 @@ export const preferGetterOverParameterlessMethod = createRule<
           }
         }
 
-        for (const value of Object.values(current)) {
-          if (!value) continue;
-          if (Array.isArray(value)) {
-            value.forEach((item) => {
-              if (item && typeof (item as any).type === 'string') {
-                stack.push(item as TSESTree.Node);
-              }
-            });
-          } else if (typeof (value as any).type === 'string') {
-            stack.push(value as TSESTree.Node);
-          }
-        }
+        pushChildNodes(current, stack);
       }
 
       return null;
@@ -315,18 +327,7 @@ export const preferGetterOverParameterlessMethod = createRule<
         ) {
           return true;
         }
-        for (const value of Object.values(current)) {
-          if (!value) continue;
-          if (Array.isArray(value)) {
-            value.forEach((item) => {
-              if (item && typeof (item as any).type === 'string') {
-                stack.push(item as TSESTree.Node);
-              }
-            });
-          } else if (typeof (value as any).type === 'string') {
-            stack.push(value as TSESTree.Node);
-          }
-        }
+        pushChildNodes(current, stack);
       }
 
       return false;
@@ -359,14 +360,20 @@ export const preferGetterOverParameterlessMethod = createRule<
       if (propName === 'call' || propName === 'apply' || propName === 'bind') {
         const target = member.object;
         if (target.type === AST_NODE_TYPES.MemberExpression) {
-          if (!target.computed && target.property.type === AST_NODE_TYPES.Identifier) {
+          if (
+            !target.computed &&
+            target.property.type === AST_NODE_TYPES.Identifier &&
+            target.object.type === AST_NODE_TYPES.ThisExpression
+          ) {
             callUsedNames.add(target.property.name);
           }
         }
         return;
       }
 
-      callUsedNames.add(propName);
+      if (member.object.type === AST_NODE_TYPES.ThisExpression) {
+        callUsedNames.add(propName);
+      }
     }
 
     const callUsedNames = new Set<string>();

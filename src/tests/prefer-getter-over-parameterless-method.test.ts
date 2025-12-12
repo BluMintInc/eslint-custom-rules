@@ -125,7 +125,12 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'preferGetter' }],
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'fullName', suggestedName: 'fullName' },
+          },
+        ],
       },
       {
         code: `
@@ -142,7 +147,12 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'preferGetter', data: { suggestedName: 'name' } }],
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'getName', suggestedName: 'name' },
+          },
+        ],
       },
       {
         code: `
@@ -159,7 +169,12 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'preferGetter', data: { suggestedName: 'preview' } }],
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'buildPreview', suggestedName: 'preview' },
+          },
+        ],
       },
       {
         code: `
@@ -176,7 +191,12 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'preferGetter', data: { suggestedName: 'isValid' } }],
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'isValid', suggestedName: 'isValid' },
+          },
+        ],
       },
       {
         code: `
@@ -193,7 +213,12 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'preferGetter', data: { suggestedName: 'pi' } }],
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'computePi', suggestedName: 'pi' },
+          },
+        ],
       },
       {
         code: `
@@ -210,7 +235,12 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'preferGetter' }],
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'result', suggestedName: 'result' },
+          },
+        ],
       },
       {
         code: `
@@ -220,7 +250,16 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'preferGetterSideEffect' }],
+        errors: [
+          {
+            messageId: 'preferGetterSideEffect',
+            data: {
+              name: 'getNextId',
+              suggestedName: 'nextId',
+              reason: 'it mutates state with ++/--',
+            },
+          },
+        ],
         output: null,
       },
       {
@@ -232,7 +271,16 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'preferGetterSideEffect' }],
+        errors: [
+          {
+            messageId: 'preferGetterSideEffect',
+            data: {
+              name: 'updateValue',
+              suggestedName: 'updateValue',
+              reason: 'it assigns to this.value',
+            },
+          },
+        ],
         output: null,
       },
       {
@@ -244,7 +292,16 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'preferGetterSideEffect' }],
+        errors: [
+          {
+            messageId: 'preferGetterSideEffect',
+            data: {
+              name: 'items',
+              suggestedName: 'items',
+              reason: 'it calls mutating method push()',
+            },
+          },
+        ],
         output: null,
       },
       {
@@ -256,7 +313,16 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'preferGetterSideEffect' }],
+        errors: [
+          {
+            messageId: 'preferGetterSideEffect',
+            data: {
+              name: 'count',
+              suggestedName: 'count',
+              reason: 'it mutates state with ++/--',
+            },
+          },
+        ],
         output: null,
       },
       {
@@ -280,7 +346,12 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'preferGetter', data: { suggestedName: 'snapshot' } }],
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'snapshot', suggestedName: 'snapshot' },
+          },
+        ],
       },
       {
         code: `
@@ -300,7 +371,12 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'preferGetter' }],
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'summary', suggestedName: 'summary' },
+          },
+        ],
       },
       {
         code: `
@@ -318,7 +394,12 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'preferGetter', data: { suggestedName: 'balance' } }],
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'getBalance', suggestedName: 'balance' },
+          },
+        ],
       },
       {
         code: `
@@ -335,7 +416,12 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'preferGetter' }],
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'URL', suggestedName: 'URL' },
+          },
+        ],
       },
       {
         code: `
@@ -349,8 +435,27 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'preferGetter' }],
-        output: null,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'name', suggestedName: 'name' },
+          },
+          {
+            messageId: 'preferGetter',
+            data: { name: 'describe', suggestedName: 'describe' },
+          },
+        ],
+        output: `
+        class Reporter {
+          name() {
+            return this.display;
+          }
+
+          get describe() {
+            return this.name();
+          }
+        }
+        `,
       },
       {
         code: `
@@ -364,8 +469,27 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'preferGetter', data: { suggestedName: 'result' } }],
-        output: null,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'getResult', suggestedName: 'result' },
+          },
+          {
+            messageId: 'preferGetter',
+            data: { name: 'bindResult', suggestedName: 'bindResult' },
+          },
+        ],
+        output: `
+        class Worker {
+          getResult() {
+            return this.value;
+          }
+
+          get bindResult() {
+            return this.getResult.bind(this);
+          }
+        }
+        `,
       },
       {
         code: `
@@ -377,7 +501,12 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'preferGetter', data: { suggestedName: 'name' } }],
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'getName', suggestedName: 'name' },
+          },
+        ],
         output: null,
       },
       {
@@ -392,8 +521,27 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'preferGetter', data: { suggestedName: 'value' } }],
-        output: null,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'value', suggestedName: 'value' },
+          },
+          {
+            messageId: 'preferGetter',
+            data: { name: 'invoke', suggestedName: 'invoke' },
+          },
+        ],
+        output: `
+        class Caller {
+          value() {
+            return this.result;
+          }
+
+          get invoke() {
+            return this.value.apply(this);
+          }
+        }
+        `,
       },
     ],
   },
