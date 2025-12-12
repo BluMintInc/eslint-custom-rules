@@ -87,6 +87,22 @@ type User = { id: string };
 declare function fetchUser(): Promise<User>;
 const getUser = async (): Promise<User> => (await fetchUser()) as User;
       `,
+      `
+type User = { id: string };
+declare function fetchUser(): User;
+declare function fallback(): User;
+function getUser(): User {
+  if (Math.random() > 0.5) {
+    return fetchUser() as User;
+  }
+
+  if (Math.random() > 0.25) {
+    return fallback() as User;
+  }
+
+  return fallback() as User;
+}
+      `,
     ],
     invalid: [
       {
@@ -341,6 +357,27 @@ type Alias = Payload;
 type Exported = Alias;
 declare function load(): Payload;
 const result = load() as Alias;
+        `,
+      },
+      {
+        code: `
+type User = { id: string };
+declare function fetchUser(): User;
+function getUser(): User {
+  if (Math.random() > 0.5) {
+    return fetchUser() as User;
+  }
+}
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type User = { id: string };
+declare function fetchUser(): User;
+function getUser() {
+  if (Math.random() > 0.5) {
+    return fetchUser() as User;
+  }
+}
         `,
       },
     ],

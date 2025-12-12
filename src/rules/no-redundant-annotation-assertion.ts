@@ -1,4 +1,5 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { visitorKeys } from '@typescript-eslint/visitor-keys';
 import * as ts from 'typescript';
 import { createRule } from '../utils/createRule';
 
@@ -28,6 +29,64 @@ function getAssertionTypeNode(
   }
 
   return null;
+}
+
+function isNode(value: unknown): value is TSESTree.Node {
+  return Boolean(value) && typeof value === 'object' && 'type' in (value as object);
+}
+
+function collectReturnInfo(
+  body: TSESTree.BlockStatement,
+): { assertions: TSESTree.TypeNode[]; returnCount: number } {
+  const assertions: TSESTree.TypeNode[] = [];
+  let returnCount = 0;
+  const stack: TSESTree.Node[] = [...body.body];
+
+  while (stack.length) {
+    const current = stack.pop() as TSESTree.Node;
+
+    if (current.type === AST_NODE_TYPES.ReturnStatement) {
+      returnCount += 1;
+      if (current.argument) {
+        const assertion = getAssertionTypeNode(current.argument);
+        if (assertion) assertions.push(assertion);
+      }
+      continue;
+    }
+
+    if (
+      current.type === AST_NODE_TYPES.FunctionDeclaration ||
+      current.type === AST_NODE_TYPES.FunctionExpression ||
+      current.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+      current.type === AST_NODE_TYPES.MethodDefinition ||
+      current.type === AST_NODE_TYPES.ClassDeclaration ||
+      current.type === AST_NODE_TYPES.ClassExpression
+    ) {
+      continue;
+    }
+
+    const keys = visitorKeys[current.type];
+    if (!keys) continue;
+
+    for (const key of keys) {
+      const value = (current as unknown as Record<string, unknown>)[key];
+
+      if (Array.isArray(value)) {
+        for (const element of value) {
+          if (isNode(element)) {
+            stack.push(element);
+          }
+        }
+        continue;
+      }
+
+      if (isNode(value)) {
+        stack.push(value);
+      }
+    }
+  }
+
+  return { assertions, returnCount };
 }
 
 function findTypeAnnotationStart(
@@ -331,16 +390,12 @@ function getReturnAssertion(
   ).body;
 
   if (body?.type === AST_NODE_TYPES.BlockStatement) {
-    const returns = body.body.filter(
-      (statement): statement is TSESTree.ReturnStatement =>
-        statement.type === AST_NODE_TYPES.ReturnStatement &&
-        Boolean(statement.argument),
-    );
+    const { assertions, returnCount } = collectReturnInfo(body);
 
     // Skip functions with multiple returns because different branches can assert different types.
-    if (returns.length !== 1) return null;
+    if (returnCount !== 1) return null;
 
-    return getAssertionTypeNode(returns[0].argument);
+    return assertions[0] ?? null;
   }
 
   if (!body) return null;
@@ -367,10 +422,13 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.getSourceCode();
-    const parserServices = sourceCode.parserServices ?? context.parserServices;
+    const sourceCode =
+      (context as typeof context & { sourceCode?: TSESLint.SourceCode }).sourceCode ??
+      context.getSourceCode?.();
+    const parserServices = sourceCode?.parserServices ?? context.parserServices;
 
     if (
+      !sourceCode ||
       !parserServices?.program ||
       !parserServices.esTreeNodeToTSNodeMap ||
       !parserServices.tsNodeToESTreeNodeMap
