@@ -73,10 +73,10 @@ export const exportIfInDoubt: TSESLint.RuleModule<'exportIfInDoubt', never[]> =
                   : 'type';
               const exportExample =
                 node.type === 'VariableDeclarator'
-                  ? `export ${kind} ${name}`
+                  ? `export ${kind} ${name} = undefined;`
                   : node.type === 'FunctionDeclaration'
-                  ? `export function ${name}`
-                  : `export type ${name}`;
+                  ? `export function ${name}() {}`
+                  : `export type ${name} = unknown;`;
               context.report({
                 node,
                 messageId: 'exportIfInDoubt',

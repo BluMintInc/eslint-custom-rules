@@ -62,7 +62,7 @@ ruleTesterTs.run('export-if-in-doubt', exportIfInDoubt, {
           data: {
             name: 'myConst',
             kind: 'const',
-            exportExample: 'export const myConst',
+            exportExample: 'export const myConst = undefined;',
           },
         },
       ],
@@ -75,7 +75,7 @@ ruleTesterTs.run('export-if-in-doubt', exportIfInDoubt, {
           data: {
             name: 'myFunction',
             kind: 'function',
-            exportExample: 'export function myFunction',
+            exportExample: 'export function myFunction() {}',
           },
         },
       ],
@@ -88,7 +88,7 @@ ruleTesterTs.run('export-if-in-doubt', exportIfInDoubt, {
           data: {
             name: 'MyType',
             kind: 'type',
-            exportExample: 'export type MyType',
+            exportExample: 'export type MyType = unknown;',
           },
         },
       ],
@@ -131,7 +131,7 @@ ruleTesterTs.run('export-if-in-doubt', exportIfInDoubt, {
           data: {
             name: 'ListAssetsImxPayload',
             kind: 'type',
-            exportExample: 'export type ListAssetsImxPayload',
+            exportExample: 'export type ListAssetsImxPayload = unknown;',
           },
         },
       ],

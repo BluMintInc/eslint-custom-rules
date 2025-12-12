@@ -4,7 +4,7 @@
 
 <!-- end auto-generated rule header -->
 
-This rule requires every top-level const, function, and type alias to be exported. Top-level declarations define the module's public surface; leaving them unexported usually signals dead code or an accidentally hidden utility. Export the symbol or move it into a narrower scope if it must remain private.
+You must export every top-level const, function, and type alias. These declarations define your module's public surface; leaving them unexported usually signals dead code or a hidden utility. Export the symbol or move it into a narrower scope when it should stay private.
 
 ## Rule Details
 
@@ -32,11 +32,13 @@ export function someFunc() { return someVar; }
 export type SomeType = { val: number };
 ```
 
+
 ```typescript
 function buildCache() {
   const cache = new Map<string, number>();
   return cache;
 }
 ```
+
 In this example the declaration is intentionally private, so it is moved into a narrower scope instead of being exported.
 
