@@ -36,14 +36,91 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
   create(context) {
     const sourceCode = context.getSourceCode();
     const visitorKeys = sourceCode.visitorKeys;
-    const memoizedNames = new Set<string>();
-    const memoizedInlineFunctions = new WeakSet<
+    const memoizedComponents = new WeakSet<
       | TSESTree.FunctionDeclaration
       | TSESTree.FunctionExpression
       | TSESTree.ArrowFunctionExpression
     >();
+    const memoScopes: Map<
+      string,
+      | TSESTree.FunctionDeclaration
+      | TSESTree.FunctionExpression
+      | TSESTree.ArrowFunctionExpression
+    >[] = [];
     const componentStack: ComponentState[] = [];
     const scopedFunctions = new WeakSet<TSESTree.Node>();
+
+    function pushMemoScope(): void {
+      memoScopes.push(new Map());
+    }
+
+    function popMemoScope(): void {
+      memoScopes.pop();
+    }
+
+    function currentMemoScope():
+      | Map<
+          string,
+          | TSESTree.FunctionDeclaration
+          | TSESTree.FunctionExpression
+          | TSESTree.ArrowFunctionExpression
+        >
+      | undefined {
+      return memoScopes[memoScopes.length - 1];
+    }
+
+    function declareFunctionBinding(
+      name: string,
+      node:
+        | TSESTree.FunctionDeclaration
+        | TSESTree.FunctionExpression
+        | TSESTree.ArrowFunctionExpression,
+    ): void {
+      const scope = currentMemoScope();
+      if (!scope) return;
+      scope.set(name, node);
+    }
+
+    function resolveFunctionBinding(
+      name: string,
+    ):
+      | TSESTree.FunctionDeclaration
+      | TSESTree.FunctionExpression
+      | TSESTree.ArrowFunctionExpression
+      | undefined {
+      for (let i = memoScopes.length - 1; i >= 0; i -= 1) {
+        const binding = memoScopes[i].get(name);
+        if (binding) {
+          return binding;
+        }
+      }
+      return undefined;
+    }
+
+    function hoistFunctionDeclarations(statements: TSESTree.Statement[]): void {
+      const scope = currentMemoScope();
+      if (!scope) return;
+      for (const statement of statements) {
+        if (
+          statement.type === AST_NODE_TYPES.FunctionDeclaration &&
+          statement.id?.type === AST_NODE_TYPES.Identifier
+        ) {
+          scope.set(statement.id.name, statement);
+        }
+      }
+    }
+
+    function registerFunctionVariable(node: TSESTree.VariableDeclarator): void {
+      if (node.id.type !== AST_NODE_TYPES.Identifier) return;
+      const { init } = node;
+      if (
+        init &&
+        (init.type === AST_NODE_TYPES.FunctionExpression ||
+          init.type === AST_NODE_TYPES.ArrowFunctionExpression)
+      ) {
+        declareFunctionBinding(node.id.name, init);
+      }
+    }
 
     function isReactMemoCallee(
       callee: TSESTree.LeftHandSideExpression,
@@ -84,61 +161,98 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
     }
 
     function collectMemoizedComponents(node: TSESTree.Node): void {
-      if (
-        node.type === AST_NODE_TYPES.CallExpression &&
-        isReactMemoCallee(node.callee)
-      ) {
-        const [firstArg] = node.arguments;
+      pushMemoScope();
+      if (node.type === AST_NODE_TYPES.Program) {
+        hoistFunctionDeclarations(node.body);
+      }
+
+      function traverse(current: TSESTree.Node): void {
+        const isFunctionLike =
+          current.type === AST_NODE_TYPES.FunctionDeclaration ||
+          current.type === AST_NODE_TYPES.FunctionExpression ||
+          current.type === AST_NODE_TYPES.ArrowFunctionExpression;
 
         if (
-          firstArg &&
-          (firstArg.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-            firstArg.type === AST_NODE_TYPES.FunctionExpression)
+          current.type === AST_NODE_TYPES.FunctionDeclaration &&
+          current.id?.type === AST_NODE_TYPES.Identifier
         ) {
-          memoizedInlineFunctions.add(firstArg);
+          declareFunctionBinding(current.id.name, current);
         }
 
-        if (firstArg && firstArg.type === AST_NODE_TYPES.Identifier) {
-          memoizedNames.add(firstArg.name);
-        }
-      }
+        let pushedScope = false;
+        if (
+          current.type === AST_NODE_TYPES.BlockStatement ||
+          isFunctionLike
+        ) {
+          pushMemoScope();
+          pushedScope = true;
 
-      const keys = visitorKeys[node.type] ?? [];
-      for (const key of keys) {
-        const value = (node as unknown as Record<string, unknown>)[key];
-        if (Array.isArray(value)) {
-          for (const child of value) {
-            if (child && typeof child === 'object') {
-              collectMemoizedComponents(child as TSESTree.Node);
+          if (
+            isFunctionLike &&
+            'id' in current &&
+            current.id?.type === AST_NODE_TYPES.Identifier
+          ) {
+            declareFunctionBinding(current.id.name, current);
+          }
+
+          if (current.type === AST_NODE_TYPES.BlockStatement) {
+            hoistFunctionDeclarations(current.body);
+          } else if (
+            isFunctionLike &&
+            current.body.type === AST_NODE_TYPES.BlockStatement
+          ) {
+            hoistFunctionDeclarations(current.body.body);
+          }
+        }
+
+        if (current.type === AST_NODE_TYPES.VariableDeclarator) {
+          registerFunctionVariable(current);
+        }
+
+        if (
+          current.type === AST_NODE_TYPES.CallExpression &&
+          isReactMemoCallee(current.callee)
+        ) {
+          const [firstArg] = current.arguments;
+
+          if (
+            firstArg &&
+            (firstArg.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+              firstArg.type === AST_NODE_TYPES.FunctionExpression)
+          ) {
+            memoizedComponents.add(firstArg);
+          } else if (firstArg && firstArg.type === AST_NODE_TYPES.Identifier) {
+            const binding = resolveFunctionBinding(firstArg.name);
+            if (binding) {
+              memoizedComponents.add(binding);
             }
           }
-        } else if (value && typeof value === 'object') {
-          collectMemoizedComponents(value as TSESTree.Node);
+        }
+
+        const keys = visitorKeys[current.type] ?? [];
+        for (const key of keys) {
+          const value = (current as unknown as Record<string, unknown>)[key];
+          if (Array.isArray(value)) {
+            for (const child of value) {
+              if (child && typeof child === 'object') {
+                traverse(child as TSESTree.Node);
+              }
+            }
+          } else if (value && typeof value === 'object') {
+            traverse(value as TSESTree.Node);
+          }
+        }
+
+        if (pushedScope) {
+          popMemoScope();
         }
       }
+
+      traverse(node);
+      popMemoScope();
     }
 
     collectMemoizedComponents(sourceCode.ast);
-
-    function getFunctionName(
-      node:
-        | TSESTree.FunctionDeclaration
-        | TSESTree.FunctionExpression
-        | TSESTree.ArrowFunctionExpression,
-    ): string | null {
-      if ('id' in node && node.id && node.id.type === AST_NODE_TYPES.Identifier) {
-        return node.id.name;
-      }
-
-      if (
-        node.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
-        node.parent.id.type === AST_NODE_TYPES.Identifier
-      ) {
-        return node.parent.id.name;
-      }
-
-      return null;
-    }
 
     function isMemoizedComponent(
       node:
@@ -146,12 +260,7 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
         | TSESTree.FunctionExpression
         | TSESTree.ArrowFunctionExpression,
     ): boolean {
-      if (memoizedInlineFunctions.has(node)) {
-        return true;
-      }
-
-      const name = getFunctionName(node);
-      return Boolean(name && memoizedNames.has(name));
+      return memoizedComponents.has(node);
     }
 
     function pushComponent(node: ComponentState['node']): void {
@@ -216,7 +325,7 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
       return current;
     }
 
-    function classifyInitializer(init: TSESTree.Expression | null): BindingKind | null {
+    function getBindingKind(init: TSESTree.Expression | null): BindingKind | null {
       if (!init) {
         return null;
       }
@@ -260,7 +369,7 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
           ? findBindingKind(initializer.name)
           : null;
 
-      const kind = aliasKind ?? classifyInitializer(initializer);
+      const kind = aliasKind ?? getBindingKind(initializer);
       if (kind) scope.set(node.id.name, kind);
     }
 

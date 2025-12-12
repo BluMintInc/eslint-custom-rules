@@ -116,6 +116,20 @@ ruleTesterJsx.run('prefer-memoized-props', preferMemoizedProps, {
         return <span>{initial}</span>;
       });
     `,
+    `
+      import { memo } from 'react';
+      function Button({ label }: { label: string }) {
+        return <span>{label}</span>;
+      }
+      const MemoButton = memo(Button);
+      function Wrapper({ label }: { label: string }) {
+        function Button() {
+          const payload = { text: label };
+          return <span>{payload.text}</span>;
+        }
+        return <Button />;
+      }
+    `,
   ],
   invalid: [
     {
