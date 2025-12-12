@@ -162,13 +162,7 @@ ruleTesterTs.run(
           }
         }
         `,
-        output: `
-        class Person {
-          get name() {
-            return this.name;
-          }
-        }
-        `,
+        output: null,
         errors: [
           {
             messageId: 'preferGetter',
@@ -429,13 +423,7 @@ ruleTesterTs.run(
         }
         `,
         options: [{ stripPrefixes: ['get', 'fetch'] }],
-        output: `
-        class Account {
-          get balance() {
-            return this.balance;
-          }
-        }
-        `,
+        output: null,
         errors: [
           {
             messageId: 'preferGetter',
@@ -899,6 +887,85 @@ ruleTesterTs.run(
           {
             messageId: 'preferGetter',
             data: { name: 'value', suggestedName: 'value' },
+          },
+        ],
+        output: null,
+      },
+      {
+        code: `
+        class Cleaner {
+          remove() {
+            delete this.cache;
+            return 1;
+          }
+        }
+        `,
+        errors: [
+          {
+            messageId: 'preferGetterSideEffect',
+            data: {
+              name: 'remove',
+              suggestedName: 'remove',
+              reason: 'it deletes this.cache',
+            },
+          },
+        ],
+        output: null,
+      },
+      {
+        code: `
+        class MapUser {
+          getEntry() {
+            return this.map.set('k', 1);
+          }
+        }
+        `,
+        errors: [
+          {
+            messageId: 'preferGetterSideEffect',
+            data: {
+              name: 'getEntry',
+              suggestedName: 'entry',
+              reason: 'it calls mutating method set()',
+            },
+          },
+        ],
+        output: null,
+      },
+      {
+        code: `
+        class CallbackUser {
+          getValue() {
+            return 1;
+          }
+        }
+
+        const instance = new CallbackUser();
+        consume(instance.getValue);
+        `,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'getValue', suggestedName: 'value' },
+          },
+        ],
+        output: null,
+      },
+      {
+        code: `
+        class OptionalRef {
+          fetchValue() {
+            return 2;
+          }
+        }
+
+        const inst = new OptionalRef();
+        const fn = inst?.fetchValue;
+        `,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'fetchValue', suggestedName: 'value' },
           },
         ],
         output: null,

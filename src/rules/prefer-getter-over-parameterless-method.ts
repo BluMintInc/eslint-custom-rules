@@ -63,6 +63,20 @@ const DEFAULT_OPTIONS: Required<OptionShape> = {
   minBodyLines: 0,
 };
 
+const MUTATING_ARRAY_METHODS = [
+  'push',
+  'pop',
+  'shift',
+  'unshift',
+  'splice',
+  'sort',
+  'reverse',
+  'fill',
+  'copyWithin',
+];
+
+const MUTATING_COLLECTION_METHODS = ['set', 'add', 'delete', 'clear'];
+
 function isVoidishType(node: TSESTree.TypeNode | TSESTree.Node): boolean {
   switch (node.type) {
     case AST_NODE_TYPES.TSVoidKeyword:
@@ -388,6 +402,13 @@ export const preferGetterOverParameterlessMethod = createRule<
           continue;
         }
 
+        if (
+          current.type === AST_NODE_TYPES.UnaryExpression &&
+          current.operator === 'delete'
+        ) {
+          return `it deletes ${sourceCode.getText(current.argument)}`;
+        }
+
         if (current.type === AST_NODE_TYPES.UpdateExpression) {
           return 'it mutates state with ++/--';
         }
@@ -403,17 +424,8 @@ export const preferGetterOverParameterlessMethod = createRule<
           if (
             callee.type === AST_NODE_TYPES.MemberExpression &&
             callee.property.type === AST_NODE_TYPES.Identifier &&
-            [
-              'push',
-              'pop',
-              'shift',
-              'unshift',
-              'splice',
-              'sort',
-              'reverse',
-              'fill',
-              'copyWithin',
-            ].includes(callee.property.name)
+            (MUTATING_ARRAY_METHODS.includes(callee.property.name) ||
+              MUTATING_COLLECTION_METHODS.includes(callee.property.name))
           ) {
             return `it calls mutating method ${callee.property.name}()`;
           }
@@ -467,6 +479,65 @@ export const preferGetterOverParameterlessMethod = createRule<
         }
       }
       return name;
+    }
+
+    function isThisProperty(
+      member: TSESTree.MemberExpression,
+      propName: string,
+    ): boolean {
+      if (
+        member.object.type !== AST_NODE_TYPES.ThisExpression &&
+        member.object.type !== AST_NODE_TYPES.Super
+      ) {
+        return false;
+      }
+
+      if (!member.computed && member.property.type === AST_NODE_TYPES.Identifier) {
+        return member.property.name === propName;
+      }
+
+      if (
+        member.computed &&
+        member.property.type === AST_NODE_TYPES.Literal &&
+        typeof member.property.value === 'string'
+      ) {
+        return member.property.value === propName;
+      }
+
+      return false;
+    }
+
+    function bodyReferencesThisProperty(
+      body: TSESTree.BlockStatement,
+      propName: string,
+    ): boolean {
+      const stack: TSESTree.Node[] = [...body.body];
+
+      while (stack.length) {
+        const current = stack.pop() as TSESTree.Node;
+
+        if (isFunctionLikeNode(current)) {
+          continue;
+        }
+
+        if (current.type === AST_NODE_TYPES.MemberExpression) {
+          if (isThisProperty(current, propName)) {
+            return true;
+          }
+        } else if (current.type === AST_NODE_TYPES.ChainExpression) {
+          const expression = current.expression;
+          if (
+            expression.type === AST_NODE_TYPES.MemberExpression &&
+            isThisProperty(expression, propName)
+          ) {
+            return true;
+          }
+        }
+
+        pushChildNodes(current, stack);
+      }
+
+      return false;
     }
 
     function isMemberExpressionNode(
@@ -549,7 +620,10 @@ export const preferGetterOverParameterlessMethod = createRule<
       if (!parent) return false;
 
       if (parent.type === AST_NODE_TYPES.CallExpression) {
-        return false;
+        if (parent.callee === member) {
+          return false;
+        }
+        return true;
       }
 
       if (parent.type === AST_NODE_TYPES.MemberExpression) {
@@ -557,7 +631,16 @@ export const preferGetterOverParameterlessMethod = createRule<
       }
 
       if (parent.type === AST_NODE_TYPES.ChainExpression) {
-        return false;
+        const chainParent = parent.parent;
+        if (
+          chainParent &&
+          chainParent.type === AST_NODE_TYPES.CallExpression &&
+          chainParent.callee ===
+            (parent as unknown as TSESTree.LeftHandSideExpression)
+        ) {
+          return false;
+        }
+        return true;
       }
 
       return true;
@@ -766,6 +849,12 @@ export const preferGetterOverParameterlessMethod = createRule<
               })
             : null;
 
+          const body = node.value.body;
+          const referencesSuggestedName =
+            body && body.type === AST_NODE_TYPES.BlockStatement
+              ? bodyReferencesThisProperty(body, suggestedName)
+              : false;
+
           const hasCollision = hasNameCollision(node, suggestedName);
           const isCallUsed =
             classBody?.type === AST_NODE_TYPES.ClassBody
@@ -797,6 +886,7 @@ export const preferGetterOverParameterlessMethod = createRule<
               hasCollision ||
               isCallUsed ||
               isCallUsedSomewhereInFile ||
+              referencesSuggestedName ||
               hasDuplicateSuggestedName
                 ? null
                 : (fixer) =>
