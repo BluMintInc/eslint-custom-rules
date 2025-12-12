@@ -211,6 +211,26 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         sourceType: 'module',
       },
     },
+    {
+      code: `
+        interface InterfaceBase {
+          visible: boolean;
+          forwarded: string;
+        }
+
+        type Props = Omit<InterfaceBase, 'forwarded'>;
+
+        const Component = ({ visible }: Props) => (
+          <section>{visible ? 'yes' : 'no'}</section>
+        );
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
   ],
   invalid: [
     {
@@ -266,6 +286,27 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         {
           messageId: 'unusedProp',
           data: { propName: '...Shared' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type Base = { forwarded: string; unused: string };
+        type Forwarded = keyof Base;
+        type Props = Omit<Base, Forwarded>;
+        const Component = ({}: Props) => <div>static</div>;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: '...Base' },
           type: AST_NODE_TYPES.Identifier,
         },
       ],

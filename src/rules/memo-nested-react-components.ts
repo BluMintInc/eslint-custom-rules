@@ -168,6 +168,23 @@ const isMemoCall = (
   return calleeMatchesReactMember(node.callee, reactImports, 'memo');
 };
 
+const mergeComponentResults = (
+  ...results: Array<ComponentDetectionResult | null>
+): ComponentDetectionResult | null => {
+  const present = results.filter(
+    (result): result is ComponentDetectionResult => Boolean(result),
+  );
+
+  if (!present.length) {
+    return null;
+  }
+
+  return {
+    found: true,
+    componentIsCallback: present.every((result) => result.componentIsCallback),
+  };
+};
+
 const expressionCreatesComponent = (
   expression: TSESTree.Expression | null,
   reactImports: ReactImports,
@@ -217,26 +234,26 @@ const expressionCreatesComponent = (
     case AST_NODE_TYPES.ConditionalExpression: {
       const cons = expressionCreatesComponent(unwrapped.consequent, reactImports);
       const alt = expressionCreatesComponent(unwrapped.alternate, reactImports);
-      return cons || alt;
+      return mergeComponentResults(cons, alt);
     }
     case AST_NODE_TYPES.LogicalExpression: {
       const left = expressionCreatesComponent(unwrapped.left, reactImports);
       const right = expressionCreatesComponent(unwrapped.right, reactImports);
-      return left || right;
+      return mergeComponentResults(left, right);
     }
     case AST_NODE_TYPES.SequenceExpression: {
       const last = unwrapped.expressions[unwrapped.expressions.length - 1];
       return expressionCreatesComponent(last || null, reactImports);
     }
     case AST_NODE_TYPES.ArrayExpression: {
-      const match = unwrapped.elements
+      const matches = unwrapped.elements
         .map((element) =>
           element && element.type !== AST_NODE_TYPES.SpreadElement
             ? expressionCreatesComponent(element, reactImports)
             : null,
         )
-        .find(Boolean);
-      return match || null;
+        .filter(Boolean) as ComponentDetectionResult[];
+      return mergeComponentResults(...matches);
     }
     default:
       return null;
@@ -357,11 +374,14 @@ const findMemoReference = (reactImports: ReactImports): string | null => {
   return reactImports.named.memo ?? null;
 };
 
-const hasIdentifierInScope = (name: string, scope: TSESLint.Scope.Scope) => {
+const hasIdentifierInScope = (
+  identifierName: string,
+  scope: TSESLint.Scope.Scope,
+) => {
   let current: TSESLint.Scope.Scope | null = scope;
 
   while (current) {
-    if (current.variables.some((variable) => variable.name === name)) {
+    if (current.variables.some((variable) => variable.name === identifierName)) {
       return true;
     }
     current = current.upper;

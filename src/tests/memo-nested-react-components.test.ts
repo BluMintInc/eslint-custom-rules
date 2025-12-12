@@ -266,6 +266,26 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
       code: `
         import { useCallback } from 'react';
 
+        const Mixed = useCallback((flag) => {
+          return flag ? <div>rendered</div> : () => <span>factory</span>;
+        }, []);
+      `,
+      output: null,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'Mixed',
+            hookName: 'useCallback()',
+            replacementHook: 'useMemo()',
+          },
+        },
+      ],
+    },
+    {
+      code: `
+        import { useCallback } from 'react';
+
         const Factory = useCallback(() => {
           return (props) => <section {...props} />;
         }, []);
