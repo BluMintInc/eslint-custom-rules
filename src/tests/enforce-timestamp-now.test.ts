@@ -162,10 +162,7 @@ ruleTesterTs.run('enforce-timestamp-now', enforceTimestampNow, {
           },
         },
       ],
-      output: `
-        import { Timestamp } from 'firebase-admin/firestore';
-        const timestamp = Timestamp.now();
-      `,
+      output: null,
       filename: backendFilePath,
     },
     // Invalid usage with createdAt naming
@@ -183,10 +180,7 @@ ruleTesterTs.run('enforce-timestamp-now', enforceTimestampNow, {
           },
         },
       ],
-      output: `
-        import { Timestamp } from 'firebase-admin/firestore';
-        const createdAt = Timestamp.now();
-      `,
+      output: null,
       filename: backendFilePath,
     },
     // Invalid usage with updatedAt naming
@@ -204,10 +198,7 @@ ruleTesterTs.run('enforce-timestamp-now', enforceTimestampNow, {
           },
         },
       ],
-      output: `
-        import { Timestamp } from 'firebase-admin/firestore';
-        const updatedAt = Timestamp.now();
-      `,
+      output: null,
       filename: backendFilePath,
     },
     // Invalid usage with dynamic import

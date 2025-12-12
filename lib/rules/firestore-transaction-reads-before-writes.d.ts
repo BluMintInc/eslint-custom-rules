@@ -1,1 +1,5 @@
-export declare const firestoreTransactionReadsBeforeWrites: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"readsAfterWrites", [], import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;
+import type { TSESLint } from '@typescript-eslint/utils';
+type MessageIds = 'readsAfterWrites';
+export declare const firestoreTransactionReadsBeforeWrites: TSESLint.RuleModule<MessageIds, [
+], TSESLint.RuleListener>;
+export {};

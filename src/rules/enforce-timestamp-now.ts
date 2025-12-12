@@ -1,4 +1,5 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import path from 'node:path';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'preferTimestampNow';
@@ -24,14 +25,18 @@ export const enforceTimestampNow = createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     const sourceCode = context.getSourceCode();
+    const normalizedFilename = path.normalize(context.getFilename());
+    const functionsSrcPattern = new RegExp(
+      `(?:^|[\\\\/])functions[\\\\/]src[\\\\/]`,
+    );
     // Only apply this rule to backend code (functions/src/)
-    const filename = context.getFilename();
-    if (!filename.includes('functions/src/')) {
+    if (!functionsSrcPattern.test(normalizedFilename)) {
       return {};
     }
 
     // Skip test files
-    if (filename.includes('.test.') || filename.includes('.spec.')) {
+    const basename = path.basename(normalizedFilename);
+    if (/\.(test|spec)\./i.test(basename)) {
       return {};
     }
 
@@ -270,9 +275,6 @@ export const enforceTimestampNow = createRule<[], MessageIds>({
                   data: {
                     expression: expressionText,
                     timestampAlias: timestampName,
-                  },
-                  fix(fixer) {
-                    return fixer.replaceText(node, `${timestampName}.now()`);
                   },
                 });
               }

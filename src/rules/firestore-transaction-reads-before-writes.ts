@@ -1,4 +1,5 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import type { TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'readsAfterWrites';
@@ -7,30 +8,32 @@ type MessageIds = 'readsAfterWrites';
 const READ_OPERATIONS = new Set(['get']);
 const WRITE_OPERATIONS = new Set(['set', 'update', 'delete']);
 
-export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
-  {
-    name: 'firestore-transaction-reads-before-writes',
-    meta: {
-      type: 'problem',
-      docs: {
-        description:
-          'Enforce that all Firestore transaction read operations are performed before any write operations',
-        recommended: 'error',
-      },
-      schema: [],
-      messages: {
-        readsAfterWrites:
-          'Firestore transaction read operations must be performed before any write operations. Move this read operation before any write operations.',
-      },
+export const firestoreTransactionReadsBeforeWrites: TSESLint.RuleModule<
+  MessageIds,
+  [],
+  TSESLint.RuleListener
+> = createRule<[], MessageIds>({
+  name: 'firestore-transaction-reads-before-writes',
+  meta: {
+    type: 'problem',
+    docs: {
+      description:
+        'Enforce that all Firestore transaction read operations are performed before any write operations',
+      recommended: 'error',
     },
-    defaultOptions: [],
-    create(context) {
+    schema: [],
+    messages: {
+      readsAfterWrites:
+        'Transaction read "{{method}}" runs after a write in this transaction. Reads must execute before writes so the transaction sees consistent data; move this read before any writes in the callback.',
+    },
+  },
+  defaultOptions: [],
+  create(context) {
       // Track transaction objects and their operations
       const transactionScopes = new Map<
         TSESTree.Node,
         {
           hasWriteOperation: boolean;
-          writeNodes: TSESTree.Node[];
           transactionVariables: Set<string>; // Track variable names that reference the transaction
         }
       >();
@@ -104,7 +107,6 @@ export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
                 }
                 transactionScopes.set(current.body, {
                   hasWriteOperation: false,
-                  writeNodes: [],
                   transactionVariables,
                 });
               }
@@ -205,7 +207,6 @@ export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
             }
             transactionScopes.set(callback.body, {
               hasWriteOperation: false,
-              writeNodes: [],
               transactionVariables,
             });
           }
@@ -266,6 +267,8 @@ export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
             return;
           }
 
+          const methodLabel = methodName ?? 'read operation';
+
           // Handle computed property access specially
           if (isRead && isWrite) {
             // This is a computed property access - we need to be more careful
@@ -274,7 +277,7 @@ export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
               context.report({
                 node,
                 messageId: 'readsAfterWrites',
-                data: { method: methodName ?? 'unknown' },
+                data: { method: methodLabel },
               });
             }
             // Don't mark as write since we don't know what method it is
@@ -284,7 +287,6 @@ export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
           // If it's a write operation, mark the scope as having a write
           if (isWrite) {
             scopeInfo.hasWriteOperation = true;
-            scopeInfo.writeNodes.push(node);
           }
 
           // If it's a read operation and the scope already has a write, report an error
@@ -292,7 +294,7 @@ export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
             context.report({
               node,
               messageId: 'readsAfterWrites',
-              data: { method: methodName ?? 'unknown' },
+              data: { method: methodLabel },
             });
           }
         },
