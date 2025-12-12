@@ -1,11 +1,15 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import type { TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'useCentralizedMockFirestore';
 
 const MOCK_FIRESTORE_PATH = '../../../../../__test-utils__/mockFirestore';
 
-export const enforceCentralizedMockFirestore = createRule<[], MessageIds>({
+export const enforceCentralizedMockFirestore: TSESLint.RuleModule<
+  MessageIds,
+  []
+> = createRule<[], MessageIds>({
   name: 'enforce-centralized-mock-firestore',
   meta: {
     type: 'problem',

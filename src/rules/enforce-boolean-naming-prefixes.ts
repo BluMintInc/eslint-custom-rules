@@ -792,17 +792,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
      * Attempt to resolve an identifier to a function declaration/expression and detect if it returns boolean
      */
     function identifierReturnsBoolean(name: string): boolean {
-      // Try to find the variable in all scopes, starting from current and going up
-      let currentScope: any = context.getScope();
-      let variable: any = undefined;
-
-      while (currentScope && !variable) {
-        variable = currentScope.variables.find((v: any) => v.name === name);
-        if (!variable) {
-          currentScope = currentScope.upper;
-        }
-      }
-
+      const variable = findVariableInScopes(name);
       if (!variable) return false;
 
       for (const def of variable.defs) {
@@ -1264,9 +1254,11 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         isBooleanVar = true;
       }
 
-      // Check if it's an arrow function with boolean return type
+      // Check if it's a function initializer with boolean return type
       if (
-        node.init?.type === AST_NODE_TYPES.ArrowFunctionExpression &&
+        node.init &&
+        (node.init.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+          node.init.type === AST_NODE_TYPES.FunctionExpression) &&
         node.init.returnType?.typeAnnotation &&
         node.init.returnType.typeAnnotation.type ===
           (AST_NODE_TYPES.TSBooleanKeyword as any)

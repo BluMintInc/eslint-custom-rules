@@ -1,4 +1,5 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import type { TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 function isCallbackFunctionNode(node: TSESTree.Node): boolean {
@@ -40,7 +41,8 @@ function isTypeLikeNode(node: TSESTree.Node): boolean {
 
 type MessageIds = 'assertShouldThrow' | 'shouldBeAssertPrefixed';
 
-export const enforceAssertThrows = createRule<[], MessageIds>({
+export const enforceAssertThrows: TSESLint.RuleModule<MessageIds, []> =
+  createRule<[], MessageIds>({
   name: 'enforce-assert-throws',
   meta: {
     type: 'problem',
@@ -59,160 +61,129 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    function callsAssertMethod(node: TSESTree.Node): boolean {
-      let hasAssertCall = false;
+    let currentFunction: TSESTree.Node | null = null;
 
-      function walk(node: TSESTree.Node): void {
-        if (hasAssertCall) return; // Early exit if we found an assert call
-        if (isTypeLikeNode(node)) return;
+    function traverseFunctionBody(
+      root: TSESTree.Node,
+      visitor: (node: TSESTree.Node) => boolean,
+    ): boolean {
+      const walk = (node: TSESTree.Node): boolean => {
+        if (visitor(node)) return true;
+        if (isTypeLikeNode(node)) return false;
 
-        if (node.type === AST_NODE_TYPES.CallExpression) {
-          const callee = node.callee;
-          if (callee.type === AST_NODE_TYPES.Identifier) {
-            if (callee.name.toLowerCase().startsWith('assert')) {
-              hasAssertCall = true;
-              return;
-            }
-          }
-          if (callee.type === AST_NODE_TYPES.MemberExpression) {
-            const property = callee.property;
-            if (property.type === AST_NODE_TYPES.Identifier) {
-              if (property.name.toLowerCase().startsWith('assert')) {
-                hasAssertCall = true;
-                return;
-              }
-            }
-          }
-        }
-
-        // Handle nested functions - only skip if it's a standalone function, not a callback
         if (
           node.type === AST_NODE_TYPES.FunctionDeclaration ||
           node.type === AST_NODE_TYPES.FunctionExpression ||
           node.type === AST_NODE_TYPES.ArrowFunctionExpression
         ) {
-          if (node !== currentFunction) {
-            // Allow traversing into callback functions
-            if (!isCallbackFunctionNode(node)) {
-              return;
-            }
+          if (node !== currentFunction && !isCallbackFunctionNode(node)) {
+            return false;
           }
         }
 
-        // Handle specific node types that contain other nodes
         switch (node.type) {
+          case AST_NODE_TYPES.CatchClause:
+            return walk(node.body);
+          case AST_NODE_TYPES.TryStatement:
+            if (walk(node.block)) return true;
+            if (node.handler && walk(node.handler)) return true;
+            if (node.finalizer && walk(node.finalizer)) return true;
+            return false;
           case AST_NODE_TYPES.BlockStatement:
-            node.body.forEach((stmt) => walk(stmt));
-            break;
+            return node.body.some((stmt) => walk(stmt));
           case AST_NODE_TYPES.IfStatement:
-            walk(node.consequent);
-            if (node.alternate) {
-              walk(node.alternate);
-            }
-            break;
+            if (walk(node.consequent)) return true;
+            if (node.alternate && walk(node.alternate)) return true;
+            return false;
           case AST_NODE_TYPES.ConditionalExpression:
-            walk(node.consequent);
-            walk(node.alternate);
-            break;
+            return walk(node.consequent) || walk(node.alternate);
           case AST_NODE_TYPES.LogicalExpression:
-            walk(node.left);
-            walk(node.right);
-            break;
-          case AST_NODE_TYPES.ExpressionStatement:
-            walk(node.expression);
-            break;
-          case AST_NODE_TYPES.ReturnStatement:
-            if (node.argument) {
-              walk(node.argument);
-            }
-            break;
-          case AST_NODE_TYPES.AwaitExpression:
-            walk(node.argument);
-            break;
-          case AST_NODE_TYPES.VariableDeclaration:
-            node.declarations.forEach((decl) => walk(decl));
-            break;
-          case AST_NODE_TYPES.VariableDeclarator:
-            if (node.init) {
-              walk(node.init);
-            }
-            break;
-          case AST_NODE_TYPES.CallExpression:
-            // Walk through arguments to find callback functions
-            node.arguments.forEach((arg) => walk(arg));
-            break;
-          case AST_NODE_TYPES.FunctionExpression:
-          case AST_NODE_TYPES.ArrowFunctionExpression:
-            // For callback functions, walk their body
-            if (isCallbackFunctionNode(node)) {
-              if (node.body.type === AST_NODE_TYPES.BlockStatement) {
-                walk(node.body);
-              } else {
-                // Arrow function with expression body
-                walk(node.body);
-              }
-            }
-            break;
+            return walk(node.left) || walk(node.right);
           case AST_NODE_TYPES.ForStatement:
           case AST_NODE_TYPES.ForInStatement:
           case AST_NODE_TYPES.ForOfStatement:
           case AST_NODE_TYPES.WhileStatement:
           case AST_NODE_TYPES.DoWhileStatement:
-            walk(node.body);
-            break;
+            return walk(node.body);
           case AST_NODE_TYPES.SwitchStatement:
-            node.cases.forEach((caseNode) => walk(caseNode));
-            break;
+            return node.cases.some((caseNode) => walk(caseNode));
           case AST_NODE_TYPES.SwitchCase:
-            node.consequent.forEach((stmt) => walk(stmt));
-            break;
+            return node.consequent.some((stmt) => walk(stmt));
           case AST_NODE_TYPES.LabeledStatement:
           case AST_NODE_TYPES.WithStatement:
-            walk(node.body);
-            break;
-          case AST_NODE_TYPES.TryStatement:
-            walk(node.block);
-            if (node.handler) {
-              walk(node.handler);
+            return walk(node.body);
+          case AST_NODE_TYPES.ExpressionStatement:
+            return walk(node.expression);
+          case AST_NODE_TYPES.ReturnStatement:
+            return node.argument ? walk(node.argument) : false;
+          case AST_NODE_TYPES.CallExpression:
+            return node.arguments.some((arg) => walk(arg as TSESTree.Node));
+          case AST_NODE_TYPES.FunctionExpression:
+          case AST_NODE_TYPES.ArrowFunctionExpression:
+            if (isCallbackFunctionNode(node)) {
+              if (node.body.type === AST_NODE_TYPES.BlockStatement) {
+                return walk(node.body);
+              }
+              return walk(node.body);
             }
-            if (node.finalizer) {
-              walk(node.finalizer);
-            }
-            break;
-          case AST_NODE_TYPES.CatchClause:
-            walk(node.body);
-            break;
+            return false;
+          case AST_NODE_TYPES.VariableDeclaration:
+            return node.declarations.some((decl) => walk(decl));
+          case AST_NODE_TYPES.VariableDeclarator:
+            return node.init ? walk(node.init) : false;
+          case AST_NODE_TYPES.AwaitExpression:
+            return walk(node.argument);
           default:
-            // Handle other node types generically
             for (const key of Object.keys(node)) {
               if (key === 'parent' || key === 'range' || key === 'loc')
                 continue;
               const value = node[key as keyof typeof node];
               if (Array.isArray(value)) {
-                value.forEach((item) => {
+                for (const item of value) {
                   if (
                     item &&
                     typeof item === 'object' &&
                     'type' in item &&
                     !isTypeLikeNode(item as TSESTree.Node)
                   ) {
-                    walk(item as TSESTree.Node);
+                    if (walk(item as TSESTree.Node)) return true;
                   }
-                });
+                }
               } else if (
                 value &&
                 typeof value === 'object' &&
                 'type' in value &&
                 !isTypeLikeNode(value as TSESTree.Node)
               ) {
-                walk(value as TSESTree.Node);
+                if (walk(value as TSESTree.Node)) return true;
               }
             }
+            return false;
         }
-      }
+      };
 
-      walk(node);
-      return hasAssertCall;
+      return walk(root);
+    }
+
+    function callsAssertMethod(node: TSESTree.Node): boolean {
+      return traverseFunctionBody(node, (current) => {
+        if (current.type !== AST_NODE_TYPES.CallExpression) return false;
+        const callee = current.callee;
+        if (
+          callee.type === AST_NODE_TYPES.Identifier &&
+          callee.name.toLowerCase().startsWith('assert')
+        ) {
+          return true;
+        }
+        if (
+          callee.type === AST_NODE_TYPES.MemberExpression &&
+          callee.property.type === AST_NODE_TYPES.Identifier &&
+          callee.property.name.toLowerCase().startsWith('assert')
+        ) {
+          return true;
+        }
+        return false;
+      });
     }
 
     function isAssertionCall(node: TSESTree.Node): boolean {
@@ -499,208 +470,36 @@ export const enforceAssertThrows = createRule<[], MessageIds>({
     }
 
     function hasThrowStatement(node: TSESTree.Node): boolean {
-      let hasThrow = false;
       const functionBody =
         node.type === AST_NODE_TYPES.BlockStatement ? node : null;
 
-      function walk(node: TSESTree.Node): void {
-        if (hasThrow) return; // Early exit if we already found a throw
-        if (isTypeLikeNode(node)) return;
-
-        if (node.type === AST_NODE_TYPES.ThrowStatement) {
-          hasThrow = true;
-          return;
+      return traverseFunctionBody(node, (current) => {
+        if (current.type === AST_NODE_TYPES.ThrowStatement) {
+          return true;
         }
 
-        // Check for process.exit(1)
-        if (node.type === AST_NODE_TYPES.ExpressionStatement) {
-          if (isProcessExit1(node.expression)) {
-            hasThrow = true;
-            return;
-          }
-        }
-
-        // Check for assertion function calls
-        if (isAssertionCall(node)) {
-          hasThrow = true;
-          return;
-        }
-
-        // Check for calls to other assert methods
-        if (isCallingAssertMethod(node, functionBody)) {
-          hasThrow = true;
-          return;
-        }
-
-        // Check for promise chains with assert methods
-        if (hasPromiseChainWithAssertMethods(node)) {
-          hasThrow = true;
-          return;
-        }
-
-        // Handle nested functions - only skip if it's a standalone function, not a callback
         if (
-          node.type === AST_NODE_TYPES.FunctionDeclaration ||
-          node.type === AST_NODE_TYPES.FunctionExpression ||
-          node.type === AST_NODE_TYPES.ArrowFunctionExpression
+          current.type === AST_NODE_TYPES.ExpressionStatement &&
+          isProcessExit1(current.expression)
         ) {
-          if (node !== currentFunction) {
-            // Allow traversing into callback functions
-            if (!isCallbackFunctionNode(node)) {
-              return;
-            }
-          }
+          return true;
         }
 
-        // Handle specific node types that need special traversal
-        switch (node.type) {
-          case AST_NODE_TYPES.CatchClause:
-            walk(node.body);
-            return;
-
-          case AST_NODE_TYPES.TryStatement:
-            walk(node.block);
-            if (node.handler) {
-              walk(node.handler);
-            }
-            if (node.finalizer) {
-              walk(node.finalizer);
-            }
-            return;
-
-          case AST_NODE_TYPES.BlockStatement:
-            node.body.forEach((stmt) => walk(stmt));
-            return;
-
-          case AST_NODE_TYPES.IfStatement:
-            walk(node.consequent);
-            if (node.alternate) {
-              walk(node.alternate);
-            }
-            return;
-
-          case AST_NODE_TYPES.ConditionalExpression:
-            walk(node.consequent);
-            walk(node.alternate);
-            return;
-
-          case AST_NODE_TYPES.LogicalExpression:
-            walk(node.left);
-            walk(node.right);
-            return;
-
-          case AST_NODE_TYPES.ForStatement:
-            walk(node.body);
-            return;
-
-          case AST_NODE_TYPES.ForInStatement:
-            walk(node.body);
-            return;
-
-          case AST_NODE_TYPES.ForOfStatement:
-            walk(node.body);
-            return;
-
-          case AST_NODE_TYPES.WhileStatement:
-            walk(node.body);
-            return;
-
-          case AST_NODE_TYPES.DoWhileStatement:
-            walk(node.body);
-            return;
-
-          case AST_NODE_TYPES.SwitchStatement:
-            node.cases.forEach((caseNode) => walk(caseNode));
-            return;
-
-          case AST_NODE_TYPES.SwitchCase:
-            node.consequent.forEach((stmt) => walk(stmt));
-            return;
-
-          case AST_NODE_TYPES.LabeledStatement:
-            walk(node.body);
-            return;
-
-          case AST_NODE_TYPES.WithStatement:
-            walk(node.body);
-            return;
-
-          case AST_NODE_TYPES.ExpressionStatement:
-            walk(node.expression);
-            return;
-
-          case AST_NODE_TYPES.ReturnStatement:
-            if (node.argument) {
-              walk(node.argument);
-            }
-            return;
-
-          case AST_NODE_TYPES.CallExpression:
-            // Walk through arguments to find callback functions
-            node.arguments.forEach((arg) => walk(arg));
-            return;
-
-          case AST_NODE_TYPES.FunctionExpression:
-          case AST_NODE_TYPES.ArrowFunctionExpression:
-            // For callback functions, walk their body
-            if (isCallbackFunctionNode(node)) {
-              if (node.body.type === AST_NODE_TYPES.BlockStatement) {
-                walk(node.body);
-              } else {
-                // Arrow function with expression body
-                walk(node.body);
-              }
-            }
-            return;
-
-          case AST_NODE_TYPES.VariableDeclaration:
-            node.declarations.forEach((decl) => walk(decl));
-            return;
-
-          case AST_NODE_TYPES.VariableDeclarator:
-            if (node.init) {
-              walk(node.init);
-            }
-            return;
-
-          case AST_NODE_TYPES.AwaitExpression:
-            walk(node.argument);
-            return;
-
-          default:
-            // Handle other node types generically
-            for (const key of Object.keys(node)) {
-              if (key === 'parent' || key === 'range' || key === 'loc')
-                continue;
-              const value = node[key as keyof typeof node];
-              if (Array.isArray(value)) {
-                value.forEach((item) => {
-                  if (
-                    item &&
-                    typeof item === 'object' &&
-                    'type' in item &&
-                    !isTypeLikeNode(item as TSESTree.Node)
-                  ) {
-                    walk(item as TSESTree.Node);
-                  }
-                });
-              } else if (
-                value &&
-                typeof value === 'object' &&
-                'type' in value &&
-                !isTypeLikeNode(value as TSESTree.Node)
-              ) {
-                walk(value as TSESTree.Node);
-              }
-            }
+        if (isAssertionCall(current)) {
+          return true;
         }
-      }
 
-      walk(node);
-      return hasThrow;
+        if (isCallingAssertMethod(current, functionBody)) {
+          return true;
+        }
+
+        if (hasPromiseChainWithAssertMethods(current)) {
+          return true;
+        }
+
+        return false;
+      });
     }
-
-    let currentFunction: TSESTree.Node | null = null;
 
     function checkFunction(
       node:
