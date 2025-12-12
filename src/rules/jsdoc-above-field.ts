@@ -42,7 +42,7 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
     ],
     messages: {
       moveJsdocAbove:
-        'Place the JSDoc for "{{name}}" above the {{kind}}. Inline JSDoc after a {{kind}} is skipped by IDE tooltips and autocomplete; move it before the declaration (and any decorators) so the documentation stays visible.',
+        'Inline JSDoc for "{{name}}" sits after the {{kind}} → IDE hovers and autocomplete skip trailing inline JSDoc, so tags like @deprecated/@default never surface when developers hover → Move the JSDoc block above the {{kind}} (and above any decorators or modifiers) so the documentation stays visible where it is needed.',
     },
   },
   defaultOptions,

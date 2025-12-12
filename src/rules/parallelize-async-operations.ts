@@ -430,9 +430,12 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
             !areInTryCatchBlocks(awaitNodes) &&
             !areInLoop(awaitNodes)
           ) {
-            const key = `${awaitNodes[0].range?.[0]}-${
-              awaitNodes[awaitNodes.length - 1].range?.[1]
-            }`;
+            const start = awaitNodes[0].range?.[0];
+            const end = awaitNodes[awaitNodes.length - 1].range?.[1];
+            if (start == null || end == null) {
+              return;
+            }
+            const key = `${start}-${end}`;
             if (!reportedRanges.has(key)) {
               reportedRanges.add(key);
               context.report({
@@ -457,9 +460,12 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
           !areInTryCatchBlocks(awaitNodes) &&
           !areInLoop(awaitNodes)
         ) {
-          const key = `${awaitNodes[0].range?.[0]}-${
-            awaitNodes[awaitNodes.length - 1].range?.[1]
-          }`;
+          const start = awaitNodes[0].range?.[0];
+          const end = awaitNodes[awaitNodes.length - 1].range?.[1];
+          if (start == null || end == null) {
+            return;
+          }
+          const key = `${start}-${end}`;
           if (!reportedRanges.has(key)) {
             reportedRanges.add(key);
             context.report({

@@ -51,8 +51,8 @@ export const noUnusedProps = createRule({
     ]);
 
     const propsTypes: Map<string, Record<string, TSESTree.Node>> = new Map();
-    // Track which spread types have been used in a component
-    const usedSpreadTypes: Map<string, Set<string>> = new Map();
+    const propsTypeToSpreadTypes: Map<string, Set<string>> = new Map();
+    const spreadTypeToPropNames: Map<string, Set<string>> = new Map();
     const componentsToCheck: Array<{
       typeName: string;
       used: Set<string>;
@@ -67,7 +67,8 @@ export const noUnusedProps = createRule({
 
     const clearState = () => {
       propsTypes.clear();
-      usedSpreadTypes.clear();
+      propsTypeToSpreadTypes.clear();
+      spreadTypeToPropNames.clear();
       componentsToCheck.length = 0;
       currentComponent = null;
     };
@@ -93,8 +94,8 @@ export const noUnusedProps = createRule({
       spreadTypeName: string,
       used: Set<string>,
     ) => {
-      const spreadTypeProps = usedSpreadTypes.get(spreadTypeName);
-      if (!spreadTypeProps) {
+      const spreadTypeProps = spreadTypeToPropNames.get(spreadTypeName);
+      if (!spreadTypeProps || spreadTypeProps.size === 0) {
         return false;
       }
 
@@ -130,14 +131,16 @@ export const noUnusedProps = createRule({
       currentTypeName: string,
       used: Set<string>,
     ) => {
-      for (const [spreadType, props] of usedSpreadTypes.entries()) {
-        if (spreadType === currentTypeName) continue;
+      const spreadTypes = propsTypeToSpreadTypes.get(currentTypeName);
+      if (!spreadTypes) return false;
 
-        if (!props.has(prop)) {
+      for (const spreadType of spreadTypes) {
+        const spreadProps = spreadTypeToPropNames.get(spreadType);
+        if (!spreadProps || !spreadProps.has(prop)) {
           continue;
         }
 
-        for (const spreadProp of props) {
+        for (const spreadProp of spreadProps) {
           if (used.has(spreadProp)) {
             return true;
           }
@@ -201,19 +204,66 @@ export const noUnusedProps = createRule({
           const addBaseTypeProps = (
             typeNode: TSESTree.TypeNode,
             shouldInclude: (name: string) => boolean = () => true,
-          ) => {
-            if (typeNode.type !== AST_NODE_TYPES.TSTypeLiteral) {
-              return;
-            }
-            typeNode.members.forEach((member) => {
+          ): boolean => {
+            const visit = (node: TSESTree.TypeNode): boolean => {
               if (
-                member.type === AST_NODE_TYPES.TSPropertySignature &&
-                member.key.type === AST_NODE_TYPES.Identifier &&
-                shouldInclude(member.key.name)
+                (node as { type: string }).type === 'TSParenthesizedType' &&
+                (node as { typeAnnotation?: TSESTree.TypeNode }).typeAnnotation
               ) {
-                props[member.key.name] = member.key;
+                return visit(
+                  (node as { typeAnnotation: TSESTree.TypeNode }).typeAnnotation,
+                );
               }
-            });
+
+              switch (node.type) {
+                case AST_NODE_TYPES.TSTypeLiteral: {
+                  let added = false;
+                  node.members.forEach((member) => {
+                    if (
+                      member.type === AST_NODE_TYPES.TSPropertySignature &&
+                      member.key.type === AST_NODE_TYPES.Identifier &&
+                      shouldInclude(member.key.name)
+                    ) {
+                      props[member.key.name] = member.key;
+                      added = true;
+                    }
+                  });
+                  return added;
+                }
+                case AST_NODE_TYPES.TSIntersectionType:
+                case AST_NODE_TYPES.TSUnionType: {
+                  let added = false;
+                  node.types.forEach((child) => {
+                    if (visit(child)) {
+                      added = true;
+                    }
+                  });
+                  return added;
+                }
+                case AST_NODE_TYPES.TSTypeReference: {
+                  if (node.typeName.type !== AST_NODE_TYPES.Identifier) {
+                    return false;
+                  }
+                  const typeIdentifier = node.typeName;
+                  const scope = context.getScope();
+                  const variable = scope.variables.find(
+                    (v) => v.name === typeIdentifier.name,
+                  );
+                  if (
+                    variable &&
+                    variable.defs[0]?.node.type ===
+                      AST_NODE_TYPES.TSTypeAliasDeclaration
+                  ) {
+                    return visit(variable.defs[0].node.typeAnnotation);
+                  }
+                  return false;
+                }
+                default:
+                  return false;
+              }
+            };
+
+            return visit(typeNode);
           };
 
           const handleOmitType = (
@@ -230,21 +280,33 @@ export const noUnusedProps = createRule({
             const baseTypeName = baseType.typeName.name;
             const omittedPropNames = new Set<string>();
 
+            let canComputeOmittedProps = false;
+
             if (omittedProps.type === AST_NODE_TYPES.TSUnionType) {
-              omittedProps.types.forEach((type) => {
-                if (
+              canComputeOmittedProps = omittedProps.types.every(
+                (type) =>
                   type.type === AST_NODE_TYPES.TSLiteralType &&
                   type.literal.type === AST_NODE_TYPES.Literal &&
-                  typeof type.literal.value === 'string'
-                ) {
-                  omittedPropNames.add(type.literal.value);
-                }
-              });
+                  typeof type.literal.value === 'string',
+              );
+
+              if (canComputeOmittedProps) {
+                omittedProps.types.forEach((type) => {
+                  if (
+                    type.type === AST_NODE_TYPES.TSLiteralType &&
+                    type.literal.type === AST_NODE_TYPES.Literal &&
+                    typeof type.literal.value === 'string'
+                  ) {
+                    omittedPropNames.add(type.literal.value);
+                  }
+                });
+              }
             } else if (
               omittedProps.type === AST_NODE_TYPES.TSLiteralType &&
               omittedProps.literal.type === AST_NODE_TYPES.Literal &&
               typeof omittedProps.literal.value === 'string'
             ) {
+              canComputeOmittedProps = true;
               omittedPropNames.add(omittedProps.literal.value);
             }
 
@@ -253,15 +315,29 @@ export const noUnusedProps = createRule({
               (v) => v.name === baseTypeName,
             );
 
+            if (!canComputeOmittedProps) {
+              props[`...${baseTypeName}`] = baseType.typeName;
+              if (!spreadTypeProps[baseTypeName]) {
+                spreadTypeProps[baseTypeName] = [];
+              }
+              return;
+            }
+
             if (
               variable &&
               variable.defs[0]?.node.type ===
                 AST_NODE_TYPES.TSTypeAliasDeclaration
             ) {
-              addBaseTypeProps(
-                variable.defs[0].node.typeAnnotation,
+              const baseTypeAnnotation = variable.defs[0].node.typeAnnotation;
+              const added = addBaseTypeProps(
+                baseTypeAnnotation,
                 (name) => !omittedPropNames.has(name),
               );
+
+              if (!added) {
+                props[`...${baseTypeName}`] = baseType.typeName;
+                spreadTypeProps[baseTypeName] ??= [];
+              }
             } else {
               props[`...${baseTypeName}`] = baseType.typeName;
               if (!spreadTypeProps[baseTypeName]) {
@@ -457,7 +533,13 @@ export const noUnusedProps = createRule({
                         AST_NODE_TYPES.TSTypeAliasDeclaration
                     ) {
                       // For Partial<T>, Required<T>, etc., add all properties from the base type
-                      addBaseTypeProps(variable.defs[0].node.typeAnnotation);
+                      const added = addBaseTypeProps(
+                        variable.defs[0].node.typeAnnotation,
+                      );
+                      if (!added) {
+                        props[`...${baseTypeName}`] = baseType.typeName;
+                        spreadTypeProps[baseTypeName] ??= [];
+                      }
                     } else {
                       // If we can't find the base type definition, treat it as a spread type
                       props[`...${baseTypeName}`] = baseType.typeName;
@@ -484,21 +566,20 @@ export const noUnusedProps = createRule({
           extractProps(node.typeAnnotation);
           propsTypes.set(node.id.name, props);
 
-          // Store the mapping of spread types to their properties
           const typeName = node.id.name;
-          usedSpreadTypes.set(typeName, new Set(Object.keys(spreadTypeProps)));
+          propsTypeToSpreadTypes.set(
+            typeName,
+            new Set(Object.keys(spreadTypeProps)),
+          );
 
-          // Store the spread type properties for later reference
           for (const [spreadType, propNames] of Object.entries(
             spreadTypeProps,
           )) {
-            // Create a map entry for this spread type if it doesn't exist
-            if (!usedSpreadTypes.has(spreadType)) {
-              usedSpreadTypes.set(spreadType, new Set());
+            if (!spreadTypeToPropNames.has(spreadType)) {
+              spreadTypeToPropNames.set(spreadType, new Set());
             }
 
-            // Add the property names to the spread type's set
-            const spreadTypeSet = usedSpreadTypes.get(spreadType)!;
+            const spreadTypeSet = spreadTypeToPropNames.get(spreadType)!;
             propNames.forEach((prop) => spreadTypeSet.add(prop));
           }
         }
