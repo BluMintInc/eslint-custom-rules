@@ -6,48 +6,63 @@
 
 <!-- end auto-generated rule header -->
 
-Callback entry points should be obvious by name. This rule keeps callback props easy to spot and callback implementations descriptive:
-- Function props that expect callables must use the `on*` prefix so callers cannot confuse them with data or component props.
-- Callback functions and methods should describe their action instead of using the generic `handle*` prefix.
+Callback naming should communicate intent at call sites. This rule enforces two conventions:
+
+- **Props that accept functions** must use the `onX` pattern (`onClick`, `onSubmit`) so consumers immediately know a prop is a callback.
+- **Callback implementations** should use action verbs (`submitOrder`, `saveDraft`) rather than the vague `handle` prefix, which hides what the function actually does.
+
+> The rule requires parser `project` settings so it can use TypeScript type info to detect function-typed props.
 
 ## Rule Details
 
-This rule reports when:
-- A JSX attribute receives a function prop whose name does not start with `on` and is not a React component prop.
-- A function, method, or constructor parameter property starts with `handle` instead of a verb phrase that explains the side effect. The rule still reports `handler`/`handlers` names but does not auto-fix them.
+The rule reports when:
+
+- A JSX attribute is a function-typed expression but its name does not start with `on` (excluding built-in React handlers and common non-callback props like `className`, `style`, `ref`, `sx`, `css`, etc.).
+- A function, method, class property, or parameter starts with `handle`/`handleX`. Plain `handler`/`handlers` still report, but the fixer avoids renaming them.
+- React component props or PascalCase prop names are skipped to avoid renaming component references.
 
 Autofix behavior:
+
 - For props, the fixer rewrites the JSX attribute to `on<PropName>` and expects you to align the prop definition.
-- For functions and methods, the fixer removes the `handle` prefix when it is safe to rename references.
+- For functions and methods, the fixer removes the `handle` prefix when it is safe to rename references. `handler`/`handlers` remain reported without an auto-fix.
 
-### Examples of incorrect code for this rule:
-
-```tsx
-type Props = {
-  submitForm: (data: FormData) => Promise<void>;
-};
-
-const Form = ({ submitForm }: Props) => (
-  <button onClick={() => submitForm(new FormData())}>Submit</button>
-);
-
-const handleSubmit = (data: FormData) => submitForm(data);
-```
-
-### Examples of correct code for this rule:
+### Examples of **incorrect** code for this rule:
 
 ```tsx
-type Props = {
-  onSubmit: (data: FormData) => Promise<void>;
-};
+// Props
+<Dialog submit={onSubmit} />          // prop is a function but not prefixed with on
+<Form changeHandler={onChange} />
 
-const Form = ({ onSubmit }: Props) => (
-  <button onClick={() => onSubmit(new FormData())}>Submit</button>
-);
-
-const submit = (data: FormData) => onSubmit(data);
+// Implementations
+const handleSubmit = () => save();    // prefer describe action
+class Modal {
+  handleClose() { this.hide(); }
+}
 ```
+
+### Examples of **correct** code for this rule:
+
+```tsx
+<Dialog onSubmit={submitOrder} />
+<Form onChange={onFormChange} />
+
+const submitOrder = () => save();
+class Modal {
+  closeModal() { this.hide(); }
+  get isOpen() { return this.visible; } // getter allowed
+}
+```
+
+## Options
+
+This rule does not have any options.
 
 ## When Not To Use It
 
-Skip this rule if your project uses a different naming convention for callback props or prefers the `handle*` prefix for functions.
+- Codebases that intentionally use `handle*` naming for callbacks and do not want automatic renames.
+- Projects that cannot enable TypeScript `project` settings for linting (the rule will throw without type information).
+- Teams that use different naming conventions for callback props.
+
+## Further Reading
+
+- React docs: [Passing Functions to Components](https://react.dev/learn/passing-props-to-a-component#passing-event-handlers)
