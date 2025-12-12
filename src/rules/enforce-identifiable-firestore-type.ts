@@ -161,7 +161,7 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
 
             if (currentType.type === AST_NODE_TYPES.TSIntersectionType) {
               return currentType.types.some((part) =>
-                findIdentifiable(part, checkedTypes),
+                findIdentifiable(part, new Set(checkedTypes)),
               );
             }
 
@@ -200,7 +200,7 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
 
             if (currentType.type === AST_NODE_TYPES.TSIntersectionType) {
               return currentType.types.some((part) =>
-                checkIdField(part, visitedTypes),
+                checkIdField(part, new Set(visitedTypes)),
               );
             }
 
@@ -280,7 +280,7 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
             if (
               isUtilityType(currentType) &&
               currentType.typeParameters?.params?.[0] &&
-              checkIdField(currentType.typeParameters.params[0], visitedTypes)
+              checkIdField(currentType.typeParameters.params[0])
             ) {
               return true;
             }
@@ -303,7 +303,7 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
 
             if (currentType.type === AST_NODE_TYPES.TSIntersectionType) {
               return currentType.types.some((part) =>
-                checkType(part, visitedTypes),
+                checkType(part, new Set(visitedTypes)),
               );
             }
 

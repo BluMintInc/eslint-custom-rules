@@ -90,6 +90,17 @@ ruleTesterTs.run(
       `,
         filename: 'functions/src/types/firestore/Guild/index.ts',
       },
+      {
+        code: `
+        type Resolve<T> = T;
+        type BaseType = { id: string; value: number };
+        type TypeA = BaseType;
+        type TypeB = Resolve<BaseType>;
+
+        export type Guild = TypeA & TypeB;
+      `,
+        filename: 'functions/src/types/firestore/Guild/index.ts',
+      },
     ],
     invalid: [
       {
