@@ -28,7 +28,7 @@ const SAFE_HOOK_ARGUMENTS = new Set([
   'useId',
 ]);
 
-const DEPENDENCY_PLACEHOLDER = '__TODO_ADD_DEPENDENCIES__';
+const TODO_REPLACE_WITH_ACTUAL_DEPENDENCIES = '__TODO_ADD_DEPENDENCIES__';
 
 function isHookName(name: string | null | undefined): name is string {
   return !!name && /^use[A-Z]/.test(name);
@@ -294,7 +294,7 @@ function buildMemoSuggestions(
         fix(fixer) {
           return fixer.replaceText(
             node,
-            `${descriptor.memoHook}(${initializerText}, [${DEPENDENCY_PLACEHOLDER}])`,
+            `${descriptor.memoHook}(${initializerText}, [${TODO_REPLACE_WITH_ACTUAL_DEPENDENCIES}])`,
           );
         },
       },
@@ -311,7 +311,7 @@ function buildMemoSuggestions(
       fix(fixer) {
         return fixer.replaceText(
           node,
-          `${descriptor.memoHook}(() => ${wrappedInitializer}, [${DEPENDENCY_PLACEHOLDER}])`,
+          `${descriptor.memoHook}(() => ${wrappedInitializer}, [${TODO_REPLACE_WITH_ACTUAL_DEPENDENCIES}])`,
         );
       },
     },
