@@ -245,6 +245,46 @@ function isUseMemoCall(
   return false;
 }
 
+function scanBackwardOverWhitespace(text: string, position: number): number {
+  let pos = position;
+  while (pos > 0 && (text[pos - 1] === ' ' || text[pos - 1] === '\t')) {
+    pos -= 1;
+  }
+  return pos;
+}
+
+function scanForwardOverWhitespace(text: string, position: number): number {
+  let pos = position;
+  while (pos < text.length && (text[pos] === ' ' || text[pos] === '\t')) {
+    pos += 1;
+  }
+  return pos;
+}
+
+function consumeLineBreak(
+  text: string,
+  position: number,
+): { consumed: boolean; newPosition: number } {
+  if (position < text.length && text[position] === '\r' && text[position + 1] === '\n') {
+    return { consumed: true, newPosition: position + 2 };
+  }
+  if (position < text.length && (text[position] === '\n' || text[position] === '\r')) {
+    return { consumed: true, newPosition: position + 1 };
+  }
+  return { consumed: false, newPosition: position };
+}
+
+function hasDeclaredVariables(
+  source: unknown,
+): source is { getDeclaredVariables: (node: TSESTree.Node) => TSESLint.Scope.Variable[] } {
+  return (
+    typeof source === 'object' &&
+    source !== null &&
+    'getDeclaredVariables' in source &&
+    typeof (source as { getDeclaredVariables?: unknown }).getDeclaredVariables === 'function'
+  );
+}
+
 function buildImportRemovalFix(
   specifier: TSESTree.ImportSpecifier,
   sourceCode: Readonly<TSESLint.SourceCode>,
@@ -263,49 +303,32 @@ function buildImportRemovalFix(
     const text = sourceCode.getText();
     let [start, end] = importDeclaration.range;
 
-    let scan = start;
-    while (scan > 0 && (text[scan - 1] === ' ' || text[scan - 1] === '\t')) {
-      scan -= 1;
-    }
-    if (scan > 0 && text[scan - 1] === '\n') {
-      start = scan - 1;
-      if (start > 0 && text[start - 1] === '\r') {
-        start -= 1;
-      }
+    const beforeImport = scanBackwardOverWhitespace(text, start);
+    if (beforeImport > 0 && (text[beforeImport - 1] === '\n' || text[beforeImport - 1] === '\r')) {
+      const { newPosition } = consumeLineBreak(text, beforeImport - 1);
+      start = newPosition;
     } else {
-      start = scan;
-      if (start > 0 && text[start - 1] === '\r') {
-        start -= 1;
+      start = beforeImport;
+    }
+
+    const afterImportWhitespace = scanForwardOverWhitespace(text, end);
+    const firstLineBreak = consumeLineBreak(text, afterImportWhitespace);
+    let removalEnd = afterImportWhitespace;
+
+    if (firstLineBreak.consumed) {
+      const afterFirstBreak = firstLineBreak.newPosition;
+      const spacesAfterFirst = scanForwardOverWhitespace(text, afterFirstBreak);
+      const secondLineBreak = consumeLineBreak(text, spacesAfterFirst);
+      if (secondLineBreak.consumed) {
+        // Remove a trailing blank line but stop before consuming indentation of the next statement.
+        removalEnd = secondLineBreak.newPosition;
+      } else {
+        // Keep indentation that belongs to the following statement.
+        removalEnd = afterFirstBreak;
       }
     }
 
-    while (end < text.length && (text[end] === ' ' || text[end] === '\t')) {
-      end += 1;
-    }
-    const consumeLineBreak = () => {
-      if (end < text.length && text[end] === '\r' && text[end + 1] === '\n') {
-        end += 2;
-        return true;
-      }
-      if (end < text.length && (text[end] === '\n' || text[end] === '\r')) {
-        end += 1;
-        return true;
-      }
-      return false;
-    };
-
-    if (consumeLineBreak()) {
-      while (end < text.length && (text[end] === ' ' || text[end] === '\t')) {
-        end += 1;
-      }
-      if (consumeLineBreak()) {
-        while (end < text.length && (text[end] === ' ' || text[end] === '\t')) {
-          end += 1;
-        }
-      }
-    }
-
-    return fixer.removeRange([start, end]);
+    return fixer.removeRange([start, removalEnd]);
   }
 
   const defaultSpecifier = remainingSpecifiers.find(
@@ -453,11 +476,9 @@ function getRemovableImportSpecifier(
   }
 
   const sourceCode = context.getSourceCode();
-  const declaredVariables =
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ((sourceCode as any).getDeclaredVariables?.(specifier) as
-      | TSESLint.Scope.Variable[]
-      | undefined) ?? context.getDeclaredVariables(specifier);
+  const declaredVariables = hasDeclaredVariables(sourceCode)
+    ? sourceCode.getDeclaredVariables(specifier)
+    : context.getDeclaredVariables(specifier);
   const [variable] = declaredVariables;
   if (!variable) {
     // Defer removal when scope analysis cannot resolve the import.
@@ -532,39 +553,41 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
     const resolveVariable = (identifier: TSESTree.Identifier) =>
       ASTUtils.findVariable(context.getScope(), identifier) ?? null;
 
-    function handleUseMemoCall(
+    function validateUseMemoArgument(
       node: TSESTree.CallExpression,
-      currentContext: FunctionContext | undefined,
-    ) {
-      if (!currentContext?.isHook || reported.has(node)) {
-        return;
-      }
-
+    ):
+      | {
+          callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression;
+          returnedExpression: TSESTree.Expression;
+        }
+      | null {
       const callback = node.arguments[0];
       if (
         !callback ||
         (callback.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
           callback.type !== AST_NODE_TYPES.FunctionExpression)
       ) {
-        return;
+        return null;
       }
       const returnedExpression = getReturnedExpression(callback);
       if (!returnedExpression) {
-        return;
+        return null;
       }
+      return { callback, returnedExpression };
+    }
 
-      if (isExpensiveComputation(callback, expensiveMatchers)) {
-        return;
-      }
-
+    function classifyUseMemoReturnType(
+      node: TSESTree.CallExpression,
+      returnedExpression: TSESTree.Expression,
+    ): { passByValue: boolean; indeterminate: boolean; description: string } | null {
       const tsNode = esTreeNodeToTSNodeMap.get(node);
       if (!tsNode) {
-        return;
+        return null;
       }
 
       const type = checker.getTypeAtLocation(tsNode);
       let classification = classifyPassByValue(type, checker);
-      if (classification.indeterminate && returnedExpression) {
+      if (classification.indeterminate) {
         const returnedTsNode = esTreeNodeToTSNodeMap.get(returnedExpression);
         if (returnedTsNode) {
           const returnedType = checker.getTypeAtLocation(returnedTsNode);
@@ -577,7 +600,61 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
           }
         }
       }
-      if (classification.indeterminate || !classification.passByValue) {
+
+      return classification;
+    }
+
+    function buildUseMemoFix(
+      node: TSESTree.CallExpression,
+      callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
+      returnedExpression: TSESTree.Expression,
+      fixer: TSESLint.RuleFixer,
+    ): TSESLint.RuleFix[] | null {
+      const replacementText = getReplacementText(callback, sourceCode);
+      if (!replacementText) {
+        return null;
+      }
+
+      const needsParentheses = shouldParenthesizeReplacement(
+        node,
+        returnedExpression,
+        sourceCode,
+      );
+      const replacement = needsParentheses ? `(${replacementText})` : replacementText;
+
+      const specifier = getRemovableImportSpecifier(node, imports, context);
+      const fixes: TSESLint.RuleFix[] = [fixer.replaceText(node, replacement)];
+
+      if (specifier) {
+        const removal = buildImportRemovalFix(specifier, sourceCode, fixer);
+        if (removal) {
+          fixes.push(removal);
+        }
+      }
+
+      return fixes;
+    }
+
+    function handleUseMemoCall(
+      node: TSESTree.CallExpression,
+      currentContext: FunctionContext | undefined,
+    ) {
+      if (!currentContext?.isHook || reported.has(node)) {
+        return;
+      }
+
+      const validated = validateUseMemoArgument(node);
+      if (!validated) {
+        return;
+      }
+
+      const { callback, returnedExpression } = validated;
+      if (isExpensiveComputation(callback, expensiveMatchers)) {
+        return;
+      }
+
+      const classification = classifyUseMemoReturnType(node, returnedExpression);
+      if (!classification || classification.indeterminate || !classification.passByValue) {
         return;
       }
 
@@ -590,36 +667,29 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
           hookName: currentContext.hookName ?? 'this hook',
           valueType: classification.description,
         },
-        fix: (fixer) => {
-          const replacementText = getReplacementText(callback, sourceCode);
-          if (!replacementText || !returnedExpression) {
-            return null;
-          }
-
-          const needsParentheses = shouldParenthesizeReplacement(
-            node,
-            returnedExpression,
-            sourceCode,
-          );
-          const replacement = needsParentheses
-            ? `(${replacementText})`
-            : replacementText;
-
-          const specifier = getRemovableImportSpecifier(node, imports, context);
-          const fixes: TSESLint.RuleFix[] = [
-            fixer.replaceText(node, replacement),
-          ];
-
-          if (specifier) {
-            const removal = buildImportRemovalFix(specifier, sourceCode, fixer);
-            if (removal) {
-              fixes.push(removal);
-            }
-          }
-
-          return fixes;
-        },
+        fix: (fixer) => buildUseMemoFix(node, callback, returnedExpression, fixer),
       });
+    }
+
+    function analyzeExpressionList(
+      expressions: (
+        | TSESTree.Expression
+        | TSESTree.SpreadElement
+        | null
+        | undefined
+      )[],
+      currentContext: FunctionContext | undefined,
+    ) {
+      for (const expr of expressions) {
+        if (!expr) {
+          continue;
+        }
+        if (expr.type === AST_NODE_TYPES.SpreadElement) {
+          analyzeReturnedValue(expr.argument, currentContext);
+          continue;
+        }
+        analyzeReturnedValue(expr, currentContext);
+      }
     }
 
     function analyzeReturnedValue(
@@ -636,22 +706,10 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
             handleUseMemoCall(expression, currentContext);
             return;
           }
-          for (const argument of expression.arguments) {
-            if (argument.type === AST_NODE_TYPES.SpreadElement) {
-              analyzeReturnedValue(argument.argument, currentContext);
-              continue;
-            }
-            analyzeReturnedValue(argument, currentContext);
-          }
+          analyzeExpressionList(expression.arguments, currentContext);
           return;
         case AST_NODE_TYPES.NewExpression:
-          for (const argument of expression.arguments ?? []) {
-            if (argument.type === AST_NODE_TYPES.SpreadElement) {
-              analyzeReturnedValue(argument.argument, currentContext);
-              continue;
-            }
-            analyzeReturnedValue(argument, currentContext);
-          }
+          analyzeExpressionList(expression.arguments ?? [], currentContext);
           return;
         case AST_NODE_TYPES.Identifier: {
           const variable = resolveVariable(expression);
@@ -684,34 +742,24 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
           return;
         }
         case AST_NODE_TYPES.ArrayExpression:
-          for (const element of expression.elements) {
-            if (!element) {
-              continue;
-            }
-            if (element.type === AST_NODE_TYPES.SpreadElement) {
-              analyzeReturnedValue(element.argument, currentContext);
-              continue;
-            }
-            analyzeReturnedValue(element, currentContext);
-          }
+          analyzeExpressionList(expression.elements, currentContext);
           return;
-        case AST_NODE_TYPES.ObjectExpression:
-          for (const property of expression.properties) {
+        case AST_NODE_TYPES.ObjectExpression: {
+          const propertyExpressions = expression.properties.map((property) => {
             if (property.type === AST_NODE_TYPES.SpreadElement) {
-              analyzeReturnedValue(property.argument, currentContext);
-              continue;
+              return property.argument;
             }
             if (
               property.type === AST_NODE_TYPES.Property &&
               property.value
             ) {
-              analyzeReturnedValue(
-                property.value as TSESTree.Expression,
-                currentContext,
-              );
+              return property.value as TSESTree.Expression;
             }
-          }
+            return null;
+          });
+          analyzeExpressionList(propertyExpressions, currentContext);
           return;
+        }
         case AST_NODE_TYPES.TSAsExpression:
         case AST_NODE_TYPES.TSTypeAssertion:
         case AST_NODE_TYPES.TSNonNullExpression:
