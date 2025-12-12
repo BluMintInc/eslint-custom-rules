@@ -164,23 +164,41 @@ function isObjectLikeType(
 ): 'object' | 'non-object' | 'unknown' {
   if (type.isUnion()) {
     let hasObject = false;
+    let hasUnknown = false;
+    let hasNonObject = false;
+    let hasNonNullable = false;
     for (const part of type.types) {
-      if (isNonObjectPrimitive(part)) {
-        return 'non-object';
-      }
       if (isNullableType(part)) {
         continue;
       }
 
-      const analysis = isObjectLikeType(part, checker);
-      if (analysis === 'non-object') {
-        return 'non-object';
+      hasNonNullable = true;
+
+      if (isNonObjectPrimitive(part)) {
+        hasNonObject = true;
+        continue;
       }
+
+      const analysis = isObjectLikeType(part, checker);
       if (analysis === 'object') {
         hasObject = true;
+      } else if (analysis === 'unknown') {
+        hasUnknown = true;
+      } else {
+        hasNonObject = true;
       }
     }
-    return hasObject ? 'object' : 'unknown';
+
+    if (hasObject) {
+      return 'object';
+    }
+    if (!hasNonNullable) {
+      return 'non-object';
+    }
+    if (hasUnknown) {
+      return 'unknown';
+    }
+    return hasNonObject ? 'non-object' : 'unknown';
   }
 
   if ((type.flags & ts.TypeFlags.Intersection) !== 0) {

@@ -368,6 +368,33 @@ ruleTesterTs.run(
       },
       {
         code: `
+        type Mixed = { required: string } | Record<string, unknown>;
+        const mixed: Mixed = getPayload();
+        if (!mixed) {
+          return handle(mixed);
+        }
+        `,
+        filename: path.join(
+          tsconfigRootDir,
+          'src/tests/fixtures/type-aware-object.ts',
+        ),
+        parserOptions: {
+          project: './tsconfig.json',
+          tsconfigRootDir,
+        },
+        errors: [
+          { messageId: 'missingEmptyObjectCheck', data: { name: 'mixed' } },
+        ],
+        output: `
+        type Mixed = { required: string } | Record<string, unknown>;
+        const mixed: Mixed = getPayload();
+        if ((!mixed || Object.keys(mixed).length === 0)) {
+          return handle(mixed);
+        }
+        `,
+      },
+      {
+        code: `
         type Payload = { a?: string } & { b?: string };
         const payload: Payload | undefined = getPayload();
         if (!payload) {
