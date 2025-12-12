@@ -511,6 +511,60 @@ ruleTesterTs.run(
       },
       {
         code: `
+        class MixedAccess {
+          static value = 1;
+          private _value = 2;
+
+          getValue() {
+            return this._value + MixedAccess.value;
+          }
+        }
+        `,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'getValue', suggestedName: 'value' },
+          },
+        ],
+        output: `
+        class MixedAccess {
+          static value = 1;
+          private _value = 2;
+
+          get value() {
+            return this._value + MixedAccess.value;
+          }
+        }
+        `,
+      },
+      {
+        code: `
+        class StaticVsInstance {
+          count = 3;
+
+          static getCount() {
+            return 10;
+          }
+        }
+        `,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'getCount', suggestedName: 'count' },
+          },
+        ],
+        output: `
+        class StaticVsInstance {
+          count = 3;
+
+          static get count() {
+            return 10;
+          }
+        }
+        `,
+      },
+      {
+        code: `
         class Caller {
           value() {
             return this.result;

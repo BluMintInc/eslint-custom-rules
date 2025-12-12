@@ -101,6 +101,8 @@ function hasNameCollision(
     return false;
   }
 
+  const targetIsStatic = (node as { static?: boolean }).static ?? false;
+
   return classBody.body.some((member) => {
     if ((member as unknown as MethodLikeDefinition) === node) {
       return false;
@@ -112,6 +114,11 @@ function hasNameCollision(
     }
 
     if ((member as { computed?: boolean }).computed) {
+      return false;
+    }
+
+    const memberIsStatic = (member as { static?: boolean }).static ?? false;
+    if (memberIsStatic !== targetIsStatic) {
       return false;
     }
 
