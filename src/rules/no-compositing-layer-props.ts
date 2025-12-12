@@ -41,13 +41,13 @@ export const noCompositingLayerProps = createRule<[], MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Warn when using CSS properties that trigger compositing layers, which can impact performance. Properties like transform, opacity, filter, and will-change create new GPU layers. While sometimes beneficial for animations, excessive layer creation can increase memory usage and hurt performance. This rule checks both regular style objects and MUI sx props. Consider alternatives or explicitly document intentional layer promotion.',
+        'Discourage CSS properties that force GPU compositing layers (e.g., transform, filter, will-change). Extra layers consume GPU memory and split rendering work, which slows scrolling and animation when sprinkled across a page. The rule inspects inline style objects and MUI sx props so layer promotion stays intentional rather than incidental.',
       recommended: 'error',
     },
     schema: [],
     messages: {
       compositingLayer:
-        '{{property}} may trigger a new compositing layer which can impact performance. Consider using alternative properties or add an eslint-disable comment if the layer promotion is intentional.',
+        'CSS property "{{property}}" promotes this element to its own GPU compositing layer. Extra layers allocate GPU memory and isolate painting, which slows scrolling and animation when used broadly. Remove "{{property}}" or keep it only when the layer promotion is intentional and documented (e.g., eslint-disable with a comment).',
     },
   },
   defaultOptions: [],
