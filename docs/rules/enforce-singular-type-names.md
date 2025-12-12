@@ -4,69 +4,72 @@
 
 <!-- end auto-generated rule header -->
 
-This rule enforces a naming convention where type names are singular. This convention enhances readability, maintainability, and consistency across the codebase. It prevents confusion between individual items and collections, improving developer experience.
+Type names should describe a single concept. Plural identifiers imply the declaration models a collection, which misleads readers into treating single-instance types as arrays, maps, or lists. Keeping type aliases, interfaces, and enums singular makes it obvious when code works with one entity and reserves plural names for actual container shapes.
 
 ## Rule Details
 
-This rule aims to ensure that all TypeScript type names (type aliases, interfaces, and enums) use singular form rather than plural.
+The rule checks TypeScript type aliases, interfaces, and enums. It uses `pluralize` to detect plural identifiers and reports names that are not singular. To avoid false positives on accepted conventions and mass nouns, the rule ignores names ending with `Props`, `Params`, `Options`, `Settings`, or `Data` (any casing).
 
-To detect whether a name is singular or plural, this rule utilizes the `pluralize` npm package, which efficiently determines word forms based on predefined rules.
+Why singular names matter:
+- Plural identifiers hide whether the symbol models one value or many, which leads to misuse as a container type.
+- Singling out cardinality in the name keeps public APIs self-documenting and reduces accidental collection handling bugs.
+- Reserving plural names for arrays/maps keeps naming consistent across variable declarations and type definitions.
 
 Examples of **incorrect** code for this rule:
 
 ```ts
-// Type name is plural (incorrect)
 type Users = {
   id: number;
   name: string;
 };
 
-// Incorrect type name for union type
 type Phases = 'not-ready' | 'ready';
 
-// Plural interface name
 interface People {
   id: number;
   name: string;
 }
 
-// Plural enum name
 enum Colors {
   RED,
   GREEN,
   BLUE
 }
+// Reported message example:
+// Type name 'Users' is plural, which signals a collection and hides whether this alias, interface, or enum represents one value or many. Plural type identifiers push callers to misuse the symbol for arrays or maps. Rename it to a singular noun such as 'User' so the declaration clearly models a single instance and leaves plural names for container types.
 ```
 
 Examples of **correct** code for this rule:
 
 ```ts
-// Type name is singular (correct)
 type User = {
   id: number;
   name: string;
 };
 
-// Corrected singular type name
 type Phase = 'not-ready' | 'ready';
 
-// Singular interface name
 interface Person {
   id: number;
   name: string;
 }
 
-// Singular enum name
 enum Color {
   RED,
   GREEN,
   BLUE
 }
+
+// Accepted suffixes that intentionally remain plural-like
+type UsersListProps = { users: User[] };
+type SearchParams = { query: string };
+type RequestOptions = { timeout: number };
+type UserData = { name: string; age: number };
 ```
 
 ## When Not To Use It
 
-If you don't care about the naming convention of your types or if you have a different naming convention for types in your project, you can disable this rule.
+Disable this rule if your project intentionally names types after collections (e.g., a domain object that is inherently plural) or you prefer a different naming convention. Otherwise, keep it enabled to preserve consistent, self-explanatory type names.
 
 ## Further Reading
 
