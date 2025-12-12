@@ -8,7 +8,7 @@ function isUtilMemoModulePath(path: string): boolean {
   return /(?:^|\/|\\)util\/memo$/.test(path);
 }
 
-function toSingleQuotedStringLiteral(value: string): string {
+function escapeStringForCodeGeneration(value: string): string {
   const escaped = value
     .replace(/\\/g, '\\\\')
     .replace(/'/g, "\\'")
@@ -41,6 +41,7 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
     const memoIdentifiers = new Map<string, string>();
     const memoNamespaces = new Map<string, string>();
     const sourceCode = context.getSourceCode();
+    const complexPropsCache = new WeakMap<TSESTree.Expression, string[]>();
 
     function isNullishComparatorArgument(
       arg: TSESTree.CallExpressionArgument,
@@ -198,6 +199,9 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
     function collectComplexProps(
       componentExpr: TSESTree.Expression,
     ): string[] {
+      const cached = complexPropsCache.get(componentExpr);
+      if (cached) return cached;
+
       const services = sourceCode.parserServices;
       if (!services?.program || !services?.esTreeNodeToTSNodeMap) {
         return [];
@@ -249,9 +253,177 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
           }
         }
 
-        return Array.from(complexProps).sort();
+        const result = Array.from(complexProps).sort();
+        complexPropsCache.set(componentExpr, result);
+        return result;
       } catch {
         return [];
+      }
+    }
+
+    function addBindingNames(
+      pattern:
+        | TSESTree.BindingName
+        | TSESTree.AssignmentPattern
+        | TSESTree.RestElement,
+      target: Set<string>,
+    ): void {
+      switch (pattern.type) {
+        case AST_NODE_TYPES.Identifier:
+          target.add(pattern.name);
+          return;
+        case AST_NODE_TYPES.AssignmentPattern:
+          addBindingNames(pattern.left as TSESTree.BindingName, target);
+          return;
+        case AST_NODE_TYPES.ObjectPattern:
+          for (const prop of pattern.properties) {
+            if (prop.type === AST_NODE_TYPES.Property) {
+              addBindingNames(
+                prop.value as TSESTree.BindingName | TSESTree.AssignmentPattern,
+                target,
+              );
+            } else if (prop.type === AST_NODE_TYPES.RestElement) {
+              addBindingNames(
+                prop.argument as
+                  | TSESTree.BindingName
+                  | TSESTree.AssignmentPattern
+                  | TSESTree.RestElement,
+                target,
+              );
+            }
+          }
+          return;
+        case AST_NODE_TYPES.ArrayPattern:
+          for (const element of pattern.elements) {
+            if (element) {
+              addBindingNames(
+                element as
+                  | TSESTree.BindingName
+                  | TSESTree.AssignmentPattern
+                  | TSESTree.RestElement,
+                target,
+              );
+            }
+          }
+          return;
+        case AST_NODE_TYPES.RestElement:
+          addBindingNames(
+            pattern.argument as
+              | TSESTree.BindingName
+              | TSESTree.AssignmentPattern
+              | TSESTree.RestElement,
+            target,
+          );
+          return;
+        default:
+          return;
+      }
+    }
+
+    type TopLevelDeclaration =
+      | TSESTree.FunctionDeclaration
+      | TSESTree.ClassDeclaration
+      | TSESTree.TSEnumDeclaration
+      | TSESTree.TSInterfaceDeclaration
+      | TSESTree.TSTypeAliasDeclaration
+      | TSESTree.VariableDeclaration
+      | TSESTree.TSModuleDeclaration;
+
+    function isTopLevelDeclaration(
+      node: TSESTree.Node | null,
+    ): node is TopLevelDeclaration {
+      if (!node) return false;
+      return (
+        node.type === AST_NODE_TYPES.FunctionDeclaration ||
+        node.type === AST_NODE_TYPES.ClassDeclaration ||
+        node.type === AST_NODE_TYPES.TSEnumDeclaration ||
+        node.type === AST_NODE_TYPES.TSInterfaceDeclaration ||
+        node.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
+        node.type === AST_NODE_TYPES.VariableDeclaration ||
+        node.type === AST_NODE_TYPES.TSModuleDeclaration
+      );
+    }
+
+    function addNamesFromDeclaration(
+      declaration: TopLevelDeclaration,
+      target: Set<string>,
+    ): void {
+      if (
+        declaration.type === AST_NODE_TYPES.FunctionDeclaration ||
+        declaration.type === AST_NODE_TYPES.ClassDeclaration ||
+        declaration.type === AST_NODE_TYPES.TSEnumDeclaration ||
+        declaration.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
+        declaration.type === AST_NODE_TYPES.TSInterfaceDeclaration
+      ) {
+        if (declaration.id) {
+          target.add(declaration.id.name);
+        }
+        return;
+      }
+
+      if (declaration.type === AST_NODE_TYPES.VariableDeclaration) {
+        for (const decl of declaration.declarations) {
+          addBindingNames(
+            decl.id as TSESTree.BindingName | TSESTree.AssignmentPattern,
+            target,
+          );
+        }
+        return;
+      }
+
+      if (
+        declaration.type === AST_NODE_TYPES.TSModuleDeclaration &&
+        declaration.id.type === AST_NODE_TYPES.Identifier
+      ) {
+        target.add(declaration.id.name);
+      }
+    }
+
+    function pickAvailableCompareDeeplyLocalName(
+      program: TSESTree.Program,
+    ): string {
+      const used = new Set<string>();
+
+      for (const stmt of program.body) {
+        if (stmt.type === AST_NODE_TYPES.ImportDeclaration) {
+          for (const spec of stmt.specifiers) {
+            used.add(spec.local.name);
+          }
+          continue;
+        }
+
+        if (stmt.type === AST_NODE_TYPES.ExportNamedDeclaration) {
+          if (isTopLevelDeclaration(stmt.declaration)) {
+            addNamesFromDeclaration(stmt.declaration, used);
+          }
+          continue;
+        }
+
+        if (stmt.type === AST_NODE_TYPES.ExportDefaultDeclaration) {
+          const decl = stmt.declaration;
+          if (
+            decl &&
+            (decl.type === AST_NODE_TYPES.FunctionDeclaration ||
+              decl.type === AST_NODE_TYPES.ClassDeclaration)
+          ) {
+            if (decl.id) used.add(decl.id.name);
+          } else if (decl && decl.type === AST_NODE_TYPES.Identifier) {
+            used.add(decl.name);
+          }
+          continue;
+        }
+
+        if (isTopLevelDeclaration(stmt)) {
+          addNamesFromDeclaration(stmt, used);
+          continue;
+        }
+      }
+
+      if (!used.has('compareDeeply')) return 'compareDeeply';
+
+      for (let i = 2; ; i += 1) {
+        const candidate = `compareDeeply${i}`;
+        if (!used.has(candidate)) return candidate;
       }
     }
 
@@ -260,6 +432,7 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
       preferredSource?: string,
     ): { fixes: TSESLint.RuleFix[]; localName: string } {
       const program = sourceCode.ast;
+      const preferredLocalName = pickAvailableCompareDeeplyLocalName(program);
       const memoImports = program.body.filter(
         (node): node is TSESTree.ImportDeclaration =>
           node.type === AST_NODE_TYPES.ImportDeclaration &&
@@ -286,6 +459,10 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
         preferredSource && isUtilMemoModulePath(preferredSource)
           ? preferredSource
           : memoImports[0]?.source.value ?? 'src/util/memo';
+      const compareDeeplySpecifierText =
+        preferredLocalName === 'compareDeeply'
+          ? 'compareDeeply'
+          : `compareDeeply as ${preferredLocalName}`;
 
       const importWithNamed = memoImports.find((memoImport) =>
         memoImport.specifiers.some(
@@ -301,8 +478,13 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
         const lastNamedSpecifier =
           namedSpecifiers[namedSpecifiers.length - 1] ?? namedSpecifiers[0];
         return {
-          fixes: [fixer.insertTextAfter(lastNamedSpecifier, ', compareDeeply')],
-          localName: 'compareDeeply',
+          fixes: [
+            fixer.insertTextAfter(
+              lastNamedSpecifier,
+              `, ${compareDeeplySpecifierText}`,
+            ),
+          ],
+          localName: preferredLocalName,
         };
       }
 
@@ -320,9 +502,12 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
         if (defaultSpecifier) {
           return {
             fixes: [
-              fixer.insertTextAfter(defaultSpecifier, ', { compareDeeply }'),
+              fixer.insertTextAfter(
+                defaultSpecifier,
+                `, { ${compareDeeplySpecifierText} }`,
+              ),
             ],
-            localName: 'compareDeeply',
+            localName: preferredLocalName,
           };
         }
       }
@@ -332,28 +517,28 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
           fixes: [
             fixer.insertTextAfter(
               memoImports[0],
-              `\nimport { compareDeeply } from '${importSource}';`,
+              `\nimport { ${compareDeeplySpecifierText} } from '${importSource}';`,
             ),
           ],
-          localName: 'compareDeeply',
+          localName: preferredLocalName,
         };
       }
 
       const firstImport = program.body.find(
         (node) => node.type === AST_NODE_TYPES.ImportDeclaration,
       );
-      const importText = `import { compareDeeply } from '${importSource}';\n`;
+      const importText = `import { ${compareDeeplySpecifierText} } from '${importSource}';\n`;
 
       if (firstImport) {
         return {
           fixes: [fixer.insertTextBefore(firstImport, importText)],
-          localName: 'compareDeeply',
+          localName: preferredLocalName,
         };
       }
 
       return {
         fixes: [fixer.insertTextBeforeRange([0, 0], importText)],
-        localName: 'compareDeeply',
+        localName: preferredLocalName,
       };
     }
 
@@ -392,7 +577,7 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
 
         const propsList = `[${complexProps.join(', ')}]`;
         const propsCall = complexProps
-          .map((prop) => toSingleQuotedStringLiteral(prop))
+          .map((prop) => escapeStringForCodeGeneration(prop))
           .join(', ');
 
         context.report({

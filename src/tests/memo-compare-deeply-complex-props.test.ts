@@ -447,6 +447,25 @@ export const Wrapped = memo(Comp, compareDeeply('config'));
 `,
         errors: [{ messageId: 'useCompareDeeply' }],
       },
+      {
+        filename: 'src/components/CompareDeeplyNameCollision.tsx',
+        code: `
+import { memo } from 'react';
+const compareDeeply = () => false;
+type Props = { config: { theme: string } };
+const Comp = ({ config }: Props) => <div>{config.theme}</div>;
+export const Wrapped = memo(Comp);
+`,
+        output: `
+import { compareDeeply as compareDeeply2 } from 'src/util/memo';
+import { memo } from 'react';
+const compareDeeply = () => false;
+type Props = { config: { theme: string } };
+const Comp = ({ config }: Props) => <div>{config.theme}</div>;
+export const Wrapped = memo(Comp, compareDeeply2('config'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
     ],
   },
 );
