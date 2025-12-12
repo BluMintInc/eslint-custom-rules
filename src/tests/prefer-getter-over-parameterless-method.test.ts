@@ -119,6 +119,17 @@ ruleTesterTs.run(
         `,
         options: [{ minBodyLines: 3 }],
       },
+      // Void-annotated methods stay as methods even when ignoreVoidReturn is false
+      {
+        code: `
+        class VoidReturn {
+          result(): void {
+            return;
+          }
+        }
+        `,
+        options: [{ ignoreVoidReturn: false }],
+      },
     ],
     invalid: [
       {
@@ -570,6 +581,59 @@ ruleTesterTs.run(
       },
       {
         code: `
+        class Example {
+          data() {
+            return [1, 2, 3];
+          }
+
+          lengthHint() {
+            return this.data.length;
+          }
+        }
+        `,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'data', suggestedName: 'data' },
+          },
+          {
+            messageId: 'preferGetter',
+            data: { name: 'lengthHint', suggestedName: 'lengthHint' },
+          },
+        ],
+        output: `
+        class Example {
+          get data() {
+            return [1, 2, 3];
+          }
+
+          get lengthHint() {
+            return this.data.length;
+          }
+        }
+        `,
+      },
+      {
+        code: `
+        class OutsideCall {
+          getValue() {
+            return 1;
+          }
+        }
+
+        const instance = new OutsideCall();
+        instance.getValue();
+        `,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'getValue', suggestedName: 'value' },
+          },
+        ],
+        output: null,
+      },
+      {
+        code: `
         class WithSetter {
           private _name = 'x';
 
@@ -736,29 +800,6 @@ ruleTesterTs.run(
       },
       {
         code: `
-        class VoidReturn {
-          result(): void {
-            return;
-          }
-        }
-        `,
-        options: [{ ignoreVoidReturn: false }],
-        errors: [
-          {
-            messageId: 'preferGetter',
-            data: { name: 'result', suggestedName: 'result' },
-          },
-        ],
-        output: `
-        class VoidReturn {
-          get result(): void {
-            return;
-          }
-        }
-        `,
-      },
-      {
-        code: `
         class CallableName {
           call() {
             return this.value;
@@ -819,23 +860,7 @@ ruleTesterTs.run(
             data: { name: 'getValue', suggestedName: 'value' },
           },
         ],
-        output: `
-        class First {
-          getValue() {
-            return this.value;
-          }
-
-          consume(value: number) {
-            return this.getValue() + value;
-          }
-        }
-
-        class Second {
-          get value() {
-            return 2;
-          }
-        }
-        `,
+        output: null,
       },
       {
         code: `

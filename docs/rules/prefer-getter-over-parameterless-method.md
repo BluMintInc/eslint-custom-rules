@@ -8,10 +8,10 @@ This rule reports parameterless, non-abstract, synchronous methods that return a
 
 - Converting the method declaration `methodName()` to the getter declaration `get <suggestedName>()`, so you use it as `instance.<suggestedName>` without parentheses
 - Preserving access modifiers, `static`, decorators, and return type annotations
-- Stripping configurable verb prefixes (for example, `getUser()` → `get user()`)
+- Stripping configurable verb prefixes (for example, `getUser()` becomes the getter `get user()` and is accessed as `instance.user`)
 - Keeping boolean prefixes intact (`isValid()` → `get isValid()`)
 
-The fixer is withheld when mutations are detected (assignments, `++/--`, or obvious mutating array calls including `fill`/`copyWithin`), when the method name is used as a callable or stored as a function reference (for example `instance.method()`, `instance.method.call(...)`, `bind`, `apply`, `const fn = this.method`, or `const { method } = this`), or when the suggested getter name would collide with an existing class member. In these cases the rule still reports but leaves the change to the developer to avoid breaking call sites or creating duplicate identifiers.
+The fixer is withheld when mutations are detected (assignments, `++/--`, or obvious mutating array calls including `fill`/`copyWithin`), when the method name is used as a callable or stored as a function reference in the same file (for example `instance.method()`, `instance.method.call(...)`, `bind`, `apply`, `const fn = this.method`, or destructuring from `this`), or when the suggested getter name would collide with an existing class member. In these cases the rule still reports but leaves the change to the developer to avoid breaking call sites or creating duplicate identifiers. The rule only inspects uses within the current file; it does not attempt project-wide call-site discovery.
 
 Implementations that accompany overload signatures are skipped entirely because getters cannot have overload declarations; leaving those signatures in place would produce invalid TypeScript.
 
@@ -63,7 +63,7 @@ Implementations that accompany overload signatures are skipped entirely because 
 - `stripPrefixes` (string[]): verb prefixes to drop when deriving the getter name. Boolean prefixes (`is/has/can/should/will/did/was`) are preserved.
 - `ignoredMethods` (string[]): method names that should never be converted.
 - `ignoreAsync` (boolean): skip `async` methods. Default `true`.
-- `ignoreVoidReturn` (boolean): skip methods that only return `void`/`undefined`. Default `true`.
+- `ignoreVoidReturn` (boolean): skip methods that only return `void`/`undefined`. Default `true`. Explicit `void`/`undefined` return types are always treated as non-value-returning and are not auto-fixed.
 - `ignoreAbstract` (boolean): skip abstract methods. Default `true`.
 - `respectJsDocSideEffects` (boolean): skip methods when the JSDoc block mentions side effects or mutation (including `@sideEffect`/`@mutates` tags and side-effect phrases anywhere in the block, @returns included). Default `true`.
 - `minBodyLines` (number): require at least this many body lines before reporting. Default `0`.

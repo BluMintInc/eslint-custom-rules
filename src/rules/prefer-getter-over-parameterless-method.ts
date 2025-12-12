@@ -294,7 +294,10 @@ export const preferGetterOverParameterlessMethod = createRule<
       node: TSESTree.Node,
       propName: string,
       callUsedNamesByClass: WeakMap<TSESTree.ClassBody, Set<string>>,
+      callUsedNamesInFile: Set<string>,
     ) {
+      callUsedNamesInFile.add(propName);
+
       const classBody = getEnclosingClassBody(node);
       if (!classBody) {
         return;
@@ -313,8 +316,9 @@ export const preferGetterOverParameterlessMethod = createRule<
       member: TSESTree.MemberExpression,
       propName: string,
       callUsedNamesByClass: WeakMap<TSESTree.ClassBody, Set<string>>,
+      callUsedNamesInFile: Set<string>,
     ) {
-      addCallUse(member, propName, callUsedNamesByClass);
+      addCallUse(member, propName, callUsedNamesByClass, callUsedNamesInFile);
     }
 
     function getJsDoc(node: MethodLikeDefinition) {
@@ -424,15 +428,10 @@ export const preferGetterOverParameterlessMethod = createRule<
     function returnsValue(node: MethodLikeDefinition): boolean {
       const returnType = node.value.returnType?.typeAnnotation;
       if (returnType) {
-        if (config.ignoreVoidReturn && isVoidishType(returnType)) {
+        if (isVoidishType(returnType)) {
           return false;
         }
-        if (!isVoidishType(returnType)) {
-          return true;
-        }
-        if (!config.ignoreVoidReturn && isVoidishType(returnType)) {
-          return true;
-        }
+        return true;
       }
 
       const body = node.value.body;
@@ -470,9 +469,16 @@ export const preferGetterOverParameterlessMethod = createRule<
       return name;
     }
 
+    function isMemberExpressionNode(
+      value: TSESTree.Node,
+    ): value is TSESTree.MemberExpression {
+      return value.type === AST_NODE_TYPES.MemberExpression;
+    }
+
     function trackMemberCall(
       member: TSESTree.MemberExpression,
       callUsedNamesByClass: WeakMap<TSESTree.ClassBody, Set<string>>,
+      callUsedNamesInFile: Set<string>,
     ) {
       if (member.computed || member.property.type !== AST_NODE_TYPES.Identifier) {
         return;
@@ -482,34 +488,91 @@ export const preferGetterOverParameterlessMethod = createRule<
 
       if (propName === 'call' || propName === 'apply' || propName === 'bind') {
         const target = member.object;
-        if (target.type === AST_NODE_TYPES.MemberExpression) {
-          if (
-            !target.computed &&
-            target.property.type === AST_NODE_TYPES.Identifier &&
-            target.object.type === AST_NODE_TYPES.ThisExpression
-          ) {
-            addCallUseForMember(
-              member,
-              target.property.name,
-              callUsedNamesByClass,
-            );
-          }
+        if (
+          isMemberExpressionNode(target) &&
+          !target.computed &&
+          target.property.type === AST_NODE_TYPES.Identifier &&
+          target.object.type === AST_NODE_TYPES.ThisExpression
+        ) {
+          addCallUseForMember(
+            member,
+            target.property.name,
+            callUsedNamesByClass,
+            callUsedNamesInFile,
+          );
         } else if (target.type === AST_NODE_TYPES.ThisExpression) {
-          addCallUseForMember(member, propName, callUsedNamesByClass);
+          addCallUseForMember(
+            member,
+            propName,
+            callUsedNamesByClass,
+            callUsedNamesInFile,
+          );
+        } else if (
+          isMemberExpressionNode(target) &&
+          !target.computed &&
+          target.property.type === AST_NODE_TYPES.Identifier
+        ) {
+          addCallUseForMember(
+            target,
+            target.property.name,
+            callUsedNamesByClass,
+            callUsedNamesInFile,
+          );
+        } else if (target.type === AST_NODE_TYPES.Identifier) {
+          addCallUseForMember(
+            member,
+            target.name,
+            callUsedNamesByClass,
+            callUsedNamesInFile,
+          );
+        } else {
+          addCallUseForMember(
+            member,
+            propName,
+            callUsedNamesByClass,
+            callUsedNamesInFile,
+          );
         }
         return;
       }
 
-      if (member.object.type === AST_NODE_TYPES.ThisExpression) {
-        addCallUseForMember(member, propName, callUsedNamesByClass);
+      addCallUseForMember(
+        member,
+        propName,
+        callUsedNamesByClass,
+        callUsedNamesInFile,
+      );
+    }
+
+    function isFunctionReference(member: TSESTree.MemberExpression): boolean {
+      const parent = member.parent;
+      if (!parent) return false;
+
+      if (parent.type === AST_NODE_TYPES.CallExpression) {
+        return false;
       }
+
+      if (parent.type === AST_NODE_TYPES.MemberExpression) {
+        return false;
+      }
+
+      if (parent.type === AST_NODE_TYPES.ChainExpression) {
+        return false;
+      }
+
+      return true;
     }
 
     function trackMemberReference(
       member: TSESTree.MemberExpression,
       callUsedNamesByClass: WeakMap<TSESTree.ClassBody, Set<string>>,
+      callUsedNamesInFile: Set<string>,
     ) {
       if (member.computed || member.property.type !== AST_NODE_TYPES.Identifier) {
+        return;
+      }
+
+      if (!isFunctionReference(member)) {
         return;
       }
 
@@ -518,14 +581,24 @@ export const preferGetterOverParameterlessMethod = createRule<
           member,
           member.property.name,
           callUsedNamesByClass,
+          callUsedNamesInFile,
         );
+        return;
       }
+
+      addCallUseForMember(
+        member,
+        member.property.name,
+        callUsedNamesByClass,
+        callUsedNamesInFile,
+      );
     }
 
     function trackThisDestructuring(
       pattern: TSESTree.ObjectPattern,
       init: TSESTree.Node | null | undefined,
       callUsedNamesByClass: WeakMap<TSESTree.ClassBody, Set<string>>,
+      callUsedNamesInFile: Set<string>,
     ) {
       if (!init || init.type !== AST_NODE_TYPES.ThisExpression) {
         return;
@@ -537,18 +610,29 @@ export const preferGetterOverParameterlessMethod = createRule<
 
           const key = prop.key;
           if (key.type === AST_NODE_TYPES.Identifier) {
-            addCallUse(pattern, key.name, callUsedNamesByClass);
+            addCallUse(
+              pattern,
+              key.name,
+              callUsedNamesByClass,
+              callUsedNamesInFile,
+            );
           } else if (
             key.type === AST_NODE_TYPES.Literal &&
             typeof key.value === 'string'
           ) {
-            addCallUse(pattern, key.value, callUsedNamesByClass);
+            addCallUse(
+              pattern,
+              key.value,
+              callUsedNamesByClass,
+              callUsedNamesInFile,
+            );
           }
         }
       }
     }
 
     const callUsedNamesByClass = new WeakMap<TSESTree.ClassBody, Set<string>>();
+    const callUsedNamesInFile = new Set<string>();
     const candidates: Array<{
       node: MethodLikeDefinition;
       sideEffectReason: string | null;
@@ -560,20 +644,28 @@ export const preferGetterOverParameterlessMethod = createRule<
         const callee = node.callee as TSESTree.Node;
 
         if (callee.type === AST_NODE_TYPES.MemberExpression) {
-          trackMemberCall(callee, callUsedNamesByClass);
+          trackMemberCall(callee, callUsedNamesByClass, callUsedNamesInFile);
         } else if (callee.type === AST_NODE_TYPES.ChainExpression) {
           const expression = (callee as TSESTree.ChainExpression).expression;
           if (expression.type === AST_NODE_TYPES.MemberExpression) {
-            trackMemberCall(expression, callUsedNamesByClass);
+            trackMemberCall(
+              expression,
+              callUsedNamesByClass,
+              callUsedNamesInFile,
+            );
           }
         }
       },
       MemberExpression(node: TSESTree.MemberExpression) {
-        trackMemberReference(node, callUsedNamesByClass);
+        trackMemberReference(node, callUsedNamesByClass, callUsedNamesInFile);
       },
       ChainExpression(node: TSESTree.ChainExpression) {
         if (node.expression.type === AST_NODE_TYPES.MemberExpression) {
-          trackMemberReference(node.expression, callUsedNamesByClass);
+          trackMemberReference(
+            node.expression,
+            callUsedNamesByClass,
+            callUsedNamesInFile,
+          );
         }
       },
       VariableDeclarator(node: TSESTree.VariableDeclarator) {
@@ -582,6 +674,7 @@ export const preferGetterOverParameterlessMethod = createRule<
             node.id,
             node.init ?? null,
             callUsedNamesByClass,
+            callUsedNamesInFile,
           );
         }
       },
@@ -591,6 +684,7 @@ export const preferGetterOverParameterlessMethod = createRule<
             node.left,
             node.right,
             callUsedNamesByClass,
+            callUsedNamesInFile,
           );
         }
       },
@@ -677,6 +771,7 @@ export const preferGetterOverParameterlessMethod = createRule<
             classBody?.type === AST_NODE_TYPES.ClassBody
               ? callUsedNamesByClass.get(classBody)?.has(name) ?? false
               : false;
+          const isCallUsedSomewhereInFile = callUsedNamesInFile.has(name);
           const hasDuplicateSuggestedName =
             classBody?.type === AST_NODE_TYPES.ClassBody
               ? (suggestedNameCounts.get(classBody)?.get(scopeKey) ?? 0) > 1
@@ -701,6 +796,7 @@ export const preferGetterOverParameterlessMethod = createRule<
               !rightParen ||
               hasCollision ||
               isCallUsed ||
+              isCallUsedSomewhereInFile ||
               hasDuplicateSuggestedName
                 ? null
                 : (fixer) =>
