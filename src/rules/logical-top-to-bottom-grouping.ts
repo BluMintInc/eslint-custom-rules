@@ -426,7 +426,8 @@ function statementMutatesAny(statement: TSESTree.Statement, names: Set<string>):
   return false;
 }
 
-  function isIdentifierMutatedBeforeIndex(
+  // Checks if any statement before the given index mutates the identifier, so reordering does not cross a mutation boundary.
+  function isIdentifierMutated(
     body: TSESTree.Statement[],
     name: string,
     beforeIndex: number,
@@ -1089,7 +1090,7 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
   ): boolean {
     if (callee.type === AST_NODE_TYPES.Identifier) {
       const name = callee.name;
-      if (isIdentifierMutatedBeforeIndex(body, name, callIndex)) {
+      if (isIdentifierMutated(body, name, callIndex)) {
         return false;
       }
 
@@ -1125,7 +1126,7 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
 
     if (callee.type === AST_NODE_TYPES.MemberExpression) {
       const rootName = callee.object.type === AST_NODE_TYPES.Identifier ? callee.object.name : null;
-      if (rootName && isIdentifierMutatedBeforeIndex(body, rootName, callIndex)) {
+      if (rootName && isIdentifierMutated(body, rootName, callIndex)) {
         return false;
       }
       const memberFunction = resolveMemberFunction(body, callee, callIndex);
