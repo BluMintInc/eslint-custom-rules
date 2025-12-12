@@ -11,11 +11,12 @@ type NormalizedOptions = {
   headerTemplate: string | null;
   ignoreGeneratedFiles: boolean;
   generatedMarkers: string[];
+  excludedAtDirectives: string[];
 };
 
 type Options = [Partial<NormalizedOptions>];
 
-type MessageIds = 'missingHeader' | 'duplicateHeader';
+type MessageIds = 'missingHeader' | 'duplicateHeader' | 'splitHeaderFragment';
 
 type HeaderGroup = {
   comments: TSESTree.Comment[];
@@ -36,24 +37,55 @@ const DEFAULT_OPTIONS: NormalizedOptions = {
     'do not edit',
     'do not edit manually',
   ],
+  excludedAtDirectives: [
+    '@ts-nocheck',
+    '@ts-check',
+    '@ts-ignore',
+    '@ts-expect-error',
+    '@jsx',
+    '@jsxruntime',
+    '@jsximportsource',
+  ],
 };
 
+const normalizeArrayOption = <T>(provided: T[] | undefined, fallback: T[]): T[] =>
+  provided && provided.length > 0 ? provided : fallback;
+
+const normalizeArrayOptionAllowEmpty = <T>(provided: T[] | undefined, fallback: T[]): T[] =>
+  provided === undefined ? fallback : provided;
+
+const normalizeBooleanOption = (provided: boolean | undefined, fallback: boolean): boolean =>
+  provided ?? fallback;
+
+const normalizeNullableOption = <T>(
+  provided: T | null | undefined,
+  fallback: T | null,
+): T | null => (provided === undefined ? fallback : provided);
+
 const normalizeOptions = (options?: Partial<NormalizedOptions>): NormalizedOptions => ({
-  requiredPatterns:
-    options?.requiredPatterns && options.requiredPatterns.length > 0
-      ? options.requiredPatterns
-      : DEFAULT_OPTIONS.requiredPatterns,
-  excludedPatterns: options?.excludedPatterns ?? DEFAULT_OPTIONS.excludedPatterns,
-  requiredTags:
-    options?.requiredTags && options.requiredTags.length > 0
-      ? options.requiredTags
-      : DEFAULT_OPTIONS.requiredTags,
-  allowSplitHeaders: options?.allowSplitHeaders ?? DEFAULT_OPTIONS.allowSplitHeaders,
-  headerTemplate:
-    options?.headerTemplate === undefined ? DEFAULT_OPTIONS.headerTemplate : options.headerTemplate,
-  ignoreGeneratedFiles:
-    options?.ignoreGeneratedFiles ?? DEFAULT_OPTIONS.ignoreGeneratedFiles,
-  generatedMarkers: options?.generatedMarkers ?? DEFAULT_OPTIONS.generatedMarkers,
+  requiredPatterns: normalizeArrayOption(options?.requiredPatterns, DEFAULT_OPTIONS.requiredPatterns),
+  excludedPatterns: normalizeArrayOptionAllowEmpty(
+    options?.excludedPatterns,
+    DEFAULT_OPTIONS.excludedPatterns,
+  ),
+  requiredTags: normalizeArrayOption(options?.requiredTags, DEFAULT_OPTIONS.requiredTags),
+  allowSplitHeaders: normalizeBooleanOption(
+    options?.allowSplitHeaders,
+    DEFAULT_OPTIONS.allowSplitHeaders,
+  ),
+  headerTemplate: normalizeNullableOption(options?.headerTemplate, DEFAULT_OPTIONS.headerTemplate),
+  ignoreGeneratedFiles: normalizeBooleanOption(
+    options?.ignoreGeneratedFiles,
+    DEFAULT_OPTIONS.ignoreGeneratedFiles,
+  ),
+  generatedMarkers: normalizeArrayOptionAllowEmpty(
+    options?.generatedMarkers,
+    DEFAULT_OPTIONS.generatedMarkers,
+  ),
+  excludedAtDirectives: normalizeArrayOptionAllowEmpty(
+    options?.excludedAtDirectives?.map((directive) => directive.toLowerCase()),
+    DEFAULT_OPTIONS.excludedAtDirectives,
+  ),
 });
 
 const normalizeCommentValue = (comment: TSESTree.Comment): string =>
@@ -69,15 +101,29 @@ const hasRequiredTags = (text: string, requiredTagsLower: string[]): boolean => 
   return requiredTagsLower.some((tag) => lowerText.includes(tag));
 };
 
-const hasHeaderMarker = (text: string): boolean =>
-  text.split('\n').some((line) => line.trimStart().startsWith('@'));
+const hasHeaderMarker = (text: string, excludedAtDirectives: Set<string>): boolean =>
+  text.split('\n').some((line) => {
+    const trimmed = line.trimStart();
 
-const isHeaderCandidate = (text: string, requiredTagsLower: string[]): boolean =>
-  hasRequiredTags(text, requiredTagsLower) || hasHeaderMarker(text);
+    if (!trimmed.startsWith('@')) {
+      return false;
+    }
+
+    const marker = trimmed.split(/\s+/u)[0].toLowerCase();
+
+    return !excludedAtDirectives.has(marker);
+  });
+
+const isHeaderCandidate = (
+  text: string,
+  requiredTagsLower: string[],
+  excludedAtDirectives: Set<string>,
+): boolean => hasRequiredTags(text, requiredTagsLower) || hasHeaderMarker(text, excludedAtDirectives);
 
 const collectHeaderGroups = (
   comments: TSESTree.Comment[],
   options: NormalizedOptions,
+  excludedAtDirectives: Set<string>,
 ): HeaderGroup[] => {
   const requiredTagsLower = options.requiredTags.map((tag) => tag.toLowerCase());
   const groups: HeaderGroup[] = [];
@@ -86,7 +132,7 @@ const collectHeaderGroups = (
     const comment = comments[index];
     const normalized = normalizeCommentValue(comment);
 
-    if (!isHeaderCandidate(normalized, requiredTagsLower)) {
+    if (!isHeaderCandidate(normalized, requiredTagsLower, excludedAtDirectives)) {
       continue;
     }
 
@@ -111,7 +157,7 @@ const collectHeaderGroups = (
 
         const nextNormalized = normalizeCommentValue(nextComment);
 
-        if (!isHeaderCandidate(nextNormalized, requiredTagsLower)) {
+        if (!isHeaderCandidate(nextNormalized, requiredTagsLower, excludedAtDirectives)) {
           break;
         }
 
@@ -214,6 +260,10 @@ export const enforceUniqueCursorHeaders = createRule<Options, MessageIds>({
             type: 'array',
             items: { type: 'string' },
           },
+          excludedAtDirectives: {
+            type: 'array',
+            items: { type: 'string' },
+          },
         },
         additionalProperties: false,
       },
@@ -223,6 +273,8 @@ export const enforceUniqueCursorHeaders = createRule<Options, MessageIds>({
         'File "{{fileName}}" is missing a cursor header before any imports or code → Cursor headers keep ownership and metadata discoverable for automation → Add one top-of-file cursor header containing: {{tags}}.',
       duplicateHeader:
         'Multiple cursor headers detected before the first statement (extra header starts on line {{line}}) → Duplicate metadata blocks conflict and make ownership ambiguous → Keep exactly one cursor header at the top and remove the extra block.',
+      splitHeaderFragment:
+        'Cursor header metadata is split across adjacent comment blocks → Fragmented headers are easy to miss and let required tags drift out of sync → Merge the fragments into a single top-of-file header containing: {{tags}}.',
     },
   },
   defaultOptions: [DEFAULT_OPTIONS],
@@ -230,6 +282,9 @@ export const enforceUniqueCursorHeaders = createRule<Options, MessageIds>({
     const options = normalizeOptions(rawOptions);
     const fileName = context.getFilename();
     const matchPath = fileName.split(path.sep).join('/');
+    const excludedAtDirectives = new Set(
+      options.excludedAtDirectives.map((directive) => directive.toLowerCase()),
+    );
 
     if (fileName === '<input>') {
       return {};
@@ -275,7 +330,7 @@ export const enforceUniqueCursorHeaders = createRule<Options, MessageIds>({
           (comment) => comment.loc.start.line < firstTokenLine,
         );
 
-        const candidateGroups = collectHeaderGroups(topComments, options);
+        const candidateGroups = collectHeaderGroups(topComments, options, excludedAtDirectives);
         const requiredTagsLower = options.requiredTags.map((tag) => tag.toLowerCase());
         const headerGroups = candidateGroups.filter((group) =>
           requiredTagsLower.every((tag) => group.text.toLowerCase().includes(tag)),
@@ -290,7 +345,7 @@ export const enforceUniqueCursorHeaders = createRule<Options, MessageIds>({
               fileName: path.basename(fileName),
               tags: options.requiredTags.join(', '),
             },
-            fix: options.headerTemplate
+            fix: options.headerTemplate !== null
               ? (fixer) => {
                   const hasShebang = sourceText.startsWith('#!');
                   const shebangNewlineIndex = hasShebang ? sourceText.indexOf('\n') : -1;
@@ -325,10 +380,12 @@ export const enforceUniqueCursorHeaders = createRule<Options, MessageIds>({
                 return false;
               }
 
-              const startLine = group.comments[0].loc.start.line;
+              const groupStart = group.comments[0].loc.start.line;
+              const groupEnd = group.comments[group.comments.length - 1].loc.end.line;
               const primaryStart = primaryHeader.comments[0].loc.start.line;
               const primaryEnd = primaryHeader.comments[primaryHeader.comments.length - 1].loc.end.line;
-              const isAdjacentToPrimary = startLine >= primaryStart && startLine <= primaryEnd + 1;
+              const isAdjacentToPrimary =
+                groupStart <= primaryEnd + 1 && groupEnd + 1 >= primaryStart;
               const hasAllTags = requiredTagsLower.every((tag) =>
                 group.text.toLowerCase().includes(tag),
               );
@@ -358,9 +415,9 @@ export const enforceUniqueCursorHeaders = createRule<Options, MessageIds>({
 
           context.report({
             loc: firstComment.loc,
-            messageId: 'duplicateHeader',
+            messageId: 'splitHeaderFragment',
             data: {
-              line: firstComment.loc.start.line.toString(),
+              tags: options.requiredTags.join(', '),
             },
             fix: null,
           });

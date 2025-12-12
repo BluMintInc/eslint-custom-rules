@@ -247,7 +247,45 @@ export const splitNotAllowed = () => true;
           allowSplitHeaders: false,
         },
       ],
-      errors: [{ messageId: 'duplicateHeader' }],
+      errors: [{ messageId: 'splitHeaderFragment' }],
+      output: null,
+    },
+    {
+      code: `
+/**
+ * @author BluMint
+ */
+/**
+ * @fileoverview Fragment two
+ */
+export const splitPreceding = () => true;
+      `,
+      filename: '/workspace/src/split-preceding.ts',
+      options: [
+        {
+          allowSplitHeaders: false,
+        },
+      ],
+      errors: [{ messageId: 'splitHeaderFragment' }],
+      output: null,
+    },
+    {
+      code: `
+// @ts-nocheck
+/**
+ * @fileoverview Header with directive merged
+ * @author BluMint
+ */
+export const directiveMerged = () => true;
+      `,
+      filename: '/workspace/src/directive-merged.ts',
+      options: [
+        {
+          allowSplitHeaders: false,
+          excludedAtDirectives: [],
+        },
+      ],
+      errors: [{ messageId: 'splitHeaderFragment' }],
       output: null,
     },
     {
@@ -368,6 +406,17 @@ export const withTemplateNewline = () => null;
 
 export const withTemplateNewline = () => null;
       `,
+    },
+    {
+      code: 'export const emptyTemplate = () => null;',
+      filename: '/workspace/src/template-empty.ts',
+      options: [
+        {
+          headerTemplate: '',
+        },
+      ],
+      errors: [{ messageId: 'missingHeader' }],
+      output: '\n\nexport const emptyTemplate = () => null;',
     },
     {
       code: '#!/usr/bin/env node',
