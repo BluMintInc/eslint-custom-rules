@@ -433,6 +433,41 @@ const useFlags = () => ({ enabled: true } as const);
         },
       ],
     },
+    // Hook return wrapped in assertion inside block body should be treated as hook return
+    {
+      code: `
+function useSettings() {
+  return { theme: 'dark' } as const;
+}
+      `,
+      errors: [
+        {
+          messageId: 'hookReturnLiteral',
+          data: {
+            literalType: 'object literal',
+            hookName: 'useSettings',
+          },
+        },
+      ],
+    },
+    // Hook return wrapped in satisfies and non-null assertions inside block body
+    {
+      code: `
+type Settings = { theme: string };
+function useTypedSettings() {
+  return ({ theme: 'dark' } satisfies Settings)!;
+}
+      `,
+      errors: [
+        {
+          messageId: 'hookReturnLiteral',
+          data: {
+            literalType: 'object literal',
+            hookName: 'useTypedSettings',
+          },
+        },
+      ],
+    },
     // Literal returned from nested function inside hook should not be treated as a hook return
     {
       code: `

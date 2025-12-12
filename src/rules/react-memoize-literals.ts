@@ -314,6 +314,32 @@ function findOwningFunction(
   return null;
 }
 
+function findEnclosingReturnStatement(
+  node: TSESTree.Node,
+): TSESTree.ReturnStatement | null {
+  let current: TSESTree.Node | null = node.parent as TSESTree.Node | null;
+  while (current) {
+    if (current.type === AST_NODE_TYPES.ReturnStatement) {
+      return current;
+    }
+
+    if (
+      current.type === AST_NODE_TYPES.TSAsExpression ||
+      current.type === AST_NODE_TYPES.TSTypeAssertion ||
+      current.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+      current.type === AST_NODE_TYPES.TSNonNullExpression ||
+      current.type === AST_NODE_TYPES.ChainExpression ||
+      isParenthesizedExpression(current)
+    ) {
+      current = current.parent as TSESTree.Node | null;
+      continue;
+    }
+
+    break;
+  }
+  return null;
+}
+
 function isReturnValueFromHook(
   node: TSESTree.Node,
   owner:
@@ -335,7 +361,19 @@ function isReturnValueFromHook(
     node.parent?.type !== AST_NODE_TYPES.ReturnStatement ||
     node.parent.argument !== node
   ) {
-    return false;
+    const returnStatement = findEnclosingReturnStatement(node);
+    if (!returnStatement?.argument) {
+      return false;
+    }
+
+    if (
+      unwrapExpression(returnStatement.argument) !== unwrapExpression(node)
+    ) {
+      return false;
+    }
+
+    const owningFunction = findOwningFunction(returnStatement);
+    return owningFunction === owner;
   }
 
   const owningFunction = findOwningFunction(node.parent);
