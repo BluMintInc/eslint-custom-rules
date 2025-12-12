@@ -9,13 +9,13 @@ export const exportIfInDoubt: TSESLint.RuleModule<'exportIfInDoubt', never[]> =
       type: 'suggestion',
       docs: {
         description:
-          'All top-level const definitions, type definitions, and functions should be exported',
+          'All top-level variable declarations, type definitions, and functions should be exported',
         recommended: 'error',
       },
       schema: [],
       messages: {
         exportIfInDoubt:
-          'Top-level {{kind}} "{{name}}" is not exported. Module-level declarations define the file\'s public API; leaving this unexported makes the code effectively dead to other modules and hides reusable utilities. Export it (for example "{{exportExample}}") or move it into a narrower scope if it is intentionally private.',
+          'What\'s wrong: Top-level {{kind}} "{{name}}" is not exported. Why it matters: Top-level declarations define your module\'s public API; leaving this unexported makes it unusable from other files and hides reusable utilities (often resulting in dead code or duplicated implementations). How to fix: Export it (for example: {{exportExample}}) or move it into a narrower scope if it is intentionally private.',
       },
     },
     defaultOptions: [],
