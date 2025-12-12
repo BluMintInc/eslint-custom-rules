@@ -55,6 +55,9 @@ const SAFE_HOOK_ARGUMENTS = new Set([
 
 const TODO_REPLACE_WITH_ACTUAL_DEPENDENCIES = '__TODO_ADD_DEPENDENCIES__';
 const TODO_DEPS_COMMENT = `/* ${TODO_REPLACE_WITH_ACTUAL_DEPENDENCIES} */`;
+const PARENTHESIZED_EXPRESSION_TYPE =
+  (AST_NODE_TYPES as Record<string, string>).ParenthesizedExpression ??
+  'ParenthesizedExpression';
 
 function isHookName(name: string | null | undefined): name is string {
   return !!name && /^use[A-Z]/.test(name);
@@ -62,6 +65,12 @@ function isHookName(name: string | null | undefined): name is string {
 
 function isComponentName(name: string | null | undefined): name is string {
   return !!name && /^[A-Z]/.test(name);
+}
+
+function isParenthesizedExpression(
+  node: TSESTree.Node,
+): node is TSESTree.Node & { expression: TSESTree.Node } {
+  return node.type === PARENTHESIZED_EXPRESSION_TYPE;
 }
 
 function getNameFromNode(node: TSESTree.Node | null): string | null {
@@ -97,7 +106,9 @@ function isTransparentNode(node: TSESTree.Node): boolean {
     node.type === AST_NODE_TYPES.MemberExpression ||
     node.type === AST_NODE_TYPES.ChainExpression ||
     node.type === AST_NODE_TYPES.TSAsExpression ||
-    node.type === AST_NODE_TYPES.TSTypeAssertion
+    node.type === AST_NODE_TYPES.TSTypeAssertion ||
+    node.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+    node.type === AST_NODE_TYPES.TSNonNullExpression
   );
 }
 
@@ -256,8 +267,8 @@ function unwrapExpression(node: TSESTree.Node): TSESTree.Node {
       continue;
     }
 
-    if ((current as { type?: string }).type === 'ParenthesizedExpression') {
-      current = (current as { expression: TSESTree.Node }).expression;
+    if (isParenthesizedExpression(current)) {
+      current = current.expression;
       continue;
     }
 
@@ -314,7 +325,8 @@ function isReturnValueFromHook(
 
   if (
     owner.type === AST_NODE_TYPES.ArrowFunctionExpression &&
-    owner.body === node
+    owner.body.type !== AST_NODE_TYPES.BlockStatement &&
+    unwrapExpression(owner.body) === unwrapExpression(node)
   ) {
     return true;
   }
@@ -417,13 +429,6 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
     const sourceCode = context.getSourceCode();
 
     function reportLiteral(node: TSESTree.Node) {
-      if (
-        node.type === AST_NODE_TYPES.FunctionDeclaration &&
-        isComponentOrHookFunction(node)
-      ) {
-        return;
-      }
-
       const descriptor = getLiteralDescriptor(node);
       if (!descriptor) return;
 

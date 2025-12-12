@@ -308,6 +308,27 @@ function Component({ userId }) {
         },
       ],
     },
+    // Nested component declaration should not be skipped
+    {
+      code: `
+function Component() {
+  function InnerComponent() {
+    return <div />;
+  }
+  return <InnerComponent />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'component "Component"',
+            memoHook: 'useCallback',
+          },
+        },
+      ],
+    },
     // Nested objects in hook argument
     {
       code: `
@@ -397,6 +418,21 @@ function useUserSettings() {
         },
       ],
     },
+    // Hook return with TS wrappers should still report as hook return
+    {
+      code: `
+const useFlags = () => ({ enabled: true } as const);
+      `,
+      errors: [
+        {
+          messageId: 'hookReturnLiteral',
+          data: {
+            literalType: 'object literal',
+            hookName: 'useFlags',
+          },
+        },
+      ],
+    },
     // Literal returned from nested function inside hook should not be treated as a hook return
     {
       code: `
@@ -477,6 +513,58 @@ const Memoized = memo(() => {
           data: {
             literalType: 'object literal',
             context: 'component "Memoized"',
+            memoHook: 'useMemo',
+          },
+        },
+      ],
+    },
+    // Name resolution should pass through satisfies/non-null wrappers
+    {
+      code: `
+type FC<P = {}> = (props: P) => unknown;
+
+const Memoized = (memo(() => {
+  const handler = () => doWork();
+  const options = { debounce: 50 } as const;
+  return <button onClick={handler}>{options.debounce}</button>;
+})) satisfies FC;
+
+const MemoizedNonNull = (memo(() => {
+  const handler = () => doWork();
+  const options = { debounce: 75 };
+  return <button onClick={handler}>{options.debounce}</button>;
+}))!;
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'component "Memoized"',
+            memoHook: 'useCallback',
+          },
+        },
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'object literal',
+            context: 'component "Memoized"',
+            memoHook: 'useMemo',
+          },
+        },
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'component "MemoizedNonNull"',
+            memoHook: 'useCallback',
+          },
+        },
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'object literal',
+            context: 'component "MemoizedNonNull"',
             memoHook: 'useMemo',
           },
         },
