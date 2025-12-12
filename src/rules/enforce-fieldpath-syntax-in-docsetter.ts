@@ -239,6 +239,8 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
           continue;
         }
 
+        // Root-level numeric keys typically model array-style buckets rather than
+        // Firestore document fields, so ignore them when identifying nested objects
         if (
           node.parent?.type !== AST_NODE_TYPES.Property &&
           isNumericLiteralKey(property)
