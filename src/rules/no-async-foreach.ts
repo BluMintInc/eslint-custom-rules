@@ -70,18 +70,18 @@ const analyzeCallbackAsyncStatus = (
     return null;
   }
 
-  for (const def of variable.defs) {
-    if (def.node.type === 'FunctionDeclaration' && def.node.async) {
+  for (const definition of variable.defs) {
+    if (definition.node.type === 'FunctionDeclaration' && definition.node.async) {
       return {
         callbackLabel: getFunctionDescription(
-          def.node,
-          def.node.id?.name ?? callback.name,
+          definition.node,
+          definition.node.id?.name ?? callback.name,
         ),
       };
     }
 
-    if (def.node.type === 'VariableDeclarator') {
-      const init = def.node.init;
+    if (definition.node.type === 'VariableDeclarator') {
+      const init = definition.node.init;
       if (
         init &&
         (init.type === 'ArrowFunctionExpression' ||
@@ -89,7 +89,8 @@ const analyzeCallbackAsyncStatus = (
         init.async
       ) {
         const name =
-          (def.node.id.type === 'Identifier' && def.node.id.name) || callback.name;
+          (definition.node.id.type === 'Identifier' && definition.node.id.name) ||
+          callback.name;
         return {
           callbackLabel: getFunctionDescription(init, name),
         };
