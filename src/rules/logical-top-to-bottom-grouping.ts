@@ -885,11 +885,52 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
       | TSESTree.FunctionExpression
       | TSESTree.ArrowFunctionExpression,
     dependencies: Set<string>,
-  ): void {
+    context: {
+      body: TSESTree.Statement[];
+      callIndex: number;
+      visitedCallees: Set<string>;
+    },
+  ): boolean {
     if (!fn.body) {
-      return;
+      return true;
     }
     collectUsedIdentifiers(fn.body, dependencies, { skipFunctions: true });
+
+    let resolved = true;
+    traverseAst(fn.body, {
+      skipFunctions: true,
+      visit(current) {
+        if (
+          current.type !== AST_NODE_TYPES.CallExpression &&
+          current.type !== AST_NODE_TYPES.ChainExpression
+        ) {
+          return undefined;
+        }
+
+        const callExpression =
+          current.type === AST_NODE_TYPES.CallExpression
+            ? current
+            : extractCallExpression(current as TSESTree.Expression);
+        if (!callExpression) {
+          return undefined;
+        }
+
+        const nestedResolved = collectCalleeDependencies(
+          context.body,
+          callExpression.callee,
+          dependencies,
+          context.callIndex,
+          context.visitedCallees,
+        );
+        if (!nestedResolved) {
+          resolved = false;
+          return { skipChildren: true };
+        }
+        return undefined;
+      },
+    });
+
+    return resolved;
   }
 
   function resolveValueForIdentifier(
@@ -1087,9 +1128,14 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
     callee: TSESTree.LeftHandSideExpression | TSESTree.PrivateIdentifier | TSESTree.Super,
     dependencies: Set<string>,
     callIndex: number,
+    visitedCallees: Set<string> = new Set<string>(),
   ): boolean {
     if (callee.type === AST_NODE_TYPES.Identifier) {
       const name = callee.name;
+      if (visitedCallees.has(name)) {
+        return true;
+      }
+      visitedCallees.add(name);
       if (isIdentifierMutated(body, name, callIndex)) {
         return false;
       }
@@ -1099,8 +1145,11 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
           statement.type === AST_NODE_TYPES.FunctionDeclaration && statement.id?.name === name,
       ) as TSESTree.FunctionDeclaration | undefined;
       if (functionDeclaration && functionDeclaration.body) {
-        collectFunctionBodyDependencies(functionDeclaration, dependencies);
-        return true;
+        return collectFunctionBodyDependencies(functionDeclaration, dependencies, {
+          body,
+          callIndex,
+          visitedCallees,
+        });
       }
 
       for (let index = 0; index < callIndex; index += 1) {
@@ -1116,8 +1165,11 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
             (declarator.init.type === AST_NODE_TYPES.FunctionExpression ||
               declarator.init.type === AST_NODE_TYPES.ArrowFunctionExpression)
           ) {
-            collectFunctionBodyDependencies(declarator.init, dependencies);
-            return true;
+            return collectFunctionBodyDependencies(declarator.init, dependencies, {
+              body,
+              callIndex,
+              visitedCallees,
+            });
           }
         }
       }
@@ -1131,8 +1183,11 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
       }
       const memberFunction = resolveMemberFunction(body, callee, callIndex);
       if (memberFunction) {
-        collectFunctionBodyDependencies(memberFunction, dependencies);
-        return true;
+        return collectFunctionBodyDependencies(memberFunction, dependencies, {
+          body,
+          callIndex,
+          visitedCallees,
+        });
       }
       if (rootName) {
         const declaredBeforeCall = body

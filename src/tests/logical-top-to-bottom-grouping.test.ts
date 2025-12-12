@@ -148,6 +148,16 @@ function preserveClosureTiming() {
 }
     `,
     `
+function outer() {
+  inner();
+}
+function inner() {
+  console.log(value);
+}
+const value = readValue();
+outer();
+    `,
+    `
 const obj = makeObject();
 if (obj!.disabled) {
   return;
