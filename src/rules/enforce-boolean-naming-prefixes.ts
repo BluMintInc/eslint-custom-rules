@@ -40,7 +40,7 @@ const DEFAULT_OPTIONS: Required<Options[0]> = {
   ignoreOverriddenGetters: false,
 };
 
-const BOOLEAN_COMPARISON_OPERATORS = new Set([
+const BOOLEAN_PRODUCING_OPERATORS = new Set([
   '===',
   '!==',
   '==',
@@ -262,7 +262,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         // Check for logical expressions that typically return boolean
         if (
           node.init.type === AST_NODE_TYPES.BinaryExpression &&
-          BOOLEAN_COMPARISON_OPERATORS.has(node.init.operator)
+          BOOLEAN_PRODUCING_OPERATORS.has(node.init.operator)
         ) {
           return true;
         }
@@ -521,7 +521,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         }
         if (
           node.body.type === AST_NODE_TYPES.BinaryExpression &&
-          BOOLEAN_COMPARISON_OPERATORS.has(node.body.operator)
+          BOOLEAN_PRODUCING_OPERATORS.has(node.body.operator)
         ) {
           return true;
         }
@@ -733,7 +733,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       }
 
       if (currentExpression.type === AST_NODE_TYPES.BinaryExpression) {
-        if (BOOLEAN_COMPARISON_OPERATORS.has(currentExpression.operator)) {
+        if (BOOLEAN_PRODUCING_OPERATORS.has(currentExpression.operator)) {
           return 'boolean';
         }
       }
