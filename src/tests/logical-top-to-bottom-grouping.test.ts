@@ -266,6 +266,12 @@ const obj = build();
 console.log(obj.state.value);
     `,
     `
+const fn = () => late;
+const placeholder = 1;
+let late = 1;
+(fn as () => void)();
+    `,
+    `
 const source = 1;
 const data = source;
 doSideEffect((value = data) => value);

@@ -1263,10 +1263,7 @@ function collectFunctionBodyDependencies(
   if (!fn.body) {
     return true;
   }
-  collectUsedIdentifiers(fn.body, dependencies, {
-    skipFunctions: true,
-    includeFunctionCaptures: true,
-  });
+  collectFunctionCaptures(fn, dependencies, { skipFunctions: true, includeFunctionCaptures: true });
 
   let resolved = true;
   traverseAst(fn.body, {
@@ -1508,13 +1505,65 @@ function getMemberCalleeKey(member: TSESTree.MemberExpression): string | null {
   return parts.join('.');
 }
 
+function unwrapCalleeExpression(
+  callee:
+    | TSESTree.LeftHandSideExpression
+    | TSESTree.PrivateIdentifier
+    | TSESTree.Super
+    | TSESTree.ChainExpression,
+):
+  | TSESTree.LeftHandSideExpression
+  | TSESTree.PrivateIdentifier
+  | TSESTree.Super
+  | TSESTree.ChainExpression {
+  let current = callee;
+  while (true) {
+    if (TYPE_EXPRESSION_WRAPPERS.has(current.type) && 'expression' in current) {
+      current = (current as TSESTree.TSAsExpression).expression as
+        | TSESTree.LeftHandSideExpression
+        | TSESTree.PrivateIdentifier
+        | TSESTree.Super;
+      continue;
+    }
+    if (current.type === AST_NODE_TYPES.ChainExpression && 'expression' in current) {
+      current = (current as TSESTree.ChainExpression).expression as
+        | TSESTree.LeftHandSideExpression
+        | TSESTree.PrivateIdentifier
+        | TSESTree.Super;
+      continue;
+    }
+    break;
+  }
+  return current;
+}
+
 function collectCalleeDependencies(
   body: TSESTree.Statement[],
-  callee: TSESTree.LeftHandSideExpression | TSESTree.PrivateIdentifier | TSESTree.Super,
+  callee:
+    | TSESTree.LeftHandSideExpression
+    | TSESTree.PrivateIdentifier
+    | TSESTree.Super
+    | TSESTree.ChainExpression,
   dependencies: Set<string>,
   callIndex: number,
   visitedCallees: Set<string> = new Set<string>(),
 ): boolean {
+  const unwrappedCallee = unwrapCalleeExpression(callee);
+  if (unwrappedCallee !== callee) {
+    return collectCalleeDependencies(body, unwrappedCallee, dependencies, callIndex, visitedCallees);
+  }
+
+  if (
+    callee.type === AST_NODE_TYPES.FunctionExpression ||
+    callee.type === AST_NODE_TYPES.ArrowFunctionExpression
+  ) {
+    return collectFunctionBodyDependencies(callee, dependencies, {
+      body,
+      callIndex,
+      visitedCallees,
+    });
+  }
+
   if (callee.type === AST_NODE_TYPES.Identifier) {
     const name = callee.name;
     if (visitedCallees.has(name)) {
@@ -1593,7 +1642,7 @@ function collectCalleeDependencies(
     return true;
   }
 
-  return true;
+  return false;
 }
 
 function isSideEffectExpression(
