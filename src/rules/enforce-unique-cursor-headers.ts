@@ -45,6 +45,10 @@ const DEFAULT_OPTIONS: NormalizedOptions = {
     '@jsx',
     '@jsxruntime',
     '@jsximportsource',
+    '@format',
+    '@flow',
+    '@jest-environment',
+    '@vitest-environment',
   ],
 };
 
@@ -278,8 +282,8 @@ export const enforceUniqueCursorHeaders = createRule<Options, MessageIds>({
     },
   },
   defaultOptions: [DEFAULT_OPTIONS],
-  create(context, [rawOptions]) {
-    const options = normalizeOptions(rawOptions);
+  create(context, [userOptions]) {
+    const options = normalizeOptions(userOptions);
     const fileName = context.getFilename();
     const matchPath = fileName.split(path.sep).join('/');
     const excludedAtDirectives = new Set(

@@ -94,6 +94,22 @@ export const withDirective = () => true;
     {
       code: `
 /**
+ * @format
+ */
+/**
+ * @jest-environment jsdom
+ */
+/**
+ * @fileoverview Header should ignore pragmas
+ * @author BluMint
+ */
+export const withPragmas = () => true;
+      `,
+      filename: '/workspace/src/with-pragmas.ts',
+    },
+    {
+      code: `
+/**
  * @fileoverview Header fragment
  */
 /**
