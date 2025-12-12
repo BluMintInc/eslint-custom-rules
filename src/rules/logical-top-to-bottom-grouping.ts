@@ -119,7 +119,10 @@ function collectPatternDependencies(
       collectPatternDependencies(pattern.argument as TSESTree.BindingName, names);
       return;
     case AST_NODE_TYPES.AssignmentPattern:
-      collectUsedIdentifiers(pattern.right as TSESTree.Expression, names, { skipFunctions: true });
+      collectUsedIdentifiers(pattern.right as TSESTree.Expression, names, {
+        skipFunctions: true,
+        includeFunctionCaptures: true,
+      });
       collectPatternDependencies(pattern.left as TSESTree.BindingName, names);
       return;
     case AST_NODE_TYPES.ArrayPattern:
@@ -133,7 +136,10 @@ function collectPatternDependencies(
       pattern.properties.forEach((prop) => {
         if (prop.type === AST_NODE_TYPES.Property) {
           if (prop.computed && ASTHelpers.isNode(prop.key)) {
-            collectUsedIdentifiers(prop.key, names, { skipFunctions: true });
+            collectUsedIdentifiers(prop.key, names, {
+              skipFunctions: true,
+              includeFunctionCaptures: true,
+            });
           }
           collectPatternDependencies(
             prop.value as TSESTree.BindingName | TSESTree.AssignmentPattern,
@@ -226,7 +232,12 @@ function traverseAst(
   {
     skipFunctions,
     visit,
-  }: { skipFunctions: boolean; visit: (node: TSESTree.Node) => TraverseResult | void },
+    onSkipFunction,
+  }: {
+    skipFunctions: boolean;
+    visit: (node: TSESTree.Node) => TraverseResult | void;
+    onSkipFunction?: (node: TSESTree.Node) => void;
+  },
 ): void {
   const stack: Array<TSESTree.Node> = [node];
 
@@ -234,6 +245,9 @@ function traverseAst(
     const current = stack.pop()!;
 
     if (shouldSkipFunction(current, skipFunctions)) {
+      if (onSkipFunction) {
+        onSkipFunction(current);
+      }
       continue;
     }
 
@@ -291,13 +305,118 @@ function collectIifeDependencies(
   collectUsedIdentifiers(fn.body, names, { skipFunctions: false });
 }
 
+type CollectIdentifierOptions = {
+  skipFunctions: boolean;
+  includeFunctionCaptures?: boolean;
+};
+
+function collectFunctionScopedDeclarations(
+  node: TSESTree.Node,
+  declared: Set<string>,
+): void {
+  traverseAst(node, {
+    skipFunctions: false,
+    visit(current) {
+      if (
+        current !== node &&
+        (current.type === AST_NODE_TYPES.FunctionDeclaration ||
+          current.type === AST_NODE_TYPES.FunctionExpression ||
+          current.type === AST_NODE_TYPES.ArrowFunctionExpression)
+      ) {
+        return { skipChildren: true };
+      }
+
+      if (current.type === AST_NODE_TYPES.VariableDeclaration) {
+        current.declarations.forEach((declarator) =>
+          collectDeclaredNamesFromPattern(
+            declarator.id as
+              | TSESTree.BindingName
+              | TSESTree.RestElement
+              | TSESTree.AssignmentPattern,
+            declared,
+          ),
+        );
+      }
+
+      if (current.type === AST_NODE_TYPES.FunctionDeclaration && current.id) {
+        declared.add(current.id.name);
+        return { skipChildren: true };
+      }
+
+      if (current.type === AST_NODE_TYPES.ClassDeclaration && current.id) {
+        declared.add(current.id.name);
+        return { skipChildren: true };
+      }
+
+      if (current.type === AST_NODE_TYPES.CatchClause && current.param) {
+        collectDeclaredNamesFromPattern(
+          current.param as
+            | TSESTree.BindingName
+            | TSESTree.RestElement
+            | TSESTree.AssignmentPattern,
+          declared,
+        );
+      }
+
+      return undefined;
+    },
+  });
+}
+
+function collectFunctionCaptures(
+  fn:
+    | TSESTree.FunctionDeclaration
+    | TSESTree.FunctionExpression
+    | TSESTree.ArrowFunctionExpression,
+  names: Set<string>,
+  options: CollectIdentifierOptions,
+): void {
+  const declared = new Set<string>();
+  if (fn.type !== AST_NODE_TYPES.ArrowFunctionExpression && fn.id) {
+    declared.add(fn.id.name);
+  }
+  fn.params.forEach((param) =>
+    collectDeclaredNamesFromPattern(
+      param as TSESTree.BindingName | TSESTree.RestElement | TSESTree.AssignmentPattern,
+      declared,
+    ),
+  );
+
+  if (fn.body.type === AST_NODE_TYPES.BlockStatement) {
+    collectFunctionScopedDeclarations(fn.body, declared);
+  }
+
+  const used = new Set<string>();
+  collectUsedIdentifiers(fn.body, used, {
+    skipFunctions: true,
+    includeFunctionCaptures: options.includeFunctionCaptures,
+  });
+
+  used.forEach((name) => {
+    if (!declared.has(name)) {
+      names.add(name);
+    }
+  });
+}
+
 function collectUsedIdentifiers(
   node: TSESTree.Node,
   names: Set<string>,
-  { skipFunctions }: { skipFunctions: boolean },
+  { skipFunctions, includeFunctionCaptures = false }: CollectIdentifierOptions,
 ): void {
   traverseAst(node, {
     skipFunctions,
+    onSkipFunction: includeFunctionCaptures
+      ? (fnNode) => {
+          if (
+            fnNode.type === AST_NODE_TYPES.FunctionDeclaration ||
+            fnNode.type === AST_NODE_TYPES.FunctionExpression ||
+            fnNode.type === AST_NODE_TYPES.ArrowFunctionExpression
+          ) {
+            collectFunctionCaptures(fnNode, names, { skipFunctions: true, includeFunctionCaptures });
+          }
+        }
+      : undefined,
     visit(current) {
       if (current.type === AST_NODE_TYPES.Identifier) {
         processIdentifier(current, names);
@@ -786,8 +905,14 @@ function handleGuardHoists(
     }
 
     const guardDependencies = new Set<string>();
-    collectUsedIdentifiers(statement.test, guardDependencies, { skipFunctions: true });
-    collectUsedIdentifiers(statement.consequent, guardDependencies, { skipFunctions: true });
+    collectUsedIdentifiers(statement.test, guardDependencies, {
+      skipFunctions: true,
+      includeFunctionCaptures: true,
+    });
+    collectUsedIdentifiers(statement.consequent, guardDependencies, {
+      skipFunctions: true,
+      includeFunctionCaptures: true,
+    });
 
     const targetIndex = findEarliestSafeIndex(body, index, guardDependencies, {
       allowHooks: false,
@@ -824,7 +949,10 @@ function handleDerivedGrouping(
           dependencies,
         );
         if (declarator.init) {
-          collectUsedIdentifiers(declarator.init, dependencies, { skipFunctions: true });
+          collectUsedIdentifiers(declarator.init, dependencies, {
+            skipFunctions: true,
+            includeFunctionCaptures: true,
+          });
         }
       });
 
@@ -982,7 +1110,10 @@ function collectFunctionBodyDependencies(
   if (!fn.body) {
     return true;
   }
-  collectUsedIdentifiers(fn.body, dependencies, { skipFunctions: true });
+  collectUsedIdentifiers(fn.body, dependencies, {
+    skipFunctions: true,
+    includeFunctionCaptures: true,
+  });
 
   let resolved = true;
   traverseAst(fn.body, {
@@ -1312,7 +1443,10 @@ function handleSideEffects(
     }
 
     const dependencies = new Set<string>();
-    collectUsedIdentifiers(expression, dependencies, { skipFunctions: true });
+    collectUsedIdentifiers(expression, dependencies, {
+      skipFunctions: true,
+      includeFunctionCaptures: true,
+    });
     const calleeResolved = collectCalleeDependencies(
       body,
       callExpression.callee,
