@@ -225,6 +225,38 @@ export const preferGetterOverParameterlessMethod = createRule<
       }
     }
 
+    function getEnclosingClassBody(
+      node: TSESTree.Node | null,
+    ): TSESTree.ClassBody | null {
+      let current: TSESTree.Node | null = node;
+      while (current) {
+        if (current.type === AST_NODE_TYPES.ClassBody) {
+          return current;
+        }
+        current = (current.parent as TSESTree.Node | null) ?? null;
+      }
+      return null;
+    }
+
+    function addCallUseForMember(
+      member: TSESTree.MemberExpression,
+      propName: string,
+      callUsedNamesByClass: WeakMap<TSESTree.ClassBody, Set<string>>,
+    ) {
+      const classBody = getEnclosingClassBody(member);
+      if (!classBody) {
+        return;
+      }
+
+      let names = callUsedNamesByClass.get(classBody);
+      if (!names) {
+        names = new Set<string>();
+        callUsedNamesByClass.set(classBody, names);
+      }
+
+      names.add(propName);
+    }
+
     function getJsDoc(node: MethodLikeDefinition) {
       const comments = sourceCode.getCommentsBefore(node);
       const candidate = comments[comments.length - 1];
@@ -374,7 +406,7 @@ export const preferGetterOverParameterlessMethod = createRule<
 
     function trackMemberCall(
       member: TSESTree.MemberExpression,
-      callUsedNames: Set<string>,
+      callUsedNamesByClass: WeakMap<TSESTree.ClassBody, Set<string>>,
     ) {
       if (member.computed || member.property.type !== AST_NODE_TYPES.Identifier) {
         return;
@@ -390,33 +422,41 @@ export const preferGetterOverParameterlessMethod = createRule<
             target.property.type === AST_NODE_TYPES.Identifier &&
             target.object.type === AST_NODE_TYPES.ThisExpression
           ) {
-            callUsedNames.add(target.property.name);
+            addCallUseForMember(
+              member,
+              target.property.name,
+              callUsedNamesByClass,
+            );
           }
         } else if (target.type === AST_NODE_TYPES.ThisExpression) {
-          callUsedNames.add(propName);
+          addCallUseForMember(member, propName, callUsedNamesByClass);
         }
         return;
       }
 
       if (member.object.type === AST_NODE_TYPES.ThisExpression) {
-        callUsedNames.add(propName);
+        addCallUseForMember(member, propName, callUsedNamesByClass);
       }
     }
 
     function trackMemberReference(
       member: TSESTree.MemberExpression,
-      callUsedNames: Set<string>,
+      callUsedNamesByClass: WeakMap<TSESTree.ClassBody, Set<string>>,
     ) {
       if (member.computed || member.property.type !== AST_NODE_TYPES.Identifier) {
         return;
       }
 
       if (member.object.type === AST_NODE_TYPES.ThisExpression) {
-        callUsedNames.add(member.property.name);
+        addCallUseForMember(
+          member,
+          member.property.name,
+          callUsedNamesByClass,
+        );
       }
     }
 
-    const callUsedNames = new Set<string>();
+    const callUsedNamesByClass = new WeakMap<TSESTree.ClassBody, Set<string>>();
     const candidates: Array<{
       node: MethodLikeDefinition;
       sideEffectReason: string | null;
@@ -428,20 +468,20 @@ export const preferGetterOverParameterlessMethod = createRule<
         const callee = node.callee as TSESTree.Node;
 
         if (callee.type === AST_NODE_TYPES.MemberExpression) {
-          trackMemberCall(callee, callUsedNames);
+          trackMemberCall(callee, callUsedNamesByClass);
         } else if (callee.type === AST_NODE_TYPES.ChainExpression) {
           const expression = (callee as TSESTree.ChainExpression).expression;
           if (expression.type === AST_NODE_TYPES.MemberExpression) {
-            trackMemberCall(expression, callUsedNames);
+            trackMemberCall(expression, callUsedNamesByClass);
           }
         }
       },
       MemberExpression(node: TSESTree.MemberExpression) {
-        trackMemberReference(node, callUsedNames);
+        trackMemberReference(node, callUsedNamesByClass);
       },
       ChainExpression(node: TSESTree.ChainExpression) {
         if (node.expression.type === AST_NODE_TYPES.MemberExpression) {
-          trackMemberReference(node.expression, callUsedNames);
+          trackMemberReference(node.expression, callUsedNamesByClass);
         }
       },
       'MethodDefinition, TSAbstractMethodDefinition'(
@@ -481,8 +521,36 @@ export const preferGetterOverParameterlessMethod = createRule<
         candidates.push({ node, sideEffectReason, suggestedName });
       },
       'Program:exit'() {
+        const suggestedNameCounts = new WeakMap<
+          TSESTree.ClassBody,
+          Map<string, number>
+        >();
+
+        for (const { node, suggestedName } of candidates) {
+          const classBody = node.parent;
+          if (!classBody || classBody.type !== AST_NODE_TYPES.ClassBody) {
+            continue;
+          }
+
+          const scopeKey = `${
+            ((node as { static?: boolean }).static ?? false)
+              ? 'static'
+              : 'instance'
+          }:${suggestedName}`;
+          const existingCounts =
+            suggestedNameCounts.get(classBody) ?? new Map<string, number>();
+          existingCounts.set(scopeKey, (existingCounts.get(scopeKey) ?? 0) + 1);
+          suggestedNameCounts.set(classBody, existingCounts);
+        }
+
         for (const { node, sideEffectReason, suggestedName } of candidates) {
           const name = (node.key as TSESTree.Identifier).name;
+          const classBody = node.parent;
+          const scopeKey = `${
+            ((node as { static?: boolean }).static ?? false)
+              ? 'static'
+              : 'instance'
+          }:${suggestedName}`;
 
           const leftParen = sourceCode.getTokenAfter(node.key, {
             filter: (token) => token.value === '(',
@@ -494,7 +562,14 @@ export const preferGetterOverParameterlessMethod = createRule<
             : null;
 
           const hasCollision = hasNameCollision(node, suggestedName);
-          const isCallUsed = callUsedNames.has(name);
+          const isCallUsed =
+            classBody?.type === AST_NODE_TYPES.ClassBody
+              ? callUsedNamesByClass.get(classBody)?.has(name) ?? false
+              : false;
+          const hasDuplicateSuggestedName =
+            classBody?.type === AST_NODE_TYPES.ClassBody
+              ? (suggestedNameCounts.get(classBody)?.get(scopeKey) ?? 0) > 1
+              : false;
 
           context.report({
             node: node.key,
@@ -511,7 +586,8 @@ export const preferGetterOverParameterlessMethod = createRule<
               !leftParen ||
               !rightParen ||
               hasCollision ||
-              isCallUsed
+              isCallUsed ||
+              hasDuplicateSuggestedName
                 ? null
                 : (fixer) =>
                     fixer.replaceTextRange(

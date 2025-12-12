@@ -744,6 +744,76 @@ ruleTesterTs.run(
         }
         `,
       },
+      {
+        code: `
+        class First {
+          getValue() {
+            return this.value;
+          }
+
+          consume(value: number) {
+            return this.getValue() + value;
+          }
+        }
+
+        class Second {
+          getValue() {
+            return 2;
+          }
+        }
+        `,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'getValue', suggestedName: 'value' },
+          },
+          {
+            messageId: 'preferGetter',
+            data: { name: 'getValue', suggestedName: 'value' },
+          },
+        ],
+        output: `
+        class First {
+          getValue() {
+            return this.value;
+          }
+
+          consume(value: number) {
+            return this.getValue() + value;
+          }
+        }
+
+        class Second {
+          get value() {
+            return 2;
+          }
+        }
+        `,
+      },
+      {
+        code: `
+        class Duo {
+          getName() {
+            return this.primary;
+          }
+
+          fetchName() {
+            return this.secondary;
+          }
+        }
+        `,
+        errors: [
+          {
+            messageId: 'preferGetter',
+            data: { name: 'getName', suggestedName: 'name' },
+          },
+          {
+            messageId: 'preferGetter',
+            data: { name: 'fetchName', suggestedName: 'name' },
+          },
+        ],
+        output: null,
+      },
     ],
   },
 );
