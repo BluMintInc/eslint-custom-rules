@@ -387,8 +387,14 @@ function collectFunctionCaptures(
   }
 
   const used = new Set<string>();
+  fn.params.forEach((param) => {
+    collectUsedIdentifiers(param, used, {
+      skipFunctions: options.skipFunctions,
+      includeFunctionCaptures: options.includeFunctionCaptures,
+    });
+  });
   collectUsedIdentifiers(fn.body, used, {
-    skipFunctions: true,
+    skipFunctions: options.skipFunctions,
     includeFunctionCaptures: options.includeFunctionCaptures,
   });
 

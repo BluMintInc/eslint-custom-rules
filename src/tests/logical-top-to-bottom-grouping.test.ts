@@ -245,6 +245,11 @@ if (shouldStop) {
     `
 const { [getKey()]: value } = source;
 console.log('ready');
+    `,
+    `
+const source = 1;
+const data = source;
+doSideEffect((value = data) => value);
 `,
   ],
   invalid: [

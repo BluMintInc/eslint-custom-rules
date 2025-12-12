@@ -19,7 +19,7 @@ This rule rearranges statements inside a block to keep the execution flow readab
 ```typescript
 const { id } = props;
 const { a } = props.group;
-if (id !== null) {
+if (id == null) {
   return null;
 }
 const b = a;
@@ -46,7 +46,7 @@ for (const item of items) {
 
 ```typescript
 const { id } = props;
-if (id !== null) {
+if (id == null) {
   return null;
 }
 
