@@ -505,6 +505,7 @@ function buildHoistFixes(
   context: Readonly<TSESLint.RuleContext<MessageIds, Options>>,
   callExpression: TSESTree.CallExpression,
   callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
+  moduleBindingsCache: WeakMap<TSESTree.Program, Set<string>>,
 ): ((fixer: TSESLint.RuleFixer) => TSESLint.RuleFix[]) | null {
   if (
     !callExpression.parent ||
@@ -538,7 +539,12 @@ function buildHoistFixes(
 
   const programNode = getProgramNode(hoistTarget);
   if (programNode) {
-    const moduleBindings = getModuleScopeValueBindings(programNode);
+    const cachedBindings = moduleBindingsCache.get(programNode);
+    const moduleBindings =
+      cachedBindings ?? getModuleScopeValueBindings(programNode);
+    if (!cachedBindings) {
+      moduleBindingsCache.set(programNode, moduleBindings);
+    }
     if (moduleBindings.has(declarator.id.name)) {
       return null;
     }
@@ -614,6 +620,7 @@ export const noEmptyDependencyUseCallbacks = createRule<Options, MessageIds>({
     const ignoreTestFiles = options?.ignoreTestFiles !== false;
     const testPatterns = options?.testFilePatterns ?? DEFAULT_TEST_PATTERNS;
     const ignoreUseLatestCallback = options?.ignoreUseLatestCallback === true;
+    const moduleBindingsCache = new WeakMap<TSESTree.Program, Set<string>>();
 
     const filename = context.getFilename();
     const isTest = ignoreTestFiles && isTestFile(filename, testPatterns);
@@ -647,7 +654,12 @@ export const noEmptyDependencyUseCallbacks = createRule<Options, MessageIds>({
           ? callExpression.parent.id.name
           : 'this callback';
 
-      const fix = buildHoistFixes(context, callExpression, callback);
+      const fix = buildHoistFixes(
+        context,
+        callExpression,
+        callback,
+        moduleBindingsCache,
+      );
 
       context.report({
         node: callExpression,
