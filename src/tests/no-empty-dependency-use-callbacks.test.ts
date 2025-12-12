@@ -213,6 +213,33 @@ class Child extends Service {
   run = useCallback(() => super.handle(), []);
 }
 `,
+  `
+import { useCallback } from 'react';
+function Component() {
+  enum LocalStatus {
+    Active = 'active',
+    Inactive = 'inactive',
+  }
+  const handler = useCallback(
+    (status: LocalStatus) => status === LocalStatus.Active,
+    [],
+  );
+  return handler(LocalStatus.Active);
+}
+`,
+  `
+import { useCallback } from 'react';
+function Component() {
+  namespace LocalNS {
+    export type Payload = { id: string };
+  }
+  const handler = useCallback(
+    (payload: LocalNS.Payload) => payload.id,
+    [],
+  );
+  return handler({ id: 'a' });
+}
+`,
 ];
 
 const invalid = [
@@ -449,6 +476,18 @@ function Component() {
   return <div data-id={marker}>{handler()}</div>;
 }
     `,
+  },
+  {
+    code: `
+import { useCallback } from 'react';
+function Component() {
+  let formatter = useCallback((value: number) => value.toFixed(2), []);
+  formatter = (value) => formatter(value);
+  return formatter(1);
+}
+    `,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: null,
   },
   {
     code: `

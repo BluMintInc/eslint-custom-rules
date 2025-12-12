@@ -121,9 +121,22 @@ function collectNearestBlockTypeBindings(
         if (
           statement.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
           statement.type === AST_NODE_TYPES.TSInterfaceDeclaration ||
-          statement.type === AST_NODE_TYPES.ClassDeclaration
+          statement.type === AST_NODE_TYPES.ClassDeclaration ||
+          statement.type === AST_NODE_TYPES.TSEnumDeclaration
         ) {
           localTypes.add(statement.id.name);
+          continue;
+        }
+        if (
+          statement.type === AST_NODE_TYPES.TSModuleDeclaration &&
+          (statement.id.type === AST_NODE_TYPES.Identifier ||
+            statement.id.type === AST_NODE_TYPES.Literal)
+        ) {
+          const name =
+            statement.id.type === AST_NODE_TYPES.Identifier
+              ? statement.id.name
+              : String(statement.id.value);
+          localTypes.add(name);
         }
       }
     }
@@ -328,7 +341,10 @@ function analyzeExternalReferences(
   fn: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
 ): { hasComponentScopeRef: boolean } {
   const sourceCode = context.getSourceCode();
-  let hasComponentScopeRef = usesThisOrSuper(fn.body, sourceCode);
+  if (usesThisOrSuper(fn.body, sourceCode)) {
+    return { hasComponentScopeRef: true };
+  }
+  let hasComponentScopeRef = false;
   const scopeManager = sourceCode.scopeManager;
   if (!scopeManager) {
     return { hasComponentScopeRef: true };
@@ -525,6 +541,10 @@ function buildHoistFixes(
     varDecl.type !== AST_NODE_TYPES.VariableDeclaration ||
     varDecl.declarations.length !== 1
   ) {
+    return null;
+  }
+
+  if (varDecl.kind !== 'const') {
     return null;
   }
 
