@@ -64,7 +64,7 @@ const onClick = useCallback(() => doThing(a, b), [a, b]);
 }
 ```
 
-- `ignoreCallExpressions` (default: `true`): When `true`, skip callbacks that contain function calls to avoid flagging potentially expensive computations that intentionally use `useMemo`.
+- `ignoreCallExpressions` (default: `true`): When `true`, skip callbacks that contain function calls (including tagged template invocations) to avoid flagging potentially expensive computations that intentionally use `useMemo`.
 - `ignoreSymbol` (default: `true`): Do not flag callbacks whose return type is or includes `symbol`, since symbol identity can be intentional.
 - `tsOnly` (default: `false`): Only run the rule when TypeScript type information is available. With `false`, the rule falls back to safe AST heuristics in JS files.
 

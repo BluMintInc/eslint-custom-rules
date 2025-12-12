@@ -124,9 +124,11 @@ function walkExpression(
 
 function containsCallExpression(expr: TSESTree.Expression): boolean {
   return walkExpression(expr, (node) =>
-    [AST_NODE_TYPES.CallExpression, AST_NODE_TYPES.NewExpression].includes(
-      node.type as AST_NODE_TYPES,
-    ),
+    [
+      AST_NODE_TYPES.CallExpression,
+      AST_NODE_TYPES.NewExpression,
+      AST_NODE_TYPES.TaggedTemplateExpression,
+    ].includes(node.type as AST_NODE_TYPES),
   );
 }
 

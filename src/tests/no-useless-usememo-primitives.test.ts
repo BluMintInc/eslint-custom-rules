@@ -56,6 +56,14 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
     },
     {
       code: `
+        const format = (strings: TemplateStringsArray, value: string) => \`Hello \${value}\`;
+        const label = useMemo(() => format\`Hello \${name}\`, [name]);
+      `,
+      parserOptions: typedParserOptions,
+      filename: 'src/tagged-template-valid.ts',
+    },
+    {
+      code: `
         const now = useMemo(() => Date.now(), []);
       `,
       options: [{ ignoreCallExpressions: false }],
@@ -334,6 +342,20 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
         function computeLabel(input: string): string {
           return input.toUpperCase();
         }
+      `,
+    },
+    {
+      code: `
+        const format = (strings: TemplateStringsArray, value: string) => \`Hello \${value}\`;
+        const label = useMemo(() => format\`Hello \${name}\`, [name]);
+      `,
+      options: [{ ignoreCallExpressions: false }],
+      parserOptions: typedParserOptions,
+      filename: 'src/tagged-template-invalid.ts',
+      errors: [{ messageId: 'uselessUseMemoPrimitive', data: { valueKind: 'string value' } }],
+      output: `
+        const format = (strings: TemplateStringsArray, value: string) => \`Hello \${value}\`;
+        const label = (format\`Hello \${name}\`);
       `,
     },
     {
