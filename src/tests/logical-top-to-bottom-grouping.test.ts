@@ -250,7 +250,16 @@ console.log('ready');
 const source = 1;
 const data = source;
 doSideEffect((value = data) => value);
-`,
+    `,
+    `
+const obj = {
+  call() {
+    obj.call();
+  },
+};
+
+obj.call();
+    `,
   ],
   invalid: [
     {

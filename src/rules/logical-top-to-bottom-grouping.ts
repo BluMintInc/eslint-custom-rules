@@ -8,6 +8,8 @@ type MessageIds =
   | 'moveDeclarationCloser'
   | 'moveSideEffect';
 
+type Options = [];
+
 type BlockLike = TSESTree.BlockStatement | TSESTree.Program;
 
 const TYPE_EXPRESSION_WRAPPERS = new Set<TSESTree.Node['type']>([
@@ -42,7 +44,7 @@ function isHookCallee(
 }
 
 type RuleExecutionContext = {
-  context: TSESLint.RuleContext<MessageIds, never[]>;
+  context: TSESLint.RuleContext<MessageIds, Options>;
   sourceCode: TSESLint.SourceCode;
   reportedStatements: WeakSet<TSESTree.Statement>;
 };
@@ -1338,6 +1340,29 @@ function resolveMemberFunction(
   }
 }
 
+function getMemberCalleeKey(member: TSESTree.MemberExpression): string | null {
+  if (member.computed || member.property.type !== AST_NODE_TYPES.Identifier) {
+    return null;
+  }
+
+  const parts: string[] = [member.property.name];
+  let cursor: TSESTree.Expression = member.object as TSESTree.Expression;
+  while (
+    cursor.type === AST_NODE_TYPES.MemberExpression &&
+    !cursor.computed &&
+    cursor.property.type === AST_NODE_TYPES.Identifier
+  ) {
+    parts.unshift(cursor.property.name);
+    cursor = cursor.object as TSESTree.Expression;
+  }
+
+  if (cursor.type !== AST_NODE_TYPES.Identifier) {
+    return null;
+  }
+  parts.unshift(cursor.name);
+  return parts.join('.');
+}
+
 function collectCalleeDependencies(
   body: TSESTree.Statement[],
   callee: TSESTree.LeftHandSideExpression | TSESTree.PrivateIdentifier | TSESTree.Super,
@@ -1392,6 +1417,14 @@ function collectCalleeDependencies(
   }
 
   if (callee.type === AST_NODE_TYPES.MemberExpression) {
+    const memberKey = getMemberCalleeKey(callee);
+    if (memberKey) {
+      if (visitedCallees.has(memberKey)) {
+        return true;
+      }
+      visitedCallees.add(memberKey);
+    }
+
     const rootName = callee.object.type === AST_NODE_TYPES.Identifier ? callee.object.name : null;
     if (rootName && isIdentifierMutated(body, rootName, callIndex)) {
       return false;
@@ -1488,7 +1521,10 @@ function handleBlock(ruleContext: RuleExecutionContext, node: BlockLike): void {
   handleSideEffects(ruleContext, statements, node);
 }
 
-export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]> = createRule({
+export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, Options> = createRule<
+  Options,
+  MessageIds
+>({
   name: 'logical-top-to-bottom-grouping',
   meta: {
     type: 'suggestion',

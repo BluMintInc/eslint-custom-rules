@@ -6,9 +6,9 @@
 
 <!-- end auto-generated rule header -->
 
-Keep related statements grouped in a logical, top-to-bottom order. The rule hoists guard clauses above skipped setup, places derived declarations next to their dependencies, keeps placeholder declarations near their first use, and lifts side effects (like logging) above unrelated initialization. Hook calls are treated as boundaries and stay in place so React's Rules of Hooks are preserved; non-hook statements do not move across hook calls.
+You keep related statements grouped in a logical, top-to-bottom order. You hoist guard clauses above skipped setup, place derived declarations next to their dependencies, keep placeholder declarations near their first use, and lift side effects (like logging) above unrelated initialization. Hook calls stay in place as boundaries so React's Rules of Hooks are preserved; you do not move non-hook statements across hook calls.
 
-Placeholder declarations only move across pure declarations that do not reference the placeholder or its initializer, so closure timing and TDZ behavior remain unchanged.
+You only move placeholder declarations across pure declarations that do not reference the placeholder or its initializer, so closure timing and TDZ behavior remain unchanged.
 
 ## Rule Details
 
@@ -72,5 +72,5 @@ for (const item of items) {
 
 ## When Not To Use It
 
-Disable this rule if you intentionally rely on non-linear ordering for performance instrumentation or need to keep logging after initialization for audit requirements.
+Disable this rule if you intentionally rely on non-linear ordering (e.g., staged startup logging for distributed tracing) or need to keep audit/compliance logging after initialization even when it breaks top-to-bottom grouping.
 
