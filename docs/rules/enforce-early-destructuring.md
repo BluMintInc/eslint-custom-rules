@@ -13,7 +13,7 @@ Destructuring inside `useEffect`, `useLayoutEffect`, `useCallback`, or `useMemo`
 The fixer:
 - Hoists object destructuring out of the hook callback.
 - Adds `?? {}` plus `= {}` / `= []` defaults for nested object or array patterns so hoisted destructuring tolerates missing/undefined inputs (nested properties that are explicitly `null` still throw).
-- Replaces the object dependency with the destructured bindings.
+- Replaces the object dependency with the destructured bindings when the callback no longer references the base object; otherwise, keeps the original dependency and adds the bindings.
 - Merges multiple destructures of the same object into a single hoisted pattern.
 - Skips destructuring inside async callbacks or nested async helpers.
 - Skips destructuring that depends on type-narrowing checks, including truthiness guards on the object (e.g., `if (!response) return;`).

@@ -15,6 +15,8 @@ type DestructuringGroup = {
   names: Set<string>;
   orderedNames: string[];
   declarations: TSESTree.VariableDeclaration[];
+  inits: TSESTree.Expression[];
+  baseName: string | null;
 };
 
 const HOOK_NAMES = new Set(['useEffect', 'useMemo', 'useCallback', 'useLayoutEffect']);
@@ -41,7 +43,7 @@ function isAllowedInit(init: TSESTree.Expression): boolean {
     return init.expression.type === AST_NODE_TYPES.MemberExpression;
   }
   if (init.type === AST_NODE_TYPES.TSNonNullExpression) {
-    return isAllowedInit(init.expression as TSESTree.Expression);
+    return isAllowedInit(init.expression);
   }
   return false;
 }
@@ -62,11 +64,11 @@ function getBaseIdentifier(init: TSESTree.Expression): string | null {
   }
 
   if (init.type === AST_NODE_TYPES.ChainExpression) {
-    return getBaseIdentifier(init.expression as TSESTree.Expression);
+    return getBaseIdentifier(init.expression);
   }
 
   if (init.type === AST_NODE_TYPES.TSNonNullExpression) {
-    return getBaseIdentifier(init.expression as TSESTree.Expression);
+    return getBaseIdentifier(init.expression);
   }
 
   return null;
@@ -254,10 +256,14 @@ function renderArrayPatternWithDefaults(
   return `[${elements.join(', ')}]`;
 }
 
-function renderObjectProperty(
-  property: TSESTree.Property,
+function formatPropertyText(
+  property: TSESTree.Property | TSESTree.RestElement,
   sourceCode: TSESLint.SourceCode,
 ): string {
+  if (property.type === AST_NODE_TYPES.RestElement) {
+    return renderRestElementProperty(property, sourceCode);
+  }
+
   if (property.shorthand) {
     return sourceCode.getText(property);
   }
@@ -280,6 +286,13 @@ function renderObjectProperty(
   }
 
   return `${keyText}: ${sourceCode.getText(value)}`;
+}
+
+function renderObjectProperty(
+  property: TSESTree.Property,
+  sourceCode: TSESLint.SourceCode,
+): string {
+  return formatPropertyText(property, sourceCode);
 }
 
 function renderPropertyKey(
@@ -363,49 +376,7 @@ function getSafePropertyText(
   property: TSESTree.Property | TSESTree.RestElement,
   sourceCode: TSESLint.SourceCode,
 ): string {
-  if (property.type === AST_NODE_TYPES.RestElement) {
-    return `...${sourceCode.getText(property.argument)}`;
-  }
-
-  if (property.shorthand) {
-    return sourceCode.getText(property);
-  }
-
-  const keyText = property.computed
-    ? `[${sourceCode.getText(property.key)}]`
-    : sourceCode.getText(property.key);
-  const value = property.value;
-
-  if (value.type === AST_NODE_TYPES.AssignmentPattern) {
-    const left = value.left;
-    if (
-      !property.computed &&
-      property.key.type === AST_NODE_TYPES.Identifier &&
-      left.type === AST_NODE_TYPES.Identifier &&
-      property.key.name === left.name
-    ) {
-      return `${sourceCode.getText(property.key)} = ${sourceCode.getText(value.right)}`;
-    }
-    const leftText =
-      left.type === AST_NODE_TYPES.ObjectPattern
-        ? renderObjectPatternWithDefaults(left, sourceCode)
-        : left.type === AST_NODE_TYPES.ArrayPattern
-        ? renderArrayPatternWithDefaults(left, sourceCode)
-        : sourceCode.getText(left);
-    return `${keyText}: ${leftText} = ${sourceCode.getText(value.right)}`;
-  }
-
-  if (value.type === AST_NODE_TYPES.ObjectPattern) {
-    const nested = renderObjectPatternWithDefaults(value, sourceCode);
-    return `${keyText}: ${nested} = {}`;
-  }
-
-  if (value.type === AST_NODE_TYPES.ArrayPattern) {
-    const nested = renderArrayPatternWithDefaults(value, sourceCode);
-    return `${keyText}: ${nested} = []`;
-  }
-
-  return `${keyText}: ${sourceCode.getText(value)}`;
+  return formatPropertyText(property, sourceCode);
 }
 
 function dependencyElements(
@@ -418,6 +389,49 @@ function dependencyElements(
         Boolean(element),
     )
     .map((element) => sourceCode.getText(element));
+}
+
+function callbackUsesBaseIdentifier(
+  callback: TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression,
+  baseName: string,
+  excludedDeclarations: Set<TSESTree.Node>,
+  excludedInits: Set<TSESTree.Node>,
+  visitorKeys: Record<string, string[]>,
+): boolean {
+  const stack: TSESTree.Node[] = [callback.body];
+
+  while (stack.length) {
+    const current = stack.pop();
+    if (!current) continue;
+
+    if (excludedDeclarations.has(current)) {
+      continue;
+    }
+
+    if (excludedInits.has(current)) {
+      continue;
+    }
+
+    if (current.type === AST_NODE_TYPES.Identifier && current.name === baseName) {
+      return true;
+    }
+
+    const keys = visitorKeys[current.type] ?? [];
+    for (const key of keys) {
+      const value = (current as unknown as Record<string, unknown>)[key];
+      if (Array.isArray(value)) {
+        for (const child of value) {
+          if (child && typeof child === 'object') {
+            stack.push(child as TSESTree.Node);
+          }
+        }
+      } else if (value && typeof value === 'object') {
+        stack.push(value as TSESTree.Node);
+      }
+    }
+  }
+
+  return false;
 }
 
 function testContainsObjectMember(
@@ -557,7 +571,9 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
     schema: [],
     messages: {
       hoistDestructuring:
-        'Destructure "{{objectName}}" before calling {{hookName}}. Keeping destructuring inside the hook forces the dependency array to track the whole object, triggering rerenders when unrelated fields change. Hoist the destructuring (or memoize/guard for missing values) and depend on the specific fields: {{dependencies}}.',
+        'What\'s wrong: "{{objectName}}" is destructured inside the {{hookName}} callback -> ' +
+        'Why it matters: the deps array then tracks the whole object, so the hook can re-run for unrelated field changes and can hide stale closures -> ' +
+        'How to fix: hoist the destructuring before {{hookName}} (or memoize/guard the object) and depend on the specific fields: {{dependencies}}.',
     },
   },
   defaultOptions: [],
@@ -639,12 +655,17 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
                 const declarations = existingGroup?.declarations ?? [];
                 declarations.push(current);
 
+                const inits = existingGroup?.inits ?? [];
+                inits.push(declarator.init);
+
                 groups.set(objectText, {
                   objectText,
                   properties,
                   names,
                   orderedNames,
                   declarations,
+                  inits,
+                  baseName: existingGroup?.baseName ?? baseName ?? null,
                 });
               }
             }
@@ -697,9 +718,35 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
 
             const hoistedLines: string[] = [];
             const declarationsToRemove = new Set<TSESTree.Node>();
-            const newDepTexts = depTexts.filter(
-              (text) => !groups.has(text),
-            );
+            const initsToIgnore = new Set<TSESTree.Node>();
+            const baseUsageByObject = new Map<string, boolean>();
+
+            for (const group of groups.values()) {
+              group.declarations.forEach((decl) => declarationsToRemove.add(decl));
+              group.inits.forEach((init) => initsToIgnore.add(init));
+            }
+
+            for (const group of groups.values()) {
+              if (!group.baseName) {
+                baseUsageByObject.set(group.objectText, true);
+                continue;
+              }
+
+              const usesBase = callbackUsesBaseIdentifier(
+                callback,
+                group.baseName,
+                declarationsToRemove,
+                initsToIgnore,
+                visitorKeys,
+              );
+              baseUsageByObject.set(group.objectText, usesBase);
+            }
+
+            const newDepTexts = depTexts.filter((text) => {
+              const group = groups.get(text);
+              if (!group) return true;
+              return baseUsageByObject.get(text) ?? true;
+            });
 
             for (const group of groups.values()) {
               const sortedProps = Array.from(group.properties.values()).sort(

@@ -388,6 +388,29 @@ ruleTesterJsx.run(
         `,
         errors: [{ messageId: 'hoistDestructuring' }, { messageId: 'hoistDestructuring' }],
       },
+      {
+        code: `
+          const MyComponent = ({ user }) => {
+            useEffect(() => {
+              const { name } = user;
+              if (!user) return;
+              logUser(name);
+              console.log(user.status);
+            }, [user]);
+          };
+        `,
+        output: `
+          const MyComponent = ({ user }) => {
+            const { name } = (user) ?? {};
+            useEffect(() => {
+              if (!user) return;
+              logUser(name);
+              console.log(user.status);
+            }, [user, name]);
+          };
+        `,
+        errors: [{ messageId: 'hoistDestructuring' }],
+      },
     ],
   },
 );
