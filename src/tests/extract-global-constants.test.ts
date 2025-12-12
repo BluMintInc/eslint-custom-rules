@@ -3,10 +3,10 @@ import type { TSESLint } from '@typescript-eslint/utils';
 import { extractGlobalConstants } from '../rules/extract-global-constants';
 
 const buildExtractMessage = (name: string) =>
-  `Declaration "${name}" does not reference values from this scope. Keeping it nested rebuilds the same helper on every call and hides that it can be shared. Hoist it to module scope (use UPPER_SNAKE_CASE for constants) so the value is created once and can be imported.`;
+  `What's wrong: Declaration "${name}" does not reference values from this scope.\nWhy it matters: Keeping it nested recreates the same constant/helper on every call, which adds avoidable allocations and obscures that the value can be shared.\nHow to fix: Hoist it to module scope (use UPPER_SNAKE_CASE for immutable constants) so it is created once and can be imported.`;
 
 const buildRequireAsConstMessage = (value: number) =>
-  `Numeric literal ${value} in this loop is a hidden magic number. Without an "as const" assertion TypeScript widens it to number, so later edits can silently change behavior across loops. Extract it to a named constant with an "as const" (or add "as const" inline) to make the boundary explicit and reusable.`;
+  `What's wrong: Numeric literal ${value} is used directly as a loop boundary.\nWhy it matters: Without "as const", TypeScript widens it to number, so if you later extract or reuse the value you lose the literal-type boundary and it is easier for related loops to drift out of sync.\nHow to fix: Extract it to a named constant with "as const" (or add "as const" inline) to keep the boundary explicit and reusable.`;
 
 type ExtractGlobalConstantsError =
   TSESLint.TestCaseError<'extractGlobalConstants' | 'requireAsConst'>;
