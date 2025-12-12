@@ -7,6 +7,7 @@ type Options = [];
 type JsxFactoryContext = {
   reactMemoIdentifiers: Set<string>;
   reactMemoNamespaces: Set<string>;
+  reactCreateElementIdentifiers: Set<string>;
 };
 
 const MEMOIZE_PREFERRED_MODULE = '@blumintinc/typescript-memoize';
@@ -232,6 +233,10 @@ function expressionReturnsJSX(
       ) as TSESTree.Expression | undefined;
 
       if (callee.type === AST_NODE_TYPES.Identifier) {
+        if (factoryContext.reactCreateElementIdentifiers.has(callee.name)) {
+          return true;
+        }
+
         const targetFn = knownFunctions.get(callee.name);
         if (
           targetFn &&
@@ -550,9 +555,11 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
     const jsxReturnCache = new WeakMap<FunctionLike, JsxReturnCacheState>();
     const reactMemoIdentifiers = new Set<string>();
     const reactMemoNamespaces = new Set<string>();
+    const reactCreateElementIdentifiers = new Set<string>();
     const factoryContext: JsxFactoryContext = {
       reactMemoIdentifiers,
       reactMemoNamespaces,
+      reactCreateElementIdentifiers,
     };
 
     return {
@@ -566,6 +573,13 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
               specifier.imported.name === 'memo'
             ) {
               reactMemoIdentifiers.add(
+                specifier.local?.name ?? specifier.imported.name,
+              );
+            } else if (
+              specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+              specifier.imported.name === 'createElement'
+            ) {
+              reactCreateElementIdentifiers.add(
                 specifier.local?.name ?? specifier.imported.name,
               );
             } else if (specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {

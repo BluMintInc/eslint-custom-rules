@@ -332,6 +332,26 @@ class ElementFactory {
     },
     {
       filename: 'file.tsx',
+      code: `import { createElement } from 'react';
+
+class NamedFactory {
+  get element() {
+    return createElement('div', null, 'hi');
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `import { Memoize } from '@blumintinc/typescript-memoize';
+import { createElement } from 'react';
+
+class NamedFactory {
+  @Memoize()
+  get element() {
+    return createElement('div', null, 'hi');
+  }
+}`,
+    },
+    {
+      filename: 'file.tsx',
       code: `import { Custom } from './decorators';
 
 class DecoratedExample {

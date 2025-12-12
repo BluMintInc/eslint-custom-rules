@@ -237,6 +237,41 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         sourceType: 'module',
       },
     },
+    {
+      code: `
+        type Props = Pick<{ alpha: string; beta: number }, 'alpha' | 'beta'>;
+        const Component = ({ alpha, beta }: Props) => (
+          <div>
+            {alpha}
+            {beta}
+          </div>
+        );
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type Parent = { child: { foo: string; bar: number } };
+        type Props = Parent['child'];
+        const Component = ({ foo, bar }: Props) => (
+          <div>
+            {foo}
+            {bar}
+          </div>
+        );
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
   ],
   invalid: [
     {
