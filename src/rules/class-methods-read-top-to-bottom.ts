@@ -37,12 +37,13 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
   },
   defaultOptions: [],
   create(context) {
-    let className: string;
+    const classNames = new WeakMap<TSESTree.ClassBody, string>();
     return {
       ClassDeclaration(node: TSESTree.ClassDeclaration) {
-        className = node.id?.name || '';
+        classNames.set(node.body, node.id?.name || '');
       },
       'ClassBody:exit'(node: TSESTree.ClassBody) {
+        const className = classNames.get(node) || '';
         const graphBuilder = new ClassGraphBuilder(className, node);
         const sortedOrder = graphBuilder.memberNamesSorted;
         const actualOrder = node.body

@@ -445,6 +445,50 @@ methodB() {
             }}`,
       },
       {
+        code: `
+        class Outer {
+          caller() {
+            class Inner {
+              methodInner() {}
+              constructor() {}
+            }
+            return new Inner();
+          }
+          constructor() {
+            this.caller();
+          }
+        }`,
+        errors: [
+          {
+            messageId: 'classMethodsReadTopToBottom',
+            data: {
+              className: 'Outer',
+              actualMember: 'caller',
+              expectedMember: 'constructor',
+            },
+          },
+          {
+            messageId: 'classMethodsReadTopToBottom',
+            data: {
+              className: 'Inner',
+              actualMember: 'methodInner',
+              expectedMember: 'constructor',
+            },
+          },
+        ],
+        output: `
+        class Outer {constructor() {
+            this.caller();
+          }
+caller() {
+            class Inner {
+              methodInner() {}
+              constructor() {}
+            }
+            return new Inner();
+          }}`,
+      },
+      {
         code: `export class TestClass {
           public field1: string;
           public fooBar: string;
