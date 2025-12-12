@@ -310,12 +310,31 @@ function isInsideAllowedHookCallback(node: TSESTree.Node): boolean {
   while (current) {
     if (
       (current.type === AST_NODE_TYPES.FunctionExpression ||
-        current.type === AST_NODE_TYPES.ArrowFunctionExpression) &&
-      current.parent?.type === AST_NODE_TYPES.CallExpression
+        current.type === AST_NODE_TYPES.ArrowFunctionExpression)
     ) {
-      const hookName = getHookNameFromCallee(current.parent.callee);
-      if (hookName && SAFE_HOOK_ARGUMENTS.has(hookName)) {
-        return true;
+      let parent: TSESTree.Node | null = current.parent as TSESTree.Node | null;
+
+      while (
+        parent &&
+        (parent.type === AST_NODE_TYPES.TSAsExpression ||
+          parent.type === AST_NODE_TYPES.TSTypeAssertion ||
+          parent.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+          parent.type === AST_NODE_TYPES.TSNonNullExpression ||
+          parent.type === AST_NODE_TYPES.ChainExpression ||
+          isParenthesizedExpression(parent))
+      ) {
+        parent = parent.parent as TSESTree.Node | null;
+      }
+
+      if (parent?.type === AST_NODE_TYPES.CallExpression) {
+        const hookName = getHookNameFromCallee(parent.callee);
+        const matchesCallback = parent.arguments.some(
+          (arg) => unwrapExpression(arg as TSESTree.Node) === current,
+        );
+
+        if (hookName && SAFE_HOOK_ARGUMENTS.has(hookName) && matchesCallback) {
+          return true;
+        }
       }
     }
     current = current.parent as TSESTree.Node | null;
@@ -562,13 +581,13 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
     schema: [],
     messages: {
       componentLiteral:
-        'New {{literalType}} inside {{context}} is created on every render. It breaks referential stability for hooks and props. Move it to a module-level constant or wrap it in {{memoHook}} so React sees a stable reference.',
+        'New {{literalType}} inside {{context}} is created on every render → Breaks referential stability for hooks/props and can re-run effects or re-render children → Hoist it to a module-level constant or wrap it in {{memoHook}} with the right dependencies.',
       nestedHookLiteral:
-        'Nested {{literalType}} inside {{hookName}} arguments is recreated on each render, so dependency comparisons always change. Extract it into a memoized value (useMemo/useCallback) or hoist it to a module constant before passing it to {{hookName}}.',
+        'Nested {{literalType}} inside {{hookName}} arguments is recreated on every render → Dependency/reference comparisons change each time and defeat memoization/caching → Extract it into a memoized value (useMemo/useCallback) or hoist it to a module constant before passing it to {{hookName}}.',
       hookReturnLiteral:
-        '{{hookName}} returns a {{literalType}} literal, giving consumers a fresh reference every render and forcing re-renders. Memoize the returned value with useMemo/useCallback or return pre-memoized pieces so callers receive a stable reference.',
+        '{{hookName}} returns a {{literalType}} literal on each render → Callers receive a fresh reference and may re-render or re-run effects → Memoize the returned value with useMemo/useCallback or return pre-memoized pieces so callers see stable references.',
       memoizeLiteralSuggestion:
-        'Wrap this {{literalType}} in {{memoHook}} so React keeps a stable reference. Include every value it closes over in the dependency array.',
+        'This {{literalType}} is created inline → It produces a new reference each render → Wrap it in {{memoHook}} and include every closed-over value in the dependency array.',
     },
   },
   defaultOptions: [],

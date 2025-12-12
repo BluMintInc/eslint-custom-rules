@@ -64,6 +64,17 @@ function Component({ dep }) {
 }
       `,
     },
+    // useEffect callback wrapped in a type assertion is allowed
+    {
+      code: `
+function Component({ dep }) {
+  useEffect((() => {
+    const payload = {};
+    return () => console.log(payload, dep);
+  }) as () => void, [dep]);
+}
+      `,
+    },
     // Custom hook returning memoized value
     {
       code: `
