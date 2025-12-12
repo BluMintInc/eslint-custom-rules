@@ -245,10 +245,10 @@ export const enforceConsoleError = createRule<[], MessageIds>({
                 ? 'the error and warning severity paths'
                 : `the ${missingSeverities[0]} severity path`;
 
-            const dynamicCall = group.openCalls.find(
+            const dynamicCalls = group.openCalls.filter(
               (call) => call.severity === 'dynamic',
             );
-            if (dynamicCall) {
+            dynamicCalls.forEach((dynamicCall) => {
               context.report({
                 node: dynamicCall.node,
                 messageId: 'missingConsoleBoth',
@@ -257,7 +257,7 @@ export const enforceConsoleError = createRule<[], MessageIds>({
                   missingPaths: missingPathsLabel,
                 },
               });
-            }
+            });
           } else {
             if (needsConsoleError && !hasConsoleError) {
               const errorCall = group.openCalls.find(

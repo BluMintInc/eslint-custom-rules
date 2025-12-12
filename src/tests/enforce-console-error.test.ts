@@ -1180,6 +1180,34 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
       errors: [missingConsoleBothErrorAndWarn],
     },
 
+    // Invalid: Multiple dynamic severity calls without console statements
+    {
+      code: `
+        import { useCallback } from 'react';
+        import { useAlertDialog } from '../useAlertDialog';
+
+        export const useDynamicDialog = () => {
+          const { open } = useAlertDialog('DYNAMIC_DIALOG');
+
+          const openDialogs = useCallback((firstSeverity, secondSeverity) => {
+            open({
+              title: 'First Alert',
+              description: 'First dynamic alert',
+              severity: firstSeverity,
+            });
+            open({
+              title: 'Second Alert',
+              description: 'Second dynamic alert',
+              severity: secondSeverity,
+            });
+          }, [open]);
+
+          return { openDialogs };
+        };
+      `,
+      errors: [missingConsoleBothErrorAndWarn, missingConsoleBothErrorAndWarn],
+    },
+
     // Invalid: Dynamic severity with only console.error
     {
       code: `
