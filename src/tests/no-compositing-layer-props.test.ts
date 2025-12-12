@@ -1,6 +1,16 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noCompositingLayerProps } from '../rules/no-compositing-layer-props';
 
+const message = (property: string) =>
+  `CSS property "${property}" promotes this element to its own GPU compositing layer. Extra layers allocate GPU memory and isolate painting, which slows scrolling and animation when used broadly. Remove "${property}" or keep it only when the layer promotion is intentional and documented (e.g., eslint-disable with a comment).`;
+
+// RuleTester accepts `message`, but its typings only expose `messageId`; cast to
+// any so we can assert the full string.
+const error = (property: string) =>
+  ({
+    message: message(property),
+  } as any);
+
 ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
   valid: [
     // Valid inline styles
@@ -103,7 +113,7 @@ ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
           filter: 'brightness(110%)',
         };
       `,
-      errors: [{ messageId: 'compositingLayer' }],
+      errors: [error('filter')],
     },
     {
       code: `
@@ -111,7 +121,7 @@ ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
           backdropFilter: 'blur(10px)',
         };
       `,
-      errors: [{ messageId: 'compositingLayer' }],
+      errors: [error('backdropFilter')],
     },
     {
       code: `
@@ -119,7 +129,7 @@ ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
           transform: 'translate3d(0, 0, 0)',
         };
       `,
-      errors: [{ messageId: 'compositingLayer' }],
+      errors: [error('transform')],
     },
     {
       code: `
@@ -127,7 +137,7 @@ ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
           willChange: 'transform',
         };
       `,
-      errors: [{ messageId: 'compositingLayer' }],
+      errors: [error('willChange')],
     },
     {
       code: `
@@ -135,7 +145,7 @@ ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
           perspective: '1000px',
         };
       `,
-      errors: [{ messageId: 'compositingLayer' }],
+      errors: [error('perspective')],
     },
     {
       code: `
@@ -143,7 +153,7 @@ ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
           backfaceVisibility: 'hidden',
         };
       `,
-      errors: [{ messageId: 'compositingLayer' }],
+      errors: [error('backfaceVisibility')],
     },
     {
       code: `
@@ -151,7 +161,7 @@ ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
           mixBlendMode: 'multiply',
         };
       `,
-      errors: [{ messageId: 'compositingLayer' }],
+      errors: [error('mixBlendMode')],
     },
     {
       code: `
@@ -159,7 +169,7 @@ ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
           backgroundColor: 'transparent',
         };
       `,
-      errors: [{ messageId: 'compositingLayer' }],
+      errors: [error('backgroundColor')],
     },
     // Invalid fractional opacity
     {
@@ -168,7 +178,7 @@ ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
           opacity: 0.99,
         };
       `,
-      errors: [{ messageId: 'compositingLayer' }],
+      errors: [error('opacity')],
     },
     // Invalid JSX styles
     {
@@ -186,8 +196,8 @@ ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
         },
       },
       errors: [
-        { messageId: 'compositingLayer' },
-        { messageId: 'compositingLayer' },
+        error('filter'),
+        error('transform'),
       ],
     },
   ],
