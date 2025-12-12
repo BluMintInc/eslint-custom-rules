@@ -90,7 +90,32 @@ function collectNearestBlockTypeBindings(
   const localTypes = new Set<string>();
   let current: TSESTree.Node | undefined = node.parent ?? undefined;
 
+  const addTypeParameters = (
+    maybeNode: TSESTree.Node | undefined,
+  ): void => {
+    if (!maybeNode) return;
+    const typeParameters = (
+      maybeNode as {
+        typeParameters?:
+          | TSESTree.TSTypeParameterDeclaration
+          | TSESTree.TSTypeParameterInstantiation;
+      }
+    ).typeParameters;
+
+    if (
+      typeParameters &&
+      typeParameters.type === AST_NODE_TYPES.TSTypeParameterDeclaration
+    ) {
+      for (const param of typeParameters.params) {
+        const name =
+          typeof param.name === 'string' ? param.name : param.name.name;
+        localTypes.add(name);
+      }
+    }
+  };
+
   while (current) {
+    addTypeParameters(current);
     if (current.type === AST_NODE_TYPES.BlockStatement) {
       for (const statement of current.body) {
         if (

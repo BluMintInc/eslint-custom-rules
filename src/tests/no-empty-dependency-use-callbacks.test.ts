@@ -149,6 +149,13 @@ function Component() {
   return <div>{handler(new LocalClass('a'))}</div>;
 }
 `,
+  `
+import { useCallback } from 'react';
+function Component<T extends { id: string }>() {
+  const handler = useCallback((value: T) => value.id, []);
+  return handler({ id: 'a' });
+}
+`,
 {
   filename: 'component.ts',
   code: `
