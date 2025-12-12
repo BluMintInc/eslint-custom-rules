@@ -476,43 +476,105 @@ function isComplexTypeInternal(
 
   const flags = type.flags ?? 0;
 
-  if (flags & ts.TypeFlags.Union) {
-    const unionType = type as UnionType;
-    return unionType.types.some((t) => isComplexTypeInternal(ts, t, checker, visited));
+  if (isUnionType(ts, flags)) {
+    return checkUnionType(ts, type as UnionType, checker, visited);
   }
-  if (flags & ts.TypeFlags.Intersection) {
-    const intersectionType = type as IntersectionType;
-    return intersectionType.types.some((t) => isComplexTypeInternal(ts, t, checker, visited));
+
+  if (isIntersectionType(ts, flags)) {
+    return checkIntersectionType(ts, type as IntersectionType, checker, visited);
   }
-  if (
-    flags &
-    (ts.TypeFlags.StringLike |
-      ts.TypeFlags.NumberLike |
-      ts.TypeFlags.BooleanLike |
-      ts.TypeFlags.BigIntLike |
-      ts.TypeFlags.ESSymbolLike |
-      ts.TypeFlags.Null |
-      ts.TypeFlags.Undefined |
-      ts.TypeFlags.Void |
-      ts.TypeFlags.Never |
-      ts.TypeFlags.EnumLike)
-  ) {
+
+  if (isPrimitiveType(ts, flags)) {
     return false;
   }
 
-  if (flags & ts.TypeFlags.TypeParameter) {
-    const constraint = type.getConstraint?.();
-    return constraint ? isComplexTypeInternal(ts, constraint, checker, visited) : false;
+  if (isTypeParameter(ts, flags)) {
+    return checkTypeParameter(ts, type, checker, visited);
   }
 
-  const callSignatures = type.getCallSignatures?.() ?? [];
-  if (callSignatures.length > 0) return false;
+  if (hasCallSignatures(type)) {
+    return false;
+  }
 
-  if (checker.isArrayType?.(type) || checker.isTupleType?.(type)) return true;
+  if (isArrayOrTupleType(checker, type)) {
+    return true;
+  }
 
-  if (flags & ts.TypeFlags.Object) return true;
+  if (isObjectType(ts, flags)) {
+    return true;
+  }
 
   return false;
+}
+
+function isUnionType(ts: typeof import('typescript'), flags: number): boolean {
+  return (flags & ts.TypeFlags.Union) !== 0;
+}
+
+function checkUnionType(
+  ts: typeof import('typescript'),
+  unionType: UnionType,
+  checker: TypeChecker,
+  visited: Set<Type>,
+): boolean {
+  return unionType.types.some((t) => isComplexTypeInternal(ts, t, checker, visited));
+}
+
+function isIntersectionType(ts: typeof import('typescript'), flags: number): boolean {
+  return (flags & ts.TypeFlags.Intersection) !== 0;
+}
+
+function checkIntersectionType(
+  ts: typeof import('typescript'),
+  intersectionType: IntersectionType,
+  checker: TypeChecker,
+  visited: Set<Type>,
+): boolean {
+  return intersectionType.types.some((t) => isComplexTypeInternal(ts, t, checker, visited));
+}
+
+function isPrimitiveType(ts: typeof import('typescript'), flags: number): boolean {
+  return (
+    (flags &
+      (ts.TypeFlags.StringLike |
+        ts.TypeFlags.NumberLike |
+        ts.TypeFlags.BooleanLike |
+        ts.TypeFlags.BigIntLike |
+        ts.TypeFlags.ESSymbolLike |
+        ts.TypeFlags.Null |
+        ts.TypeFlags.Undefined |
+        ts.TypeFlags.Void |
+        ts.TypeFlags.Never |
+        ts.TypeFlags.EnumLike)) !==
+    0
+  );
+}
+
+function isTypeParameter(ts: typeof import('typescript'), flags: number): boolean {
+  return (flags & ts.TypeFlags.TypeParameter) !== 0;
+}
+
+function checkTypeParameter(
+  ts: typeof import('typescript'),
+  type: Type,
+  checker: TypeChecker,
+  visited: Set<Type>,
+): boolean {
+  const constraint = type.getConstraint?.();
+  return constraint ? isComplexTypeInternal(ts, constraint, checker, visited) : false;
+}
+
+function hasCallSignatures(type: Type): boolean {
+  const callSignatures = type.getCallSignatures?.() ?? [];
+  return callSignatures.length > 0;
+}
+
+function isArrayOrTupleType(checker: TypeChecker, type: Type): boolean {
+  return Boolean(checker.isArrayType?.(type) || checker.isTupleType?.(type));
+}
+
+function isObjectType(ts: typeof import('typescript'), flags: number): boolean {
+  return (flags & ts.TypeFlags.Object) !== 0;
 }
 
 function getTypeFromSymbol(
