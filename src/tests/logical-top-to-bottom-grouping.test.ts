@@ -175,6 +175,27 @@ function logAll() {
 }
 logger = createLogger();
     `,
+    `
+const obj = {
+  method() {
+    return data;
+  },
+};
+
+const data = 1;
+obj.method();
+    `,
+    `
+class Service {
+  run() {
+    return config;
+  }
+}
+
+const service = new Service();
+const config = loadConfig();
+service.run();
+    `,
   ],
   invalid: [
     {

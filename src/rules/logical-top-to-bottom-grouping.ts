@@ -855,40 +855,235 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<MessageIds, never[]
       return null;
     }
 
+  function collectFunctionBodyDependencies(
+    fn:
+      | TSESTree.FunctionDeclaration
+      | TSESTree.FunctionExpression
+      | TSESTree.ArrowFunctionExpression,
+    dependencies: Set<string>,
+  ): void {
+    if (!fn.body) {
+      return;
+    }
+    collectUsedIdentifiers(fn.body, dependencies, { skipFunctions: true });
+  }
+
+  function resolveValueForIdentifier(
+    body: TSESTree.Statement[],
+    name: string,
+  ): TSESTree.Expression | TSESTree.ClassDeclaration | TSESTree.ClassExpression | null {
+    for (const statement of body) {
+      if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
+        for (const declarator of statement.declarations) {
+          if (
+            declarator.id.type === AST_NODE_TYPES.Identifier &&
+            declarator.id.name === name &&
+            declarator.init &&
+            ASTHelpers.isNode(declarator.init)
+          ) {
+            return declarator.init as TSESTree.Expression;
+          }
+        }
+      }
+      if (statement.type === AST_NODE_TYPES.ClassDeclaration && statement.id?.name === name) {
+        return statement;
+      }
+    }
+    return null;
+  }
+
+  function resolveValueNode(
+    body: TSESTree.Statement[],
+    node: TSESTree.Expression | TSESTree.ClassDeclaration | TSESTree.ClassExpression,
+    visited: Set<string>,
+  ): TSESTree.Expression | TSESTree.ClassDeclaration | TSESTree.ClassExpression | null {
+    if (node.type === AST_NODE_TYPES.Identifier) {
+      if (visited.has(node.name)) {
+        return null;
+      }
+      visited.add(node.name);
+      const resolved = resolveValueForIdentifier(body, node.name);
+      if (!resolved) {
+        return null;
+      }
+      return resolveValueNode(body, resolved as TSESTree.Expression, visited);
+    }
+
+    if (
+      node.type === AST_NODE_TYPES.NewExpression &&
+      node.callee.type === AST_NODE_TYPES.Identifier
+    ) {
+      const resolvedClass = resolveValueForIdentifier(body, node.callee.name);
+      if (
+        resolvedClass &&
+        (resolvedClass.type === AST_NODE_TYPES.ClassDeclaration ||
+          resolvedClass.type === AST_NODE_TYPES.ClassExpression)
+      ) {
+        return resolvedClass;
+      }
+    }
+
+    return node;
+  }
+
+  function resolveMemberFunction(
+    body: TSESTree.Statement[],
+    member: TSESTree.MemberExpression,
+  ): TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression | null {
+    if (member.computed || member.property.type !== AST_NODE_TYPES.Identifier) {
+      return null;
+    }
+
+    const path: string[] = [];
+    let cursor:
+      | TSESTree.LeftHandSideExpression
+      | TSESTree.PrivateIdentifier
+      | TSESTree.Super
+      | null = member;
+
+    while (
+      cursor &&
+      cursor.type === AST_NODE_TYPES.MemberExpression &&
+      !cursor.computed &&
+      cursor.property.type === AST_NODE_TYPES.Identifier
+    ) {
+      path.unshift(cursor.property.name);
+      cursor = cursor.object as
+        | TSESTree.LeftHandSideExpression
+        | TSESTree.PrivateIdentifier
+        | TSESTree.Super
+        | null;
+    }
+
+    if (!cursor || cursor.type !== AST_NODE_TYPES.Identifier) {
+      return null;
+    }
+
+    path.unshift(cursor.name);
+    const [root, ...segments] = path;
+    const initialValue = resolveValueForIdentifier(body, root);
+    if (!initialValue) {
+      return null;
+    }
+
+    const visited = new Set<string>([root]);
+    return descend(resolveValueNode(body, initialValue, visited), segments, visited);
+
+    function descend(
+      value:
+        | TSESTree.Expression
+        | TSESTree.ClassDeclaration
+        | TSESTree.ClassExpression
+        | null,
+      remaining: string[],
+      visitedNames: Set<string>,
+    ): TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression | null {
+      if (!value) {
+        return null;
+      }
+
+      if (remaining.length === 0) {
+        if (
+          value.type === AST_NODE_TYPES.FunctionExpression ||
+          value.type === AST_NODE_TYPES.ArrowFunctionExpression
+        ) {
+          return value;
+        }
+        return null;
+      }
+
+      const [segment, ...rest] = remaining;
+
+      if (value.type === AST_NODE_TYPES.ObjectExpression) {
+        const property = value.properties.find(
+          (prop) =>
+            prop.type === AST_NODE_TYPES.Property &&
+            !prop.computed &&
+            prop.key.type === AST_NODE_TYPES.Identifier &&
+            prop.key.name === segment,
+        ) as TSESTree.Property | undefined;
+
+        if (!property) {
+          return null;
+        }
+
+        const resolved = resolveValueNode(
+          body,
+          property.value as TSESTree.Expression,
+          visitedNames,
+        );
+        return descend(resolved, rest, visitedNames);
+      }
+
+      if (
+        value.type === AST_NODE_TYPES.ClassDeclaration ||
+        value.type === AST_NODE_TYPES.ClassExpression
+      ) {
+        const method = value.body.body.find(
+          (memberDef) =>
+            memberDef.type === AST_NODE_TYPES.MethodDefinition &&
+            !memberDef.computed &&
+            memberDef.key.type === AST_NODE_TYPES.Identifier &&
+            memberDef.key.name === segment,
+        ) as TSESTree.MethodDefinition | undefined;
+
+        if (!method) {
+          return null;
+        }
+
+        const resolved = resolveValueNode(
+          body,
+          method.value as TSESTree.FunctionExpression,
+          visitedNames,
+        );
+        return descend(resolved, rest, visitedNames);
+      }
+
+      return null;
+    }
+  }
+
   function collectCalleeDependencies(
     body: TSESTree.Statement[],
     callee: TSESTree.LeftHandSideExpression | TSESTree.PrivateIdentifier | TSESTree.Super,
     dependencies: Set<string>,
   ): void {
-    if (callee.type !== AST_NODE_TYPES.Identifier) {
-      return;
-    }
-    const name = callee.name;
+    if (callee.type === AST_NODE_TYPES.Identifier) {
+      const name = callee.name;
 
-    const functionDeclaration = body.find(
-      (statement) =>
-        statement.type === AST_NODE_TYPES.FunctionDeclaration && statement.id?.name === name,
-    ) as TSESTree.FunctionDeclaration | undefined;
-    if (functionDeclaration && functionDeclaration.body) {
-      collectUsedIdentifiers(functionDeclaration.body, dependencies, { skipFunctions: true });
-      return;
-    }
-
-    for (const statement of body) {
-      if (statement.type !== AST_NODE_TYPES.VariableDeclaration) {
-        continue;
+      const functionDeclaration = body.find(
+        (statement) =>
+          statement.type === AST_NODE_TYPES.FunctionDeclaration && statement.id?.name === name,
+      ) as TSESTree.FunctionDeclaration | undefined;
+      if (functionDeclaration && functionDeclaration.body) {
+        collectFunctionBodyDependencies(functionDeclaration, dependencies);
+        return;
       }
-      for (const declarator of statement.declarations) {
-        if (
-          declarator.id.type === AST_NODE_TYPES.Identifier &&
-          declarator.id.name === name &&
-          declarator.init &&
-          (declarator.init.type === AST_NODE_TYPES.FunctionExpression ||
-            declarator.init.type === AST_NODE_TYPES.ArrowFunctionExpression)
-        ) {
-          collectUsedIdentifiers(declarator.init.body, dependencies, { skipFunctions: true });
-          return;
+
+      for (const statement of body) {
+        if (statement.type !== AST_NODE_TYPES.VariableDeclaration) {
+          continue;
         }
+        for (const declarator of statement.declarations) {
+          if (
+            declarator.id.type === AST_NODE_TYPES.Identifier &&
+            declarator.id.name === name &&
+            declarator.init &&
+            (declarator.init.type === AST_NODE_TYPES.FunctionExpression ||
+              declarator.init.type === AST_NODE_TYPES.ArrowFunctionExpression)
+          ) {
+            collectFunctionBodyDependencies(declarator.init, dependencies);
+            return;
+          }
+        }
+      }
+      return;
+    }
+
+    if (callee.type === AST_NODE_TYPES.MemberExpression) {
+      const memberFunction = resolveMemberFunction(body, callee);
+      if (memberFunction) {
+        collectFunctionBodyDependencies(memberFunction, dependencies);
       }
     }
   }
