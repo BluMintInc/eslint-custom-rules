@@ -1,4 +1,4 @@
-import { TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 
 type AsyncCallbackNode =
   | TSESTree.ArrowFunctionExpression
@@ -10,20 +10,23 @@ const getFunctionDescription = (
   fallbackName?: string,
 ): string => {
   const declaredName =
-    (node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression') &&
+    (node.type === AST_NODE_TYPES.FunctionDeclaration ||
+      node.type === AST_NODE_TYPES.FunctionExpression) &&
     node.id?.name
       ? node.id.name
       : null;
 
   const functionName =
     declaredName ??
-    (node.type !== 'ArrowFunctionExpression' ? fallbackName : undefined);
+    (node.type !== AST_NODE_TYPES.ArrowFunctionExpression
+      ? fallbackName
+      : undefined);
 
   if (functionName) {
     return `function "${functionName}"`;
   }
 
-  if (node.type === 'ArrowFunctionExpression') {
+  if (node.type === AST_NODE_TYPES.ArrowFunctionExpression) {
     return fallbackName
       ? `arrow function "${fallbackName}"`
       : 'arrow function';
@@ -47,13 +50,42 @@ const findVariableInScope = (
   return null;
 };
 
+const isAsyncFunctionExpression = (
+  node: unknown,
+): node is
+  | TSESTree.ArrowFunctionExpression
+  | TSESTree.FunctionExpression => {
+  if (!node || typeof node !== 'object') {
+    return false;
+  }
+
+  const typedNode = node as TSESTree.Node;
+
+  return (
+    (typedNode.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+      typedNode.type === AST_NODE_TYPES.FunctionExpression) &&
+    (typedNode as TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression)
+      .async === true
+  );
+};
+
+const getSourceCode = (
+  context: TSESLint.RuleContext<'noAsyncForEach', []>,
+): TSESLint.SourceCode => {
+  const typedContext = context as TSESLint.RuleContext<'noAsyncForEach', []> & {
+    sourceCode?: TSESLint.SourceCode;
+  };
+
+  return typedContext.sourceCode ?? context.getSourceCode();
+};
+
 const analyzeCallbackAsyncStatus = (
   callback: TSESTree.CallExpressionArgument,
   scope: TSESLint.Scope.Scope | null,
 ): { callbackLabel: string } | null => {
   if (
-    (callback.type === 'ArrowFunctionExpression' ||
-      callback.type === 'FunctionExpression') &&
+    (callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+      callback.type === AST_NODE_TYPES.FunctionExpression) &&
     callback.async
   ) {
     return {
@@ -61,7 +93,7 @@ const analyzeCallbackAsyncStatus = (
     };
   }
 
-  if (callback.type !== 'Identifier') {
+  if (callback.type !== AST_NODE_TYPES.Identifier) {
     return null;
   }
 
@@ -71,7 +103,10 @@ const analyzeCallbackAsyncStatus = (
   }
 
   for (const definition of variable.defs) {
-    if (definition.node.type === 'FunctionDeclaration' && definition.node.async) {
+    if (
+      definition.node.type === AST_NODE_TYPES.FunctionDeclaration &&
+      definition.node.async
+    ) {
       return {
         callbackLabel: getFunctionDescription(
           definition.node,
@@ -80,21 +115,43 @@ const analyzeCallbackAsyncStatus = (
       };
     }
 
-    if (definition.node.type === 'VariableDeclarator') {
-      const init = definition.node.init;
-      if (
-        init &&
-        (init.type === 'ArrowFunctionExpression' ||
-          init.type === 'FunctionExpression') &&
-        init.async
-      ) {
+    if (definition.node.type === AST_NODE_TYPES.VariableDeclarator) {
+      const initializerExpression = definition.node.init;
+      if (isAsyncFunctionExpression(initializerExpression)) {
         const name =
-          (definition.node.id.type === 'Identifier' && definition.node.id.name) ||
+          (definition.node.id.type === AST_NODE_TYPES.Identifier &&
+            definition.node.id.name) ||
           callback.name;
         return {
-          callbackLabel: getFunctionDescription(init, name),
+          callbackLabel: getFunctionDescription(initializerExpression, name),
         };
       }
+    }
+  }
+
+  for (const reference of variable.references) {
+    if (typeof reference.isWrite === 'function' && !reference.isWrite()) {
+      continue;
+    }
+
+    const parent = reference.identifier.parent;
+    const writeExpr =
+      reference.writeExpr ??
+      (parent &&
+        parent.type === AST_NODE_TYPES.AssignmentExpression &&
+        parent.right) ??
+      (parent &&
+        parent.type === AST_NODE_TYPES.VariableDeclarator &&
+        parent.init);
+
+    if (isAsyncFunctionExpression(writeExpr)) {
+      const name =
+        (writeExpr.type === AST_NODE_TYPES.FunctionExpression &&
+          writeExpr.id?.name) ||
+        reference.identifier.name;
+      return {
+        callbackLabel: getFunctionDescription(writeExpr, name),
+      };
     }
   }
 
@@ -103,10 +160,7 @@ const analyzeCallbackAsyncStatus = (
 
 export const noAsyncForEach: TSESLint.RuleModule<'noAsyncForEach', []> = {
   create(context) {
-    const sourceCode =
-      (context as TSESLint.RuleContext<'noAsyncForEach', []> & {
-        sourceCode?: TSESLint.SourceCode;
-      }).sourceCode ?? context.getSourceCode();
+    const sourceCode = getSourceCode(context);
 
     return {
       CallExpression(node: TSESTree.CallExpression) {
@@ -114,8 +168,8 @@ export const noAsyncForEach: TSESLint.RuleModule<'noAsyncForEach', []> = {
         const callback = node.arguments[0];
 
         if (
-          callee.type === 'MemberExpression' &&
-          callee.property.type === 'Identifier' &&
+          callee.type === AST_NODE_TYPES.MemberExpression &&
+          callee.property.type === AST_NODE_TYPES.Identifier &&
           callee.property.name === 'forEach' &&
           callback
         ) {
@@ -134,7 +188,7 @@ export const noAsyncForEach: TSESLint.RuleModule<'noAsyncForEach', []> = {
 
           if (asyncCallbackInfo) {
             context.report({
-              node,
+              node: callback,
               messageId: 'noAsyncForEach',
               data: asyncCallbackInfo,
             });
