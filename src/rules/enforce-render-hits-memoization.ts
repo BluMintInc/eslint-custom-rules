@@ -162,12 +162,21 @@ export const enforceRenderHitsMemoization = createRule<[], MessageIds>({
       return false;
     };
 
+    const useRenderHitsSources = new Set([
+      'useRenderHits',
+      '@/hooks/algolia/useRenderHits',
+    ]);
+    const renderHitsSources = new Set([
+      'renderHits',
+      '@/hooks/algolia/renderHits',
+    ]);
     let useRenderHitsName = 'useRenderHits';
     let renderHitsName = 'renderHits';
 
     return {
       ImportDeclaration(node) {
-        if (node.source.value.endsWith('useRenderHits')) {
+        const sourceValue = String(node.source.value);
+        if (useRenderHitsSources.has(sourceValue)) {
           for (const specifier of node.specifiers) {
             if (
               specifier.type === AST_NODE_TYPES.ImportSpecifier &&
@@ -177,7 +186,7 @@ export const enforceRenderHitsMemoization = createRule<[], MessageIds>({
               break;
             }
           }
-        } else if (node.source.value.endsWith('renderHits')) {
+        } else if (renderHitsSources.has(sourceValue)) {
           for (const specifier of node.specifiers) {
             if (
               specifier.type === AST_NODE_TYPES.ImportSpecifier &&

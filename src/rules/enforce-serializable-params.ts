@@ -58,9 +58,30 @@ export default createRule({
     ]);
 
     const typeAliasMap = new Map<string, TSESTree.TSTypeAliasDeclaration>();
+    const sourceCode = context.getSourceCode();
 
     function isNonSerializableType(typeName: string): boolean {
       return allNonSerializableTypes.has(typeName);
+    }
+
+    function getEntityName(typeName: TSESTree.EntityName): string {
+      if (typeName.type === AST_NODE_TYPES.Identifier) {
+        return typeName.name;
+      }
+      if (typeName.type === AST_NODE_TYPES.TSQualifiedName) {
+        return sourceCode.getText(typeName);
+      }
+      return sourceCode.getText(typeName);
+    }
+
+    function getPropertyName(key: TSESTree.PropertyName): string {
+      if (key.type === AST_NODE_TYPES.Identifier) {
+        return key.name;
+      }
+      if (key.type === AST_NODE_TYPES.Literal && typeof key.value === 'string') {
+        return key.value;
+      }
+      return sourceCode.getText(key);
     }
 
     function checkTypeNode(
@@ -71,7 +92,7 @@ export default createRule({
 
       switch (node.type) {
         case AST_NODE_TYPES.TSTypeReference: {
-          const typeName = (node.typeName as TSESTree.Identifier).name;
+          const typeName = getEntityName(node.typeName);
           if (isNonSerializableType(typeName)) {
             context.report({
               node,
@@ -101,7 +122,7 @@ export default createRule({
         case AST_NODE_TYPES.TSTypeLiteral:
           node.members.forEach((member) => {
             if (member.type === AST_NODE_TYPES.TSPropertySignature) {
-              const propertyName = (member.key as TSESTree.Identifier).name;
+              const propertyName = getPropertyName(member.key);
               checkTypeNode(member.typeAnnotation, propertyName);
             }
           });
@@ -117,7 +138,7 @@ export default createRule({
         typeAliasMap.set(node.id.name, node);
       },
       TSTypeReference(node) {
-        const typeName = (node.typeName as TSESTree.Identifier).name;
+        const typeName = getEntityName(node.typeName);
         if (
           options.functionTypes.includes(typeName) &&
           node.typeParameters?.params[0]
@@ -125,9 +146,7 @@ export default createRule({
           const typeParam = node.typeParameters.params[0];
 
           if (typeParam.type === AST_NODE_TYPES.TSTypeReference) {
-            const referencedTypeName = (
-              typeParam.typeName as TSESTree.Identifier
-            ).name;
+            const referencedTypeName = getEntityName(typeParam.typeName);
             const typeAlias = typeAliasMap.get(referencedTypeName);
             if (typeAlias) {
               checkTypeNode(typeAlias.typeAnnotation);

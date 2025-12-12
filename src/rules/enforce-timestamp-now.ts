@@ -36,7 +36,7 @@ export const enforceTimestampNow = createRule<[], MessageIds>({
     }
 
     // Track Timestamp imports and aliases
-    const timestampAliases = new Set<string>(['Timestamp']);
+    const timestampAliases = new Set<string>();
 
     function isTimestampFromDateWithNewDate(
       node: TSESTree.CallExpression,

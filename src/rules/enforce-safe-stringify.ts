@@ -23,16 +23,19 @@ export const enforceStableStringify = createRule<Options, MessageIds>({
   defaultOptions: [],
   create(context) {
     let hasStringifyImport = false;
+    let stringifyImportName: string | null = null;
 
     return {
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
         if (
           node.source.value === 'safe-stable-stringify' &&
-          node.specifiers.some(
-            (specifier) =>
-              specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier &&
-              specifier.local.name === 'stringify',
-          )
+          node.specifiers.some((specifier) => {
+            if (specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
+              stringifyImportName = specifier.local.name;
+              return true;
+            }
+            return false;
+          })
         ) {
           hasStringifyImport = true;
         }
@@ -49,6 +52,7 @@ export const enforceStableStringify = createRule<Options, MessageIds>({
             messageId: 'useStableStringify',
             fix(fixer) {
               const fixes: TSESLint.RuleFix[] = [];
+              const importName = stringifyImportName ?? 'stringify';
 
               // Add import if not present
               if (!hasStringifyImport) {
@@ -57,7 +61,7 @@ export const enforceStableStringify = createRule<Options, MessageIds>({
                   (node) => node.type === AST_NODE_TYPES.ImportDeclaration,
                 );
                 const importStatement =
-                  "import stringify from 'safe-stable-stringify';\n";
+                  `import ${importName} from 'safe-stable-stringify';\n`;
 
                 if (firstImport) {
                   fixes.push(
@@ -65,14 +69,15 @@ export const enforceStableStringify = createRule<Options, MessageIds>({
                   );
                 } else {
                   fixes.push(
-                    fixer.insertTextBefore(program.body[0], importStatement),
+                    fixer.insertTextBeforeRange([0, 0], importStatement),
                   );
                 }
                 hasStringifyImport = true;
+                stringifyImportName = importName;
               }
 
               // Replace JSON.stringify with stringify
-              fixes.push(fixer.replaceText(node, 'stringify'));
+              fixes.push(fixer.replaceText(node, importName));
 
               return fixes;
             },
