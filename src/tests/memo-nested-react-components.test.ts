@@ -92,6 +92,24 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
         }), []);
       `,
     },
+    {
+      code: `
+        import { useCallback } from 'react';
+        import * as Factory from 'ui-factory';
+
+        const NonReactFactory = useCallback(() => {
+          return Factory.createElement('div', null, 'text');
+        }, []);
+      `,
+    },
+    {
+      code: `
+        import { useCallback } from 'react';
+        import { memo as memoize } from 'lodash';
+
+        const LodashMemo = useCallback(() => memoize((props) => <div {...props} />), []);
+      `,
+    },
   ],
   invalid: [
     {
@@ -103,7 +121,7 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
       output: `
         import React, { useCallback, useMemo, memo } from 'react';
 
-        const CustomButton = useMemo(() => memo(({ onClick, children }) => <button onClick={onClick}>{children}</button>), []);
+        const CustomButton = useMemo(() => React.memo(({ onClick, children }) => <button onClick={onClick}>{children}</button>), []);
       `,
       errors: [
         {
@@ -201,7 +219,7 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
         import React, { useCallback } from 'react';
         import { memo } from 'react';
 
-        const Inline = React.useMemo(() => memo(() => {
+        const Inline = React.useMemo(() => React.memo(() => {
           return <span>inline</span>;
         }), []);
       `,
@@ -363,7 +381,7 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
       output: `
         import React, { useCallback, useMemo, memo } from 'react';
 
-        const CreateElement = useMemo(() => memo(() => {
+        const CreateElement = useMemo(() => React.memo(() => {
           return React.createElement('div', null, 'text');
         }), []);
       `,
@@ -481,6 +499,25 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
           messageId: 'memoizeNestedComponent',
           data: {
             componentName: 'GenericComp',
+            hookName: 'useCallback()',
+            replacementHook: 'useMemo()',
+          },
+        },
+      ],
+    },
+    {
+      code: `
+        import React, { useMemo, memo } from 'react';
+        import Hooks from '@other/hooks';
+
+        const NamespacedHook = Hooks.useCallback(() => <div>other</div>, []);
+      `,
+      output: null,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'NamespacedHook',
             hookName: 'useCallback()',
             replacementHook: 'useMemo()',
           },

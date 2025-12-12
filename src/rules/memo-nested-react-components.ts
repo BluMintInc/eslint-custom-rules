@@ -22,6 +22,71 @@ const HOOK_REPLACEMENT: Record<string, string> = {
   useDeepCompareCallback: 'useDeepCompareMemo',
 };
 
+type ReactImports = {
+  namespace: string | null;
+  named: Partial<Record<'createElement' | 'memo' | 'forwardRef', string>>;
+};
+
+const collectReactImports = (
+  sourceCode: Readonly<TSESLint.SourceCode>,
+): ReactImports => {
+  const reactImports: ReactImports = { namespace: null, named: {} };
+
+  for (const statement of sourceCode.ast.body) {
+    if (statement.type !== AST_NODE_TYPES.ImportDeclaration) continue;
+
+    if (statement.source.value !== 'react') continue;
+
+    for (const specifier of statement.specifiers) {
+      if (
+        specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+        specifier.imported.type === AST_NODE_TYPES.Identifier
+      ) {
+        const importedName = specifier.imported.name;
+        if (
+          importedName === 'createElement' ||
+          importedName === 'memo' ||
+          importedName === 'forwardRef'
+        ) {
+          reactImports.named[importedName] = specifier.local.name;
+        }
+      }
+
+      if (
+        specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
+        specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier
+      ) {
+        reactImports.namespace = specifier.local.name;
+      }
+    }
+  }
+
+  return reactImports;
+};
+
+const calleeMatchesReactMember = (
+  callee: TSESTree.LeftHandSideExpression,
+  reactImports: ReactImports,
+  member: keyof ReactImports['named'],
+): boolean => {
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    return reactImports.named[member] === callee.name;
+  }
+
+  if (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.property.type === AST_NODE_TYPES.Identifier &&
+    callee.property.name === member &&
+    callee.object.type === AST_NODE_TYPES.Identifier &&
+    reactImports.namespace === callee.object.name
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
 const isFunctionExpression = (
   node: TSESTree.Node,
 ): node is TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression => {
@@ -60,20 +125,11 @@ const unwrapExpression = (
   return expression;
 };
 
-const isReactCreateElementCall = (node: TSESTree.CallExpression): boolean => {
-  if (node.callee.type === AST_NODE_TYPES.Identifier) {
-    return node.callee.name === 'createElement';
-  }
-
-  if (
-    node.callee.type === AST_NODE_TYPES.MemberExpression &&
-    !node.callee.computed &&
-    node.callee.property.type === AST_NODE_TYPES.Identifier
-  ) {
-    return node.callee.property.name === 'createElement';
-  }
-
-  return false;
+const isReactCreateElementCall = (
+  node: TSESTree.CallExpression,
+  reactImports: ReactImports,
+): boolean => {
+  return calleeMatchesReactMember(node.callee, reactImports, 'createElement');
 };
 
 const isHookCall = (
@@ -98,36 +154,23 @@ const isHookCall = (
   return null;
 };
 
-const isForwardRefCall = (node: TSESTree.CallExpression): boolean => {
-  if (node.callee.type === AST_NODE_TYPES.Identifier) {
-    return node.callee.name === 'forwardRef';
-  }
-  if (
-    node.callee.type === AST_NODE_TYPES.MemberExpression &&
-    !node.callee.computed &&
-    node.callee.property.type === AST_NODE_TYPES.Identifier
-  ) {
-    return node.callee.property.name === 'forwardRef';
-  }
-  return false;
+const isForwardRefCall = (
+  node: TSESTree.CallExpression,
+  reactImports: ReactImports,
+): boolean => {
+  return calleeMatchesReactMember(node.callee, reactImports, 'forwardRef');
 };
 
-const isMemoCall = (node: TSESTree.CallExpression): boolean => {
-  if (node.callee.type === AST_NODE_TYPES.Identifier) {
-    return node.callee.name === 'memo';
-  }
-  if (
-    node.callee.type === AST_NODE_TYPES.MemberExpression &&
-    !node.callee.computed &&
-    node.callee.property.type === AST_NODE_TYPES.Identifier
-  ) {
-    return node.callee.property.name === 'memo';
-  }
-  return false;
+const isMemoCall = (
+  node: TSESTree.CallExpression,
+  reactImports: ReactImports,
+): boolean => {
+  return calleeMatchesReactMember(node.callee, reactImports, 'memo');
 };
 
 const expressionCreatesComponent = (
   expression: TSESTree.Expression | null,
+  reactImports: ReactImports,
 ): ComponentDetectionResult | null => {
   if (!expression) {
     return null;
@@ -144,7 +187,7 @@ const expressionCreatesComponent = (
 
   if (
     unwrapped.type === AST_NODE_TYPES.CallExpression &&
-    isReactCreateElementCall(unwrapped)
+    isReactCreateElementCall(unwrapped, reactImports)
   ) {
     return { found: true, componentIsCallback: true };
   }
@@ -152,14 +195,17 @@ const expressionCreatesComponent = (
   switch (unwrapped.type) {
     case AST_NODE_TYPES.ArrowFunctionExpression:
     case AST_NODE_TYPES.FunctionExpression: {
-      const inner = functionCreatesComponent(unwrapped);
+      const inner = functionCreatesComponent(unwrapped, reactImports);
       return inner ? { found: true, componentIsCallback: false } : null;
     }
     case AST_NODE_TYPES.CallExpression: {
-      if (isForwardRefCall(unwrapped) || isMemoCall(unwrapped)) {
+      if (
+        isForwardRefCall(unwrapped, reactImports) ||
+        isMemoCall(unwrapped, reactImports)
+      ) {
         const firstArg = unwrapped.arguments[0];
         if (firstArg && isFunctionExpression(firstArg)) {
-          const inner = functionCreatesComponent(firstArg);
+          const inner = functionCreatesComponent(firstArg, reactImports);
           if (inner) {
             return { found: true, componentIsCallback: false };
           }
@@ -169,24 +215,24 @@ const expressionCreatesComponent = (
       return null;
     }
     case AST_NODE_TYPES.ConditionalExpression: {
-      const cons = expressionCreatesComponent(unwrapped.consequent);
-      const alt = expressionCreatesComponent(unwrapped.alternate);
+      const cons = expressionCreatesComponent(unwrapped.consequent, reactImports);
+      const alt = expressionCreatesComponent(unwrapped.alternate, reactImports);
       return cons || alt;
     }
     case AST_NODE_TYPES.LogicalExpression: {
-      const left = expressionCreatesComponent(unwrapped.left);
-      const right = expressionCreatesComponent(unwrapped.right);
+      const left = expressionCreatesComponent(unwrapped.left, reactImports);
+      const right = expressionCreatesComponent(unwrapped.right, reactImports);
       return left || right;
     }
     case AST_NODE_TYPES.SequenceExpression: {
       const last = unwrapped.expressions[unwrapped.expressions.length - 1];
-      return expressionCreatesComponent(last || null);
+      return expressionCreatesComponent(last || null, reactImports);
     }
     case AST_NODE_TYPES.ArrayExpression: {
       const match = unwrapped.elements
         .map((element) =>
           element && element.type !== AST_NODE_TYPES.SpreadElement
-            ? expressionCreatesComponent(element)
+            ? expressionCreatesComponent(element, reactImports)
             : null,
         )
         .find(Boolean);
@@ -199,23 +245,24 @@ const expressionCreatesComponent = (
 
 const statementCreatesComponent = (
   node: TSESTree.Statement,
+  reactImports: ReactImports,
 ): ComponentDetectionResult | null => {
   switch (node.type) {
     case AST_NODE_TYPES.ReturnStatement:
-      return expressionCreatesComponent(node.argument);
+      return expressionCreatesComponent(node.argument, reactImports);
     case AST_NODE_TYPES.IfStatement: {
       const cons =
         node.consequent.type === AST_NODE_TYPES.BlockStatement
-          ? blockCreatesComponent(node.consequent)
-          : statementCreatesComponent(node.consequent);
+          ? blockCreatesComponent(node.consequent, reactImports)
+          : statementCreatesComponent(node.consequent, reactImports);
 
       if (cons) return cons;
 
       if (node.alternate) {
         if (node.alternate.type === AST_NODE_TYPES.BlockStatement) {
-          return blockCreatesComponent(node.alternate);
+          return blockCreatesComponent(node.alternate, reactImports);
         }
-        return statementCreatesComponent(node.alternate);
+        return statementCreatesComponent(node.alternate, reactImports);
       }
 
       return null;
@@ -223,35 +270,35 @@ const statementCreatesComponent = (
     case AST_NODE_TYPES.SwitchStatement: {
       for (const switchCase of node.cases) {
         for (const consequent of switchCase.consequent) {
-          const match = statementCreatesComponent(consequent);
+          const match = statementCreatesComponent(consequent, reactImports);
           if (match) return match;
         }
       }
       return null;
     }
     case AST_NODE_TYPES.BlockStatement:
-      return blockCreatesComponent(node);
+      return blockCreatesComponent(node, reactImports);
     case AST_NODE_TYPES.ForStatement:
     case AST_NODE_TYPES.ForInStatement:
     case AST_NODE_TYPES.ForOfStatement:
     case AST_NODE_TYPES.WhileStatement:
     case AST_NODE_TYPES.DoWhileStatement: {
       if (node.body.type === AST_NODE_TYPES.BlockStatement) {
-        return blockCreatesComponent(node.body);
+        return blockCreatesComponent(node.body, reactImports);
       }
-      return statementCreatesComponent(node.body);
+      return statementCreatesComponent(node.body, reactImports);
     }
     case AST_NODE_TYPES.TryStatement: {
-      const blockMatch = blockCreatesComponent(node.block);
+      const blockMatch = blockCreatesComponent(node.block, reactImports);
       if (blockMatch) return blockMatch;
 
       if (node.handler?.body) {
-        const handlerMatch = blockCreatesComponent(node.handler.body);
+        const handlerMatch = blockCreatesComponent(node.handler.body, reactImports);
         if (handlerMatch) return handlerMatch;
       }
 
       if (node.finalizer) {
-        return blockCreatesComponent(node.finalizer);
+        return blockCreatesComponent(node.finalizer, reactImports);
       }
 
       return null;
@@ -263,9 +310,10 @@ const statementCreatesComponent = (
 
 const blockCreatesComponent = (
   block: TSESTree.BlockStatement,
+  reactImports: ReactImports,
 ): ComponentDetectionResult | null => {
   for (const statement of block.body) {
-    const match = statementCreatesComponent(statement);
+    const match = statementCreatesComponent(statement, reactImports);
     if (match) return match;
   }
   return null;
@@ -276,12 +324,13 @@ const functionCreatesComponent = (
     | TSESTree.ArrowFunctionExpression
     | TSESTree.FunctionExpression
     | TSESTree.FunctionDeclaration,
+  reactImports: ReactImports,
 ): ComponentDetectionResult | null => {
   if (node.body.type === AST_NODE_TYPES.BlockStatement) {
-    return blockCreatesComponent(node.body);
+    return blockCreatesComponent(node.body, reactImports);
   }
 
-  return expressionCreatesComponent(node.body);
+  return expressionCreatesComponent(node.body, reactImports);
 };
 
 const shouldIgnoreFile = (filename: string, patterns: string[]): boolean => {
@@ -300,38 +349,12 @@ const getVariableName = (node: TSESTree.CallExpression): string | null => {
   return null;
 };
 
-const findMemoReference = (
-  sourceCode: Readonly<TSESLint.SourceCode>,
-): string | null => {
-  let reactIdentifier: string | null = null;
-
-  for (const statement of sourceCode.ast.body) {
-    if (statement.type !== AST_NODE_TYPES.ImportDeclaration) continue;
-
-    const isReactImport = statement.source.value === 'react';
-    if (!isReactImport) {
-      continue;
-    }
-
-    for (const specifier of statement.specifiers) {
-      if (
-        specifier.type === AST_NODE_TYPES.ImportSpecifier &&
-        specifier.imported.type === AST_NODE_TYPES.Identifier &&
-        specifier.imported.name === 'memo'
-      ) {
-        return specifier.local.name;
-      }
-
-      if (
-        specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
-        specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier
-      ) {
-        reactIdentifier = specifier.local.name;
-      }
-    }
+const findMemoReference = (reactImports: ReactImports): string | null => {
+  if (reactImports.namespace) {
+    return `${reactImports.namespace}.memo`;
   }
 
-  return reactIdentifier ? `${reactIdentifier}.memo` : null;
+  return reactImports.named.memo ?? null;
 };
 
 const hasIdentifierInScope = (name: string, scope: TSESLint.Scope.Scope) => {
@@ -391,7 +414,8 @@ How to fix: Create the component via {{replacementHook}} and wrap it in memo() s
     const sourceCode =
       (Reflect.get(context, 'sourceCode') as Readonly<TSESLint.SourceCode> | null | undefined) ??
       context.getSourceCode();
-    const memoReference = findMemoReference(sourceCode);
+    const reactImports = collectReactImports(sourceCode);
+    const memoReference = findMemoReference(reactImports);
 
     return {
       CallExpression(node) {
@@ -405,8 +429,8 @@ How to fix: Create the component via {{replacementHook}} and wrap it in memo() s
         }
 
         const componentMatch = isFunctionExpression(callback)
-          ? functionCreatesComponent(callback)
-          : expressionCreatesComponent(callback);
+          ? functionCreatesComponent(callback, reactImports)
+          : expressionCreatesComponent(callback, reactImports);
         if (!componentMatch) {
           return;
         }
@@ -432,6 +456,10 @@ How to fix: Create the component via {{replacementHook}} and wrap it in memo() s
             if (!memoReference) {
               return null;
             }
+
+            const memoNamespace = memoReference.endsWith('.memo')
+              ? memoReference.slice(0, -'.memo'.length)
+              : null;
 
             const scope = context.getScope();
             const replacementIdentifierAvailable =
@@ -465,6 +493,15 @@ How to fix: Create the component via {{replacementHook}} and wrap it in memo() s
             }
 
             if (!isFunctionExpression(callback)) {
+              return null;
+            }
+
+            if (
+              memoNamespace &&
+              node.callee.type === AST_NODE_TYPES.MemberExpression &&
+              node.callee.object.type === AST_NODE_TYPES.Identifier &&
+              node.callee.object.name !== memoNamespace
+            ) {
               return null;
             }
 

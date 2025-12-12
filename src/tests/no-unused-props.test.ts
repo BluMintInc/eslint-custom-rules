@@ -258,6 +258,26 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
     },
     {
       code: `
+        type Shared = { forwarded: string } & { unused: string };
+        type Props = Omit<Shared, 'forwarded'>;
+        const Component = ({}: Props) => <div>static</div>;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: '...Shared' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
         type ButtonProps = { onClick: () => void; label: string; disabled: boolean };
         const Button = ({ onClick: handleClick, label }: ButtonProps) => (
           <button onClick={handleClick}>{label}</button>

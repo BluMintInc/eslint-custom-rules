@@ -2,7 +2,7 @@
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix) when `memo` and the replacement hook are already in scope.
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix) when `memo` and the replacement hook are already in scope, either as named imports or via a namespace like `React.useMemo`/`React.useDeepCompareMemo`.
 
 <!-- end auto-generated rule header -->
 
@@ -15,7 +15,7 @@ Creating React components inside `useCallback` or `useDeepCompareCallback` hides
   - Flags callbacks passed to `useCallback` or `useDeepCompareCallback` when they return JSX, a `React.createElement` call, or return another function that returns JSX (higher-order component factories).
   - Detects component wrappers such as `forwardRef` or `memo` returned from these callback hooks.
   - Skips files that match configured `ignorePatterns`.
-- **Fix behavior**: When `memo` and the replacement hook (`useMemo` or `useDeepCompareMemo`) are already available in scope, the fixer rewrites `useCallback`/`useDeepCompareCallback` calls to the memo variant and wraps the original callback in `memo(...)`. Fixes are skipped when required identifiers are missing to avoid producing invalid code. The fixer also skips callbacks that return another function which returns JSX (component factories) because those require a manual refactor.
+- **Fix behavior**: When `memo` and the replacement hook (`useMemo` or `useDeepCompareMemo`) are already available in scope (either as named imports or as a namespace reference such as `React.useMemo`/`React.useDeepCompareMemo`), the fixer rewrites `useCallback`/`useDeepCompareCallback` calls to the memo variant and wraps the original callback in `memo(...)`. Fixes are skipped when required identifiers are missing to avoid producing invalid code. The fixer also skips callbacks that return another function which returns JSX (component factories) because those require a manual refactor.
 
 ### Options
 

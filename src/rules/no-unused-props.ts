@@ -219,9 +219,9 @@ export const noUnusedProps = createRule({
           const addBaseTypeProps = (
             typeNode: TSESTree.TypeNode,
             shouldInclude: (name: string) => boolean = () => true,
-          ) => {
+          ): boolean => {
             if (typeNode.type !== AST_NODE_TYPES.TSTypeLiteral) {
-              return;
+              return false;
             }
             typeNode.members.forEach((member) => {
               if (
@@ -232,6 +232,7 @@ export const noUnusedProps = createRule({
                 props[member.key.name] = member.key;
               }
             });
+            return true;
           };
 
           const handleOmitType = (
@@ -274,10 +275,16 @@ export const noUnusedProps = createRule({
               variable.defs[0]?.node.type ===
                 AST_NODE_TYPES.TSTypeAliasDeclaration
             ) {
-              addBaseTypeProps(
+              const added = addBaseTypeProps(
                 variable.defs[0].node.typeAnnotation,
                 (name) => !omittedPropNames.has(name),
               );
+              if (!added) {
+                props[`...${baseTypeName}`] = baseType.typeName;
+                if (!spreadTypeProps[baseTypeName]) {
+                  spreadTypeProps[baseTypeName] = [];
+                }
+              }
             } else {
               props[`...${baseTypeName}`] = baseType.typeName;
               if (!spreadTypeProps[baseTypeName]) {
@@ -472,7 +479,15 @@ export const noUnusedProps = createRule({
                         AST_NODE_TYPES.TSTypeAliasDeclaration
                     ) {
                       // For Partial<T>, Required<T>, etc., add all properties from the base type
-                      addBaseTypeProps(variable.defs[0].node.typeAnnotation);
+                      const added = addBaseTypeProps(
+                        variable.defs[0].node.typeAnnotation,
+                      );
+                      if (!added) {
+                        props[`...${baseTypeName}`] = baseType.typeName;
+                        if (!spreadTypeProps[baseTypeName]) {
+                          spreadTypeProps[baseTypeName] = [];
+                        }
+                      }
                     } else {
                       // If we can't find the base type definition, treat it as a spread type
                       props[`...${baseTypeName}`] = baseType.typeName;
