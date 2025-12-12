@@ -20,10 +20,23 @@ export const exportIfInDoubt: TSESLint.RuleModule<'exportIfInDoubt', never[]> =
     },
     defaultOptions: [],
     create(context) {
-      // List of top-level declarations
-      // List of exported identifiers
       const topLevelDeclarations: TSESTree.Node[] = [];
       const exportedIdentifiers: string[] = [];
+      const getDeclarationKind = (
+        node: TSESTree.Node,
+      ): TSESTree.VariableDeclaration['kind'] | 'function' | 'type' => {
+        if (node.type === 'VariableDeclarator') {
+          const variableParent = node.parent;
+          if (variableParent?.type === 'VariableDeclaration') {
+            return variableParent.kind;
+          }
+          return 'const';
+        }
+        if (node.type === 'FunctionDeclaration') {
+          return 'function';
+        }
+        return 'type';
+      };
 
       return {
         'Program > VariableDeclaration > VariableDeclarator, Program > FunctionDeclaration, Program > TSTypeAliasDeclaration'(
@@ -63,14 +76,7 @@ export const exportIfInDoubt: TSESLint.RuleModule<'exportIfInDoubt', never[]> =
               !exportedIdentifiers.includes(node.id.name)
             ) {
               const name = node.id.name;
-              const kind =
-                node.type === 'VariableDeclarator'
-                  ? node.parent?.type === 'VariableDeclaration'
-                    ? node.parent.kind
-                    : 'const'
-                  : node.type === 'FunctionDeclaration'
-                  ? 'function'
-                  : 'type';
+              const kind = getDeclarationKind(node);
               const exportExample =
                 node.type === 'VariableDeclarator'
                   ? `export ${kind} ${name} = undefined;`
