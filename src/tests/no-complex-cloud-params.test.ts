@@ -3,7 +3,7 @@ import { ruleTesterTs } from '../utils/ruleTester';
 import { noComplexCloudParams } from '../rules/no-complex-cloud-params';
 
 const message =
-  'Cloud function "exitChannelGroupExternal" receives a value that is not JSON-serializable. Cloud params must stay plain data; class instances, functions, RegExp/BigInt/TypedArray values, or nested complex properties are dropped or throw during transport to Firebase. Send only primitives and plain objects/arrays, or serialize the value first (for example convert a RegExp to a string or JSON.stringify the payload) before calling "exitChannelGroupExternal".';
+  'Cloud function "exitChannelGroupExternal" receives a value that is not JSON-serializable. Cloud params must stay plain data; class instances, functions, RegExp/BigInt/TypedArray values, or nested complex properties are dropped or cause runtime errors during transport to Firebase. Send only primitives and plain objects/arrays, or serialize the value first (for example, convert a RegExp to a string or JSON.stringify the payload) before calling "exitChannelGroupExternal".';
 const error = { message } as unknown as TSESLint.TestCaseError<'noComplexObjects'>;
 
 ruleTesterTs.run('no-complex-cloud-params', noComplexCloudParams, {

@@ -15,7 +15,7 @@ Cloud function parameters must be JSON-serializable. Class instances, functions,
 ## How to fix
 
 - Pass only primitives and plain objects/arrays with JSON-safe properties.
-- Convert complex values into serializable forms (for example use `regexp.source`, `date.toISOString()`, or plain data objects).
+- Convert complex values into serializable forms (for example, use `regexp.source`, `date.toISOString()`, or plain data objects).
 - Pre-serialize payloads with `JSON.stringify` when appropriate, or move behavior into the cloud function and only pass the data it needs.
 
 ## Examples
