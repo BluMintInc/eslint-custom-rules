@@ -1,5 +1,14 @@
+import { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { enforceVerbNounNaming } from '../rules/enforce-verb-noun-naming';
+
+const verbNounMessage = (name: string) =>
+  `Function "${name}" should start with an action verb followed by the thing it acts on. Verb-first names tell readers this symbol performs work instead of representing data, which keeps APIs predictable and prevents accidental misuse. Rename "${name}" to a verb-noun phrase such as "fetchUsers" or "processRequest".`;
+
+const verbNounError = (name: string) =>
+  ({
+    message: verbNounMessage(name),
+  } as unknown as TSESLint.TestCaseError<'functionVerbPhrase'>);
 
 ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
   valid: [
@@ -185,13 +194,13 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
     // Invalid function names (not verb phrases)
     {
       code: `function userData() { return null; }`,
-      errors: [{ messageId: 'functionVerbPhrase' }],
+      errors: [verbNounError('userData')],
     },
 
     // Invalid arrow function names (not verb phrases)
     {
       code: `const data = () => null;`,
-      errors: [{ messageId: 'functionVerbPhrase' }],
+      errors: [verbNounError('data')],
     },
 
     // Invalid class method names (not verb phrases)
@@ -199,7 +208,7 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
       code: `class Service {
         data() { }
       }`,
-      errors: [{ messageId: 'functionVerbPhrase' }],
+      errors: [verbNounError('data')],
     },
   ],
 });
