@@ -19,6 +19,18 @@ const DEFAULT_TEST_PATTERNS = [
   '**/*.spec.*',
 ];
 
+const PREFER_UTILITY_FUNCTION_MESSAGE = [
+  'What\'s wrong: "{{name}}" uses useCallback([]) but never reads component/hook state',
+  'Why it matters: empty-deps callbacks are already stable, so hook bookkeeping adds overhead without benefit',
+  'How to fix: move "{{name}}" to a module-level utility (or add an eslint-disable with a short justification if you intentionally keep it for memoized children).',
+].join(' -> ');
+
+const PREFER_UTILITY_LATEST_MESSAGE = [
+  'What\'s wrong: useLatestCallback wraps "{{name}}" even though it never reads component/hook state',
+  'Why it matters: the hook wrapper adds indirection without preventing stale closures',
+  'How to fix: extract "{{name}}" to a module-level utility (or disable with a brief note if you rely on HMR or a stale-closure pattern).',
+].join(' -> ');
+
 function isUseCallbackCallee(
   callee: TSESTree.LeftHandSideExpression,
 ): boolean {
@@ -631,10 +643,8 @@ export const noEmptyDependencyUseCallbacks = createRule<Options, MessageIds>({
       },
     ],
     messages: {
-      preferUtilityFunction:
-        'What\'s wrong: "{{name}}" uses useCallback([]) but never reads component/hook state -> Why it matters: empty-deps callbacks are already stable, so hook bookkeeping adds overhead without benefit -> How to fix: move "{{name}}" to a module-level utility (or add an eslint-disable with a short justification if you intentionally keep it for memoized children).',
-      preferUtilityLatest:
-        'What\'s wrong: useLatestCallback wraps "{{name}}" even though it never reads component/hook state -> Why it matters: the hook wrapper adds indirection without preventing stale closures -> How to fix: extract "{{name}}" to a module-level utility (or disable with a brief note if you rely on HMR or a stale-closure pattern).',
+      preferUtilityFunction: PREFER_UTILITY_FUNCTION_MESSAGE,
+      preferUtilityLatest: PREFER_UTILITY_LATEST_MESSAGE,
     },
   },
   defaultOptions: [{}],
