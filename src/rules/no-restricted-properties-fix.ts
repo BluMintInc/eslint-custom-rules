@@ -49,7 +49,7 @@ export const noRestrictedPropertiesFix = createRule<
     ],
     messages: {
       restrictedProperty:
-        "Disallowed object property: '{{objectName}}.{{propertyName}}'{{message}}",
+        'Access to "{{objectName}}.{{propertyName}}" is restricted. {{restrictionReason}}Restricted properties often bypass safer APIs, hide side effects, or encourage patterns this codebase forbids. Use the allowed alternative from your rule configuration or remove this property access.',
     },
   },
   defaultOptions: [[]],
@@ -143,8 +143,8 @@ export const noRestrictedPropertiesFix = createRule<
               data: {
                 objectName: restrictedProp.object,
                 propertyName: restrictedProp.property,
-                message: restrictedProp.message
-                  ? `: ${restrictedProp.message}`
+                restrictionReason: restrictedProp.message
+                  ? `${restrictedProp.message} `
                   : '',
               },
               fix: () => null,
@@ -176,8 +176,8 @@ export const noRestrictedPropertiesFix = createRule<
               data: {
                 objectName,
                 propertyName: restrictedProp.property,
-                message: restrictedProp.message
-                  ? `: ${restrictedProp.message}`
+                restrictionReason: restrictedProp.message
+                  ? `${restrictedProp.message} `
                   : '',
               },
               fix: () => null,
@@ -202,8 +202,8 @@ export const noRestrictedPropertiesFix = createRule<
               data: {
                 objectName: restrictedProp.object,
                 propertyName,
-                message: restrictedProp.message
-                  ? `: ${restrictedProp.message}`
+                restrictionReason: restrictedProp.message
+                  ? `${restrictedProp.message} `
                   : '',
               },
               fix: () => null,

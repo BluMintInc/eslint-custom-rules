@@ -133,7 +133,7 @@ ruleTesterTs.run('no-restricted-properties-fix', noRestrictedPropertiesFix, {
           data: {
             objectName: 'disallowedObject',
             propertyName: 'disallowedProperty',
-            message: ': This property is disallowed.',
+            restrictionReason: 'This property is disallowed. ',
           },
         },
       ],
@@ -158,7 +158,7 @@ ruleTesterTs.run('no-restricted-properties-fix', noRestrictedPropertiesFix, {
           data: {
             objectName: 'myArray',
             propertyName: 'push',
-            message: ': Use spread operator instead of push.',
+            restrictionReason: 'Use spread operator instead of push. ',
           },
         },
       ],
@@ -183,7 +183,7 @@ ruleTesterTs.run('no-restricted-properties-fix', noRestrictedPropertiesFix, {
           data: {
             objectName: 'require',
             propertyName: 'resolve',
-            message: ': Use import instead.',
+            restrictionReason: 'Use import instead. ',
           },
         },
       ],
