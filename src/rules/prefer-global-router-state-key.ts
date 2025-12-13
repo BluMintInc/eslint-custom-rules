@@ -317,9 +317,15 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                               defaultImports.entries(),
                             ).find(([, source]) => isQueryKeysSource(source))?.[0];
                             const importAlias = namespaceAlias ?? defaultAlias;
-                            const replacementText = importAlias
-                              ? `${importAlias}.${suggestedConstant}`
-                              : suggestedConstant;
+                            const formatConstantReference = (
+                              alias: string | undefined,
+                              constant: string,
+                            ): string =>
+                              alias ? `${alias}.${constant}` : constant;
+                            const replacementText = formatConstantReference(
+                              importAlias,
+                              suggestedConstant,
+                            );
 
                             // 1) Replace the literal with the constant (qualify if alias exists)
                             fixes.push(fixer.replaceText(keyValue, replacementText));

@@ -463,8 +463,11 @@ export const noUnusedProps = createRule({
                           return;
                         }
                         visitingTypeReferences.add(typeName.name);
-                        extractProps(variable.defs[0].node.typeAnnotation);
-                        visitingTypeReferences.delete(typeName.name);
+                        try {
+                          extractProps(variable.defs[0].node.typeAnnotation);
+                        } finally {
+                          visitingTypeReferences.delete(typeName.name);
+                        }
                       } else {
                         // If we can't find the type declaration, it's likely an imported type
                         // Mark it as a forwarded prop
