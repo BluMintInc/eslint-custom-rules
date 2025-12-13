@@ -111,6 +111,17 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
                 const { mockFirestore: mockFirebase } = await import('../../__test-utils__/mockFirestore');
             };`,
     },
+    // Invalid: Dynamic import with multiple destructured properties
+    {
+      code: `const mockFn = async () => {
+                const { mockFirebase, mockSet } = await import('firestore-jest-mock');
+            };`,
+      filename: 'src/components/test.test.ts',
+      errors: [expectedError],
+      output: `const mockFn = async () => {
+                const { mockFirestore: mockFirebase, mockFirestore: mockSet } = await import('../../__test-utils__/mockFirestore');
+            };`,
+    },
     // Invalid: Dynamic import with alias in test file
     {
       code: `const mockFn = async () => {
@@ -139,6 +150,20 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
       output: `import { render } from '@testing-library/react';
             import { mockFirestore } from '../../__test-utils__/mockFirestore';
             import { useState } from 'react';`,
+    },
+    // Invalid: Non-awaited dynamic import should still rewrite module path
+    {
+      code: `const loader = import('firestore-jest-mock');`,
+      filename: 'src/components/test.test.ts',
+      errors: [expectedError],
+      output: `const loader = import('../../__test-utils__/mockFirestore');`,
+    },
+    // Invalid: Dynamic import with promise chaining keeps destructuring intact
+    {
+      code: `const load = () => import('firestore-jest-mock').then(({ mockFirebase }) => mockFirebase());`,
+      filename: 'src/components/test.test.ts',
+      errors: [expectedError],
+      output: `const load = () => import('../../__test-utils__/mockFirestore').then(({ mockFirebase }) => mockFirebase());`,
     },
     // Invalid: Import with line breaks and comments
     {

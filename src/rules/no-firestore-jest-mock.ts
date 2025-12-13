@@ -1,5 +1,6 @@
 import path from 'path';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
+import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'noFirestoreJestMock';
@@ -12,14 +13,67 @@ const toPosixPath = (filePath: string) => filePath.replace(/\\/g, '/');
 const ensureRelativeSpecifier = (specifier: string) =>
   specifier.startsWith('.') ? specifier : `./${specifier}`;
 
-const buildReplacementPath = (filename: string, cwd: string) => {
-  const absoluteFilename = path.isAbsolute(filename)
-    ? filename
-    : path.join(cwd, filename);
+const buildReplacementPath = (sourceFilePath: string, cwd: string) => {
+  const absoluteFilename = path.isAbsolute(sourceFilePath)
+    ? sourceFilePath
+    : path.join(cwd, sourceFilePath);
   const targetPath = path.join(cwd, MOCK_FIRESTORE_TARGET);
   const relativePath = path.relative(path.dirname(absoluteFilename), targetPath);
 
   return ensureRelativeSpecifier(toPosixPath(relativePath));
+};
+
+const findVariableDeclarator = (
+  node: TSESTree.ImportExpression,
+): TSESTree.VariableDeclarator | null => {
+  const { parent } = node;
+
+  if (parent?.type === AST_NODE_TYPES.VariableDeclarator) {
+    return parent;
+  }
+
+  if (
+    parent?.type === AST_NODE_TYPES.AwaitExpression &&
+    parent.parent?.type === AST_NODE_TYPES.VariableDeclarator
+  ) {
+    return parent.parent;
+  }
+
+  return null;
+};
+
+const buildDestructuringFix = (
+  fixer: TSESLint.RuleFixer,
+  pattern: TSESTree.ObjectPattern,
+): TSESLint.RuleFix | null => {
+  const mappedProperties = pattern.properties
+    .map((property) => {
+      if (property.type !== AST_NODE_TYPES.Property) {
+        return null;
+      }
+
+      const value =
+        property.value.type === AST_NODE_TYPES.AssignmentPattern
+          ? property.value.left
+          : property.value;
+
+      if (value.type !== AST_NODE_TYPES.Identifier) {
+        return null;
+      }
+
+      const localName = value.name;
+
+      return localName === 'mockFirestore'
+        ? 'mockFirestore'
+        : `mockFirestore: ${localName}`;
+    })
+    .filter((property): property is string => property !== null);
+
+  if (mappedProperties.length === 0) {
+    return null;
+  }
+
+  return fixer.replaceText(pattern, `{ ${mappedProperties.join(', ')} }`);
 };
 
 export const noFirestoreJestMock = createRule<[], MessageIds>({
@@ -79,11 +133,7 @@ export const noFirestoreJestMock = createRule<[], MessageIds>({
           node.source.type === AST_NODE_TYPES.Literal &&
           node.source.value === FIRESTORE_JEST_MOCK
         ) {
-          const variableDeclarator =
-            node.parent?.type === AST_NODE_TYPES.AwaitExpression &&
-            node.parent.parent?.type === AST_NODE_TYPES.VariableDeclarator
-              ? node.parent.parent
-              : null;
+          const variableDeclarator = findVariableDeclarator(node);
           context.report({
             node,
             messageId: 'noFirestoreJestMock',
@@ -93,26 +143,14 @@ export const noFirestoreJestMock = createRule<[], MessageIds>({
                 fixer.replaceText(node.source, `'${replacementPath}'`),
               ];
 
-              if (
-                variableDeclarator &&
-                variableDeclarator.id.type === AST_NODE_TYPES.ObjectPattern
-              ) {
-                const [firstProperty] = variableDeclarator.id.properties;
+              if (variableDeclarator?.id.type === AST_NODE_TYPES.ObjectPattern) {
+                const destructuringFix = buildDestructuringFix(
+                  fixer,
+                  variableDeclarator.id,
+                );
 
-                if (
-                  firstProperty &&
-                  firstProperty.type === AST_NODE_TYPES.Property &&
-                  firstProperty.value.type === AST_NODE_TYPES.Identifier
-                ) {
-                  const bindingName = firstProperty.value.name;
-                  const patternText =
-                    bindingName === 'mockFirestore'
-                      ? '{ mockFirestore }'
-                      : `{ mockFirestore: ${bindingName} }`;
-
-                  fixes.push(
-                    fixer.replaceText(variableDeclarator.id, patternText),
-                  );
+                if (destructuringFix) {
+                  fixes.push(destructuringFix);
                 } else {
                   fixes.push(
                     fixer.replaceText(
@@ -123,6 +161,8 @@ export const noFirestoreJestMock = createRule<[], MessageIds>({
                 }
               }
 
+              // Destructuring in promise chains (e.g., import().then(({ mockFirestore }) => {}))
+              // stays reported but only the module specifier is rewritten to avoid unsafe edits.
               return fixes;
             },
           });
