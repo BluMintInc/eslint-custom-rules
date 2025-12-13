@@ -15,12 +15,15 @@ export const noJsxWhitespaceLiteral = createRule<Options, MessageIds>({
     schema: [],
     messages: {
       noWhitespaceLiteral:
-        'Whitespace-only JSX expression {{literal}} creates fragile spacer nodes that disappear or duplicate when children move or translations change. Place spacing inside text content or use CSS layout spacing such as gap, margin, or padding.',
+        'Whitespace-only JSX expression {{literal}} inserts fragile spacer nodes → These nodes disappear or duplicate when children move or translations change because the spacing lives in its own text node → Place spacing inside text content (e.g., "Hello ") or use CSS spacing such as gap, margin, or padding.',
     },
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.sourceCode;
+    const typedContext = context as typeof context & {
+      sourceCode?: ReturnType<typeof context.getSourceCode>;
+    };
+    const sourceCode = typedContext.sourceCode ?? context.getSourceCode();
 
     return {
       JSXExpressionContainer(node) {
