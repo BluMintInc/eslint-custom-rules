@@ -79,13 +79,23 @@ export const noUnusedProps = createRule({
     const findTypeAliasDeclaration = (
       typeName: string,
     ): TSESTree.TSTypeAliasDeclaration | null => {
-      const scope = context.getScope();
-      const variable = scope.variables.find((v) => v.name === typeName);
-      const typeAliasDef = variable?.defs.find(
-        (def) => def.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration,
-      );
-      const typeAliasNode = typeAliasDef?.node;
-      return isTypeAliasDeclaration(typeAliasNode) ? typeAliasNode : null;
+      let scope: ReturnType<typeof context.getScope> | null = context.getScope();
+
+      while (scope) {
+        const variable = scope.variables.find((v) => v.name === typeName);
+        if (variable) {
+          const typeAliasDef = variable.defs.find(
+            (def) => def.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration,
+          );
+          const typeAliasNode = typeAliasDef?.node;
+          if (isTypeAliasDeclaration(typeAliasNode)) {
+            return typeAliasNode;
+          }
+        }
+        scope = scope.upper;
+      }
+
+      return null;
     };
 
     const propsTypes: Map<string, Record<string, TSESTree.Node>> = new Map();

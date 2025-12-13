@@ -193,8 +193,7 @@ const findParamsIdentifier = (
       prop.type === AST_NODE_TYPES.Property &&
       prop.key.type === AST_NODE_TYPES.Identifier &&
       prop.key.name === 'params' &&
-      prop.value.type === AST_NODE_TYPES.Identifier &&
-      prop.value.name === 'params'
+      prop.value.type === AST_NODE_TYPES.Identifier
     ) {
       return prop.value.name;
     }

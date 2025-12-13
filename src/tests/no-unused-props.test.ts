@@ -237,6 +237,28 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         sourceType: 'module',
       },
     },
+    {
+      code: `
+        type SharedProps = { title: string };
+
+        function makeComponent() {
+          type LocalProps = SharedProps & { subtitle: string };
+          const Component = ({ title, subtitle }: LocalProps) => (
+            <h1>
+              {title}
+              {subtitle}
+            </h1>
+          );
+          return Component;
+        }
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
   ],
   invalid: [
     {
