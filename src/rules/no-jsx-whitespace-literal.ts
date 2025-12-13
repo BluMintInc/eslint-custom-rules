@@ -15,12 +15,12 @@ export const noJsxWhitespaceLiteral = createRule<Options, MessageIds>({
     schema: [],
     messages: {
       noWhitespaceLiteral:
-        'What\'s wrong: Whitespace-only JSX expression {{literal}} inserts an invisible text node. Why it matters: Spacer nodes shift or collapse when translations, formatters, or runtime reordering change where children render, leading to missing or doubled spaces. How to fix: Move spacing into the surrounding text (e.g., "Hello ") or rely on layout spacing like CSS gap, margin, or padding.',
+        'Whitespace-only JSX expression {{literal}} creates fragile spacer nodes that disappear or duplicate when children move or translations change. Place spacing inside text content or use CSS layout spacing such as gap, margin, or padding.',
     },
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode;
 
     return {
       JSXExpressionContainer(node) {
