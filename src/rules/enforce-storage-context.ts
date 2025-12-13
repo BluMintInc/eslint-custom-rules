@@ -133,7 +133,9 @@ const createAliasState = (): AliasState => {
  * TS assertions, satisfies expressions, non-null assertions, optional chaining,
  * or parentheses that do not change runtime behavior (e.g., `(localStorage as Storage)?.getItem()`).
  */
-const unwrapExpression = (expression: TSESTree.Expression): TSESTree.Expression => {
+const unwrapExpression = (
+  expression: TSESTree.Expression,
+): TSESTree.Expression => {
   let current: TSESTree.Expression = expression;
 
   while (true) {
@@ -167,10 +169,15 @@ const getPropertyName = (
   node: TSESTree.Expression | TSESTree.PrivateIdentifier,
 ): string | null => {
   const unwrapped =
-    node.type === AST_NODE_TYPES.PrivateIdentifier ? node : unwrapExpression(node);
+    node.type === AST_NODE_TYPES.PrivateIdentifier
+      ? node
+      : unwrapExpression(node);
 
   if (unwrapped.type === AST_NODE_TYPES.Identifier) return unwrapped.name;
-  if (unwrapped.type === AST_NODE_TYPES.Literal && typeof unwrapped.value === 'string') {
+  if (
+    unwrapped.type === AST_NODE_TYPES.Literal &&
+    typeof unwrapped.value === 'string'
+  ) {
     return unwrapped.value;
   }
   return null;
@@ -288,7 +295,9 @@ const parentMatchesBinding = (
   if (parent.type !== type) return false;
   if (!propertyName) return true;
 
-  const parentProperty = (parent as unknown as Record<string, unknown>)[propertyName];
+  const parentProperty = (parent as unknown as Record<string, unknown>)[
+    propertyName
+  ];
   if (propertyName === 'params' && Array.isArray(parentProperty)) {
     return parentProperty.includes(value);
   }
@@ -308,12 +317,42 @@ const identifierHasDeclarationParent = (node: TSESTree.Identifier): boolean => {
   if (
     parentMatchesBinding(parent, AST_NODE_TYPES.ObjectPattern) ||
     parentMatchesBinding(parent, AST_NODE_TYPES.ArrayPattern) ||
-    parentMatchesBinding(parent, AST_NODE_TYPES.RestElement, 'argument', node) ||
-    parentMatchesBinding(parent, AST_NODE_TYPES.VariableDeclarator, 'id', node) ||
-    parentMatchesBinding(parent, AST_NODE_TYPES.AssignmentExpression, 'left', node) ||
-    parentMatchesBinding(parent, AST_NODE_TYPES.AssignmentPattern, 'left', node) ||
-    parentMatchesBinding(parent, AST_NODE_TYPES.FunctionDeclaration, 'id', node) ||
-    parentMatchesBinding(parent, AST_NODE_TYPES.FunctionExpression, 'id', node) ||
+    parentMatchesBinding(
+      parent,
+      AST_NODE_TYPES.RestElement,
+      'argument',
+      node,
+    ) ||
+    parentMatchesBinding(
+      parent,
+      AST_NODE_TYPES.VariableDeclarator,
+      'id',
+      node,
+    ) ||
+    parentMatchesBinding(
+      parent,
+      AST_NODE_TYPES.AssignmentExpression,
+      'left',
+      node,
+    ) ||
+    parentMatchesBinding(
+      parent,
+      AST_NODE_TYPES.AssignmentPattern,
+      'left',
+      node,
+    ) ||
+    parentMatchesBinding(
+      parent,
+      AST_NODE_TYPES.FunctionDeclaration,
+      'id',
+      node,
+    ) ||
+    parentMatchesBinding(
+      parent,
+      AST_NODE_TYPES.FunctionExpression,
+      'id',
+      node,
+    ) ||
     parentMatchesBinding(parent, AST_NODE_TYPES.ClassExpression, 'id', node) ||
     parentMatchesBinding(parent, AST_NODE_TYPES.CatchClause, 'param', node) ||
     parentMatchesBinding(parent, AST_NODE_TYPES.ClassDeclaration, 'id', node) ||
@@ -327,9 +366,24 @@ const identifierHasDeclarationParent = (node: TSESTree.Identifier): boolean => {
   }
 
   if (
-    parentMatchesBinding(parent, AST_NODE_TYPES.FunctionDeclaration, 'params', node) ||
-    parentMatchesBinding(parent, AST_NODE_TYPES.FunctionExpression, 'params', node) ||
-    parentMatchesBinding(parent, AST_NODE_TYPES.ArrowFunctionExpression, 'params', node)
+    parentMatchesBinding(
+      parent,
+      AST_NODE_TYPES.FunctionDeclaration,
+      'params',
+      node,
+    ) ||
+    parentMatchesBinding(
+      parent,
+      AST_NODE_TYPES.FunctionExpression,
+      'params',
+      node,
+    ) ||
+    parentMatchesBinding(
+      parent,
+      AST_NODE_TYPES.ArrowFunctionExpression,
+      'params',
+      node,
+    )
   ) {
     return true;
   }
@@ -337,65 +391,65 @@ const identifierHasDeclarationParent = (node: TSESTree.Identifier): boolean => {
   return false;
 };
 
+const isObjectLiteralKeyDeclaration = (
+  node: TSESTree.Identifier,
+  parent: TSESTree.Node,
+): boolean => {
+  if (parent.type !== AST_NODE_TYPES.Property) return false;
+  if (parent.shorthand) return false;
+
+  return parent.key === node;
+};
+
+const isClassMemberKeyDeclaration = (
+  node: TSESTree.Identifier,
+  parent: TSESTree.Node,
+): boolean =>
+  (parent.type === AST_NODE_TYPES.MethodDefinition ||
+    parent.type === AST_NODE_TYPES.PropertyDefinition) &&
+  parent.key === node;
+
+const isTypeScriptDeclarationIdentifier = (
+  node: TSESTree.Identifier,
+  parent: TSESTree.Node,
+): boolean =>
+  (parent.type === AST_NODE_TYPES.TSTypeAliasDeclaration &&
+    parent.id === node) ||
+  (parent.type === AST_NODE_TYPES.TSInterfaceDeclaration &&
+    parent.id === node) ||
+  (parent.type === AST_NODE_TYPES.TSEnumDeclaration && parent.id === node) ||
+  (parent.type === AST_NODE_TYPES.TSEnumMember && parent.id === node) ||
+  (parent.type === AST_NODE_TYPES.TSModuleDeclaration && parent.id === node);
+
+const isLabelIdentifier = (
+  node: TSESTree.Identifier,
+  parent: TSESTree.Node,
+): boolean =>
+  (parent.type === AST_NODE_TYPES.LabeledStatement && parent.label === node) ||
+  ((parent.type === AST_NODE_TYPES.BreakStatement ||
+    parent.type === AST_NODE_TYPES.ContinueStatement) &&
+    parent.label === node);
+
 /**
  * Distinguishes declaration sites (bindings) from usage sites. The rule reports
  * reads of storage, not the act of declaring a variable/property/parameter, so
  * declarations across destructuring, params, imports, class members, and
  * assignment targets must be ignored.
  */
-const identifierRepresentsDeclaration = (node: TSESTree.Identifier): boolean => {
+const identifierRepresentsDeclaration = (
+  node: TSESTree.Identifier,
+): boolean => {
   const parent = node.parent;
   if (!parent) return false;
 
   if (identifierHasDeclarationParent(node)) {
     return true;
   }
-  if (parent.type === AST_NODE_TYPES.Property) {
-    // For object literals, shorthand properties are runtime reads; non-shorthand
-    // keys are just property names and should not be treated as storage usage.
-    if (parent.shorthand) return false;
-    if (parent.key === node) return true;
-  }
-  if (
-    (parent.type === AST_NODE_TYPES.MethodDefinition ||
-      parent.type === AST_NODE_TYPES.PropertyDefinition) &&
-    parent.key === node
-  ) {
-    return true;
-  }
-  if (
-    parent.type === AST_NODE_TYPES.AssignmentPattern &&
-    parent.left === node
-  ) {
-    return true;
-  }
-  if (parent.type === AST_NODE_TYPES.TSTypeAliasDeclaration && parent.id === node) {
-    return true;
-  }
-  if (parent.type === AST_NODE_TYPES.TSInterfaceDeclaration && parent.id === node) {
-    return true;
-  }
-  if (parent.type === AST_NODE_TYPES.TSEnumDeclaration && parent.id === node) {
-    return true;
-  }
-  if (parent.type === AST_NODE_TYPES.TSEnumMember && parent.id === node) {
-    return true;
-  }
-  if (parent.type === AST_NODE_TYPES.TSModuleDeclaration && parent.id === node) {
-    return true;
-  }
-  if (parent.type === AST_NODE_TYPES.LabeledStatement && parent.label === node) {
-    return true;
-  }
-  if (
-    (parent.type === AST_NODE_TYPES.BreakStatement ||
-      parent.type === AST_NODE_TYPES.ContinueStatement) &&
-    parent.label === node
-  ) {
-    return true;
-  }
+  if (isObjectLiteralKeyDeclaration(node, parent)) return true;
+  if (isClassMemberKeyDeclaration(node, parent)) return true;
+  if (isTypeScriptDeclarationIdentifier(node, parent)) return true;
 
-  return false;
+  return isLabelIdentifier(node, parent);
 };
 
 const isVarBinding = (node: TSESTree.Identifier): boolean => {
@@ -549,18 +603,23 @@ const createIdentifierHandler = (
       const hoistToFunctionScope = isVarBinding(node);
       const existingAlias = getAliasFromStack(storageAliases, node.name);
       const isAssignmentTarget =
-        parent?.type === AST_NODE_TYPES.AssignmentExpression && parent.left === node;
+        parent?.type === AST_NODE_TYPES.AssignmentExpression &&
+        parent.left === node;
       if (
         isAssignmentTarget &&
         !existingAlias &&
-        (STORAGE_NAMES.has(node.name as StorageKind) || GLOBAL_NAMES.has(node.name))
+        (STORAGE_NAMES.has(node.name as StorageKind) ||
+          GLOBAL_NAMES.has(node.name))
       ) {
         // Ignore assignments to global storage identifiers without an existing
         // local binding. Treating them as declarations would shadow the global
         // object and mask subsequent violations.
         return;
       }
-      if (existingAlias === 'localStorage' || existingAlias === 'sessionStorage') {
+      if (
+        existingAlias === 'localStorage' ||
+        existingAlias === 'sessionStorage'
+      ) {
         // Preserve existing aliases introduced earlier in the traversal
         // (e.g., destructuring) so later declaration-node visits do not
         // override them as shadowed bindings.
@@ -574,8 +633,14 @@ const createIdentifierHandler = (
         // be treated as shadowing outer scope storage references.
         return;
       }
-      if (identifierHasDeclarationParent(node) && !aliases.currentScope().has(node.name)) {
-        const shadowsStorage = checkIfNameShadowsStorage(node.name, storageAliases);
+      if (
+        identifierHasDeclarationParent(node) &&
+        !aliases.currentScope().has(node.name)
+      ) {
+        const shadowsStorage = checkIfNameShadowsStorage(
+          node.name,
+          storageAliases,
+        );
         if (shadowsStorage) {
           aliases.markShadowed(node.name, { hoistToFunctionScope });
         }
@@ -602,6 +667,14 @@ const createMemberExpressionHandler = (
 ): ((node: TSESTree.MemberExpression) => void) => {
   return (node) => {
     const object = node.object as TSESTree.Expression;
+    const isAssignmentTarget =
+      node.parent?.type === AST_NODE_TYPES.AssignmentExpression &&
+      node.parent.left === node;
+
+    if (isAssignmentTarget) {
+      return;
+    }
+
     const storageKind = resolveStorageObject(object, storageAliases);
 
     if (storageKind) {
@@ -691,9 +764,13 @@ const createVariableDeclaratorHandler = (
       if (storageKind) {
         aliases.setAlias(node.id.name, storageKind, { hoistToFunctionScope });
       } else {
-        const shadowsStorage = checkIfNameShadowsStorage(node.id.name, storageAliases, {
-          includeCurrentScope: true,
-        });
+        const shadowsStorage = checkIfNameShadowsStorage(
+          node.id.name,
+          storageAliases,
+          {
+            includeCurrentScope: true,
+          },
+        );
         if (shadowsStorage) {
           aliases.markShadowed(node.id.name, { hoistToFunctionScope });
         }
@@ -726,9 +803,13 @@ const createAssignmentExpressionHandler = (
       if (storageKind) {
         aliases.setAliasInExistingBindingScope(node.left.name, storageKind);
       } else {
-        const shadowsStorage = checkIfNameShadowsStorage(node.left.name, storageAliases, {
-          includeCurrentScope: true,
-        });
+        const shadowsStorage = checkIfNameShadowsStorage(
+          node.left.name,
+          storageAliases,
+          {
+            includeCurrentScope: true,
+          },
+        );
         if (shadowsStorage) {
           aliases.setAliasInExistingBindingScope(node.left.name, 'shadowed');
         }
@@ -738,7 +819,8 @@ const createAssignmentExpressionHandler = (
         node.left,
         node.right as TSESTree.Expression,
         storageAliases,
-        (name, storageKind) => aliases.setAliasInExistingBindingScope(name, storageKind),
+        (name, storageKind) =>
+          aliases.setAliasInExistingBindingScope(name, storageKind),
         (propertyNode, storageKind, accessType) => {
           reportUsage(propertyNode, storageKind, accessType);
         },
@@ -824,7 +906,10 @@ const createStorageVisitors = (
   return {
     ...createScopeListeners(aliases, storageAliases),
     Identifier: createIdentifierHandler(aliases, storageAliases, reportUsage),
-    MemberExpression: createMemberExpressionHandler(storageAliases, reportUsage),
+    MemberExpression: createMemberExpressionHandler(
+      storageAliases,
+      reportUsage,
+    ),
     CallExpression: createCallExpressionHandler(storageAliases, reportUsage),
     VariableDeclarator: createVariableDeclaratorHandler(
       aliases,

@@ -129,6 +129,12 @@ ruleTesterTs.run('enforce-storage-context', enforceStorageContext, {
       const window = { localStorage: createMockStorage() };
       window.localStorage.setItem('k', 'v');
     `,
+    {
+      code: `
+        const mock = createMockStorage();
+        window.localStorage = mock;
+      `,
+    },
     `
       try {
         throw new Error('boom');
@@ -361,6 +367,13 @@ store.setItem('k', 'v');
       code: `
         localStorage = createMockStorage();
         localStorage.setItem('k', 'v');
+      `,
+      errors: [{ messageId: 'useStorageContext' }],
+    },
+    {
+      code: `
+        window.localStorage = createMockStorage();
+        window.localStorage.getItem('k');
       `,
       errors: [{ messageId: 'useStorageContext' }],
     },
