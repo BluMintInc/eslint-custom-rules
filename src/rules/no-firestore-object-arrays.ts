@@ -101,6 +101,19 @@ const unwrapArrayElementType = (
   return current as TSESTree.TypeNode;
 };
 
+const literalToString = (node: TSESTree.Node | null | undefined): string | null => {
+  if (!node || node.type !== AST_NODE_TYPES.Literal) return null;
+  const value = (node as TSESTree.Literal).value;
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'bigint'
+  ) {
+    return String(value);
+  }
+  return null;
+};
+
 /**
  * Derives a field label for diagnostics by walking ancestors.
  * Prefers TSPropertySignature keys and returns identifier or string/number/bigint literal keys when present.
@@ -114,14 +127,8 @@ const getFieldName = (node: TSESTree.Node): string => {
     if (current.type === AST_NODE_TYPES.TSPropertySignature) {
       const key = current.key;
       if (key.type === AST_NODE_TYPES.Identifier) return key.name;
-      if (
-        key.type === AST_NODE_TYPES.Literal &&
-        (typeof key.value === 'string' ||
-          typeof key.value === 'number' ||
-          typeof key.value === 'bigint')
-      ) {
-        return String(key.value);
-      }
+      const literalKey = literalToString(key);
+      if (literalKey !== null) return literalKey;
       const computedKey = key as { type?: string; expression?: TSESTree.Node };
       if (
         computedKey.type === 'TSComputedPropertyName' &&
@@ -129,14 +136,8 @@ const getFieldName = (node: TSESTree.Node): string => {
       ) {
         const expr = computedKey.expression;
         if (expr.type === AST_NODE_TYPES.Identifier) return expr.name;
-        if (
-          expr.type === AST_NODE_TYPES.Literal &&
-          (typeof (expr as TSESTree.Literal).value === 'string' ||
-            typeof (expr as TSESTree.Literal).value === 'number' ||
-            typeof (expr as TSESTree.Literal).value === 'bigint')
-        ) {
-          return String((expr as TSESTree.Literal).value);
-        }
+        const literalExpr = literalToString(expr);
+        if (literalExpr !== null) return literalExpr;
       }
     }
     if (
@@ -207,7 +208,7 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
         // Why it matters
         'Why it matters: Firestore cannot query inside object arrays, and updating one item rewrites the whole array; concurrent writes can overwrite each other and lose data.',
         // How to fix
-        'How to fix: Store items as Record<string, T> keyed by id (with an index field for ordering; convert with toMap/toArr), or move items into a subcollection or store only an array of IDs.',
+        'How to fix: Store items as Record<string, T> keyed by id with an index field for ordering (use toMap/toArr helpers), or move items into a subcollection or store only an array of IDs.',
       ].join('\n'),
     },
   },
