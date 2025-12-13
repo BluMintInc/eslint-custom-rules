@@ -42,9 +42,13 @@ export const noUnusedProps = createRule({
 
       return trimmed.startsWith('.') ? trimmed : `.${trimmed}`;
     };
-    const reactLikeExtensions = (ruleSettings.reactLikeExtensions ?? ['.tsx'])
-      .map(normalizeExtension)
-      .filter((ext): ext is string => Boolean(ext));
+    const reactLikeExtensions = Array.from(
+      new Set(
+        (ruleSettings.reactLikeExtensions ?? ['.tsx'])
+          .map(normalizeExtension)
+          .filter((ext): ext is string => Boolean(ext)),
+      ),
+    );
     const fileExtension = filename.includes('.')
       ? filename.slice(filename.lastIndexOf('.')).toLowerCase()
       : '';
@@ -337,10 +341,11 @@ export const noUnusedProps = createRule({
                             def.node.type ===
                             AST_NODE_TYPES.TSTypeAliasDeclaration,
                         );
+                        const typeAliasNode = typeAliasDef?.node;
                         const typeAliasAnnotation = isTypeAliasDeclaration(
-                          typeAliasDef?.node,
+                          typeAliasNode,
                         )
-                          ? typeAliasDef.node.typeAnnotation
+                          ? typeAliasNode.typeAnnotation
                           : null;
                         if (typeAliasAnnotation) {
                           return visit(typeAliasAnnotation);
@@ -373,6 +378,18 @@ export const noUnusedProps = createRule({
                 ? sourceCode.getText(baseType.typeName)
                 : null;
             const spreadKey = baseTypeName ?? baseTypeRefText;
+            const fallbackSpreadKey = spreadKey ?? sourceCode.getText(baseType);
+            const recordSpreadMarker = () => {
+              const markerKey = fallbackSpreadKey;
+              if (!markerKey) {
+                return;
+              }
+              props[`...${markerKey}`] =
+                baseType.type === AST_NODE_TYPES.TSTypeReference
+                  ? baseType.typeName
+                  : baseType;
+              spreadTypeProps[markerKey] ??= [];
+            };
             const omittedPropNames = new Set<string>();
 
             let canComputeOmittedProps = false;
@@ -407,14 +424,13 @@ export const noUnusedProps = createRule({
 
             if (!canComputeOmittedProps) {
               if (spreadKey) {
-                props[`...${spreadKey}`] =
-                  baseType.type === AST_NODE_TYPES.TSTypeReference
-                    ? baseType.typeName
-                    : baseType;
-                spreadTypeProps[spreadKey] ??= [];
+                recordSpreadMarker();
                 return;
               }
-              addBaseTypeProps(baseType);
+              const added = addBaseTypeProps(baseType);
+              if (!added) {
+                recordSpreadMarker();
+              }
               return;
             }
 
@@ -427,32 +443,21 @@ export const noUnusedProps = createRule({
               return;
             }
 
-            if (!spreadKey) {
-              return;
-            }
-
-            props[`...${spreadKey}`] =
-              baseType.type === AST_NODE_TYPES.TSTypeReference
-                ? baseType.typeName
-                : baseType;
-            spreadTypeProps[spreadKey] ??= [];
+            recordSpreadMarker();
           };
 
           function extractProps(typeNode: TSESTree.TypeNode) {
-            if (typeNode.type === AST_NODE_TYPES.TSTypeLiteral) {
-              typeNode.members.forEach((member) => {
-                if (
-                  member.type === AST_NODE_TYPES.TSPropertySignature &&
-                  (member.key.type === AST_NODE_TYPES.Identifier ||
-                    member.key.type === AST_NODE_TYPES.Literal)
-                ) {
-                  const propName = getStaticPropName(member.key);
-                  if (propName) {
-                    props[propName] = member.key;
-                  }
-                }
-              });
-            } else if (typeNode.type === AST_NODE_TYPES.TSIntersectionType) {
+          if (typeNode.type === AST_NODE_TYPES.TSTypeLiteral) {
+            typeNode.members.forEach((member) => {
+              if (member.type !== AST_NODE_TYPES.TSPropertySignature) {
+                return;
+              }
+              const propName = getStaticPropName(member.key);
+              if (propName) {
+                props[propName] = member.key;
+              }
+            });
+          } else if (typeNode.type === AST_NODE_TYPES.TSIntersectionType) {
               typeNode.types.forEach((type) => {
                 if (type.type === AST_NODE_TYPES.TSTypeReference) {
                   const typeName = type.typeName;
@@ -519,10 +524,11 @@ export const noUnusedProps = createRule({
                           def.node.type ===
                           AST_NODE_TYPES.TSTypeAliasDeclaration,
                       );
+                      const typeAliasNode = typeAliasDef?.node;
                       const typeAliasAnnotation = isTypeAliasDeclaration(
-                        typeAliasDef?.node,
+                        typeAliasNode,
                       )
-                        ? typeAliasDef.node.typeAnnotation
+                        ? typeAliasNode.typeAnnotation
                         : null;
                       if (typeAliasAnnotation) {
                         withTypeVisitation(
@@ -718,11 +724,7 @@ export const noUnusedProps = createRule({
                 const used = new Set<string>();
                 let restUsed = false;
                 param.properties.forEach((prop) => {
-                  if (
-                    prop.type === AST_NODE_TYPES.Property &&
-                    (prop.key.type === AST_NODE_TYPES.Identifier ||
-                      prop.key.type === AST_NODE_TYPES.Literal)
-                  ) {
+                  if (prop.type === AST_NODE_TYPES.Property) {
                     const propName = getStaticPropName(prop.key);
                     if (propName) {
                       used.add(propName);

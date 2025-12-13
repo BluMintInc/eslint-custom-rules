@@ -156,6 +156,16 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
       return { isMatch: depth > 0, depth };
     }
 
+    const getParentParamName = (depth: number) => {
+      if (depth === 1) {
+        return 'userId';
+      }
+      if (depth === 2) {
+        return 'parentId';
+      }
+      return `parent${depth}Id`;
+    };
+
     function findHandlerFunction(node: TSESTree.Node): TSESTree.Node | null {
       let current: TSESTree.Node | undefined = node;
       while (current) {
@@ -265,12 +275,7 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
             const paramsInScope = isParamsInScope(handlerNode);
             // Suggest different parameter names based on depth
             // Note: These conventions may vary by data model; adjust if needed
-            const paramSuggestion =
-              parentAccess.depth === 1
-                ? 'userId'
-                : parentAccess.depth === 2
-                ? 'parentId'
-                : `parent${parentAccess.depth}Id`;
+            const paramSuggestion = getParentParamName(parentAccess.depth);
 
             context.report({
               node,
