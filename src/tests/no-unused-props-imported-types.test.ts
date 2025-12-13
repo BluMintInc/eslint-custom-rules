@@ -89,6 +89,23 @@ ruleTesterTs.run('no-unused-props with imported types', noUnusedProps, {
         sourceType: 'module',
       },
     },
+    {
+      code: `
+        import { ExternalProps } from './external';
+
+        type Props = Partial<ExternalProps>;
+
+        const Component = ({ ...rest }: Props) => {
+          return <Widget {...rest} />;
+        };
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
   ],
   invalid: [],
 });

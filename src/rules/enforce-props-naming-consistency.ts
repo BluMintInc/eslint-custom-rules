@@ -166,10 +166,7 @@ export const enforcePropsNamingConsistency = createRule<Options, MessageIds>({
             messageId: 'usePropsName',
             data: { paramName: param.parameter.name },
             fix: (fixer) =>
-              fixParameterName(
-                fixer,
-                param.parameter as TSESTree.Identifier,
-              ),
+              fixParameterName(fixer, param.parameter as TSESTree.Identifier),
           });
         }
       }

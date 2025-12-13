@@ -1875,11 +1875,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const roundId = change.after.ref.parent.id;
         };
       `,
-      errors: [
-        paramError('parent3Id'),
-        parentIdError(),
-        userIdError(),
-      ],
+      errors: [paramError('parent3Id'), parentIdError(), userIdError()],
     },
 
     // EDGE CASE: Variable assignment and reuse
