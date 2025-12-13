@@ -85,42 +85,124 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
     // Basic function with explicit return type
     {
       code: 'function add(a: number, b: number): number { return a + b; }',
-      errors: [{ messageId: 'noExplicitReturnType' }],
+      errors: [
+        {
+          messageId: 'noExplicitReturnType',
+          data: { functionKind: 'function "add"' },
+        },
+      ],
       output: 'function add(a: number, b: number) { return a + b; }',
     },
 
     // Arrow function with explicit return type
     {
       code: 'const multiply = (a: number, b: number): number => a * b;',
-      errors: [{ messageId: 'noExplicitReturnType' }],
+      errors: [
+        {
+          messageId: 'noExplicitReturnType',
+          data: { functionKind: 'arrow function "multiply"' },
+        },
+      ],
       output: 'const multiply = (a: number, b: number) => a * b;',
     },
 
     // Method with explicit return type
     {
       code: 'const obj = { method(a: number): number { return a; } };',
-      errors: [{ messageId: 'noExplicitReturnType' }],
+      errors: [
+        {
+          messageId: 'noExplicitReturnType',
+          data: { functionKind: 'object method "method"' },
+        },
+      ],
       output: 'const obj = { method(a: number) { return a; } };',
+    },
+
+    // Computed class method should not use computed identifier name
+    {
+      code: `
+        const key = 'value';
+        class Example {
+          [key](): number {
+            return 1;
+          }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'noExplicitReturnType',
+          data: { functionKind: 'class method' },
+        },
+      ],
+      output: `
+        const key = 'value';
+        class Example {
+          [key]() {
+            return 1;
+          }
+        }
+      `,
+    },
+
+    // Computed object method should fall back to generic description
+    {
+      code: `
+        const key = 'value';
+        const obj = {
+          [key]: function (a: number): number {
+            return a;
+          },
+        };
+      `,
+      errors: [
+        {
+          messageId: 'noExplicitReturnType',
+          data: { functionKind: 'function expression' },
+        },
+      ],
+      output: `
+        const key = 'value';
+        const obj = {
+          [key]: function (a: number) {
+            return a;
+          },
+        };
+      `,
     },
 
     // Async function with explicit return type
     {
       code: 'async function getData(): Promise<string> { return "data"; }',
-      errors: [{ messageId: 'noExplicitReturnType' }],
+      errors: [
+        {
+          messageId: 'noExplicitReturnType',
+          data: { functionKind: 'function "getData"' },
+        },
+      ],
       output: 'async function getData() { return "data"; }',
     },
 
     // Arrow function in callback with explicit return type
     {
       code: 'const numbers = [1, 2, 3].map((n): number => n * 2);',
-      errors: [{ messageId: 'noExplicitReturnType' }],
+      errors: [
+        {
+          messageId: 'noExplicitReturnType',
+          data: { functionKind: 'arrow function' },
+        },
+      ],
       output: 'const numbers = [1, 2, 3].map((n) => n * 2);',
     },
 
     // Function expression with explicit return type
     {
       code: 'const isEven = function(n: number): boolean { return n % 2 === 0; };',
-      errors: [{ messageId: 'noExplicitReturnType' }],
+      errors: [
+        {
+          messageId: 'noExplicitReturnType',
+          data: { functionKind: 'function "isEven"' },
+        },
+      ],
       output: 'const isEven = function(n: number) { return n % 2 === 0; };',
     },
 
@@ -128,7 +210,12 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
     {
       code: 'function factorial(n: number): number { if (n <= 1) return 1; return n * factorial(n - 1); }',
       options: [{ allowRecursiveFunctions: false }],
-      errors: [{ messageId: 'noExplicitReturnType' }],
+      errors: [
+        {
+          messageId: 'noExplicitReturnType',
+          data: { functionKind: 'function "factorial"' },
+        },
+      ],
       output:
         'function factorial(n: number) { if (n <= 1) return 1; return n * factorial(n - 1); }',
     },
@@ -137,7 +224,12 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
     {
       code: 'interface Logger { log(message: string): void; }',
       options: [{ allowInterfaceMethodSignatures: false }],
-      errors: [{ messageId: 'noExplicitReturnType' }],
+      errors: [
+        {
+          messageId: 'noExplicitReturnType',
+          data: { functionKind: 'interface method "log"' },
+        },
+      ],
       output: 'interface Logger { log(message: string); }',
     },
 
@@ -153,7 +245,12 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       `,
       filename: 'deleteUser.f.ts',
       options: [{ allowFirestoreFunctionFiles: false }],
-      errors: [{ messageId: 'noExplicitReturnType' }],
+      errors: [
+        {
+          messageId: 'noExplicitReturnType',
+          data: { functionKind: 'arrow function "deleteUser"' },
+        },
+      ],
       output: `
         export type Response = Promise<void>;
         export const deleteUser = async (

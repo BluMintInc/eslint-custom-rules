@@ -23,6 +23,116 @@ const defaultOptions: Options[0] = {
   allowFirestoreFunctionFiles: true,
 };
 
+function getNameFromIdentifierOrLiteral(
+  key: TSESTree.Identifier | TSESTree.Literal,
+): string | undefined {
+  if (key.type === AST_NODE_TYPES.Identifier) {
+    return key.name;
+  }
+
+  if (typeof key.value === 'string') {
+    return key.value;
+  }
+
+  return undefined;
+}
+
+function describeMethodDefinition(node: TSESTree.MethodDefinition): string {
+  if (
+    !node.computed &&
+    (node.key.type === AST_NODE_TYPES.Identifier ||
+      (node.key.type === AST_NODE_TYPES.Literal &&
+        typeof node.key.value === 'string'))
+  ) {
+    const name = getNameFromIdentifierOrLiteral(node.key);
+    if (name) {
+      return `class method "${name}"`;
+    }
+  }
+
+  return 'class method';
+}
+
+function describeMethodSignature(node: TSESTree.TSMethodSignature): string {
+  if (
+    !node.computed &&
+    (node.key.type === AST_NODE_TYPES.Identifier ||
+      (node.key.type === AST_NODE_TYPES.Literal &&
+        typeof node.key.value === 'string'))
+  ) {
+    const name = getNameFromIdentifierOrLiteral(node.key);
+    if (name) {
+      return `interface method "${name}"`;
+    }
+  }
+
+  return 'interface method';
+}
+
+function describeFunctionDeclaration(node: TSESTree.FunctionDeclaration): string {
+  if (node.id?.name) {
+    return `function "${node.id.name}"`;
+  }
+
+  return 'function';
+}
+
+function describeFunctionExpression(node: TSESTree.FunctionExpression): string {
+  if (node.id?.name) {
+    return `function "${node.id.name}"`;
+  }
+
+  if (
+    node.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+    node.parent.id.type === AST_NODE_TYPES.Identifier
+  ) {
+    return `function "${node.parent.id.name}"`;
+  }
+
+  if (
+    node.parent?.type === AST_NODE_TYPES.Property &&
+    !node.parent.computed &&
+    (node.parent.key.type === AST_NODE_TYPES.Identifier ||
+      (node.parent.key.type === AST_NODE_TYPES.Literal &&
+        typeof node.parent.key.value === 'string'))
+  ) {
+    const name = getNameFromIdentifierOrLiteral(node.parent.key);
+    if (name) {
+      return `object method "${name}"`;
+    }
+  }
+
+  return 'function expression';
+}
+
+function describeArrowFunction(node: TSESTree.ArrowFunctionExpression): string {
+  if (
+    node.parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+    node.parent.id.type === AST_NODE_TYPES.Identifier
+  ) {
+    return `arrow function "${node.parent.id.name}"`;
+  }
+
+  return 'arrow function';
+}
+
+function describeFunctionKind(node: TSESTree.Node): string {
+  switch (node.type) {
+    case AST_NODE_TYPES.MethodDefinition:
+      return describeMethodDefinition(node);
+    case AST_NODE_TYPES.TSMethodSignature:
+      return describeMethodSignature(node);
+    case AST_NODE_TYPES.FunctionDeclaration:
+      return describeFunctionDeclaration(node);
+    case AST_NODE_TYPES.FunctionExpression:
+      return describeFunctionExpression(node);
+    case AST_NODE_TYPES.ArrowFunctionExpression:
+      return describeArrowFunction(node);
+    default:
+      return 'function';
+  }
+}
+
 function isRecursiveFunction(node: TSESTree.FunctionLike): boolean {
   const functionName =
     node.type === AST_NODE_TYPES.FunctionDeclaration
@@ -169,7 +279,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<
     ],
     messages: {
       noExplicitReturnType:
-        'Explicit return type is not allowed. Let TypeScript infer it.',
+        'Explicit return type on {{functionKind}} requires manual upkeep and can drift from the value actually returned. Remove the return type annotation so TypeScript infers it and keeps the signature aligned automatically.',
     },
   },
   defaultOptions: [defaultOptions],
@@ -207,6 +317,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<
         context.report({
           node: node.returnType,
           messageId: 'noExplicitReturnType',
+          data: { functionKind: describeFunctionKind(node) },
           fix: (fixer) => fixReturnType(fixer, node),
         });
       },
@@ -224,6 +335,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<
         context.report({
           node: node.returnType,
           messageId: 'noExplicitReturnType',
+          data: { functionKind: describeFunctionKind(node) },
           fix: (fixer) => fixReturnType(fixer, node),
         });
       },
@@ -238,6 +350,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<
         context.report({
           node: node.returnType,
           messageId: 'noExplicitReturnType',
+          data: { functionKind: describeFunctionKind(node) },
           fix: (fixer) => fixReturnType(fixer, node),
         });
       },
@@ -259,6 +372,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<
         context.report({
           node: node.returnType,
           messageId: 'noExplicitReturnType',
+          data: { functionKind: describeFunctionKind(node) },
           fix: (fixer) => fixReturnType(fixer, node),
         });
       },
@@ -277,6 +391,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<
         context.report({
           node: node.value.returnType,
           messageId: 'noExplicitReturnType',
+          data: { functionKind: describeFunctionKind(node) },
           fix: (fixer) => fixReturnType(fixer, node),
         });
       },
