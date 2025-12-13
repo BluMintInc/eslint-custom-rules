@@ -1,6 +1,48 @@
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { noEntireObjectHookDeps } from '../rules/no-entire-object-hook-deps';
 
+type MessageIds = 'avoidEntireObject' | 'removeUnusedDependency';
+
+type RuleError = {
+  messageId: MessageIds;
+  data: {
+    objectName: string;
+    fields?: string;
+  };
+};
+
+const avoidEntireObjectMessage =
+  'What\'s wrong: Dependency array includes entire object "{{objectName}}". Why it matters: Any change to its other properties reruns the hook even though the hook reads only {{fields}}, creating extra renders and stale memoized values. How to fix: Depend on those fields instead.';
+
+const removeUnusedDependencyMessage =
+  'What\'s wrong: Dependency "{{objectName}}" is listed in the array but never read inside the hook body. Why it matters: The hook reruns when "{{objectName}}" changes without affecting the result and can hide the real missing dependency. How to fix: Remove it or add the specific value that actually drives the hook.';
+
+const avoid = (objectName: string, fields: string): RuleError => ({
+  messageId: 'avoidEntireObject',
+  data: {
+    objectName,
+    fields,
+  },
+});
+
+const removeUnused = (objectName: string): RuleError => ({
+  messageId: 'removeUnusedDependency',
+  data: {
+    objectName,
+  },
+});
+
+describe('no-entire-object-hook-deps messages', () => {
+  it('explains why and how to fix', () => {
+    expect(noEntireObjectHookDeps.meta.messages.avoidEntireObject).toBe(
+      avoidEntireObjectMessage,
+    );
+    expect(
+      noEntireObjectHookDeps.meta.messages.removeUnusedDependency,
+    ).toBe(removeUnusedDependencyMessage);
+  });
+});
+
 ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
   valid: [
     // Using specific fields
@@ -446,13 +488,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userFull',
-            fields: 'userFull?.uid',
-          },
-        },
+        avoid('userFull', 'userFull?.uid'),
       ],
       output: `
         const MyComponent = ({ userFull }: { userFull: { uid?: string } }) => {
@@ -474,13 +510,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'user',
-            fields: 'user.name',
-          },
-        },
+        avoid('user', 'user.name'),
       ],
       output: `
         const MyComponent = ({ user }: { user: { name: string } }) => {
@@ -503,13 +533,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'user',
-            fields: 'user.name, user.age',
-          },
-        },
+        avoid('user', 'user.name, user.age'),
       ],
       output: `
         const MyComponent = ({ user }: { user: { name: string; age: number } }) => {
@@ -532,13 +556,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'user',
-            fields: 'user.address.city',
-          },
-        },
+        avoid('user', 'user.address.city'),
       ],
       output: `
         const MyComponent = ({ user }: { user: { address: { city: string } } }) => {
@@ -577,12 +595,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'removeUnusedDependency',
-          data: {
-            objectName: 'channelGroupActive',
-          },
-        },
+        removeUnused('channelGroupActive'),
       ],
       output: `
         const MyComponent = ({ channelGroupActive, channelGroupIdRouter, findByChannelGroupId }) => {
@@ -621,13 +634,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'config',
-            fields: 'config.value',
-          },
-        },
+        avoid('config', 'config.value'),
       ],
       output: `
         const MyComponent = ({ config }: { config: { value: string } }) => {
@@ -649,13 +656,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'settings',
-            fields: 'settings.enabled',
-          },
-        },
+        avoid('settings', 'settings.enabled'),
       ],
       output: `
         const MyComponent = ({ settings }: { settings: { enabled: boolean } }) => {
@@ -677,13 +678,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'theme',
-            fields: 'theme?.color',
-          },
-        },
+        avoid('theme', 'theme?.color'),
       ],
       output: `
         const MyComponent = ({ theme }: { theme: { color?: string } }) => {
@@ -705,13 +700,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'config',
-            fields: 'config.api.endpoints.users',
-          },
-        },
+        avoid('config', 'config.api.endpoints.users'),
       ],
       output: `
         const MyComponent = ({ config }: { config: { api: { endpoints: { users: string } } } }) => {
@@ -733,13 +722,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'data',
-            fields: 'data.items[0]',
-          },
-        },
+        avoid('data', 'data.items[0]'),
       ],
       output: `
         const MyComponent = ({ data }: { data: { items: string[] } }) => {
@@ -761,13 +744,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'matrix',
-            fields: 'matrix.rows[0][1], matrix.rows[1][0]',
-          },
-        },
+        avoid('matrix', 'matrix.rows[0][1], matrix.rows[1][0]'),
       ],
       output: `
         const MyComponent = ({ matrix }: { matrix: { rows: number[][] } }) => {
@@ -789,13 +766,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'data',
-            fields: 'data["special-key"]',
-          },
-        },
+        avoid('data', 'data["special-key"]'),
       ],
       output: `
         const MyComponent = ({ data }: { data: { [key: string]: any } }) => {
@@ -817,18 +788,8 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'removeUnusedDependency',
-          data: {
-            objectName: 'unusedObject',
-          },
-        },
-        {
-          messageId: 'removeUnusedDependency',
-          data: {
-            objectName: 'usedValue',
-          },
-        },
+        removeUnused('unusedObject'),
+        removeUnused('usedValue'),
       ],
       output: `
         const MyComponent = ({ unusedObject, usedValue }) => {
@@ -850,25 +811,9 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'removeUnusedDependency',
-          data: {
-            objectName: 'unused1',
-          },
-        },
-        {
-          messageId: 'removeUnusedDependency',
-          data: {
-            objectName: 'unused2',
-          },
-        },
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'used',
-            fields: 'used.value',
-          },
-        },
+        removeUnused('unused1'),
+        removeUnused('unused2'),
+        avoid('used', 'used.value'),
       ],
       output: `
         const MyComponent = ({ unused1, unused2, used }) => {
@@ -932,13 +877,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields: 'userData?.id',
-          },
-        },
+        avoid('userData', 'userData?.id'),
       ],
       output: `
         import { useEffect, useState } from 'react';
@@ -1002,13 +941,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields: 'userData?.id, userData?.name',
-          },
-        },
+        avoid('userData', 'userData?.id, userData?.name'),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { id?: string; name?: string } }) => {
@@ -1030,13 +963,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields: 'userData?.profile.address.city, userData?.profile',
-          },
-        },
+        avoid('userData', 'userData?.profile.address.city, userData?.profile'),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { profile?: { address?: { city?: string } } } }) => {
@@ -1058,13 +985,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields: 'userData?.name, userData.id',
-          },
-        },
+        avoid('userData', 'userData?.name, userData.id'),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { id: string; name?: string } }) => {
@@ -1086,13 +1007,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields: 'userData?.id',
-          },
-        },
+        avoid('userData', 'userData?.id'),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { id?: string } }) => {
@@ -1114,13 +1029,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields: 'userData?.name',
-          },
-        },
+        avoid('userData', 'userData?.name'),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { name?: string } }) => {
@@ -1142,13 +1051,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields: 'userData?.name',
-          },
-        },
+        avoid('userData', 'userData?.name'),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { name?: string } }) => {
@@ -1170,13 +1073,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields: 'userData?.getName',
-          },
-        },
+        avoid('userData', 'userData?.getName'),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { getName?: () => string } }) => {
@@ -1198,13 +1095,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields: 'userData?.items[0], userData?.items',
-          },
-        },
+        avoid('userData', 'userData?.items[0], userData?.items'),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { items?: string[] } }) => {
@@ -1226,13 +1117,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields: 'userData?.id',
-          },
-        },
+        avoid('userData', 'userData?.id'),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { id?: string } }) => {
@@ -1254,13 +1139,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields: 'userData?.id, userData?.name',
-          },
-        },
+        avoid('userData', 'userData?.id, userData?.name'),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { id?: string; name?: string } }) => {
@@ -1282,13 +1161,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields: 'userData?.id, userData?.name',
-          },
-        },
+        avoid('userData', 'userData?.id, userData?.name'),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { id?: string; name?: string } }) => {
@@ -1310,13 +1183,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields: 'userData?.name',
-          },
-        },
+        avoid('userData', 'userData?.name'),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { name?: string } }) => {
@@ -1338,13 +1205,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields: 'userData?.id, userData?.name',
-          },
-        },
+        avoid('userData', 'userData?.id, userData?.name'),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { id?: string; name?: string } }) => {
@@ -1366,20 +1227,8 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields: 'userData?.id',
-          },
-        },
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userSettings',
-            fields: 'userSettings?.theme',
-          },
-        },
+        avoid('userData', 'userData?.id'),
+        avoid('userSettings', 'userSettings?.theme'),
       ],
       output: `
         const MyComponent = ({ userData, userSettings }: { userData: { id?: string }; userSettings: { theme?: string } }) => {
@@ -1401,13 +1250,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields: 'userData?.id',
-          },
-        },
+        avoid('userData', 'userData?.id'),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { id?: string } }) => {
@@ -1429,13 +1272,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields: 'userData?.id',
-          },
-        },
+        avoid('userData', 'userData?.id'),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { id?: string } }) => {
@@ -1457,13 +1294,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields: 'userData?.id, userData?.status',
-          },
-        },
+        avoid('userData', 'userData?.id, userData?.status'),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { id?: string; status?: string } }) => {
@@ -1486,13 +1317,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields: 'userData?.id',
-          },
-        },
+        avoid('userData', 'userData?.id'),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { id?: string } }) => {
@@ -1522,13 +1347,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields: 'userData?.status',
-          },
-        },
+        avoid('userData', 'userData?.status'),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { status?: string } }) => {
@@ -1561,13 +1380,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields: 'userData?.getData',
-          },
-        },
+        avoid('userData', 'userData?.getData'),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { getData?: () => string } }) => {
@@ -1593,13 +1406,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields: 'userData?.id',
-          },
-        },
+        avoid('userData', 'userData?.id'),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { id?: string } }) => {
@@ -1621,13 +1428,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields: 'userData?.date.toISOString, userData?.date',
-          },
-        },
+        avoid('userData', 'userData?.date.toISOString, userData?.date'),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { date?: Date } }) => {
@@ -1649,13 +1450,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields: 'userData?.items',
-          },
-        },
+        avoid('userData', 'userData?.items'),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { items?: { id: string }[] } }) => {
@@ -1677,14 +1472,10 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
       errors: [
-        {
-          messageId: 'avoidEntireObject',
-          data: {
-            objectName: 'userData',
-            fields:
-              'userData?.profile.settings.theme.primary, userData?.profile',
-          },
-        },
+        avoid(
+          'userData',
+          'userData?.profile.settings.theme.primary, userData?.profile',
+        ),
       ],
       output: `
         const MyComponent = ({ userData }: { userData: { profile?: { settings?: { theme?: { primary?: string } } } } }) => {

@@ -1,4 +1,6 @@
-# Avoid using entire objects in React hook dependency arrays when only specific fields are used, as this can cause unnecessary re-renders. When a hook only uses obj.name but obj is in the deps array, any change to obj.age will trigger the hook. Use individual fields (obj.name) instead of the entire object. Requires TypeScript and `parserOptions.project` to be configured (`@blumintinc/blumint/no-entire-object-hook-deps`)
+# Avoid entire objects in hook deps (`@blumintinc/blumint/no-entire-object-hook-deps`)
+
+Depend on the specific fields your hook reads; listing an entire object forces your hook to rerun when unrelated properties change and can leave memoized values stale.
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
@@ -8,48 +10,66 @@
 
 <!-- end auto-generated rule header -->
 
-## Prerequisites
+## Why this rule matters
 
-This rule requires type information to work correctly. Make sure to:
+- Your hooks rerun when any dependency identity changes. Listing an entire object means unrelated property updates (or shallow re-creations) rerun your hook even when you only read a few fields.
+- You risk duplicate network calls, animation glitches, or wasted memo computations when your hook fires unnecessarily.
+- Listing a dependency you never read reruns the hook for no effect and can hide the real missing dependency you rely on.
 
-1. Use TypeScript
-2. Configure `parserOptions.project` in your ESLint configuration:
+## What this rule checks
 
-```json
-{
-  "parser": "@typescript-eslint/parser",
-  "parserOptions": {
-    "project": "./tsconfig.json"
-  }
-}
-```
+- `useEffect`, `useMemo`, and `useCallback` dependency arrays.
+- Flags when you list an entire object even though the hook body only reads specific properties (including optional chaining paths).
+- Flags dependencies you put in the array but never reference in the hook body.
+- Requires TypeScript with `parserOptions.project` so the rule can distinguish objects from primitives and arrays.
 
-## Rule Details
-
-This rule warns when an entire object is used in a React hook dependency array when only specific fields from that object are actually used within the hook. This helps prevent unnecessary re-renders and ensures more precise dependency tracking.
-
-### Examples
-
-❌ Incorrect:
+## Incorrect
 
 ```typescript
 function Component({ user }) {
-  useEffect(() => {
-    console.log(user.name);
-  }, [user]); // Using entire user object when only user.name is needed
+  const greeting = useMemo(() => `Hello ${user.name}`, [user]);
+  return <div>{greeting}</div>;
 }
 ```
 
-✅ Correct:
+Message:
+`What's wrong: Dependency array includes entire object "user". Why it matters: Any change to its other properties reruns the hook even though the hook reads only user.name, creating extra renders and stale memoized values. How to fix: Depend on those fields instead.`
+
+```typescript
+function Component({ channelGroupIdRouter, channelGroupActive }) {
+  useEffect(() => {
+    // channelGroupActive is never read
+    fetchChannels(channelGroupIdRouter);
+  }, [channelGroupIdRouter, channelGroupActive]);
+}
+```
+
+Message:
+`What's wrong: Dependency "channelGroupActive" is listed in the array but never read inside the hook body. Why it matters: The hook reruns when "channelGroupActive" changes without affecting the result and can hide the real missing dependency. How to fix: Remove it or add the specific value that actually drives the hook.`
+
+## Correct
 
 ```typescript
 function Component({ user }) {
-  useEffect(() => {
-    console.log(user.name);
-  }, [user.name]); // Using only the specific field that's needed
+  const greeting = useMemo(() => `Hello ${user.name}`, [user.name]);
+  return <div>{greeting}</div>;
 }
 ```
 
-### When Not To Use It
+```typescript
+function Component({ channelGroupIdRouter }) {
+  useEffect(() => {
+    fetchChannels(channelGroupIdRouter);
+  }, [channelGroupIdRouter]);
+}
+```
 
-If you're not using TypeScript or if you have cases where you intentionally want to track entire objects in your dependencies (e.g., for memoization purposes), you might want to disable this rule.
+## Auto-fix
+
+- Rewrites your dependency arrays to list the specific fields your hook reads.
+- Removes dependencies you keep in the array but never use when it is safe to do so.
+
+## When not to use it
+
+- You intentionally want your hook to rerun on any change to an object reference (for example, when you treat the object as an immutable snapshot).
+- You rely on dynamic computed property access where specifying individual fields is impossible or would reduce correctness.
