@@ -93,7 +93,7 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
         return key.value;
       }
 
-      return 'property';
+      return 'computed property';
     };
 
     const getKind = (node: FieldNode): string => {

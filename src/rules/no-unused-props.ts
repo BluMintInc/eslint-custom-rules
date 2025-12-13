@@ -33,9 +33,18 @@ export const noUnusedProps = createRule({
       ((context.settings && context.settings['no-unused-props']) as {
         reactLikeExtensions?: string[];
       }) ?? {};
-    const reactLikeExtensions = (
-      ruleSettings.reactLikeExtensions ?? ['.tsx']
-    ).map((ext) => ext.toLowerCase());
+    const normalizeExtension = (ext: string): string | null => {
+      const trimmed = ext.trim().toLowerCase();
+
+      if (!trimmed) {
+        return null;
+      }
+
+      return trimmed.startsWith('.') ? trimmed : `.${trimmed}`;
+    };
+    const reactLikeExtensions = (ruleSettings.reactLikeExtensions ?? ['.tsx'])
+      .map(normalizeExtension)
+      .filter((ext): ext is string => Boolean(ext));
     const fileExtension = filename.includes('.')
       ? filename.slice(filename.lastIndexOf('.')).toLowerCase()
       : '';
@@ -106,6 +115,26 @@ export const noUnusedProps = createRule({
     ): node is ParenthesizedTypeNode =>
       (node as { type?: string }).type === PAREN_TYPE &&
       (node as { typeAnnotation?: unknown }).typeAnnotation != null;
+
+    const getStaticPropName = (
+      key:
+        | TSESTree.PropertyName
+        | TSESTree.Expression
+        | TSESTree.PrivateIdentifier,
+    ): string | null => {
+      if (key.type === AST_NODE_TYPES.Identifier) {
+        return key.name;
+      }
+
+      if (
+        key.type === AST_NODE_TYPES.Literal &&
+        typeof key.value === 'string'
+      ) {
+        return key.value;
+      }
+
+      return null;
+    };
 
     const isAnyPropFromSpreadTypeUsed = (
       spreadTypeName: string,
@@ -248,18 +277,7 @@ export const noUnusedProps = createRule({
                     if (member.type !== AST_NODE_TYPES.TSPropertySignature) {
                       return;
                     }
-                    if (
-                      member.key.type !== AST_NODE_TYPES.Identifier &&
-                      member.key.type !== AST_NODE_TYPES.Literal
-                    ) {
-                      return;
-                    }
-                    const propName =
-                      member.key.type === AST_NODE_TYPES.Identifier
-                        ? member.key.name
-                        : typeof member.key.value === 'string'
-                          ? member.key.value
-                          : null;
+                    const propName = getStaticPropName(member.key);
                     if (propName && shouldInclude(propName)) {
                       props[propName] = member.key;
                       added = true;
@@ -404,12 +422,7 @@ export const noUnusedProps = createRule({
                   (member.key.type === AST_NODE_TYPES.Identifier ||
                     member.key.type === AST_NODE_TYPES.Literal)
                 ) {
-                  const propName =
-                    member.key.type === AST_NODE_TYPES.Identifier
-                      ? member.key.name
-                      : typeof member.key.value === 'string'
-                        ? member.key.value
-                        : null;
+                  const propName = getStaticPropName(member.key);
                   if (propName) {
                     props[propName] = member.key;
                   }
@@ -674,15 +687,10 @@ export const noUnusedProps = createRule({
                 param.properties.forEach((prop) => {
                   if (
                     prop.type === AST_NODE_TYPES.Property &&
-                    (prop.key.type === AST_NODE_TYPES.Identifier ||
-                      prop.key.type === AST_NODE_TYPES.Literal)
+                (prop.key.type === AST_NODE_TYPES.Identifier ||
+                  prop.key.type === AST_NODE_TYPES.Literal)
                   ) {
-                    const propName =
-                      prop.key.type === AST_NODE_TYPES.Identifier
-                        ? prop.key.name
-                        : typeof prop.key.value === 'string'
-                          ? prop.key.value
-                          : null;
+                const propName = getStaticPropName(prop.key);
                     if (propName) {
                       used.add(propName);
                     }
