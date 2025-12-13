@@ -99,20 +99,8 @@ function isBoundToName(
     parent.type === AST_NODE_TYPES.MethodDefinition ||
     parent.type === AST_NODE_TYPES.PropertyDefinition
   ) {
-    const key = (
-      parent as
-        | TSESTree.Property
-        | TSESTree.MethodDefinition
-        | TSESTree.PropertyDefinition
-    ).key;
-    if (
-      (
-        parent as
-          | TSESTree.Property
-          | TSESTree.MethodDefinition
-          | TSESTree.PropertyDefinition
-      ).computed
-    ) {
+    const key = parent.key;
+    if (parent.computed) {
       return key.type === AST_NODE_TYPES.Literal && key.value === name;
     }
     if (key.type === AST_NODE_TYPES.Identifier) return key.name === name;
