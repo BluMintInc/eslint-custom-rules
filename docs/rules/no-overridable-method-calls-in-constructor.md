@@ -12,7 +12,7 @@ If you call an overridable or abstract member inside a constructor, you execute 
 - Static and private members are allowed because they cannot be overridden.
 - Computed property names are ignored because the rule cannot determine whether they are overridable.
 
-When the rule fires, the message explains which member was called and why it is risky, and suggests moving the call after construction or making the member non-overridable.
+When this rule fires, you receive a message that explains which member was called, why it is risky, and suggests moving the call after construction or making the member non-overridable.
 
 ### Examples of **incorrect** code for this rule:
 
