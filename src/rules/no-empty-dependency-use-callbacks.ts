@@ -426,7 +426,7 @@ function getProgramNode(node: TSESTree.Node): TSESTree.Program | null {
   return current?.type === AST_NODE_TYPES.Program ? current : null;
 }
 
-function collectPatternIdentifiers(
+function addPatternIdentifiersToSet(
   pattern:
     | TSESTree.BindingName
     | TSESTree.AssignmentPattern
@@ -440,12 +440,12 @@ function collectPatternIdentifiers(
     case AST_NODE_TYPES.ObjectPattern:
       for (const property of pattern.properties) {
         if (property.type === AST_NODE_TYPES.Property) {
-          collectPatternIdentifiers(
+          addPatternIdentifiersToSet(
             property.value as TSESTree.BindingName,
             names,
           );
         } else if (property.type === AST_NODE_TYPES.RestElement) {
-          collectPatternIdentifiers(
+          addPatternIdentifiersToSet(
             property.argument as TSESTree.BindingName,
             names,
           );
@@ -456,23 +456,23 @@ function collectPatternIdentifiers(
       for (const element of pattern.elements) {
         if (!element) continue;
         if (element.type === AST_NODE_TYPES.RestElement) {
-          collectPatternIdentifiers(
+          addPatternIdentifiersToSet(
             element.argument as TSESTree.BindingName,
             names,
           );
         } else {
-          collectPatternIdentifiers(element as TSESTree.BindingName, names);
+          addPatternIdentifiersToSet(element as TSESTree.BindingName, names);
         }
       }
       return;
     case AST_NODE_TYPES.RestElement:
-      collectPatternIdentifiers(
+      addPatternIdentifiersToSet(
         pattern.argument as TSESTree.BindingName,
         names,
       );
       return;
     case AST_NODE_TYPES.AssignmentPattern:
-      collectPatternIdentifiers(pattern.left, names);
+      addPatternIdentifiersToSet(pattern.left, names);
       return;
   }
 }
@@ -498,7 +498,7 @@ function getModuleScopeValueBindings(program: TSESTree.Program): Set<string> {
 
     if (target.type === AST_NODE_TYPES.VariableDeclaration) {
       for (const declaration of target.declarations) {
-        collectPatternIdentifiers(declaration.id, names);
+        addPatternIdentifiersToSet(declaration.id, names);
       }
       continue;
     }
