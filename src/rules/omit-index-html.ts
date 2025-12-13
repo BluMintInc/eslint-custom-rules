@@ -1,3 +1,5 @@
+import { TSESLint, TSESTree } from '@typescript-eslint/utils';
+
 import { createRule } from '../utils/createRule';
 
 type Options = [
@@ -42,6 +44,27 @@ function fixUrl(url: string): string {
   return url.replace(/\/index\.html($|[?#])/, '/$1');
 }
 
+/**
+ * Reconstructs a template literal as it appears in source, including expressions.
+ */
+function describeTemplateLiteral(
+  node: TSESTree.TemplateLiteral,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+): string {
+  const parts: string[] = [];
+
+  node.quasis.forEach((quasi, index) => {
+    parts.push(quasi.value.raw);
+
+    const expression = node.expressions[index];
+    if (expression) {
+      parts.push(`\${${sourceCode.getText(expression)}}`);
+    }
+  });
+
+  return parts.join('');
+}
+
 export const omitIndexHtml = createRule<Options, MessageIds>({
   name: 'omit-index-html',
   meta: {
@@ -64,11 +87,12 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
     ],
     messages: {
       omitIndexHtml:
-        'Avoid using "index.html" in URLs. Many web servers automatically resolve directory requests to index.html.',
+        'URL "{{url}}" includes "index.html", which servers already serve implicitly for directory paths. Keeping the file name creates duplicate URLs, breaks canonical links, and can make caches treat the same page as different assets. Drop the file name and point to the directory path instead (e.g., "{{suggestedUrl}}").',
     },
   },
   defaultOptions: [{ allowWithQueryOrHash: true }],
   create(context, [options]) {
+    const sourceCode = context.getSourceCode();
     const allowWithQueryOrHash = options.allowWithQueryOrHash !== false;
 
     return {
@@ -85,6 +109,10 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
           context.report({
             node,
             messageId: 'omitIndexHtml',
+            data: {
+              url: value,
+              suggestedUrl: fixUrl(value),
+            },
             fix: (fixer) => {
               return fixer.replaceText(node, `"${fixUrl(value)}"`);
             },
@@ -92,13 +120,16 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
         }
       },
       TemplateLiteral(node) {
-        // For template literals, we can only check if the static parts contain index.html
-        const value = node.quasis.map((q) => q.value.raw).join('');
+        const value = describeTemplateLiteral(node, sourceCode);
 
         if (value.includes('/index.html')) {
           context.report({
             node,
             messageId: 'omitIndexHtml',
+            data: {
+              url: value,
+              suggestedUrl: fixUrl(value),
+            },
             // No automatic fix for template literals as they may contain dynamic parts
           });
         }
