@@ -120,7 +120,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'For', suggestion: 'createMatch' },
+          data: {
+            name: 'createMatchFor',
+            suffix: 'For',
+            suggestion: 'createMatch',
+          },
         },
       ],
       output: 'function createMatch(player) {}',
@@ -130,7 +134,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'From', suggestion: 'computeValue' },
+          data: {
+            name: 'computeValueFrom',
+            suffix: 'From',
+            suggestion: 'computeValue',
+          },
         },
       ],
       output: 'function computeValue(data) {}',
@@ -140,7 +148,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'With', suggestion: 'updateConfig' },
+          data: {
+            name: 'updateConfigWith',
+            suffix: 'With',
+            suggestion: 'updateConfig',
+          },
         },
       ],
       output: 'function updateConfig(options) {}',
@@ -150,7 +162,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'To', suggestion: 'convertData' },
+          data: {
+            name: 'convertDataTo',
+            suffix: 'To',
+            suggestion: 'convertData',
+          },
         },
       ],
       output: 'function convertData(format) {}',
@@ -160,7 +176,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'By', suggestion: 'validateInput' },
+          data: {
+            name: 'validateInputBy',
+            suffix: 'By',
+            suggestion: 'validateInput',
+          },
         },
       ],
       output: 'function validateInput(rules) {}',
@@ -170,7 +190,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'In', suggestion: 'searchItems' },
+          data: {
+            name: 'searchItemsIn',
+            suffix: 'In',
+            suggestion: 'searchItems',
+          },
         },
       ],
       output: 'function searchItems(container) {}',
@@ -180,7 +204,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'On', suggestion: 'processEvent' },
+          data: {
+            name: 'processEventOn',
+            suffix: 'On',
+            suggestion: 'processEvent',
+          },
         },
       ],
       output: 'function processEvent(element) {}',
@@ -192,7 +220,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'During', suggestion: 'process' },
+          data: {
+            name: 'processDuring',
+            suffix: 'During',
+            suggestion: 'process',
+          },
         },
       ],
       output: 'function process(interval) {}',
@@ -204,7 +236,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'Via', suggestion: 'execute' },
+          data: {
+            name: 'executeVia',
+            suffix: 'Via',
+            suggestion: 'execute',
+          },
         },
       ],
       output: 'function execute(method) {}',
@@ -214,7 +250,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'Without', suggestion: 'process' },
+          data: {
+            name: 'processWithout',
+            suffix: 'Without',
+            suggestion: 'process',
+          },
         },
       ],
       output: 'function process(options) {}',
@@ -226,7 +266,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'Against', suggestion: 'fight' },
+          data: {
+            name: 'fightAgainst',
+            suffix: 'Against',
+            suggestion: 'fight',
+          },
         },
       ],
       output: 'function fight(enemy) {}',
@@ -238,7 +282,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'Again', suggestion: 'retry' },
+          data: {
+            name: 'retryAgain',
+            suffix: 'Again',
+            suggestion: 'retry',
+          },
         },
       ],
       output: 'function retry(attempt) {}',
@@ -248,7 +296,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'Again', suggestion: 'attempt' },
+          data: {
+            name: 'attemptAgain',
+            suffix: 'Again',
+            suggestion: 'attempt',
+          },
         },
       ],
       output: 'function attempt(data) {}',
@@ -258,7 +310,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'Now', suggestion: 'start' },
+          data: {
+            name: 'startNow',
+            suffix: 'Now',
+            suggestion: 'start',
+          },
         },
       ],
       output: 'function start(task) {}',
@@ -270,7 +326,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'Async', suggestion: 'execute' },
+          data: {
+            name: 'executeAsync',
+            suffix: 'Async',
+            suggestion: 'execute',
+          },
         },
       ],
       output: 'function execute(task) {}',
@@ -280,7 +340,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'Sync', suggestion: 'process' },
+          data: {
+            name: 'processSync',
+            suffix: 'Sync',
+            suggestion: 'process',
+          },
         },
       ],
       output: 'function process(data) {}',
@@ -294,7 +358,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'For', suggestion: 'initializeGame' },
+          data: {
+            name: 'initializeGameFor',
+            suffix: 'For',
+            suggestion: 'initializeGame',
+          },
         },
       ],
       output: `class TournamentService {
@@ -308,7 +376,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'From', suggestion: 'calculateScore' },
+          data: {
+            name: 'calculateScoreFrom',
+            suffix: 'From',
+            suggestion: 'calculateScore',
+          },
         },
       ],
       output: `class TournamentService {
@@ -324,15 +396,27 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'With', suggestion: 'updateState' },
+          data: {
+            name: 'updateStateWith',
+            suffix: 'With',
+            suggestion: 'updateState',
+          },
         },
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'To', suggestion: 'transformData' },
+          data: {
+            name: 'transformDataTo',
+            suffix: 'To',
+            suggestion: 'transformData',
+          },
         },
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'By', suggestion: 'filterUsers' },
+          data: {
+            name: 'filterUsersBy',
+            suffix: 'By',
+            suggestion: 'filterUsers',
+          },
         },
       ],
       output: `class DataService {
@@ -348,7 +432,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'With', suggestion: 'transformData' },
+          data: {
+            name: 'transformDataWith',
+            suffix: 'With',
+            suggestion: 'transformData',
+          },
         },
       ],
       output: 'const transformData = (options) => {};',
@@ -358,7 +446,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'For', suggestion: 'prepareState' },
+          data: {
+            name: 'prepareStateFor',
+            suffix: 'For',
+            suggestion: 'prepareState',
+          },
         },
       ],
       output: 'const prepareState = (component) => {};',
@@ -368,7 +460,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'By', suggestion: 'validate' },
+          data: {
+            name: 'validateBy',
+            suffix: 'By',
+            suggestion: 'validate',
+          },
         },
       ],
       output: 'const validate = (rules) => {};',
@@ -378,7 +474,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'In', suggestion: 'search' },
+          data: {
+            name: 'searchIn',
+            suffix: 'In',
+            suggestion: 'search',
+          },
         },
       ],
       output: 'const search = (scope) => {};',
@@ -395,19 +495,35 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'From', suggestion: 'getUser' },
+          data: {
+            name: 'getUserFrom',
+            suffix: 'From',
+            suggestion: 'getUser',
+          },
         },
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'With', suggestion: 'createUser' },
+          data: {
+            name: 'createUserWith',
+            suffix: 'With',
+            suggestion: 'createUser',
+          },
         },
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'To', suggestion: 'updateUser' },
+          data: {
+            name: 'updateUserTo',
+            suffix: 'To',
+            suggestion: 'updateUser',
+          },
         },
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'By', suggestion: 'deleteUser' },
+          data: {
+            name: 'deleteUserBy',
+            suffix: 'By',
+            suggestion: 'deleteUser',
+          },
         },
       ],
       output: `const api = {
@@ -424,7 +540,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'With', suggestion: '_privateProcess' },
+          data: {
+            name: '_privateProcessWith',
+            suffix: 'With',
+            suggestion: '_privateProcess',
+          },
         },
       ],
       output: 'function _privateProcess() {}',
@@ -434,7 +554,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'For', suggestion: '$specialHandle' },
+          data: {
+            name: '$specialHandleFor',
+            suffix: 'For',
+            suggestion: '$specialHandle',
+          },
         },
       ],
       output: 'function $specialHandle() {}',
@@ -446,7 +570,11 @@ ruleTesterTs.run('no-unnecessary-verb-suffix', noUnnecessaryVerbSuffix, {
       errors: [
         {
           messageId: 'unnecessaryVerbSuffix',
-          data: { suffix: 'By', suggestion: 'extractConfigFromWithToVia' },
+          data: {
+            name: 'extractConfigFromWithToViaBy',
+            suffix: 'By',
+            suggestion: 'extractConfigFromWithToVia',
+          },
         },
       ],
       output: 'function extractConfigFromWithToVia() {}',

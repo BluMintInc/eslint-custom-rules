@@ -83,7 +83,7 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
     schema: [],
     messages: {
       unnecessaryVerbSuffix:
-        'Unnecessary verb suffix "{{suffix}}" in function name. Consider using "{{suggestion}}" instead.',
+        'Function name "{{name}}" ends with verb suffix "{{suffix}}" that does not add meaning beyond its parameters. Redundant verb-preposition endings make call sites harder to scan and hide the primary action. Rename to "{{suggestion}}" so the name stays action-oriented while arguments express the relationship.',
     },
   },
   defaultOptions: [],
@@ -115,6 +115,7 @@ export const noUnnecessaryVerbSuffix = createRule<[], MessageIds>({
               node,
               messageId: 'unnecessaryVerbSuffix',
               data: {
+                name,
                 suffix,
                 suggestion,
               },
