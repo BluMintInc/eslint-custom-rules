@@ -55,6 +55,7 @@ export const noUnusedProps = createRule({
       'ThisType',
     ]);
 
+    // Marks spread types whose members cannot be enumerated so unknown props still count as used
     const UNKNOWN_SPREAD_PROP = '__unknown_spread_prop__';
 
     const propsTypes: Map<string, Record<string, TSESTree.Node>> = new Map();
@@ -311,6 +312,32 @@ export const noUnusedProps = createRule({
             return names;
           };
 
+          const extractPickedPropNames = (
+            pickedProps: TSESTree.TypeNode,
+          ): Set<string> => {
+            const names = new Set<string>();
+
+            if (pickedProps.type === AST_NODE_TYPES.TSUnionType) {
+              pickedProps.types.forEach((type) => {
+                if (
+                  type.type === AST_NODE_TYPES.TSLiteralType &&
+                  type.literal.type === AST_NODE_TYPES.Literal &&
+                  typeof type.literal.value === 'string'
+                ) {
+                  names.add(type.literal.value);
+                }
+              });
+            } else if (
+              pickedProps.type === AST_NODE_TYPES.TSLiteralType &&
+              pickedProps.literal.type === AST_NODE_TYPES.Literal &&
+              typeof pickedProps.literal.value === 'string'
+            ) {
+              names.add(pickedProps.literal.value);
+            }
+
+            return names;
+          };
+
           const addBaseTypeProps = (
             typeNode: TSESTree.TypeNode,
             propsMap: Record<string, TSESTree.Node>,
@@ -321,128 +348,129 @@ export const noUnusedProps = createRule({
 
             type CollectResult = { added: boolean; fullySupported: boolean };
 
-            const collectProps = (
-              node: TSESTree.TypeNode,
+            const mergeCollectResults = (
+              acc: CollectResult,
+              result: CollectResult,
+            ): CollectResult => ({
+              added: acc.added || result.added,
+              fullySupported: acc.fullySupported && result.fullySupported,
+            });
+
+            const collectPropsFromTypeLiteral = (
+              node: TSESTree.TSTypeLiteral,
               includePredicate: (name: string) => boolean,
             ): CollectResult => {
-              if (node.type === AST_NODE_TYPES.TSTypeLiteral) {
-                let added = false;
-                node.members.forEach((member) => {
-                  if (
-                    member.type === AST_NODE_TYPES.TSPropertySignature &&
-                    member.key.type === AST_NODE_TYPES.Identifier &&
-                    includePredicate(member.key.name)
-                  ) {
-                    propsMap[member.key.name] = member.key;
-                    added = true;
-                  }
-                });
-                return { added, fullySupported: true };
+              let added = false;
+
+              node.members.forEach((member) => {
+                if (
+                  member.type === AST_NODE_TYPES.TSPropertySignature &&
+                  member.key.type === AST_NODE_TYPES.Identifier &&
+                  includePredicate(member.key.name)
+                ) {
+                  propsMap[member.key.name] = member.key;
+                  added = true;
+                }
+              });
+
+              return { added, fullySupported: true };
+            };
+
+            const collectPropsFromIntersection = (
+              node: TSESTree.TSIntersectionType,
+              includePredicate: (name: string) => boolean,
+            ): CollectResult =>
+              node.types.reduce<CollectResult>(
+                (acc, type) =>
+                  mergeCollectResults(acc, collectProps(type, includePredicate)),
+                { added: false, fullySupported: true },
+              );
+
+            const collectPropsFromTypeReference = (
+              node: TSESTree.TSTypeReference,
+              includePredicate: (name: string) => boolean,
+            ): CollectResult => {
+              if (node.typeName.type !== AST_NODE_TYPES.Identifier) {
+                return { added: false, fullySupported: false };
               }
 
-              if (node.type === AST_NODE_TYPES.TSIntersectionType) {
-                return node.types.reduce<CollectResult>(
-                  (acc, type) => {
-                    const result = collectProps(type, includePredicate);
-                    return {
-                      added: acc.added || result.added,
-                      fullySupported: acc.fullySupported && result.fullySupported,
-                    };
-                  },
-                  { added: false, fullySupported: true },
-                );
+              const referenceName = node.typeName.name;
+
+              if (
+                (referenceName === 'Partial' || referenceName === 'Required') &&
+                node.typeParameters?.params[0]
+              ) {
+                return collectProps(node.typeParameters.params[0], includePredicate);
               }
 
               if (
-                node.type === AST_NODE_TYPES.TSTypeReference &&
-                node.typeName.type === AST_NODE_TYPES.Identifier
+                referenceName === 'Omit' &&
+                node.typeParameters?.params.length === 2
               ) {
-                const referenceName = node.typeName.name;
-
-                if (
-                  (referenceName === 'Partial' ||
-                    referenceName === 'Required') &&
-                  node.typeParameters?.params[0]
-                ) {
-                  return collectProps(node.typeParameters.params[0], includePredicate);
-                }
-
-                if (
-                  referenceName === 'Omit' &&
-                  node.typeParameters?.params.length === 2
-                ) {
-                  const [base, omitted] = node.typeParameters.params;
-                  const omittedNames = extractOmittedPropNames(omitted);
-                  const combinedInclude = combinePredicates(
-                    includePredicate,
-                    (name) => !omittedNames.has(name),
-                  );
-                  return collectProps(base, combinedInclude);
-                }
-
-                if (
-                  referenceName === 'Pick' &&
-                  node.typeParameters?.params.length === 2
-                ) {
-                  const [, pickedProps] = node.typeParameters.params;
-                  const pickedNames = new Set<string>();
-
-                  if (pickedProps.type === AST_NODE_TYPES.TSUnionType) {
-                    pickedProps.types.forEach((type) => {
-                      if (
-                        type.type === AST_NODE_TYPES.TSLiteralType &&
-                        type.literal.type === AST_NODE_TYPES.Literal &&
-                        typeof type.literal.value === 'string'
-                      ) {
-                        pickedNames.add(type.literal.value);
-                      }
-                    });
-                  } else if (
-                    pickedProps.type === AST_NODE_TYPES.TSLiteralType &&
-                    pickedProps.literal.type === AST_NODE_TYPES.Literal &&
-                    typeof pickedProps.literal.value === 'string'
-                  ) {
-                    pickedNames.add(pickedProps.literal.value);
-                  }
-
-                  const combinedInclude = combinePredicates(
-                    includePredicate,
-                    (name) => pickedNames.size === 0 || pickedNames.has(name),
-                  );
-
-                  return collectProps(
-                    node.typeParameters.params[0],
-                    combinedInclude,
-                  );
-                }
-
-                if (visitedAliases.has(referenceName)) {
-                  return { added: false, fullySupported: true };
-                }
-
-                visitedAliases.add(referenceName);
-
-                const scope = context.getScope();
-                const variable = scope.variables.find(
-                  (v) => v.name === referenceName,
+                const [base, omitted] = node.typeParameters.params;
+                const omittedNames = extractOmittedPropNames(omitted);
+                const combinedInclude = combinePredicates(
+                  includePredicate,
+                  (name) => !omittedNames.has(name),
                 );
 
-                if (
-                  variable &&
-                  variable.defs[0]?.node.type ===
-                    AST_NODE_TYPES.TSTypeAliasDeclaration
-                ) {
-                  return collectProps(
-                    variable.defs[0].node.typeAnnotation,
-                    includePredicate,
-                  );
-                }
+                return collectProps(base, combinedInclude);
+              }
 
-                return { added: false, fullySupported: false };
+              if (
+                referenceName === 'Pick' &&
+                node.typeParameters?.params.length === 2
+              ) {
+                const [base, pickedProps] = node.typeParameters.params;
+                const pickedNames = extractPickedPropNames(pickedProps);
+                const combinedInclude = combinePredicates(
+                  includePredicate,
+                  (name) => pickedNames.size === 0 || pickedNames.has(name),
+                );
+
+                return collectProps(base, combinedInclude);
+              }
+
+              if (visitedAliases.has(referenceName)) {
+                return { added: false, fullySupported: true };
+              }
+
+              visitedAliases.add(referenceName);
+
+              const scope = context.getScope();
+              const variable = scope.variables.find(
+                (v) => v.name === referenceName,
+              );
+
+              if (
+                variable &&
+                variable.defs[0]?.node.type ===
+                  AST_NODE_TYPES.TSTypeAliasDeclaration
+              ) {
+                return collectProps(
+                  variable.defs[0].node.typeAnnotation,
+                  includePredicate,
+                );
               }
 
               return { added: false, fullySupported: false };
             };
+
+            function collectProps(
+              node: TSESTree.TypeNode,
+              includePredicate: (name: string) => boolean,
+            ): CollectResult {
+              switch (node.type) {
+                case AST_NODE_TYPES.TSTypeLiteral:
+                  return collectPropsFromTypeLiteral(node, includePredicate);
+                case AST_NODE_TYPES.TSIntersectionType:
+                  return collectPropsFromIntersection(node, includePredicate);
+                case AST_NODE_TYPES.TSTypeReference:
+                  return collectPropsFromTypeReference(node, includePredicate);
+                default:
+                  return { added: false, fullySupported: false };
+              }
+            }
 
             const result = collectProps(typeNode, shouldInclude);
 
@@ -496,9 +524,6 @@ export const noUnusedProps = createRule({
 
             propsMap[`...${baseTypeName}`] = baseType.typeName;
             ensureSpreadTypeEntry(baseTypeName, spreadTypePropsMap);
-            omittedPropNames.forEach((propName) =>
-              addToSpreadTypeProps(baseTypeName, propName, spreadTypePropsMap),
-            );
             addToSpreadTypeProps(
               baseTypeName,
               UNKNOWN_SPREAD_PROP,
