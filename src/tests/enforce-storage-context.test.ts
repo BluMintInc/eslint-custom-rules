@@ -80,6 +80,14 @@ ruleTesterTs.run('enforce-storage-context', enforceStorageContext, {
       filename: 'C:\\\\repo\\\\polyfills\\\\storage.ts',
       options: [{ allow: ['**/polyfills/**'] }],
     },
+    {
+      code: `
+        const polyfill = window.localStorage || createPolyfill();
+        polyfill.setItem('key', 'value');
+      `,
+      filename: 'C:\\\\repo\\\\src\\\\polyfills\\\\storage.ts',
+      options: [{ allow: ['**\\\\polyfills\\\\**'] }],
+    },
     `
       const customWindow = { localStorage: 'value' };
       customWindow.localStorage;
@@ -151,6 +159,16 @@ ruleTesterTs.run('enforce-storage-context', enforceStorageContext, {
     `
       const storage = window.appConfig.localStorage;
       storage.setItem('k', 'v');
+    `,
+    `
+      localStorage: {
+        break localStorage;
+      }
+      enum localStorage { Key = 'k' }
+      enum Names { localStorage = 'v' }
+      namespace localStorage {
+        export const value = 'ok';
+      }
     `,
     `
       function shadowWithVar(flag: boolean) {
@@ -319,10 +337,7 @@ store.setItem('k', 'v');
           store.getItem('k');
         }
       `,
-      errors: [
-        { messageId: 'useStorageContext' },
-        { messageId: 'useStorageContext' },
-      ],
+      errors: [{ messageId: 'useStorageContext' }],
     },
     {
       code: `

@@ -29,7 +29,7 @@ The rule accepts an optional configuration object:
 ```
 
 - `allowInTests` (default `true`): when `true`, files matching `*.test.*`, `*.spec.*`, or paths containing `__mocks__/` are ignored.
-- `allow`: array of glob patterns to permit direct storage access (e.g., polyfills or specialized mocks).
+- `allow`: array of glob patterns to permit direct storage access (e.g., polyfills or specialized mocks). Patterns are normalized to use forward slashes, so Windows-style patterns like `src\\polyfills\\**` also work.
 
 ### Examples of **incorrect** code for this rule:
 

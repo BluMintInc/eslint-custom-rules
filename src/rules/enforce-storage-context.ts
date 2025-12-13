@@ -22,6 +22,7 @@ type AliasState = {
   pushScope: (kind?: 'function' | 'block') => void;
   popScope: () => void;
   reset: () => void;
+  setAliasInExistingBindingScope: (name: string, value: AliasEntry) => void;
   setAlias: (
     name: string,
     value: AliasEntry,
@@ -75,15 +76,25 @@ const createAliasState = (): AliasState => {
   ) => {
     if (options?.hoistToFunctionScope) {
       for (let i = stack.length - 1; i >= 0; i -= 1) {
-        stack[i].set(name, value);
         if (scopeKinds[i] === 'function') {
-          break;
+          stack[i].set(name, value);
+          return;
         }
       }
+      stack[0].set(name, value);
       return;
     }
 
     currentScope().set(name, value);
+  };
+  const setAliasInExistingBindingScope = (name: string, value: AliasEntry) => {
+    for (let i = stack.length - 1; i >= 0; i -= 1) {
+      if (stack[i].has(name)) {
+        stack[i].set(name, value);
+        return;
+      }
+    }
+    setAlias(name, value);
   };
   const markShadowed = (
     name: string,
@@ -102,6 +113,7 @@ const createAliasState = (): AliasState => {
     pushScope,
     popScope,
     reset,
+    setAliasInExistingBindingScope,
     setAlias,
     markShadowed,
   };
@@ -317,6 +329,7 @@ const identifierHasDeclarationParent = (node: TSESTree.Identifier): boolean => {
   if (parent.type === AST_NODE_TYPES.ImportDefaultSpecifier) return true;
   if (parent.type === AST_NODE_TYPES.ImportNamespaceSpecifier) return true;
   if (parent.type === AST_NODE_TYPES.ExportSpecifier) return true;
+  if (parent.type === AST_NODE_TYPES.TSEnumMember && parent.id === node) return true;
   return false;
 };
 
@@ -356,6 +369,25 @@ const identifierRepresentsDeclaration = (node: TSESTree.Identifier): boolean => 
     return true;
   }
   if (parent.type === AST_NODE_TYPES.TSInterfaceDeclaration && parent.id === node) {
+    return true;
+  }
+  if (parent.type === AST_NODE_TYPES.TSEnumDeclaration && parent.id === node) {
+    return true;
+  }
+  if (parent.type === AST_NODE_TYPES.TSEnumMember && parent.id === node) {
+    return true;
+  }
+  if (parent.type === AST_NODE_TYPES.TSModuleDeclaration && parent.id === node) {
+    return true;
+  }
+  if (parent.type === AST_NODE_TYPES.LabeledStatement && parent.label === node) {
+    return true;
+  }
+  if (
+    (parent.type === AST_NODE_TYPES.BreakStatement ||
+      parent.type === AST_NODE_TYPES.ContinueStatement) &&
+    parent.label === node
+  ) {
     return true;
   }
 
@@ -467,7 +499,13 @@ const shouldIgnoreFile = (
   if (allowInTests && isTestFile) return true;
 
   const allowPatterns = options?.allow ?? [];
-  return allowPatterns.some((pattern) => minimatch(normalizedFilename, pattern));
+  const normalizedAllowPatterns = allowPatterns.map((pattern) =>
+    pattern.replace(/\\/g, '/'),
+  );
+
+  return normalizedAllowPatterns.some((pattern) =>
+    minimatch(normalizedFilename, pattern, { windowsPathsNoEscape: true }),
+  );
 };
 
 const createUsageReporter = (
@@ -656,28 +694,18 @@ const createAssignmentExpressionHandler = (
   storageAliases: AliasStack,
   reportUsage: ReportUsage,
 ): ((node: TSESTree.AssignmentExpression) => void) => {
-  const setAliasInBindingScope = (name: string, value: AliasEntry) => {
-    for (let i = aliases.stack.length - 1; i >= 0; i -= 1) {
-      if (aliases.stack[i].has(name)) {
-        aliases.stack[i].set(name, value);
-        return;
-      }
-    }
-    aliases.setAlias(name, value);
-  };
-
   return (node) => {
     if (node.left.type === AST_NODE_TYPES.Identifier) {
       const right = node.right as TSESTree.Expression;
       const storageKind = resolveStorageObject(right, storageAliases);
       if (storageKind) {
-        setAliasInBindingScope(node.left.name, storageKind);
+        aliases.setAliasInExistingBindingScope(node.left.name, storageKind);
       } else {
         const shadowsStorage = checkIfNameShadowsStorage(node.left.name, storageAliases, {
           includeCurrentScope: true,
         });
         if (shadowsStorage) {
-          setAliasInBindingScope(node.left.name, 'shadowed');
+          aliases.setAliasInExistingBindingScope(node.left.name, 'shadowed');
         }
       }
     } else if (node.left.type === AST_NODE_TYPES.ObjectPattern) {
@@ -685,7 +713,7 @@ const createAssignmentExpressionHandler = (
         node.left,
         node.right as TSESTree.Expression,
         storageAliases,
-        (name, storageKind) => setAliasInBindingScope(name, storageKind),
+        (name, storageKind) => aliases.setAliasInExistingBindingScope(name, storageKind),
         (propertyNode, storageKind, accessType) => {
           reportUsage(propertyNode, storageKind, accessType);
         },
