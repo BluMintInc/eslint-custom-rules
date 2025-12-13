@@ -37,6 +37,15 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     const transactionScopes = new Set<TSESTree.Node>();
+    /**
+     * Tracks fetcher lifetimes per transaction scope and binding name.
+     * The outer map keys by the transaction scope node so nested transactions keep
+     * independent state. Each scope maps variable names to an ordered list of
+     * instances, preserving reassignment history. Arrays keep the latest instance
+     * easy to read for fetch calls while still retaining older instances for
+     * Program:exit validation, which must flag any overwritten fetcher that never
+     * received a transaction.
+     */
     const fetcherInstances = new Map<
       TSESTree.Node,
       Map<string, FetcherInstance[]>
@@ -107,7 +116,7 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       }
 
       if (isFunctionLike(node) && node.params.some(isTransactionParameter)) {
-        return node.body ?? node;
+        return node.body;
       }
 
       return null;
@@ -257,6 +266,14 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       return null;
     }
 
+    /**
+     * Reports only when a fetcher is ever used without a transaction.
+     * Constructor-level transactions make the instance always safe. If any call
+     * occurs without a transaction, we report even if other calls were safe to
+     * avoid mixed usage. If the constructor lacked a transaction but at least one
+     * call provided it, we skip reporting because the caller opted into explicit
+     * transactional use.
+     */
     function shouldReportFetcher(instance: FetcherInstance): boolean {
       if (instance.constructorHasTransaction) return false;
       if (instance.hasCallWithoutTransaction) return true;
@@ -274,6 +291,7 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
     function trackTransactionScope(node: TSESTree.CallExpression): void {
       if (!isFirestoreTransaction(node)) return;
       const callback = node.arguments[0];
+      if (!callback) return;
       if (
         callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
         callback.type === AST_NODE_TYPES.FunctionExpression
@@ -463,6 +481,7 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
         node: TSESTree.CallExpression,
       ) {
         const callback = node.arguments[0];
+        if (!callback) return;
         if (
           callback.type === AST_NODE_TYPES.ArrowFunctionExpression ||
           callback.type === AST_NODE_TYPES.FunctionExpression
