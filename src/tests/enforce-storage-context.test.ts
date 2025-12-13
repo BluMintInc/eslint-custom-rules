@@ -36,7 +36,7 @@ ruleTesterTs.run('enforce-storage-context', enforceStorageContext, {
       code: `
         localStorage.setItem('mock', 'value');
       `,
-      filename: 'C:\\\\repo\\\\src\\\\contexts\\\\LocalStorage.tsx',
+      filename: 'C:\\repo\\src\\contexts\\LocalStorage.tsx',
     },
     {
       code: `
@@ -62,7 +62,7 @@ ruleTesterTs.run('enforce-storage-context', enforceStorageContext, {
       code: `
         window.localStorage.getItem('mock');
       `,
-      filename: 'C:\\\\repo\\\\src\\\\__mocks__\\\\storage.ts',
+      filename: 'C:\\repo\\src\\__mocks__\\storage.ts',
     },
     {
       code: `
@@ -77,7 +77,7 @@ ruleTesterTs.run('enforce-storage-context', enforceStorageContext, {
         const polyfill = window.sessionStorage || createPolyfill();
         polyfill.getItem('key');
       `,
-      filename: 'C:\\\\repo\\\\polyfills\\\\storage.ts',
+      filename: 'C:\\repo\\polyfills\\storage.ts',
       options: [{ allow: ['**/polyfills/**'] }],
     },
     {
@@ -85,8 +85,8 @@ ruleTesterTs.run('enforce-storage-context', enforceStorageContext, {
         const polyfill = window.localStorage || createPolyfill();
         polyfill.setItem('key', 'value');
       `,
-      filename: 'C:\\\\repo\\\\src\\\\polyfills\\\\storage.ts',
-      options: [{ allow: ['**\\\\polyfills\\\\**'] }],
+      filename: 'C:\\repo\\src\\polyfills\\storage.ts',
+      options: [{ allow: ['**\\polyfills\\**'] }],
     },
     `
       const customWindow = { localStorage: 'value' };
