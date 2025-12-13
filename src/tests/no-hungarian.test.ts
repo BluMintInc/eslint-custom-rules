@@ -1,5 +1,14 @@
+import type { TestCaseError } from '@typescript-eslint/utils/dist/ts-eslint';
 import { noHungarian } from '../rules/no-hungarian';
 import { ruleTesterTs } from '../utils/ruleTester';
+
+const messageFor = (name: string) =>
+  `Identifier "${name}" encodes its type through a prefix or suffix (Hungarian notation). Type-coded names hide the domain concept and become misleading when the underlying type changes. Rename it to a domain-focused name without the type marker and rely on TypeScript for type information.`;
+
+const errorFor = (name: string): TestCaseError<'noHungarian'> =>
+  ({
+    message: messageFor(name),
+  } as unknown as TestCaseError<'noHungarian'>);
 
 ruleTesterTs.run('no-hungarian', noHungarian, {
   valid: [
@@ -408,56 +417,56 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
   invalid: [
     {
       code: 'const usernameString: string = "abc";',
-      errors: [{ messageId: 'noHungarian', data: { name: 'usernameString' } }],
+      errors: [errorFor('usernameString')],
     },
     {
       code: 'const isReadyBoolean: boolean = true;',
-      errors: [{ messageId: 'noHungarian', data: { name: 'isReadyBoolean' } }],
+      errors: [errorFor('isReadyBoolean')],
     },
     {
       code: 'const countNumber: number = 5;',
-      errors: [{ messageId: 'noHungarian', data: { name: 'countNumber' } }],
+      errors: [errorFor('countNumber')],
     },
     {
       code: 'let itemsArray: string[] = [];',
-      errors: [{ messageId: 'noHungarian', data: { name: 'itemsArray' } }],
+      errors: [errorFor('itemsArray')],
     },
     {
       code: 'const userDataObject = { name: "John", age: 30 };',
-      errors: [{ messageId: 'noHungarian', data: { name: 'userDataObject' } }],
+      errors: [errorFor('userDataObject')],
     },
 
     {
       code: 'function test() { const resultString = "test"; return resultString; }',
-      errors: [{ messageId: 'noHungarian', data: { name: 'resultString' } }],
+      errors: [errorFor('resultString')],
     },
     {
       code: 'if (condition) { let countNumber = 0; countNumber++; }',
-      errors: [{ messageId: 'noHungarian', data: { name: 'countNumber' } }],
+      errors: [errorFor('countNumber')],
     },
     {
       code: 'for (let indexNumber = 0; indexNumber < 10; indexNumber++) { console.log(indexNumber); }',
-      errors: [{ messageId: 'noHungarian', data: { name: 'indexNumber' } }],
+      errors: [errorFor('indexNumber')],
     },
 
     {
       code: 'const strName = "John";',
-      errors: [{ messageId: 'noHungarian', data: { name: 'strName' } }],
+      errors: [errorFor('strName')],
     },
     {
       code: 'const intAge = 30;',
-      errors: [{ messageId: 'noHungarian', data: { name: 'intAge' } }],
+      errors: [errorFor('intAge')],
     },
     {
       code: 'const boolIsActive = true;',
-      errors: [{ messageId: 'noHungarian', data: { name: 'boolIsActive' } }],
+      errors: [errorFor('boolIsActive')],
     },
 
     {
       code: 'const nameString = "John", ageNumber = 30;',
       errors: [
-        { messageId: 'noHungarian', data: { name: 'nameString' } },
-        { messageId: 'noHungarian', data: { name: 'ageNumber' } },
+        errorFor('nameString'),
+        errorFor('ageNumber'),
       ],
     },
 
@@ -472,20 +481,20 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
         }
       `,
       errors: [
-        { messageId: 'noHungarian', data: { name: 'outerString' } },
-        { messageId: 'noHungarian', data: { name: 'innerString' } },
-        { messageId: 'noHungarian', data: { name: 'nestedString' } },
+        errorFor('outerString'),
+        errorFor('innerString'),
+        errorFor('nestedString'),
       ],
     },
 
     {
       code: 'const userObjectArray = [{ name: "John" }];',
-      errors: [{ messageId: 'noHungarian', data: { name: 'userObjectArray' } }],
+      errors: [errorFor('userObjectArray')],
     },
 
     {
       code: 'const arrayOfItems = ["a", "b", "c"];',
-      errors: [{ messageId: 'noHungarian', data: { name: 'arrayOfItems' } }],
+      errors: [errorFor('arrayOfItems')],
     },
     {
       code: `
@@ -498,9 +507,9 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
       }
       `,
       errors: [
-        { messageId: 'noHungarian', data: { name: 'customFunction' } },
-        { messageId: 'noHungarian', data: { name: 'paramString' } },
-        { messageId: 'noHungarian', data: { name: 'callCustomFunction' } },
+        errorFor('customFunction'),
+        errorFor('paramString'),
+        errorFor('callCustomFunction'),
       ],
     },
     {
@@ -512,9 +521,9 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
       const result = customFunction('hello', 3);
       `,
       errors: [
-        { messageId: 'noHungarian', data: { name: 'customFunction' } },
-        { messageId: 'noHungarian', data: { name: 'paramString' } },
-        { messageId: 'noHungarian', data: { name: 'paramNumber' } },
+        errorFor('customFunction'),
+        errorFor('paramString'),
+        errorFor('paramNumber'),
       ],
     },
     {
@@ -526,8 +535,8 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
     }
     `,
       errors: [
-        { messageId: 'noHungarian', data: { name: 'TestClass' } },
-        { messageId: 'noHungarian', data: { name: 'inputString' } },
+        errorFor('TestClass'),
+        errorFor('inputString'),
       ],
     },
     {
@@ -536,7 +545,7 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
     };
 
     fnF('  test  ');`,
-      errors: [{ messageId: 'noHungarian', data: { name: 'fnF' } }],
+      errors: [errorFor('fnF')],
     },
     // Tests for class methods with Hungarian notation
     {
@@ -547,7 +556,7 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
           }
         }
       `,
-      errors: [{ messageId: 'noHungarian', data: { name: 'getNameString' } }],
+      errors: [errorFor('getNameString')],
     },
     {
       code: `
@@ -558,8 +567,8 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
         }
       `,
       errors: [
-        { messageId: 'noHungarian', data: { name: 'processArrayItems' } },
-        { messageId: 'noHungarian', data: { name: 'itemsArray' } },
+        errorFor('processArrayItems'),
+        errorFor('itemsArray'),
       ],
     },
     {
@@ -571,7 +580,7 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
         }
       `,
       errors: [
-        { messageId: 'noHungarian', data: { name: 'getOptionsObject' } },
+        errorFor('getOptionsObject'),
       ],
     },
     // Tests for class properties with Hungarian notation
@@ -584,9 +593,9 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
         }
       `,
       errors: [
-        { messageId: 'noHungarian', data: { name: 'nameString' } },
-        { messageId: 'noHungarian', data: { name: 'ageNumber' } },
-        { messageId: 'noHungarian', data: { name: 'isActiveBoolean' } },
+        errorFor('nameString'),
+        errorFor('ageNumber'),
+        errorFor('isActiveBoolean'),
       ],
     },
     {
@@ -597,8 +606,8 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
         }
       `,
       errors: [
-        { messageId: 'noHungarian', data: { name: 'apiUrlString' } },
-        { messageId: 'noHungarian', data: { name: 'maxCountNumber' } },
+        errorFor('apiUrlString'),
+        errorFor('maxCountNumber'),
       ],
     },
     {
@@ -616,9 +625,9 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
         }
       `,
       errors: [
-        { messageId: 'noHungarian', data: { name: 'dataArray' } },
-        { messageId: 'noHungarian', data: { name: 'objItem' } },
-        { messageId: 'noHungarian', data: { name: 'getItemsArray' } },
+        errorFor('dataArray'),
+        errorFor('objItem'),
+        errorFor('getItemsArray'),
       ],
     },
     {
@@ -634,10 +643,10 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
       }
       `,
       errors: [
-        { messageId: 'noHungarian', data: { name: 'STR_USERNAME' } },
-        { messageId: 'noHungarian', data: { name: 'NUM_ACCESS_LEVEL' } },
-        { messageId: 'noHungarian', data: { name: 'BOOL_IS_ACTIVE' } },
-        { messageId: 'noHungarian', data: { name: 'GET_STR_FULL_NAME' } },
+        errorFor('STR_USERNAME'),
+        errorFor('NUM_ACCESS_LEVEL'),
+        errorFor('BOOL_IS_ACTIVE'),
+        errorFor('GET_STR_FULL_NAME'),
       ],
     },
   ],
@@ -756,27 +765,23 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
     // Invalid SCREAMING_SNAKE_CASE examples - with Hungarian notation
     {
       code: 'const STR_API_KEY = "abc123";',
-      errors: [{ messageId: 'noHungarian', data: { name: 'STR_API_KEY' } }],
+      errors: [errorFor('STR_API_KEY')],
     },
     {
       code: 'const NUM_MAX_RETRY = 5;',
-      errors: [{ messageId: 'noHungarian', data: { name: 'NUM_MAX_RETRY' } }],
+      errors: [errorFor('NUM_MAX_RETRY')],
     },
     {
       code: 'const BOOL_IS_PRODUCTION = true;',
-      errors: [
-        { messageId: 'noHungarian', data: { name: 'BOOL_IS_PRODUCTION' } },
-      ],
+      errors: [errorFor('BOOL_IS_PRODUCTION')],
     },
     {
       code: 'const ARR_USER_ROLES = ["admin", "user", "guest"];',
-      errors: [{ messageId: 'noHungarian', data: { name: 'ARR_USER_ROLES' } }],
+      errors: [errorFor('ARR_USER_ROLES')],
     },
     {
       code: 'export const OBJ_DATABASE_CONFIG = { host: "localhost", port: 3306 };',
-      errors: [
-        { messageId: 'noHungarian', data: { name: 'OBJ_DATABASE_CONFIG' } },
-      ],
+      errors: [errorFor('OBJ_DATABASE_CONFIG')],
     },
     {
       code: `
@@ -786,9 +791,9 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
       }
       `,
       errors: [
-        { messageId: 'noHungarian', data: { name: 'ConfigClass' } },
-        { messageId: 'noHungarian', data: { name: 'INT_MAX_CONNECTIONS' } },
-        { messageId: 'noHungarian', data: { name: 'NUM_DEFAULT_TIMEOUT' } },
+        errorFor('ConfigClass'),
+        errorFor('INT_MAX_CONNECTIONS'),
+        errorFor('NUM_DEFAULT_TIMEOUT'),
       ],
     },
     {
@@ -798,29 +803,23 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
         return { mode: STR_ENV_MODE };
       }
       `,
-      errors: [{ messageId: 'noHungarian', data: { name: 'STR_ENV_MODE' } }],
+      errors: [errorFor('STR_ENV_MODE')],
     },
     {
       code: 'const API_KEY_STRING = "abc123";',
-      errors: [{ messageId: 'noHungarian', data: { name: 'API_KEY_STRING' } }],
+      errors: [errorFor('API_KEY_STRING')],
     },
     {
       code: 'const MAX_RETRY_NUMBER = 5;',
-      errors: [
-        { messageId: 'noHungarian', data: { name: 'MAX_RETRY_NUMBER' } },
-      ],
+      errors: [errorFor('MAX_RETRY_NUMBER')],
     },
     {
       code: 'const IS_PRODUCTION_BOOLEAN = true;',
-      errors: [
-        { messageId: 'noHungarian', data: { name: 'IS_PRODUCTION_BOOLEAN' } },
-      ],
+      errors: [errorFor('IS_PRODUCTION_BOOLEAN')],
     },
     {
       code: 'const USER_ROLES_ARRAY = ["admin", "user", "guest"];',
-      errors: [
-        { messageId: 'noHungarian', data: { name: 'USER_ROLES_ARRAY' } },
-      ],
+      errors: [errorFor('USER_ROLES_ARRAY')],
     },
     // Test cases for class methods and properties with Hungarian notation in SCREAMING_SNAKE_CASE
     {
@@ -839,10 +838,10 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
       }
       `,
       errors: [
-        { messageId: 'noHungarian', data: { name: 'GET_STR_API_KEY' } },
-        { messageId: 'noHungarian', data: { name: 'SET_NUM_MAX_RETRY' } },
-        { messageId: 'noHungarian', data: { name: 'ARR_ALLOWED_DOMAINS' } },
-        { messageId: 'noHungarian', data: { name: 'OBJ_DEFAULT_SETTINGS' } },
+        errorFor('GET_STR_API_KEY'),
+        errorFor('SET_NUM_MAX_RETRY'),
+        errorFor('ARR_ALLOWED_DOMAINS'),
+        errorFor('OBJ_DEFAULT_SETTINGS'),
       ],
     },
     {
@@ -858,51 +857,51 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
       }
       `,
       errors: [
-        { messageId: 'noHungarian', data: { name: 'STR_USERNAME' } },
-        { messageId: 'noHungarian', data: { name: 'NUM_ACCESS_LEVEL' } },
-        { messageId: 'noHungarian', data: { name: 'BOOL_IS_ACTIVE' } },
-        { messageId: 'noHungarian', data: { name: 'GET_STR_FULL_NAME' } },
+        errorFor('STR_USERNAME'),
+        errorFor('NUM_ACCESS_LEVEL'),
+        errorFor('BOOL_IS_ACTIVE'),
+        errorFor('GET_STR_FULL_NAME'),
       ],
     },
     // Type markers in the middle of camelCase names (word boundary with uppercase following)
     {
       code: 'const userStrName = "John";',
-      errors: [{ messageId: 'noHungarian', data: { name: 'userStrName' } }],
+      errors: [errorFor('userStrName')],
     },
     {
       code: 'const dataNumCount = 42;',
-      errors: [{ messageId: 'noHungarian', data: { name: 'dataNumCount' } }],
+      errors: [errorFor('dataNumCount')],
     },
     {
       code: 'const userBoolIsActive = true;',
       errors: [
-        { messageId: 'noHungarian', data: { name: 'userBoolIsActive' } },
+        errorFor('userBoolIsActive'),
       ],
     },
     {
       code: 'function getUserObjData() { return {}; }',
-      errors: [{ messageId: 'noHungarian', data: { name: 'getUserObjData' } }],
+      errors: [errorFor('getUserObjData')],
     },
     {
       code: 'const configArrOptions = [];',
       errors: [
-        { messageId: 'noHungarian', data: { name: 'configArrOptions' } },
+        errorFor('configArrOptions'),
       ],
     },
 
     // Type markers in the middle of SCREAMING_SNAKE_CASE names
     {
       code: 'const USER_STR_NAME = "John";',
-      errors: [{ messageId: 'noHungarian', data: { name: 'USER_STR_NAME' } }],
+      errors: [errorFor('USER_STR_NAME')],
     },
     {
       code: 'const DATA_NUM_COUNT = 42;',
-      errors: [{ messageId: 'noHungarian', data: { name: 'DATA_NUM_COUNT' } }],
+      errors: [errorFor('DATA_NUM_COUNT')],
     },
     {
       code: 'const CONFIG_OBJ_SETTINGS = {};',
       errors: [
-        { messageId: 'noHungarian', data: { name: 'CONFIG_OBJ_SETTINGS' } },
+        errorFor('CONFIG_OBJ_SETTINGS'),
       ],
     },
 
@@ -917,46 +916,46 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
       }
       `,
       errors: [
-        { messageId: 'noHungarian', data: { name: 'getUserStrName' } },
-        { messageId: 'noHungarian', data: { name: 'userNumAge' } },
+        errorFor('getUserStrName'),
+        errorFor('userNumAge'),
       ],
     },
 
     // PascalCase with type markers in the middle
     {
       code: 'class UserObjData {}',
-      errors: [{ messageId: 'noHungarian', data: { name: 'UserObjData' } }],
+      errors: [errorFor('UserObjData')],
     },
     {
       code: 'interface ConfigArrSettings {}',
       errors: [
-        { messageId: 'noHungarian', data: { name: 'ConfigArrSettings' } },
+        errorFor('ConfigArrSettings'),
       ],
     },
     {
       code: 'type UserStrName = string;',
-      errors: [{ messageId: 'noHungarian', data: { name: 'UserStrName' } }],
+      errors: [errorFor('UserStrName')],
     },
 
     // Full Words with Capitalization
     {
       code: 'const userStringName = "John";',
-      errors: [{ messageId: 'noHungarian', data: { name: 'userStringName' } }],
+      errors: [errorFor('userStringName')],
     },
     {
       code: 'const dataNumberCount = 42;',
-      errors: [{ messageId: 'noHungarian', data: { name: 'dataNumberCount' } }],
+      errors: [errorFor('dataNumberCount')],
     },
     {
       code: 'function getUserObjectData() { return {}; }',
       errors: [
-        { messageId: 'noHungarian', data: { name: 'getUserObjectData' } },
+        errorFor('getUserObjectData'),
       ],
     },
     {
       code: 'const configArrayOptions = [];',
       errors: [
-        { messageId: 'noHungarian', data: { name: 'configArrayOptions' } },
+        errorFor('configArrayOptions'),
       ],
     },
 
@@ -964,13 +963,13 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
     {
       code: 'const USER_STRING_NAME = "John";',
       errors: [
-        { messageId: 'noHungarian', data: { name: 'USER_STRING_NAME' } },
+        errorFor('USER_STRING_NAME'),
       ],
     },
     {
       code: 'const CONFIG_ARRAY_OPTIONS = [];',
       errors: [
-        { messageId: 'noHungarian', data: { name: 'CONFIG_ARRAY_OPTIONS' } },
+        errorFor('CONFIG_ARRAY_OPTIONS'),
       ],
     },
     {
@@ -983,7 +982,7 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
   
       const processor = createProcessor(param => param.toUpperCase());
       `,
-      errors: [{ messageId: 'noHungarian', data: { name: 'transformFn' } }],
+      errors: [errorFor('transformFn')],
     },
   ],
 });
