@@ -104,7 +104,7 @@ const unwrapArrayElementType = (
 /**
  * Derives a field label for diagnostics by walking ancestors.
  * Prefers TSPropertySignature keys and returns identifier or string/number/bigint literal keys when present.
- * Falls back to the surrounding TSTypeAliasDeclaration or TSInterfaceDeclaration name when no property key is available so declaration-level array types still surface a meaningful label in diagnostics.
+ * Falls back to the surrounding TSTypeAliasDeclaration or TSInterfaceDeclaration name when no property key is available so declaration-level array aliases (for example, `type Foo = Object[]`) still surface a meaningful label and avoid unlabeled diagnostics.
  * Returns a placeholder when resolution fails so downstream messaging remains readable.
  */
 const getFieldName = (node: TSESTree.Node): string => {
