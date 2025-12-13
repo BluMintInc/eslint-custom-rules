@@ -1,6 +1,15 @@
 import { keyOnlyOutermostElement } from '../rules/key-only-outermost-element';
 import { ruleTesterJsx } from '../utils/ruleTester';
 
+const nestedKeyError = (elementName: string) => ({
+  messageId: 'keyOnlyOutermostElement' as const,
+  data: { elementName },
+});
+
+const fragmentError = {
+  messageId: 'fragmentShouldHaveKey' as const,
+};
+
 ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
   valid: [
     // Basic valid case - key only on outermost element
@@ -178,7 +187,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
         </div>
       ))}
       `,
-      errors: [{ messageId: 'keyOnlyOutermostElement' }],
+      errors: [nestedKeyError('span')],
       output: `
       {items.map((item) => (
         <div key={item.id}>
@@ -198,10 +207,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
         </div>
       ))}
       `,
-      errors: [
-        { messageId: 'keyOnlyOutermostElement' },
-        { messageId: 'keyOnlyOutermostElement' },
-      ],
+      errors: [nestedKeyError('h3'), nestedKeyError('p')],
       output: `
       {items.map((item) => (
         <div key={item.id}>
@@ -222,11 +228,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
         </>
       ))}
       `,
-      errors: [
-        { messageId: 'fragmentShouldHaveKey' },
-        { messageId: 'keyOnlyOutermostElement' },
-        { messageId: 'keyOnlyOutermostElement' },
-      ],
+      errors: [fragmentError, nestedKeyError('h3'), nestedKeyError('p')],
       output: `
       {items.map((item) => (
         <>
@@ -251,7 +253,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
         </div>
       ))}
       `,
-      errors: [{ messageId: 'keyOnlyOutermostElement' }],
+      errors: [nestedKeyError('span')],
       output: `
       {categories.map((category) => (
         <div key={category.id}>
@@ -275,7 +277,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
         </div>
       ))}
       `,
-      errors: [{ messageId: 'keyOnlyOutermostElement' }],
+      errors: [nestedKeyError('p')],
       output: `
       {items.length > 0 && items.map((item) => (
         <div key={item.id}>
@@ -297,7 +299,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
           ))
       }
       `,
-      errors: [{ messageId: 'keyOnlyOutermostElement' }],
+      errors: [nestedKeyError('span')],
       output: `
       {isLoading
         ? <LoadingSpinner />
@@ -326,11 +328,11 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
       ))}
       `,
       errors: [
-        { messageId: 'keyOnlyOutermostElement' },
-        { messageId: 'keyOnlyOutermostElement' },
-        { messageId: 'keyOnlyOutermostElement' },
-        { messageId: 'keyOnlyOutermostElement' },
-        { messageId: 'keyOnlyOutermostElement' },
+        nestedKeyError('header'),
+        nestedKeyError('h2'),
+        nestedKeyError('button'),
+        nestedKeyError('section'),
+        nestedKeyError('p'),
       ],
       output: `
       {items.map((item) => (
@@ -356,7 +358,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
         </CustomComponent>
       ))}
       `,
-      errors: [{ messageId: 'keyOnlyOutermostElement' }],
+      errors: [nestedKeyError('div')],
       output: `
       {items.map((item) => (
         <CustomComponent key={item.id}>
@@ -389,10 +391,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
         ))}
       </div>
       `,
-      errors: [
-        { messageId: 'keyOnlyOutermostElement' },
-        { messageId: 'keyOnlyOutermostElement' },
-      ],
+      errors: [nestedKeyError('h3'), nestedKeyError('span')],
       output: `
       <div>
         {categories.map(category => (
@@ -428,7 +427,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
         );
       })}
       `,
-      errors: [{ messageId: 'keyOnlyOutermostElement' }],
+      errors: [nestedKeyError('div')],
       output: `
       {items.map((item) => {
         const Component = getComponentByType(item.type);
@@ -457,7 +456,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
             ))
       }
       `,
-      errors: [{ messageId: 'keyOnlyOutermostElement' }],
+      errors: [nestedKeyError('header')],
       output: `
       {isLoading
         ? <LoadingSpinner />
@@ -484,7 +483,7 @@ ruleTesterJsx.run('key-only-outermost-element', keyOnlyOutermostElement, {
         </>
       ))}
       `,
-      errors: [{ messageId: 'fragmentShouldHaveKey' }],
+      errors: [fragmentError],
       output: `
       {items.map((item) => (
         <>
