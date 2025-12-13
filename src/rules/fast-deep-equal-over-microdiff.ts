@@ -577,11 +577,11 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
           return;
         }
 
-        const result = isMicrodiffEqualityCheck(node.argument);
+        const result = isMicrodiffEqualityCheck(argument);
         if (result.isEquality !== undefined && result.diffCall) {
-          reportedNodes.add(node.argument);
+          reportedNodes.add(argument);
           context.report({
-            node: node.argument,
+            node: argument,
             messageId: 'useFastDeepEqual',
             data: {
               diffName: microdiffImportName,
@@ -591,7 +591,7 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
               // We already checked that node.argument is not null above
               return createFix(
                 fixer,
-                node.argument as TSESTree.Node,
+                argument,
                 result.diffCall!,
                 result.isEquality,
               );
