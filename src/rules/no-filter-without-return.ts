@@ -42,7 +42,7 @@ export const noFilterWithoutReturn: TSESLint.RuleModule<'unexpected', never[]> =
       schema: [],
       messages: {
         unexpected:
-          'Callback for {{filterCall}} uses braces but never returns a boolean, so filter receives undefined for every element and silently drops them all. Return the predicate result from inside the block (e.g., "return matches(item);") or use a concise arrow like {{filterCall}}((item) => matches(item)) to make the keep/remove condition explicit.',
+          'Callback for {{filterCall}} uses braces but never returns a value, so filter receives undefined for every element and silently drops them all. Return the predicate result from inside the block (e.g., "return matches(item);") or use a concise arrow like {{filterCall}}((item) => matches(item)) to make the keep/remove condition explicit.',
       },
     },
     defaultOptions: [],

@@ -11,10 +11,12 @@ This rule disallows `Array.filter` callbacks that use braces but never return a 
 `Array.filter` keeps an element only when the callback returns a truthy value. If the callback has a block body and does not return, the predicate always produces `undefined`, so the filtered array becomes empty even if the callback contains side effects like logging or metric collection. This rule ensures block-bodied callbacks return the boolean condition they mean to evaluate, or that you use a concise arrow for implicit returns.
 
 ### Why this matters
+
 - A missing `return` in a block-bodied predicate turns the filter into "drop everything," which is hard to notice because the callback still executes.
 - Explicitly returning the condition documents the keep/remove rule and avoids subtle bugs when the code later adds logic branches.
 
 ### How to fix
+
 - Add `return <condition>` inside the block.
 - Or switch to a concise arrow when the body is a single expression, e.g., `array.filter((item) => condition(item))`.
 
