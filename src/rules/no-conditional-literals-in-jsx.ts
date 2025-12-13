@@ -78,6 +78,12 @@ export const noConditionalLiteralsInJsx: TSESLint.RuleModule<
               ? logicalExpression.left
               : logicalExpression.right;
 
+          // Ignore logical expressions with two literals; there is no conditional
+          // context to surface and the message would be misleading.
+          if (conditionalNode.type === TSESTree.AST_NODE_TYPES.Literal) {
+            return;
+          }
+
           context.report({
             node,
             messageId: 'unexpected',

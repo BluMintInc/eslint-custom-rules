@@ -62,6 +62,12 @@ ruleTesterJsx.run(
         {conditional && variable}
       </div>
     )`,
+      // Logical expression with two literals should be ignored
+      `(
+      <div>
+        prefix {'foo' && 'bar'} suffix
+      </div>
+    )`,
     ],
   },
 );
