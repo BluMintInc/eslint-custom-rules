@@ -70,7 +70,7 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
       code: `import { mockFirebase } from 'firestore-jest-mock';`,
       filename: 'src/components/test.test.ts',
       errors: [expectedError],
-      output: `import { mockFirestore } from '../../__test-utils__/mockFirestore';`,
+      output: `import { mockFirestore as mockFirebase } from '../../__test-utils__/mockFirestore';`,
     },
     // Invalid: Direct import in deeper nested test file
     {
@@ -85,14 +85,14 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
           },
         },
       ],
-      output: `import { mockFirestore } from '../../../../../../__test-utils__/mockFirestore';`,
+      output: `import { mockFirestore as mockFirebase } from '../../../../../../__test-utils__/mockFirestore';`,
     },
     // Invalid: Multiple imports with aliases
     {
       code: `import { mockFirebase as myMock, mockSet as mySet } from 'firestore-jest-mock';`,
       filename: 'src/components/test.test.ts',
       errors: [expectedError],
-      output: `import { mockFirestore } from '../../__test-utils__/mockFirestore';`,
+      output: null,
     },
     // Invalid: jest.mock usage
     {
@@ -118,9 +118,7 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
             };`,
       filename: 'src/components/test.test.ts',
       errors: [expectedError],
-      output: `const mockFn = async () => {
-                const { mockFirestore: mockFirebase } = await import('../../__test-utils__/mockFirestore');
-            };`,
+      output: null,
     },
     // Invalid: Dynamic import with alias in test file
     {
@@ -147,9 +145,7 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
             import { useState } from 'react';`,
       filename: 'src/components/test.test.ts',
       errors: [expectedError],
-      output: `import { render } from '@testing-library/react';
-            import { mockFirestore } from '../../__test-utils__/mockFirestore';
-            import { useState } from 'react';`,
+      output: null,
     },
     // Invalid: Non-awaited dynamic import should still rewrite module path
     {
@@ -175,7 +171,7 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
             } from 'firestore-jest-mock';`,
       filename: 'src/components/test.test.ts',
       errors: [expectedError],
-      output: `import { mockFirestore } from '../../__test-utils__/mockFirestore';`,
+      output: null,
     },
     // Invalid: jest.mock with other configurations
     {

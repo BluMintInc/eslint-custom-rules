@@ -46,25 +46,61 @@ const buildDestructuringFix = (
   fixer: TSESLint.RuleFixer,
   pattern: TSESTree.ObjectPattern,
 ): TSESLint.RuleFix | null => {
-  for (const property of pattern.properties) {
-    if (property.type !== AST_NODE_TYPES.Property) continue;
-
-    const value =
-      property.value.type === AST_NODE_TYPES.AssignmentPattern
-        ? property.value.left
-        : property.value;
-    if (value.type !== AST_NODE_TYPES.Identifier) continue;
-
-    const localName = value.name;
-    const replacement =
-      localName === 'mockFirestore'
-        ? '{ mockFirestore }'
-        : `{ mockFirestore: ${localName} }`;
-
-    return fixer.replaceText(pattern, replacement);
+  if (pattern.properties.length !== 1) {
+    return null;
   }
 
-  return null;
+  const [property] = pattern.properties;
+  if (property.type !== AST_NODE_TYPES.Property) {
+    return null;
+  }
+
+  const value =
+    property.value.type === AST_NODE_TYPES.AssignmentPattern
+      ? property.value.left
+      : property.value;
+  if (value.type !== AST_NODE_TYPES.Identifier) {
+    return null;
+  }
+
+  const localName = value.name;
+  const replacement =
+    localName === 'mockFirestore'
+      ? '{ mockFirestore }'
+      : `{ mockFirestore: ${localName} }`;
+
+  return fixer.replaceText(pattern, replacement);
+};
+
+const buildImportDeclarationFix = (
+  node: TSESTree.ImportDeclaration,
+  replacementPath: string,
+): string | null => {
+  const nonTypeImportSpecifiers = node.specifiers.filter(
+    (specifier): specifier is TSESTree.ImportSpecifier =>
+      specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+      specifier.importKind !== 'type',
+  );
+
+  if (
+    nonTypeImportSpecifiers.length !== 1 ||
+    node.specifiers.some(
+      (specifier) =>
+        specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
+        specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier,
+    )
+  ) {
+    return null;
+  }
+
+  const [specifier] = nonTypeImportSpecifiers;
+  const localName = specifier.local.name;
+  const binding =
+    localName === 'mockFirestore'
+      ? 'mockFirestore'
+      : `mockFirestore as ${localName}`;
+
+  return `import { ${binding} } from '${replacementPath}';`;
 };
 
 export const noFirestoreJestMock = createRule<[], MessageIds>({
@@ -112,10 +148,16 @@ export const noFirestoreJestMock = createRule<[], MessageIds>({
             messageId: 'noFirestoreJestMock',
             data: reportData,
             fix: (fixer) => {
-              return fixer.replaceText(
+              const replacementImport = buildImportDeclarationFix(
                 node,
-                `import { mockFirestore } from '${replacementPath}';`,
+                replacementPath,
               );
+
+              if (!replacementImport) {
+                return null;
+              }
+
+              return fixer.replaceText(node, replacementImport);
             },
           });
         }
@@ -131,26 +173,25 @@ export const noFirestoreJestMock = createRule<[], MessageIds>({
             messageId: 'noFirestoreJestMock',
             data: reportData,
             fix: (fixer) => {
+              const destructuringFix =
+                variableDeclarator?.id.type === AST_NODE_TYPES.ObjectPattern
+                  ? buildDestructuringFix(fixer, variableDeclarator.id)
+                  : null;
+
+              // Avoid unsafe autofix when multiple bindings are destructured.
+              if (
+                variableDeclarator?.id.type === AST_NODE_TYPES.ObjectPattern &&
+                !destructuringFix
+              ) {
+                return null;
+              }
+
               const fixes = [
                 fixer.replaceText(node.source, `'${replacementPath}'`),
               ];
 
-              if (variableDeclarator?.id.type === AST_NODE_TYPES.ObjectPattern) {
-                const destructuringFix = buildDestructuringFix(
-                  fixer,
-                  variableDeclarator.id,
-                );
-
-                if (destructuringFix) {
-                  fixes.push(destructuringFix);
-                } else {
-                  fixes.push(
-                    fixer.replaceText(
-                      variableDeclarator.id,
-                      '{ mockFirestore }',
-                    ),
-                  );
-                }
+              if (destructuringFix) {
+                fixes.push(destructuringFix);
               }
 
               // Destructuring in promise chains (e.g., import().then(({ mockFirestore }) => {}))
