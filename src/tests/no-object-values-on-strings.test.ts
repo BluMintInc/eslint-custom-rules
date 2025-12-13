@@ -1,6 +1,22 @@
 import { noObjectValuesOnStrings } from '../rules/no-object-values-on-strings';
 import { ruleTesterTs } from '../utils/ruleTester';
 
+const unexpectedMessage = (argument: string) =>
+  `Object.values() receives string-like argument ${argument}. Strings are iterable, so Object.values returns one entry per character instead of object properties, which signals the argument is not an object. Pass an object (for example, a Record or Object.fromEntries(map)) to Object.values or use string helpers (split, spread, Array.from) to work with text.`;
+
+const unexpectedError = (argument: string) => ({
+  messageId: 'unexpected' as const,
+  data: { argument },
+});
+
+describe('no-object-values-on-strings messages', () => {
+  it('teaches why Object.values on strings is unsafe', () => {
+    expect(noObjectValuesOnStrings.meta.messages.unexpected).toBe(
+      unexpectedMessage('{{argument}}'),
+    );
+  });
+});
+
 ruleTesterTs.run('no-object-values-on-strings', noObjectValuesOnStrings, {
   valid: [
     // Basic valid cases - using Object.values on objects
@@ -69,131 +85,131 @@ ruleTesterTs.run('no-object-values-on-strings', noObjectValuesOnStrings, {
     // Basic invalid cases - using Object.values on strings
     {
       code: `Object.values("hello");`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [unexpectedError('"hello"')],
     },
     {
       code: `Object.values(\`template literal\`);`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [unexpectedError('`template literal`')],
     },
 
     // Function returning a string
     {
       code: `function getString() { return "hello"; } Object.values(getString());`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [unexpectedError('getString()')],
     },
 
     // Variable with string type
     {
       code: `const str: string = "hello"; Object.values(str);`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [unexpectedError('str')],
     },
 
     // String concatenation
     {
       code: `Object.values("hello" + " world");`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [unexpectedError('"hello" + " world"')],
     },
 
     // Template literal with expressions
     {
       code: `const name = "world"; Object.values(\`hello \${name}\`);`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [unexpectedError('`hello ${name}`')],
     },
 
     // String from a method call
     {
       code: `Object.values("hello".toUpperCase());`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [unexpectedError('"hello".toUpperCase()')],
     },
 
     // String from a complex expression
     {
       code: `Object.values(["a", "b", "c"].join(""));`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [unexpectedError('["a", "b", "c"].join("")')],
     },
 
     // String from JSON.stringify
     {
       code: `Object.values(JSON.stringify({ a: 1 }));`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [unexpectedError('JSON.stringify({ a: 1 })')],
     },
 
     // String from a conditional expression
     {
       code: `Object.values(Math.random() > 0.5 ? "yes" : "no");`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [unexpectedError('Math.random() > 0.5 ? "yes" : "no"')],
     },
 
     // String from a function with multiple return types including string - simplified
     {
       code: `const getStringOrObject = (): string => "hello"; Object.values(getStringOrObject());`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [unexpectedError('getStringOrObject()')],
     },
 
     // String from a parameter with string type
     {
       code: `function processValue(value: string) { return Object.values(value); }`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [unexpectedError('value')],
     },
 
     // String from a parameter with union type including string - simplified
     {
       code: `const value: string = "hello"; Object.values(value);`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [unexpectedError('value')],
     },
 
     // String from a generic function without proper constraints
     {
       code: `function getValues<T>(input: T) { return Object.values(input); } getValues("hello");`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [unexpectedError('input')],
     },
 
     // String from a type assertion
     {
       code: `const someValue: any = "hello"; Object.values(someValue as string);`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [unexpectedError('someValue as string')],
     },
 
     // String from a complex nested expression
     {
       code: `const getStr = () => "hello"; Object.values(getStr());`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [unexpectedError('getStr()')],
     },
 
     // String from a library function (simulated)
     {
       code: `declare function getLibraryValue(): string; Object.values(getLibraryValue());`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [unexpectedError('getLibraryValue()')],
     },
 
     // String from a Promise resolution - simplified
     {
       code: `const str: string = "hello"; Object.values(str);`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [unexpectedError('str')],
     },
 
     // String from a destructured parameter
     {
       code: `function test({ text }: { text: string }) { return Object.values(text); }`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [unexpectedError('text')],
     },
 
     // String from a default parameter
     {
       code: `function test(text = "default") { return Object.values(text); }`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [unexpectedError('text')],
     },
 
     // String from a class property
     {
       code: `class Test { text = "hello"; method() { return Object.values(this.text); } }`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [unexpectedError('this.text')],
     },
 
     // String from a complex object property access
     {
       code: `const obj = { nested: { text: "hello" } }; Object.values(obj.nested.text);`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [unexpectedError('obj.nested.text')],
     },
   ],
 });
