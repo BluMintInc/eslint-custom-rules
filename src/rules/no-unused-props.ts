@@ -231,6 +231,9 @@ export const noUnusedProps = createRule({
             typeNode: TSESTree.TypeNode,
             shouldInclude: (name: string) => boolean = () => true,
           ): boolean => {
+            // Tracks type identifiers while descending to avoid infinite recursion on
+            // self-referential or mutually recursive type aliases; names are removed
+            // in the finally block so parallel branches still run.
             const visitingTypeNames = new Set<string>();
 
             const visit = (node: TSESTree.TypeNode): boolean => {

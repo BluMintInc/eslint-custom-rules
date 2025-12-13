@@ -14,6 +14,11 @@ type Options = [
 
 type MessageIds = 'moveJsdocAbove';
 
+type FieldNode =
+  | TSESTree.TSPropertySignature
+  | TSESTree.PropertyDefinition
+  | TSESTree.Property;
+
 const defaultOptions: Options = [{ checkObjectLiterals: false }];
 
 export const jsdocAboveField = createRule<Options, MessageIds>({
@@ -53,12 +58,7 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
     const { checkObjectLiterals = false } = options;
     const allComments = sourceCode.getAllComments();
 
-    const isRelevantNode = (
-      node: TSESTree.Node,
-    ): node is
-      | TSESTree.TSPropertySignature
-      | TSESTree.PropertyDefinition
-      | TSESTree.Property => {
+    const isRelevantNode = (node: TSESTree.Node): node is FieldNode => {
       if (node.type === AST_NODE_TYPES.TSPropertySignature) {
         return true;
       }
@@ -81,12 +81,7 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
     const isJSDocBlock = (comment: TSESTree.Comment): boolean =>
       comment.type === 'Block' && comment.value.startsWith('*');
 
-    const getPropertyName = (
-      node:
-        | TSESTree.TSPropertySignature
-        | TSESTree.PropertyDefinition
-        | TSESTree.Property,
-    ): string => {
+    const getPropertyName = (node: FieldNode): string => {
       const key = node.key;
 
       if (key.type === AST_NODE_TYPES.Identifier) {
@@ -103,12 +98,7 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
       return 'property';
     };
 
-    const getKind = (
-      node:
-        | TSESTree.TSPropertySignature
-        | TSESTree.PropertyDefinition
-        | TSESTree.Property,
-    ): string => {
+    const getKind = (node: FieldNode): string => {
       if (node.type === AST_NODE_TYPES.PropertyDefinition) {
         return 'class field';
       }
@@ -121,10 +111,7 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
     };
 
     const inlineJSDocOnSameLine = (
-      node:
-        | TSESTree.TSPropertySignature
-        | TSESTree.PropertyDefinition
-        | TSESTree.Property,
+      node: FieldNode,
     ): TSESTree.Comment | undefined => {
       return allComments.find((comment) => {
         if (!isJSDocBlock(comment)) {
@@ -168,13 +155,7 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
         .join('\n');
     };
 
-    const reportInlineJSDoc = (
-      node:
-        | TSESTree.TSPropertySignature
-        | TSESTree.PropertyDefinition
-        | TSESTree.Property,
-      comment: TSESTree.Comment,
-    ) => {
+    const reportInlineJSDoc = (node: FieldNode, comment: TSESTree.Comment) => {
       const insertTarget =
         node.type === AST_NODE_TYPES.PropertyDefinition &&
         node.decorators &&

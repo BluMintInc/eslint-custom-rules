@@ -358,12 +358,52 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                                   ),
                                 );
                               } else {
-                                fixes.push(
-                                  fixer.insertTextBeforeRange(
-                                    [0, 0],
-                                    importText,
-                                  ),
-                                );
+                                const { body } = sourceCode.ast;
+                                let firstNonDirective:
+                                  | TSESTree.Statement
+                                  | undefined;
+                                let lastDirective:
+                                  | TSESTree.ExpressionStatement
+                                  | undefined;
+
+                                for (const stmt of body) {
+                                  if (
+                                    stmt.type ===
+                                      AST_NODE_TYPES.ExpressionStatement &&
+                                    stmt.expression.type ===
+                                      AST_NODE_TYPES.Literal &&
+                                    typeof stmt.expression.value === 'string' &&
+                                    typeof stmt.directive === 'string'
+                                  ) {
+                                    lastDirective = stmt;
+                                    continue;
+                                  }
+                                  firstNonDirective = stmt;
+                                  break;
+                                }
+
+                                if (firstNonDirective) {
+                                  fixes.push(
+                                    fixer.insertTextBefore(
+                                      firstNonDirective,
+                                      importText,
+                                    ),
+                                  );
+                                } else if (lastDirective) {
+                                  fixes.push(
+                                    fixer.insertTextAfter(
+                                      lastDirective,
+                                      `\n${importText}`,
+                                    ),
+                                  );
+                                } else {
+                                  fixes.push(
+                                    fixer.insertTextBeforeRange(
+                                      [0, 0],
+                                      importText,
+                                    ),
+                                  );
+                                }
                               }
                             }
 
