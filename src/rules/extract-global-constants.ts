@@ -158,27 +158,53 @@ export const extractGlobalConstants: TSESLint.RuleModule<
           return;
         }
 
-        // Skip if any of the declarations are function definitions or mutable values
-        if (
-          node.declarations.some(
-            (d) => isFunctionDefinition(d.init) || isMutableValue(d.init),
-          )
-        ) {
+        const declarations = node.declarations.filter(
+          (declaration): declaration is TSESTree.VariableDeclarator =>
+            declaration !== null && declaration !== undefined,
+        );
+
+        if (declarations.length === 0) {
+          return;
+        }
+
+        let hasFunctionOrMutableValue = false;
+        let hasDependencies = false;
+        let hasAsConstAssertion = false;
+        let hasIdentifierDeclaration = false;
+
+        for (const declaration of declarations) {
+          const init = declaration.init ?? null;
+
+          if (isFunctionDefinition(init) || isMutableValue(init)) {
+            hasFunctionOrMutableValue = true;
+            break;
+          }
+
+          if (!hasDependencies && init) {
+            hasDependencies = ASTHelpers.declarationIncludesIdentifier(init);
+          }
+
+          if (!hasAsConstAssertion && init) {
+            hasAsConstAssertion = isAsConstExpression(init);
+          }
+
+          if (
+            !hasIdentifierDeclaration &&
+            declaration.id?.type === AST_NODE_TYPES.Identifier
+          ) {
+            hasIdentifierDeclaration = true;
+          }
+
+          if (hasDependencies && hasAsConstAssertion && hasIdentifierDeclaration) {
+            continue;
+          }
+        }
+
+        if (hasFunctionOrMutableValue) {
           return;
         }
 
         const scope = context.getScope();
-        const hasDependencies = node.declarations.some(
-          (declaration) =>
-            declaration.init &&
-            ASTHelpers.declarationIncludesIdentifier(declaration.init),
-        );
-
-        // Skip constants with 'as const' type assertions used in loops
-        const hasAsConstAssertion = node.declarations.some(
-          (declaration) =>
-            declaration.init && isAsConstExpression(declaration.init),
-        );
 
         // Only check function/block scoped constants without dependencies
         if (
@@ -186,13 +212,13 @@ export const extractGlobalConstants: TSESLint.RuleModule<
           !hasAsConstAssertion &&
           (scope.type === 'function' || scope.type === 'block') &&
           isInsideFunction(node) &&
-          node.declarations.some((d) => d.id.type === 'Identifier')
+          hasIdentifierDeclaration
         ) {
-          for (const d of node.declarations) {
-            if (d.id.type !== 'Identifier') continue;
-            const constName = d.id.name;
+          for (const declaration of declarations) {
+            if (declaration.id?.type !== AST_NODE_TYPES.Identifier) continue;
+            const constName = declaration.id.name;
             context.report({
-              node: d,
+              node: declaration,
               messageId: 'extractGlobalConstants',
               data: { declarationName: constName },
             });
