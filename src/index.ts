@@ -134,6 +134,7 @@ import { noArrayLengthInDeps } from './rules/no-array-length-in-deps';
 import { preferUseDeepCompareMemo } from './rules/prefer-use-deep-compare-memo';
 import { noCircularReferences } from './rules/no-circular-references';
 import { noPassthroughGetters } from './rules/no-passthrough-getters';
+import { noCurlyBracketsAroundCommentedProperties } from './rules/no-curly-brackets-around-commented-properties';
 import { noTryCatchAlreadyExistsInTransaction } from './rules/no-try-catch-already-exists-in-transaction';
 import { enforceTransformMemoization } from './rules/enforce-transform-memoization';
 import { verticallyGroupRelatedFunctions } from './rules/vertically-group-related-functions';
@@ -292,6 +293,8 @@ module.exports = {
         '@blumintinc/blumint/no-circular-references': 'error',
         '@blumintinc/blumint/no-try-catch-already-exists-in-transaction':
           'error',
+        '@blumintinc/blumint/no-curly-brackets-around-commented-properties':
+          'error',
         '@blumintinc/blumint/no-passthrough-getters': 'error',
         '@blumintinc/blumint/vertically-group-related-functions': 'error',
         '@blumintinc/blumint/no-static-constants-in-dynamic-files': 'error',
@@ -447,6 +450,8 @@ module.exports = {
     'no-circular-references': noCircularReferences,
     'no-try-catch-already-exists-in-transaction':
       noTryCatchAlreadyExistsInTransaction,
+    'no-curly-brackets-around-commented-properties':
+      noCurlyBracketsAroundCommentedProperties,
     'no-passthrough-getters': noPassthroughGetters,
     'vertically-group-related-functions': verticallyGroupRelatedFunctions,
     'no-static-constants-in-dynamic-files': noStaticConstantsInDynamicFiles,
