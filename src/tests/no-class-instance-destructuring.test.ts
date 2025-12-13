@@ -46,7 +46,16 @@ ruleTesterTs.run(
         const example = new Example();
         const { getName } = example;
       `,
-        errors: [{ messageId: 'noClassInstanceDestructuring' }],
+        errors: [
+          {
+            messageId: 'noClassInstanceDestructuring',
+            data: {
+              instance: '`example`',
+              members: '`getName`',
+              suggestion: '`example.getName`',
+            },
+          },
+        ],
         output: `
         class Example {
           getName() {
@@ -55,6 +64,38 @@ ruleTesterTs.run(
         }
         const example = new Example();
         const getName = example.getName;
+      `,
+      },
+      {
+        code: `
+        class Example {
+          constructor(map) {
+            this.map = map;
+          }
+        }
+        const key = 'value';
+        const example = new Example({ value: 1 });
+        const { [key]: selected } = example;
+      `,
+        errors: [
+          {
+            messageId: 'noClassInstanceDestructuring',
+            data: {
+              instance: '`example`',
+              members: '`[key]`',
+              suggestion: '`example[key]`',
+            },
+          },
+        ],
+        output: `
+        class Example {
+          constructor(map) {
+            this.map = map;
+          }
+        }
+        const key = 'value';
+        const example = new Example({ value: 1 });
+        const selected = example[key];
       `,
       },
       {
@@ -70,7 +111,16 @@ ruleTesterTs.run(
         const bracketChunker = new BracketChunker(data);
         const { cohorts } = bracketChunker;
       `,
-        errors: [{ messageId: 'noClassInstanceDestructuring' }],
+        errors: [
+          {
+            messageId: 'noClassInstanceDestructuring',
+            data: {
+              instance: '`bracketChunker`',
+              members: '`cohorts`',
+              suggestion: '`bracketChunker.cohorts`',
+            },
+          },
+        ],
         output: `
         class BracketChunker {
           constructor(data) {
@@ -88,7 +138,16 @@ ruleTesterTs.run(
         code: `
         const { cohorts } = new BracketChunker(data);
       `,
-        errors: [{ messageId: 'noClassInstanceDestructuring' }],
+        errors: [
+          {
+            messageId: 'noClassInstanceDestructuring',
+            data: {
+              instance: '`new BracketChunker(data)`',
+              members: '`cohorts`',
+              suggestion: '`new BracketChunker(data).cohorts`',
+            },
+          },
+        ],
         output: `
         const cohorts = new BracketChunker(data).cohorts;
       `,
@@ -110,7 +169,16 @@ ruleTesterTs.run(
         const example = new Example();
         const { getName, getAge } = example;
       `,
-        errors: [{ messageId: 'noClassInstanceDestructuring' }],
+        errors: [
+          {
+            messageId: 'noClassInstanceDestructuring',
+            data: {
+              instance: '`example`',
+              members: '`getName`, `getAge`',
+              suggestion: '`example.getName`, `example.getAge`',
+            },
+          },
+        ],
         output: `
         class Example {
           constructor() {
@@ -133,7 +201,17 @@ const getAge = example.getAge;
         code: `
         const { name, age } = new Person('John', 30);
       `,
-        errors: [{ messageId: 'noClassInstanceDestructuring' }],
+        errors: [
+          {
+            messageId: 'noClassInstanceDestructuring',
+            data: {
+              instance: '`new Person(\'John\', 30)`',
+              members: '`name`, `age`',
+              suggestion:
+                '`new Person(\'John\', 30).name`, `new Person(\'John\', 30).age`',
+            },
+          },
+        ],
         output: `
         const name = new Person('John', 30).name;
 const age = new Person('John', 30).age;
@@ -151,7 +229,16 @@ const age = new Person('John', 30).age;
         const holder = new DataHolder({ value: 42, type: 'number' });
         const { value, type } = holder;
       `,
-        errors: [{ messageId: 'noClassInstanceDestructuring' }],
+        errors: [
+          {
+            messageId: 'noClassInstanceDestructuring',
+            data: {
+              instance: '`holder`',
+              members: '`value`, `type`',
+              suggestion: '`holder.value`, `holder.type`',
+            },
+          },
+        ],
         output: `
         class DataHolder {
           constructor(data) {
