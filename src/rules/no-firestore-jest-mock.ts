@@ -79,19 +79,51 @@ export const noFirestoreJestMock = createRule<[], MessageIds>({
           node.source.type === AST_NODE_TYPES.Literal &&
           node.source.value === FIRESTORE_JEST_MOCK
         ) {
+          const variableDeclarator =
+            node.parent?.type === AST_NODE_TYPES.AwaitExpression &&
+            node.parent.parent?.type === AST_NODE_TYPES.VariableDeclarator
+              ? node.parent.parent
+              : null;
           context.report({
             node,
             messageId: 'noFirestoreJestMock',
             data: reportData,
             fix: (fixer) => {
-              if (node.source.type !== AST_NODE_TYPES.Literal) {
-                return null;
+              const fixes = [
+                fixer.replaceText(node.source, `'${replacementPath}'`),
+              ];
+
+              if (
+                variableDeclarator &&
+                variableDeclarator.id.type === AST_NODE_TYPES.ObjectPattern
+              ) {
+                const [firstProperty] = variableDeclarator.id.properties;
+
+                if (
+                  firstProperty &&
+                  firstProperty.type === AST_NODE_TYPES.Property &&
+                  firstProperty.value.type === AST_NODE_TYPES.Identifier
+                ) {
+                  const bindingName = firstProperty.value.name;
+                  const patternText =
+                    bindingName === 'mockFirestore'
+                      ? '{ mockFirestore }'
+                      : `{ mockFirestore: ${bindingName} }`;
+
+                  fixes.push(
+                    fixer.replaceText(variableDeclarator.id, patternText),
+                  );
+                } else {
+                  fixes.push(
+                    fixer.replaceText(
+                      variableDeclarator.id,
+                      '{ mockFirestore }',
+                    ),
+                  );
+                }
               }
 
-              return fixer.replaceText(
-                node.source,
-                `'${replacementPath}'`,
-              );
+              return fixes;
             },
           });
         }
