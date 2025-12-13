@@ -76,6 +76,18 @@ export const noUnusedProps = createRule({
     ): node is TSESTree.TSTypeAliasDeclaration =>
       node?.type === AST_NODE_TYPES.TSTypeAliasDeclaration;
 
+    const findTypeAliasDeclaration = (
+      typeName: string,
+    ): TSESTree.TSTypeAliasDeclaration | null => {
+      const scope = context.getScope();
+      const variable = scope.variables.find((v) => v.name === typeName);
+      const typeAliasDef = variable?.defs.find(
+        (def) => def.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration,
+      );
+      const typeAliasNode = typeAliasDef?.node;
+      return isTypeAliasDeclaration(typeAliasNode) ? typeAliasNode : null;
+    };
+
     const propsTypes: Map<string, Record<string, TSESTree.Node>> = new Map();
     const componentToReferencedSpreadTypeNames: Map<
       string,
@@ -332,25 +344,12 @@ export const noUnusedProps = createRule({
                       visitingTypeNames,
                       typeIdentifier.name,
                       () => {
-                        const scope = context.getScope();
-                        const variable = scope.variables.find(
-                          (v) => v.name === typeIdentifier.name,
+                        const typeAliasNode = findTypeAliasDeclaration(
+                          typeIdentifier.name,
                         );
-                        const typeAliasDef = variable?.defs.find(
-                          (def) =>
-                            def.node.type ===
-                            AST_NODE_TYPES.TSTypeAliasDeclaration,
-                        );
-                        const typeAliasNode = typeAliasDef?.node;
-                        const typeAliasAnnotation = isTypeAliasDeclaration(
-                          typeAliasNode,
-                        )
-                          ? typeAliasNode.typeAnnotation
-                          : null;
-                        if (typeAliasAnnotation) {
-                          return visit(typeAliasAnnotation);
-                        }
-                        return false;
+                        return typeAliasNode
+                          ? visit(typeAliasNode.typeAnnotation)
+                          : false;
                       },
                     ) ?? false
                   );
@@ -515,27 +514,15 @@ export const noUnusedProps = createRule({
                       handleOmitType(baseType, omittedProps);
                     } else {
                       // For referenced types in intersections, we need to find their type declaration
-                      const scope = context.getScope();
-                      const variable = scope.variables.find(
-                        (v) => v.name === typeName.name,
+                      const typeAliasNode = findTypeAliasDeclaration(
+                        typeName.name,
                       );
-                      const typeAliasDef = variable?.defs.find(
-                        (def) =>
-                          def.node.type ===
-                          AST_NODE_TYPES.TSTypeAliasDeclaration,
-                      );
-                      const typeAliasNode = typeAliasDef?.node;
-                      const typeAliasAnnotation = isTypeAliasDeclaration(
-                        typeAliasNode,
-                      )
-                        ? typeAliasNode.typeAnnotation
-                        : null;
-                      if (typeAliasAnnotation) {
+                      if (typeAliasNode) {
                         withTypeVisitation(
                           visitingTypeReferences,
                           typeName.name,
                           () => {
-                            extractProps(typeAliasAnnotation);
+                            extractProps(typeAliasNode.typeAnnotation);
                           },
                         );
                       } else {
@@ -635,23 +622,10 @@ export const noUnusedProps = createRule({
                   ) {
                     const baseTypeName = baseType.typeName.name;
 
-                    // Find the base type definition
-                    const scope = context.getScope();
-                    const variable = scope.variables.find(
-                      (v) => v.name === baseTypeName,
-                    );
-                    const typeAliasDef = variable?.defs.find(
-                      (def) =>
-                        def.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration,
-                    );
-
-                    if (
-                      typeAliasDef?.node.type ===
-                      AST_NODE_TYPES.TSTypeAliasDeclaration
-                    ) {
+                    const typeAliasNode =
+                      findTypeAliasDeclaration(baseTypeName);
+                    if (typeAliasNode) {
                       // For Partial<T>, Required<T>, etc., add all properties from the base type
-                      const typeAliasNode: TSESTree.TSTypeAliasDeclaration =
-                        typeAliasDef.node as TSESTree.TSTypeAliasDeclaration;
                       const added = addBaseTypeProps(
                         typeAliasNode.typeAnnotation,
                       );
