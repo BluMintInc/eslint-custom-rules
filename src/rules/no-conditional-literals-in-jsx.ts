@@ -18,7 +18,9 @@ export const noConditionalLiteralsInJsx: TSESLint.RuleModule<
     schema: [],
     messages: {
       unexpected:
-        'Conditional text literal {{literal}} is rendered next to other JSX text or expressions under condition {{condition}}. Splitting a sentence across conditional strings creates fragmented text nodes that confuse browser translation and can trigger React hydration mismatches. Wrap the conditional literal in its own element (for example, <span>{ {{expression}} }</span>) or move the entire sentence inside the conditional so it renders as a single text node.',
+        "What's wrong: Conditional text literal {{literal}} is rendered next to other JSX text or expressions under condition {{condition}}. " +
+        'Why it matters: Fragmented text nodes confuse translation/i18n tools and can trigger React hydration mismatches when server and client group the text differently. ' +
+        'How to fix: Wrap the conditional literal in its own element (for example, <span>{ {{expression}} }</span>) or move the entire sentence inside the conditional so it renders as a single text node.',
     },
   },
   defaultOptions: [],
@@ -78,8 +80,20 @@ export const noConditionalLiteralsInJsx: TSESLint.RuleModule<
               ? logicalExpression.left
               : logicalExpression.right;
 
-          // Ignore logical expressions with two literals; there is no conditional
-          // context to surface and the message would be misleading.
+          if (literalNode.type !== TSESTree.AST_NODE_TYPES.Literal) {
+            return;
+          }
+
+          // Only enforce for string literals to avoid misleading messages for
+          // numeric or boolean literals rendered conditionally.
+          if (typeof literalNode.value !== 'string') {
+            return;
+          }
+
+          /**
+           * Ignore logical expressions with two literals; there is no conditional
+           * context to surface and the message would be misleading.
+           */
           if (conditionalNode.type === TSESTree.AST_NODE_TYPES.Literal) {
             return;
           }

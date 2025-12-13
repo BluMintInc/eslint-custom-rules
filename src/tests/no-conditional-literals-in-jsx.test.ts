@@ -62,6 +62,12 @@ ruleTesterJsx.run(
         {conditional && variable}
       </div>
     )`,
+      // Conditional rendering of non-string literal should be ignored
+      `(
+      <div>
+        {conditional && 0}
+      </div>
+    )`,
       // Logical expression with two literals should be ignored
       `(
       <div>
