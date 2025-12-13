@@ -120,6 +120,24 @@ interface Account {
       errors: [{ messageId: 'moveJsdocAbove' }],
     },
     {
+      code: `type Example = {
+  value: string; /**
+   * @example
+   *   const x = 1;
+   *     const y = 2;
+   */
+};`,
+      output: `type Example = {
+  /**
+   * @example
+   *   const x = 1;
+   *     const y = 2;
+   */
+  value: string;
+};`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
       code: `class User {
   @Column()
   private readonly email?: string; /** @remarks must be lowercase */

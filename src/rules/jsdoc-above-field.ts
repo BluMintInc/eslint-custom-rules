@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 
 import { createRule } from '../utils/createRule';
 
@@ -52,9 +52,7 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
   },
   defaultOptions,
   create(context, [options = defaultOptions[0]]) {
-    const sourceCode =
-      (context as unknown as { sourceCode?: TSESLint.SourceCode }).sourceCode ??
-      context.getSourceCode();
+    const sourceCode = context.getSourceCode();
     const { checkObjectLiterals = false } = options;
     const allComments = sourceCode.getAllComments();
 
@@ -144,15 +142,57 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
       comment: TSESTree.Comment,
       indent: string,
     ): string => {
-      const raw = sourceCode
-        .getText(comment)
-        // Strip inline indentation so we can re-indent cleanly.
-        .replace(/\n\s*\*/g, '\n *');
+      const rawLines = sourceCode.getText(comment).split('\n');
+      let minIndentAfterStar: number | undefined;
 
-      return raw
-        .split('\n')
-        .map((line) => `${indent}${line}`)
-        .join('\n');
+      rawLines.slice(1).forEach((line) => {
+        const starMatch = line.match(/^\s*\*(.*)$/);
+        if (!starMatch) {
+          return;
+        }
+        const afterStar = starMatch[1];
+        const contentIndent = afterStar.match(/^([ \t]*)\S/);
+        if (contentIndent) {
+          const indentLength = contentIndent[1].length;
+          minIndentAfterStar =
+            minIndentAfterStar === undefined
+              ? indentLength
+              : Math.min(minIndentAfterStar, indentLength);
+        }
+      });
+
+      const indentToRemove = minIndentAfterStar ?? 0;
+      const stripIndent = (text: string) =>
+        indentToRemove === 0
+          ? text
+          : text.replace(new RegExp(`^[ \\t]{0,${indentToRemove}}`), '');
+
+      const normalizedLines = rawLines.map((line, index) => {
+        if (index === 0) {
+          return line.trimStart();
+        }
+
+        const starMatch = line.match(/^\s*\*(.*)$/);
+        if (!starMatch) {
+          return line.trimStart();
+        }
+
+        const afterStar = stripIndent(starMatch[1]);
+        if (afterStar.trim() === '/') {
+          return ' */';
+        }
+        if (afterStar.trim() === '') {
+          return ' *';
+        }
+
+        const needsSpace =
+          !afterStar.startsWith(' ') && !afterStar.startsWith('\t');
+        const content = needsSpace ? ` ${afterStar}` : afterStar;
+
+        return ` *${content}`;
+      });
+
+      return normalizedLines.map((line) => `${indent}${line}`).join('\n');
     };
 
     const reportInlineJSDoc = (node: FieldNode, comment: TSESTree.Comment) => {

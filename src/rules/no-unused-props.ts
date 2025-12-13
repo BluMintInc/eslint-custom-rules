@@ -245,12 +245,23 @@ export const noUnusedProps = createRule({
                 case AST_NODE_TYPES.TSTypeLiteral: {
                   let added = false;
                   node.members.forEach((member) => {
+                    if (member.type !== AST_NODE_TYPES.TSPropertySignature) {
+                      return;
+                    }
                     if (
-                      member.type === AST_NODE_TYPES.TSPropertySignature &&
-                      member.key.type === AST_NODE_TYPES.Identifier &&
-                      shouldInclude(member.key.name)
+                      member.key.type !== AST_NODE_TYPES.Identifier &&
+                      member.key.type !== AST_NODE_TYPES.Literal
                     ) {
-                      props[member.key.name] = member.key;
+                      return;
+                    }
+                    const propName =
+                      member.key.type === AST_NODE_TYPES.Identifier
+                        ? member.key.name
+                        : typeof member.key.value === 'string'
+                          ? member.key.value
+                          : null;
+                    if (propName && shouldInclude(propName)) {
+                      props[propName] = member.key;
                       added = true;
                     }
                   });
@@ -390,9 +401,18 @@ export const noUnusedProps = createRule({
               typeNode.members.forEach((member) => {
                 if (
                   member.type === AST_NODE_TYPES.TSPropertySignature &&
-                  member.key.type === AST_NODE_TYPES.Identifier
+                  (member.key.type === AST_NODE_TYPES.Identifier ||
+                    member.key.type === AST_NODE_TYPES.Literal)
                 ) {
-                  props[member.key.name] = member.key;
+                  const propName =
+                    member.key.type === AST_NODE_TYPES.Identifier
+                      ? member.key.name
+                      : typeof member.key.value === 'string'
+                        ? member.key.value
+                        : null;
+                  if (propName) {
+                    props[propName] = member.key;
+                  }
                 }
               });
             } else if (typeNode.type === AST_NODE_TYPES.TSIntersectionType) {
@@ -622,11 +642,9 @@ export const noUnusedProps = createRule({
           for (const [spreadType, propNames] of Object.entries(
             spreadTypeProps,
           )) {
-            if (!spreadTypeToPropNames.has(spreadType)) {
-              spreadTypeToPropNames.set(spreadType, new Set());
-            }
-
-            const spreadTypeSet = spreadTypeToPropNames.get(spreadType)!;
+          const spreadTypeSet =
+            spreadTypeToPropNames.get(spreadType) ?? new Set<string>();
+          spreadTypeToPropNames.set(spreadType, spreadTypeSet);
             propNames.forEach((prop) => spreadTypeSet.add(prop));
           }
         } finally {
@@ -656,9 +674,18 @@ export const noUnusedProps = createRule({
                 param.properties.forEach((prop) => {
                   if (
                     prop.type === AST_NODE_TYPES.Property &&
-                    prop.key.type === AST_NODE_TYPES.Identifier
+                    (prop.key.type === AST_NODE_TYPES.Identifier ||
+                      prop.key.type === AST_NODE_TYPES.Literal)
                   ) {
-                    used.add(prop.key.name);
+                    const propName =
+                      prop.key.type === AST_NODE_TYPES.Identifier
+                        ? prop.key.name
+                        : typeof prop.key.value === 'string'
+                          ? prop.key.value
+                          : null;
+                    if (propName) {
+                      used.add(propName);
+                    }
                   } else if (
                     prop.type === AST_NODE_TYPES.RestElement &&
                     prop.argument.type === AST_NODE_TYPES.Identifier

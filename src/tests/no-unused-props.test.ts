@@ -223,6 +223,20 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         sourceType: 'module',
       },
     },
+    {
+      code: `
+        type Props = { 'data-testid': string; label: string };
+        const Component = ({ label, 'data-testid': dataTestId }: Props) => (
+          <div data-testid={dataTestId}>{label}</div>
+        );
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
   ],
   invalid: [
     {
@@ -235,6 +249,25 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
           messageId: 'unusedProp',
           data: { propName: 'subtitle' },
           type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type Props = { 'data-testid': string; label: string };
+        const Component = ({ label }: Props) => <div>{label}</div>;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'data-testid' },
+          type: AST_NODE_TYPES.Literal,
         },
       ],
       filename: 'test.tsx',
