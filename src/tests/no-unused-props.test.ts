@@ -411,5 +411,26 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         sourceType: 'module',
       },
     },
+    {
+      code: `
+        type BaseProps = () => void;
+        type Props = Omit<BaseProps, 'a'> & Omit<BaseProps, 'b'>;
+
+        const Component = (props: Props) => <div />;
+      `,
+      errors: [
+        {
+          messageId: 'unsupportedPropsShape',
+          data: { typeName: 'BaseProps', actualType: 'function type' },
+          type: AST_NODE_TYPES.TSFunctionType,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
   ],
 });

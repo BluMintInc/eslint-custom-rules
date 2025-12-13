@@ -1,5 +1,128 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+
+type CollectResult = { added: boolean; fullySupported: boolean };
+
+type CollectFn = (
+  node: TSESTree.TypeNode,
+  includePredicate: (name: string) => boolean,
+) => CollectResult;
+
+const mergeCollectResults = (
+  acc: CollectResult,
+  result: CollectResult,
+): CollectResult => ({
+  added: acc.added || result.added,
+  fullySupported: acc.fullySupported && result.fullySupported,
+});
+
+const collectPropsFromTypeLiteral = (
+  node: TSESTree.TSTypeLiteral,
+  propsMap: Record<string, TSESTree.Node>,
+  includePredicate: (name: string) => boolean,
+): CollectResult => {
+  let added = false;
+
+  node.members.forEach((member) => {
+    if (
+      member.type === AST_NODE_TYPES.TSPropertySignature &&
+      member.key.type === AST_NODE_TYPES.Identifier &&
+      includePredicate(member.key.name)
+    ) {
+      propsMap[member.key.name] = member.key;
+      added = true;
+    }
+  });
+
+  return { added, fullySupported: true };
+};
+
+const collectPropsFromIntersection = (
+  node: TSESTree.TSIntersectionType,
+  includePredicate: (name: string) => boolean,
+  collectProps: CollectFn,
+): CollectResult =>
+  node.types.reduce<CollectResult>(
+    (acc, type) => mergeCollectResults(acc, collectProps(type, includePredicate)),
+    { added: false, fullySupported: true },
+  );
+
+type TypeReferenceCollectorOptions = {
+  node: TSESTree.TSTypeReference;
+  includePredicate: (name: string) => boolean;
+  collectProps: CollectFn;
+  extractOmittedPropNames: (omittedProps: TSESTree.TypeNode) => Set<string>;
+  extractPickedPropNames: (pickedProps: TSESTree.TypeNode) => Set<string>;
+  combinePredicates: (
+    ...predicates: Array<(name: string) => boolean>
+  ) => (name: string) => boolean;
+  context: TSESLint.RuleContext<string, unknown[]>;
+  visitedAliases: Set<string>;
+};
+
+const collectPropsFromTypeReference = ({
+  node,
+  includePredicate,
+  collectProps,
+  extractOmittedPropNames,
+  extractPickedPropNames,
+  combinePredicates,
+  context,
+  visitedAliases,
+}: TypeReferenceCollectorOptions): CollectResult => {
+  if (node.typeName.type !== AST_NODE_TYPES.Identifier) {
+    return { added: false, fullySupported: false };
+  }
+
+  const referenceName = node.typeName.name;
+
+  if (
+    (referenceName === 'Partial' || referenceName === 'Required') &&
+    node.typeParameters?.params[0]
+  ) {
+    return collectProps(node.typeParameters.params[0], includePredicate);
+  }
+
+  if (referenceName === 'Omit' && node.typeParameters?.params.length === 2) {
+    const [base, omitted] = node.typeParameters.params;
+    const omittedNames = extractOmittedPropNames(omitted);
+    const combinedInclude = combinePredicates(
+      includePredicate,
+      (name) => !omittedNames.has(name),
+    );
+
+    return collectProps(base, combinedInclude);
+  }
+
+  if (referenceName === 'Pick' && node.typeParameters?.params.length === 2) {
+    const [base, pickedProps] = node.typeParameters.params;
+    const pickedNames = extractPickedPropNames(pickedProps);
+    const combinedInclude = combinePredicates(
+      includePredicate,
+      (name) => pickedNames.size === 0 || pickedNames.has(name),
+    );
+
+    return collectProps(base, combinedInclude);
+  }
+
+  if (visitedAliases.has(referenceName)) {
+    return { added: false, fullySupported: true };
+  }
+
+  visitedAliases.add(referenceName);
+
+  const scope = context.getScope();
+  const variable = scope.variables.find((v) => v.name === referenceName);
+
+  if (
+    variable &&
+    variable.defs[0]?.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration
+  ) {
+    return collectProps(variable.defs[0].node.typeAnnotation, includePredicate);
+  }
+
+  return { added: false, fullySupported: false };
+};
 
 export const noUnusedProps = createRule({
   name: 'no-unused-props',
@@ -29,15 +152,15 @@ export const noUnusedProps = createRule({
       ((context.settings && context.settings['no-unused-props']) as {
         reactLikeExtensions?: string[];
       }) ?? {};
-    const reactLikeExtensions = (
-      ruleSettings.reactLikeExtensions ?? ['.tsx']
-    ).map((ext) => ext.toLowerCase());
+    const extensions = ruleSettings.reactLikeExtensions ?? ['.tsx'];
+    const reactLikeExtensions = extensions.map((ext) => ext.toLowerCase());
     const fileExtension = filename.includes('.')
       ? filename.slice(filename.lastIndexOf('.')).toLowerCase()
       : '';
     const isTsxFile = reactLikeExtensions.includes(fileExtension);
     let hasJsxInFile = false;
     const deferredReports: Array<() => void> = [];
+    const unsupportedTypeNodes = new WeakSet<TSESTree.TypeNode>();
 
     const shouldCheckFile = () => isTsxFile || hasJsxInFile;
 
@@ -346,135 +469,43 @@ export const noUnusedProps = createRule({
           ) => {
             const visitedAliases = new Set<string>();
 
-            type CollectResult = { added: boolean; fullySupported: boolean };
-
-            const mergeCollectResults = (
-              acc: CollectResult,
-              result: CollectResult,
-            ): CollectResult => ({
-              added: acc.added || result.added,
-              fullySupported: acc.fullySupported && result.fullySupported,
-            });
-
-            const collectPropsFromTypeLiteral = (
-              node: TSESTree.TSTypeLiteral,
-              includePredicate: (name: string) => boolean,
-            ): CollectResult => {
-              let added = false;
-
-              node.members.forEach((member) => {
-                if (
-                  member.type === AST_NODE_TYPES.TSPropertySignature &&
-                  member.key.type === AST_NODE_TYPES.Identifier &&
-                  includePredicate(member.key.name)
-                ) {
-                  propsMap[member.key.name] = member.key;
-                  added = true;
-                }
-              });
-
-              return { added, fullySupported: true };
-            };
-
-            const collectPropsFromIntersection = (
-              node: TSESTree.TSIntersectionType,
-              includePredicate: (name: string) => boolean,
-            ): CollectResult =>
-              node.types.reduce<CollectResult>(
-                (acc, type) =>
-                  mergeCollectResults(acc, collectProps(type, includePredicate)),
-                { added: false, fullySupported: true },
-              );
-
-            const collectPropsFromTypeReference = (
-              node: TSESTree.TSTypeReference,
-              includePredicate: (name: string) => boolean,
-            ): CollectResult => {
-              if (node.typeName.type !== AST_NODE_TYPES.Identifier) {
-                return { added: false, fullySupported: false };
-              }
-
-              const referenceName = node.typeName.name;
-
-              if (
-                (referenceName === 'Partial' || referenceName === 'Required') &&
-                node.typeParameters?.params[0]
-              ) {
-                return collectProps(node.typeParameters.params[0], includePredicate);
-              }
-
-              if (
-                referenceName === 'Omit' &&
-                node.typeParameters?.params.length === 2
-              ) {
-                const [base, omitted] = node.typeParameters.params;
-                const omittedNames = extractOmittedPropNames(omitted);
-                const combinedInclude = combinePredicates(
-                  includePredicate,
-                  (name) => !omittedNames.has(name),
-                );
-
-                return collectProps(base, combinedInclude);
-              }
-
-              if (
-                referenceName === 'Pick' &&
-                node.typeParameters?.params.length === 2
-              ) {
-                const [base, pickedProps] = node.typeParameters.params;
-                const pickedNames = extractPickedPropNames(pickedProps);
-                const combinedInclude = combinePredicates(
-                  includePredicate,
-                  (name) => pickedNames.size === 0 || pickedNames.has(name),
-                );
-
-                return collectProps(base, combinedInclude);
-              }
-
-              if (visitedAliases.has(referenceName)) {
-                return { added: false, fullySupported: true };
-              }
-
-              visitedAliases.add(referenceName);
-
-              const scope = context.getScope();
-              const variable = scope.variables.find(
-                (v) => v.name === referenceName,
-              );
-
-              if (
-                variable &&
-                variable.defs[0]?.node.type ===
-                  AST_NODE_TYPES.TSTypeAliasDeclaration
-              ) {
-                return collectProps(
-                  variable.defs[0].node.typeAnnotation,
-                  includePredicate,
-                );
-              }
-
-              return { added: false, fullySupported: false };
-            };
-
-            function collectProps(
+            const collectProps: CollectFn = (
               node: TSESTree.TypeNode,
               includePredicate: (name: string) => boolean,
-            ): CollectResult {
+            ) => {
               switch (node.type) {
                 case AST_NODE_TYPES.TSTypeLiteral:
-                  return collectPropsFromTypeLiteral(node, includePredicate);
+                  return collectPropsFromTypeLiteral(
+                    node,
+                    propsMap,
+                    includePredicate,
+                  );
                 case AST_NODE_TYPES.TSIntersectionType:
-                  return collectPropsFromIntersection(node, includePredicate);
+                  return collectPropsFromIntersection(
+                    node,
+                    includePredicate,
+                    collectProps,
+                  );
                 case AST_NODE_TYPES.TSTypeReference:
-                  return collectPropsFromTypeReference(node, includePredicate);
+                  return collectPropsFromTypeReference({
+                    node,
+                    includePredicate,
+                    collectProps,
+                    extractOmittedPropNames,
+                    extractPickedPropNames,
+                    combinePredicates,
+                    context,
+                    visitedAliases,
+                  });
                 default:
                   return { added: false, fullySupported: false };
               }
-            }
+            };
 
             const result = collectProps(typeNode, shouldInclude);
 
-            if (!result.fullySupported) {
+            if (!result.fullySupported && !unsupportedTypeNodes.has(typeNode)) {
+              unsupportedTypeNodes.add(typeNode);
               deferredReports.push(() =>
                 context.report({
                   node: typeNode,
