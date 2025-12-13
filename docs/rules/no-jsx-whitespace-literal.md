@@ -4,16 +4,16 @@
 
 <!-- end auto-generated rule header -->
 
-Disallow whitespace-only JSX expressions like `{" "}` because they create invisible text nodes that make spacing fragile.
+Disallow whitespace-only JSX expressions like `{" "}` because React renders them as separate text children that make spacing fragile.
 
 ## Rule Details
 
-A whitespace-only JSX expression renders an actual text node whose content is just spaces. These nodes seem harmless but often collapse or shift when:
+A whitespace-only JSX expression renders an actual text child whose content is only spaces. React can move, drop, or duplicate that child when:
 - Formatters wrap JSX children differently
 - Translators or copy updates move words across boundaries
-- Conditionals reorder children at runtime
+- Conditionals reorder or dynamically render children at runtime
 
-The result is missing or duplicated spacing in the UI, which is hard to trace back to the invisible spacer node.
+The result is missing or duplicated spacing in the UI, which is hard to trace back to the invisible spacer child.
 
 The rule flags JSX expressions like `{" "}` where the string literal contains only whitespace (it trims to an empty string).
 

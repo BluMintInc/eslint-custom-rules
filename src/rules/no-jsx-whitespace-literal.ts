@@ -15,7 +15,7 @@ export const noJsxWhitespaceLiteral = createRule<Options, MessageIds>({
     schema: [],
     messages: {
       noWhitespaceLiteral:
-        'Whitespace-only JSX expression {{literal}} inserts fragile spacer nodes → These nodes disappear or duplicate when children move or translations change because the spacing lives in its own text node → Place spacing inside text content (e.g., "Hello ") or use CSS spacing such as gap, margin, or padding.',
+        'Whitespace-only JSX expression {{literal}} inserts fragile spacer nodes → React treats the whitespace as a separate text child that shifts, disappears, or duplicates when child elements are reordered, translated, or dynamically rendered → Place spacing inside text content (e.g., "Hello ") or use CSS spacing such as gap, margin, or padding.',
     },
   },
   defaultOptions: [],
