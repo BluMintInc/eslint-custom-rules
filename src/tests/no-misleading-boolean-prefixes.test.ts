@@ -1,6 +1,12 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noMisleadingBooleanPrefixes } from '../rules/no-misleading-boolean-prefixes';
 
+const defaultPrefixes = 'is, has, should';
+const error = (name: string) => ({
+  messageId: 'nonBooleanReturn' as const,
+  data: { name, prefixes: defaultPrefixes },
+});
+
 ruleTesterTs.run(
   'no-misleading-boolean-prefixes',
   noMisleadingBooleanPrefixes,
@@ -51,111 +57,111 @@ ruleTesterTs.run(
       // Examples from spec
       {
         code: 'function isAvailable() { return "yes"; }',
-        errors: [{ messageId: 'nonBooleanReturn' }],
+        errors: [error('isAvailable')],
       },
       {
         code: 'const hasItems = (arr) => arr.length;',
-        errors: [{ messageId: 'nonBooleanReturn' }],
+        errors: [error('hasItems')],
       },
       {
         code: 'async function shouldRefresh() { return "false"; }',
-        errors: [{ messageId: 'nonBooleanReturn' }],
+        errors: [error('shouldRefresh')],
       },
       {
         code: 'function isUser() { return { id: 1 }; }',
-        errors: [{ messageId: 'nonBooleanReturn' }],
+        errors: [error('isUser')],
       },
 
       // Explicit non-boolean annotations
       {
         code: 'const isEnabled: () => string = () => "yes";',
-        errors: [{ messageId: 'nonBooleanReturn' }],
+        errors: [error('isEnabled')],
       },
       {
         code: 'async function hasAccess(): Promise<string> { return "ok"; }',
-        errors: [{ messageId: 'nonBooleanReturn' }],
+        errors: [error('hasAccess')],
       },
 
       // Arrow with clearly non-boolean expressions
       {
         code: 'const isEmpty = (arr) => arr.length;',
-        errors: [{ messageId: 'nonBooleanReturn' }],
+        errors: [error('isEmpty')],
       },
       {
         code: 'const hasData = () => ({})',
-        errors: [{ messageId: 'nonBooleanReturn' }],
+        errors: [error('hasData')],
       },
       {
         code: 'const hasList = () => []',
-        errors: [{ messageId: 'nonBooleanReturn' }],
+        errors: [error('hasList')],
       },
       {
         code: 'const isNow = () => new Date()',
-        errors: [{ messageId: 'nonBooleanReturn' }],
+        errors: [error('isNow')],
       },
       {
         code: 'const hasName = () => `name`',
-        errors: [{ messageId: 'nonBooleanReturn' }],
+        errors: [error('hasName')],
       },
 
       // No return -> void
       {
         code: 'function isActive() { }',
-        errors: [{ messageId: 'nonBooleanReturn' }],
+        errors: [error('isActive')],
       },
 
       // return; without value
       {
         code: 'function hasValue() { return; }',
-        errors: [{ messageId: 'nonBooleanReturn' }],
+        errors: [error('hasValue')],
       },
 
       // null/undefined
       {
         code: 'function isNullish() { return null; }',
-        errors: [{ messageId: 'nonBooleanReturn' }],
+        errors: [error('isNullish')],
       },
       {
         code: 'function hasNothing() { return undefined; }',
-        errors: [{ messageId: 'nonBooleanReturn' }],
+        errors: [error('hasNothing')],
       },
 
       // Class method
       {
         code: 'class K { isDone() { return "done"; } }',
-        errors: [{ messageId: 'nonBooleanReturn' }],
+        errors: [error('isDone')],
       },
 
       // Object method
       {
         code: 'const obj = { hasUser() { return 1; } }',
-        errors: [{ messageId: 'nonBooleanReturn' }],
+        errors: [error('hasUser')],
       },
       {
         code: 'const obj2 = { hasUser: () => 1 }',
-        errors: [{ messageId: 'nonBooleanReturn' }],
+        errors: [error('hasUser')],
       },
 
       // Underscore boundary with non-boolean
       {
         code: 'const is_ready = () => 1;',
-        errors: [{ messageId: 'nonBooleanReturn' }],
+        errors: [error('is_ready')],
       },
 
       // Uppercase leading name
       {
         code: 'function ISReady() { return 1; }',
-        errors: [{ messageId: 'nonBooleanReturn' }],
+        errors: [error('ISReady')],
       },
 
       // Union with non-boolean types should fail
       {
         code: 'function hasConfig(): boolean | number { return 1 as any; }',
-        errors: [{ messageId: 'nonBooleanReturn' }],
+        errors: [error('hasConfig')],
       },
       {
         code: 'async function shouldClear(): Promise<boolean | string> { return true; }',
-        errors: [{ messageId: 'nonBooleanReturn' }],
+        errors: [error('shouldClear')],
       },
     ],
   },

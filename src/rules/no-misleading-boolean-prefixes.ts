@@ -252,7 +252,7 @@ export const noMisleadingBooleanPrefixes = createRule<Options, MessageIds>({
     type: 'problem',
     docs: {
       description:
-        'Reserve boolean-style prefixes (is/has/should) for functions that actually return boolean values.',
+        'Reserve boolean-style prefixes (is/has/should) for functions that actually return boolean values to avoid misleading call sites.',
       recommended: 'error',
     },
     schema: [
@@ -269,7 +269,7 @@ export const noMisleadingBooleanPrefixes = createRule<Options, MessageIds>({
     ],
     messages: {
       nonBooleanReturn:
-        'Function "{{name}}" uses a boolean-style prefix but does not return a boolean value.',
+        'Function "{{name}}" uses a boolean-style prefix but its return value is not guaranteed to be boolean. Boolean prefixes promise a yes/no answer; returning strings, objects, or void misleads callers and hides incorrect branching. Return a real boolean (e.g., add an explicit comparison or Boolean(...)) or rename the function to drop the boolean-style prefix (prefixes treated as boolean: {{prefixes}}).',
     },
   },
   defaultOptions: [{ prefixes: DEFAULT_PREFIXES }],
@@ -281,7 +281,11 @@ export const noMisleadingBooleanPrefixes = createRule<Options, MessageIds>({
     }
 
     function report(node: TSESTree.Node, name: string) {
-      context.report({ node, messageId: 'nonBooleanReturn', data: { name } });
+      context.report({
+        node,
+        messageId: 'nonBooleanReturn',
+        data: { name, prefixes: prefixes.join(', ') },
+      });
     }
 
     function checkFunctionLike(
