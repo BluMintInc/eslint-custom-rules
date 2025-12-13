@@ -104,7 +104,7 @@ const unwrapArrayElementType = (
 /**
  * Derives a field label for diagnostics by walking ancestors.
  * Prefers TSPropertySignature keys and returns identifier or string/number/bigint literal keys when present.
- * Falls back to the surrounding TSTypeAliasDeclaration or TSInterfaceDeclaration name when no property key is available.
+ * Falls back to the surrounding TSTypeAliasDeclaration or TSInterfaceDeclaration name when no property key is available so declaration-level array types still surface a meaningful label in diagnostics.
  * Returns a placeholder when resolution fails so downstream messaging remains readable.
  */
 const getFieldName = (node: TSESTree.Node): string => {
@@ -186,7 +186,7 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
     messages: {
       noObjectArrays: [
         // What's wrong
-        "What's wrong: Array field {{fieldName}} stores objects in a Firestore document.",
+        "What's wrong: {{fieldName}} stores an array of objects in a Firestore document.",
         // Why it matters
         'Why it matters: Firestore cannot query inside object arrays, and non-atomic array overwrites can drop concurrent updates.',
         // How to fix

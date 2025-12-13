@@ -55,6 +55,6 @@ export type UserProfile = {
 
 When the rule fires, it points to the problematic field and suggests a replacement:
 
-> What's wrong: Array field friends stores objects in a Firestore document.
+> What's wrong: friends stores an array of objects in a Firestore document.
 > Why it matters: Firestore cannot query inside object arrays, and non-atomic array overwrites can drop concurrent updates.
 > How to fix: Store items as Record<string, T> keyed by id (with an index field for ordering; convert with toMap/toArr), or move items into a subcollection or store only an array of IDs.
