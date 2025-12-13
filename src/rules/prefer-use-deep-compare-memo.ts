@@ -252,13 +252,9 @@ function removeImportSpecifierFixes(
   const tokenBefore = sourceCode.getTokenBefore(specifier);
 
   if (tokenAfter && tokenAfter.value === ',') {
-    fixes.push(
-      fixer.removeRange([specifier.range[0], tokenAfter.range![1]]),
-    );
+    fixes.push(fixer.removeRange([specifier.range[0], tokenAfter.range![1]]));
   } else if (tokenBefore && tokenBefore.value === ',') {
-    fixes.push(
-      fixer.removeRange([tokenBefore.range![0], specifier.range[1]]),
-    );
+    fixes.push(fixer.removeRange([tokenBefore.range![0], specifier.range[1]]));
   } else {
     fixes.push(fixer.remove(specifier));
   }

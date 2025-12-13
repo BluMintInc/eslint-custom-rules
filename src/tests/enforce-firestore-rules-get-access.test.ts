@@ -144,7 +144,7 @@ ruleTesterTs.run(
       },
       // Mixed bracket and dot chain
       {
-        code: "const rules = \"allow read: if request.resource.data['outer'][\\\"inner\\\"] === null;\";",
+        code: 'const rules = "allow read: if request.resource.data[\'outer\'][\\"inner\\"] === null;";',
         errors: [{ messageId: 'useGetAccess' }],
         output:
           "const rules = \"allow read: if request.resource.data.get('outer', null).get('inner', null) === null;\";",
