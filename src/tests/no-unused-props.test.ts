@@ -309,6 +309,29 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
     },
     {
       code: `
+        namespace Foo {
+          export type BarProps = { kept: string; unused: string };
+        }
+
+        type Props = Omit<Foo.BarProps, 'kept'>;
+        const Component = ({}: Props) => <div />;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: '...Foo.BarProps' },
+          type: AST_NODE_TYPES.TSQualifiedName,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
         type ButtonProps = { onClick: () => void; label: string; disabled: boolean };
         const Button = ({ onClick: handleClick, label }: ButtonProps) => (
           <button onClick={handleClick}>{label}</button>

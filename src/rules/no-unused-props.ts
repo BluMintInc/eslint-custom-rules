@@ -311,6 +311,12 @@ export const noUnusedProps = createRule({
               baseType.typeName.type === AST_NODE_TYPES.Identifier
                 ? baseType.typeName.name
                 : null;
+            const sourceCode = context.getSourceCode();
+            const baseTypeRefText =
+              baseType.type === AST_NODE_TYPES.TSTypeReference
+                ? sourceCode.getText(baseType.typeName)
+                : null;
+            const spreadKey = baseTypeName ?? baseTypeRefText;
             const omittedPropNames = new Set<string>();
 
             let canComputeOmittedProps = false;
@@ -344,12 +350,15 @@ export const noUnusedProps = createRule({
             }
 
             if (!canComputeOmittedProps) {
-              if (baseTypeName) {
-                props[`...${baseTypeName}`] = (baseType as TSESTree.TSTypeReference).typeName;
-                spreadTypeProps[baseTypeName] ??= [];
-              } else {
-                addBaseTypeProps(baseType);
+              if (spreadKey) {
+                props[`...${spreadKey}`] =
+                  baseType.type === AST_NODE_TYPES.TSTypeReference
+                    ? baseType.typeName
+                    : baseType;
+                spreadTypeProps[spreadKey] ??= [];
+                return;
               }
+              addBaseTypeProps(baseType);
               return;
             }
 
@@ -362,12 +371,15 @@ export const noUnusedProps = createRule({
               return;
             }
 
-            if (!baseTypeName) {
+            if (!spreadKey) {
               return;
             }
 
-            props[`...${baseTypeName}`] = (baseType as TSESTree.TSTypeReference).typeName;
-            spreadTypeProps[baseTypeName] ??= [];
+            props[`...${spreadKey}`] =
+              baseType.type === AST_NODE_TYPES.TSTypeReference
+                ? baseType.typeName
+                : baseType;
+            spreadTypeProps[spreadKey] ??= [];
           };
 
           function extractProps(typeNode: TSESTree.TypeNode) {
