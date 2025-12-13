@@ -27,6 +27,7 @@ import { noUnpinnedDependencies } from './rules/no-unpinned-dependencies';
 import { noUnusedProps } from './rules/no-unused-props';
 import { noUselessFragment } from './rules/no-useless-fragment';
 import { preferFragmentShorthand } from './rules/prefer-fragment-shorthand';
+import { preferGetterOverParameterlessMethod } from './rules/prefer-getter-over-parameterless-method';
 import { preferTypeOverInterface } from './rules/prefer-type-over-interface';
 import { preferTypeAliasOverTypeofConstant } from './rules/prefer-type-alias-over-typeof-constant';
 import { requireMemo } from './rules/require-memo';
@@ -191,6 +192,7 @@ module.exports = {
         '@blumintinc/blumint/no-uuidv4-base62-as-key': 'error',
         '@blumintinc/blumint/no-useless-fragment': 'error',
         '@blumintinc/blumint/prefer-fragment-shorthand': 'error',
+        '@blumintinc/blumint/prefer-getter-over-parameterless-method': 'error',
         '@blumintinc/blumint/prefer-type-over-interface': 'error',
         '@blumintinc/blumint/prefer-type-alias-over-typeof-constant': 'error',
         '@blumintinc/blumint/require-memo': 'error',
@@ -340,6 +342,7 @@ module.exports = {
     'no-uuidv4-base62-as-key': noUuidv4Base62AsKey,
     'enforce-dynamic-file-naming': enforceDynamicFileNaming,
     'prefer-fragment-shorthand': preferFragmentShorthand,
+    'prefer-getter-over-parameterless-method': preferGetterOverParameterlessMethod,
     'prefer-type-over-interface': preferTypeOverInterface,
     'prefer-type-alias-over-typeof-constant': preferTypeAliasOverTypeofConstant,
     'require-memo': requireMemo,
