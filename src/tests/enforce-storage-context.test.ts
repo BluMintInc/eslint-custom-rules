@@ -157,6 +157,15 @@ ruleTesterTs.run('enforce-storage-context', enforceStorageContext, {
       Box.prototype.value();
     `,
     `
+      class localStorage {
+        static build() {
+          return new localStorage();
+        }
+      }
+      const instance = new localStorage();
+      instance.constructor;
+    `,
+    `
       const storage = window.appConfig.localStorage;
       storage.setItem('k', 'v');
     `,
@@ -223,6 +232,12 @@ ruleTesterTs.run('enforce-storage-context', enforceStorageContext, {
     {
       code: `
         const total = window.sessionStorage['length'];
+      `,
+      errors: [{ messageId: 'useStorageContext' }],
+    },
+    {
+      code: `
+        window[('localStorage' as string)].setItem('theme', 'dark');
       `,
       errors: [{ messageId: 'useStorageContext' }],
     },

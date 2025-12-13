@@ -166,9 +166,12 @@ const unwrapExpression = (expression: TSESTree.Expression): TSESTree.Expression 
 const getPropertyName = (
   node: TSESTree.Expression | TSESTree.PrivateIdentifier,
 ): string | null => {
-  if (node.type === AST_NODE_TYPES.Identifier) return node.name;
-  if (node.type === AST_NODE_TYPES.Literal && typeof node.value === 'string') {
-    return node.value;
+  const unwrapped =
+    node.type === AST_NODE_TYPES.PrivateIdentifier ? node : unwrapExpression(node);
+
+  if (unwrapped.type === AST_NODE_TYPES.Identifier) return unwrapped.name;
+  if (unwrapped.type === AST_NODE_TYPES.Literal && typeof unwrapped.value === 'string') {
+    return unwrapped.value;
   }
   return null;
 };
@@ -276,6 +279,22 @@ const resolveStorageObject = (
   return null;
 };
 
+const parentMatchesBinding = (
+  parent: TSESTree.Node,
+  type: AST_NODE_TYPES,
+  propertyName?: string,
+  value?: TSESTree.Node,
+): boolean => {
+  if (parent.type !== type) return false;
+  if (!propertyName) return true;
+
+  const parentProperty = (parent as unknown as Record<string, unknown>)[propertyName];
+  if (propertyName === 'params' && Array.isArray(parentProperty)) {
+    return parentProperty.includes(value);
+  }
+  return parentProperty === value;
+};
+
 const identifierHasDeclarationParent = (node: TSESTree.Identifier): boolean => {
   const parent = node.parent;
   if (!parent) return false;
@@ -287,57 +306,34 @@ const identifierHasDeclarationParent = (node: TSESTree.Identifier): boolean => {
     return true;
   }
   if (
-    parent.type === AST_NODE_TYPES.ObjectPattern ||
-    parent.type === AST_NODE_TYPES.ArrayPattern
+    parentMatchesBinding(parent, AST_NODE_TYPES.ObjectPattern) ||
+    parentMatchesBinding(parent, AST_NODE_TYPES.ArrayPattern) ||
+    parentMatchesBinding(parent, AST_NODE_TYPES.RestElement, 'argument', node) ||
+    parentMatchesBinding(parent, AST_NODE_TYPES.VariableDeclarator, 'id', node) ||
+    parentMatchesBinding(parent, AST_NODE_TYPES.AssignmentExpression, 'left', node) ||
+    parentMatchesBinding(parent, AST_NODE_TYPES.AssignmentPattern, 'left', node) ||
+    parentMatchesBinding(parent, AST_NODE_TYPES.FunctionDeclaration, 'id', node) ||
+    parentMatchesBinding(parent, AST_NODE_TYPES.FunctionExpression, 'id', node) ||
+    parentMatchesBinding(parent, AST_NODE_TYPES.ClassExpression, 'id', node) ||
+    parentMatchesBinding(parent, AST_NODE_TYPES.CatchClause, 'param', node) ||
+    parentMatchesBinding(parent, AST_NODE_TYPES.ClassDeclaration, 'id', node) ||
+    parentMatchesBinding(parent, AST_NODE_TYPES.ImportSpecifier) ||
+    parentMatchesBinding(parent, AST_NODE_TYPES.ImportDefaultSpecifier) ||
+    parentMatchesBinding(parent, AST_NODE_TYPES.ImportNamespaceSpecifier) ||
+    parentMatchesBinding(parent, AST_NODE_TYPES.ExportSpecifier) ||
+    parentMatchesBinding(parent, AST_NODE_TYPES.TSEnumMember, 'id', node)
   ) {
     return true;
   }
+
   if (
-    parent.type === AST_NODE_TYPES.RestElement &&
-    parent.argument === node
+    parentMatchesBinding(parent, AST_NODE_TYPES.FunctionDeclaration, 'params', node) ||
+    parentMatchesBinding(parent, AST_NODE_TYPES.FunctionExpression, 'params', node) ||
+    parentMatchesBinding(parent, AST_NODE_TYPES.ArrowFunctionExpression, 'params', node)
   ) {
     return true;
   }
-  if (parent.type === AST_NODE_TYPES.VariableDeclarator && parent.id === node) {
-    return true;
-  }
-  if (
-    parent.type === AST_NODE_TYPES.AssignmentExpression &&
-    parent.left === node
-  ) {
-    return true;
-  }
-  if (parent.type === AST_NODE_TYPES.AssignmentPattern && parent.left === node) {
-    return true;
-  }
-  if (parent.type === AST_NODE_TYPES.FunctionDeclaration && parent.id === node) {
-    return true;
-  }
-  if (parent.type === AST_NODE_TYPES.FunctionExpression && parent.id === node) {
-    return true;
-  }
-  if (parent.type === AST_NODE_TYPES.ClassExpression && parent.id === node) {
-    return true;
-  }
-  if (
-    (parent.type === AST_NODE_TYPES.FunctionDeclaration ||
-      parent.type === AST_NODE_TYPES.FunctionExpression ||
-      parent.type === AST_NODE_TYPES.ArrowFunctionExpression) &&
-    parent.params.includes(node)
-  ) {
-    return true;
-  }
-  if (parent.type === AST_NODE_TYPES.CatchClause && parent.param === node) {
-    return true;
-  }
-  if (parent.type === AST_NODE_TYPES.ClassDeclaration && parent.id === node) {
-    return true;
-  }
-  if (parent.type === AST_NODE_TYPES.ImportSpecifier) return true;
-  if (parent.type === AST_NODE_TYPES.ImportDefaultSpecifier) return true;
-  if (parent.type === AST_NODE_TYPES.ImportNamespaceSpecifier) return true;
-  if (parent.type === AST_NODE_TYPES.ExportSpecifier) return true;
-  if (parent.type === AST_NODE_TYPES.TSEnumMember && parent.id === node) return true;
+
   return false;
 };
 
@@ -574,6 +570,8 @@ const createIdentifierHandler = (
         parent?.type === AST_NODE_TYPES.ClassExpression &&
         parent.id === node
       ) {
+        // Class expression names are only bound to the class body and should not
+        // be treated as shadowing outer scope storage references.
         return;
       }
       if (identifierHasDeclarationParent(node) && !aliases.currentScope().has(node.name)) {
@@ -759,18 +757,27 @@ const createScopeListeners = (
   TSModuleBlock: (_node: TSESTree.TSModuleBlock) => aliases.pushScope(),
   'TSModuleBlock:exit': aliases.popScope,
   ClassBody: (node: TSESTree.ClassBody) => {
-    aliases.pushScope();
     const parent = node.parent;
     if (
-      parent &&
-      (parent.type === AST_NODE_TYPES.ClassDeclaration ||
-        parent.type === AST_NODE_TYPES.ClassExpression) &&
-      parent.id
+      parent?.type === AST_NODE_TYPES.ClassDeclaration &&
+      parent.id &&
+      checkIfNameShadowsStorage(parent.id.name, storageAliases, {
+        includeCurrentScope: true,
+      })
     ) {
-      const name = parent.id.name;
-      if (checkIfNameShadowsStorage(name, storageAliases)) {
-        aliases.setAlias(name, 'shadowed');
-      }
+      aliases.setAlias(parent.id.name, 'shadowed');
+    }
+
+    aliases.pushScope();
+
+    if (
+      parent?.type === AST_NODE_TYPES.ClassExpression &&
+      parent.id &&
+      checkIfNameShadowsStorage(parent.id.name, storageAliases, {
+        includeCurrentScope: true,
+      })
+    ) {
+      aliases.setAlias(parent.id.name, 'shadowed');
     }
   },
   'ClassBody:exit': aliases.popScope,
