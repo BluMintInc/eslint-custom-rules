@@ -132,6 +132,7 @@ import { preferNextDynamic } from './rules/prefer-next-dynamic';
 import { default as noRedundantUseCallbackWrapper } from './rules/no-redundant-usecallback-wrapper';
 import { noArrayLengthInDeps } from './rules/no-array-length-in-deps';
 import { preferUseDeepCompareMemo } from './rules/prefer-use-deep-compare-memo';
+import { memoCompareDeeplyComplexProps } from './rules/memo-compare-deeply-complex-props';
 import { noCircularReferences } from './rules/no-circular-references';
 import { noPassthroughGetters } from './rules/no-passthrough-getters';
 import { noTryCatchAlreadyExistsInTransaction } from './rules/no-try-catch-already-exists-in-transaction';
@@ -289,6 +290,7 @@ module.exports = {
         '@blumintinc/blumint/no-array-length-in-deps': 'error',
         '@blumintinc/blumint/enforce-stable-hash-spread-props': 'error',
         '@blumintinc/blumint/prefer-use-deep-compare-memo': 'error',
+        '@blumintinc/blumint/memo-compare-deeply-complex-props': 'error',
         '@blumintinc/blumint/no-circular-references': 'error',
         '@blumintinc/blumint/no-try-catch-already-exists-in-transaction':
           'error',
@@ -444,6 +446,7 @@ module.exports = {
     'no-redundant-usecallback-wrapper': noRedundantUseCallbackWrapper,
     'no-array-length-in-deps': noArrayLengthInDeps,
     'prefer-use-deep-compare-memo': preferUseDeepCompareMemo,
+    'memo-compare-deeply-complex-props': memoCompareDeeplyComplexProps,
     'no-circular-references': noCircularReferences,
     'no-try-catch-already-exists-in-transaction':
       noTryCatchAlreadyExistsInTransaction,
