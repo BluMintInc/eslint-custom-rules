@@ -1,4 +1,4 @@
-import { ESLintUtils } from '@typescript-eslint/utils';
+import { ESLintUtils, TSESLint } from '@typescript-eslint/utils';
 import { noSeparateLoadingState } from '../rules/no-separate-loading-state';
 
 const ruleTester = new ESLintUtils.RuleTester({
@@ -11,6 +11,18 @@ const ruleTester = new ESLintUtils.RuleTester({
     },
   },
 });
+
+const loadingMessage = (stateName: string) =>
+  `Loading flag "${stateName}" splits the source of truth for data fetching. Boolean toggles drift from the actual data and add extra renders. Encode the loading phase inside the primary state instead (use a "loading" sentinel or discriminated union) so components read a single authoritative value.`;
+
+// RuleTester accepts a raw message string at runtime even though the type
+// definition requires a messageId, so we assert the type to verify the text.
+const errorWithMessage = (
+  stateName: string,
+): TSESLint.TestCaseError<'separateLoadingState'> =>
+  ({
+    message: loadingMessage(stateName),
+  } as unknown as TSESLint.TestCaseError<'separateLoadingState'>);
 
 ruleTester.run('no-separate-loading-state', noSeparateLoadingState, {
   valid: [
@@ -125,7 +137,7 @@ ruleTester.run('no-separate-loading-state', noSeparateLoadingState, {
           }
         }
       `,
-      errors: [{ messageId: 'separateLoadingState' }],
+      errors: [errorWithMessage('isProfileLoading')],
     },
 
     // Invalid: isLoadingX pattern
@@ -141,7 +153,7 @@ ruleTester.run('no-separate-loading-state', noSeparateLoadingState, {
           setIsLoadingAvatar(false);
         }
       `,
-      errors: [{ messageId: 'separateLoadingState' }],
+      errors: [errorWithMessage('isLoadingAvatar')],
     },
 
     // Invalid: Simple boolean toggle pattern
@@ -158,7 +170,7 @@ ruleTester.run('no-separate-loading-state', noSeparateLoadingState, {
           });
         }
       `,
-      errors: [{ messageId: 'separateLoadingState' }],
+      errors: [errorWithMessage('isDataLoading')],
     },
 
     // Invalid: Case insensitive matching
@@ -172,7 +184,7 @@ ruleTester.run('no-separate-loading-state', noSeparateLoadingState, {
           setISLOADING(false);
         }
       `,
-      errors: [{ messageId: 'separateLoadingState' }],
+      errors: [errorWithMessage('ISLOADING')],
     },
   ],
 });
