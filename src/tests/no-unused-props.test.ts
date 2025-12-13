@@ -211,6 +211,54 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         sourceType: 'module',
       },
     },
+    {
+      code: `
+        type ExtraProps = { bar: number };
+        type BaseProps = { title: string } & ExtraProps;
+        type Props = Partial<BaseProps>;
+
+        const Component = ({ title, bar }: Props) => (
+          <div>
+            {title}
+            {bar}
+          </div>
+        );
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type ImportedProps = { label: string };
+        type AliasProps = ImportedProps;
+        type Props = Partial<AliasProps>;
+
+        const Component = ({ label }: Props) => <div>{label}</div>;
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type BaseProps = () => void;
+        type Props = Partial<BaseProps>;
+
+        const useProps = (props: Props) => props;
+      `,
+      filename: 'plain.ts',
+      parserOptions: {
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
   ],
   invalid: [
     {
@@ -340,6 +388,27 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         ecmaVersion: 2018,
         sourceType: 'module',
         jsx: true,
+      },
+    },
+    {
+      code: `
+        type BaseProps = () => void;
+        type Props = Partial<BaseProps>;
+
+        const Component = (props: Props) => <div />;
+      `,
+      errors: [
+        {
+          messageId: 'unsupportedPropsShape',
+          data: { typeName: 'BaseProps', actualType: 'function type' },
+          type: AST_NODE_TYPES.TSFunctionType,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
       },
     },
   ],
