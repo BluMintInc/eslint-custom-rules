@@ -325,7 +325,6 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                             fixes.push(fixer.replaceText(keyValue, replacementText));
 
                             // 2) Ensure an import exists for the suggested constant
-                            const sourceCode = context.getSourceCode();
                             const alreadyImportedNamed = Array.from(
                               queryKeyImports.values(),
                             ).some(

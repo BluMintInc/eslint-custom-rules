@@ -91,6 +91,12 @@ export const noUnusedProps = createRule({
       return false;
     };
 
+    const isTSParenthesizedType = (
+      node: TSESTree.TypeNode,
+    ): node is TSESTree.TSParenthesizedType =>
+      node.type === AST_NODE_TYPES.TSParenthesizedType &&
+      node.typeAnnotation != null;
+
     const isAnyPropFromSpreadTypeUsed = (
       spreadTypeName: string,
       used: Set<string>,
@@ -208,13 +214,8 @@ export const noUnusedProps = createRule({
             shouldInclude: (name: string) => boolean = () => true,
           ): boolean => {
             const visit = (node: TSESTree.TypeNode): boolean => {
-              if (
-                (node as { type: string }).type === 'TSParenthesizedType' &&
-                (node as { typeAnnotation?: TSESTree.TypeNode }).typeAnnotation
-              ) {
-                return visit(
-                  (node as { typeAnnotation: TSESTree.TypeNode }).typeAnnotation,
-                );
+              if (isTSParenthesizedType(node)) {
+                return visit(node.typeAnnotation);
               }
 
               switch (node.type) {

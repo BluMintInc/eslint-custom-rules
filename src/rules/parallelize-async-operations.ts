@@ -433,7 +433,8 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
             const start = awaitNodes[0].range?.[0];
             const end = awaitNodes[awaitNodes.length - 1].range?.[1];
             if (start == null || end == null) {
-              return;
+              awaitNodes.length = 0;
+              continue;
             }
             const key = `${start}-${end}`;
             if (!reportedRanges.has(key)) {
@@ -463,6 +464,7 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
           const start = awaitNodes[0].range?.[0];
           const end = awaitNodes[awaitNodes.length - 1].range?.[1];
           if (start == null || end == null) {
+            // Defensive guard: skip reporting when range metadata is missing
             return;
           }
           const key = `${start}-${end}`;
