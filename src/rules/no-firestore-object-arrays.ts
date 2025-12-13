@@ -99,6 +99,12 @@ const unwrapArrayElementType = (
   return current as TSESTree.TypeNode;
 };
 
+/**
+ * Derives a field label for diagnostics by walking ancestors.
+ * Prefers TSPropertySignature keys and returns identifier or string/number/bigint literal keys when present.
+ * Falls back to the surrounding TSTypeAliasDeclaration or TSInterfaceDeclaration name when no property key is available.
+ * Returns null if neither a property key nor a type/interface identifier is found.
+ */
 const getFieldName = (node: TSESTree.Node): string | null => {
   let current: TSESTree.Node | undefined = node;
   while (current) {
