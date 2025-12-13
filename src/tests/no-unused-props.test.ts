@@ -2,6 +2,20 @@ import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 import { noUnusedProps } from '../rules/no-unused-props';
 import { ruleTesterTs } from '../utils/ruleTester';
 
+const formatUnusedPropMessage = (propName: string) =>
+  `Prop "${propName}" is declared in the component Props type but never used inside the component body. Unused props make the component API misleading: callers keep passing values that are ignored and reviewers assume behavior that is not implemented. Remove "${propName}" from the Props type, consume it in the component, or forward it with a rest spread (e.g., \`const MyComponent = ({ usedProp, ...rest }: Props) => <Child {...rest} />\`).`;
+
+describe('no-unused-props messages', () => {
+  it('explains why unused props are flagged', () => {
+    const propName = 'subtitle';
+    const formatted = noUnusedProps.meta.messages.unusedProp.replace(
+      /{{propName}}/g,
+      propName,
+    );
+    expect(formatted).toBe(formatUnusedPropMessage(propName));
+  });
+});
+
 ruleTesterTs.run('no-unused-props', noUnusedProps, {
   valid: [
     {
