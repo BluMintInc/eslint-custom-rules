@@ -6,18 +6,18 @@
 
 <!-- end auto-generated rule header -->
 
-This rule prevents decorative pseudo-elements that use absolute or fixed positioning from intercepting user interactions. Overlays applied with `::before` or `::after` can sit on top of buttons and links; without `pointer-events: none`, they absorb clicks, taps, hover, and focus feedback and make the underlying control feel broken or inaccessible. Add `pointer-events: none` so the pseudo-element stays visual only while the element underneath remains usable.
+You need to stop decorative pseudo-elements that use absolute or fixed positioning from intercepting user interactions. Overlays you apply with `::before` or `::after` can sit on top of buttons and links; without `pointer-events: none`, they absorb clicks, taps, hover, and focus feedback and make the underlying control feel broken or inaccessible. Add `pointer-events: none` so your pseudo-element stays visual only while the element underneath remains usable.
 
 ## Rule Details
 
-This rule reports when:
+You trigger this rule when:
 
 - A styled-components/emotion template defines `::before` or `::after` with `position: absolute` or `position: fixed` and omits `pointer-events: none`.
 - A CSS-in-JS object for a pseudo-selector (e.g., `{ '&::before': { ... } }`) has absolute/fixed positioning without `pointerEvents: 'none'`.
 - A JSX `style={{ ... }}` object represents a pseudo-element style (via nested selector keys) and lacks `pointerEvents: 'none'`.
-- `::before` or `::after` styles use `position: absolute` or `position: fixed` without defining `pointer-events`.
+- `::before` or `::after` styles use `position: absolute` or `position: fixed` without setting `pointer-events` (use `pointer-events: none` for decorative overlays, or set `pointer-events: auto` explicitly when interaction is intentional).
 
-The rule allows:
+You can rely on this rule to allow:
 
 - Pseudo-elements that already specify `pointer-events`.
 - Explicit `pointer-events: auto` for intentionally interactive pseudo-elements.
@@ -69,7 +69,7 @@ const Wrapper = styled.div`
 
 const styles = {
   '&::before': {
-    content: '""',
+    content: '',
     position: 'absolute',
     width: '100%',
     height: '100%',
@@ -89,7 +89,7 @@ const styles = {
 
 ## Options
 
-This rule does not have any options.
+You do not configure any options for this rule.
 
 ## When Not To Use It
 

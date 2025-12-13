@@ -31,9 +31,21 @@ function isPointerEventsProperty(propertyName: string): boolean {
 
 function formatSelector(selector?: string): string {
   if (!selector) return 'pseudo-element';
-  const match = selector.match(/::?(before|after)/i);
-  if (match) return `::${match[1].toLowerCase()}`;
-  return selector;
+  const trimmedSelector = selector.trim();
+  const candidates = trimmedSelector
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  for (const candidate of candidates) {
+    const match = candidate.match(/::?(before|after)\b/i);
+    if (match) return `::${match[1].toLowerCase()}`;
+  }
+
+  if (trimmedSelector.length === 0) return 'pseudo-element';
+
+  const snippet = trimmedSelector.slice(0, 40);
+  return trimmedSelector.length > 40 ? `${snippet}...` : trimmedSelector;
 }
 
 export const ensurePointerEventsNone = createRule<Options, MessageIds>({
@@ -49,7 +61,9 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
     schema: [],
     messages: {
       missingPointerEventsNone:
-        'Pseudo-element "{{selector}}" uses absolute or fixed positioning without pointer-events: none. Positioned overlays capture clicks, hover, and focus, which blocks the underlying control and hurts accessibility. Add pointer-events: none so the pseudo-element stays decorative and does not intercept interactions.',
+        'What\'s wrong: pseudo-element "{{selector}}" uses absolute or fixed positioning without pointer-events: none. ' +
+        'Why it matters: positioned overlays capture clicks, hover, and focus, blocking the underlying control and harming accessibility. ' +
+        'How to fix: add pointer-events: none so the pseudo-element stays decorative and does not intercept interactions.',
     },
   },
   defaultOptions: [],
