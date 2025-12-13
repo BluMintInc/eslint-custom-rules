@@ -101,18 +101,24 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       );
     }
 
+    function identifyTransactionScope(node: TSESTree.Node): TSESTree.Node | null {
+      if (transactionScopes.has(node)) {
+        return node;
+      }
+
+      if (isFunctionLike(node) && node.params.some(isTransactionParameter)) {
+        return node.body ?? node;
+      }
+
+      return null;
+    }
+
     function getTransactionScopeChain(node: TSESTree.Node): TSESTree.Node[] {
       const scopes: TSESTree.Node[] = [];
       let current: TSESTree.Node | undefined = node;
-      while (current) {
-        let scope: TSESTree.Node | null = null;
-        if (transactionScopes.has(current)) {
-          scope = current;
-        }
 
-        if (isFunctionLike(current) && current.params.some(isTransactionParameter)) {
-          scope = current.body ?? current;
-        }
+      while (current) {
+        const scope = identifyTransactionScope(current);
 
         if (scope && scopes[scopes.length - 1] !== scope) {
           scopes.push(scope);
@@ -120,6 +126,7 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
 
         current = current.parent;
       }
+
       return scopes;
     }
 
