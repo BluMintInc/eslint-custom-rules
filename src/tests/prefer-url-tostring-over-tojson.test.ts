@@ -30,64 +30,109 @@ ruleTesterTs.run(
       // Basic misuse
       {
         code: `const url = new URL('https://example.com/path'); console.log(url.toJSON());`,
-        errors: [{ messageId: 'preferToString' }],
+        errors: [
+          {
+            messageId: 'preferToString',
+            data: { urlText: 'url' },
+          },
+        ],
         output: `const url = new URL('https://example.com/path'); console.log(url.toString());`,
       },
       // In JSON building context: prefer passing object directly
       {
         code: `const url = new URL('https://e.com'); const payload = { link: url.toJSON() }; JSON.stringify(payload);`,
-        errors: [{ messageId: 'preferToString' }],
+        errors: [
+          {
+            messageId: 'preferToString',
+            data: { urlText: 'url' },
+          },
+        ],
         output: `const url = new URL('https://e.com'); const payload = { link: url.toString() }; JSON.stringify(payload);`,
       },
       // When directly inside JSON.stringify, replace call with object expression
       {
         code: `const u = new URL('https://e.com'); JSON.stringify({ link: u.toJSON() });`,
-        errors: [{ messageId: 'preferToString' }],
+        errors: [
+          {
+            messageId: 'preferToString',
+            data: { urlText: 'u' },
+          },
+        ],
         output: `const u = new URL('https://e.com'); JSON.stringify({ link: u });`,
       },
       // Nested object in stringify
       {
         code: `const u = new URL('https://e.com'); JSON.stringify({ data: { link: u.toJSON() } });`,
-        errors: [{ messageId: 'preferToString' }],
+        errors: [
+          {
+            messageId: 'preferToString',
+            data: { urlText: 'u' },
+          },
+        ],
         output: `const u = new URL('https://e.com'); JSON.stringify({ data: { link: u } });`,
       },
       // New expression inline
       {
         code: `console.log(new URL('https://e.com').toJSON());`,
-        errors: [{ messageId: 'preferToString' }],
+        errors: [
+          {
+            messageId: 'preferToString',
+            data: { urlText: "new URL('https://e.com')" },
+          },
+        ],
         output: `console.log(new URL('https://e.com').toString());`,
       },
       // Assigned identifiers still recognized
       {
         code: `let u = new URL('https://e.com'); function f(){ return u.toJSON(); }`,
-        errors: [{ messageId: 'preferToString' }],
+        errors: [
+          {
+            messageId: 'preferToString',
+            data: { urlText: 'u' },
+          },
+        ],
         output: `let u = new URL('https://e.com'); function f(){ return u.toString(); }`,
       },
       // Assignment after declaration
       {
         code: `let u:any; u = new URL('https://e.com'); u.toJSON();`,
-        errors: [{ messageId: 'preferToString' }],
+        errors: [
+          {
+            messageId: 'preferToString',
+            data: { urlText: 'u' },
+          },
+        ],
         output: `let u:any; u = new URL('https://e.com'); u.toString();`,
       },
       // Optional chaining should still flag but fix to .toString() (since cannot drop call safely inside stringify only)
       {
         code: `const u = new URL('https://e.com'); u?.toJSON();`,
-        errors: [{ messageId: 'preferToString' }],
+        errors: [
+          {
+            messageId: 'preferToString',
+            data: { urlText: 'u' },
+          },
+        ],
         output: `const u = new URL('https://e.com'); u?.toString();`,
       },
       // Multiple occurrences
       {
         code: `const u = new URL('https://e.com'); console.log(u.toJSON(), JSON.stringify({ u: u.toJSON() }));`,
         errors: [
-          { messageId: 'preferToString' },
-          { messageId: 'preferToString' },
+          { messageId: 'preferToString', data: { urlText: 'u' } },
+          { messageId: 'preferToString', data: { urlText: 'u' } },
         ],
         output: `const u = new URL('https://e.com'); console.log(u.toString(), JSON.stringify({ u: u }));`,
       },
       // Member access path like globalThis.URL
       {
         code: `const u = new globalThis.URL('https://e.com'); u.toJSON();`,
-        errors: [{ messageId: 'preferToString' }],
+        errors: [
+          {
+            messageId: 'preferToString',
+            data: { urlText: 'u' },
+          },
+        ],
         output: `const u = new globalThis.URL('https://e.com'); u.toString();`,
       },
     ],
