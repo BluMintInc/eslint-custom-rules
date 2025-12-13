@@ -15,7 +15,7 @@ A whitespace-only JSX expression renders an actual text node whose content is ju
 
 The result is missing or duplicated spacing in the UI, which is hard to trace back to the invisible spacer node.
 
-The rule flags any `JSXExpressionContainer` whose expression is a string literal that trims to empty characters.
+The rule flags JSX expressions like `{" "}` where the string literal contains only whitespace (it trims to an empty string).
 
 ### Examples of **incorrect** code for this rule:
 

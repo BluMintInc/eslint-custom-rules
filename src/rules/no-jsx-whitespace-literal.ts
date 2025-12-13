@@ -1,3 +1,4 @@
+import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type Options = [];
@@ -14,7 +15,7 @@ export const noJsxWhitespaceLiteral = createRule<Options, MessageIds>({
     schema: [],
     messages: {
       noWhitespaceLiteral:
-        'Whitespace-only JSX expression {{literal}} inserts an invisible text node that relies on manual spacing. These spacer nodes shift or collapse when translations, formatters, or dynamic rendering rearrange children. Put spacing inside the surrounding text (e.g., "Hello ") or use layout spacing like CSS gap, margin, or padding instead.',
+        'What\'s wrong: Whitespace-only JSX expression {{literal}} inserts an invisible text node. Why it matters: Spacer nodes shift or collapse when translations, formatters, or runtime reordering change where children render, leading to missing or doubled spaces. How to fix: Move spacing into the surrounding text (e.g., "Hello ") or rely on layout spacing like CSS gap, margin, or padding.',
     },
   },
   defaultOptions: [],
@@ -24,7 +25,7 @@ export const noJsxWhitespaceLiteral = createRule<Options, MessageIds>({
     return {
       JSXExpressionContainer(node) {
         if (
-          node.expression.type === 'Literal' &&
+          node.expression.type === AST_NODE_TYPES.Literal &&
           typeof node.expression.value === 'string' &&
           node.expression.value.trim() === ''
         ) {
