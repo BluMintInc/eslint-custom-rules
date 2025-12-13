@@ -528,7 +528,7 @@ export const preferNullishCoalescingBooleanProps = createRule<[], MessageIds>({
     fixable: 'code',
     messages: {
       preferNullishCoalescing:
-        'Prefer using nullish coalescing operator (??) instead of logical OR operator (||) when checking for null/undefined',
+        'Logical OR between "{{left}}" and "{{right}}" treats every falsy value (false, 0, "", NaN) as missing and will override intentional boolean or empty states. Use the nullish coalescing operator (??) so "{{right}}" only applies when "{{left}}" is null or undefined, preserving explicit false/0/"" values.',
     },
     schema: [],
   },
@@ -545,16 +545,19 @@ export const preferNullishCoalescingBooleanProps = createRule<[], MessageIds>({
           // Check if this could benefit from nullish coalescing
           // We only suggest nullish coalescing when the left operand could be nullish
           if (couldBeNullish(node.left)) {
+            const sourceCode = context.getSourceCode();
+            const leftText = sourceCode.getText(node.left);
+            const rightText = sourceCode.getText(node.right);
+
             context.report({
               node,
               messageId: 'preferNullishCoalescing',
+              data: {
+                left: leftText,
+                right: rightText,
+              },
               fix(fixer) {
-                return fixer.replaceText(
-                  node,
-                  `${context.getSourceCode().getText(node.left)} ?? ${context
-                    .getSourceCode()
-                    .getText(node.right)}`,
-                );
+                return fixer.replaceText(node, `${leftText} ?? ${rightText}`);
               },
             });
           }
