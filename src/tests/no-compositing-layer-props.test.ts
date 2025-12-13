@@ -195,10 +195,7 @@ ruleTesterTs.run('no-compositing-layer-props', noCompositingLayerProps, {
           jsx: true,
         },
       },
-      errors: [
-        error('filter'),
-        error('transform'),
-      ],
+      errors: [error('filter'), error('transform')],
     },
   ],
 });

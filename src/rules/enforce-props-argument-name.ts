@@ -52,8 +52,7 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
         allParams
           .map((p) => getIdFromParam(p))
           .filter(
-            (id): id is TSESTree.Identifier =>
-              !!id && id.name !== currentName,
+            (id): id is TSESTree.Identifier => !!id && id.name !== currentName,
           )
           .map((id) => id.name),
       );
@@ -143,7 +142,9 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
       return false;
     }
 
-    function getIdFromParam(param: TSESTree.Parameter): TSESTree.Identifier | null {
+    function getIdFromParam(
+      param: TSESTree.Parameter,
+    ): TSESTree.Identifier | null {
       if (param.type === AST_NODE_TYPES.Identifier) return param;
 
       if (

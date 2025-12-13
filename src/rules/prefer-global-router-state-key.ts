@@ -328,23 +328,29 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                               namespaceImports.size > 0 ||
                               defaultImports.size > 0;
 
-                            if (!alreadyImportedNamed && !hasNamespaceOrDefault) {
+                            if (
+                              !alreadyImportedNamed &&
+                              !hasNamespaceOrDefault
+                            ) {
                               const importText = `import { ${suggestedConstant} } from '@/util/routing/queryKeys';\n`;
-                              const firstImport =
-                                sourceCode.ast.body.find(
-                                  (
-                                    n,
-                                  ): n is TSESTree.ImportDeclaration =>
-                                    n.type === AST_NODE_TYPES.ImportDeclaration,
-                                );
+                              const firstImport = sourceCode.ast.body.find(
+                                (n): n is TSESTree.ImportDeclaration =>
+                                  n.type === AST_NODE_TYPES.ImportDeclaration,
+                              );
 
                               if (firstImport) {
                                 fixes.push(
-                                  fixer.insertTextBefore(firstImport, importText),
+                                  fixer.insertTextBefore(
+                                    firstImport,
+                                    importText,
+                                  ),
                                 );
                               } else {
                                 fixes.push(
-                                  fixer.insertTextBeforeRange([0, 0], importText),
+                                  fixer.insertTextBeforeRange(
+                                    [0, 0],
+                                    importText,
+                                  ),
                                 );
                               }
                             }
@@ -363,7 +369,9 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                         variableName: keyValue.name,
                       },
                     });
-                  } else if (keyValue.type === AST_NODE_TYPES.MemberExpression) {
+                  } else if (
+                    keyValue.type === AST_NODE_TYPES.MemberExpression
+                  ) {
                     context.report({
                       node: keyValue,
                       messageId: 'invalidQueryKeySource',
