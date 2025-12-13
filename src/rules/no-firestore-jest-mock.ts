@@ -1,10 +1,26 @@
+import path from 'path';
 import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'noFirestoreJestMock';
 
 const FIRESTORE_JEST_MOCK = 'firestore-jest-mock';
-const MOCK_FIRESTORE_PATH = '../../../../../__test-utils__/mockFirestore';
+const MOCK_FIRESTORE_TARGET = '__test-utils__/mockFirestore';
+
+const toPosixPath = (value: string) => value.replace(/\\/g, '/');
+
+const ensureRelativeSpecifier = (specifier: string) =>
+  specifier.startsWith('.') ? specifier : `./${specifier}`;
+
+const buildReplacementPath = (filename: string, cwd: string) => {
+  const absoluteFilename = path.isAbsolute(filename)
+    ? filename
+    : path.join(cwd, filename);
+  const targetPath = path.join(cwd, MOCK_FIRESTORE_TARGET);
+  const relativePath = path.relative(path.dirname(absoluteFilename), targetPath);
+
+  return ensureRelativeSpecifier(toPosixPath(relativePath));
+};
 
 export const noFirestoreJestMock = createRule<[], MessageIds>({
   name: 'no-firestore-jest-mock',
@@ -30,6 +46,13 @@ export const noFirestoreJestMock = createRule<[], MessageIds>({
       return {};
     }
 
+    const cwd = typeof context.getCwd === 'function' ? context.getCwd() : process.cwd();
+    const replacementPath = buildReplacementPath(filename, cwd);
+    const reportData = {
+      moduleName: FIRESTORE_JEST_MOCK,
+      replacementPath,
+    } as const;
+
     return {
       ImportDeclaration(node) {
         // Skip type imports completely
@@ -41,14 +64,11 @@ export const noFirestoreJestMock = createRule<[], MessageIds>({
           context.report({
             node,
             messageId: 'noFirestoreJestMock',
-            data: {
-              moduleName: FIRESTORE_JEST_MOCK,
-              replacementPath: MOCK_FIRESTORE_PATH,
-            },
+            data: reportData,
             fix: (fixer) => {
               return fixer.replaceText(
                 node,
-                `import { mockFirestore } from '${MOCK_FIRESTORE_PATH}';`,
+                `import { mockFirestore } from '${replacementPath}';`,
               );
             },
           });
@@ -62,9 +82,16 @@ export const noFirestoreJestMock = createRule<[], MessageIds>({
           context.report({
             node,
             messageId: 'noFirestoreJestMock',
-            data: {
-              moduleName: FIRESTORE_JEST_MOCK,
-              replacementPath: MOCK_FIRESTORE_PATH,
+            data: reportData,
+            fix: (fixer) => {
+              if (node.source.type !== AST_NODE_TYPES.Literal) {
+                return null;
+              }
+
+              return fixer.replaceText(
+                node.source,
+                `'${replacementPath}'`,
+              );
             },
           });
         }
@@ -84,10 +111,7 @@ export const noFirestoreJestMock = createRule<[], MessageIds>({
           context.report({
             node,
             messageId: 'noFirestoreJestMock',
-            data: {
-              moduleName: FIRESTORE_JEST_MOCK,
-              replacementPath: MOCK_FIRESTORE_PATH,
-            },
+            data: reportData,
           });
         }
 
@@ -102,10 +126,7 @@ export const noFirestoreJestMock = createRule<[], MessageIds>({
           context.report({
             node,
             messageId: 'noFirestoreJestMock',
-            data: {
-              moduleName: FIRESTORE_JEST_MOCK,
-              replacementPath: MOCK_FIRESTORE_PATH,
-            },
+            data: reportData,
           });
         }
       },

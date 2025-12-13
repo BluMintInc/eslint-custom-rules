@@ -3,7 +3,7 @@ import { noFirestoreJestMock } from '../rules/no-firestore-jest-mock';
 
 const errorData = {
   moduleName: 'firestore-jest-mock',
-  replacementPath: '../../../../../__test-utils__/mockFirestore',
+  replacementPath: '../../__test-utils__/mockFirestore',
 } as const;
 const expectedError = { messageId: 'noFirestoreJestMock', data: errorData } as const;
 
@@ -16,7 +16,7 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
     },
     // Valid: Test file using mockFirestore
     {
-      code: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';`,
+      code: `import { mockFirestore } from '../../__test-utils__/mockFirestore';`,
       filename: 'src/components/test.test.ts',
     },
     // Valid: Test file with no Firestore mocks
@@ -49,13 +49,13 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
     // Valid: Test file with dynamic import of allowed package
     {
       code: `const mockFn = async () => {
-                const { mockFirestore } = await import('../../../../../__test-utils__/mockFirestore');
+                const { mockFirestore } = await import('../../__test-utils__/mockFirestore');
             };`,
       filename: 'src/components/test.test.ts',
     },
     // Valid: Test file with type import from mockFirestore
     {
-      code: `import type { MockFirestoreTypes } from '../../../../../__test-utils__/mockFirestore';`,
+      code: `import type { MockFirestoreTypes } from '../../__test-utils__/mockFirestore';`,
       filename: 'src/components/test.test.ts',
     },
     // Valid: Test file with type import from firestore-jest-mock
@@ -70,14 +70,29 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
       code: `import { mockFirebase } from 'firestore-jest-mock';`,
       filename: 'src/components/test.test.ts',
       errors: [expectedError],
-      output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';`,
+      output: `import { mockFirestore } from '../../__test-utils__/mockFirestore';`,
+    },
+    // Invalid: Direct import in deeper nested test file
+    {
+      code: `import { mockFirebase } from 'firestore-jest-mock';`,
+      filename: 'packages/app/src/features/foo/__tests__/component.test.ts',
+      errors: [
+        {
+          messageId: 'noFirestoreJestMock',
+          data: {
+            moduleName: 'firestore-jest-mock',
+            replacementPath: '../../../../../../__test-utils__/mockFirestore',
+          },
+        },
+      ],
+      output: `import { mockFirestore } from '../../../../../../__test-utils__/mockFirestore';`,
     },
     // Invalid: Multiple imports with aliases
     {
       code: `import { mockFirebase as myMock, mockSet as mySet } from 'firestore-jest-mock';`,
       filename: 'src/components/test.test.ts',
       errors: [expectedError],
-      output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';`,
+      output: `import { mockFirestore } from '../../__test-utils__/mockFirestore';`,
     },
     // Invalid: jest.mock usage
     {
@@ -92,6 +107,9 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
             };`,
       filename: 'src/components/test.test.ts',
       errors: [expectedError],
+      output: `const mockFn = async () => {
+                const { mockFirebase } = await import('../../__test-utils__/mockFirestore');
+            };`,
     },
     // Invalid: Require statement in test file
     {
@@ -108,7 +126,7 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
       filename: 'src/components/test.test.ts',
       errors: [expectedError],
       output: `import { render } from '@testing-library/react';
-            import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
+            import { mockFirestore } from '../../__test-utils__/mockFirestore';
             import { useState } from 'react';`,
     },
     // Invalid: Import with line breaks and comments
@@ -121,7 +139,7 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
             } from 'firestore-jest-mock';`,
       filename: 'src/components/test.test.ts',
       errors: [expectedError],
-      output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';`,
+      output: `import { mockFirestore } from '../../__test-utils__/mockFirestore';`,
     },
     // Invalid: jest.mock with other configurations
     {
