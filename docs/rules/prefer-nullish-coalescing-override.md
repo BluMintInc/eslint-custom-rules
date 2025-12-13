@@ -10,39 +10,43 @@
 
 ## Rule Details
 
-This rule is a configuration shim that disables `@typescript-eslint/prefer-nullish-coalescing` and intentionally does not report diagnostics. It documents our preference: use `??` only for null/undefined checks, and keep `||` for truthiness checks.
+`@typescript-eslint/prefer-nullish-coalescing` can flag every `||` fallback, even when the code intentionally treats all falsy values as “missing.” This override keeps the guidance but only applies it when a fallback is meant for `null` or `undefined`, avoiding false positives in boolean or truthiness-driven code paths.
 
-The nullish coalescing operator (`??`) and logical OR operator (`||`) serve different purposes:
-
-- `??` only checks for `null` or `undefined`
-- `||` checks for any falsy value (`false`, `0`, `''`, `null`, `undefined`, `NaN`)
-
-This rule recognizes contexts where the logical OR operator is intentionally used for its truthiness checking behavior and doesn't suggest replacing it with the nullish coalescing operator.
+Why this matters:
+- `||` replaces empty strings, `0`, and `false` with the fallback, which hides legitimate values in user input, configuration, and feature flags.
+- `??` keeps those falsy-but-valid values intact and only falls back when the value is actually `null` or `undefined`.
+- By being conservative, this override preserves boolean logic that relies on truthiness while still nudging developers toward `??` when the intent is a nullish-only default.
 
 ### ✅ Correct
 
 ```tsx
-// Boolean contexts where truthiness matters
+// Nullish fallback keeps falsy-but-valid values intact
+const port = config.port ?? 0;
+const title = payload.title ?? '';
+
+// Boolean logic where truthiness is intentional remains allowed
 if (isMatchMember || isTournamentAdmin) {
-  console.log("Has access");
+  console.log('Has access');
 }
-
-// Conditional rendering in JSX where truthiness matters
-{(isMatchMember || isTournamentAdmin) && <MatchLobbyIconButton />}
-
-// Boolean logic operations
 const canEdit = isOwner || hasEditPermission;
-
-// Default values when falsy values should trigger the default
-const displayName = username || 'Anonymous';
-
-// Nullish coalescing for null/undefined checks
-const value = maybeNull ?? defaultValue;
 ```
 
 ### ❌ Incorrect
 
-This rule doesn't report any issues itself. It's meant to override the `@typescript-eslint/prefer-nullish-coalescing` rule by turning it off and providing more specific guidance.
+```tsx
+// Using || hides valid falsy values such as 0
+const port = config.port || 0;
+
+// Empty strings get replaced even when they are meaningful
+const title = payload.title || '(untitled)';
+```
+
+Use `??` when the fallback should only run for `null` or `undefined`:
+
+```tsx
+const port = config.port ?? 0;
+const title = payload.title ?? '(untitled)';
+```
 
 ## When Not To Use It
 

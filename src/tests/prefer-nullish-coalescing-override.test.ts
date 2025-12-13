@@ -1,6 +1,16 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { preferNullishCoalescingOverride } from '../rules/prefer-nullish-coalescing-override';
 
+describe('prefer-nullish-coalescing-override messages', () => {
+  it('provides teaching-oriented guidance', () => {
+    expect(
+      preferNullishCoalescingOverride.meta.messages.preferNullishCoalescing,
+    ).toBe(
+      'Replace "{{left}} || {{right}}" with nullish coalescing when you only want a fallback for null or undefined. The logical OR operator treats "", 0, and false as missing values and silently swaps in the fallback, which hides valid data. Use "{{left}} ?? {{right}}" so only nullish inputs trigger the fallback.',
+    );
+  });
+});
+
 ruleTesterTs.run(
   'prefer-nullish-coalescing-override',
   preferNullishCoalescingOverride,
