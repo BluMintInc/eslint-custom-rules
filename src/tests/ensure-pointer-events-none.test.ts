@@ -1,6 +1,12 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { ensurePointerEventsNone } from '../rules/ensure-pointer-events-none';
 
+const pointerEventsError = (selector = '::before') =>
+  ({
+    messageId: 'missingPointerEventsNone' as const,
+    data: { selector },
+  });
+
 ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
   valid: [
     // Valid case: pseudo-element with position: absolute and pointer-events: none
@@ -399,7 +405,7 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
           }
         };
       `,
-      errors: [{ messageId: 'missingPointerEventsNone' }],
+      errors: [pointerEventsError('::before')],
       output: `
         const style = {
           '&::before': {
@@ -423,7 +429,7 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
           }
         };
       `,
-      errors: [{ messageId: 'missingPointerEventsNone' }],
+      errors: [pointerEventsError('::after')],
       output: `
         const style = {
           '&::after': {
@@ -447,7 +453,7 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
           }
         \`;
       `,
-      errors: [{ messageId: 'missingPointerEventsNone' }],
+      errors: [pointerEventsError('::before')],
     },
     // Invalid case: JSX style without pointer-events
     {
@@ -468,7 +474,7 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
           jsx: true,
         },
       },
-      errors: [{ messageId: 'missingPointerEventsNone' }],
+      errors: [pointerEventsError('::before')],
       output: `
         const Component = () => (
           <div style={{
@@ -494,7 +500,7 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
           }
         };
       `,
-      errors: [{ messageId: 'missingPointerEventsNone' }],
+      errors: [pointerEventsError('::before')],
       output: `
         const buttonStyle = {
           '&::before': {
@@ -518,7 +524,7 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
           }
         });
       `,
-      errors: [{ messageId: 'missingPointerEventsNone' }],
+      errors: [pointerEventsError('::before')],
       output: `
         const styles = css({
           '&::before': {
@@ -544,7 +550,7 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
           }
         };
       `,
-      errors: [{ messageId: 'missingPointerEventsNone' }],
+      errors: [pointerEventsError('::before')],
       output: `
         const styles = {
           container: {
@@ -578,7 +584,7 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
           }
         };
       `,
-      errors: [{ messageId: 'missingPointerEventsNone' }],
+      errors: [pointerEventsError('::before')],
       output: `
         const theme = {
           components: {
@@ -607,7 +613,7 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
           }
         };
       `,
-      errors: [{ messageId: 'missingPointerEventsNone' }],
+      errors: [pointerEventsError('::before')],
       output: `
         const style = {
           '&::before': {
@@ -630,7 +636,7 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
           '&:hover': { color: 'red' }
         };
       `,
-      errors: [{ messageId: 'missingPointerEventsNone' }],
+      errors: [pointerEventsError('::before')],
       output: `
         const styles = {
           container: { display: 'flex' },
@@ -656,7 +662,7 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
           }
         \`;
       `,
-      errors: [{ messageId: 'missingPointerEventsNone' }],
+      errors: [pointerEventsError('::before')],
     },
     // Invalid case: pseudo-element with old single-colon syntax
     {
@@ -670,7 +676,7 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
           }
         };
       `,
-      errors: [{ messageId: 'missingPointerEventsNone' }],
+      errors: [pointerEventsError('::before')],
       output: `
         const style = {
           '&:before': {
@@ -702,7 +708,7 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
           jsx: true,
         },
       },
-      errors: [{ messageId: 'missingPointerEventsNone' }],
+      errors: [pointerEventsError('::before')],
       output: `
         const pseudoStyles = {
           '&::before': {
@@ -737,7 +743,7 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
           }
         };
       `,
-      errors: [{ messageId: 'missingPointerEventsNone' }],
+      errors: [pointerEventsError('::before')],
       output: `
         const styles = {
           level1: {
@@ -771,7 +777,7 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
           }
         ];
       `,
-      errors: [{ messageId: 'missingPointerEventsNone' }],
+      errors: [pointerEventsError('::before')],
       output: `
         const styleArray = [
           {
@@ -799,7 +805,7 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
           };
         }
       `,
-      errors: [{ messageId: 'missingPointerEventsNone' }],
+      errors: [pointerEventsError('::before')],
       output: `
         function getStyles() {
           return {
@@ -826,7 +832,7 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
           }
         };
       `,
-      errors: [{ messageId: 'missingPointerEventsNone' }],
+      errors: [pointerEventsError('::before')],
       output: `
         const style = {
           '&::before': {
@@ -853,7 +859,7 @@ ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
           }
         };
       `,
-      errors: [{ messageId: 'missingPointerEventsNone' }],
+      errors: [pointerEventsError('::before')],
       output: `
         const style={
           '&::before':{
