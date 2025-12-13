@@ -4,7 +4,7 @@
 
 <!-- end auto-generated rule header -->
 
-Conditional string literals must not sit next to other JSX text or expressions. When JSX mixes `"text"`, `{condition && 'more text'}`, and other siblings in the same element, React splits the sentence across multiple text nodes. Those fragmented nodes confuse browser auto-translation, i18n tooling, and React hydration because different environments may assemble the text differently. Wrap conditional literals in their own element or move the entire sentence inside the conditional so it renders as one text node.
+Conditional string literals must not sit next to other JSX text or expressions. When JSX mixes `"text"`, `{condition && 'more text'}`, and other siblings in the same element, React splits the sentence across multiple text nodes. Those fragmented nodes confuse browser auto-translation, i18n tooling, and React hydration because different environments may assemble the text differently. Wrap the conditional expression in its own element or move the entire sentence inside the conditional so it renders as one text node.
 
 ## Rule Details
 
@@ -16,7 +16,7 @@ The rule reports conditional string literals that are adjacent to other JSX text
 
 To fix the warning, either:
 
-- Wrap the conditional literal in its own element so the text node stays intact while preserving the original operator: `<div>text <span>{condition && 'more text'}</span></div>` or `<div>text <span>{value || 'fallback'}</span></div>`
+- Wrap the conditional expression in its own element so the text node stays intact while preserving the original operator: `<div>text <span>{condition && 'more text'}</span></div>` or `<div>text <span>{value || 'fallback'}</span></div>`
 - Move the entire sentence into the conditional: `{condition && <div>text more text</div>}`
 
 Examples of **incorrect** code for this rule:

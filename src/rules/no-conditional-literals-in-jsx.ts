@@ -20,7 +20,7 @@ export const noConditionalLiteralsInJsx: TSESLint.RuleModule<
       unexpected:
         "What's wrong: Conditional text literal {{literal}} is rendered next to other JSX text or expressions under condition {{condition}}. " +
         'Why it matters: Fragmented text nodes confuse translation/i18n tools and can trigger React hydration mismatches when server and client group the text differently. ' +
-        'How to fix: Wrap the conditional literal in its own element (for example, <span>{ {{expression}} }</span>) or move the entire sentence inside the conditional so it renders as a single text node.',
+        'How to fix: Wrap the conditional expression in its own element (for example, <span>{ {{expression}} }</span>) or move the entire sentence inside the conditional so it renders as a single text node.',
     },
   },
   defaultOptions: [],
@@ -58,56 +58,47 @@ export const noConditionalLiteralsInJsx: TSESLint.RuleModule<
               n.expression.type === 'MemberExpression'),
         );
 
-        // Operands of {conditional && 'string'} -- the conditional and the
-        // literal. We want to make sure we have a text literal, otherwise we'd
-        // trigger this rule on the (safe) {conditional && <div>string</div>}.
-        const expressionOperandTypes = [
-          (node.expression as TSESTree.LogicalExpression).left.type,
-          (node.expression as TSESTree.LogicalExpression).right.type,
-        ];
-        if (
-          siblingTextNodes.concat(siblingExpressionNodes).length > 0 &&
-          expressionOperandTypes.includes(TSESTree.AST_NODE_TYPES.Literal)
-        ) {
-          const logicalExpression = node.expression as TSESTree.LogicalExpression;
-          const sourceCode = context.getSourceCode();
-          const literalNode =
-            logicalExpression.right.type === TSESTree.AST_NODE_TYPES.Literal
-              ? logicalExpression.right
-              : logicalExpression.left;
-          const conditionalNode =
-            literalNode === logicalExpression.right
-              ? logicalExpression.left
-              : logicalExpression.right;
-
-          if (literalNode.type !== TSESTree.AST_NODE_TYPES.Literal) {
-            return;
-          }
-
-          // Only enforce for string literals to avoid misleading messages for
-          // numeric or boolean literals rendered conditionally.
-          if (typeof literalNode.value !== 'string') {
-            return;
-          }
-
-          /**
-           * Ignore logical expressions with two literals; there is no conditional
-           * context to surface and the message would be misleading.
-           */
-          if (conditionalNode.type === TSESTree.AST_NODE_TYPES.Literal) {
-            return;
-          }
-
-          context.report({
-            node,
-            messageId: 'unexpected',
-            data: {
-              literal: sourceCode.getText(literalNode),
-              condition: sourceCode.getText(conditionalNode),
-              expression: sourceCode.getText(logicalExpression),
-            },
-          });
+        const hasSiblingContent =
+          siblingTextNodes.concat(siblingExpressionNodes).length > 0;
+        if (!hasSiblingContent) {
+          return;
         }
+
+        const logicalExpression = node.expression as TSESTree.LogicalExpression;
+        const literalNode = logicalExpression.right;
+        const conditionalNode = logicalExpression.left;
+
+        // Only enforce when the literal is the expression's return value.
+        if (literalNode.type !== TSESTree.AST_NODE_TYPES.Literal) {
+          return;
+        }
+
+        // Only enforce for string literals to avoid misleading messages for
+        // numeric or boolean literals rendered conditionally.
+        if (typeof literalNode.value !== 'string') {
+          return;
+        }
+
+        /**
+         * Ignore logical expressions that do not actually render the literal
+         * conditionally (e.g., literal && condition or literal || condition)
+         * and expressions with two literals.
+         */
+        if (conditionalNode.type === TSESTree.AST_NODE_TYPES.Literal) {
+          return;
+        }
+
+        const sourceCode = context.getSourceCode();
+
+        context.report({
+          node,
+          messageId: 'unexpected',
+          data: {
+            literal: sourceCode.getText(literalNode),
+            condition: sourceCode.getText(conditionalNode),
+            expression: sourceCode.getText(logicalExpression),
+          },
+        });
       },
     };
   },

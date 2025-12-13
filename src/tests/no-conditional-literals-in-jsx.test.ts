@@ -74,6 +74,19 @@ ruleTesterJsx.run(
         prefix {'foo' && 'bar'} suffix
       </div>
     )`,
+      // Literal on the left-hand side should not report because the literal is
+      // not the rendered value
+      `(
+      <div>
+        start {'always' && condition} end
+      </div>
+    )`,
+      // Literal short-circuit on the left is unconditional and should be ignored
+      `(
+      <div>
+        start {'always' || condition} end
+      </div>
+    )`,
     ],
   },
 );
