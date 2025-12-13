@@ -310,12 +310,6 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                           if (suggestedConstant) {
                             const fixes: TSESLint.RuleFix[] = [];
 
-                            // 1) Replace the literal with the constant
-                            fixes.push(
-                              fixer.replaceText(keyValue, suggestedConstant),
-                            );
-
-                            // 2) Ensure an import exists for the suggested constant
                             const sourceCode = context.getSourceCode();
                             const alreadyImportedNamed = Array.from(
                               queryKeyImports.values(),
@@ -324,27 +318,108 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                                 isQueryKeysSource(info.source) &&
                                 info.imported === suggestedConstant,
                             );
-                            const hasNamespaceOrDefault =
-                              namespaceImports.size > 0 ||
-                              defaultImports.size > 0;
+                            const namespaceLocal =
+                              namespaceImports.keys().next().value;
+                            const defaultLocal =
+                              defaultImports.keys().next().value;
 
-                            if (!alreadyImportedNamed && !hasNamespaceOrDefault) {
+                            let replacementText = suggestedConstant;
+                            let needsNamedImport = false;
+
+                            if (!alreadyImportedNamed) {
+                              if (namespaceLocal) {
+                                replacementText = `${namespaceLocal}.${suggestedConstant}`;
+                              } else if (defaultLocal) {
+                                replacementText = `${defaultLocal}.${suggestedConstant}`;
+                              } else {
+                                needsNamedImport = true;
+                              }
+                            }
+
+                            // 1) Replace the literal with the chosen reference
+                            fixes.push(
+                              fixer.replaceText(keyValue, replacementText),
+                            );
+
+                            // 2) Ensure an import exists for the suggested constant when needed
+                            if (needsNamedImport) {
                               const importText = `import { ${suggestedConstant} } from '@/util/routing/queryKeys';\n`;
-                              const firstImport =
-                                sourceCode.ast.body.find(
-                                  (
-                                    n,
-                                  ): n is TSESTree.ImportDeclaration =>
-                                    n.type === AST_NODE_TYPES.ImportDeclaration,
-                                );
+                              const queryKeysImport = sourceCode.ast.body.find(
+                                (n): n is TSESTree.ImportDeclaration =>
+                                  n.type === AST_NODE_TYPES.ImportDeclaration &&
+                                  n.source.type === AST_NODE_TYPES.Literal &&
+                                  typeof n.source.value === 'string' &&
+                                  isQueryKeysSource(n.source.value) &&
+                                  n.specifiers.some(
+                                    (s) => s.type === AST_NODE_TYPES.ImportSpecifier,
+                                  ),
+                              );
+                              const sideEffectImport = sourceCode.ast.body.find(
+                                (n): n is TSESTree.ImportDeclaration =>
+                                  n.type === AST_NODE_TYPES.ImportDeclaration &&
+                                  n.source.type === AST_NODE_TYPES.Literal &&
+                                  typeof n.source.value === 'string' &&
+                                  isQueryKeysSource(n.source.value) &&
+                                  n.specifiers.length === 0,
+                              );
+                              const firstImport = sourceCode.ast.body.find(
+                                (n): n is TSESTree.ImportDeclaration =>
+                                  n.type === AST_NODE_TYPES.ImportDeclaration,
+                              );
 
-                              if (firstImport) {
+                              if (queryKeysImport) {
+                                const importSpecifiers =
+                                  queryKeysImport.specifiers.filter(
+                                    (
+                                      spec,
+                                    ): spec is TSESTree.ImportSpecifier =>
+                                      spec.type === AST_NODE_TYPES.ImportSpecifier,
+                                  );
+                                const lastSpecifier =
+                                  importSpecifiers[importSpecifiers.length - 1];
                                 fixes.push(
-                                  fixer.insertTextBefore(firstImport, importText),
+                                  fixer.insertTextAfter(
+                                    lastSpecifier,
+                                    `, ${suggestedConstant}`,
+                                  ),
+                                );
+                              } else if (sideEffectImport) {
+                                const importTextWithoutTrailingNewline =
+                                  importText.trimEnd();
+                                fixes.push(
+                                  fixer.replaceText(
+                                    sideEffectImport,
+                                    importTextWithoutTrailingNewline,
+                                  ),
+                                );
+                              } else if (firstImport) {
+                                const firstImportStart =
+                                  firstImport.range?.[0] ??
+                                  sourceCode.getIndexFromLoc(
+                                    firstImport.loc.start,
+                                  );
+                                const firstImportLineStart =
+                                  sourceCode.text.lastIndexOf(
+                                    '\n',
+                                    firstImportStart - 1,
+                                  ) + 1;
+                                const firstImportIndent = sourceCode.text.slice(
+                                  firstImportLineStart,
+                                  firstImportStart,
+                                );
+                                const importTextWithIndent = `${firstImportIndent}${importText}`;
+                                fixes.push(
+                                  fixer.insertTextBeforeRange(
+                                    [firstImportLineStart, firstImportLineStart],
+                                    importTextWithIndent,
+                                  ),
                                 );
                               } else {
                                 fixes.push(
-                                  fixer.insertTextBeforeRange([0, 0], importText),
+                                  fixer.insertTextBeforeRange(
+                                    [0, 0],
+                                    importText,
+                                  ),
                                 );
                               }
                             }
@@ -363,7 +438,9 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                         variableName: keyValue.name,
                       },
                     });
-                  } else if (keyValue.type === AST_NODE_TYPES.MemberExpression) {
+                  } else if (
+                    keyValue.type === AST_NODE_TYPES.MemberExpression
+                  ) {
                     context.report({
                       node: keyValue,
                       messageId: 'invalidQueryKeySource',

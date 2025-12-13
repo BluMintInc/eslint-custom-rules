@@ -145,7 +145,9 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
         return { isMatch: false, depth: 0 };
       }
 
-      const invalidParent = parentSegment.some((segment) => segment !== 'parent');
+      const invalidParent = parentSegment.some(
+        (segment) => segment !== 'parent',
+      );
       if (invalidParent) {
         return { isMatch: false, depth: 0 };
       }
@@ -267,8 +269,8 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
               parentAccess.depth === 1
                 ? 'userId'
                 : parentAccess.depth === 2
-                  ? 'parentId'
-                  : `parent${parentAccess.depth}Id`;
+                ? 'parentId'
+                : `parent${parentAccess.depth}Id`;
 
             context.report({
               node,

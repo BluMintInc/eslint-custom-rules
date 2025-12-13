@@ -79,7 +79,8 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
   create(context, [options]) {
     const approvedPrefixes = options.prefixes || DEFAULT_OPTIONS.prefixes;
     const ignoreOverriddenGetters =
-      options.ignoreOverriddenGetters ?? DEFAULT_OPTIONS.ignoreOverriddenGetters;
+      options.ignoreOverriddenGetters ??
+      DEFAULT_OPTIONS.ignoreOverriddenGetters;
     const importStatusCache = new Map<string, boolean>();
     const externalApiUsageCache = new Map<string, boolean>();
 
@@ -150,8 +151,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       return (
         hasApprovedPrefix(normalizedName, {
           treatLeadingUnderscoreAsApproved: false,
-        }) ||
-        suffixKeywords.some((keyword) => lowerName.endsWith(keyword))
+        }) || suffixKeywords.some((keyword) => lowerName.endsWith(keyword))
       );
     }
 
@@ -249,9 +249,18 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         // Check for logical expressions that typically return boolean
         if (
           node.init.type === AST_NODE_TYPES.BinaryExpression &&
-          ['===', '!==', '==', '!=', '>', '<', '>=', '<=', 'in', 'instanceof'].includes(
-            node.init.operator,
-          )
+          [
+            '===',
+            '!==',
+            '==',
+            '!=',
+            '>',
+            '<',
+            '>=',
+            '<=',
+            'in',
+            'instanceof',
+          ].includes(node.init.operator)
         ) {
           return true;
         }
@@ -510,9 +519,18 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         }
         if (
           node.body.type === AST_NODE_TYPES.BinaryExpression &&
-          ['===', '!==', '==', '!=', '>', '<', '>=', '<=', 'in', 'instanceof'].includes(
-            node.body.operator,
-          )
+          [
+            '===',
+            '!==',
+            '==',
+            '!=',
+            '>',
+            '<',
+            '>=',
+            '<=',
+            'in',
+            'instanceof',
+          ].includes(node.body.operator)
         ) {
           return true;
         }
@@ -595,9 +613,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         const lowerCallee = calleeName.toLowerCase();
 
         if (lowerCallee.startsWith('assert')) {
-          return identifierReturnsBoolean(calleeName)
-            ? 'boolean'
-            : 'unknown';
+          return identifierReturnsBoolean(calleeName) ? 'boolean' : 'unknown';
         }
 
         const matchesPrefix = approvedPrefixes.some(
