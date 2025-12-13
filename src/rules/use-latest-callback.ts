@@ -37,7 +37,9 @@ export const useLatestCallback = createRule<[], MessageIds>({
     const reactDefaultLikeNames = new Set<string>();
     let hasReactMemberUseCallback = false;
 
-    const isJSXLikeReturn = (node: TSESTree.Node | null | undefined): boolean => {
+    const isJSXLikeReturn = (
+      node: TSESTree.Node | null | undefined,
+    ): boolean => {
       if (!node) return false;
 
       if (
@@ -75,9 +77,7 @@ export const useLatestCallback = createRule<[], MessageIds>({
       }
 
       if (node.type === AST_NODE_TYPES.LogicalExpression) {
-        return (
-          isJSXLikeReturn(node.left) || isJSXLikeReturn(node.right)
-        );
+        return isJSXLikeReturn(node.left) || isJSXLikeReturn(node.right);
       }
 
       if (node.type === AST_NODE_TYPES.CallExpression) {
@@ -171,7 +171,10 @@ export const useLatestCallback = createRule<[], MessageIds>({
           node.callee.property.type === AST_NODE_TYPES.Identifier &&
           node.callee.property.name === 'useCallback';
 
-        if ((isUseCallbackIdentifierCall || isUseCallbackMemberCall) && node.arguments.length >= 1) {
+        if (
+          (isUseCallbackIdentifierCall || isUseCallbackMemberCall) &&
+          node.arguments.length >= 1
+        ) {
           if (isUseCallbackMemberCall) {
             hasReactMemberUseCallback = true;
           }
@@ -234,12 +237,12 @@ export const useLatestCallback = createRule<[], MessageIds>({
               fix(fixer) {
                 const sourceCode = context.getSourceCode();
                 const callbackText = sourceCode.getText(node.arguments[0]);
-                const typeParams =
-                  (node as TSESTree.CallExpression).typeParameters
-                    ? sourceCode.getText(
-                        (node as TSESTree.CallExpression).typeParameters!,
-                      )
-                    : '';
+                const typeParams = (node as TSESTree.CallExpression)
+                  .typeParameters
+                  ? sourceCode.getText(
+                      (node as TSESTree.CallExpression).typeParameters!,
+                    )
+                  : '';
 
                 // Replace useCallback with useLatestCallback and remove the dependency array
                 return fixer.replaceText(
@@ -277,7 +280,8 @@ export const useLatestCallback = createRule<[], MessageIds>({
             ) as TSESTree.ImportSpecifier[];
 
             if (specifiers.length > 0 || hasReactMemberUseCallback) {
-              const useCallbackLocalName = specifiers[0]?.local.name ?? 'useCallback';
+              const useCallbackLocalName =
+                specifiers[0]?.local.name ?? 'useCallback';
               const recommendedHook = hasUseLatestCallbackImport
                 ? useLatestCallbackImportName
                 : useCallbackLocalName === 'useCallback'

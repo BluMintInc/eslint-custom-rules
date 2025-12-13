@@ -27,16 +27,15 @@ const getFunctionDescription = (
       : null;
 
   const isArrowFunction = node.type === AST_NODE_TYPES.ArrowFunctionExpression;
-  const functionName = declaredName ?? (isArrowFunction ? undefined : fallbackName);
+  const functionName =
+    declaredName ?? (isArrowFunction ? undefined : fallbackName);
 
   if (functionName) {
     return `function "${functionName}"`;
   }
 
   if (node.type === AST_NODE_TYPES.ArrowFunctionExpression) {
-    return fallbackName
-      ? `arrow function "${fallbackName}"`
-      : 'arrow function';
+    return fallbackName ? `arrow function "${fallbackName}"` : 'arrow function';
   }
 
   return 'function expression';
@@ -77,9 +76,7 @@ const isWriteReference = (reference: TSESLint.Scope.Reference): boolean =>
 
 const isAsyncFunctionExpression = (
   node: unknown,
-): node is
-  | TSESTree.ArrowFunctionExpression
-  | TSESTree.FunctionExpression => {
+): node is TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression => {
   if (!node || typeof node !== 'object') {
     return false;
   }
@@ -89,8 +86,11 @@ const isAsyncFunctionExpression = (
   return (
     (typedNode.type === AST_NODE_TYPES.ArrowFunctionExpression ||
       typedNode.type === AST_NODE_TYPES.FunctionExpression) &&
-    (typedNode as TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression)
-      .async === true
+    (
+      typedNode as
+        | TSESTree.ArrowFunctionExpression
+        | TSESTree.FunctionExpression
+    ).async === true
   );
 };
 
@@ -276,8 +276,8 @@ const analyzeCallbackAsyncStatus = (
     });
   }
 
-  const relevantWrites = writes.filter(({ start }) =>
-    typeof callbackStart === 'number' && start <= callbackStart,
+  const relevantWrites = writes.filter(
+    ({ start }) => typeof callbackStart === 'number' && start <= callbackStart,
   );
 
   if (!relevantWrites.length) {
@@ -285,7 +285,8 @@ const analyzeCallbackAsyncStatus = (
   }
 
   const lastWrite = relevantWrites.reduce<CallbackWrite | null>(
-    (latest, current) => (!latest || current.start > latest.start ? current : latest),
+    (latest, current) =>
+      !latest || current.start > latest.start ? current : latest,
     null,
   );
 
@@ -308,10 +309,7 @@ export const noAsyncForEach: TSESLint.RuleModule<'noAsyncForEach', []> = {
           callback
         ) {
           const scope = getScope(context, sourceCode, callback);
-          const asyncCallbackInfo = analyzeCallbackAsyncStatus(
-            callback,
-            scope,
-          );
+          const asyncCallbackInfo = analyzeCallbackAsyncStatus(callback, scope);
 
           if (asyncCallbackInfo) {
             context.report({

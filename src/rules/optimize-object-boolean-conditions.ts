@@ -16,7 +16,8 @@ interface BooleanConditionPattern {
 function isHookCall(node: TSESTree.CallExpression): boolean {
   const callee = node.callee;
   return (
-    (callee.type === AST_NODE_TYPES.Identifier && HOOK_NAMES.has(callee.name)) ||
+    (callee.type === AST_NODE_TYPES.Identifier &&
+      HOOK_NAMES.has(callee.name)) ||
     (callee.type === AST_NODE_TYPES.MemberExpression &&
       !callee.computed &&
       callee.object.type === AST_NODE_TYPES.Identifier &&
@@ -50,7 +51,10 @@ function isObjectExistenceCheck(node: TSESTree.Node): boolean {
   // Check for patterns like !obj
   if (node.type === AST_NODE_TYPES.UnaryExpression) {
     // !obj
-    if (node.operator === '!' && node.argument.type === AST_NODE_TYPES.Identifier) {
+    if (
+      node.operator === '!' &&
+      node.argument.type === AST_NODE_TYPES.Identifier
+    ) {
       return true;
     }
     // !!obj
@@ -204,7 +208,11 @@ function analyzeBooleanCondition(
         type: 'complex',
         objectName,
         expression,
-        suggestedName: generateBooleanVariableName(objectName, 'complex', false),
+        suggestedName: generateBooleanVariableName(
+          objectName,
+          'complex',
+          false,
+        ),
         node,
       };
     }
