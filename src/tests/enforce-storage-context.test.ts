@@ -344,6 +344,13 @@ store.setItem('k', 'v');
     },
     {
       code: `
+        localStorage = createMockStorage();
+        localStorage.setItem('k', 'v');
+      `,
+      errors: [{ messageId: 'useStorageContext' }],
+    },
+    {
+      code: `
         function catchDoesNotHoist() {
           try {
             doThing();

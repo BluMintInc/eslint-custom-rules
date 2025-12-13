@@ -94,6 +94,13 @@ const createAliasState = (): AliasState => {
         return;
       }
     }
+
+    if (STORAGE_NAMES.has(name as StorageKind) || GLOBAL_NAMES.has(name)) {
+      // Avoid synthesizing a new binding for global storage identifiers; treating
+      // the assignment as a shadow creates false negatives for later accesses.
+      return;
+    }
+
     setAlias(name, value);
   };
   const markShadowed = (
@@ -543,6 +550,25 @@ const createIdentifierHandler = (
     const parent = node.parent;
     if (identifierRepresentsDeclaration(node)) {
       const hoistToFunctionScope = isVarBinding(node);
+      const existingAlias = getAliasFromStack(storageAliases, node.name);
+      const isAssignmentTarget =
+        parent?.type === AST_NODE_TYPES.AssignmentExpression && parent.left === node;
+      if (
+        isAssignmentTarget &&
+        !existingAlias &&
+        (STORAGE_NAMES.has(node.name as StorageKind) || GLOBAL_NAMES.has(node.name))
+      ) {
+        // Ignore assignments to global storage identifiers without an existing
+        // local binding. Treating them as declarations would shadow the global
+        // object and mask subsequent violations.
+        return;
+      }
+      if (existingAlias === 'localStorage' || existingAlias === 'sessionStorage') {
+        // Preserve existing aliases introduced earlier in the traversal
+        // (e.g., destructuring) so later declaration-node visits do not
+        // override them as shadowed bindings.
+        return;
+      }
       if (
         parent?.type === AST_NODE_TYPES.ClassExpression &&
         parent.id === node
