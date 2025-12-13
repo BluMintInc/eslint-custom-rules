@@ -46,34 +46,25 @@ const buildDestructuringFix = (
   fixer: TSESLint.RuleFixer,
   pattern: TSESTree.ObjectPattern,
 ): TSESLint.RuleFix | null => {
-  const mappedProperties = pattern.properties
-    .map((property) => {
-      if (property.type !== AST_NODE_TYPES.Property) {
-        return null;
-      }
+  for (const property of pattern.properties) {
+    if (property.type !== AST_NODE_TYPES.Property) continue;
 
-      const value =
-        property.value.type === AST_NODE_TYPES.AssignmentPattern
-          ? property.value.left
-          : property.value;
+    const value =
+      property.value.type === AST_NODE_TYPES.AssignmentPattern
+        ? property.value.left
+        : property.value;
+    if (value.type !== AST_NODE_TYPES.Identifier) continue;
 
-      if (value.type !== AST_NODE_TYPES.Identifier) {
-        return null;
-      }
+    const localName = value.name;
+    const replacement =
+      localName === 'mockFirestore'
+        ? '{ mockFirestore }'
+        : `{ mockFirestore: ${localName} }`;
 
-      const localName = value.name;
-
-      return localName === 'mockFirestore'
-        ? 'mockFirestore'
-        : `mockFirestore: ${localName}`;
-    })
-    .filter((property): property is string => property !== null);
-
-  if (mappedProperties.length === 0) {
-    return null;
+    return fixer.replaceText(pattern, replacement);
   }
 
-  return fixer.replaceText(pattern, `{ ${mappedProperties.join(', ')} }`);
+  return null;
 };
 
 export const noFirestoreJestMock = createRule<[], MessageIds>({
@@ -88,20 +79,21 @@ export const noFirestoreJestMock = createRule<[], MessageIds>({
     schema: [],
     messages: {
       noFirestoreJestMock:
-        'Importing "{{moduleName}}" in tests bypasses the shared mockFirestore helper that mirrors production schema and centralized seeding/cleanup. Use mockFirestore from "{{replacementPath}}" so Firestore tests stay consistent and avoid flaky state.',
+        'What\'s wrong: This test imports "{{moduleName}}" directly → Why it matters: it bypasses the centralized mockFirestore helper that mirrors production schema and keeps seeding/cleanup consistent, which leads to inconsistent data and flaky tests → How to fix: import { mockFirestore } from "{{replacementPath}}" instead.',
     },
   },
   defaultOptions: [],
   create(context) {
-    const filename = context.getFilename();
+    const sourceFilePath = context.getFilename();
 
     // Only apply rule to test files
-    if (!filename.endsWith('.test.ts')) {
+    if (!sourceFilePath.endsWith('.test.ts')) {
       return {};
     }
 
-    const cwd = typeof context.getCwd === 'function' ? context.getCwd() : process.cwd();
-    const replacementPath = buildReplacementPath(filename, cwd);
+    const cwd =
+      typeof context.getCwd === 'function' ? context.getCwd() : process.cwd();
+    const replacementPath = buildReplacementPath(sourceFilePath, cwd);
     const reportData = {
       moduleName: FIRESTORE_JEST_MOCK,
       replacementPath,

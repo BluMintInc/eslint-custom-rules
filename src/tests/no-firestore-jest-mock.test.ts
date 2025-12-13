@@ -119,7 +119,7 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
       filename: 'src/components/test.test.ts',
       errors: [expectedError],
       output: `const mockFn = async () => {
-                const { mockFirestore: mockFirebase, mockFirestore: mockSet } = await import('../../__test-utils__/mockFirestore');
+                const { mockFirestore: mockFirebase } = await import('../../__test-utils__/mockFirestore');
             };`,
     },
     // Invalid: Dynamic import with alias in test file
