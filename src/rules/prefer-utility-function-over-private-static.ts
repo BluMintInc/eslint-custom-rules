@@ -18,7 +18,7 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
     schema: [],
     messages: {
       preferUtilityFunctionOverPrivateStatic:
-        'Private static methods should be abstracted into standalone utility functions for better reusability and testability',
+        'Private static method "{{methodName}}" in class "{{className}}" does not use class state. Keeping class-agnostic helpers as private statics hides reusable logic and signals coupling that is not present. Extract this logic into a standalone utility function (module-level or shared) and import it where needed so it can be reused and unit tested independently.',
     },
   },
   defaultOptions: [],
@@ -57,6 +57,58 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
       return false;
     };
 
+    const getMethodName = (
+      method: TSESTree.MethodDefinition,
+      sourceCode: Readonly<{ getText: (node: TSESTree.Node) => string }>,
+    ): string => {
+      if (
+        method.key.type === 'PrivateIdentifier' ||
+        method.key.type === 'Identifier'
+      ) {
+        return method.key.name;
+      }
+
+      if (method.key.type === 'Literal' && method.key.value) {
+        return String(method.key.value);
+      }
+
+      return sourceCode.getText(method.key);
+    };
+
+    const getClassName = (method: TSESTree.MethodDefinition): string => {
+      const classNode = method.parent?.parent;
+
+      if (
+        classNode &&
+        (classNode.type === 'ClassDeclaration' ||
+          classNode.type === 'ClassExpression')
+      ) {
+        if (classNode.id && classNode.id.type === 'Identifier') {
+          return classNode.id.name;
+        }
+
+        if (
+          classNode.type === 'ClassExpression' &&
+          classNode.parent &&
+          classNode.parent.type === 'VariableDeclarator' &&
+          classNode.parent.id.type === 'Identifier'
+        ) {
+          return classNode.parent.id.name;
+        }
+
+        if (
+          classNode.type === 'ClassExpression' &&
+          classNode.parent &&
+          classNode.parent.type === 'AssignmentExpression' &&
+          classNode.parent.left.type === 'Identifier'
+        ) {
+          return classNode.parent.left.name;
+        }
+      }
+
+      return 'this class';
+    };
+
     return {
       'MethodDefinition[static=true][accessibility="private"]'(
         node: TSESTree.MethodDefinition,
@@ -82,9 +134,16 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
 
         // If the method doesn't use 'this', it's a good candidate for extraction
         if (!usesThis) {
+          const methodName = getMethodName(node, sourceCode);
+          const className = getClassName(node);
+
           context.report({
             node,
             messageId: 'preferUtilityFunctionOverPrivateStatic',
+            data: {
+              methodName,
+              className,
+            },
           });
         }
       },
