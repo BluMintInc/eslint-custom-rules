@@ -18,9 +18,9 @@ export const noConditionalLiteralsInJsx: TSESLint.RuleModule<
     schema: [],
     messages: {
       unexpected:
-        "What's wrong: Conditional text literal {{literal}} is rendered next to other JSX text or expressions under condition {{condition}}. " +
-        'Why it matters: Fragmented text nodes confuse translation/i18n tools and can trigger React hydration mismatches when server and client group the text differently. ' +
-        'How to fix: Wrap the conditional expression in its own element (for example, <span>{ {{expression}} }</span>) or move the entire sentence inside the conditional so it renders as a single text node.',
+        'Conditional text literal {{literal}} is rendered next to other JSX text or expressions under condition {{condition}}. ' +
+        'This fragments text nodes, confusing translation/i18n tools and potentially causing React hydration mismatches when server and client group the text differently. ' +
+        'Wrap the conditional expression in its own element (for example, <span>{ {{expression}} }</span>) or move the entire sentence inside the conditional so it renders as a single text node.',
     },
   },
   defaultOptions: [],
