@@ -8,6 +8,10 @@ type CollectFn = (
   includePredicate: (name: string) => boolean,
 ) => CollectResult;
 
+type SourceCodeWithScope = TSESLint.SourceCode & {
+  getScope(node: TSESTree.Node): TSESLint.Scope.Scope;
+};
+
 const mergeCollectResults = (
   acc: CollectResult,
   result: CollectResult,
@@ -51,12 +55,11 @@ type TypeReferenceCollectorOptions = {
   node: TSESTree.TSTypeReference;
   includePredicate: (name: string) => boolean;
   collectProps: CollectFn;
-  extractOmittedPropNames: (omittedProps: TSESTree.TypeNode) => Set<string>;
-  extractPickedPropNames: (pickedProps: TSESTree.TypeNode) => Set<string>;
+  extractLiteralPropNames: (typeNode: TSESTree.TypeNode) => Set<string>;
   combinePredicates: (
     ...predicates: Array<(name: string) => boolean>
   ) => (name: string) => boolean;
-  context: TSESLint.RuleContext<string, unknown[]>;
+  sourceCode: TSESLint.SourceCode;
   visitedAliases: Set<string>;
 };
 
@@ -64,10 +67,9 @@ const collectPropsFromTypeReference = ({
   node,
   includePredicate,
   collectProps,
-  extractOmittedPropNames,
-  extractPickedPropNames,
+  extractLiteralPropNames,
   combinePredicates,
-  context,
+  sourceCode,
   visitedAliases,
 }: TypeReferenceCollectorOptions): CollectResult => {
   if (node.typeName.type !== AST_NODE_TYPES.Identifier) {
@@ -85,7 +87,7 @@ const collectPropsFromTypeReference = ({
 
   if (referenceName === 'Omit' && node.typeParameters?.params.length === 2) {
     const [base, omitted] = node.typeParameters.params;
-    const omittedNames = extractOmittedPropNames(omitted);
+    const omittedNames = extractLiteralPropNames(omitted);
     const combinedInclude = combinePredicates(
       includePredicate,
       (name) => !omittedNames.has(name),
@@ -96,7 +98,7 @@ const collectPropsFromTypeReference = ({
 
   if (referenceName === 'Pick' && node.typeParameters?.params.length === 2) {
     const [base, pickedProps] = node.typeParameters.params;
-    const pickedNames = extractPickedPropNames(pickedProps);
+    const pickedNames = extractLiteralPropNames(pickedProps);
     const combinedInclude = combinePredicates(
       includePredicate,
       (name) => pickedNames.size === 0 || pickedNames.has(name),
@@ -111,7 +113,7 @@ const collectPropsFromTypeReference = ({
 
   visitedAliases.add(referenceName);
 
-  const scope = context.getScope();
+  const scope = (sourceCode as SourceCodeWithScope).getScope(node);
   const variable = scope.variables.find((v) => v.name === referenceName);
 
   if (
@@ -148,6 +150,9 @@ export const noUnusedProps = createRule({
     const filename =
       (context as { filename?: string; getFilename(): string }).filename ??
       context.getFilename();
+    const sourceCode: TSESLint.SourceCode = context.getSourceCode();
+    const getScope = (node: TSESTree.Node) =>
+      (sourceCode as SourceCodeWithScope).getScope(node);
     const ruleSettings =
       ((context.settings && context.settings['no-unused-props']) as {
         reactLikeExtensions?: string[];
@@ -409,13 +414,13 @@ export const noUnusedProps = createRule({
             (name: string) =>
               predicates.every((predicate) => predicate(name));
 
-          const extractOmittedPropNames = (
-            omittedProps: TSESTree.TypeNode,
+          const extractLiteralPropNames = (
+            typeNode: TSESTree.TypeNode,
           ): Set<string> => {
             const names = new Set<string>();
 
-            if (omittedProps.type === AST_NODE_TYPES.TSUnionType) {
-              omittedProps.types.forEach((type) => {
+            if (typeNode.type === AST_NODE_TYPES.TSUnionType) {
+              typeNode.types.forEach((type) => {
                 if (
                   type.type === AST_NODE_TYPES.TSLiteralType &&
                   type.literal.type === AST_NODE_TYPES.Literal &&
@@ -425,37 +430,11 @@ export const noUnusedProps = createRule({
                 }
               });
             } else if (
-              omittedProps.type === AST_NODE_TYPES.TSLiteralType &&
-              omittedProps.literal.type === AST_NODE_TYPES.Literal &&
-              typeof omittedProps.literal.value === 'string'
+              typeNode.type === AST_NODE_TYPES.TSLiteralType &&
+              typeNode.literal.type === AST_NODE_TYPES.Literal &&
+              typeof typeNode.literal.value === 'string'
             ) {
-              names.add(omittedProps.literal.value);
-            }
-
-            return names;
-          };
-
-          const extractPickedPropNames = (
-            pickedProps: TSESTree.TypeNode,
-          ): Set<string> => {
-            const names = new Set<string>();
-
-            if (pickedProps.type === AST_NODE_TYPES.TSUnionType) {
-              pickedProps.types.forEach((type) => {
-                if (
-                  type.type === AST_NODE_TYPES.TSLiteralType &&
-                  type.literal.type === AST_NODE_TYPES.Literal &&
-                  typeof type.literal.value === 'string'
-                ) {
-                  names.add(type.literal.value);
-                }
-              });
-            } else if (
-              pickedProps.type === AST_NODE_TYPES.TSLiteralType &&
-              pickedProps.literal.type === AST_NODE_TYPES.Literal &&
-              typeof pickedProps.literal.value === 'string'
-            ) {
-              names.add(pickedProps.literal.value);
+              names.add(typeNode.literal.value);
             }
 
             return names;
@@ -491,10 +470,9 @@ export const noUnusedProps = createRule({
                     node,
                     includePredicate,
                     collectProps,
-                    extractOmittedPropNames,
-                    extractPickedPropNames,
+                    extractLiteralPropNames,
                     combinePredicates,
-                    context,
+                    sourceCode,
                     visitedAliases,
                   });
                 default:
@@ -533,8 +511,8 @@ export const noUnusedProps = createRule({
             }
 
             const baseTypeName = baseType.typeName.name;
-            const omittedPropNames = extractOmittedPropNames(omittedProps);
-            const scope = context.getScope();
+            const omittedPropNames = extractLiteralPropNames(omittedProps);
+            const scope = getScope(baseType);
             const variable = scope.variables.find(
               (v) => v.name === baseTypeName,
             );
@@ -637,7 +615,7 @@ export const noUnusedProps = createRule({
                       );
                     } else {
                       // For referenced types in intersections, we need to find their type declaration
-                      const scope = context.getScope();
+                    const scope = getScope(type);
                       const variable = scope.variables.find(
                         (v) => v.name === typeName.name,
                       );
@@ -750,7 +728,7 @@ export const noUnusedProps = createRule({
                     const baseTypeName = baseType.typeName.name;
 
                     // Find the base type definition
-                    const scope = context.getScope();
+                    const scope = getScope(baseType);
                     const variable = scope.variables.find(
                       (v) => v.name === baseTypeName,
                     );
