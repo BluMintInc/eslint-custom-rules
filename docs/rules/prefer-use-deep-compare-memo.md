@@ -1,4 +1,4 @@
-# Enforce using useDeepCompareMemo when dependency array contains non-primitive values (objects, arrays, functions) that are not already memoized. This prevents unnecessary re-renders due to reference changes (`@blumintinc/blumint/prefer-use-deep-compare-memo`)
+# Prefer useDeepCompareMemo when dependencies are non-primitive (`@blumintinc/blumint/prefer-use-deep-compare-memo`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
@@ -6,18 +6,15 @@
 
 <!-- end auto-generated rule header -->
 
-Enforce using `useDeepCompareMemo` instead of React's `useMemo` when the dependency array contains pass-by-reference values (objects, arrays, functions) that aren't already memoized. This prevents unnecessary re-renders caused by reference-equality checks failing for structurally identical but newly created references.
+`useMemo` compares dependencies by reference. Objects, arrays, and functions created inside a render receive a new identity every time, so `useMemo` treats them as "changed" and reruns the memoized computation, triggering downstream renders. `useDeepCompareMemo` (or memoizing the dependencies first) compares by value and keeps equivalent dependencies stable.
 
 ## Rule Details
 
-- **Why**: `useMemo` uses reference equality on dependencies. Inline objects/arrays/functions or non-stable identifiers will create new references on each render, retriggering the memoized computation. `useDeepCompareMemo` uses deep equality, reducing unnecessary recalculations/renders.
-- **What it checks**:
-  - Targets `useMemo` calls whose dependency array contains at least one non-primitive value (object, array, function)
-  - Ignores cases where those non-primitives are already memoized above (e.g., via `useMemo`, `useCallback`, `useLatestCallback`, or `useDeepCompareMemo`)
-  - Ignores empty dependency arrays
-  - Ignores cases where the `useMemo` returns JSX (see `@blumintinc/blumint/react-usememo-should-be-component`)
+- **Why**: Non-primitive dependencies change identity each render. Reference equality in `useMemo` sees them as different, so the memo recomputes and can force avoidable renders.
+- **How**: The rule flags `useMemo` calls when the dependency array contains an object, array, or function that is not already memoized. Identifiers are considered safe when they come from `useMemo`, `useCallback`, `useLatestCallback`, or `useDeepCompareMemo`.
+- **Fix**: Auto-fix replaces `useMemo` with `useDeepCompareMemo` and inserts `import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';`. You can also silence the warning by memoizing the dependencies first.
 
-This rule is auto-fixable: it replaces `useMemo` with `useDeepCompareMemo` and adds an import:
+Auto-fix adds the import if needed:
 
 ```ts
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
@@ -25,10 +22,9 @@ import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 
 ### Examples
 
-Bad: useMemo with unmemoized object dependency:
+Bad – non-primitive dependency recreates each render:
 
 ```tsx
-// Component re-renders whenever `userConfig` reference changes
 const UserProfile: FC<UserProfileProps> = ({ userConfig }) => {
   const formattedData = useMemo(() => {
     return {
@@ -42,7 +38,7 @@ const UserProfile: FC<UserProfileProps> = ({ userConfig }) => {
 };
 ```
 
-Good: useDeepCompareMemo with structurally identical objects:
+Good – compare dependency by value with `useDeepCompareMemo`:
 
 ```tsx
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
@@ -60,12 +56,32 @@ const UserProfile: FC<UserProfileProps> = ({ userConfig }) => {
 };
 ```
 
+Good – memoize the dependency first (no rule warning):
+
+```tsx
+const UserProfile: FC<UserProfileProps> = ({ userConfig }) => {
+  const memoizedConfig = useMemo(
+    () => ({ ...userConfig, status: getStatusLabel(userConfig.status) }),
+    [userConfig],
+  );
+
+  const formattedData = useMemo(() => memoizedConfig.status, [memoizedConfig]);
+
+  return <ProfileCard status={formattedData} />;
+};
+```
+
 ### Edge Cases
 
-- Primitives only: dependency arrays with only primitives are ignored
-- Already memoized: identifiers produced by `useMemo`, `useCallback`, `useLatestCallback`, or `useDeepCompareMemo` are considered stable and won’t trigger
-- Empty dependency arrays: ignored
-- JSX in memo body: rule does not trigger when the memo body contains JSX (handled by `@blumintinc/blumint/react-usememo-should-be-component`)
+- Primitives: dependency arrays with only primitives are ignored.
+- Already memoized: identifiers produced by `useMemo`, `useCallback`, `useLatestCallback`, or `useDeepCompareMemo` are treated as stable.
+- Empty dependency arrays: ignored.
+- JSX in memo body: ignored, to avoid false positives with JSX-returning memos.
+- Performance hotspots: prefer memoizing dependencies instead of deep comparison when deep equality cost is a concern.
+
+### Options
+
+- None
 
 ### When Not To Use It
 

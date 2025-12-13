@@ -1,6 +1,11 @@
 import { ruleTesterJsx, ruleTesterTs } from '../utils/ruleTester';
 import { preferUseDeepCompareMemo } from '../rules/prefer-use-deep-compare-memo';
 
+const error = {
+  messageId: 'preferUseDeepCompareMemo' as const,
+  data: { hook: 'useMemo' as const },
+};
+
 // Use JSX tester to allow JSX detection inside callbacks
 ruleTesterJsx.run(
   'prefer-use-deep-compare-memo (jsx)',
@@ -69,7 +74,7 @@ const Comp = ({ userConfig }) => {
   return <div>{formatted.name}</div>;
 };
 `,
-        errors: [{ messageId: 'preferUseDeepCompareMemo' }],
+        errors: [error],
         output: `
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 import { useMemo } from 'react';
@@ -88,7 +93,7 @@ const Comp = ({ a, b }) => {
   return <div>{arr}</div>;
 };
 `,
-        errors: [{ messageId: 'preferUseDeepCompareMemo' }],
+        errors: [error],
         output: `
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 import { useMemo } from 'react';
@@ -107,7 +112,7 @@ const Comp = ({ fn }) => {
   return <div>{result}</div>;
 };
 `,
-        errors: [{ messageId: 'preferUseDeepCompareMemo' }],
+        errors: [error],
         output: `
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 import { useMemo } from 'react';
@@ -126,7 +131,7 @@ const Comp = ({ obj }) => {
   return <div>{result}</div>;
 };
 `,
-        errors: [{ messageId: 'preferUseDeepCompareMemo' }],
+        errors: [error],
         output: `
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 import { useMemo } from 'react';
@@ -146,7 +151,7 @@ const Comp = ({ value }: { value: T }) => {
   return <div>{v}</div>;
 };
 `,
-        errors: [{ messageId: 'preferUseDeepCompareMemo' }],
+        errors: [error],
         output: `
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 import { useMemo } from 'react';
@@ -183,7 +188,7 @@ const v = useMemo(() => f(1), [f(1)]);
 import { useMemo } from 'react';
 const v = useMemo(() => 1, [{ a: 1 }, 2]);
 `,
-        errors: [{ messageId: 'preferUseDeepCompareMemo' }],
+        errors: [error],
         output: `
 import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
 import { useMemo } from 'react';
