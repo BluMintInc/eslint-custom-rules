@@ -10,12 +10,22 @@ ruleTesterJsx.run('no-useless-fragment', noUselessFragment, {
   invalid: [
     {
       code: '<><ChildComponent /></>',
-      errors: [{ messageId: 'noUselessFragment' }],
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
       output: '<ChildComponent />',
     },
     {
       code: '<><NestedComponent><ChildComponent /></NestedComponent></>',
-      errors: [{ messageId: 'noUselessFragment' }],
+      errors: [
+        {
+          messageId: 'noUselessFragment',
+          data: { childKind: 'JSX element' },
+        },
+      ],
       output: '<NestedComponent><ChildComponent /></NestedComponent>',
     },
   ],
