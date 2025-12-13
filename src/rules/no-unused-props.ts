@@ -67,9 +67,16 @@ export const noUnusedProps = createRule({
       'ThisType',
     ]);
 
+    const isTypeAliasDeclaration = (
+      node: TSESTree.Node | undefined,
+    ): node is TSESTree.TSTypeAliasDeclaration =>
+      node?.type === AST_NODE_TYPES.TSTypeAliasDeclaration;
+
     const propsTypes: Map<string, Record<string, TSESTree.Node>> = new Map();
-    const componentToReferencedSpreadTypeNames: Map<string, Set<string>> =
-      new Map();
+    const componentToReferencedSpreadTypeNames: Map<
+      string,
+      Set<string>
+    > = new Map();
     const spreadTypeToPropNames: Map<string, Set<string>> = new Map();
     const processingTypeAliases = new Set<string>();
     const componentsToCheck: Array<{
@@ -256,6 +263,22 @@ export const noUnusedProps = createRule({
           const spreadTypeProps: Record<string, string[]> = {};
           const visitingTypeReferences = new Set<string>();
 
+          const withTypeVisitation = <T>(
+            visited: Set<string>,
+            typeName: string,
+            callback: () => T,
+          ): T | null => {
+            if (visited.has(typeName)) {
+              return null;
+            }
+            visited.add(typeName);
+            try {
+              return callback();
+            } finally {
+              visited.delete(typeName);
+            }
+          };
+
           const addBaseTypeProps = (
             typeNode: TSESTree.TypeNode,
             shouldInclude: (name: string) => boolean = () => true,
@@ -300,31 +323,32 @@ export const noUnusedProps = createRule({
                     return false;
                   }
                   const typeIdentifier = node.typeName;
-                  if (visitingTypeNames.has(typeIdentifier.name)) {
-                    return false;
-                  }
-                  visitingTypeNames.add(typeIdentifier.name);
-                  try {
-                    const scope = context.getScope();
-                    const variable = scope.variables.find(
-                      (v) => v.name === typeIdentifier.name,
-                    );
-                    const typeAliasDef = variable?.defs.find(
-                      (def) =>
-                        def.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration,
-                    );
-                    const typeAliasNode =
-                      typeAliasDef?.node.type ===
-                      AST_NODE_TYPES.TSTypeAliasDeclaration
-                        ? (typeAliasDef.node as TSESTree.TSTypeAliasDeclaration)
-                        : null;
-                    if (typeAliasNode?.typeAnnotation) {
-                      return visit(typeAliasNode.typeAnnotation);
-                    }
-                    return false;
-                  } finally {
-                    visitingTypeNames.delete(typeIdentifier.name);
-                  }
+                  return (
+                    withTypeVisitation(
+                      visitingTypeNames,
+                      typeIdentifier.name,
+                      () => {
+                        const scope = context.getScope();
+                        const variable = scope.variables.find(
+                          (v) => v.name === typeIdentifier.name,
+                        );
+                        const typeAliasDef = variable?.defs.find(
+                          (def) =>
+                            def.node.type ===
+                            AST_NODE_TYPES.TSTypeAliasDeclaration,
+                        );
+                        const typeAliasAnnotation = isTypeAliasDeclaration(
+                          typeAliasDef?.node,
+                        )
+                          ? typeAliasDef.node.typeAnnotation
+                          : null;
+                        if (typeAliasAnnotation) {
+                          return visit(typeAliasAnnotation);
+                        }
+                        return false;
+                      },
+                    ) ?? false
+                  );
                 }
                 default:
                   return false;
@@ -490,20 +514,24 @@ export const noUnusedProps = createRule({
                       const variable = scope.variables.find(
                         (v) => v.name === typeName.name,
                       );
-                      if (
-                        variable &&
-                        variable.defs[0]?.node.type ===
-                          AST_NODE_TYPES.TSTypeAliasDeclaration
-                      ) {
-                        if (visitingTypeReferences.has(typeName.name)) {
-                          return;
-                        }
-                        visitingTypeReferences.add(typeName.name);
-                        try {
-                          extractProps(variable.defs[0].node.typeAnnotation);
-                        } finally {
-                          visitingTypeReferences.delete(typeName.name);
-                        }
+                      const typeAliasDef = variable?.defs.find(
+                        (def) =>
+                          def.node.type ===
+                          AST_NODE_TYPES.TSTypeAliasDeclaration,
+                      );
+                      const typeAliasAnnotation = isTypeAliasDeclaration(
+                        typeAliasDef?.node,
+                      )
+                        ? typeAliasDef.node.typeAnnotation
+                        : null;
+                      if (typeAliasAnnotation) {
+                        withTypeVisitation(
+                          visitingTypeReferences,
+                          typeName.name,
+                          () => {
+                            extractProps(typeAliasAnnotation);
+                          },
+                        );
                       } else {
                         // If we can't find the type declaration, it's likely an imported type
                         // Mark it as a forwarded prop
@@ -606,15 +634,20 @@ export const noUnusedProps = createRule({
                     const variable = scope.variables.find(
                       (v) => v.name === baseTypeName,
                     );
+                    const typeAliasDef = variable?.defs.find(
+                      (def) =>
+                        def.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration,
+                    );
 
                     if (
-                      variable &&
-                      variable.defs[0]?.node.type ===
-                        AST_NODE_TYPES.TSTypeAliasDeclaration
+                      typeAliasDef?.node.type ===
+                      AST_NODE_TYPES.TSTypeAliasDeclaration
                     ) {
                       // For Partial<T>, Required<T>, etc., add all properties from the base type
+                      const typeAliasNode: TSESTree.TSTypeAliasDeclaration =
+                        typeAliasDef.node as TSESTree.TSTypeAliasDeclaration;
                       const added = addBaseTypeProps(
-                        variable.defs[0].node.typeAnnotation,
+                        typeAliasNode.typeAnnotation,
                       );
                       if (!added) {
                         props[`...${baseTypeName}`] = baseType.typeName;
@@ -655,9 +688,9 @@ export const noUnusedProps = createRule({
           for (const [spreadType, propNames] of Object.entries(
             spreadTypeProps,
           )) {
-          const spreadTypeSet =
-            spreadTypeToPropNames.get(spreadType) ?? new Set<string>();
-          spreadTypeToPropNames.set(spreadType, spreadTypeSet);
+            const spreadTypeSet =
+              spreadTypeToPropNames.get(spreadType) ?? new Set<string>();
+            spreadTypeToPropNames.set(spreadType, spreadTypeSet);
             propNames.forEach((prop) => spreadTypeSet.add(prop));
           }
         } finally {
@@ -687,10 +720,10 @@ export const noUnusedProps = createRule({
                 param.properties.forEach((prop) => {
                   if (
                     prop.type === AST_NODE_TYPES.Property &&
-                (prop.key.type === AST_NODE_TYPES.Identifier ||
-                  prop.key.type === AST_NODE_TYPES.Literal)
+                    (prop.key.type === AST_NODE_TYPES.Identifier ||
+                      prop.key.type === AST_NODE_TYPES.Literal)
                   ) {
-                const propName = getStaticPropName(prop.key);
+                    const propName = getStaticPropName(prop.key);
                     if (propName) {
                       used.add(propName);
                     }
