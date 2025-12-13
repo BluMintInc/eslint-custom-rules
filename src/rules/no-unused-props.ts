@@ -51,7 +51,8 @@ export const noUnusedProps = createRule({
     ]);
 
     const propsTypes: Map<string, Record<string, TSESTree.Node>> = new Map();
-    const propsTypeToSpreadTypes: Map<string, Set<string>> = new Map();
+    const componentPropsToReferencedSpreadTypes: Map<string, Set<string>> =
+      new Map();
     const spreadTypeToPropNames: Map<string, Set<string>> = new Map();
     const componentsToCheck: Array<{
       typeName: string;
@@ -67,7 +68,7 @@ export const noUnusedProps = createRule({
 
     const clearState = () => {
       propsTypes.clear();
-      propsTypeToSpreadTypes.clear();
+      componentPropsToReferencedSpreadTypes.clear();
       spreadTypeToPropNames.clear();
       componentsToCheck.length = 0;
       currentComponent = null;
@@ -131,7 +132,8 @@ export const noUnusedProps = createRule({
       currentTypeName: string,
       used: Set<string>,
     ) => {
-      const spreadTypes = propsTypeToSpreadTypes.get(currentTypeName);
+      const spreadTypes =
+        componentPropsToReferencedSpreadTypes.get(currentTypeName);
       if (!spreadTypes) return false;
 
       for (const spreadType of spreadTypes) {
@@ -567,7 +569,7 @@ export const noUnusedProps = createRule({
           propsTypes.set(node.id.name, props);
 
           const typeName = node.id.name;
-          propsTypeToSpreadTypes.set(
+          componentPropsToReferencedSpreadTypes.set(
             typeName,
             new Set(Object.keys(spreadTypeProps)),
           );
