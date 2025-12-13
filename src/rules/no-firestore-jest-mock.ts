@@ -7,7 +7,7 @@ type MessageIds = 'noFirestoreJestMock';
 const FIRESTORE_JEST_MOCK = 'firestore-jest-mock';
 const MOCK_FIRESTORE_TARGET = '__test-utils__/mockFirestore';
 
-const toPosixPath = (value: string) => value.replace(/\\/g, '/');
+const toPosixPath = (filePath: string) => filePath.replace(/\\/g, '/');
 
 const ensureRelativeSpecifier = (specifier: string) =>
   specifier.startsWith('.') ? specifier : `./${specifier}`;
