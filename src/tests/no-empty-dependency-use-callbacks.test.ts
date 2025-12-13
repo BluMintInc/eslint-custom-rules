@@ -116,6 +116,14 @@ function Component() {
 `,
   `
 import { useCallback } from 'react';
+function Component() {
+  type LocalHandler = () => string;
+  const handler: LocalHandler = useCallback(() => 'hi', []);
+  return handler();
+}
+`,
+  `
+import { useCallback } from 'react';
 function Outer() {
   type LocalType = { value: number };
   function Inner() {
@@ -191,6 +199,14 @@ import { sendAnalytics } from './analytics';
 function Component({ id }) {
   const report = useLatestCallback(() => sendAnalytics(id));
   return <button onClick={report}>Report</button>;
+}
+`,
+  `
+import { useLatestCallback } from 'use-latest-callback';
+function Component() {
+  type LatestHandler = () => number;
+  const run: LatestHandler = useLatestCallback(() => 1);
+  return run();
 }
 `,
   {

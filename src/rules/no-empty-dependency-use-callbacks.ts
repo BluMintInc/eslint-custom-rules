@@ -31,34 +31,32 @@ const PREFER_UTILITY_LATEST_MESSAGE = [
   'How to fix: extract "{{name}}" to a module-level utility (or disable with a brief note if you rely on HMR or a stale-closure pattern).',
 ].join(' -> ');
 
-function isUseCallbackCallee(
+function isHookCallee(
   callee: TSESTree.LeftHandSideExpression,
+  hookName: string,
 ): boolean {
   if (callee.type === AST_NODE_TYPES.Identifier) {
-    return callee.name === 'useCallback';
+    return callee.name === hookName;
   }
 
   return (
     callee.type === AST_NODE_TYPES.MemberExpression &&
     !callee.computed &&
     callee.property.type === AST_NODE_TYPES.Identifier &&
-    callee.property.name === 'useCallback'
+    callee.property.name === hookName
   );
+}
+
+function isUseCallbackCallee(
+  callee: TSESTree.LeftHandSideExpression,
+): boolean {
+  return isHookCallee(callee, 'useCallback');
 }
 
 function isUseLatestCallbackCallee(
   callee: TSESTree.LeftHandSideExpression,
 ): boolean {
-  if (callee.type === AST_NODE_TYPES.Identifier) {
-    return callee.name === 'useLatestCallback';
-  }
-
-  return (
-    callee.type === AST_NODE_TYPES.MemberExpression &&
-    !callee.computed &&
-    callee.property.type === AST_NODE_TYPES.Identifier &&
-    callee.property.name === 'useLatestCallback'
-  );
+  return isHookCallee(callee, 'useLatestCallback');
 }
 
 function isFunctionExpression(
@@ -351,6 +349,7 @@ function usesThisOrSuper(
 function analyzeExternalReferences(
   context: Readonly<TSESLint.RuleContext<MessageIds, Options>>,
   fn: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
+  extraTypeRoots: TSESTree.Node[] = [],
 ): { hasComponentScopeRef: boolean } {
   const sourceCode = context.getSourceCode();
   if (usesThisOrSuper(fn.body, sourceCode)) {
@@ -411,6 +410,7 @@ function analyzeExternalReferences(
     }
 
     typeRoots.push(...collectBodyTypeAnnotations(fn.body, sourceCode));
+    typeRoots.push(...extraTypeRoots);
 
     if (typeRoots.some((typeRoot) => usesThisOrSuper(typeRoot, sourceCode))) {
       hasComponentScopeRef = true;
@@ -675,7 +675,26 @@ export const noEmptyDependencyUseCallbacks = createRule<Options, MessageIds>({
 
       if (ASTHelpers.returnsJSX(callback.body)) return;
 
-      const { hasComponentScopeRef } = analyzeExternalReferences(context, callback);
+      const extraTypeRoots: TSESTree.Node[] = [];
+      if (
+        callExpression.parent &&
+        callExpression.parent.type === AST_NODE_TYPES.VariableDeclarator &&
+        'typeAnnotation' in callExpression.parent.id &&
+        callExpression.parent.id.typeAnnotation
+      ) {
+        const typeAnnotation = callExpression.parent.id.typeAnnotation;
+        if (typeAnnotation.type === AST_NODE_TYPES.TSTypeAnnotation) {
+          extraTypeRoots.push(typeAnnotation.typeAnnotation);
+        } else {
+          extraTypeRoots.push(typeAnnotation);
+        }
+      }
+
+      const { hasComponentScopeRef } = analyzeExternalReferences(
+        context,
+        callback,
+        extraTypeRoots,
+      );
       if (hasComponentScopeRef) {
         return;
       }
