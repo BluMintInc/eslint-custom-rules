@@ -15,13 +15,14 @@ export const noUuidv4Base62AsKey = createRule<[], MessageIds>({
     schema: [],
     messages: {
       noUuidv4Base62AsKey:
-        'Do not use uuidv4Base62() to generate keys for elements in a list or loop. ' +
-        'These keys are not stable across renders and can cause performance issues. ' +
-        'Use a stable identifier from your data instead.',
+        'Key "{{keyExpression}}" comes from uuidv4Base62(), which regenerates on every render so React cannot reconcile list items and may remount components, drop local state, or reorder DOM nodes. ' +
+        'Use a stable identifier from your data (for example a database id, slug, or memoized array of ids) instead of generating a new UUID inside render.',
     },
   },
   defaultOptions: [],
   create(context) {
+    const sourceCode = context.getSourceCode();
+
     // Track imported uuidv4Base62 identifiers
     const importedUuidv4Base62 = new Set<string>();
 
@@ -42,15 +43,20 @@ export const noUuidv4Base62AsKey = createRule<[], MessageIds>({
     // Helper function to report a rule violation while avoiding duplicates
     function reportViolation(
       node: TSESTree.JSXElement | TSESTree.JSXFragment,
+      keyExpression?: TSESTree.Node,
       messageId: MessageIds = 'noUuidv4Base62AsKey',
     ) {
       // Skip if we've already reported this element
       if (reportedElements.has(node)) return;
 
       reportedElements.add(node);
+      const keyExpressionText = keyExpression
+        ? sourceCode.getText(keyExpression).trim()
+        : 'uuidv4Base62()';
       context.report({
         node,
         messageId,
+        data: { keyExpression: keyExpressionText },
       });
     }
 
@@ -161,7 +167,7 @@ export const noUuidv4Base62AsKey = createRule<[], MessageIds>({
 
           // Direct uuidv4Base62() call in key
           if (containsUuidV4Base62Call(expression)) {
-            reportViolation(jsxElement);
+            reportViolation(jsxElement, expression);
             return;
           }
 
@@ -176,7 +182,7 @@ export const noUuidv4Base62AsKey = createRule<[], MessageIds>({
 
             // Check if this variable has been marked as containing keys with uuidv4Base62
             if (variablesWithUuidv4Base62Keys.has(objName)) {
-              reportViolation(jsxElement);
+              reportViolation(jsxElement, expression);
               return;
             }
 
@@ -199,7 +205,7 @@ export const noUuidv4Base62AsKey = createRule<[], MessageIds>({
                       ancestor.callee.object.name,
                     )
                   ) {
-                    reportViolation(jsxElement);
+                    reportViolation(jsxElement, expression);
                     return;
                   }
                 }
@@ -452,7 +458,10 @@ export const noUuidv4Base62AsKey = createRule<[], MessageIds>({
                   attr.value.expression.property.name === 'key'
                 ) {
                   // The test case - directly report this element
-                  reportViolation(returnExpr);
+                  reportViolation(
+                    returnExpr,
+                    attr.value.expression,
+                  );
                   break;
                 }
               }
