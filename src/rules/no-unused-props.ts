@@ -272,26 +272,27 @@ export const noUnusedProps = createRule({
                     return false;
                   }
                   visitingTypeNames.add(typeIdentifier.name);
-                  const scope = context.getScope();
-                  const variable = scope.variables.find(
-                    (v) => v.name === typeIdentifier.name,
-                  );
-                  const typeAliasDef = variable?.defs.find(
-                    (def) =>
-                      def.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration,
-                  );
-                  const typeAliasNode =
-                    typeAliasDef?.node.type ===
-                    AST_NODE_TYPES.TSTypeAliasDeclaration
-                      ? (typeAliasDef.node as TSESTree.TSTypeAliasDeclaration)
-                      : null;
-                  if (typeAliasNode?.typeAnnotation) {
-                    const added = visit(typeAliasNode.typeAnnotation);
+                  try {
+                    const scope = context.getScope();
+                    const variable = scope.variables.find(
+                      (v) => v.name === typeIdentifier.name,
+                    );
+                    const typeAliasDef = variable?.defs.find(
+                      (def) =>
+                        def.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration,
+                    );
+                    const typeAliasNode =
+                      typeAliasDef?.node.type ===
+                      AST_NODE_TYPES.TSTypeAliasDeclaration
+                        ? (typeAliasDef.node as TSESTree.TSTypeAliasDeclaration)
+                        : null;
+                    if (typeAliasNode?.typeAnnotation) {
+                      return visit(typeAliasNode.typeAnnotation);
+                    }
+                    return false;
+                  } finally {
                     visitingTypeNames.delete(typeIdentifier.name);
-                    return added;
                   }
-                  visitingTypeNames.delete(typeIdentifier.name);
-                  return false;
                 }
                 default:
                   return false;
@@ -346,6 +347,8 @@ export const noUnusedProps = createRule({
               if (baseTypeName) {
                 props[`...${baseTypeName}`] = (baseType as TSESTree.TSTypeReference).typeName;
                 spreadTypeProps[baseTypeName] ??= [];
+              } else {
+                addBaseTypeProps(baseType);
               }
               return;
             }

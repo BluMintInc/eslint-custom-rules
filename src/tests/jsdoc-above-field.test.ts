@@ -87,6 +87,13 @@ interface Account {
       errors: [{ messageId: 'moveJsdocAbove' }],
     },
     {
+      code: `type InlineType = { value: string; /** @remarks stays with field */ };`,
+      output: `type InlineType = { 
+ /** @remarks stays with field */
+ value: string; };`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
       code: `interface Profile {
   username: string; /** @remarks unique handle */
 }`,

@@ -147,8 +147,10 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
 
     const indentForNode = (node: TSESTree.Node): string => {
       const line = sourceCode.lines[node.loc.start.line - 1] ?? '';
-      const match = line.match(/^\s*/);
-      return match?.[0] ?? '';
+      const beforeColumn = line.slice(0, node.loc.start.column);
+      const trailingWhitespace = beforeColumn.match(/\s*$/);
+
+      return trailingWhitespace?.[0] ?? '';
     };
 
     const formatCommentWithIndent = (
@@ -184,6 +186,12 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
       let removalStart = comment.range[0];
       const removalEnd = comment.range[1];
       const lineStart = insertTarget.range[0] - insertTarget.loc.start.column;
+      const textBeforeNode = sourceCode.text.slice(lineStart, insertTarget.range[0]);
+      const hasCodeBeforeNode = /\S/.test(textBeforeNode);
+      const insertionPoint = hasCodeBeforeNode ? insertTarget.range[0] : lineStart;
+      const insertionText = hasCodeBeforeNode
+        ? `\n${commentText}\n${indent}`
+        : `${commentText}\n`;
 
       while (
         removalStart > node.range[1] &&
@@ -203,8 +211,8 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
         fix(fixer) {
           return [
             fixer.insertTextBeforeRange(
-              [lineStart, lineStart],
-              `${commentText}\n`,
+              [insertionPoint, insertionPoint],
+              insertionText,
             ),
             fixer.removeRange([removalStart, removalEnd]),
           ];
