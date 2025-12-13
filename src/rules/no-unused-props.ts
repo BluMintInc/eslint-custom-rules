@@ -446,17 +446,17 @@ export const noUnusedProps = createRule({
           };
 
           function extractProps(typeNode: TSESTree.TypeNode) {
-          if (typeNode.type === AST_NODE_TYPES.TSTypeLiteral) {
-            typeNode.members.forEach((member) => {
-              if (member.type !== AST_NODE_TYPES.TSPropertySignature) {
-                return;
-              }
-              const propName = getStaticPropName(member.key);
-              if (propName) {
-                props[propName] = member.key;
-              }
-            });
-          } else if (typeNode.type === AST_NODE_TYPES.TSIntersectionType) {
+            if (typeNode.type === AST_NODE_TYPES.TSTypeLiteral) {
+              typeNode.members.forEach((member) => {
+                if (member.type !== AST_NODE_TYPES.TSPropertySignature) {
+                  return;
+                }
+                const propName = getStaticPropName(member.key);
+                if (propName) {
+                  props[propName] = member.key;
+                }
+              });
+            } else if (typeNode.type === AST_NODE_TYPES.TSIntersectionType) {
               typeNode.types.forEach((type) => {
                 if (type.type === AST_NODE_TYPES.TSTypeReference) {
                   const typeName = type.typeName;

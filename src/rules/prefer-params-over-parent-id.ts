@@ -15,16 +15,36 @@ const HANDLER_TYPES = new Set([
   'RealtimeDbChangeHandlerTransaction',
 ]);
 
+const getQualifiedNameIdentifier = (
+  typeName: TSESTree.EntityName,
+): string | null => {
+  if (typeName.type === AST_NODE_TYPES.Identifier) {
+    return typeName.name;
+  }
+  if (
+    typeName.type === AST_NODE_TYPES.TSQualifiedName &&
+    typeName.right.type === AST_NODE_TYPES.Identifier
+  ) {
+    return typeName.right.name;
+  }
+  return null;
+};
+
 const checkTypeAnnotationForHandler = (
   typeNode: TSESTree.TypeNode,
 ): boolean => {
-  if (
-    typeNode.type === AST_NODE_TYPES.TSTypeReference &&
-    typeNode.typeName.type === AST_NODE_TYPES.Identifier
-  ) {
-    return HANDLER_TYPES.has(typeNode.typeName.name);
+  switch (typeNode.type) {
+    case AST_NODE_TYPES.TSTypeReference: {
+      const typeIdentifier = getQualifiedNameIdentifier(typeNode.typeName);
+      return typeIdentifier ? HANDLER_TYPES.has(typeIdentifier) : false;
+    }
+    case AST_NODE_TYPES.TSUnionType:
+      return typeNode.types.some(checkTypeAnnotationForHandler);
+    case AST_NODE_TYPES.TSIntersectionType:
+      return typeNode.types.some(checkTypeAnnotationForHandler);
+    default:
+      return false;
   }
-  return false;
 };
 
 const findTypeAnnotationInContext = (
@@ -83,7 +103,9 @@ const isFirebaseChangeHandler = (node: TSESTree.Node): boolean => {
   return checkTypeAnnotationForHandler(typeAnnotation.typeAnnotation);
 };
 
-const isParentIdAccess = (node: TSESTree.MemberExpression): {
+const isParentIdAccess = (
+  node: TSESTree.MemberExpression,
+): {
   isMatch: boolean;
   depth: number;
 } => {
@@ -109,7 +131,7 @@ const isParentIdAccess = (node: TSESTree.MemberExpression): {
     return { isMatch: false, depth: 0 };
   }
 
-  const refIndex = chain.indexOf('ref');
+  const refIndex = chain.lastIndexOf('ref');
   if (refIndex === -1) {
     return { isMatch: false, depth: 0 };
   }
@@ -163,63 +185,74 @@ const hasOptionalChaining = (node: TSESTree.MemberExpression): boolean => {
   return false;
 };
 
-const isParamsInScope = (handlerNode: TSESTree.Node): boolean => {
-  if (
-    handlerNode.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-    handlerNode.type === AST_NODE_TYPES.FunctionExpression ||
-    handlerNode.type === AST_NODE_TYPES.FunctionDeclaration
-  ) {
-    const firstParam = handlerNode.params[0];
-    if (!firstParam) return false;
-
-    if (firstParam.type === AST_NODE_TYPES.ObjectPattern) {
-      return firstParam.properties.some((prop) => {
-        if (
-          prop.type === AST_NODE_TYPES.Property &&
-          prop.key.type === AST_NODE_TYPES.Identifier &&
-          prop.key.name === 'params'
-        ) {
-          return true;
-        }
-        return false;
-      });
-    }
-
+const findParamsIdentifier = (
+  pattern: TSESTree.ObjectPattern,
+): string | null => {
+  for (const prop of pattern.properties) {
     if (
-      handlerNode.body &&
-      handlerNode.body.type === AST_NODE_TYPES.BlockStatement
+      prop.type === AST_NODE_TYPES.Property &&
+      prop.key.type === AST_NODE_TYPES.Identifier &&
+      prop.key.name === 'params' &&
+      prop.value.type === AST_NODE_TYPES.Identifier &&
+      prop.value.name === 'params'
     ) {
-      for (const statement of handlerNode.body.body) {
-        if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
-          for (const declarator of statement.declarations) {
-            if (
-              declarator.id.type === AST_NODE_TYPES.ObjectPattern &&
-              declarator.init &&
-              declarator.init.type === AST_NODE_TYPES.Identifier
-            ) {
-              const eventParamName =
-                firstParam.type === AST_NODE_TYPES.Identifier
-                  ? firstParam.name
-                  : 'event';
-              if (declarator.init.name === eventParamName) {
-                return declarator.id.properties.some((prop) => {
-                  if (
-                    prop.type === AST_NODE_TYPES.Property &&
-                    prop.key.type === AST_NODE_TYPES.Identifier &&
-                    prop.key.name === 'params'
-                  ) {
-                    return true;
-                  }
-                  return false;
-                });
-              }
-            }
-          }
+      return prop.value.name;
+    }
+  }
+  return null;
+};
+
+const getParamsIdentifierInScope = (
+  handlerNode: TSESTree.Node,
+): string | null => {
+  if (
+    handlerNode.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
+    handlerNode.type !== AST_NODE_TYPES.FunctionExpression &&
+    handlerNode.type !== AST_NODE_TYPES.FunctionDeclaration
+  ) {
+    return null;
+  }
+
+  const firstParam = handlerNode.params[0];
+  if (!firstParam) {
+    return null;
+  }
+
+  if (firstParam.type === AST_NODE_TYPES.ObjectPattern) {
+    const identifier = findParamsIdentifier(firstParam);
+    if (identifier) {
+      return identifier;
+    }
+  }
+
+  if (
+    handlerNode.body &&
+    handlerNode.body.type === AST_NODE_TYPES.BlockStatement
+  ) {
+    const eventParamName =
+      firstParam.type === AST_NODE_TYPES.Identifier ? firstParam.name : 'event';
+    for (const statement of handlerNode.body.body) {
+      if (statement.type !== AST_NODE_TYPES.VariableDeclaration) {
+        continue;
+      }
+      for (const declarator of statement.declarations) {
+        if (
+          declarator.id.type !== AST_NODE_TYPES.ObjectPattern ||
+          !declarator.init ||
+          declarator.init.type !== AST_NODE_TYPES.Identifier ||
+          declarator.init.name !== eventParamName
+        ) {
+          continue;
+        }
+        const identifier = findParamsIdentifier(declarator.id);
+        if (identifier) {
+          return identifier;
         }
       }
     }
   }
-  return false;
+
+  return null;
 };
 
 export const preferParamsOverParentId = createRule<[], MessageIds>({
@@ -234,8 +267,13 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
     fixable: 'code',
     schema: [],
     messages: {
-      preferParams:
-        'Accessing parent IDs through `ref.parent.id` bypasses the handler params and breaks when collection nesting changes. Use the params object for stable, typed IDs instead (destructure `const { params: { {{paramName}} } } = event` or read `params.{{paramName}}`).',
+      preferParams: [
+        "What's wrong: This code reads an ID via `ref.parent...id` instead of using the trigger's params.",
+        '',
+        'Why it matters: Walking `ref.parent` ties the handler to the current path depth; when collections change, it can yield the wrong ID (or a collection name) and bypasses the typed params the trigger provides.',
+        '',
+        'How to fix: Read the ID from `params.{{paramName}}` (or destructure `const { params } = event` and then access `params.{{paramName}}`).',
+      ].join('\n'),
     },
   },
   defaultOptions: [],
@@ -264,7 +302,7 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
 
           if (handlerNode) {
             const hasOptional = hasOptionalChaining(node);
-            const paramsInScope = isParamsInScope(handlerNode);
+            const paramsIdentifier = getParamsIdentifierInScope(handlerNode);
             // Suggest different parameter names based on depth
             // Note: These conventions may vary by data model; adjust if needed
             const paramSuggestion = getParentParamName(parentAccess.depth);
@@ -275,11 +313,11 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
               data: {
                 paramName: paramSuggestion,
               },
-              fix: paramsInScope
+              fix: paramsIdentifier
                 ? (fixer) => {
                     const replacement = hasOptional
-                      ? `params?.${paramSuggestion}`
-                      : `params.${paramSuggestion}`;
+                      ? `${paramsIdentifier}?.${paramSuggestion}`
+                      : `${paramsIdentifier}.${paramSuggestion}`;
                     return fixer.replaceText(node, replacement);
                   }
                 : undefined,
