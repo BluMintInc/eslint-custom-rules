@@ -12,19 +12,19 @@ Enforce using fast-deep-equal for equality checks instead of microdiff.
 
 This rule enforces that boolean equality checks use `fast-deep-equal` instead of counting results from `microdiff`. `microdiff` builds and returns a change list for diff inspection, so using it for equality forces unnecessary allocations and obscures the intent of a simple true/false comparison. `fast-deep-equal` performs a direct equality check and keeps equality intent obvious.
 
-**Why this matters**
+### Why this matters
 
 - `microdiff` creates diff entries (paths, types, values) before you ever count `.length`, which is wasted work when you only need a boolean.
 - Equality intent is explicit with `isEqual(a, b)`, reducing the chance that future edits treat the value as a diff they can iterate.
 - `fast-deep-equal` is optimized for equality and avoids the extra allocations that slow hot code paths.
 
-**What this rule checks**
+### What this rule checks
 
 - Comparisons such as `microdiff(a, b).length === 0`, `0 === diff(a, b).length`, or `!diff(a, b).length`.
 - Comparisons that use a variable assigned to `diff(...)` when that variable is only used for `.length` checks.
 - Aliased imports of both `microdiff` and `fast-deep-equal`.
 
-**Autofix**
+### Autofix
 
 - Adds `fast-deep-equal` import if missing.
 - Replaces `microdiff` length comparisons with `isEqual(left, right)` (or `!isEqual(left, right)` for inequality checks).
@@ -77,13 +77,19 @@ function updateIfNeeded(obj1, obj2) {
   }
   return true;
 }
+```
 
+```ts
 import isEqual from 'fast-deep-equal/es6';
+
 function areObjectsEqual(obj1, obj2) {
   return isEqual(obj1, obj2);
 }
+```
 
+```ts
 import deepEqual from 'fast-deep-equal';
+
 function areObjectsEqual(obj1, obj2) {
   return deepEqual(obj1, obj2);
 }

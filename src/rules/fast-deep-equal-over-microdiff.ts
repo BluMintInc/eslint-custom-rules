@@ -16,9 +16,13 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
     schema: [],
     messages: {
       useFastDeepEqual:
-        'Equality check uses microdiff via `{{diffName}}(...).length`, which builds a change list before you compare it to zero. That extra diff creation wastes allocations and hides that the code only needs a boolean equality check. Use fast-deep-equal by calling `{{fastEqualName}}(left, right)` for a direct deep equality comparison without generating diffs.',
+        "What's wrong: This code uses `{{diffName}}(...).length` as a deep equality check.\n" +
+        'Why it matters: `{{diffName}}` allocates a full change list (paths, types, values) before you compare it to zero, which hides the boolean intent and wastes memory/time.\n' +
+        'How to fix: Call `{{fastEqualName}}(left, right)` for equality (or prefix with `!` for inequality) using the same two arguments instead of counting diff length.',
       addFastDeepEqualImport:
-        'Import fast-deep-equal as `{{fastEqualName}}` so equality checks call it directly instead of constructing microdiff results just to count them.',
+        "What's wrong: This file checks equality via `{{diffName}}(...).length` but does not import `fast-deep-equal`.\n" +
+        'Why it matters: Without `fast-deep-equal`, equality checks keep building diff entries just to count them, adding overhead and obscuring intent.\n' +
+        'How to fix: Add a default import for `fast-deep-equal` as `{{fastEqualName}}` and use `{{fastEqualName}}(a, b)` for equality checks.',
     },
   },
   defaultOptions: [],
@@ -469,6 +473,27 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
       return fixes;
     }
 
+    function reportEqualityCheck(
+      node: TSESTree.Node,
+      result: { isEquality: boolean; diffCall?: TSESTree.CallExpression },
+    ): void {
+      const { diffCall, isEquality } = result;
+      if (!diffCall) return;
+      if (reportedNodes.has(node)) return;
+      reportedNodes.add(node);
+      context.report({
+        node,
+        messageId: 'useFastDeepEqual',
+        data: {
+          diffName: microdiffImportName,
+          fastEqualName: fastDeepEqualImportName,
+        },
+        fix(fixer) {
+          return createFix(fixer, node, diffCall, isEquality);
+        },
+      });
+    }
+
     return {
       // Track imports of microdiff and fast-deep-equal
       ImportDeclaration(node) {
@@ -516,26 +541,7 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
           return;
         }
 
-        const result = isMicrodiffEqualityCheck(node);
-        if (result.isEquality !== undefined && result.diffCall) {
-          reportedNodes.add(node);
-          context.report({
-            node,
-            messageId: 'useFastDeepEqual',
-            data: {
-              diffName: microdiffImportName,
-              fastEqualName: fastDeepEqualImportName,
-            },
-            fix(fixer) {
-              return createFix(
-                fixer,
-                node,
-                result.diffCall!,
-                result.isEquality,
-              );
-            },
-          });
-        }
+        reportEqualityCheck(node, isMicrodiffEqualityCheck(node));
       },
 
       // Check if statements for microdiff equality patterns
@@ -546,26 +552,7 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
           return;
         }
 
-        const result = isMicrodiffEqualityCheck(node.test);
-        if (result.isEquality !== undefined && result.diffCall) {
-          reportedNodes.add(node.test);
-          context.report({
-            node: node.test,
-            messageId: 'useFastDeepEqual',
-            data: {
-              diffName: microdiffImportName,
-              fastEqualName: fastDeepEqualImportName,
-            },
-            fix(fixer) {
-              return createFix(
-                fixer,
-                node.test,
-                result.diffCall!,
-                result.isEquality,
-              );
-            },
-          });
-        }
+        reportEqualityCheck(node.test, isMicrodiffEqualityCheck(node.test));
       },
 
       // Check return statements for microdiff equality patterns
@@ -577,27 +564,7 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
           return;
         }
 
-        const result = isMicrodiffEqualityCheck(argument);
-        if (result.isEquality !== undefined && result.diffCall) {
-          reportedNodes.add(argument);
-          context.report({
-            node: argument,
-            messageId: 'useFastDeepEqual',
-            data: {
-              diffName: microdiffImportName,
-              fastEqualName: fastDeepEqualImportName,
-            },
-            fix(fixer) {
-              // We already checked that node.argument is not null above
-              return createFix(
-                fixer,
-                argument,
-                result.diffCall!,
-                result.isEquality,
-              );
-            },
-          });
-        }
+        reportEqualityCheck(argument, isMicrodiffEqualityCheck(argument));
       },
     };
   },

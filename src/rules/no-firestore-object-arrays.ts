@@ -391,8 +391,9 @@ Prefer:
           currentParent.type === AST_NODE_TYPES.TSTypeOperator &&
           (currentParent as TSESTree.TSTypeOperator).operator === 'readonly'
         ) {
-          currentParent = (currentParent as TSESTree.TSTypeOperator)
-            .parent as TSESTree.Node | undefined;
+          currentParent = (currentParent as TSESTree.TSTypeOperator).parent as
+            | TSESTree.Node
+            | undefined;
           continue;
         }
         if (isParenthesizedType(currentParent)) {
