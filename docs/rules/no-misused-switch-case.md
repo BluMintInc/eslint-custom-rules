@@ -10,6 +10,7 @@ Using `case a || b` looks like it matches two values, but `||` collapses to a si
 
 `switch` expects each `case` label to be a single value. When you write `case x || y:`, JavaScript evaluates the expression and keeps only the first truthy operand, so one of the operands never triggers the branch. The rule reports any `case` label that uses `||` and expects both operands to be matched.
 
+
 ### Why this matters
 - Logical OR returns one operand, so `case x || y` silently ignores one of the values you tried to cover.
 - Explicit sequential cases keep every value reachable and make the control flow obvious to readers and AI tools.
@@ -58,6 +59,7 @@ switch (value) {
     break;
 }
 ```
+
 
 ### How to fix violations
 - Replace `case x || y:` with sequential `case x:` / `case y:` labels.
