@@ -69,23 +69,24 @@ const createAliasState = (): AliasState => {
       scopeKinds.pop();
     }
   };
+  const findFunctionScope = (): Map<string, AliasEntry> => {
+    for (let i = stack.length - 1; i >= 0; i -= 1) {
+      if (scopeKinds[i] === 'function') {
+        return stack[i];
+      }
+    }
+    return stack[0];
+  };
   const setAlias = (
     name: string,
     value: AliasEntry,
     options?: { hoistToFunctionScope?: boolean },
   ) => {
-    if (options?.hoistToFunctionScope) {
-      for (let i = stack.length - 1; i >= 0; i -= 1) {
-        if (scopeKinds[i] === 'function') {
-          stack[i].set(name, value);
-          return;
-        }
-      }
-      stack[0].set(name, value);
-      return;
-    }
+    const targetScope = options?.hoistToFunctionScope
+      ? findFunctionScope()
+      : currentScope();
 
-    currentScope().set(name, value);
+    targetScope.set(name, value);
   };
   const setAliasInExistingBindingScope = (name: string, value: AliasEntry) => {
     for (let i = stack.length - 1; i >= 0; i -= 1) {
