@@ -13,12 +13,7 @@ type MessageArgs = {
   prefixes: string;
 };
 
-const buildMessage = ({
-  type,
-  name,
-  capitalizedName,
-  prefixes,
-}: MessageArgs) =>
+const buildMessage = ({ type, name, capitalizedName, prefixes }: MessageArgs) =>
   `Boolean ${type} "${name}" is missing a common approved boolean prefix (${prefixes}). ` +
   `Prefixes immediately communicate that the value is a true/false predicate; without one, checks like \`if (${name})\` read as generic truthiness guards and hide the boolean intent. ` +
   `Rename by prepending any approved prefix so the name becomes \`<prefix>${capitalizedName}\`, making the boolean contract obvious at call sites and API boundaries.`;

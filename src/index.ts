@@ -37,6 +37,7 @@ import { useCustomRouter } from './rules/use-custom-router';
 import { default as requireImageOptimized } from './rules/require-image-optimized';
 import { requireUseMemoObjectLiterals } from './rules/require-usememo-object-literals';
 import { enforceStableStringify } from './rules/enforce-safe-stringify';
+import { enforceStorageContext } from './rules/enforce-storage-context';
 import { avoidUtilsDirectory } from './rules/avoid-utils-directory';
 import { noEntireObjectHookDeps } from './rules/no-entire-object-hook-deps';
 import { enforceFirestorePathUtils } from './rules/enforce-firestore-path-utils';
@@ -202,6 +203,7 @@ module.exports = {
         '@blumintinc/blumint/require-usememo-object-literals': 'error',
         '@blumintinc/blumint/memoize-root-level-hocs': 'error',
         '@blumintinc/blumint/enforce-safe-stringify': 'error',
+        '@blumintinc/blumint/enforce-storage-context': 'error',
         '@blumintinc/blumint/no-entire-object-hook-deps': 'error',
         '@blumintinc/blumint/no-compositing-layer-props': 'error',
         '@blumintinc/blumint/enforce-firestore-doc-ref-generic': 'error',
@@ -352,6 +354,7 @@ module.exports = {
     'require-usememo-object-literals': requireUseMemoObjectLiterals,
     'memoize-root-level-hocs': memoizeRootLevelHocs,
     'enforce-safe-stringify': enforceStableStringify,
+    'enforce-storage-context': enforceStorageContext,
     'avoid-utils-directory': avoidUtilsDirectory,
     'no-entire-object-hook-deps': noEntireObjectHookDeps,
     'enforce-firestore-path-utils': enforceFirestorePathUtils,

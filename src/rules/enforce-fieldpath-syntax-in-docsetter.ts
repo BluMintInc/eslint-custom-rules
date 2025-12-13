@@ -225,9 +225,7 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
     function getFirstNestedObjectProperty(
       node: TSESTree.ObjectExpression,
       keyPredicate?: (keyText: string) => boolean,
-    ):
-      | (TSESTree.Property & { value: TSESTree.ObjectExpression })
-      | undefined {
+    ): (TSESTree.Property & { value: TSESTree.ObjectExpression }) | undefined {
       for (const property of node.properties) {
         if (isSpreadOrComputed(property)) {
           continue;
@@ -301,11 +299,7 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       const propertyKeyText = getPropertyKeyText(firstNestedProperty);
       const exampleFieldPathFromProperty =
         propertyKeyText &&
-        flattenObject(
-          firstNestedProperty.value,
-          sourceCode,
-          propertyKeyText,
-        );
+        flattenObject(firstNestedProperty.value, sourceCode, propertyKeyText);
 
       const flattenedProperties = flattenObject(firstArg, sourceCode);
 
@@ -349,9 +343,7 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
 
         // Check if the first argument is an object literal
         const firstArg = node.arguments[0];
-        if (
-          firstArg?.type !== AST_NODE_TYPES.ObjectExpression
-        ) {
+        if (firstArg?.type !== AST_NODE_TYPES.ObjectExpression) {
           return;
         }
 
