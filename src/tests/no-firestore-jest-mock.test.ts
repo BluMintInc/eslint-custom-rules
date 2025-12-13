@@ -1,6 +1,12 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noFirestoreJestMock } from '../rules/no-firestore-jest-mock';
 
+const errorData = {
+  moduleName: 'firestore-jest-mock',
+  replacementPath: '../../__test-utils__/mockFirestore',
+} as const;
+const expectedError = { messageId: 'noFirestoreJestMock', data: errorData } as const;
+
 ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
   valid: [
     // Valid: Non-test file importing firestore-jest-mock
@@ -10,7 +16,7 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
     },
     // Valid: Test file using mockFirestore
     {
-      code: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';`,
+      code: `import { mockFirestore } from '../../__test-utils__/mockFirestore';`,
       filename: 'src/components/test.test.ts',
     },
     // Valid: Test file with no Firestore mocks
@@ -43,13 +49,13 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
     // Valid: Test file with dynamic import of allowed package
     {
       code: `const mockFn = async () => {
-                const { mockFirestore } = await import('../../../../../__test-utils__/mockFirestore');
+                const { mockFirestore } = await import('../../__test-utils__/mockFirestore');
             };`,
       filename: 'src/components/test.test.ts',
     },
     // Valid: Test file with type import from mockFirestore
     {
-      code: `import type { MockFirestoreTypes } from '../../../../../__test-utils__/mockFirestore';`,
+      code: `import type { MockFirestoreTypes } from '../../__test-utils__/mockFirestore';`,
       filename: 'src/components/test.test.ts',
     },
     // Valid: Test file with type import from firestore-jest-mock
@@ -63,21 +69,43 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
     {
       code: `import { mockFirebase } from 'firestore-jest-mock';`,
       filename: 'src/components/test.test.ts',
-      errors: [{ messageId: 'noFirestoreJestMock' }],
-      output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';`,
+      errors: [expectedError],
+      output: `import { mockFirestore as mockFirebase } from '../../__test-utils__/mockFirestore';`,
+    },
+    // Invalid: Mixed value and type imports should not be auto-fixed to avoid dropping types
+    {
+      code: `import { mockFirebase, type MockType } from 'firestore-jest-mock';`,
+      filename: 'src/components/test.test.ts',
+      errors: [expectedError],
+      output: null,
+    },
+    // Invalid: Direct import in deeper nested test file
+    {
+      code: `import { mockFirebase } from 'firestore-jest-mock';`,
+      filename: 'packages/app/src/features/foo/__tests__/component.test.ts',
+      errors: [
+        {
+          messageId: 'noFirestoreJestMock',
+          data: {
+            moduleName: 'firestore-jest-mock',
+            replacementPath: '../../../../../../__test-utils__/mockFirestore',
+          },
+        },
+      ],
+      output: `import { mockFirestore as mockFirebase } from '../../../../../../__test-utils__/mockFirestore';`,
     },
     // Invalid: Multiple imports with aliases
     {
       code: `import { mockFirebase as myMock, mockSet as mySet } from 'firestore-jest-mock';`,
       filename: 'src/components/test.test.ts',
-      errors: [{ messageId: 'noFirestoreJestMock' }],
-      output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';`,
+      errors: [expectedError],
+      output: null,
     },
     // Invalid: jest.mock usage
     {
       code: `jest.mock('firestore-jest-mock');`,
       filename: 'src/components/test.test.ts',
-      errors: [{ messageId: 'noFirestoreJestMock' }],
+      errors: [expectedError],
     },
     // Invalid: Dynamic import in test file
     {
@@ -85,13 +113,45 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
                 const { mockFirebase } = await import('firestore-jest-mock');
             };`,
       filename: 'src/components/test.test.ts',
-      errors: [{ messageId: 'noFirestoreJestMock' }],
+      errors: [expectedError],
+      output: `const mockFn = async () => {
+                const { mockFirestore: mockFirebase } = await import('../../__test-utils__/mockFirestore');
+            };`,
+    },
+    // Invalid: Dynamic import with multiple destructured properties
+    {
+      code: `const mockFn = async () => {
+                const { mockFirebase, mockSet } = await import('firestore-jest-mock');
+            };`,
+      filename: 'src/components/test.test.ts',
+      errors: [expectedError],
+      output: null,
+    },
+    // Invalid: Dynamic import with default value should not auto-fix
+    {
+      code: `const mockFn = async () => {
+                const { mockFirebase = fallback } = await import('firestore-jest-mock');
+            };`,
+      filename: 'src/components/test.test.ts',
+      errors: [expectedError],
+      output: null,
+    },
+    // Invalid: Dynamic import with alias in test file
+    {
+      code: `const mockFn = async () => {
+                const { mockFirebase: myMock } = await import('firestore-jest-mock');
+            };`,
+      filename: 'src/components/test.test.ts',
+      errors: [expectedError],
+      output: `const mockFn = async () => {
+                const { mockFirestore: myMock } = await import('../../__test-utils__/mockFirestore');
+            };`,
     },
     // Invalid: Require statement in test file
     {
       code: `const { mockFirebase } = require('firestore-jest-mock');`,
       filename: 'src/components/test.test.ts',
-      errors: [{ messageId: 'noFirestoreJestMock' }],
+      errors: [expectedError],
     },
 
     // Invalid: Multiple imports mixed with other imports
@@ -100,10 +160,22 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
             import { mockFirebase, mockSet } from 'firestore-jest-mock';
             import { useState } from 'react';`,
       filename: 'src/components/test.test.ts',
-      errors: [{ messageId: 'noFirestoreJestMock' }],
-      output: `import { render } from '@testing-library/react';
-            import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';
-            import { useState } from 'react';`,
+      errors: [expectedError],
+      output: null,
+    },
+    // Invalid: Non-awaited dynamic import should still rewrite module path
+    {
+      code: `const loader = import('firestore-jest-mock');`,
+      filename: 'src/components/test.test.ts',
+      errors: [expectedError],
+      output: null,
+    },
+    // Invalid: Dynamic import with promise chaining keeps destructuring intact
+    {
+      code: `const load = () => import('firestore-jest-mock').then(({ mockFirebase }) => mockFirebase());`,
+      filename: 'src/components/test.test.ts',
+      errors: [expectedError],
+      output: null,
     },
     // Invalid: Import with line breaks and comments
     {
@@ -114,8 +186,8 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
                 mockSet
             } from 'firestore-jest-mock';`,
       filename: 'src/components/test.test.ts',
-      errors: [{ messageId: 'noFirestoreJestMock' }],
-      output: `import { mockFirestore } from '../../../../../__test-utils__/mockFirestore';`,
+      errors: [expectedError],
+      output: null,
     },
     // Invalid: jest.mock with other configurations
     {
@@ -124,7 +196,7 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
                 mockSet: jest.fn()
             }));`,
       filename: 'src/components/test.test.ts',
-      errors: [{ messageId: 'noFirestoreJestMock' }],
+      errors: [expectedError],
     },
   ],
 });
