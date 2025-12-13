@@ -211,6 +211,27 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
         },
       ],
     },
+    // Test: Computed property keys preserve identifier and literal labels
+    {
+      code: `
+        const SOME_CONST = 'computedField';
+        export type ComputedKeys = {
+          [SOME_CONST]: { value: string }[];
+          ['literal-key']: Array<{ value: number }>;
+        };
+      `,
+      filename: 'functions/src/types/firestore/computed.ts',
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'SOME_CONST' },
+        },
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'literal-key' },
+        },
+      ],
+    },
     // Test: Array of type alias
     {
       code: `

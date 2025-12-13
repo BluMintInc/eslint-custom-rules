@@ -121,6 +121,22 @@ const getFieldName = (node: TSESTree.Node): string => {
       ) {
         return String(key.value);
       }
+      const computedKey = key as { type?: string; expression?: TSESTree.Node };
+      if (
+        computedKey.type === 'TSComputedPropertyName' &&
+        computedKey.expression
+      ) {
+        const expr = computedKey.expression;
+        if (expr.type === AST_NODE_TYPES.Identifier) return expr.name;
+        if (
+          expr.type === AST_NODE_TYPES.Literal &&
+          (typeof (expr as TSESTree.Literal).value === 'string' ||
+            typeof (expr as TSESTree.Literal).value === 'number' ||
+            typeof (expr as TSESTree.Literal).value === 'bigint')
+        ) {
+          return String((expr as TSESTree.Literal).value);
+        }
+      }
     }
     if (
       current.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
@@ -188,7 +204,7 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
         // What's wrong
         "What's wrong: {{fieldName}} stores an array of objects in a Firestore document.",
         // Why it matters
-        'Why it matters: Firestore cannot query inside object arrays, and non-atomic array overwrites can drop concurrent updates.',
+        'Why it matters: Firestore cannot query inside object arrays, and updating one item rewrites the whole array; concurrent writes can overwrite each other and lose data.',
         // How to fix
         'How to fix: Store items as Record<string, T> keyed by id (with an index field for ordering; convert with toMap/toArr), or move items into a subcollection or store only an array of IDs.',
       ].join('\n'),
