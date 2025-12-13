@@ -464,7 +464,12 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
         export type T = { loose: any[] };
       `,
       filename: 'functions/src/types/firestore/misc.ts',
-      errors: [{ messageId: 'noObjectArrays' }],
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'loose' },
+        },
+      ],
     },
     // Test: unknown[] should be flagged
     {
@@ -472,7 +477,12 @@ ruleTesterTs.run('no-firestore-object-arrays', noFirestoreObjectArrays, {
         export type T = { mystery: unknown[] };
       `,
       filename: 'functions/src/types/firestore/misc.ts',
-      errors: [{ messageId: 'noObjectArrays' }],
+      errors: [
+        {
+          messageId: 'noObjectArrays',
+          data: { fieldName: 'mystery' },
+        },
+      ],
     },
   ],
 });

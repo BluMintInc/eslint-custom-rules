@@ -20,6 +20,8 @@ const PRIMITIVE_TYPES = new Set([
   'GeoPoint',
 ]);
 
+const UNKNOWN_FIELD_LABEL = '<unknown field>';
+
 const isInFirestoreTypesDirectory = (filename: string): boolean => {
   if (!filename || filename === '<input>') return false;
   const normalized = filename.replace(/\\/g, '/');
@@ -103,9 +105,9 @@ const unwrapArrayElementType = (
  * Derives a field label for diagnostics by walking ancestors.
  * Prefers TSPropertySignature keys and returns identifier or string/number/bigint literal keys when present.
  * Falls back to the surrounding TSTypeAliasDeclaration or TSInterfaceDeclaration name when no property key is available.
- * Returns null if neither a property key nor a type/interface identifier is found.
+ * Returns a placeholder when resolution fails so downstream messaging remains readable.
  */
-const getFieldName = (node: TSESTree.Node): string | null => {
+const getFieldName = (node: TSESTree.Node): string => {
   let current: TSESTree.Node | undefined = node;
   while (current) {
     if (current.type === AST_NODE_TYPES.TSPropertySignature) {
@@ -133,7 +135,7 @@ const getFieldName = (node: TSESTree.Node): string | null => {
       | TSESTree.Node
       | undefined;
   }
-  return null;
+  return UNKNOWN_FIELD_LABEL;
 };
 
 // Determine whether this type node appears in a Firestore model type context
@@ -182,8 +184,14 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
     },
     schema: [],
     messages: {
-      noObjectArrays:
-        'Array field "{{fieldName}}" stores objects in a Firestore document. Firestore cannot query inside object arrays, and updates rewrite the entire array so concurrent writes drop data. Store this collection as Record<string, T> keyed by id with an index for ordering (convert with toMap/toArr), or move the items into a subcollection or array of IDs.',
+      noObjectArrays: [
+        // What's wrong
+        "What's wrong: Array field {{fieldName}} stores objects in a Firestore document.",
+        // Why it matters
+        'Why it matters: Firestore cannot query inside object arrays, and non-atomic array overwrites can drop concurrent updates.',
+        // How to fix
+        'How to fix: Store items as Record<string, T> keyed by id (with an index field for ordering; convert with toMap/toArr), or move items into a subcollection or store only an array of IDs.',
+      ].join('\n'),
     },
   },
   defaultOptions: [],
@@ -466,7 +474,7 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
             node,
             messageId: 'noObjectArrays',
             data: {
-              fieldName: getFieldName(node) ?? 'this field',
+              fieldName: getFieldName(node),
             },
           });
         }
@@ -492,9 +500,9 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
             context.report({
               node,
               messageId: 'noObjectArrays',
-              data: {
-                fieldName: getFieldName(node) ?? 'this field',
-              },
+            data: {
+              fieldName: getFieldName(node),
+            },
             });
           }
         }
