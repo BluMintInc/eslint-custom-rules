@@ -12,7 +12,7 @@ This rule disallows `Array.filter` callbacks that use braces but never return a 
 
 ### Why this matters
 
-- A missing `return` in a block-bodied predicate turns the filter into "drop everything," which is hard to notice because the callback still executes.
+- A missing `return` in a block-bodied predicate causes `filter` to drop every item, which is easy to miss because the callback still runs without any obvious error.
 - Explicitly returning the condition documents the keep/remove rule and avoids subtle bugs when the code later adds logic branches.
 
 ### How to fix
