@@ -814,6 +814,7 @@ export const enforceStorageContext = createRule<RuleOptions, MessageIds>({
         'Require storage access to go through the LocalStorage and SessionStorage context providers instead of direct browser APIs',
       recommended: 'error',
     },
+    fixable: undefined,
     schema: [
       {
         type: 'object',
