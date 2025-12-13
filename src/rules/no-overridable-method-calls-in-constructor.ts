@@ -17,7 +17,7 @@ export const noOverridableMethodCallsInConstructor = createRule<[], MessageIds>(
       schema: [],
       messages: {
         noOverridableMethodCallsInConstructor:
-          'Constructor calls overridable or abstract {{target}} member "{{methodName}}", which executes subclass overrides before the subclass constructor finishes initializing its fields. This can read undefined state or run side effects on a partially constructed instance. Move the call to a post-construction initializer or make the member private/static so construction never executes overridable code.',
+          "What's wrong: Constructor calls overridable or abstract {{target}} member \"{{methodName}}\". \u2192 Why it matters: This executes subclass overrides before the subclass constructor finishes initializing its fields, which can read undefined state or run side effects on a partially constructed instance. \u2192 How to fix: Move the call to a post-construction initializer, or make \"{{methodName}}\" private or static so construction never executes overridable code.",
       },
     },
     defaultOptions: [],
