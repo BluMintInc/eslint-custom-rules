@@ -1,6 +1,11 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { requireHooksDefaultParams } from '../rules/require-hooks-default-params';
 
+const errorFor = (hookName: string) => ({
+  messageId: 'requireDefaultParams' as const,
+  data: { hookName },
+});
+
 ruleTesterTs.run('require-hooks-default-params', requireHooksDefaultParams, {
   valid: [
     // Already has default empty object
@@ -151,7 +156,7 @@ ruleTesterTs.run('require-hooks-default-params', requireHooksDefaultParams, {
           return null;
         };
       `,
-      errors: [{ messageId: 'requireDefaultParams' }],
+      errors: [errorFor('useLivestreamPlayer')],
       output: `
         export const useLivestreamPlayer = ({ placeholder, playbackId }: { placeholder?: ReactNode; playbackId?: string } = {}) => {
           return null;
@@ -165,7 +170,7 @@ ruleTesterTs.run('require-hooks-default-params', requireHooksDefaultParams, {
           return null;
         }
       `,
-      errors: [{ messageId: 'requireDefaultParams' }],
+      errors: [errorFor('useData')],
       output: `
         export function useData({ url, options }: { url?: string; options?: object } = {}) {
           return null;
@@ -183,7 +188,7 @@ ruleTesterTs.run('require-hooks-default-params', requireHooksDefaultParams, {
           return null;
         };
       `,
-      errors: [{ messageId: 'requireDefaultParams' }],
+      errors: [errorFor('useTheme')],
       output: `
         type Options = {
           theme?: string;
@@ -205,7 +210,7 @@ ruleTesterTs.run('require-hooks-default-params', requireHooksDefaultParams, {
           return null;
         };
       `,
-      errors: [{ messageId: 'requireDefaultParams' }],
+      errors: [errorFor('useTheme')],
       output: `
         interface Options {
           theme?: string;
@@ -223,7 +228,7 @@ ruleTesterTs.run('require-hooks-default-params', requireHooksDefaultParams, {
           return null;
         }
       `,
-      errors: [{ messageId: 'requireDefaultParams' }],
+      errors: [errorFor('useDataFetcher')],
       output: `
         export function useDataFetcher<T>({ url, options }: { url?: string; options?: T } = {}) {
           return null;
@@ -247,7 +252,7 @@ ruleTesterTs.run('require-hooks-default-params', requireHooksDefaultParams, {
           return null;
         };
       `,
-      errors: [{ messageId: 'requireDefaultParams' }],
+      errors: [errorFor('useComplexHook')],
       output: `
         type ComplexOptions = {
           config?: {
