@@ -13,12 +13,18 @@ const toPosixPath = (filePath: string) => filePath.replace(/\\/g, '/');
 const ensureRelativeSpecifier = (specifier: string) =>
   specifier.startsWith('.') ? specifier : `./${specifier}`;
 
+const isWindowsDrivePath = (filePath: string) => /^[A-Za-z]:[\\/]/.test(filePath);
+
 const buildReplacementPath = (sourceFilePath: string, cwd: string) => {
   const absoluteFilename = path.isAbsolute(sourceFilePath)
     ? sourceFilePath
     : path.join(cwd, sourceFilePath);
   const targetPath = path.join(cwd, MOCK_FIRESTORE_TARGET);
   const relativePath = path.relative(path.dirname(absoluteFilename), targetPath);
+
+  if (path.isAbsolute(relativePath) || isWindowsDrivePath(relativePath)) {
+    return '';
+  }
 
   return ensureRelativeSpecifier(toPosixPath(relativePath));
 };
@@ -72,35 +78,65 @@ const buildDestructuringFix = (
   return fixer.replaceText(pattern, replacement);
 };
 
-const buildImportDeclarationFix = (
-  node: TSESTree.ImportDeclaration,
+const constructImportStatement = (
+  localName: string,
   replacementPath: string,
-): string | null => {
-  const nonTypeImportSpecifiers = node.specifiers.filter(
-    (specifier): specifier is TSESTree.ImportSpecifier =>
-      specifier.type === AST_NODE_TYPES.ImportSpecifier &&
-      specifier.importKind !== 'type',
-  );
-
-  if (
-    nonTypeImportSpecifiers.length !== 1 ||
-    node.specifiers.some(
-      (specifier) =>
-        specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
-        specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier,
-    )
-  ) {
-    return null;
-  }
-
-  const [specifier] = nonTypeImportSpecifiers;
-  const localName = specifier.local.name;
+) => {
   const binding =
     localName === 'mockFirestore'
       ? 'mockFirestore'
       : `mockFirestore as ${localName}`;
 
   return `import { ${binding} } from '${replacementPath}';`;
+};
+
+const getSingleValueImportSpecifier = (
+  node: TSESTree.ImportDeclaration,
+): TSESTree.ImportSpecifier | null => {
+  const valueSpecifiers = node.specifiers.filter(
+    (specifier): specifier is TSESTree.ImportSpecifier =>
+      specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+      specifier.importKind !== 'type',
+  );
+
+  const hasTypeSpecifiers = node.specifiers.some(
+    (specifier) =>
+      specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+      specifier.importKind === 'type',
+  );
+
+  const hasUnsupportedSpecifier = node.specifiers.some(
+    (specifier) =>
+      specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
+      specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier,
+  );
+
+  if (
+    valueSpecifiers.length !== 1 ||
+    hasTypeSpecifiers ||
+    hasUnsupportedSpecifier
+  ) {
+    return null;
+  }
+
+  return valueSpecifiers[0];
+};
+
+const buildImportDeclarationFix = (
+  node: TSESTree.ImportDeclaration,
+  replacementPath: string,
+): string | null => {
+  if (!replacementPath) {
+    return null;
+  }
+
+  const specifier = getSingleValueImportSpecifier(node);
+
+  if (!specifier) {
+    return null;
+  }
+
+  return constructImportStatement(specifier.local.name, replacementPath);
 };
 
 export const noFirestoreJestMock = createRule<[], MessageIds>({
@@ -130,9 +166,12 @@ export const noFirestoreJestMock = createRule<[], MessageIds>({
     const cwd =
       typeof context.getCwd === 'function' ? context.getCwd() : process.cwd();
     const replacementPath = buildReplacementPath(sourceFilePath, cwd);
+    const messageReplacementPath =
+      replacementPath ||
+      ensureRelativeSpecifier(toPosixPath(MOCK_FIRESTORE_TARGET));
     const reportData = {
       moduleName: FIRESTORE_JEST_MOCK,
-      replacementPath,
+      replacementPath: messageReplacementPath,
     } as const;
 
     return {
@@ -173,30 +212,31 @@ export const noFirestoreJestMock = createRule<[], MessageIds>({
             messageId: 'noFirestoreJestMock',
             data: reportData,
             fix: (fixer) => {
-              const destructuringFix =
-                variableDeclarator?.id.type === AST_NODE_TYPES.ObjectPattern
-                  ? buildDestructuringFix(fixer, variableDeclarator.id)
-                  : null;
-
-              // Avoid unsafe autofix when multiple bindings are destructured.
-              if (
-                variableDeclarator?.id.type === AST_NODE_TYPES.ObjectPattern &&
-                !destructuringFix
-              ) {
+              if (!replacementPath) {
                 return null;
               }
 
-              const fixes = [
-                fixer.replaceText(node.source, `'${replacementPath}'`),
-              ];
-
-              if (destructuringFix) {
-                fixes.push(destructuringFix);
+              if (!variableDeclarator) {
+                return null;
               }
 
-              // Destructuring in promise chains (e.g., import().then(({ mockFirestore }) => {}))
-              // stays reported but only the module specifier is rewritten to avoid unsafe edits.
-              return fixes;
+              if (variableDeclarator.id.type !== AST_NODE_TYPES.ObjectPattern) {
+                return null;
+              }
+
+              const destructuringFix = buildDestructuringFix(
+                fixer,
+                variableDeclarator.id,
+              );
+
+              if (!destructuringFix) {
+                return null;
+              }
+
+              return [
+                fixer.replaceText(node.source, `'${replacementPath}'`),
+                destructuringFix,
+              ];
             },
           });
         }

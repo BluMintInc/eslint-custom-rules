@@ -15,6 +15,7 @@ This rule ensures every test relies on the same Firestore test harness:
 - Direct `firestore-jest-mock` imports set up mocks that diverge from our production schema and skip the shared teardown hooks, which causes brittle, stateful tests.
 - The centralized `mockFirestore` helper handles seeding and cleanup consistently, so suites share reliable Firestore behavior.
 - The rule is scoped to test files (`*.test.ts`) and offers an autofix that replaces the disallowed import with a path pointing at `__test-utils__/mockFirestore` (the path is computed relative to the current test file so nested suites resolve correctly).
+- Autofix is conservative: it rewrites only single value imports or single-binding dynamic destructures. Mixed type/value imports or multi-binding destructures are reported without a fix to avoid dropping types or changing runtime bindings.
 - This repository ships a stubbed `__test-utils__/mockFirestore` to anchor autofixes; consuming projects should map that path (via resolver or tsconfig paths) to their real shared helper.
 
 Examples of **incorrect** code for this rule:

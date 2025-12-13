@@ -72,6 +72,13 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
       errors: [expectedError],
       output: `import { mockFirestore as mockFirebase } from '../../__test-utils__/mockFirestore';`,
     },
+    // Invalid: Mixed value and type imports should not be auto-fixed to avoid dropping types
+    {
+      code: `import { mockFirebase, type MockType } from 'firestore-jest-mock';`,
+      filename: 'src/components/test.test.ts',
+      errors: [expectedError],
+      output: null,
+    },
     // Invalid: Direct import in deeper nested test file
     {
       code: `import { mockFirebase } from 'firestore-jest-mock';`,
@@ -152,14 +159,14 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
       code: `const loader = import('firestore-jest-mock');`,
       filename: 'src/components/test.test.ts',
       errors: [expectedError],
-      output: `const loader = import('../../__test-utils__/mockFirestore');`,
+      output: null,
     },
     // Invalid: Dynamic import with promise chaining keeps destructuring intact
     {
       code: `const load = () => import('firestore-jest-mock').then(({ mockFirebase }) => mockFirebase());`,
       filename: 'src/components/test.test.ts',
       errors: [expectedError],
-      output: `const load = () => import('../../__test-utils__/mockFirestore').then(({ mockFirebase }) => mockFirebase());`,
+      output: null,
     },
     // Invalid: Import with line breaks and comments
     {
