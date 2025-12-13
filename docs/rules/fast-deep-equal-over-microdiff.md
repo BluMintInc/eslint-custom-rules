@@ -26,8 +26,8 @@ This rule enforces that boolean equality checks use `fast-deep-equal` instead of
 
 ### Autofix
 
-- Adds `fast-deep-equal` import if missing.
-- Replaces `microdiff` length comparisons with `isEqual(left, right)` (or `!isEqual(left, right)` for inequality checks).
+- Adds `fast-deep-equal` import if missing, keeping any existing local alias or adding a default import named `isEqual`.
+- Replaces `microdiff` length comparisons with the imported equality function call (for example, `isEqual(left, right)` or a local alias like `deepEqual(left, right)`), or its negation for inequality checks.
 
 ### Examples of **incorrect** code for this rule:
 
