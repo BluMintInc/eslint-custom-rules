@@ -4,7 +4,7 @@
 
 <!-- end auto-generated rule header -->
 
-Disallow whitespace-only JSX expressions like `{" "}` because React renders them as separate text children that make spacing fragile.
+You should avoid whitespace-only JSX expressions like `{" "}` because React renders them as separate text children that make spacing fragile.
 
 ## Rule Details
 
@@ -13,9 +13,9 @@ A whitespace-only JSX expression renders an actual text child whose content is o
 - Translators or copy updates move words across boundaries
 - Conditionals reorder or dynamically render children at runtime
 
-The result is missing or duplicated spacing in the UI, which is hard to trace back to the invisible spacer child.
+The result is missing or duplicated spacing in the UI, which is difficult to trace back to the invisible spacer child.
 
-The rule flags JSX expressions like `{" "}` where the string literal contains only whitespace (it trims to an empty string).
+This rule flags JSX expressions like `{" "}` where the string literal contains only whitespace (it trims to an empty string).
 
 ### Examples of **incorrect** code for this rule:
 
