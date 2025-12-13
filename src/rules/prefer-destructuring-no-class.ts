@@ -142,7 +142,7 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
     ],
     messages: {
       preferDestructuring:
-        'Use destructuring instead of accessing the property directly.',
+        'Property "{{property}}" from "{{object}}" is assigned via dot access{{targetNote}}. Destructure the property so the dependency is declared once and stays aligned with the source object. Use destructuring{{renamingHint}} (e.g., {{example}}).',
     },
   },
   defaultOptions,
@@ -215,50 +215,68 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
         if (!node.init) return;
         if (node.init.type !== AST_NODE_TYPES.MemberExpression) return;
 
-        if (shouldUseDestructuring(node.init, node.id)) {
-          const sourceCode = context.getSourceCode();
-          const objectText = sourceCode.getText(node.init.object);
-          const propertyText = getPropertyText(
-            node.init.property,
-            node.init.computed,
-            sourceCode,
-          );
+        if (!shouldUseDestructuring(node.init, node.id)) {
+          return;
+        }
 
-          context.report({
-            node,
-            messageId: 'preferDestructuring',
-            fix(fixer) {
-              // Get the variable declaration kind (const, let, var)
-              const parentNode = node.parent;
-              if (
-                !parentNode ||
-                parentNode.type !== AST_NODE_TYPES.VariableDeclaration
-              ) {
-                return null;
-              }
-              const kind = parentNode.kind;
+        const sourceCode = context.getSourceCode();
+        const objectText = sourceCode.getText(node.init.object);
+        const propertyText = getPropertyText(
+          node.init.property,
+          node.init.computed,
+          sourceCode,
+        );
+        const targetName =
+          node.id.type === AST_NODE_TYPES.Identifier ? node.id.name : null;
+        const usesRenaming =
+          options.enforceForRenamedProperties &&
+          !!targetName &&
+          !isMatchingPropertyName(node.init.property, targetName);
 
-              // Handle renamed properties
-              if (
-                options.enforceForRenamedProperties &&
-                node.id.type === AST_NODE_TYPES.Identifier &&
-                node.init &&
-                node.init.type === AST_NODE_TYPES.MemberExpression &&
-                !isMatchingPropertyName(node.init.property, node.id.name)
-              ) {
-                return fixer.replaceText(
-                  parentNode,
-                  `${kind} { ${propertyText}: ${node.id.name} } = ${objectText};`,
-                );
-              }
+        context.report({
+          node,
+          messageId: 'preferDestructuring',
+          data: {
+            property: propertyText,
+            object: objectText,
+            targetNote:
+              usesRenaming && targetName ? ` to "${targetName}"` : '',
+            renamingHint: usesRenaming ? ' with renaming' : '',
+            example: usesRenaming
+              ? `${node.parent?.type === AST_NODE_TYPES.VariableDeclaration ? node.parent.kind : 'const'} { ${propertyText}: ${targetName ?? propertyText} } = ${objectText};`
+              : `${node.parent?.type === AST_NODE_TYPES.VariableDeclaration ? node.parent.kind : 'const'} { ${propertyText} } = ${objectText};`,
+          },
+          fix(fixer) {
+            // Get the variable declaration kind (const, let, var)
+            const parentNode = node.parent;
+            if (
+              !parentNode ||
+              parentNode.type !== AST_NODE_TYPES.VariableDeclaration
+            ) {
+              return null;
+            }
+            const kind = parentNode.kind;
 
+            // Handle renamed properties
+            if (
+              options.enforceForRenamedProperties &&
+              node.id.type === AST_NODE_TYPES.Identifier &&
+              node.init &&
+              node.init.type === AST_NODE_TYPES.MemberExpression &&
+              !isMatchingPropertyName(node.init.property, node.id.name)
+            ) {
               return fixer.replaceText(
                 parentNode,
-                `${kind} { ${propertyText} } = ${objectText};`,
+                `${kind} { ${propertyText}: ${node.id.name} } = ${objectText};`,
               );
-            },
-          });
-        }
+            }
+
+            return fixer.replaceText(
+              parentNode,
+              `${kind} { ${propertyText} } = ${objectText};`,
+            );
+          },
+        });
       },
 
       AssignmentExpression(node) {
@@ -266,39 +284,59 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
           node.operator === '=' &&
           node.right.type === AST_NODE_TYPES.MemberExpression
         ) {
-          if (shouldUseDestructuring(node.right, node.left)) {
-            const sourceCode = context.getSourceCode();
-            const objectText = sourceCode.getText(node.right.object);
-            const propertyText = getPropertyText(
-              node.right.property,
-              node.right.computed,
-              sourceCode,
-            );
+          if (!shouldUseDestructuring(node.right, node.left)) {
+            return;
+          }
 
-            context.report({
-              node,
-              messageId: 'preferDestructuring',
-              fix(fixer) {
-                // Handle renamed properties
-                if (
-                  options.enforceForRenamedProperties &&
-                  node.left.type === AST_NODE_TYPES.Identifier &&
-                  node.right.type === AST_NODE_TYPES.MemberExpression &&
-                  !isMatchingPropertyName(node.right.property, node.left.name)
-                ) {
-                  return fixer.replaceText(
-                    node,
-                    `({ ${propertyText}: ${node.left.name} } = ${objectText})`,
-                  );
-                }
+          const sourceCode = context.getSourceCode();
+          const objectText = sourceCode.getText(node.right.object);
+          const propertyText = getPropertyText(
+            node.right.property,
+            node.right.computed,
+            sourceCode,
+          );
+          const targetName =
+            node.left.type === AST_NODE_TYPES.Identifier
+              ? node.left.name
+              : null;
+          const usesRenaming =
+            options.enforceForRenamedProperties &&
+            !!targetName &&
+            !isMatchingPropertyName(node.right.property, targetName);
 
+          context.report({
+            node,
+            messageId: 'preferDestructuring',
+            data: {
+              property: propertyText,
+              object: objectText,
+              targetNote:
+                usesRenaming && targetName ? ` to "${targetName}"` : '',
+              renamingHint: usesRenaming ? ' with renaming' : '',
+              example: usesRenaming
+                ? `({ ${propertyText}: ${targetName ?? propertyText} } = ${objectText})`
+                : `({ ${propertyText} } = ${objectText})`,
+            },
+            fix(fixer) {
+              // Handle renamed properties
+              if (
+                options.enforceForRenamedProperties &&
+                node.left.type === AST_NODE_TYPES.Identifier &&
+                node.right.type === AST_NODE_TYPES.MemberExpression &&
+                !isMatchingPropertyName(node.right.property, node.left.name)
+              ) {
                 return fixer.replaceText(
                   node,
-                  `({ ${propertyText} } = ${objectText})`,
+                  `({ ${propertyText}: ${node.left.name} } = ${objectText})`,
                 );
-              },
-            });
-          }
+              }
+
+              return fixer.replaceText(
+                node,
+                `({ ${propertyText} } = ${objectText})`,
+              );
+            },
+          });
         }
       },
     };
