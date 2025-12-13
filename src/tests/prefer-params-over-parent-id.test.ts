@@ -829,7 +829,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         export const withAliasedParams: DocumentChangeHandler<
           UserData,
           UserPath
-        > = async ({ data: change, params: p }) => {
+        > = async ({ data: change, params: paramsAlias }) => {
           const userId = change.after.ref.parent.id;
         };
       `,
@@ -838,8 +838,8 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
         export const withAliasedParams: DocumentChangeHandler<
           UserData,
           UserPath
-        > = async ({ data: change, params: p }) => {
-          const userId = p.userId;
+        > = async ({ data: change, params: paramsAlias }) => {
+          const userId = paramsAlias.userId;
         };
       `,
     },
