@@ -337,7 +337,10 @@ store.setItem('k', 'v');
           store.getItem('k');
         }
       `,
-      errors: [{ messageId: 'useStorageContext' }],
+      errors: [
+        { messageId: 'useStorageContext' },
+        { messageId: 'useStorageContext' },
+      ],
     },
     {
       code: `

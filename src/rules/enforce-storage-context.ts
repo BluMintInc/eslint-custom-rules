@@ -826,6 +826,8 @@ export const enforceStorageContext = createRule<RuleOptions, MessageIds>({
             type: 'array',
             items: { type: 'string' },
             default: [],
+            description:
+              'Glob patterns that permit direct storage access (normalized to forward slashes) so polyfills and approved shims can bypass the context providers.',
           },
         },
         additionalProperties: false,
