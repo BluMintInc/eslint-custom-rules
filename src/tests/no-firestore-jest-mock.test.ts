@@ -127,6 +127,15 @@ ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
       errors: [expectedError],
       output: null,
     },
+    // Invalid: Dynamic import with default value should not auto-fix
+    {
+      code: `const mockFn = async () => {
+                const { mockFirebase = fallback } = await import('firestore-jest-mock');
+            };`,
+      filename: 'src/components/test.test.ts',
+      errors: [expectedError],
+      output: null,
+    },
     // Invalid: Dynamic import with alias in test file
     {
       code: `const mockFn = async () => {

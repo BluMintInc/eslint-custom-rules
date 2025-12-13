@@ -15,6 +15,9 @@ const ensureRelativeSpecifier = (specifier: string) =>
 
 const isWindowsDrivePath = (filePath: string) => /^[A-Za-z]:[\\/]/.test(filePath);
 
+const isValidRelativePath = (relativePath: string) =>
+  !path.isAbsolute(relativePath) && !isWindowsDrivePath(relativePath);
+
 const buildReplacementPath = (sourceFilePath: string, cwd: string) => {
   const absoluteFilename = path.isAbsolute(sourceFilePath)
     ? sourceFilePath
@@ -22,7 +25,7 @@ const buildReplacementPath = (sourceFilePath: string, cwd: string) => {
   const targetPath = path.join(cwd, MOCK_FIRESTORE_TARGET);
   const relativePath = path.relative(path.dirname(absoluteFilename), targetPath);
 
-  if (path.isAbsolute(relativePath) || isWindowsDrivePath(relativePath)) {
+  if (!isValidRelativePath(relativePath)) {
     return '';
   }
 
@@ -61,15 +64,15 @@ const buildDestructuringFix = (
     return null;
   }
 
-  const value =
-    property.value.type === AST_NODE_TYPES.AssignmentPattern
-      ? property.value.left
-      : property.value;
-  if (value.type !== AST_NODE_TYPES.Identifier) {
+  if (property.value.type === AST_NODE_TYPES.AssignmentPattern) {
     return null;
   }
 
-  const localName = value.name;
+  if (property.value.type !== AST_NODE_TYPES.Identifier) {
+    return null;
+  }
+
+  const localName = property.value.name;
   const replacement =
     localName === 'mockFirestore'
       ? '{ mockFirestore }'
