@@ -4,7 +4,7 @@
 
 <!-- end auto-generated rule header -->
 
-This rule stops test suites from replacing the shared `firebaseAdmin` mock that `jest.setup.node.js` provides. Mocking the module yourself bypasses the stable Firestore/Auth stub and leads to divergent state between tests. Use `__test-utils__/mockFirestore` to seed Firestore data without overriding the module mock.
+This rule prevents you from replacing the shared `firebaseAdmin` mock that `jest.setup.node.js` provides. Mocking the module yourself bypasses the stable Firestore/Auth stub and leads to divergent state between tests. Use `__test-utils__/mockFirestore` to seed Firestore data without overriding the module mock.
 
 ## Rule Details
 
@@ -52,7 +52,7 @@ beforeEach(() => {
 
 The rule reports with the following message (path interpolated from the offending mock):
 
-> Do not mock firebaseAdmin module "<modulePath>". The project already ships a stable mock in jest.setup.node.js; overriding it creates divergent Firestore/Auth state and brittle test fixtures. Keep the shared mock and use `__test-utils__/mockFirestore` to seed data instead of replacing the module.
+> Do not mock firebaseAdmin module "{{modulePath}}". The project already ships a stable mock in jest.setup.node.js; overriding it creates divergent Firestore/Auth state and brittle test fixtures. Keep the shared mock and use `__test-utils__/mockFirestore` to seed data instead of replacing the module.
 
 ## When Not To Use It
 
