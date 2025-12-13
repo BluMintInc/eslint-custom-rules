@@ -201,6 +201,26 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       return args.some(isTransactionOptionObject);
     }
 
+    type FetchCallContext = {
+      transactionScope: TSESTree.Node;
+      transactionScopesForCall: TSESTree.Node[];
+      callHasTransaction: boolean;
+    };
+
+    function getFetchCallContext(
+      node: TSESTree.CallExpression,
+    ): FetchCallContext | null {
+      const transactionScopesForCall = getTransactionScopeChain(node);
+      const transactionScope = transactionScopesForCall[0];
+      if (!transactionScope) return null;
+
+      return {
+        transactionScope,
+        transactionScopesForCall,
+        callHasTransaction: hasTransactionOption(node.arguments),
+      };
+    }
+
     function ensureFetcherScope(
       scope: TSESTree.Node,
     ): Map<string, FetcherInstance[]> {
@@ -262,6 +282,18 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       }
     }
 
+    function updateInstanceTransactionState(
+      instance: FetcherInstance,
+      callHasTransaction: boolean,
+    ): void {
+      if (callHasTransaction || instance.constructorHasTransaction) {
+        instance.hasTransactionCall =
+          instance.hasTransactionCall || callHasTransaction;
+      } else {
+        instance.hasCallWithoutTransaction = true;
+      }
+    }
+
     function handleIdentifierFetchCall(
       identifier: TSESTree.Identifier,
       transactionScopesForCall: TSESTree.Node[],
@@ -270,12 +302,17 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       const instance = findFetcherInstance(transactionScopesForCall, identifier.name);
       if (!instance) return;
 
-      if (callHasTransaction || instance.constructorHasTransaction) {
-        instance.hasTransactionCall =
-          instance.hasTransactionCall || callHasTransaction;
-      } else {
-        instance.hasCallWithoutTransaction = true;
-      }
+      updateInstanceTransactionState(instance, callHasTransaction);
+    }
+
+    function isInlineFetcherNew(
+      object: TSESTree.Expression,
+    ): object is TSESTree.NewExpression {
+      return (
+        object.type === AST_NODE_TYPES.NewExpression &&
+        object.callee.type === AST_NODE_TYPES.Identifier &&
+        isFetcherClass(object.callee.name)
+      );
     }
 
     function handleInlineNewFetchCall(
@@ -303,20 +340,15 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       node: TSESTree.CallExpression,
       callee: TSESTree.MemberExpression,
     ): void {
-      const transactionScopesForCall = getTransactionScopeChain(node);
-      const transactionScope = transactionScopesForCall[0];
-      if (!transactionScope) return;
+      const contextForCall = getFetchCallContext(node);
+      if (!contextForCall) return;
 
-      const callHasTransaction = hasTransactionOption(node.arguments);
+      const { transactionScopesForCall, callHasTransaction } = contextForCall;
       const object = callee.object;
 
       if (object.type === AST_NODE_TYPES.Identifier) {
         handleIdentifierFetchCall(object, transactionScopesForCall, callHasTransaction);
-      } else if (
-        object.type === AST_NODE_TYPES.NewExpression &&
-        object.callee.type === AST_NODE_TYPES.Identifier &&
-        isFetcherClass(object.callee.name)
-      ) {
+      } else if (isInlineFetcherNew(object)) {
         handleInlineNewFetchCall(object, callHasTransaction);
       }
     }
