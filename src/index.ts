@@ -46,6 +46,7 @@ import { semanticFunctionPrefixes } from './rules/semantic-function-prefixes';
 import { enforceFirestoreMock } from './rules/enforce-mock-firestore';
 import { preferSettingsObject } from './rules/prefer-settings-object';
 import { enforceFirestoreSetMerge } from './rules/enforce-firestore-set-merge';
+import { enforceEarlyDestructuring } from './rules/enforce-early-destructuring';
 import { enforceVerbNounNaming } from './rules/enforce-verb-noun-naming';
 import { noExplicitReturnType } from './rules/no-explicit-return-type';
 import { useCustomMemo } from './rules/use-custom-memo';
@@ -202,6 +203,7 @@ module.exports = {
         '@blumintinc/blumint/require-usememo-object-literals': 'error',
         '@blumintinc/blumint/memoize-root-level-hocs': 'error',
         '@blumintinc/blumint/enforce-safe-stringify': 'error',
+        '@blumintinc/blumint/enforce-early-destructuring': 'error',
         '@blumintinc/blumint/no-entire-object-hook-deps': 'error',
         '@blumintinc/blumint/no-compositing-layer-props': 'error',
         '@blumintinc/blumint/enforce-firestore-doc-ref-generic': 'error',
@@ -352,6 +354,7 @@ module.exports = {
     'require-usememo-object-literals': requireUseMemoObjectLiterals,
     'memoize-root-level-hocs': memoizeRootLevelHocs,
     'enforce-safe-stringify': enforceStableStringify,
+    'enforce-early-destructuring': enforceEarlyDestructuring,
     'avoid-utils-directory': avoidUtilsDirectory,
     'no-entire-object-hook-deps': noEntireObjectHookDeps,
     'enforce-firestore-path-utils': enforceFirestorePathUtils,
