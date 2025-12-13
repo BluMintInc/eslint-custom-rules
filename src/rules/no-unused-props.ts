@@ -208,9 +208,7 @@ export const noUnusedProps = createRule({
             spreadTypeName: string,
             spreadTypePropsMap: Record<string, string[]>,
           ) => {
-            if (!spreadTypePropsMap[spreadTypeName]) {
-              spreadTypePropsMap[spreadTypeName] = [];
-            }
+            spreadTypePropsMap[spreadTypeName] ??= [];
           };
 
           const describeTypeNode = (typeNode: TSESTree.TypeNode): string => {
@@ -234,10 +232,12 @@ export const noUnusedProps = createRule({
               case AST_NODE_TYPES.TSTypeOperator:
                 return `${typeNode.operator.toLowerCase()} type`;
               default: {
-                const raw = typeNode.type.startsWith('TS')
-                  ? typeNode.type.slice(2)
-                  : typeNode.type;
-                return raw.replace(/([A-Z])/g, ' $1').toLowerCase().trim();
+                // Strip TS prefix and add spaces between capitals for readability
+                const withoutPrefix = typeNode.type.replace(/^TS/, '');
+                return withoutPrefix
+                  .replace(/([A-Z])/g, ' $1')
+                  .toLowerCase()
+                  .trim();
               }
             }
           };
