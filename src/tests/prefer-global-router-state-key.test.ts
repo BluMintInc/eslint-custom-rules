@@ -329,6 +329,44 @@ ruleTesterJsx.run(
         }
         `,
       },
+      {
+        code: `
+        import * as QueryKeys from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: 'user-profile' });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [stringLiteralError("'user-profile'")],
+        output: `
+        import * as QueryKeys from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: QueryKeys.QUERY_KEY_USER_PROFILE });
+          return <div>{value}</div>;
+        }
+        `,
+      },
+      {
+        code: `
+        import queryKeys from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: 'user-profile' });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [stringLiteralError("'user-profile'")],
+        output: `
+        import queryKeys from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: queryKeys.QUERY_KEY_USER_PROFILE });
+          return <div>{value}</div>;
+        }
+        `,
+      },
 
       // 2. String literals in template expressions
       {

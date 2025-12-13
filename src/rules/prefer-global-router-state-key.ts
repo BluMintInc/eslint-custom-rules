@@ -310,13 +310,27 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                           if (suggestedConstant) {
                             const fixes: TSESLint.RuleFix[] = [];
 
-                            // 1) Replace the literal with the constant
-                            fixes.push(
-                              fixer.replaceText(keyValue, suggestedConstant),
+                            const namespaceAlias = Array.from(
+                              namespaceImports.entries(),
+                            ).find(([, source]) => isQueryKeysSource(source))?.[0];
+                            const defaultAlias = Array.from(
+                              defaultImports.entries(),
+                            ).find(([, source]) => isQueryKeysSource(source))?.[0];
+                            const importAlias = namespaceAlias ?? defaultAlias;
+                            const formatConstantReference = (
+                              alias: string | undefined,
+                              constant: string,
+                            ): string =>
+                              alias ? `${alias}.${constant}` : constant;
+                            const replacementText = formatConstantReference(
+                              importAlias,
+                              suggestedConstant,
                             );
 
+                            // 1) Replace the literal with the constant (qualify if alias exists)
+                            fixes.push(fixer.replaceText(keyValue, replacementText));
+
                             // 2) Ensure an import exists for the suggested constant
-                            const sourceCode = context.getSourceCode();
                             const alreadyImportedNamed = Array.from(
                               queryKeyImports.values(),
                             ).some(
@@ -324,28 +338,72 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                                 isQueryKeysSource(info.source) &&
                                 info.imported === suggestedConstant,
                             );
-                            const hasNamespaceOrDefault =
-                              namespaceImports.size > 0 ||
-                              defaultImports.size > 0;
+                            const hasNamespaceOrDefault = Boolean(importAlias);
 
-                            if (!alreadyImportedNamed && !hasNamespaceOrDefault) {
+                            if (
+                              !alreadyImportedNamed &&
+                              !hasNamespaceOrDefault
+                            ) {
                               const importText = `import { ${suggestedConstant} } from '@/util/routing/queryKeys';\n`;
-                              const firstImport =
-                                sourceCode.ast.body.find(
-                                  (
-                                    n,
-                                  ): n is TSESTree.ImportDeclaration =>
-                                    n.type === AST_NODE_TYPES.ImportDeclaration,
-                                );
+                              const firstImport = sourceCode.ast.body.find(
+                                (n): n is TSESTree.ImportDeclaration =>
+                                  n.type === AST_NODE_TYPES.ImportDeclaration,
+                              );
 
                               if (firstImport) {
                                 fixes.push(
-                                  fixer.insertTextBefore(firstImport, importText),
+                                  fixer.insertTextBefore(
+                                    firstImport,
+                                    importText,
+                                  ),
                                 );
                               } else {
-                                fixes.push(
-                                  fixer.insertTextBeforeRange([0, 0], importText),
-                                );
+                                const { body } = sourceCode.ast;
+                                let firstNonDirective:
+                                  | TSESTree.Statement
+                                  | undefined;
+                                let lastDirective:
+                                  | TSESTree.ExpressionStatement
+                                  | undefined;
+
+                                for (const stmt of body) {
+                                  if (
+                                    stmt.type ===
+                                      AST_NODE_TYPES.ExpressionStatement &&
+                                    stmt.expression.type ===
+                                      AST_NODE_TYPES.Literal &&
+                                    typeof stmt.expression.value === 'string' &&
+                                    typeof stmt.directive === 'string'
+                                  ) {
+                                    lastDirective = stmt;
+                                    continue;
+                                  }
+                                  firstNonDirective = stmt;
+                                  break;
+                                }
+
+                                if (firstNonDirective) {
+                                  fixes.push(
+                                    fixer.insertTextBefore(
+                                      firstNonDirective,
+                                      importText,
+                                    ),
+                                  );
+                                } else if (lastDirective) {
+                                  fixes.push(
+                                    fixer.insertTextAfter(
+                                      lastDirective,
+                                      `\n${importText}`,
+                                    ),
+                                  );
+                                } else {
+                                  fixes.push(
+                                    fixer.insertTextBeforeRange(
+                                      [0, 0],
+                                      importText,
+                                    ),
+                                  );
+                                }
                               }
                             }
 
@@ -363,7 +421,9 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                         variableName: keyValue.name,
                       },
                     });
-                  } else if (keyValue.type === AST_NODE_TYPES.MemberExpression) {
+                  } else if (
+                    keyValue.type === AST_NODE_TYPES.MemberExpression
+                  ) {
                     context.report({
                       node: keyValue,
                       messageId: 'invalidQueryKeySource',

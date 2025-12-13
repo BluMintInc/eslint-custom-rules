@@ -208,7 +208,9 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
             callee.property.type === AST_NODE_TYPES.Identifier
           ) {
             const methodName = callee.property.name;
-            if (sideEffectPatterns.some((pattern) => pattern.test(methodName))) {
+            if (
+              sideEffectPatterns.some((pattern) => pattern.test(methodName))
+            ) {
               return true;
             }
           }
@@ -428,7 +430,16 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
             !areInTryCatchBlocks(awaitNodes) &&
             !areInLoop(awaitNodes)
           ) {
-            const key = `${awaitNodes[0].range?.[0]}-${awaitNodes[awaitNodes.length - 1].range?.[1]}`;
+            const start = awaitNodes[0].range?.[0];
+            const end = awaitNodes[awaitNodes.length - 1].range?.[1];
+            // Range metadata should exist on parser-produced nodes; this guard
+            // only skips malformed or synthetic nodes to avoid forming an
+            // "undefined-undefined" deduplication key
+            if (start == null || end == null) {
+              awaitNodes.length = 0;
+              continue;
+            }
+            const key = `${start}-${end}`;
             if (!reportedRanges.has(key)) {
               reportedRanges.add(key);
               context.report({
@@ -453,7 +464,13 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
           !areInTryCatchBlocks(awaitNodes) &&
           !areInLoop(awaitNodes)
         ) {
-          const key = `${awaitNodes[0].range?.[0]}-${awaitNodes[awaitNodes.length - 1].range?.[1]}`;
+          const start = awaitNodes[0].range?.[0];
+          const end = awaitNodes[awaitNodes.length - 1].range?.[1];
+          if (start == null || end == null) {
+            // Defensive guard: skip reporting when range metadata is missing
+            return;
+          }
+          const key = `${start}-${end}`;
           if (!reportedRanges.has(key)) {
             reportedRanges.add(key);
             context.report({

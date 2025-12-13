@@ -15,7 +15,10 @@ const workspaceTempDir = path.join(
 );
 const relativeTestDir = path.join(workspaceTempDir, 'relative');
 fs.mkdirSync(relativeTestDir, { recursive: true });
-const relativeTestFilePath = path.join(relativeTestDir, 'relative-file.test.ts');
+const relativeTestFilePath = path.join(
+  relativeTestDir,
+  'relative-file.test.ts',
+);
 fs.writeFileSync(relativeTestFilePath, '// relative test');
 fs.writeFileSync(
   path.join(relativeTestDir, 'relative-file.ts'),
@@ -35,7 +38,9 @@ const createTestFileWithSources = (
   sourceExtensions: string[],
 ) => {
   const testFilePath = createFile(testRelativePath);
-  const baseName = path.basename(testRelativePath).replace(/\.test\.tsx?$/i, '');
+  const baseName = path
+    .basename(testRelativePath)
+    .replace(/\.test\.tsx?$/i, '');
   const directory = path.dirname(testRelativePath);
 
   for (const extension of sourceExtensions) {
@@ -58,17 +63,15 @@ ruleTesterTs.run(
     valid: [
       {
         code: 'describe("foo", () => {});',
-        filename: createTestFileWithSources(
-          'functions/src/util/foo.test.ts',
-          ['.ts'],
-        ),
+        filename: createTestFileWithSources('functions/src/util/foo.test.ts', [
+          '.ts',
+        ]),
       },
       {
         code: 'it("handles components", () => {});',
-        filename: createTestFileWithSources(
-          'web/components/Button.test.tsx',
-          ['.tsx'],
-        ),
+        filename: createTestFileWithSources('web/components/Button.test.tsx', [
+          '.tsx',
+        ]),
       },
       {
         code: 'test("js helper", () => {});',
@@ -86,10 +89,9 @@ ruleTesterTs.run(
       },
       {
         code: 'describe("index module", () => {});',
-        filename: createTestFileWithSources(
-          'functions/src/index.test.ts',
-          ['.ts'],
-        ),
+        filename: createTestFileWithSources('functions/src/index.test.ts', [
+          '.ts',
+        ]),
       },
       {
         code: 'const notATest = true;',
@@ -116,10 +118,10 @@ ruleTesterTs.run(
       },
       {
         code: 'it("handles test next to jsx sibling", () => {});',
-        filename: createTestFileWithSources(
-          'shared/components/Card.test.tsx',
-          ['.jsx', '.tsx'],
-        ),
+        filename: createTestFileWithSources('shared/components/Card.test.tsx', [
+          '.jsx',
+          '.tsx',
+        ]),
       },
       {
         code: 'test("relative path fixtures", () => {});',
