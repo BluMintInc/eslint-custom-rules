@@ -1,7 +1,9 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
-type MessageIds = 'noExplicitReturnType';
+type MessageIds =
+  | 'noExplicitReturnTypeInferable'
+  | 'noExplicitReturnTypeNonInferable';
 
 type Options = [
   {
@@ -53,6 +55,24 @@ function describeMethodDefinition(node: TSESTree.MethodDefinition): string {
   return 'class method';
 }
 
+function describeAbstractMethodDefinition(
+  node: TSESTree.TSAbstractMethodDefinition,
+): string {
+  if (
+    !node.computed &&
+    (node.key.type === AST_NODE_TYPES.Identifier ||
+      (node.key.type === AST_NODE_TYPES.Literal &&
+        typeof node.key.value === 'string'))
+  ) {
+    const name = getNameFromIdentifierOrLiteral(node.key);
+    if (name) {
+      return `class method "${name}"`;
+    }
+  }
+
+  return 'class method';
+}
+
 function describeMethodSignature(node: TSESTree.TSMethodSignature): string {
   if (
     !node.computed &&
@@ -70,6 +90,14 @@ function describeMethodSignature(node: TSESTree.TSMethodSignature): string {
 }
 
 function describeFunctionDeclaration(node: TSESTree.FunctionDeclaration): string {
+  if (node.id?.name) {
+    return `function "${node.id.name}"`;
+  }
+
+  return 'function';
+}
+
+function describeTSDeclareFunction(node: TSESTree.TSDeclareFunction): string {
   if (node.id?.name) {
     return `function "${node.id.name}"`;
   }
@@ -120,8 +148,12 @@ function describeFunctionKind(node: TSESTree.Node): string {
   switch (node.type) {
     case AST_NODE_TYPES.MethodDefinition:
       return describeMethodDefinition(node);
+    case AST_NODE_TYPES.TSAbstractMethodDefinition:
+      return describeAbstractMethodDefinition(node);
     case AST_NODE_TYPES.TSMethodSignature:
       return describeMethodSignature(node);
+    case AST_NODE_TYPES.TSDeclareFunction:
+      return describeTSDeclareFunction(node);
     case AST_NODE_TYPES.FunctionDeclaration:
       return describeFunctionDeclaration(node);
     case AST_NODE_TYPES.FunctionExpression:
@@ -187,16 +219,23 @@ function isOverloadedFunction(node: TSESTree.Node): boolean {
     const interfaceBody = node.parent;
     if (interfaceBody.type !== AST_NODE_TYPES.TSInterfaceBody) return false;
 
+    if (node.computed) return false;
+
     const methodName =
-      node.key.type === AST_NODE_TYPES.Identifier ? node.key.name : undefined;
+      node.key.type === AST_NODE_TYPES.Identifier ||
+      node.key.type === AST_NODE_TYPES.Literal
+        ? getNameFromIdentifierOrLiteral(node.key)
+        : undefined;
     if (!methodName) return false;
 
     return (
       interfaceBody.body.filter(
         (member) =>
           member.type === AST_NODE_TYPES.TSMethodSignature &&
-          member.key.type === AST_NODE_TYPES.Identifier &&
-          member.key.name === methodName,
+          !member.computed &&
+          (member.key.type === AST_NODE_TYPES.Identifier ||
+            member.key.type === AST_NODE_TYPES.Literal) &&
+          getNameFromIdentifierOrLiteral(member.key) === methodName,
       ).length > 1
     );
   }
@@ -205,6 +244,7 @@ function isOverloadedFunction(node: TSESTree.Node): boolean {
 }
 
 function isInterfaceOrAbstractMethodSignature(node: TSESTree.Node): boolean {
+  if (node.type === AST_NODE_TYPES.TSAbstractMethodDefinition) return true;
   if (node.type === AST_NODE_TYPES.TSMethodSignature) return true;
 
   if (node.type === AST_NODE_TYPES.MethodDefinition) {
@@ -248,10 +288,8 @@ function isTypeGuardFunction(node: TSESTree.Node): boolean {
   return false;
 }
 
-export const noExplicitReturnType: TSESLint.RuleModule<
-  'noExplicitReturnType',
-  Options
-> = createRule<Options, MessageIds>({
+export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
+  createRule<Options, MessageIds>({
   name: 'no-explicit-return-type',
   meta: {
     type: 'suggestion',
@@ -278,8 +316,10 @@ export const noExplicitReturnType: TSESLint.RuleModule<
       },
     ],
     messages: {
-      noExplicitReturnType:
-        'Explicit return type on {{functionKind}} requires manual upkeep and can drift from the value actually returned. Remove the return type annotation so TypeScript infers it and keeps the signature aligned automatically.',
+      noExplicitReturnTypeInferable:
+        'Explicit return type on {{functionKind}} requires manual upkeep and can drift from what the implementation returns. Remove the return type annotation so TypeScript infers it and keeps the signature aligned automatically.',
+      noExplicitReturnTypeNonInferable:
+        '{{functionKind}} has no implementation body for TypeScript to infer from. Removing the return type here widens it to any; keep the annotation or provide an implementation where inference can succeed.',
     },
   },
   defaultOptions: [defaultOptions],
@@ -305,7 +345,8 @@ export const noExplicitReturnType: TSESLint.RuleModule<
 
     return {
       FunctionDeclaration(node) {
-        if (!node.returnType) return;
+        const returnType = node.returnType;
+        if (!returnType) return;
 
         if (
           isTypeGuardFunction(node) ||
@@ -314,16 +355,21 @@ export const noExplicitReturnType: TSESLint.RuleModule<
           return;
         }
 
+        const isInferable = Boolean(node.body);
+
         context.report({
-          node: node.returnType,
-          messageId: 'noExplicitReturnType',
+          node: returnType,
+          messageId: isInferable
+            ? 'noExplicitReturnTypeInferable'
+            : 'noExplicitReturnTypeNonInferable',
           data: { functionKind: describeFunctionKind(node) },
-          fix: (fixer) => fixReturnType(fixer, node),
+          ...(isInferable ? { fix: (fixer) => fixReturnType(fixer, node) } : {}),
         });
       },
 
       FunctionExpression(node) {
-        if (!node.returnType) return;
+        const returnType = node.returnType;
+        if (!returnType) return;
 
         if (node.parent?.type === AST_NODE_TYPES.MethodDefinition) {
           return;
@@ -336,31 +382,41 @@ export const noExplicitReturnType: TSESLint.RuleModule<
           return;
         }
 
+        const isInferable = Boolean(node.body);
+
         context.report({
-          node: node.returnType,
-          messageId: 'noExplicitReturnType',
+          node: returnType,
+          messageId: isInferable
+            ? 'noExplicitReturnTypeInferable'
+            : 'noExplicitReturnTypeNonInferable',
           data: { functionKind: describeFunctionKind(node) },
-          fix: (fixer) => fixReturnType(fixer, node),
+          ...(isInferable ? { fix: (fixer) => fixReturnType(fixer, node) } : {}),
         });
       },
 
       ArrowFunctionExpression(node) {
-        if (!node.returnType) return;
+        const returnType = node.returnType;
+        if (!returnType) return;
 
         if (isTypeGuardFunction(node)) {
           return;
         }
 
+        const isInferable = true;
+
         context.report({
-          node: node.returnType,
-          messageId: 'noExplicitReturnType',
+          node: returnType,
+          messageId: isInferable
+            ? 'noExplicitReturnTypeInferable'
+            : 'noExplicitReturnTypeNonInferable',
           data: { functionKind: describeFunctionKind(node) },
-          fix: (fixer) => fixReturnType(fixer, node),
+          ...(isInferable ? { fix: (fixer) => fixReturnType(fixer, node) } : {}),
         });
       },
 
       TSMethodSignature(node) {
-        if (!node.returnType) return;
+        const returnType = node.returnType;
+        if (!returnType) return;
 
         if (mergedOptions.allowInterfaceMethodSignatures) {
           return;
@@ -374,15 +430,15 @@ export const noExplicitReturnType: TSESLint.RuleModule<
         }
 
         context.report({
-          node: node.returnType,
-          messageId: 'noExplicitReturnType',
+          node: returnType,
+          messageId: 'noExplicitReturnTypeNonInferable',
           data: { functionKind: describeFunctionKind(node) },
-          fix: (fixer) => fixReturnType(fixer, node),
         });
       },
 
       MethodDefinition(node) {
-        if (!node.value.returnType) return;
+        const returnType = node.value.returnType;
+        if (!returnType) return;
 
         if (
           isTypeGuardFunction(node.value) ||
@@ -392,11 +448,50 @@ export const noExplicitReturnType: TSESLint.RuleModule<
           return;
         }
 
+        const isInferable = Boolean(node.value.body);
+
         context.report({
-          node: node.value.returnType,
-          messageId: 'noExplicitReturnType',
+          node: returnType,
+          messageId: isInferable
+            ? 'noExplicitReturnTypeInferable'
+            : 'noExplicitReturnTypeNonInferable',
           data: { functionKind: describeFunctionKind(node) },
-          fix: (fixer) => fixReturnType(fixer, node),
+          ...(isInferable ? { fix: (fixer) => fixReturnType(fixer, node) } : {}),
+        });
+      },
+
+      TSAbstractMethodDefinition(node) {
+        const returnType = node.value.returnType;
+        if (!returnType) return;
+
+        if (
+          isTypeGuardFunction(node.value) ||
+          (mergedOptions.allowAbstractMethodSignatures &&
+            isInterfaceOrAbstractMethodSignature(node))
+        ) {
+          return;
+        }
+
+        const isInferable = Boolean(node.value.body);
+
+        context.report({
+          node: returnType,
+          messageId: isInferable
+            ? 'noExplicitReturnTypeInferable'
+            : 'noExplicitReturnTypeNonInferable',
+          data: { functionKind: describeFunctionKind(node) },
+          ...(isInferable ? { fix: (fixer) => fixReturnType(fixer, node) } : {}),
+        });
+      },
+
+      TSDeclareFunction(node) {
+        const returnType = node.returnType;
+        if (!returnType) return;
+
+        context.report({
+          node: returnType,
+          messageId: 'noExplicitReturnTypeNonInferable',
+          data: { functionKind: describeFunctionKind(node) },
         });
       },
     };

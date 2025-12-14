@@ -47,6 +47,17 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       options: [{ allowOverloadedFunctions: true }],
     },
 
+    // String literal overloads should still be treated as overloads when disabled
+    {
+      code: `
+        interface Logger {
+          'log'(message: string): void;
+          'log'(message: number): void;
+        }
+      `,
+      options: [{ allowInterfaceMethodSignatures: false }],
+    },
+
     // Declaration files
     {
       code: 'export function helper(): void; export class Example { method(): string; }',
@@ -87,7 +98,7 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       code: 'function add(a: number, b: number): number { return a + b; }',
       errors: [
         {
-          messageId: 'noExplicitReturnType',
+          messageId: 'noExplicitReturnTypeInferable',
           data: { functionKind: 'function "add"' },
         },
       ],
@@ -99,7 +110,7 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       code: 'const multiply = (a: number, b: number): number => a * b;',
       errors: [
         {
-          messageId: 'noExplicitReturnType',
+          messageId: 'noExplicitReturnTypeInferable',
           data: { functionKind: 'arrow function "multiply"' },
         },
       ],
@@ -111,7 +122,7 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       code: 'const obj = { method(a: number): number { return a; } };',
       errors: [
         {
-          messageId: 'noExplicitReturnType',
+          messageId: 'noExplicitReturnTypeInferable',
           data: { functionKind: 'object method "method"' },
         },
       ],
@@ -130,7 +141,7 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       `,
       errors: [
         {
-          messageId: 'noExplicitReturnType',
+          messageId: 'noExplicitReturnTypeInferable',
           data: { functionKind: 'class method' },
         },
       ],
@@ -156,7 +167,7 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       `,
       errors: [
         {
-          messageId: 'noExplicitReturnType',
+          messageId: 'noExplicitReturnTypeInferable',
           data: { functionKind: 'function expression' },
         },
       ],
@@ -175,7 +186,7 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       code: 'async function getData(): Promise<string> { return "data"; }',
       errors: [
         {
-          messageId: 'noExplicitReturnType',
+          messageId: 'noExplicitReturnTypeInferable',
           data: { functionKind: 'function "getData"' },
         },
       ],
@@ -187,7 +198,7 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       code: 'const numbers = [1, 2, 3].map((n): number => n * 2);',
       errors: [
         {
-          messageId: 'noExplicitReturnType',
+          messageId: 'noExplicitReturnTypeInferable',
           data: { functionKind: 'arrow function' },
         },
       ],
@@ -199,7 +210,7 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       code: 'const isEven = function(n: number): boolean { return n % 2 === 0; };',
       errors: [
         {
-          messageId: 'noExplicitReturnType',
+          messageId: 'noExplicitReturnTypeInferable',
           data: { functionKind: 'function "isEven"' },
         },
       ],
@@ -212,7 +223,7 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       options: [{ allowRecursiveFunctions: false }],
       errors: [
         {
-          messageId: 'noExplicitReturnType',
+          messageId: 'noExplicitReturnTypeInferable',
           data: { functionKind: 'function "factorial"' },
         },
       ],
@@ -226,11 +237,53 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       options: [{ allowInterfaceMethodSignatures: false }],
       errors: [
         {
-          messageId: 'noExplicitReturnType',
+          messageId: 'noExplicitReturnTypeNonInferable',
           data: { functionKind: 'interface method "log"' },
         },
       ],
-      output: 'interface Logger { log(message: string); }',
+      output: null,
+    },
+
+    // String literal interface method should be reported when not overloaded
+    {
+      code: `
+        interface Logger {
+          'log'(message: string): void;
+        }
+      `,
+      options: [{ allowInterfaceMethodSignatures: false }],
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeNonInferable',
+          data: { functionKind: 'interface method "log"' },
+        },
+      ],
+      output: null,
+    },
+
+    // Abstract methods lack bodies, so no autofix
+    {
+      code: 'abstract class BaseService { abstract fetchData(): Promise<string>; }',
+      options: [{ allowAbstractMethodSignatures: false }],
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeNonInferable',
+          data: { functionKind: 'class method "fetchData"' },
+        },
+      ],
+      output: null,
+    },
+
+    // Declared functions have no body to infer from
+    {
+      code: 'declare function declaredHelper(): number;',
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeNonInferable',
+          data: { functionKind: 'function "declaredHelper"' },
+        },
+      ],
+      output: null,
     },
 
     // Firestore function file when not allowed
@@ -247,7 +300,7 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       options: [{ allowFirestoreFunctionFiles: false }],
       errors: [
         {
-          messageId: 'noExplicitReturnType',
+          messageId: 'noExplicitReturnTypeInferable',
           data: { functionKind: 'arrow function "deleteUser"' },
         },
       ],
