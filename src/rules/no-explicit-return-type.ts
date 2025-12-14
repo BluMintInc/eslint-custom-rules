@@ -325,6 +325,10 @@ export const noExplicitReturnType: TSESLint.RuleModule<
       FunctionExpression(node) {
         if (!node.returnType) return;
 
+        if (node.parent?.type === AST_NODE_TYPES.MethodDefinition) {
+          return;
+        }
+
         if (
           isTypeGuardFunction(node) ||
           (mergedOptions.allowRecursiveFunctions && isRecursiveFunction(node))
