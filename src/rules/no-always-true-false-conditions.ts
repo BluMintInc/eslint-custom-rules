@@ -61,7 +61,7 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
       return undefined;
     }
 
-    function resolveIdentifierLiteralValue(
+    function getConstLiteralValue(
       identifier: TSESTree.Identifier,
     ): TSESTree.Literal['value'] | typeof NOT_FOUND {
       const variable = findVariableInScopes(identifier.name);
@@ -1800,7 +1800,7 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
             switchStatement.discriminant.type === AST_NODE_TYPES.Literal &&
             node.test.type === AST_NODE_TYPES.Identifier
           ) {
-            const identifierValue = resolveIdentifierLiteralValue(node.test);
+            const identifierValue = getConstLiteralValue(node.test);
 
             if (
               identifierValue !== NOT_FOUND &&
