@@ -1,6 +1,8 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noRedundantParamTypes } from '../rules/no-redundant-param-types';
 
+const redundantParamData = (paramText: string) => ({ paramText });
+
 ruleTesterTs.run('no-redundant-param-types', noRedundantParamTypes, {
   valid: [
     // Arrow function without type annotations
@@ -113,7 +115,12 @@ ruleTesterTs.run('no-redundant-param-types', noRedundantParamTypes, {
       output: `
         const fn: (x: number) => number = (x) => x;
       `,
-      errors: [{ messageId: 'redundantParamType' }],
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('x: number'),
+        },
+      ],
     },
     // Multiple parameters
     {
@@ -124,8 +131,14 @@ ruleTesterTs.run('no-redundant-param-types', noRedundantParamTypes, {
         const example: (x: number, y: string) => void = (x, y) => {};
       `,
       errors: [
-        { messageId: 'redundantParamType' },
-        { messageId: 'redundantParamType' },
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('x: number'),
+        },
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('y: string'),
+        },
       ],
     },
     // Complex type with redundant parameter type
@@ -150,7 +163,14 @@ ruleTesterTs.run('no-redundant-param-types', noRedundantParamTypes, {
           // function logic
         };
       `,
-      errors: [{ messageId: 'redundantParamType' }],
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData(
+            'event: FirestoreEvent<Change<DocumentSnapshot<ChannelMembership>>>',
+          ),
+        },
+      ],
     },
     // Generic function with redundant parameter type
     {
@@ -164,7 +184,12 @@ ruleTesterTs.run('no-redundant-param-types', noRedundantParamTypes, {
           return await apiCall(id);
         };
       `,
-      errors: [{ messageId: 'redundantParamType' }],
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('id: string'),
+        },
+      ],
     },
     // Rest parameters with redundant type
     {
@@ -174,7 +199,12 @@ ruleTesterTs.run('no-redundant-param-types', noRedundantParamTypes, {
       output: `
         const sum: (...nums: number[]) => number = (...nums) => nums.reduce((a, b) => a + b, 0);
       `,
-      errors: [{ messageId: 'redundantParamType' }],
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('...nums: number[]'),
+        },
+      ],
     },
     // Optional parameters with redundant type
     {
@@ -184,7 +214,12 @@ ruleTesterTs.run('no-redundant-param-types', noRedundantParamTypes, {
       output: `
         const greet: (name?: string) => string = (name) => \`Hello \${name ?? 'world'}\`;
       `,
-      errors: [{ messageId: 'redundantParamType' }],
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('name?: string'),
+        },
+      ],
     },
     // Destructured parameters with redundant type
     {
@@ -194,7 +229,14 @@ ruleTesterTs.run('no-redundant-param-types', noRedundantParamTypes, {
       output: `
         const process: ({ x, y }: { x: number; y: string }) => string = ({ x, y }) => \`\${x}-\${y}\`;
       `,
-      errors: [{ messageId: 'redundantParamType' }],
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData(
+            '{ x, y }: { x: number; y: string }',
+          ),
+        },
+      ],
     },
     // Union/intersection types with redundant type
     {
@@ -204,7 +246,12 @@ ruleTesterTs.run('no-redundant-param-types', noRedundantParamTypes, {
       output: `
         const process: (value: string | number) => string = (value) => String(value);
       `,
-      errors: [{ messageId: 'redundantParamType' }],
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('value: string | number'),
+        },
+      ],
     },
     // Callback parameters with redundant type
     {
@@ -214,7 +261,12 @@ ruleTesterTs.run('no-redundant-param-types', noRedundantParamTypes, {
       output: `
         const withCallback: (cb: (err: Error | null) => void) => void = (cb) => cb(null);
       `,
-      errors: [{ messageId: 'redundantParamType' }],
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('cb: (err: Error | null) => void'),
+        },
+      ],
     },
     // Readonly parameters with redundant type
     {
@@ -224,7 +276,12 @@ ruleTesterTs.run('no-redundant-param-types', noRedundantParamTypes, {
       output: `
         const process: (data: readonly string[]) => string[] = (data) => [...data];
       `,
-      errors: [{ messageId: 'redundantParamType' }],
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('data: readonly string[]'),
+        },
+      ],
     },
     // Tuple types with redundant type
     {
@@ -234,7 +291,12 @@ ruleTesterTs.run('no-redundant-param-types', noRedundantParamTypes, {
       output: `
         const swap: (tuple: [string, number]) => [number, string] = (tuple) => [tuple[1], tuple[0]];
       `,
-      errors: [{ messageId: 'redundantParamType' }],
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('tuple: [string, number]'),
+        },
+      ],
     },
     // Class method with redundant parameter type
     {
@@ -248,7 +310,12 @@ ruleTesterTs.run('no-redundant-param-types', noRedundantParamTypes, {
           process: (value: number) => string = (value) => String(value);
         }
       `,
-      errors: [{ messageId: 'redundantParamType' }],
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('value: number'),
+        },
+      ],
     },
     // Interface implementation with redundant parameter type
     {
@@ -268,7 +335,12 @@ ruleTesterTs.run('no-redundant-param-types', noRedundantParamTypes, {
           handle: (event: Event) => void = (event) => { console.log(event); };
         }
       `,
-      errors: [{ messageId: 'redundantParamType' }],
+      errors: [
+        {
+          messageId: 'redundantParamType',
+          data: redundantParamData('event: Event'),
+        },
+      ],
     },
   ],
 });
