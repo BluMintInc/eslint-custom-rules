@@ -22,7 +22,7 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode;
 
     const messageDataFor = (node: TSESTree.Node) => ({
       condition: sourceCode.getText(node),
@@ -38,6 +38,8 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
 
     // Track parent nodes that have been evaluated to prevent duplicate reports on children
     const evaluatedParentNodes = new Set<TSESTree.Node>();
+
+    const NOT_FOUND = Symbol('literal-not-found');
 
     function findVariableInScopes(
       name: string,
@@ -61,11 +63,11 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
 
     function resolveIdentifierLiteralValue(
       identifier: TSESTree.Identifier,
-    ): TSESTree.Literal['value'] | undefined {
+    ): TSESTree.Literal['value'] | typeof NOT_FOUND {
       const variable = findVariableInScopes(identifier.name);
 
       if (!variable) {
-        return undefined;
+        return NOT_FOUND;
       }
 
       const definition = variable.defs.find(
@@ -86,7 +88,7 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
         definition.parent?.type !== AST_NODE_TYPES.VariableDeclaration ||
         definition.parent.kind !== 'const'
       ) {
-        return undefined;
+        return NOT_FOUND;
       }
 
       const initializer = definition.node.init;
@@ -95,7 +97,7 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
         return initializer.value;
       }
 
-      return undefined;
+      return NOT_FOUND;
     }
 
     /**
@@ -1803,7 +1805,7 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
             const identifierValue = resolveIdentifierLiteralValue(node.test);
 
             if (
-              identifierValue !== undefined &&
+              identifierValue !== NOT_FOUND &&
               !reportedNodes.has(node.test)
             ) {
               const messageId =
