@@ -1,5 +1,11 @@
+import type { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterTs } from '../utils/ruleTester';
 import rule from '../rules/enforce-serializable-params';
+
+const propertyError = (
+  message: string,
+): TSESLint.TestCaseError<'nonSerializableProperty'> =>
+  ({ message } as unknown as TSESLint.TestCaseError<'nonSerializableProperty'>);
 
 ruleTesterTs.run('enforce-serializable-params', rule, {
   valid: [
@@ -35,14 +41,12 @@ ruleTesterTs.run('enforce-serializable-params', rule, {
         };
       `,
       errors: [
-        {
-          messageId: 'nonSerializableProperty',
-          data: { type: 'DocumentReference', prop: 'userRef' },
-        },
-        {
-          messageId: 'nonSerializableProperty',
-          data: { type: 'Date', prop: 'createdAt' },
-        },
+        propertyError(
+          'What\'s wrong: property "userRef" uses a non-JSON-safe type "DocumentReference" → Why it matters: Firebase may coerce, drop, or strip semantic type when serializing callable/HTTPS request payloads → How to fix: accept only JSON-safe primitives, arrays, or plain objects, and convert DocumentReference to a safe representation (e.g., Date/Timestamp -> ISO string, DocumentReference -> document path string, Map/Set -> an array or object).',
+        ),
+        propertyError(
+          'What\'s wrong: property "createdAt" uses a non-JSON-safe type "Date" → Why it matters: Firebase may coerce, drop, or strip semantic type when serializing callable/HTTPS request payloads → How to fix: accept only JSON-safe primitives, arrays, or plain objects, and convert Date to a safe representation (e.g., Date/Timestamp -> ISO string, DocumentReference -> document path string, Map/Set -> an array or object).',
+        ),
       ],
     },
     {
@@ -59,14 +63,12 @@ ruleTesterTs.run('enforce-serializable-params', rule, {
         };
       `,
       errors: [
-        {
-          messageId: 'nonSerializableProperty',
-          data: { type: 'Timestamp', prop: 'timestamp' },
-        },
-        {
-          messageId: 'nonSerializableProperty',
-          data: { type: 'DocumentReference', prop: 'users' },
-        },
+        propertyError(
+          'What\'s wrong: property "timestamp" uses a non-JSON-safe type "Timestamp" → Why it matters: Firebase may coerce, drop, or strip semantic type when serializing callable/HTTPS request payloads → How to fix: accept only JSON-safe primitives, arrays, or plain objects, and convert Timestamp to a safe representation (e.g., Date/Timestamp -> ISO string, DocumentReference -> document path string, Map/Set -> an array or object).',
+        ),
+        propertyError(
+          'What\'s wrong: property "users" uses a non-JSON-safe type "DocumentReference" → Why it matters: Firebase may coerce, drop, or strip semantic type when serializing callable/HTTPS request payloads → How to fix: accept only JSON-safe primitives, arrays, or plain objects, and convert DocumentReference to a safe representation (e.g., Date/Timestamp -> ISO string, DocumentReference -> document path string, Map/Set -> an array or object).',
+        ),
       ],
     },
     {
@@ -82,14 +84,12 @@ ruleTesterTs.run('enforce-serializable-params', rule, {
         };
       `,
       errors: [
-        {
-          messageId: 'nonSerializableProperty',
-          data: { type: 'Map', prop: 'cache' },
-        },
-        {
-          messageId: 'nonSerializableProperty',
-          data: { type: 'Set', prop: 'set' },
-        },
+        propertyError(
+          'What\'s wrong: property "cache" uses a non-JSON-safe type "Map" → Why it matters: Firebase may coerce, drop, or strip semantic type when serializing callable/HTTPS request payloads → How to fix: accept only JSON-safe primitives, arrays, or plain objects, and convert Map to a safe representation (e.g., Date/Timestamp -> ISO string, DocumentReference -> document path string, Map/Set -> an array or object).',
+        ),
+        propertyError(
+          'What\'s wrong: property "set" uses a non-JSON-safe type "Set" → Why it matters: Firebase may coerce, drop, or strip semantic type when serializing callable/HTTPS request payloads → How to fix: accept only JSON-safe primitives, arrays, or plain objects, and convert Set to a safe representation (e.g., Date/Timestamp -> ISO string, DocumentReference -> document path string, Map/Set -> an array or object).',
+        ),
       ],
     },
   ],

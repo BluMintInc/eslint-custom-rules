@@ -45,7 +45,12 @@ const C = ({ items }) => {
   return null;
 };
 `,
-      errors: [{ messageId: 'noArrayLengthInDeps' }],
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
       output: `import { useMemo } from 'react';
 import { stableHash } from 'functions/src/util/hash/stableHash';
 
@@ -64,7 +69,12 @@ const C = ({ data }) => {
   return null;
 };
 `,
-      errors: [{ messageId: 'noArrayLengthInDeps' }],
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'data?.items.length' },
+        },
+      ],
       output: `import { useMemo } from 'react';
 import { stableHash } from 'functions/src/util/hash/stableHash';
 
@@ -83,7 +93,12 @@ const C = ({ ctx }) => {
   return null;
 };
 `,
-      errors: [{ messageId: 'noArrayLengthInDeps' }],
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'ctx.user.list.length' },
+        },
+      ],
       output: `import { useMemo } from 'react';
 import { stableHash } from 'functions/src/util/hash/stableHash';
 
@@ -103,7 +118,14 @@ const C = ({ items, users, messages }) => {
   return null;
 };
 `,
-      errors: [{ messageId: 'noArrayLengthInDeps' }],
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: {
+            dependencies: 'items.length, users.length, messages.length',
+          },
+        },
+      ],
       output: `import { useMemo } from 'react';
 import { stableHash } from 'functions/src/util/hash/stableHash';
 
@@ -125,7 +147,12 @@ const C = ({ items, id }) => {
   return null;
 };
 `,
-      errors: [{ messageId: 'noArrayLengthInDeps' }],
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
       output: `import { useMemo } from 'react';
 import { stableHash } from 'functions/src/util/hash/stableHash';
 
@@ -145,7 +172,12 @@ const C = ({ items }) => {
   return null;
 };
 `,
-      errors: [{ messageId: 'noArrayLengthInDeps' }],
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+      ],
       output: `import { useMemo } from 'react';
 import { stableHash } from 'functions/src/util/hash/stableHash';
 
@@ -165,7 +197,12 @@ const C = ({ s }) => {
   return null;
 };
 `,
-      errors: [{ messageId: 'noArrayLengthInDeps' }],
+      errors: [
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 's?.users.length' },
+        },
+      ],
       output: `import { useMemo } from 'react';
 import { stableHash } from 'functions/src/util/hash/stableHash';
 
@@ -186,8 +223,14 @@ const C = ({ items }) => {
 };
 `,
       errors: [
-        { messageId: 'noArrayLengthInDeps' },
-        { messageId: 'noArrayLengthInDeps' },
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
+        {
+          messageId: 'noArrayLengthInDeps',
+          data: { dependencies: 'items.length' },
+        },
       ],
       output: `import { useMemo } from 'react';
 import { stableHash } from 'functions/src/util/hash/stableHash';
