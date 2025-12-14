@@ -35,6 +35,7 @@ const obj = {
   },
 };
 
+// Computed class method with an explicit return type is flagged
 class Service {
   [Symbol.toStringTag](): string {
     return 'Service';
