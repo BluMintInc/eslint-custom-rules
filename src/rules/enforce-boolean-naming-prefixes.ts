@@ -70,16 +70,17 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
     ],
     messages: {
       missingBooleanPrefix:
-        'Boolean {{type}} "{{name}}" should start with a prefix like "is", "has", "can", or "should" (e.g., is{{capitalizedName}}, has{{capitalizedName}}). ' +
-        'Boolean prefixes make code self-documenting—readers immediately know the value is true/false without checking its declaration or type. ' +
-        'This improves readability at call sites: `if (user.{{name}})` is ambiguous, but `if (user.is{{capitalizedName}})` clearly signals a boolean check.',
+        'Boolean {{type}} "{{name}}" is missing a common approved boolean prefix ({{prefixes}}). ' +
+        'Prefixes immediately communicate that the value is a true/false predicate; without one, checks like `if ({{name}})` read as generic truthiness guards and hide the boolean intent. ' +
+        'Rename by prepending any approved prefix so the name becomes `<prefix>{{capitalizedName}}`, making the boolean contract obvious at call sites and API boundaries.',
     },
   },
   defaultOptions: [DEFAULT_OPTIONS],
   create(context, [options]) {
     const approvedPrefixes = options.prefixes || DEFAULT_OPTIONS.prefixes;
     const ignoreOverriddenGetters =
-      options.ignoreOverriddenGetters ?? DEFAULT_OPTIONS.ignoreOverriddenGetters;
+      options.ignoreOverriddenGetters ??
+      DEFAULT_OPTIONS.ignoreOverriddenGetters;
     const importStatusCache = new Map<string, boolean>();
     const externalApiUsageCache = new Map<string, boolean>();
 
@@ -150,8 +151,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       return (
         hasApprovedPrefix(normalizedName, {
           treatLeadingUnderscoreAsApproved: false,
-        }) ||
-        suffixKeywords.some((keyword) => lowerName.endsWith(keyword))
+        }) || suffixKeywords.some((keyword) => lowerName.endsWith(keyword))
       );
     }
 
@@ -249,9 +249,18 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         // Check for logical expressions that typically return boolean
         if (
           node.init.type === AST_NODE_TYPES.BinaryExpression &&
-          ['===', '!==', '==', '!=', '>', '<', '>=', '<=', 'in', 'instanceof'].includes(
-            node.init.operator,
-          )
+          [
+            '===',
+            '!==',
+            '==',
+            '!=',
+            '>',
+            '<',
+            '>=',
+            '<=',
+            'in',
+            'instanceof',
+          ].includes(node.init.operator)
         ) {
           return true;
         }
@@ -510,9 +519,18 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         }
         if (
           node.body.type === AST_NODE_TYPES.BinaryExpression &&
-          ['===', '!==', '==', '!=', '>', '<', '>=', '<=', 'in', 'instanceof'].includes(
-            node.body.operator,
-          )
+          [
+            '===',
+            '!==',
+            '==',
+            '!=',
+            '>',
+            '<',
+            '>=',
+            '<=',
+            'in',
+            'instanceof',
+          ].includes(node.body.operator)
         ) {
           return true;
         }
@@ -595,9 +613,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         const lowerCallee = calleeName.toLowerCase();
 
         if (lowerCallee.startsWith('assert')) {
-          return identifierReturnsBoolean(calleeName)
-            ? 'boolean'
-            : 'unknown';
+          return identifierReturnsBoolean(calleeName) ? 'boolean' : 'unknown';
         }
 
         const matchesPrefix = approvedPrefixes.some(
