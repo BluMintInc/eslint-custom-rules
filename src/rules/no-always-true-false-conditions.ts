@@ -22,7 +22,7 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.sourceCode;
+    const sourceCode = context.getSourceCode();
 
     const messageDataFor = (node: TSESTree.Node) => ({
       condition: sourceCode.getText(node),
@@ -71,7 +71,12 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
       }
 
       const definition = variable.defs.find(
-        (def) =>
+        (
+          def,
+        ): def is TSESLint.Scope.Definition & {
+          node: TSESTree.VariableDeclarator;
+          parent: TSESTree.VariableDeclaration;
+        } =>
           def.type === 'Variable' &&
           def.node.type === AST_NODE_TYPES.VariableDeclarator &&
           def.node.id.type === AST_NODE_TYPES.Identifier &&
@@ -80,14 +85,7 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
           def.parent.kind === 'const',
       );
 
-      if (
-        !definition ||
-        definition.node.type !== AST_NODE_TYPES.VariableDeclarator ||
-        definition.node.id.type !== AST_NODE_TYPES.Identifier ||
-        definition.node.id.name !== identifier.name ||
-        definition.parent?.type !== AST_NODE_TYPES.VariableDeclaration ||
-        definition.parent.kind !== 'const'
-      ) {
+      if (!definition) {
         return NOT_FOUND;
       }
 
