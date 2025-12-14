@@ -42,6 +42,10 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
     // Sentinel distinguishes "no const literal resolved" from valid literal values (including null/undefined)
     const NOT_FOUND = Symbol('literal-not-found');
 
+    /**
+     * Walks the current scope chain to locate a variable by name so identifier
+     * lookups can resolve const initializers even when declared in parent scopes.
+     */
     function findVariableInScopes(
       name: string,
     ): TSESLint.Scope.Variable | undefined {
@@ -62,6 +66,11 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
       return undefined;
     }
 
+    /**
+     * Resolves an identifier to the literal it is initialized with when declared
+     * as a const. Returns the NOT_FOUND sentinel when the binding is absent,
+     * not a const, or not initialized with a literal value.
+     */
     function getConstLiteralValue(
       identifier: TSESTree.Identifier,
     ): TSESTree.Literal['value'] | typeof NOT_FOUND {
