@@ -303,7 +303,7 @@ export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
         // Check all call expressions for transaction operations
         CallExpression(node) {
           const transactionScope = findTransactionScope(node);
-          const { isRead, isWrite, methodName } = isTransactionMethodCall(
+          const { isRead, isWrite } = isTransactionMethodCall(
             node,
             transactionScope,
           );
@@ -331,7 +331,7 @@ export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
               context.report({
                 node,
                 messageId: 'readsAfterWrites',
-                data: { method: methodName ?? 'unknown' },
+                data: { readMethod, writeMethods },
               });
             }
             // Don't mark as write since we don't know what method it is
@@ -351,7 +351,7 @@ export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
             context.report({
               node,
               messageId: 'readsAfterWrites',
-              data: { method: methodName ?? 'unknown' },
+              data: { readMethod, writeMethods },
             });
           }
         },
