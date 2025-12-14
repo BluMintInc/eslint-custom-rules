@@ -13,7 +13,8 @@ const toPosixPath = (filePath: string) => filePath.replace(/\\/g, '/');
 const ensureRelativeSpecifier = (specifier: string) =>
   specifier.startsWith('.') ? specifier : `./${specifier}`;
 
-const isWindowsDrivePath = (filePath: string) => /^[A-Za-z]:[\\/]/.test(filePath);
+const isWindowsDrivePath = (filePath: string) =>
+  /^[A-Za-z]:[\\/]/.test(filePath);
 
 const isValidRelativePath = (relativePath: string) =>
   !path.isAbsolute(relativePath) && !isWindowsDrivePath(relativePath);
@@ -23,7 +24,10 @@ const buildReplacementPath = (sourceFilePath: string, cwd: string) => {
     ? sourceFilePath
     : path.join(cwd, sourceFilePath);
   const targetPath = path.join(cwd, MOCK_FIRESTORE_TARGET);
-  const relativePath = path.relative(path.dirname(absoluteFilename), targetPath);
+  const relativePath = path.relative(
+    path.dirname(absoluteFilename),
+    targetPath,
+  );
 
   if (!isValidRelativePath(relativePath)) {
     return '';

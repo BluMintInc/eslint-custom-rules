@@ -15,12 +15,11 @@ export const noClassInstanceDestructuring = createRule<[], MessageIds>({
     fixable: 'code',
     schema: [],
     messages: {
-      noClassInstanceDestructuring:
-        [
-          "What's wrong: Destructuring {{members}} from class instance {{instance}} detaches those members from the instance.",
-          "Why it matters: Methods can run with the wrong `this`, and getters become one-time snapshots that go stale when the instance changes.",
-          'How to fix: Access through the instance instead (for example, {{suggestion}}) and bind when you need to pass a method around.',
-        ].join('\n'),
+      noClassInstanceDestructuring: [
+        "What's wrong: Destructuring {{members}} from class instance {{instance}} detaches those members from the instance.",
+        'Why it matters: Methods can run with the wrong `this`, and getters become one-time snapshots that go stale when the instance changes.',
+        'How to fix: Access through the instance instead (for example, {{suggestion}}) and bind when you need to pass a method around.',
+      ].join('\n'),
     },
   },
   defaultOptions: [],
@@ -126,7 +125,10 @@ export const noClassInstanceDestructuring = createRule<[], MessageIds>({
             data: {
               members: formatMembers(objectPattern.properties),
               instance: `\`${initText}\``,
-              suggestion: formatAccessExamples(objectPattern.properties, initText),
+              suggestion: formatAccessExamples(
+                objectPattern.properties,
+                initText,
+              ),
             },
             fix(fixer) {
               const properties = objectPattern.properties;
@@ -143,10 +145,7 @@ export const noClassInstanceDestructuring = createRule<[], MessageIds>({
                       ? prop.value.name
                       : sourceCode.getText(prop.value);
                   const accessPath = buildAccessPath(initText, prop);
-                  return fixer.replaceText(
-                    node,
-                    `${value} = ${accessPath}`,
-                  );
+                  return fixer.replaceText(node, `${value} = ${accessPath}`);
                 }
                 return null;
               }

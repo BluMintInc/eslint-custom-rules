@@ -5,7 +5,10 @@ const errorData = {
   moduleName: 'firestore-jest-mock',
   replacementPath: '../../__test-utils__/mockFirestore',
 } as const;
-const expectedError = { messageId: 'noFirestoreJestMock', data: errorData } as const;
+const expectedError = {
+  messageId: 'noFirestoreJestMock',
+  data: errorData,
+} as const;
 
 ruleTesterTs.run('no-firestore-jest-mock', noFirestoreJestMock, {
   valid: [

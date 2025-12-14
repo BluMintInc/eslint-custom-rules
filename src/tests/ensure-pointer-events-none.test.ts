@@ -1,11 +1,10 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { ensurePointerEventsNone } from '../rules/ensure-pointer-events-none';
 
-const pointerEventsError = (selector = '::before') =>
-  ({
-    messageId: 'missingPointerEventsNone' as const,
-    data: { selector },
-  });
+const pointerEventsError = (selector = '::before') => ({
+  messageId: 'missingPointerEventsNone' as const,
+  data: { selector },
+});
 
 ruleTesterTs.run('ensure-pointer-events-none', ensurePointerEventsNone, {
   valid: [

@@ -15,17 +15,20 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
     schema: [],
     messages: {
       alwaysTrueCondition:
-        "What's wrong → Condition \"{{condition}}\" is always true.\nWhy it matters → The guarded branch runs every time, which can hide logic errors and leave redundant checks.\nHow to fix → Remove the check, or rewrite \"{{condition}}\" so it depends on runtime values instead of constants.",
+        'What\'s wrong → Condition "{{condition}}" is always true.\nWhy it matters → The guarded branch runs every time, which can hide logic errors and leave redundant checks.\nHow to fix → Remove the check, or rewrite "{{condition}}" so it depends on runtime values instead of constants.',
       alwaysFalseCondition:
-        "What's wrong → Condition \"{{condition}}\" is always false.\nWhy it matters → The guarded branch is unreachable, which leaves misleading or dead code.\nHow to fix → Remove the unreachable branch, or adjust \"{{condition}}\" so it can evaluate to true when intended.",
+        'What\'s wrong → Condition "{{condition}}" is always false.\nWhy it matters → The guarded branch is unreachable, which leaves misleading or dead code.\nHow to fix → Remove the unreachable branch, or adjust "{{condition}}" so it can evaluate to true when intended.',
     },
   },
   defaultOptions: [],
   create(context) {
     const sourceCode = context.getSourceCode();
 
+    const normalizedConditionText = (node: TSESTree.Node) =>
+      sourceCode.getText(node).replace(/\s+/g, ' ').trim();
+
     const conditionTextFor = (node: TSESTree.Node) => ({
-      condition: sourceCode.getText(node),
+      condition: normalizedConditionText(node),
     });
 
     type ConditionResult = {

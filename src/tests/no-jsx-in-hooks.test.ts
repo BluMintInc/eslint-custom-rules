@@ -148,9 +148,7 @@ ruleTesterJsx.run('no-jsx-in-hooks', noJsxInHooks, {
           return <div>Element</div>;
         };
       `,
-      errors: [
-        { messageId: 'noJsxInHooks', data: { hookName: 'useElement' } },
-      ],
+      errors: [{ messageId: 'noJsxInHooks', data: { hookName: 'useElement' } }],
     },
     // Invalid function declaration hook
     {
@@ -159,9 +157,7 @@ ruleTesterJsx.run('no-jsx-in-hooks', noJsxInHooks, {
           return <header>App Header</header>;
         }
       `,
-      errors: [
-        { messageId: 'noJsxInHooks', data: { hookName: 'useHeader' } },
-      ],
+      errors: [{ messageId: 'noJsxInHooks', data: { hookName: 'useHeader' } }],
     },
     // Invalid hook with JSX.Element return type
     {

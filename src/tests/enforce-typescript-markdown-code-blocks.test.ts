@@ -18,19 +18,11 @@ ruleTesterMarkdown.run('enforce-typescript-markdown-code-blocks', rule, {
     },
     {
       filename: 'docs/example.md',
-      code: [
-        '```javascript',
-        'const jsExample = 1;',
-        '```',
-      ].join('\n'),
+      code: ['```javascript', 'const jsExample = 1;', '```'].join('\n'),
     },
     {
       filename: 'docs/example.md',
-      code: [
-        '```bash',
-        'echo "no change"',
-        '```',
-      ].join('\n'),
+      code: ['```bash', 'echo "no change"', '```'].join('\n'),
     },
     {
       filename: 'docs/example.md',
@@ -38,27 +30,15 @@ ruleTesterMarkdown.run('enforce-typescript-markdown-code-blocks', rule, {
     },
     {
       filename: 'docs/example.md',
-      code: [
-        '````',
-        'This is not a triple backtick fence.',
-        '````',
-      ].join('\n'),
+      code: ['````', 'This is not a triple backtick fence.', '````'].join('\n'),
     },
     {
       filename: 'docs/example.md',
-      code: [
-        '```typescript   ',
-        'const spaced = true;',
-        '```',
-      ].join('\n'),
+      code: ['```typescript   ', 'const spaced = true;', '```'].join('\n'),
     },
     {
       filename: 'docs/example.md',
-      code: [
-        '```ts',
-        'const shorthand = true;',
-        '```',
-      ].join('\n'),
+      code: ['```ts', 'const shorthand = true;', '```'].join('\n'),
     },
     {
       filename: 'docs/example.md',
@@ -104,7 +84,9 @@ ruleTesterMarkdown.run('enforce-typescript-markdown-code-blocks', rule, {
     {
       filename: 'docs/example.md',
       code: ['  ```', '  const indented = true;', '  ```'].join('\n'),
-      output: ['  ```typescript', '  const indented = true;', '  ```'].join('\n'),
+      output: ['  ```typescript', '  const indented = true;', '  ```'].join(
+        '\n',
+      ),
       errors: [{ messageId: 'missingLanguageSpecifier', line: 1 }],
     },
     {
@@ -121,7 +103,15 @@ ruleTesterMarkdown.run('enforce-typescript-markdown-code-blocks', rule, {
     },
     {
       filename: 'docs/example.md',
-      code: ['```', 'const first = 1;', '```', '', '```', 'const second = 2;', '```'].join('\n'),
+      code: [
+        '```',
+        'const first = 1;',
+        '```',
+        '',
+        '```',
+        'const second = 2;',
+        '```',
+      ].join('\n'),
       output: [
         '```typescript',
         'const first = 1;',
@@ -138,7 +128,15 @@ ruleTesterMarkdown.run('enforce-typescript-markdown-code-blocks', rule, {
     },
     {
       filename: 'docs/example.md',
-      code: ['```', 'const example = 1;', '```', '', '```javascript', 'const jsExample = 2;', '```'].join('\n'),
+      code: [
+        '```',
+        'const example = 1;',
+        '```',
+        '',
+        '```javascript',
+        'const jsExample = 2;',
+        '```',
+      ].join('\n'),
       output: [
         '```typescript',
         'const example = 1;',
@@ -152,7 +150,15 @@ ruleTesterMarkdown.run('enforce-typescript-markdown-code-blocks', rule, {
     },
     {
       filename: 'docs/example.md',
-      code: ['```', 'const example = true;', '```', 'Text', '```', 'const another = false;', '```'].join('\n'),
+      code: [
+        '```',
+        'const example = true;',
+        '```',
+        'Text',
+        '```',
+        'const another = false;',
+        '```',
+      ].join('\n'),
       output: [
         '```typescript',
         'const example = true;',
@@ -176,13 +182,27 @@ ruleTesterMarkdown.run('enforce-typescript-markdown-code-blocks', rule, {
     {
       filename: 'docs/example.md',
       code: ['```', 'const hasBackticks = "```";', '```'].join('\n'),
-      output: ['```typescript', 'const hasBackticks = "```";', '```'].join('\n'),
+      output: ['```typescript', 'const hasBackticks = "```";', '```'].join(
+        '\n',
+      ),
       errors: [{ messageId: 'missingLanguageSpecifier', line: 1 }],
     },
     {
       filename: 'docs/example.md',
-      code: ['```', 'function block() {', '  return `template`;', '}', '```'].join('\n'),
-      output: ['```typescript', 'function block() {', '  return `template`;', '}', '```'].join('\n'),
+      code: [
+        '```',
+        'function block() {',
+        '  return `template`;',
+        '}',
+        '```',
+      ].join('\n'),
+      output: [
+        '```typescript',
+        'function block() {',
+        '  return `template`;',
+        '}',
+        '```',
+      ].join('\n'),
       errors: [{ messageId: 'missingLanguageSpecifier', line: 1 }],
     },
   ],

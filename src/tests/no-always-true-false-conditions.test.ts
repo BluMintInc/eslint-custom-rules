@@ -330,9 +330,7 @@ if ("nonExistentProp" in { existingProp: true }) {
   doSomething();
 }
 `,
-    errors: [
-      expectAlwaysFalse('"nonExistentProp" in { existingProp: true }'),
-    ],
+    errors: [expectAlwaysFalse('"nonExistentProp" in { existingProp: true }')],
   },
   // Always true with typeof null
   {
@@ -467,11 +465,7 @@ if (new Date(2023, 0, 1) < new Date(2023, 0, 2)) {
   doSomething();
 }
 `,
-    errors: [
-      expectAlwaysTrue(
-        'new Date(2023, 0, 1) < new Date(2023, 0, 2)',
-      ),
-    ],
+    errors: [expectAlwaysTrue('new Date(2023, 0, 1) < new Date(2023, 0, 2)')],
   },
   // Always false with Date comparisons
   {
@@ -480,11 +474,7 @@ if (new Date(2023, 0, 2) < new Date(2023, 0, 1)) {
   doSomething();
 }
 `,
-    errors: [
-      expectAlwaysFalse(
-        'new Date(2023, 0, 2) < new Date(2023, 0, 1)',
-      ),
-    ],
+    errors: [expectAlwaysFalse('new Date(2023, 0, 2) < new Date(2023, 0, 1)')],
   },
   // Always true with Object methods
   {
@@ -493,9 +483,7 @@ if (Object.keys({a: 1, b: 2}).length === 2) {
   doSomething();
 }
 `,
-    errors: [
-      expectAlwaysTrue('Object.keys({a: 1, b: 2}).length === 2'),
-    ],
+    errors: [expectAlwaysTrue('Object.keys({a: 1, b: 2}).length === 2')],
   },
   // Always false with Object methods
   {
@@ -504,9 +492,7 @@ if (Object.keys({a: 1, b: 2}).length === 3) {
   doSomething();
 }
 `,
-    errors: [
-      expectAlwaysFalse('Object.keys({a: 1, b: 2}).length === 3'),
-    ],
+    errors: [expectAlwaysFalse('Object.keys({a: 1, b: 2}).length === 3')],
   },
   // Always true with JSON operations
   {
@@ -515,9 +501,7 @@ if (JSON.stringify({a: 1}) === '{"a":1}') {
   doSomething();
 }
 `,
-    errors: [
-      expectAlwaysTrue('JSON.stringify({a: 1}) === \'{"a":1}\''),
-    ],
+    errors: [expectAlwaysTrue('JSON.stringify({a: 1}) === \'{"a":1}\'')],
   },
   // Always false with JSON operations
   {
@@ -526,9 +510,7 @@ if (JSON.stringify({a: 1}) === '{"a":2}') {
   doSomething();
 }
 `,
-    errors: [
-      expectAlwaysFalse('JSON.stringify({a: 1}) === \'{"a":2}\''),
-    ],
+    errors: [expectAlwaysFalse('JSON.stringify({a: 1}) === \'{"a":2}\'')],
   },
   // Switch case comparison flagged as always true when identifier matches literal
   {
