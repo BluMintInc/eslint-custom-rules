@@ -39,6 +39,7 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
     // Track parent nodes that have been evaluated to prevent duplicate reports on children
     const evaluatedParentNodes = new Set<TSESTree.Node>();
 
+    // Sentinel distinguishes "no const literal resolved" from valid literal values (including null/undefined)
     const NOT_FOUND = Symbol('literal-not-found');
 
     function findVariableInScopes(
