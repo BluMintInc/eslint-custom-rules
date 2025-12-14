@@ -101,7 +101,9 @@ const unwrapArrayElementType = (
   return current as TSESTree.TypeNode;
 };
 
-const literalToString = (node: TSESTree.Node | null | undefined): string | null => {
+const literalToString = (
+  node: TSESTree.Node | null | undefined,
+): string | null => {
   if (!node || node.type !== AST_NODE_TYPES.Literal) return null;
   const value = (node as TSESTree.Literal).value;
   if (
@@ -447,8 +449,9 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
           currentParent.type === AST_NODE_TYPES.TSTypeOperator &&
           (currentParent as TSESTree.TSTypeOperator).operator === 'readonly'
         ) {
-          currentParent = (currentParent as TSESTree.TSTypeOperator)
-            .parent as TSESTree.Node | undefined;
+          currentParent = (currentParent as TSESTree.TSTypeOperator).parent as
+            | TSESTree.Node
+            | undefined;
           continue;
         }
         if (isParenthesizedType(currentParent)) {
@@ -518,9 +521,9 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
             context.report({
               node,
               messageId: 'noObjectArrays',
-            data: {
-              fieldName: getFieldName(node),
-            },
+              data: {
+                fieldName: getFieldName(node),
+              },
             });
           }
         }

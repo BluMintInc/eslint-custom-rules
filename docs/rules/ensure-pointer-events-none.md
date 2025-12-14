@@ -6,18 +6,17 @@
 
 <!-- end auto-generated rule header -->
 
-You need to stop decorative pseudo-elements that use absolute or fixed positioning from intercepting user interactions. Overlays you apply with `::before` or `::after` can sit on top of buttons and links; without `pointer-events: none`, they absorb clicks, taps, hover, and focus feedback and make the underlying control feel broken or inaccessible. Add `pointer-events: none` so your pseudo-element stays visual only while the element underneath remains usable.
+Absolutely or fixed-positioned pseudo-elements (`::before`/`::after`) can block clicks and hovers on the elements they decorate. This rule ensures those pseudo-elements explicitly set `pointer-events: none` so decorations never intercept user input.
 
 ## Rule Details
 
-You trigger this rule when:
+This rule reports when:
 
-- A styled-components/emotion template defines `::before` or `::after` with `position: absolute` or `position: fixed` and omits `pointer-events: none`.
+- Plain CSS, styled-components, or emotion templates define `::before` or `::after` with `position: absolute` or `position: fixed` and omit `pointer-events: none`.
 - A CSS-in-JS object for a pseudo-selector (e.g., `{ '&::before': { ... } }`) has absolute/fixed positioning without `pointerEvents: 'none'`.
 - A JSX `style={{ ... }}` object represents a pseudo-element style (via nested selector keys) and lacks `pointerEvents: 'none'`.
-- `::before` or `::after` styles use `position: absolute` or `position: fixed` without setting `pointer-events` (use `pointer-events: none` for decorative overlays, or set `pointer-events: auto` explicitly when interaction is intentional).
 
-You can rely on this rule to allow:
+The rule allows:
 
 - Pseudo-elements that already specify `pointer-events`.
 - Explicit `pointer-events: auto` for intentionally interactive pseudo-elements.
@@ -68,13 +67,6 @@ const Wrapper = styled.div`
 `;
 
 const styles = {
-  '&::before': {
-    content: '',
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-    pointerEvents: 'none',
-  },
   '&::after': {
     position: 'fixed',
     top: 0,
@@ -87,9 +79,22 @@ const styles = {
 };
 ```
 
+### Styled-components overlay example
+
+```tsx
+const Overlay = styled.div`
+  &::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+  }
+`;
+```
+
 ## Options
 
-You do not configure any options for this rule.
+This rule does not have any options.
 
 ## When Not To Use It
 
