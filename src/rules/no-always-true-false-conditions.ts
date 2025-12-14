@@ -105,7 +105,7 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
      * as a const. Returns the NOT_FOUND sentinel when the binding is absent,
      * not a const, or not initialized with a literal value.
      */
-    function getConstLiteralValue(
+    function resolveIdentifierValue(
       identifier: TSESTree.Identifier,
     ): TSESTree.Literal['value'] | typeof NOT_FOUND {
       const variable = findVariableInScopes(identifier.name);
@@ -1834,7 +1834,7 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
             switchStatement.discriminant.type === AST_NODE_TYPES.Literal &&
             node.test.type === AST_NODE_TYPES.Identifier
           ) {
-            const identifierValue = getConstLiteralValue(node.test);
+            const identifierValue = resolveIdentifierValue(node.test);
 
             if (
               identifierValue !== NOT_FOUND &&
