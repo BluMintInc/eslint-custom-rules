@@ -34,6 +34,12 @@ const obj = {
     return value.trim();
   },
 };
+
+class Service {
+  [Symbol.toStringTag](): string {
+    return 'Service';
+  }
+}
 ```
 
 ### Examples of correct code
