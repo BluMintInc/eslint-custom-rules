@@ -66,6 +66,37 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
       return undefined;
     }
 
+    function isConstIdentifierDefinition(
+      def: TSESLint.Scope.Definition,
+      identifierName: string,
+    ): def is TSESLint.Scope.Definition & {
+      node: TSESTree.VariableDeclarator;
+      parent: TSESTree.VariableDeclaration;
+    } {
+      return (
+        def.type === 'Variable' &&
+        def.node.type === AST_NODE_TYPES.VariableDeclarator &&
+        def.node.id.type === AST_NODE_TYPES.Identifier &&
+        def.node.id.name === identifierName &&
+        def.parent?.type === AST_NODE_TYPES.VariableDeclaration &&
+        def.parent.kind === 'const'
+      );
+    }
+
+    function findConstIdentifierDefinition(
+      variable: TSESLint.Scope.Variable,
+      identifierName: string,
+    ) {
+      return variable.defs.find(
+        (
+          def,
+        ): def is TSESLint.Scope.Definition & {
+          node: TSESTree.VariableDeclarator;
+          parent: TSESTree.VariableDeclaration;
+        } => isConstIdentifierDefinition(def, identifierName),
+      );
+    }
+
     /**
      * Resolves an identifier to the literal it is initialized with when declared
      * as a const. Returns the NOT_FOUND sentinel when the binding is absent,
@@ -80,19 +111,9 @@ export const noAlwaysTrueFalseConditions = createRule<[], MessageIds>({
         return NOT_FOUND;
       }
 
-      const definition = variable.defs.find(
-        (
-          def,
-        ): def is TSESLint.Scope.Definition & {
-          node: TSESTree.VariableDeclarator;
-          parent: TSESTree.VariableDeclaration;
-        } =>
-          def.type === 'Variable' &&
-          def.node.type === AST_NODE_TYPES.VariableDeclarator &&
-          def.node.id.type === AST_NODE_TYPES.Identifier &&
-          def.node.id.name === identifier.name &&
-          def.parent?.type === AST_NODE_TYPES.VariableDeclaration &&
-          def.parent.kind === 'const',
+      const definition = findConstIdentifierDefinition(
+        variable,
+        identifier.name,
       );
 
       if (!definition) {
