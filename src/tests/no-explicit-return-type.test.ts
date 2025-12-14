@@ -16,6 +16,7 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
     'function isLivestreamType(type: FilterType): type is FilterType { return true; }',
     'class ChannelGroupUtils { private static isValidIdentifierKey(key: string): key is TemporaryChannelGroupKey { return key in CHANNEL_GROUP_CONFIGS; } }',
     'class TypeGuardClass { isValidKey(key: string): key is TemporaryChannelGroupKey { return key in CHANNEL_GROUP_CONFIGS; } }',
+    'declare function isStringDeclared(value: unknown): value is string;',
 
     // Assertion functions with asserts keyword
     'function assertIsString(value: unknown): asserts value is string { if (typeof value !== "string") throw new Error("Not a string"); }',
@@ -46,6 +47,12 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
       code: 'interface StringNumberConverter { convert(input: string): number; convert(input: number): string; }',
       options: [{ allowOverloadedFunctions: true }],
     },
+
+    // Overloaded declared functions are allowed by default
+    `
+      declare function convert(input: string): number;
+      declare function convert(input: number): string;
+    `,
 
     // String literal overloads should still be treated as overloads when disabled
     {
@@ -269,6 +276,26 @@ ruleTesterTs.run('no-explicit-return-type', noExplicitReturnType, {
         {
           messageId: 'noExplicitReturnTypeNonInferable',
           data: { functionKind: 'class method "fetchData"' },
+        },
+      ],
+      output: null,
+    },
+
+    // Overloaded declared functions should be reported when not allowed
+    {
+      code: `
+        declare function convert(input: string): number;
+        declare function convert(input: number): string;
+      `,
+      options: [{ allowOverloadedFunctions: false }],
+      errors: [
+        {
+          messageId: 'noExplicitReturnTypeNonInferable',
+          data: { functionKind: 'function "convert"' },
+        },
+        {
+          messageId: 'noExplicitReturnTypeNonInferable',
+          data: { functionKind: 'function "convert"' },
         },
       ],
       output: null,

@@ -14,7 +14,7 @@
 
 ## Rule details
 
-This rule reports explicit return type annotations on functions that include an implementation body where TypeScript can infer the return value. The fixer (`--fix`) removes only the return type annotation while keeping the rest of the signature intact. Interface method signatures and abstract methods are allowed by default because they lack bodies for inference; disable those options to require annotations in those contexts (no auto-fix is applied there). The rule keeps the annotation for cases where the annotation conveys additional meaning:
+This rule reports explicit return type annotations on functions that include an implementation body where TypeScript can infer the return value. The fixer (`--fix`) removes only the return type annotation while keeping the rest of the signature intact. Interface method signatures and abstract methods are allowed by default because they lack bodies for inference; disabling those allowances makes the rule report these signatures (no auto-fix) instead of treating them as allowed. The rule keeps the annotation for cases where the annotation conveys additional meaning:
 
 - Type predicates (`value is Type`) and assertion functions (`asserts value is Type`) where the return type changes control flow.
 - Recursive functions, overloads, interface method signatures, and abstract methods when those allowances are enabled.

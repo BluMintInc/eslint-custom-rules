@@ -39,25 +39,11 @@ function getNameFromIdentifierOrLiteral(
   return undefined;
 }
 
-function describeMethodDefinition(node: TSESTree.MethodDefinition): string {
-  if (
-    !node.computed &&
-    (node.key.type === AST_NODE_TYPES.Identifier ||
-      (node.key.type === AST_NODE_TYPES.Literal &&
-        typeof node.key.value === 'string'))
-  ) {
-    const name = getNameFromIdentifierOrLiteral(node.key);
-    if (name) {
-      return `class method "${name}"`;
-    }
-  }
+type ClassMethodDefinition =
+  | TSESTree.MethodDefinition
+  | TSESTree.TSAbstractMethodDefinition;
 
-  return 'class method';
-}
-
-function describeAbstractMethodDefinition(
-  node: TSESTree.TSAbstractMethodDefinition,
-): string {
+function describeClassMethod(node: ClassMethodDefinition): string {
   if (
     !node.computed &&
     (node.key.type === AST_NODE_TYPES.Identifier ||
@@ -147,9 +133,9 @@ function describeArrowFunction(node: TSESTree.ArrowFunctionExpression): string {
 function describeFunctionKind(node: TSESTree.Node): string {
   switch (node.type) {
     case AST_NODE_TYPES.MethodDefinition:
-      return describeMethodDefinition(node);
+      return describeClassMethod(node);
     case AST_NODE_TYPES.TSAbstractMethodDefinition:
-      return describeAbstractMethodDefinition(node);
+      return describeClassMethod(node);
     case AST_NODE_TYPES.TSMethodSignature:
       return describeMethodSignature(node);
     case AST_NODE_TYPES.TSDeclareFunction:
@@ -243,6 +229,53 @@ function isOverloadedFunction(node: TSESTree.Node): boolean {
   return false;
 }
 
+function isOverloadedTsDeclareFunction(
+  node: TSESTree.TSDeclareFunction,
+): boolean {
+  const functionName = node.id?.name;
+  if (!functionName) return false;
+
+  let container: TSESTree.Node | undefined = node.parent as
+    | TSESTree.Node
+    | undefined;
+
+  while (container) {
+    if (
+      container.type === AST_NODE_TYPES.Program ||
+      container.type === AST_NODE_TYPES.TSModuleBlock
+    ) {
+      const declarations = container.body
+        .map((statement) => {
+          if (statement.type === AST_NODE_TYPES.TSDeclareFunction) {
+            return statement;
+          }
+
+          if (
+            statement.type === AST_NODE_TYPES.ExportNamedDeclaration &&
+            statement.declaration?.type === AST_NODE_TYPES.TSDeclareFunction
+          ) {
+            return statement.declaration;
+          }
+
+          return undefined;
+        })
+        .filter(
+          (
+            value,
+          ): value is TSESTree.TSDeclareFunction & { id: TSESTree.Identifier } =>
+            Boolean(value?.id?.name),
+        )
+        .filter((decl) => decl.id.name === functionName);
+
+      return declarations.length > 1;
+    }
+
+    container = container.parent as TSESTree.Node | undefined;
+  }
+
+  return false;
+}
+
 function isInterfaceOrAbstractMethodSignature(node: TSESTree.Node): boolean {
   if (node.type === AST_NODE_TYPES.TSAbstractMethodDefinition) return true;
   if (node.type === AST_NODE_TYPES.TSMethodSignature) return true;
@@ -317,9 +350,9 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
     ],
     messages: {
       noExplicitReturnTypeInferable:
-        'Explicit return type on {{functionKind}} requires manual upkeep and can drift from what the implementation returns. Remove the return type annotation so TypeScript infers it and keeps the signature aligned automatically.',
+        "What's wrong: {{functionKind}} has an explicit return type annotation. \u2192 Why it matters: it must be updated manually and can drift from what the implementation actually returns, hiding bugs behind a stale type. \u2192 How to fix: remove the return type annotation so TypeScript infers it from the implementation.",
       noExplicitReturnTypeNonInferable:
-        '{{functionKind}} has no implementation body for TypeScript to infer from. Removing the return type here widens it to any; keep the annotation or provide an implementation where inference can succeed.',
+        "What's wrong: {{functionKind}} has an explicit return type annotation but no implementation body. \u2192 Why it matters: TypeScript cannot infer the return type here; removing it widens the return type to `any`. \u2192 How to fix: keep the annotation, or provide an implementation body where inference can succeed.",
     },
   },
   defaultOptions: [defaultOptions],
@@ -487,6 +520,17 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
       TSDeclareFunction(node) {
         const returnType = node.returnType;
         if (!returnType) return;
+
+        if (isTypeGuardFunction(node)) {
+          return;
+        }
+
+        if (
+          mergedOptions.allowOverloadedFunctions &&
+          isOverloadedTsDeclareFunction(node)
+        ) {
+          return;
+        }
 
         context.report({
           node: returnType,
