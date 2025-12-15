@@ -300,7 +300,7 @@ function hasEmptyDependencyArray(node: TSESTree.CallExpression): boolean {
   return deps.type === AST_NODE_TYPES.ArrayExpression && deps.elements.length === 0;
 }
 
-function isTestFile(
+function filenameMatchesPatterns(
   filename: string,
   patterns: string[],
 ): boolean {
@@ -656,7 +656,8 @@ export const noEmptyDependencyUseCallbacks = createRule<Options, MessageIds>({
     const moduleBindingsCache = new WeakMap<TSESTree.Program, Set<string>>();
 
     const filename = context.getFilename();
-    const isTest = ignoreTestFiles && isTestFile(filename, testPatterns);
+    const isTest =
+      ignoreTestFiles && filenameMatchesPatterns(filename, testPatterns);
 
     function reportIfStaticCallback(
       callExpression: TSESTree.CallExpression,
