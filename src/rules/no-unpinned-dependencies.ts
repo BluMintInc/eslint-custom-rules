@@ -8,6 +8,9 @@ import {
   JSONStringLiteral,
 } from 'jsonc-eslint-parser/lib/parser/ast';
 
+const pinnedSemverPattern =
+  /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const noUnpinnedDependencies: TSESLint.RuleModule<'unexpected', any[]> =
   createRule({
@@ -21,7 +24,7 @@ export const noUnpinnedDependencies: TSESLint.RuleModule<'unexpected', any[]> =
       schema: [],
       messages: {
         unexpected:
-          "Dependency '{{ propertyName }}' is declared with the range '{{ version }}'. Ranges let package managers pull newer releases outside code review, which breaks reproducible installs and can hide breaking changes. Pin to an exact version like '{{ fixedVersion }}' (no ^ or ~) so dependency updates stay intentional and auditable.",
+          "Dependency '{{ propertyName }}' is declared with the range '{{ version }}'. Ranges let package managers pull newer releases outside code review, which breaks reproducible installs and can hide breaking changes. Pin to a single exact version without range operators (for example '{{ suggestedVersion }}') so dependency updates stay intentional and auditable; complex ranges must be pinned manually.",
       },
     },
     defaultOptions: [],
@@ -55,23 +58,27 @@ export const noUnpinnedDependencies: TSESLint.RuleModule<'unexpected', any[]> =
               (property.key as JSONIdentifier).name ||
               (property.key as JSONStringLiteral).value;
             // Check if the version string starts with a caret (^) or tilde (~), indicating a non-pinned version
-            if (
-              typeof version === 'string' &&
-              /^[~^]/.test(version)
-            ) {
-              const fixedVersion = version.replace(/^[~^]/, '');
+            if (typeof version === 'string' && /^[~^]/.test(version)) {
+              const pinnedCandidate = version.replace(/^[~^]/, '');
+              const isSimplePinned = pinnedSemverPattern.test(pinnedCandidate);
+              const suggestedVersion = isSimplePinned
+                ? pinnedCandidate
+                : '1.2.3';
               context.report({
                 node: node as unknown as TSESTree.Node,
                 messageId: 'unexpected',
                 data: {
                   propertyName,
                   version,
-                  fixedVersion,
+                  suggestedVersion,
                 },
                 fix: function (fixer) {
+                  if (!isSimplePinned) {
+                    return null;
+                  }
                   return fixer.replaceTextRange(
                     node.range,
-                    `"${fixedVersion}"`,
+                    `"${pinnedCandidate}"`,
                   );
                 },
               });

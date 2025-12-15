@@ -10,7 +10,7 @@ Pinned versions keep dependency installs reproducible and auditable. Caret (`^`)
 
 ## Rule Details
 
-The rule inspects `package.json` (including JSON/JSONC) and reports any dependency version that starts with `^` or `~`. Exact versions ensure CI, local development, and deployments all resolve the same artifacts and that security/compliance audits match the versions that were reviewed.
+The rule inspects `package.json` (including JSON/JSONC) and reports any dependency version that starts with `^` or `~`. Exact versions ensure CI, local development, and deployments all resolve the same artifacts and that security/compliance audits match the versions that were reviewed. Auto-fix removes only the leading `^` or `~` when the remaining value is a single pinned semver (for example `1.2.3`). Compound ranges such as `~1 || ^2` are reported but must be pinned manually.
 
 ### Why this matters
 
@@ -48,7 +48,8 @@ Examples of **correct** code for this rule:
 
 - Remove `^` or `~` and pin to the exact version you intend to ship.
 - Run `npm install` or `npm update <package>@<version>` to refresh your lockfile.
-- ESLint `--fix` can strip the range prefixes automatically for this rule.
+- ESLint `--fix` strips the leading range prefix when the remainder is a single pinned version (for example `^8.19.0` → `8.19.0`).
+- For compound ranges (for example `~1 || ^2`), choose the exact version you want to ship and replace the range manually before updating the lockfile.
 
 ## When Not To Use It
 
