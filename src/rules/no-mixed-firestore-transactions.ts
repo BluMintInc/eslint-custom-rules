@@ -459,6 +459,39 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       handleFetcherClass(node, className, transactionScope);
     }
 
+    function reportFetcherInstance(instance: FetcherInstance): void {
+      if (!shouldReportFetcher(instance)) return;
+
+      context.report({
+        node: instance.node,
+        messageId: 'noMixedTransactions',
+        data: {
+          className: instance.className,
+          transactionalClass: getTransactionalClassName(instance.className),
+        },
+      });
+    }
+
+    function reportFetcherInstances(instances: FetcherInstance[]): void {
+      for (const instance of instances) {
+        reportFetcherInstance(instance);
+      }
+    }
+
+    function reportFetcherScope(
+      scope: Map<string, FetcherInstance[]>,
+    ): void {
+      for (const instances of scope.values()) {
+        reportFetcherInstances(instances);
+      }
+    }
+
+    function reportAllFetcherScopes(): void {
+      for (const scope of fetcherInstances.values()) {
+        reportFetcherScope(scope);
+      }
+    }
+
     return {
       NewExpression: handleNewExpression,
 
@@ -491,24 +524,7 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       },
 
       'Program:exit'() {
-        for (const scope of fetcherInstances.values()) {
-          for (const instances of scope.values()) {
-            for (const instance of instances) {
-              if (!shouldReportFetcher(instance)) continue;
-
-              context.report({
-                node: instance.node,
-                messageId: 'noMixedTransactions',
-                data: {
-                  className: instance.className,
-                  transactionalClass: getTransactionalClassName(
-                    instance.className,
-                  ),
-                },
-              });
-            }
-          }
-        }
+        reportAllFetcherScopes();
       },
     };
   },
