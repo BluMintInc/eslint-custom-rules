@@ -71,7 +71,8 @@ export const noRestrictedPropertiesFix = createRule<
     ]);
 
     /**
-     * Formats the restriction reason with a trailing space when present
+     * Keeps the templated message readable by only adding a trailing space
+     * when a restriction reason is provided.
      */
     function formatRestrictionReason(message: string | undefined): string {
       return message ? `${message} ` : '';
