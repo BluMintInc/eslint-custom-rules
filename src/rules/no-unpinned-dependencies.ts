@@ -9,7 +9,7 @@ import {
 } from 'jsonc-eslint-parser/lib/parser/ast';
 
 const pinnedSemverPattern =
-  /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+  /^\d+\.\d+\.\d+(?:-(?:[0-9A-Za-z-]+)(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const noUnpinnedDependencies: TSESLint.RuleModule<'unexpected', any[]> =
@@ -57,13 +57,19 @@ export const noUnpinnedDependencies: TSESLint.RuleModule<'unexpected', any[]> =
             const propertyName =
               (property.key as JSONIdentifier).name ||
               (property.key as JSONStringLiteral).value;
-            // Check if the version string starts with a caret (^) or tilde (~), indicating a non-pinned version
-            if (typeof version === 'string' && /^[~^]/.test(version)) {
-              const pinnedCandidate = version.replace(/^[~^]/, '');
-              const isSimplePinned = pinnedSemverPattern.test(pinnedCandidate);
-              const suggestedVersion = isSimplePinned
-                ? pinnedCandidate
-                : '1.2.3';
+            // Flag caret/tilde range operators anywhere; only auto-fix simple leading ranges
+            if (typeof version === 'string' && /[~^]/.test(version)) {
+              const startsWithRange = /^[~^]/.test(version);
+              const pinnedCandidate = startsWithRange
+                ? version.replace(/^[~^]/, '')
+                : version;
+              const firstSemverInString = version.match(/\d+\.\d+\.\d+/)?.[0];
+              const isSimplePinned =
+                startsWithRange && pinnedSemverPattern.test(pinnedCandidate);
+              const suggestedVersion =
+                isSimplePinned && startsWithRange
+                  ? pinnedCandidate
+                  : firstSemverInString ?? '1.2.3';
               context.report({
                 node: node as unknown as TSESTree.Node,
                 messageId: 'unexpected',

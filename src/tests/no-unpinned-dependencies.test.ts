@@ -39,6 +39,16 @@ ruleTesterJson.run(
         output: null,
       },
       {
+        code: '{dependencies: {eslint: "1.0.0 || ^2.0.0"}}',
+        errors: [
+          {
+            message:
+              "Dependency 'eslint' is declared with the range '1.0.0 || ^2.0.0'. Ranges let package managers pull newer releases outside code review, which breaks reproducible installs and can hide breaking changes. Pin to a single exact version without range operators (for example '1.0.0') so dependency updates stay intentional and auditable; complex ranges must be pinned manually.",
+          },
+        ],
+        output: null,
+      },
+      {
         code: `{
             "name": "eslint-plugin-blumint",
             "version": "0.0.0",
