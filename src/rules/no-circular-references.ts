@@ -25,12 +25,25 @@ export const noCircularReferences = createRule<[], MessageIds>({
     schema: [],
     messages: {
       circularReference:
-        'Reference "{{referenceText}}" makes this object point back to itself (directly or through other objects). Circular object graphs throw in JSON.stringify and keep members reachable longer, which causes memory leaks and unexpected mutations. Store a copy or a serialize-safe identifier instead of the original object when assigning.',
+        'Reference "{{referenceText}}" makes this object point back to itself (directly or through other objects). Circular object graphs throw in `JSON.stringify()` and keep members reachable longer, which causes memory leaks and unexpected mutations. Store a copy or a serialize-safe identifier instead of the original object when assigning.',
     },
   },
   defaultOptions: [],
   create(context) {
     const sourceCode = context.getSourceCode();
+
+    function reportCircularReference(
+      node: TSESTree.Node,
+      reference: TSESTree.Node,
+    ) {
+      context.report({
+        node,
+        messageId: 'circularReference',
+        data: {
+          referenceText: sourceCode.getText(reference),
+        },
+      });
+    }
 
     function isObjectExpression(
       node: TSESTree.Node,
@@ -268,13 +281,7 @@ export const noCircularReferences = createRule<[], MessageIds>({
       if (targetInfo) {
         targetInfo.references.add(reference);
         if (detectCircularReference(targetObj)) {
-          context.report({
-            node: reference,
-            messageId: 'circularReference',
-            data: {
-              referenceText: sourceCode.getText(reference),
-            },
-          });
+          reportCircularReference(reference, reference);
         }
       }
     }
@@ -683,13 +690,8 @@ export const noCircularReferences = createRule<[], MessageIds>({
                               if (isIdentifier(leftObj)) {
                                 const leftObjRef = getReferencedObject(leftObj);
                                 if (leftObjRef === referencedObj) {
-                                  context.report({
-                                    node: assignment,
-                                    messageId: 'circularReference',
-                                    data: {
-                                      referenceText: sourceCode.getText(assignment.right),
-                                    },
-                                  });
+                                  const reference = assignment.right;
+                                  reportCircularReference(assignment, reference);
                                 }
                               }
                             }
@@ -713,14 +715,11 @@ export const noCircularReferences = createRule<[], MessageIds>({
                                     const leftObjRef =
                                       getReferencedObject(leftObj);
                                     if (leftObjRef === referencedObj) {
-                                      context.report({
-                                        node: assignment,
-                                        messageId: 'circularReference',
-                                        data: {
-                                          referenceText:
-                                            sourceCode.getText(assignment.right),
-                                        },
-                                      });
+                                      const reference = assignment.right;
+                                      reportCircularReference(
+                                        assignment,
+                                        reference,
+                                      );
                                     }
                                   }
                                 }
@@ -773,13 +772,8 @@ export const noCircularReferences = createRule<[], MessageIds>({
                     parent.left as TSESTree.MemberExpression,
                   );
                   if (leftObj === referencedObj) {
-                    context.report({
-                      node,
-                      messageId: 'circularReference',
-                      data: {
-                        referenceText: sourceCode.getText(node),
-                      },
-                    });
+                    const reference = node;
+                    reportCircularReference(node, reference);
                   }
                 }
               }

@@ -4,17 +4,17 @@
 
 <!-- end auto-generated rule header -->
 
-Circular object graphs throw during `JSON.stringify`, keep objects reachable longer (leading to leaks), and make mutation paths harder to reason about. This rule reports any assignment or property wiring that makes an object point back to itself, directly or through another object, method, or promise callback.
+Circular object graphs throw during `JSON.stringify()`, keep objects reachable longer (leading to leaks), and make mutation paths harder to reason about. This rule reports any assignment or property wiring that makes an object point back to itself, directly or through another object, method, or promise callback.
 
 ## Rule Details
 
 When the rule fires, the message explains which expression created the cycle and how to break it:
 
-> Reference "{{referenceText}}" makes this object point back to itself (directly or through other objects). Circular object graphs throw in JSON.stringify and keep members reachable longer, which causes memory leaks and unexpected mutations. Store a copy or a serialize-safe identifier instead of the original object when assigning.
+> Reference "{{referenceText}}" makes this object point back to itself (directly or through other objects). Circular object graphs throw in `JSON.stringify()` and keep members reachable longer, which causes memory leaks and unexpected mutations. Store a copy or a serialize-safe identifier instead of the original object when assigning.
 
 Why this matters:
 
-- `JSON.stringify` throws on circular structures, blocking logging, telemetry, and API payloads.
+- `JSON.stringify()` throws on circular structures, blocking logging, telemetry, and API payloads.
 - Cycles keep entire graphs reachable, which delays garbage collection and can leak large trees.
 - Shared references spread mutations in surprising directions, hiding the source of state changes.
 
