@@ -8,20 +8,31 @@ import {
   JSONStringLiteral,
 } from 'jsonc-eslint-parser/lib/parser/ast';
 
-const pinnedSemverPattern =
+const PINNED_SEMVER_PATTERN =
   /^\d+\.\d+\.\d+(?:-(?:[0-9A-Za-z-]+)(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const RANGE_OPERATOR_PATTERN = /[~^]/;
 const LEADING_RANGE_PATTERN = /^[~^]/;
 const DEFAULT_PINNED_VERSION = '1.2.3';
+const BASIC_SEMVER_PATTERN = /\d+\.\d+\.\d+/;
 
+/**
+ * Computes a pinned-version recommendation from a raw dependency version.
+ * Strips a leading range token (^ or ~), validates pinned candidates, and
+ * falls back to the first semver-like substring or a default placeholder
+ * when no safe candidate is present.
+ *
+ * @param version Dependency version string from package.json.
+ * @returns Object describing whether a safe fix is possible and the
+ * suggested pinned version.
+ */
 function computeVersionSuggestion(version: string) {
   const startsWithRange = LEADING_RANGE_PATTERN.test(version);
   const pinnedCandidate = startsWithRange
     ? version.replace(LEADING_RANGE_PATTERN, '')
     : version;
-  const firstSemverInString = version.match(/\d+\.\d+\.\d+/)?.[0];
+  const firstSemverInString = version.match(BASIC_SEMVER_PATTERN)?.[0];
   const isSimplePinned =
-    startsWithRange && pinnedSemverPattern.test(pinnedCandidate);
+    startsWithRange && PINNED_SEMVER_PATTERN.test(pinnedCandidate);
   const suggestedVersion =
     isSimplePinned && startsWithRange
       ? pinnedCandidate
