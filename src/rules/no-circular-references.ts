@@ -30,7 +30,7 @@ export const noCircularReferences = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode;
 
     function isObjectExpression(
       node: TSESTree.Node,
