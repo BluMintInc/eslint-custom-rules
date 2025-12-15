@@ -66,7 +66,7 @@ const validate = (rules) => {};
 const search = (scope) => {};
 
 // When the suffix carries essential domain context, allow it explicitly
-/* eslint-disable no-unnecessary-verb-suffix */
+/* eslint-disable @blumintinc/blumint/no-unnecessary-verb-suffix */
 function migrateDataFromLegacy(data) {}        // Source system is material
 function mergeConfigWithDefaults(config) {}    // The combination rule matters
 function convertTemperatureToCelsius(temp) {}  // Destination scale matters
@@ -75,12 +75,12 @@ function searchProductsInCategory(category) {} // Category scoping matters
 function validateInputAgainstSchema(input) {}  // Validation target matters
 function processEventsUntilTimeout(events) {}  // Time boundary matters
 function computeScoreViaAlgorithm(data) {}     // Algorithm choice matters
-/* eslint-enable no-unnecessary-verb-suffix */
+/* eslint-enable @blumintinc/blumint/no-unnecessary-verb-suffix */
 ```
 
 ## When Not To Use It
 
-Disable this rule when the suffix carries domain meaning that parameters alone cannot convey (e.g., security mode, data partition, migration origin). Prefer targeted disables near the affected declarations so the exception stays visible to readers.
+You can disable this rule when the suffix carries domain meaning that parameters alone cannot convey (e.g., security mode, data partition, migration origin). Prefer targeted disables near the affected declarations so the exception stays visible to readers.
 
 ## Further Reading
 
