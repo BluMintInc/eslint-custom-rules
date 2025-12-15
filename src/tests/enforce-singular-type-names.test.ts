@@ -1,6 +1,22 @@
 import { enforceSingularTypeNames } from '../rules/enforce-singular-type-names';
 import { ruleTesterTs } from '../utils/ruleTester';
 
+const messageTemplate =
+  "Type name '{{name}}' is plural, which signals a collection and hides whether this alias, interface, or enum represents one value or many. Plural type identifiers push callers to misuse the symbol for arrays or maps. Rename it to a singular noun such as '{{suggestedName}}' so the declaration clearly models a single instance and leaves plural names for container types.";
+
+const error = (name: string, suggestedName: string) => ({
+  messageId: 'typeShouldBeSingular' as const,
+  data: { name, suggestedName },
+});
+
+describe('enforce-singular-type-names message', () => {
+  it('uses an educational template', () => {
+    expect(enforceSingularTypeNames.meta.messages.typeShouldBeSingular).toBe(
+      messageTemplate,
+    );
+  });
+});
+
 ruleTesterTs.run('enforce-singular-type-names', enforceSingularTypeNames, {
   valid: [
     // Singular type alias
@@ -229,275 +245,145 @@ ruleTesterTs.run('enforce-singular-type-names', enforceSingularTypeNames, {
     // Basic plural type alias
     {
       code: 'type Users = { id: number; name: string; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Users', suggestedName: 'User' },
-        },
-      ],
+      errors: [error('Users', 'User')],
     },
 
     // Plural interface
     {
       code: 'interface People { id: number; name: string; }',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'People', suggestedName: 'Person' },
-        },
-      ],
+      errors: [error('People', 'Person')],
     },
 
     // Plural enum
     {
       code: 'enum Colors { RED, GREEN, BLUE }',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Colors', suggestedName: 'Color' },
-        },
-      ],
+      errors: [error('Colors', 'Color')],
     },
 
     // Plural union type
     {
       code: 'type Phases = "not-ready" | "ready";',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Phases', suggestedName: 'Phase' },
-        },
-      ],
+      errors: [error('Phases', 'Phase')],
     },
 
     // Plural generic type
     {
       code: 'type Results<T> = { data: T; error?: string; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Results', suggestedName: 'Result' },
-        },
-      ],
+      errors: [error('Results', 'Result')],
     },
 
     // Irregular plural
     {
       code: 'type Children = { name: string; age: number; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Children', suggestedName: 'Child' },
-        },
-      ],
+      errors: [error('Children', 'Child')],
     },
 
     // More plural types that should be flagged
     {
       code: 'type Books = { title: string; author: string; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Books', suggestedName: 'Book' },
-        },
-      ],
+      errors: [error('Books', 'Book')],
     },
 
     {
       code: 'type Cars = { make: string; model: string; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Cars', suggestedName: 'Car' },
-        },
-      ],
+      errors: [error('Cars', 'Car')],
     },
 
     {
       code: 'type Houses = { address: string; rooms: number; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Houses', suggestedName: 'House' },
-        },
-      ],
+      errors: [error('Houses', 'House')],
     },
 
     // Plural interfaces
     {
       code: 'interface Students { name: string; grade: number; }',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Students', suggestedName: 'Student' },
-        },
-      ],
+      errors: [error('Students', 'Student')],
     },
 
     {
       code: 'interface Teachers { subject: string; experience: number; }',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Teachers', suggestedName: 'Teacher' },
-        },
-      ],
+      errors: [error('Teachers', 'Teacher')],
     },
 
     // Plural enums
     {
       code: 'enum Statuses { PENDING, APPROVED, REJECTED }',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Statuses', suggestedName: 'Status' },
-        },
-      ],
+      errors: [error('Statuses', 'Status')],
     },
 
     {
       code: 'enum Types { STRING, NUMBER, BOOLEAN }',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Types', suggestedName: 'Type' },
-        },
-      ],
+      errors: [error('Types', 'Type')],
     },
 
     // Irregular plurals
     {
       code: 'type Women = { name: string; age: number; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Women', suggestedName: 'Woman' },
-        },
-      ],
+      errors: [error('Women', 'Woman')],
     },
 
     {
       code: 'type Men = { name: string; age: number; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Men', suggestedName: 'Man' },
-        },
-      ],
+      errors: [error('Men', 'Man')],
     },
 
     {
       code: 'type Feet = { size: number; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Feet', suggestedName: 'Foot' },
-        },
-      ],
+      errors: [error('Feet', 'Foot')],
     },
 
     {
       code: 'type Teeth = { count: number; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Teeth', suggestedName: 'Tooth' },
-        },
-      ],
+      errors: [error('Teeth', 'Tooth')],
     },
 
     {
       code: 'type Mice = { species: string; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Mice', suggestedName: 'Mouse' },
-        },
-      ],
+      errors: [error('Mice', 'Mouse')],
     },
 
     // Generic plural types
     {
       code: 'type Items<T> = { data: T[]; count: number; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Items', suggestedName: 'Item' },
-        },
-      ],
+      errors: [error('Items', 'Item')],
     },
 
     {
       code: 'type Records<T, K> = { entries: T[]; keys: K[]; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Records', suggestedName: 'Record' },
-        },
-      ],
+      errors: [error('Records', 'Record')],
     },
 
     // Union types with plural names
     {
       code: 'type Animals = "cat" | "dog" | "bird";',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Animals', suggestedName: 'Animal' },
-        },
-      ],
+      errors: [error('Animals', 'Animal')],
     },
 
     {
       code: 'type Fruits = "apple" | "banana" | "orange";',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Fruits', suggestedName: 'Fruit' },
-        },
-      ],
+      errors: [error('Fruits', 'Fruit')],
     },
 
     // Complex plural types
     {
       code: 'type ApiResponses = { success: boolean; data: any; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'ApiResponses', suggestedName: 'ApiResponse' },
-        },
-      ],
+      errors: [error('ApiResponses', 'ApiResponse')],
     },
 
     {
       code: 'type DatabaseRecords = { id: string; value: any; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'DatabaseRecords', suggestedName: 'DatabaseRecord' },
-        },
-      ],
+      errors: [error('DatabaseRecords', 'DatabaseRecord')],
     },
 
     // Edge case: Types that contain "Data" but don't end with it should still be flagged if plural
     {
       code: 'type DataProcessors = { process: (data: any) => any; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'DataProcessors', suggestedName: 'DataProcessor' },
-        },
-      ],
+      errors: [error('DataProcessors', 'DataProcessor')],
     },
 
     {
       code: 'type DataHandlers = { handle: (data: any) => void; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'DataHandlers', suggestedName: 'DataHandler' },
-        },
-      ],
+      errors: [error('DataHandlers', 'DataHandler')],
     },
 
     // Types that end with excluded suffixes but have plural words before them should still be flagged
@@ -507,13 +393,10 @@ ruleTesterTs.run('enforce-singular-type-names', enforceSingularTypeNames, {
     {
       code: 'type VeryLongComplexUserAccountManagementRecords = { id: string; };',
       errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: {
-            name: 'VeryLongComplexUserAccountManagementRecords',
-            suggestedName: 'VeryLongComplexUserAccountManagementRecord',
-          },
-        },
+        error(
+          'VeryLongComplexUserAccountManagementRecords',
+          'VeryLongComplexUserAccountManagementRecord',
+        ),
       ],
     },
 
@@ -522,211 +405,111 @@ ruleTesterTs.run('enforce-singular-type-names', enforceSingularTypeNames, {
     // Technical plural terms
     {
       code: 'type Algorithms = { name: string; complexity: string; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Algorithms', suggestedName: 'Algorithm' },
-        },
-      ],
+      errors: [error('Algorithms', 'Algorithm')],
     },
 
     {
       code: 'type Databases = { name: string; type: string; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Databases', suggestedName: 'Database' },
-        },
-      ],
+      errors: [error('Databases', 'Database')],
     },
 
     {
       code: 'type Servers = { host: string; port: number; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Servers', suggestedName: 'Server' },
-        },
-      ],
+      errors: [error('Servers', 'Server')],
     },
 
     // Plural types that might be confused with mass nouns but are clearly countable
     {
       code: 'type Softwares = { name: string; version: string; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Softwares', suggestedName: 'Software' },
-        },
-      ],
+      errors: [error('Softwares', 'Software')],
     },
 
     {
       code: 'type Hardwares = { type: string; specs: any; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Hardwares', suggestedName: 'Hardware' },
-        },
-      ],
+      errors: [error('Hardwares', 'Hardware')],
     },
 
     // Edge cases: Types that contain "data" but don't end with "Data" should still be flagged if plural
     {
       code: 'type Databases = { name: string; host: string; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Databases', suggestedName: 'Database' },
-        },
-      ],
+      errors: [error('Databases', 'Database')],
     },
 
     {
       code: 'type Metadatas = { key: string; value: any; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Metadatas', suggestedName: 'Metadata' },
-        },
-      ],
+      errors: [error('Metadatas', 'Metadata')],
     },
 
     // Test that types containing "data" in the middle are still flagged if plural
     {
       code: 'type DataProcessors = { process: (data: any) => any; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'DataProcessors', suggestedName: 'DataProcessor' },
-        },
-      ],
+      errors: [error('DataProcessors', 'DataProcessor')],
     },
 
     {
       code: 'type DataValidators = { validate: (data: any) => boolean; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'DataValidators', suggestedName: 'DataValidator' },
-        },
-      ],
+      errors: [error('DataValidators', 'DataValidator')],
     },
 
     // Test plural types with "data" at the beginning
     {
       code: 'type DataSources = { url: string; type: string; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'DataSources', suggestedName: 'DataSource' },
-        },
-      ],
+      errors: [error('DataSources', 'DataSource')],
     },
 
     {
       code: 'type DataTypes = { name: string; format: string; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'DataTypes', suggestedName: 'DataType' },
-        },
-      ],
+      errors: [error('DataTypes', 'DataType')],
     },
 
     // Test that lowercase "data" doesn't get the exclusion (edge case)
     {
       code: 'type Datas = { content: any; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Datas', suggestedName: 'Data' },
-        },
-      ],
+      errors: [error('Datas', 'Data')],
     },
 
     // Test compound words that are plural but don't end with excluded suffixes
     {
       code: 'type BigDatas = { volume: number; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'BigDatas', suggestedName: 'BigData' },
-        },
-      ],
+      errors: [error('BigDatas', 'BigData')],
     },
 
     // Test technical terms that should be singular
     {
       code: 'type Frameworks = { name: string; version: string; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Frameworks', suggestedName: 'Framework' },
-        },
-      ],
+      errors: [error('Frameworks', 'Framework')],
     },
 
     {
       code: 'type Libraries = { name: string; dependencies: any[]; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Libraries', suggestedName: 'Library' },
-        },
-      ],
+      errors: [error('Libraries', 'Library')],
     },
 
     {
       code: 'type Modules = { exports: any; imports: any; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Modules', suggestedName: 'Module' },
-        },
-      ],
+      errors: [error('Modules', 'Module')],
     },
 
     {
       code: 'type Components = { props: any; state: any; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Components', suggestedName: 'Component' },
-        },
-      ],
+      errors: [error('Components', 'Component')],
     },
 
     // Test plural forms of words that might be confused with mass nouns
     {
       code: 'type Informations = { details: string; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Informations', suggestedName: 'Information' },
-        },
-      ],
+      errors: [error('Informations', 'Information')],
     },
 
     // Test edge cases with very short plural names (but longer than 3 chars)
     {
       code: 'type Apps = { name: string; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Apps', suggestedName: 'App' },
-        },
-      ],
+      errors: [error('Apps', 'App')],
     },
 
     {
       code: 'type Docs = { title: string; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Docs', suggestedName: 'Doc' },
-        },
-      ],
+      errors: [error('Docs', 'Doc')],
     },
 
     // Note: Types with numbers like Users2, Items3 are not flagged by pluralize library
@@ -736,90 +519,52 @@ ruleTesterTs.run('enforce-singular-type-names', enforceSingularTypeNames, {
     {
       code: 'type VeryLongComplexUserAccountManagementSystemRecords = { id: string; };',
       errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: {
-            name: 'VeryLongComplexUserAccountManagementSystemRecords',
-            suggestedName: 'VeryLongComplexUserAccountManagementSystemRecord',
-          },
-        },
+        error(
+          'VeryLongComplexUserAccountManagementSystemRecords',
+          'VeryLongComplexUserAccountManagementSystemRecord',
+        ),
       ],
     },
 
     // Test irregular plurals that should be caught
     {
       code: 'type Geese = { species: string; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Geese', suggestedName: 'Goose' },
-        },
-      ],
+      errors: [error('Geese', 'Goose')],
     },
 
     {
       code: 'type Oxen = { strength: number; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Oxen', suggestedName: 'Ox' },
-        },
-      ],
+      errors: [error('Oxen', 'Ox')],
     },
 
     // Additional tests to ensure the Data suffix exclusion is working correctly
     // These should be flagged because they don't end with "Data" (case-sensitive for the exact suffix)
     {
       code: 'type DataContainers = { items: any[]; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'DataContainers', suggestedName: 'DataContainer' },
-        },
-      ],
+      errors: [error('DataContainers', 'DataContainer')],
     },
 
     {
       code: 'type DataProcessors = { process: (data: any) => any; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'DataProcessors', suggestedName: 'DataProcessor' },
-        },
-      ],
+      errors: [error('DataProcessors', 'DataProcessor')],
     },
 
     // Test that plural forms of words containing "data" are still flagged
     {
       code: 'type Databases = { host: string; port: number; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Databases', suggestedName: 'Database' },
-        },
-      ],
+      errors: [error('Databases', 'Database')],
     },
 
     // Test edge case: "Datas" should be flagged (not ending with "Data")
     {
       code: 'type Datas = { content: any; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'Datas', suggestedName: 'Data' },
-        },
-      ],
+      errors: [error('Datas', 'Data')],
     },
 
     // Test that compound words ending in plural but not "Data" are flagged
     {
       code: 'type BigDatas = { volume: number; };',
-      errors: [
-        {
-          messageId: 'typeShouldBeSingular',
-          data: { name: 'BigDatas', suggestedName: 'BigData' },
-        },
-      ],
+      errors: [error('BigDatas', 'BigData')],
     },
   ],
 });
