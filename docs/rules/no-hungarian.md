@@ -9,17 +9,20 @@ This rule disallows embedding type information in identifier names (Hungarian no
 ## Rule Details
 
 ### Why this matters
+
 - Type-coded names drift as soon as the underlying type changes, leaving misleading hints that cause misuse and slow reviews.
 - Prefixes and suffixes push the domain concept out of the name, making it harder to see what the value represents at a glance.
 - Type information already lives in TypeScript annotations and runtime validation; duplicating it in names increases maintenance overhead without adding safety.
 
 ### What gets checked
+
 - Locally declared identifiers that start or end with common type markers (camelCase, PascalCase, or SCREAMING_SNAKE_CASE).
 - Class members and parameters that reuse the same markers.
 - The rule allows common compound nouns (for example, `PhoneNumber`, `EmailAddress`) and descriptive suffixes like `Formatted`, `Parsed`, or `Converted`.
 - Built-in methods and imported identifiers are ignored to avoid false positives for code you do not control.
 
 ### How to fix
+
 Rename the identifier to a domain-focused term and keep the type information in the type annotation or inference. For example, use `email` or `customerEmail` instead of `emailString`, and `results` instead of `resultsArray`.
 
 ### Examples of **incorrect** code for this rule:
