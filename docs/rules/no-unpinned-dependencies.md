@@ -10,7 +10,7 @@ Pinned versions keep dependency installs reproducible and auditable. Caret (`^`)
 
 ## Rule Details
 
-The rule inspects `package.json` (including JSON/JSONC) and reports any dependency version that contains `^` or `~` range operators. Exact versions ensure CI, local development, and deployments all resolve the same artifacts and that security/compliance audits match the versions that were reviewed. Auto-fix removes only the leading `^` or `~` when the remaining value is a single pinned semver (for example `1.2.3`). Compound ranges such as `~1 || ^2` are reported but must be pinned manually.
+The rule inspects `package.json` (including JSON/JSONC) and reports any dependency version string that contains `^` or `~` range operators anywhere in the value, including compound ranges such as `1.0.0 || ^2.0.0`. Exact versions ensure CI, local development, and deployments all resolve the same artifacts and that security/compliance audits match the versions that were reviewed. Auto-fix removes only the leading `^` or `~` when the remaining value is a single pinned semver (for example `1.2.3`). Compound ranges such as `~1 || ^2` are reported but must be pinned manually.
 
 ### Why this matters
 
