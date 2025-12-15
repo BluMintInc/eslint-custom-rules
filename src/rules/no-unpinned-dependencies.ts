@@ -10,6 +10,25 @@ import {
 
 const pinnedSemverPattern =
   /^\d+\.\d+\.\d+(?:-(?:[0-9A-Za-z-]+)(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+const RANGE_OPERATOR_PATTERN = /[~^]/;
+const LEADING_RANGE_PATTERN = /^[~^]/;
+const DEFAULT_PINNED_VERSION = '1.2.3';
+
+function computeVersionSuggestion(version: string) {
+  const startsWithRange = LEADING_RANGE_PATTERN.test(version);
+  const pinnedCandidate = startsWithRange
+    ? version.replace(LEADING_RANGE_PATTERN, '')
+    : version;
+  const firstSemverInString = version.match(/\d+\.\d+\.\d+/)?.[0];
+  const isSimplePinned =
+    startsWithRange && pinnedSemverPattern.test(pinnedCandidate);
+  const suggestedVersion =
+    isSimplePinned && startsWithRange
+      ? pinnedCandidate
+      : firstSemverInString ?? DEFAULT_PINNED_VERSION;
+
+  return { isSimplePinned, suggestedVersion, pinnedCandidate };
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const noUnpinnedDependencies: TSESLint.RuleModule<'unexpected', any[]> =
@@ -58,18 +77,12 @@ export const noUnpinnedDependencies: TSESLint.RuleModule<'unexpected', any[]> =
               (property.key as JSONIdentifier).name ||
               (property.key as JSONStringLiteral).value;
             // Flag caret/tilde range operators anywhere; only auto-fix simple leading ranges
-            if (typeof version === 'string' && /[~^]/.test(version)) {
-              const startsWithRange = /^[~^]/.test(version);
-              const pinnedCandidate = startsWithRange
-                ? version.replace(/^[~^]/, '')
-                : version;
-              const firstSemverInString = version.match(/\d+\.\d+\.\d+/)?.[0];
-              const isSimplePinned =
-                startsWithRange && pinnedSemverPattern.test(pinnedCandidate);
-              const suggestedVersion =
-                isSimplePinned && startsWithRange
-                  ? pinnedCandidate
-                  : firstSemverInString ?? '1.2.3';
+            if (
+              typeof version === 'string' &&
+              RANGE_OPERATOR_PATTERN.test(version)
+            ) {
+              const { isSimplePinned, suggestedVersion, pinnedCandidate } =
+                computeVersionSuggestion(version);
               context.report({
                 node: node as unknown as TSESTree.Node,
                 messageId: 'unexpected',
