@@ -1,6 +1,17 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noMixedFirestoreTransactions } from '../rules/no-mixed-firestore-transactions';
 
+const messageTemplate =
+  'Non-transactional Firestore helper "{{ className }}" is instantiated inside a transaction callback, so its reads and writes bypass the transaction context. That breaks Firestore\'s atomicity guarantees and can commit partial updates. Use the transaction-safe "{{ transactionalClass }}" and pass the provided transaction so every operation participates in the same commit.';
+
+describe('no-mixed-firestore-transactions messages', () => {
+  it('explains why transaction-safe helpers are required', () => {
+    expect(
+      noMixedFirestoreTransactions.meta.messages.noMixedTransactions,
+    ).toBe(messageTemplate);
+  });
+});
+
 ruleTesterTs.run(
   'no-mixed-firestore-transactions',
   noMixedFirestoreTransactions,
