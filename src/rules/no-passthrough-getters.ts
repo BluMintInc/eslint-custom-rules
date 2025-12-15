@@ -176,14 +176,6 @@ export const noPassthroughGetters = createRule({
         return `${objectPath}.${node.property.name}`;
       }
 
-      if (
-        node.property.type === 'Literal' &&
-        (typeof node.property.value === 'string' ||
-          typeof node.property.value === 'number')
-      ) {
-        return `${objectPath}.${node.property.value}`;
-      }
-
       return null;
     }
 
