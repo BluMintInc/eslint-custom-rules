@@ -59,7 +59,12 @@ ruleTester.run('no-unused-usestate', noUnusedUseState, {
           return <div onClick={() => setCount(c => c + 1)}>Increment</div>;
         }
       `,
-      errors: [{ messageId: 'unusedUseState' }],
+      errors: [
+        {
+          messageId: 'unusedUseState',
+          data: { stateName: '_' },
+        },
+      ],
       output: `
         import React, { useState } from 'react';
 
@@ -78,7 +83,12 @@ ruleTester.run('no-unused-usestate', noUnusedUseState, {
           return <button onClick={() => setFlag(true)}>Set Flag</button>;
         }
       `,
-      errors: [{ messageId: 'unusedUseState' }],
+      errors: [
+        {
+          messageId: 'unusedUseState',
+          data: { stateName: '_unused' },
+        },
+      ],
       output: `
         import React, { useState } from 'react';
 
@@ -97,7 +107,12 @@ ruleTester.run('no-unused-usestate', noUnusedUseState, {
           return <div onClick={() => { setCount(count + 1); setFlag(true); }}>{count}</div>;
         }
       `,
-      errors: [{ messageId: 'unusedUseState' }],
+      errors: [
+        {
+          messageId: 'unusedUseState',
+          data: { stateName: '_' },
+        },
+      ],
       output: `
         import React, { useState } from 'react';
 
