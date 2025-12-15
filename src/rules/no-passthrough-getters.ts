@@ -256,13 +256,13 @@ export const noPassthroughGetters = createRule({
     type: 'suggestion',
     docs: {
       description:
-        'Avoid getter methods that only re-expose constructor parameter properties without adding behavior',
+        'Avoid getter methods that only re-expose nested properties on constructor-injected objects without adding behavior',
       recommended: 'error',
     },
     schema: [],
     messages: {
       noPassthroughGetter:
-        'Getter "{{getterName}}" only forwards constructor parameter property "{{propertyPath}}". This indirection hides the real source of state and expands the class API without adding behavior. Read the constructor parameter directly or add logic that justifies a getter (validation, memoization, fallback).',
+        'Getter "{{getterName}}" only forwards nested property "{{propertyPath}}" from an object provided via the constructor. This indirection hides the real source of state and expands the class API without adding behavior. Read the constructor-injected object directly or add logic that justifies a getter (validation, memoization, fallback).',
     },
   },
   defaultOptions: [],
