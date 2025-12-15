@@ -57,9 +57,9 @@ export const noUnpinnedDependencies: TSESLint.RuleModule<'unexpected', any[]> =
             // Check if the version string starts with a caret (^) or tilde (~), indicating a non-pinned version
             if (
               typeof version === 'string' &&
-              (version.includes('^') || version.includes('~'))
+              /^[~^]/.test(version)
             ) {
-              const fixedVersion = version.replace('^', '').replace('~', '');
+              const fixedVersion = version.replace(/^[~^]/, '');
               context.report({
                 node: node as unknown as TSESTree.Node,
                 messageId: 'unexpected',
