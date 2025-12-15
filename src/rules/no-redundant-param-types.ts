@@ -124,7 +124,8 @@ export const noRedundantParamTypes = createRule<[], MessageIds>({
     fixable: 'code',
     schema: [],
     messages: {
-      redundantParamType: 'Parameter type annotation is redundant',
+      redundantParamType:
+        'Parameter "{{paramText}}" repeats a type that the contextual function type already provides. Duplicate annotations drift out of sync and obscure the single source of truth for the signature. Remove the inline parameter annotation and rely on the variable or property type so the function stays aligned.',
     },
   },
   defaultOptions: [],
@@ -134,17 +135,20 @@ export const noRedundantParamTypes = createRule<[], MessageIds>({
         if (!hasRedundantTypeAnnotation(node)) return;
 
         const params = node.params as ParamNode[];
+        const sourceCode = context.getSourceCode();
 
         params.forEach((param) => {
+          const paramText = sourceCode.getText(param).replace(/\s+/g, ' ').trim();
           if (isIdentifierWithTypeAnnotation(param)) {
             context.report({
               node: param,
               messageId: 'redundantParamType',
+              data: { paramText },
               fix(fixer) {
                 return removeTypeAnnotation(
                   fixer,
                   param.typeAnnotation,
-                  context.getSourceCode(),
+                  sourceCode,
                 );
               },
             });
@@ -152,11 +156,12 @@ export const noRedundantParamTypes = createRule<[], MessageIds>({
             context.report({
               node: param,
               messageId: 'redundantParamType',
+              data: { paramText },
               fix(fixer) {
                 return removeTypeAnnotation(
                   fixer,
                   param.typeAnnotation,
-                  context.getSourceCode(),
+                  sourceCode,
                 );
               },
             });
@@ -164,11 +169,12 @@ export const noRedundantParamTypes = createRule<[], MessageIds>({
             context.report({
               node: param,
               messageId: 'redundantParamType',
+              data: { paramText },
               fix(fixer) {
                 return removeTypeAnnotation(
                   fixer,
                   param.typeAnnotation,
-                  context.getSourceCode(),
+                  sourceCode,
                 );
               },
             });
@@ -176,11 +182,12 @@ export const noRedundantParamTypes = createRule<[], MessageIds>({
             context.report({
               node: param,
               messageId: 'redundantParamType',
+              data: { paramText },
               fix(fixer) {
                 return removeTypeAnnotation(
                   fixer,
                   param.typeAnnotation,
-                  context.getSourceCode(),
+                  sourceCode,
                 );
               },
             });
@@ -189,11 +196,12 @@ export const noRedundantParamTypes = createRule<[], MessageIds>({
             context.report({
               node: param,
               messageId: 'redundantParamType',
+              data: { paramText },
               fix(fixer) {
                 return removeTypeAnnotation(
                   fixer,
                   left.typeAnnotation,
-                  context.getSourceCode(),
+                  sourceCode,
                 );
               },
             });
