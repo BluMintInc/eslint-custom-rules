@@ -68,7 +68,7 @@ export const noPassthroughGetters = createRule({
             const getterName = getMethodName(node);
             const propertyPath =
               getMemberPath(returnStatement.argument) ??
-              'constructor parameter property';
+              'nested property on a constructor-injected object';
 
             context.report({
               node,
