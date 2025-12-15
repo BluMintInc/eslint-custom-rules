@@ -5,7 +5,7 @@ import { noCircularReferences } from '../../rules/no-circular-references';
 const buildMessage = (referenceText: string) =>
   noCircularReferences.meta.messages.circularReference.replace(
     '{{referenceText}}',
-    referenceText,
+    () => referenceText,
   );
 
 const error = (
@@ -551,7 +551,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         obj.promise = promise;
         promise.then(result => obj.self = result);
       `,
-      errors: [error('obj.self = result')],
+      errors: [error('result')],
     },
     // Circular reference with Symbol
     {

@@ -687,7 +687,7 @@ export const noCircularReferences = createRule<[], MessageIds>({
                                     node: assignment,
                                     messageId: 'circularReference',
                                     data: {
-                                      referenceText: sourceCode.getText(assignment),
+                                      referenceText: sourceCode.getText(assignment.right),
                                     },
                                   });
                                 }
@@ -718,7 +718,7 @@ export const noCircularReferences = createRule<[], MessageIds>({
                                         messageId: 'circularReference',
                                         data: {
                                           referenceText:
-                                            sourceCode.getText(assignment),
+                                            sourceCode.getText(assignment.right),
                                         },
                                       });
                                     }

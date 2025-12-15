@@ -57,10 +57,10 @@ const snapshot = structuredClone(original.settings);
 const viewModel = { settings: snapshot };
 
 // Keep async flows acyclic
-const obj = {};
+const obj = { id: 'u123' };
 const promise = Promise.resolve(obj);
 promise.then((result) => {
-  obj.selfId = result.id; // break the potential cycle
+  obj.selfId = result.id; // store a stable identifier, not the object
 });
 ```
 
