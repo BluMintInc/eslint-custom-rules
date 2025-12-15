@@ -1,14 +1,20 @@
-# All top-level const definitions, type definitions, and functions should be exported (`@blumintinc/blumint/export-if-in-doubt`)
+# All top-level variable declarations, type definitions, and functions should be exported (`@blumintinc/blumint/export-if-in-doubt`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
 
-This rule enforces that all top-level const definitions, type definitions, and functions should always be exported. If not done, this rule will trigger a warning message suggesting to export the declaration.
+You must export every top-level variable (const/let/var), function, and type alias. These declarations define your module's public surface; leaving them unexported usually signals dead code or a hidden utility. Export the symbol or move it into a narrower scope when it should stay private.
 
 ## Rule Details
 
-This rule targets `VariableDeclaration`, `FunctionDeclaration`, and `TSTypeAliasDeclaration` at the top-level of the file. It will issue a warning if these are not part of an `ExportNamedDeclaration`.
+This rule checks for unexported top-level const, function, and type-alias declarations (AST nodes `VariableDeclaration`, `FunctionDeclaration`, and `TSTypeAliasDeclaration`) that sit directly under the `Program`. It reports any such declaration that is not exported, because:
+
+- Top-level declarations are expected to form the module API; unexported symbols become invisible to other files and invite duplicate implementations.
+- Hidden top-level code makes intent unclear—callers cannot tell whether the symbol is private or simply forgotten.
+- Exporting or moving the code into a narrower scope clarifies ownership and prevents dead code from drifting through the codebase.
+
+To satisfy the rule, either export the declaration (for example, `export const foo = ...`) or relocate it inside a function/inner block when it should remain private.
 
 ### Examples of incorrect code for this rule:
 
@@ -25,4 +31,14 @@ export const someVar = "Hello, world!";
 export function someFunc() { return someVar; }
 export type SomeType = { val: number };
 ```
+
+
+```typescript
+function buildCache() {
+  const cache = new Map<string, number>();
+  return cache;
+}
+```
+
+In this example, the declaration is intentionally private, so it is moved into a narrower scope instead of being exported.
 
