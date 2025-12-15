@@ -8,11 +8,13 @@
 
 Margin props push spacing outside a component and bypass MUI's container-controlled spacing model (Stack/Grid spacing, gaps, responsive gutters). When a child sets margins, it can double-count gutters, misalign at breakpoints, and overflow when nested components also add margins. Centralizing spacing in the container keeps layouts predictable and aligned with the design system spacing scale.
 
+
 ### What this rule checks
 
 - Any margin property (`margin`, `marginLeft`, `marginRight`, `marginTop`, `marginBottom`, `mx`, `my`, `mt`, `mb`, `ml`, `mr`, `m`, kebab-case equivalents) used in MUI styling surfaces (`sx`, theme `styleOverrides`, MUI `css`, or direct JSX props like `margin`/`mt`).
 - Margin properties found inside objects, conditionals, arrays, spreads, and nested selectors within those MUI styling contexts.
 - Non-MUI contexts (plain CSS-in-JS objects, styled-components strings, type declarations) are ignored.
+
 
 ### How to fix
 
