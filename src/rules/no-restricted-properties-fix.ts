@@ -71,6 +71,13 @@ export const noRestrictedPropertiesFix = createRule<
     ]);
 
     /**
+     * Formats the restriction reason with a trailing space when present
+     */
+    function formatRestrictionReason(message: string | undefined): string {
+      return message ? `${message} ` : '';
+    }
+
+    /**
      * Checks if the given node is a result of Object.keys() or Object.values()
      * @param node The node to check
      * @returns True if the node is a result of Object.keys() or Object.values()
@@ -143,9 +150,7 @@ export const noRestrictedPropertiesFix = createRule<
               data: {
                 objectName: restrictedProp.object,
                 propertyName: restrictedProp.property,
-                restrictionReason: restrictedProp.message
-                  ? `${restrictedProp.message} `
-                  : '',
+                restrictionReason: formatRestrictionReason(restrictedProp.message),
               },
               fix: () => null,
             });
@@ -176,9 +181,7 @@ export const noRestrictedPropertiesFix = createRule<
               data: {
                 objectName,
                 propertyName: restrictedProp.property,
-                restrictionReason: restrictedProp.message
-                  ? `${restrictedProp.message} `
-                  : '',
+                restrictionReason: formatRestrictionReason(restrictedProp.message),
               },
               fix: () => null,
             });
@@ -202,9 +205,7 @@ export const noRestrictedPropertiesFix = createRule<
               data: {
                 objectName: restrictedProp.object,
                 propertyName,
-                restrictionReason: restrictedProp.message
-                  ? `${restrictedProp.message} `
-                  : '',
+                restrictionReason: formatRestrictionReason(restrictedProp.message),
               },
               fix: () => null,
             });
