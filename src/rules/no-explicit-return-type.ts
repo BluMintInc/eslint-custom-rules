@@ -382,6 +382,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
         fixer: TSESLint.RuleFixer,
         node: FixableNode,
       ): TSESLint.RuleFix | null {
+        // Some nodes expose returnType directly while others nest it under value.
         const returnType =
           'returnType' in node
             ? node.returnType

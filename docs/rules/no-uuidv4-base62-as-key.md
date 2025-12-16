@@ -38,13 +38,13 @@ const itemKeys = items.map((item) => ({ ...item, key: uuidv4Base62() }));
   <div key={item.id}>{item.name}</div>
 ))}
 
-{items.map((item) => (
-  <div key={`${item.name}-${item.index}`}>{item.name}</div>
+{items.map((item, index) => (
+  <div key={`${item.name}-${index}`}>{item.name}</div>
 ))}
 
 function Component({ items }) {
   const memoizedIds = React.useMemo(
-    () => items.map(() => uuidv4Base62()),
+    () => items.map((_item) => uuidv4Base62()),
     [items],
   );
   return items.map((item, index) => (
