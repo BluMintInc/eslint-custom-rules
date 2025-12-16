@@ -1,6 +1,11 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noMemoizeOnStatic } from '../rules/no-memoize-on-static';
 
+const error = (methodName: string) => ({
+  messageId: 'noMemoizeOnStatic' as const,
+  data: { methodName },
+});
+
 ruleTesterTs.run('no-memoize-on-static', noMemoizeOnStatic, {
   valid: [
     // Regular static method without decorator
@@ -90,7 +95,7 @@ ruleTesterTs.run('no-memoize-on-static', noMemoizeOnStatic, {
           }
         }
       `,
-      errors: [{ messageId: 'noMemoizeOnStatic' }],
+      errors: [error('expensiveComputation')],
     },
     // Multiple decorators including @Memoize()
     {
@@ -103,7 +108,7 @@ ruleTesterTs.run('no-memoize-on-static', noMemoizeOnStatic, {
           }
         }
       `,
-      errors: [{ messageId: 'noMemoizeOnStatic' }],
+      errors: [error('problematicMethod')],
     },
     // Renamed import case
     {
@@ -117,7 +122,7 @@ ruleTesterTs.run('no-memoize-on-static', noMemoizeOnStatic, {
           }
         }
       `,
-      errors: [{ messageId: 'noMemoizeOnStatic' }],
+      errors: [error('invalidMethod')],
     },
     // Multiple static methods with @Memoize() in the same class
     {
@@ -134,10 +139,7 @@ ruleTesterTs.run('no-memoize-on-static', noMemoizeOnStatic, {
           }
         }
       `,
-      errors: [
-        { messageId: 'noMemoizeOnStatic' },
-        { messageId: 'noMemoizeOnStatic' },
-      ],
+      errors: [error('method1'), error('method2')],
     },
     // Nested class with @Memoize() on static method
     {
@@ -151,7 +153,7 @@ ruleTesterTs.run('no-memoize-on-static', noMemoizeOnStatic, {
           }
         }
       `,
-      errors: [{ messageId: 'noMemoizeOnStatic' }],
+      errors: [error('nestedMethod')],
     },
     // Abstract class with @Memoize() on static method
     {
@@ -163,7 +165,7 @@ ruleTesterTs.run('no-memoize-on-static', noMemoizeOnStatic, {
           }
         }
       `,
-      errors: [{ messageId: 'noMemoizeOnStatic' }],
+      errors: [error('abstractMethod')],
     },
     // @Memoize() with arguments
     {
@@ -175,7 +177,7 @@ ruleTesterTs.run('no-memoize-on-static', noMemoizeOnStatic, {
           }
         }
       `,
-      errors: [{ messageId: 'noMemoizeOnStatic' }],
+      errors: [error('cachedMethod')],
     },
     // Multiple renamed imports
     {
@@ -195,10 +197,7 @@ ruleTesterTs.run('no-memoize-on-static', noMemoizeOnStatic, {
           }
         }
       `,
-      errors: [
-        { messageId: 'noMemoizeOnStatic' },
-        { messageId: 'noMemoizeOnStatic' },
-      ],
+      errors: [error('method1'), error('method2')],
     },
     // Static getter with @Memoize()
     {
@@ -210,7 +209,7 @@ ruleTesterTs.run('no-memoize-on-static', noMemoizeOnStatic, {
           }
         }
       `,
-      errors: [{ messageId: 'noMemoizeOnStatic' }],
+      errors: [error('value')],
     },
     // Static setter with @Memoize()
     {
@@ -222,7 +221,7 @@ ruleTesterTs.run('no-memoize-on-static', noMemoizeOnStatic, {
           }
         }
       `,
-      errors: [{ messageId: 'noMemoizeOnStatic' }],
+      errors: [error('value')],
     },
     // Static async method with @Memoize()
     {
@@ -235,7 +234,7 @@ ruleTesterTs.run('no-memoize-on-static', noMemoizeOnStatic, {
           }
         }
       `,
-      errors: [{ messageId: 'noMemoizeOnStatic' }],
+      errors: [error('asyncMethod')],
     },
     // @Memoize without parentheses (invalid syntax but should be handled)
     {
@@ -247,7 +246,7 @@ ruleTesterTs.run('no-memoize-on-static', noMemoizeOnStatic, {
           }
         }
       `,
-      errors: [{ messageId: 'noMemoizeOnStatic' }],
+      errors: [error('method')],
     },
   ],
 });

@@ -4,57 +4,56 @@
 
 <!-- end auto-generated rule header -->
 
-Disallows using `Object.values()` on strings to prevent unintended behavior.
+`Object.values()` expects an object and returns its enumerable property values. When the argument is string-like, JavaScript treats the string as an array of characters and returns each character. That usually means the data shape is wrong—callers think they are iterating object values but instead get individual characters—so downstream logic silently processes text one character at a time.
 
 ## Rule Details
 
-This rule aims to prevent the unintended use of `Object.values()` on string values. When `Object.values()` is called on a string, JavaScript treats the string as an array of characters, which is likely not the intended behavior and can lead to subtle bugs.
+- Flags any `Object.values()` call where the argument is a string literal, string-producing expression, or parameter typed as string (including unions that contain string).
+- Prevents bugs where object-specific logic runs against characters, leading to empty results, incorrect counts, or broken mappings.
+- Encourages using explicit string helpers when the goal is to work with text, or passing actual objects when enumerating values.
 
 ### Examples
 
 #### ❌ Incorrect
 
 ```js
-// Using Object.values() on a string literal
-Object.values("hello");
-// Returns ['h', 'e', 'l', 'l', 'o']
+Object.values("hello"); // → ['h', 'e', 'l', 'l', 'o']
 
-// Using Object.values() on a template literal
-Object.values(`template literal`);
-// Returns ['t', 'e', 'm', 'p', 'l', 'a', 't', 'e', ' ', 'l', 'i', 't', 'e', 'r', 'a', 'l']
+const name = "world";
+Object.values(`hello ${name}`); // returns characters, not words
+
+const label = getLabel(); // returns a string
+const values = Object.values(label); // values is a character array, not option values
 ```
 
 #### ✅ Correct
 
 ```js
-// Using Object.values() on objects
+// Enumerating object values
 const obj = { a: 1, b: 2 };
 Object.values(obj);
-// Returns [1, 2]
 
-// Using Object.values() on arrays
-const arr = [1, 2, 3];
-Object.values(arr);
-// Returns [1, 2, 3]
+// Converting entries to an object before enumerating
+const entries = new Map([
+  ['name', 'Ada'],
+  ['role', 'Engineer'],
+]);
+Object.values(Object.fromEntries(entries));
 
-// Using Object.values() on Map entries
-const map = new Map();
-map.set('a', 1);
-map.set('b', 2);
-Object.values(Object.fromEntries(map));
-// Returns [1, 2]
+// Working with text explicitly
+const str = "hello";
+const chars = Array.from(str); // clear intent to work with characters
 ```
+
+## How to Fix
+
+- Pass an object (for example, a `Record` or the result of `Object.fromEntries`) to `Object.values`.
+- If you need characters, use string helpers such as `Array.from(str)`, `[...str]`, or `str.split('')`.
+- Tighten types so string values are not passed where objects are expected.
 
 ## When Not To Use It
 
-If you intentionally want to convert a string to an array of characters, you should use the spread operator or `Array.from()` instead:
-
-```js
-// Better alternatives for converting a string to an array of characters
-const str = "hello";
-const chars1 = [...str]; // ['h', 'e', 'l', 'l', 'o']
-const chars2 = Array.from(str); // ['h', 'e', 'l', 'l', 'o']
-```
+Disable this rule only when you deliberately rely on `Object.values` returning characters—prefer explicit string helpers instead so the intent is clear.
 
 ## Further Reading
 
