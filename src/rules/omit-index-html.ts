@@ -37,7 +37,7 @@ function hasQueryOrHash(url: string): boolean {
 }
 
 /**
- * Removes 'index.html' from a URL and ensures proper trailing slash
+ * Removes '/index.html' from a URL by replacing it with '/' at path boundaries
  */
 function fixUrl(url: string): string {
   // Replace /index.html with /
@@ -51,6 +51,15 @@ function fixUrl(url: string): string {
  */
 function escapeForTemplateLiteral(text: string): string {
   return text.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
+}
+
+/**
+ * Generates contextual fix guidance based on whether the URL contains dynamic parts
+ */
+function buildFixHint(suggestedUrl: string, hasDynamicParts: boolean): string {
+  return hasDynamicParts
+    ? `Remove "index.html" from the static portion of the template so it resolves to the directory path (e.g., ${suggestedUrl}).`
+    : `Replace it with the directory path (e.g., "${suggestedUrl}").`;
 }
 
 /**
@@ -131,7 +140,7 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
           if (allowWithQueryOrHash && hasQueryOrHash(value)) return;
 
           const suggestedUrl = fixUrl(value);
-          const fixHint = `Replace it with the directory path (e.g., "${suggestedUrl}").`;
+          const fixHint = buildFixHint(suggestedUrl, false);
 
           context.report({
             node,
@@ -143,10 +152,7 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
             },
             fix: (fixer) => {
               const quote = getLiteralQuote(node, sourceCode);
-              const escapedUrl = suggestedUrl.replace(
-                new RegExp(`\\${quote}`, 'g'),
-                `\\${quote}`,
-              );
+              const escapedUrl = suggestedUrl.split(quote).join(`\\${quote}`);
               return fixer.replaceText(node, `${quote}${escapedUrl}${quote}`);
             },
           });
@@ -175,13 +181,11 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
         }
 
         const hasDynamicParts = node.expressions.length > 0;
-        const suggestedUrlRaw = fixUrl(value);
+        const fixedUrl = fixUrl(value);
         const suggestedUrl = hasDynamicParts
-          ? `\`${escapeForTemplateLiteral(suggestedUrlRaw)}\``
-          : suggestedUrlRaw;
-        const fixHint = hasDynamicParts
-          ? `Remove "index.html" from the static portion of the template so it resolves to the directory path (e.g., ${suggestedUrl}).`
-          : `Replace it with the directory path (e.g., "${suggestedUrl}").`;
+          ? `\`${escapeForTemplateLiteral(fixedUrl)}\``
+          : fixedUrl;
+        const fixHint = buildFixHint(suggestedUrl, hasDynamicParts);
 
         context.report({
           node,
