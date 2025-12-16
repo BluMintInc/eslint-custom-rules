@@ -99,7 +99,7 @@ export const noUndefinedNullPassthrough: TSESLint.RuleModule<
     schema: [],
     messages: {
       unexpected:
-        'Function returns null or undefined when "{{paramName}}" is nullish, which just passes the missing value to callers and hides where validation belongs. Validate the argument before calling or return a concrete fallback so this function always provides a meaningful result.',
+        'Function returns null or undefined when "{{paramName}}" is nullish, which just passes the missing value to callers. This hides where validation belongs, delays failures until runtime as null values propagate unpredictably, and forces every caller to add defensive branching—making bugs and debugging more likely. Validate the argument before calling (throw an error if it is required) or return a concrete fallback (for example, an empty array or default object) so this function always provides a meaningful result.',
     },
   },
   defaultOptions: [],
@@ -469,7 +469,7 @@ function checkFunctionBodyForEarlyReturns(
       );
 
       if (matchedParam) {
-        const paramNameForMessage = matchedParam ?? 'argument';
+        const paramNameForMessage = matchedParam;
         // Check if the consequent is a block statement with a return
         if (statement.consequent.type === 'BlockStatement') {
           for (const consequentStmt of statement.consequent.body) {
