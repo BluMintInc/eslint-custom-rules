@@ -469,7 +469,6 @@ function checkFunctionBodyForEarlyReturns(
       );
 
       if (matchedParam) {
-        const paramNameForMessage = matchedParam;
         // Check if the consequent is a block statement with a return
         if (statement.consequent.type === 'BlockStatement') {
           for (const consequentStmt of statement.consequent.body) {
@@ -486,7 +485,7 @@ function checkFunctionBodyForEarlyReturns(
                 context.report({
                   node: statement,
                   messageId: 'unexpected',
-                  data: { paramName: paramNameForMessage },
+                  data: { paramName: matchedParam },
                 });
               }
               return;
@@ -507,7 +506,7 @@ function checkFunctionBodyForEarlyReturns(
             context.report({
               node: statement,
               messageId: 'unexpected',
-              data: { paramName: paramNameForMessage },
+              data: { paramName: matchedParam },
             });
           }
           return;
