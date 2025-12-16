@@ -8,29 +8,26 @@
 
 ## Rule Details
 
-This rule enforces the use of Firestore FieldPath syntax when passing `documentData` into `DocSetter`. Instead of using nested object syntax, developers should use dot notation for deeply nested fields. This ensures consistency in Firestore updates and aligns with best practices for Firestore field path updates.
+When you pass nested objects in a `DocSetter` payload, Firestore treats each nested map as a whole sub-document write. If you pass `{ roles: { contributor: ... } }` to `set()` or `updateIfExists()`, Firestore replaces the entire `roles` map and can silently drop sibling fields you leave out. FieldValue helpers (`arrayUnion`, `increment`, etc.) expect dotted field paths for nested updates. This rule requires FieldPath (dot) notation so your DocSetter calls touch only the intended leaf fields and you avoid data loss during partial updates.
 
-Firestore operations like `FieldValue.arrayUnion` and `FieldValue.increment` work more predictably with FieldPath notation, reducing potential issues with partial document updates. This rule improves maintainability, readability, and consistency in Firestore operations within the BluMint codebase.
+### What This Rule Checks
 
-### When This Rule Applies
+- `DocSetter.set()` payloads that contain nested object literals
+- `DocSetter.updateIfExists()` payloads that contain nested object literals
 
-This rule applies to:
+### What This Rule Ignores
 
-- `DocSetter.set()` method calls
-- `DocSetter.updateIfExists()` method calls
-
-### When This Rule Does NOT Apply
-
-This rule does not apply to:
-
-- `DocSetter.overwrite()` method calls (since overwrite replaces the entire document)
-- Dynamically constructed objects
-- Array elements (Firestore does not support FieldPath notation within array objects)
-- Properties that already use dot notation
+- `DocSetter.overwrite()` calls because they intentionally replace the whole document
+- Object literals that are already flattened with dotted keys
+- Dynamic/computed/spread constructions where safe auto-flattening is ambiguous
+- Arrays of objects (Firestore cannot target nested array members with FieldPath keys)
+- Payloads whose top-level keys include numeric literals (these often model array-like buckets; the rule skips them entirely to avoid unsafe fixes that could drop those entries)
 
 ## Examples
 
 ### ❌ Incorrect
+
+These payloads send nested objects, so Firestore treats each nested map as a single value and can overwrite siblings that are not present in the payload.
 
 ```javascript
 const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
@@ -55,6 +52,8 @@ await docSetter.updateIfExists({
 ```
 
 ### ✅ Correct
+
+Flattening nested fields into FieldPath keys targets only the intended leaves and keeps other data in the nested maps intact.
 
 ```javascript
 const docSetter = new DocSetter<Tournament>(tournamentRef.parent);
