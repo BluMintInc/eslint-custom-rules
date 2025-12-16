@@ -375,8 +375,7 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
         | TSESTree.FunctionDeclaration
         | TSESTree.FunctionExpression
         | TSESTree.ArrowFunctionExpression
-        | TSESTree.MethodDefinition
-        | TSESTree.TSAbstractMethodDefinition;
+        | TSESTree.MethodDefinition;
 
       function fixReturnType(
         fixer: TSESLint.RuleFixer,
@@ -436,17 +435,11 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
             return;
           }
 
-          const isInferable = Boolean(node.body);
-
           context.report({
             node: returnType,
-            messageId: isInferable
-              ? 'noExplicitReturnTypeInferable'
-              : 'noExplicitReturnTypeNonInferable',
+            messageId: 'noExplicitReturnTypeInferable',
             data: { functionKind: describeFunctionKind(node) },
-            ...(isInferable
-              ? { fix: (fixer) => fixReturnType(fixer, node) }
-              : {}),
+            fix: (fixer) => fixReturnType(fixer, node),
           });
         },
 
