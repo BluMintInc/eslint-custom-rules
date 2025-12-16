@@ -1,13 +1,24 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { omitIndexHtml } from '../rules/omit-index-html';
 
-const buildError = (url: string) => ({
-  messageId: 'omitIndexHtml' as const,
-  data: {
-    url,
-    suggestedUrl: url.replace(/\/index\.html($|[?#])/, '/$1'),
-  },
-});
+const fixUrl = (url: string) => url.replace(/\/index\.html($|[?#]|\$\{)/, '/$1');
+
+const buildError = (url: string, { hasExpressions = false } = {}) => {
+  const suggestedUrlRaw = fixUrl(url);
+  const suggestedUrl = hasExpressions ? `\`${suggestedUrlRaw}\`` : suggestedUrlRaw;
+  const fixHint = hasExpressions
+    ? `Remove "index.html" from the static portion of the template so it resolves to the directory path (e.g., ${suggestedUrl}).`
+    : `Replace it with the directory path (e.g., "${suggestedUrl}").`;
+
+  return {
+    messageId: 'omitIndexHtml' as const,
+    data: {
+      url,
+      suggestedUrl,
+      fixHint,
+    },
+  };
+};
 
 ruleTesterTs.run('omit-index-html', omitIndexHtml, {
   valid: [
@@ -77,7 +88,13 @@ ruleTesterTs.run('omit-index-html', omitIndexHtml, {
     // Template literal with dynamic part and index.html
     {
       code: 'const url = `https://example.com/${page}/index.html`;',
-      errors: [buildError('https://example.com/${page}/index.html')],
+      errors: [buildError('https://example.com/${page}/index.html', { hasExpressions: true })],
+      // No output as we don't auto-fix template literals
+    },
+    // Template literal where expression follows index.html
+    {
+      code: 'const url = `https://example.com/index.html${query}`;',
+      errors: [buildError('https://example.com/index.html${query}', { hasExpressions: true })],
       // No output as we don't auto-fix template literals
     },
   ],
