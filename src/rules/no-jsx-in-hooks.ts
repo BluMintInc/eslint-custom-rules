@@ -176,7 +176,7 @@ export const noJsxInHooks = createRule<[], MessageIds>({
     schema: [],
     messages: {
       noJsxInHooks:
-        'Hooks should not return JSX. Convert this hook into a component or extract the JSX into a separate component.',
+        'Hook "{{hookName}}" returns JSX. Hooks are meant to expose data and behavior; embedding JSX turns the hook into a hidden component and forces callers to use a hook where a component should render. Move the JSX into a component and have the hook return the values and callbacks that component needs instead.',
     },
   },
   defaultOptions: [],
@@ -189,6 +189,7 @@ export const noJsxInHooks = createRule<[], MessageIds>({
             context.report({
               node: node.id,
               messageId: 'noJsxInHooks',
+              data: { hookName: node.id.name },
             });
             return;
           }
@@ -199,6 +200,7 @@ export const noJsxInHooks = createRule<[], MessageIds>({
               context.report({
                 node: node.id,
                 messageId: 'noJsxInHooks',
+                data: { hookName: node.id.name },
               });
             }
           }
@@ -217,6 +219,7 @@ export const noJsxInHooks = createRule<[], MessageIds>({
             context.report({
               node: parent.id,
               messageId: 'noJsxInHooks',
+              data: { hookName: parent.id.name },
             });
             return;
           }
@@ -226,6 +229,7 @@ export const noJsxInHooks = createRule<[], MessageIds>({
             context.report({
               node: parent.id,
               messageId: 'noJsxInHooks',
+              data: { hookName: parent.id.name },
             });
             return;
           }
@@ -236,6 +240,7 @@ export const noJsxInHooks = createRule<[], MessageIds>({
               context.report({
                 node: parent.id,
                 messageId: 'noJsxInHooks',
+                data: { hookName: parent.id.name },
               });
             }
           }
