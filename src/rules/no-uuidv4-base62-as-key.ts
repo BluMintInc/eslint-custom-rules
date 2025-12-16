@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'noUuidv4Base62AsKey';
@@ -21,7 +21,10 @@ export const noUuidv4Base62AsKey = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.getSourceCode();
+    // Prefer the ESLint v9 sourceCode property; fall back for typings compatibility.
+    const sourceCode =
+      (context as unknown as { sourceCode?: TSESLint.SourceCode }).sourceCode ??
+      context.getSourceCode();
 
     // Track imported uuidv4Base62 identifiers
     const importedUuidv4Base62 = new Set<string>();
@@ -458,10 +461,7 @@ export const noUuidv4Base62AsKey = createRule<[], MessageIds>({
                   attr.value.expression.property.name === 'key'
                 ) {
                   // The test case - directly report this element
-                  reportViolation(
-                    returnExpr,
-                    attr.value.expression,
-                  );
+                  reportViolation(returnExpr, attr.value.expression);
                   break;
                 }
               }

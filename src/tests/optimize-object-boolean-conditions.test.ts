@@ -938,9 +938,7 @@ ruleTesterJsx.run(
           return Object.keys(data).length > 0 ? 'has data' : 'no data';
         }, [Object.keys(data).length > 0]);
       `,
-        errors: [
-          buildError('Object.keys(data).length > 0', 'data', 'hasData'),
-        ],
+        errors: [buildError('Object.keys(data).length > 0', 'data', 'hasData')],
       },
       // Object key count check with not equal
       {
@@ -961,7 +959,11 @@ ruleTesterJsx.run(
         }, [!data || Object.keys(data).length === 0]);
       `,
         errors: [
-          buildError('!data || Object.keys(data).length === 0', 'data', 'hasData'),
+          buildError(
+            '!data || Object.keys(data).length === 0',
+            'data',
+            'hasData',
+          ),
         ],
       },
       // Complex boolean expression with logical AND
@@ -1002,8 +1004,16 @@ ruleTesterJsx.run(
         }, [!data || Object.keys(data).length === 0, !config || Object.keys(config).length === 0]);
       `,
         errors: [
-          buildError('!data || Object.keys(data).length === 0', 'data', 'hasData'),
-          buildError('!config || Object.keys(config).length === 0', 'config', 'hasConfig'),
+          buildError(
+            '!data || Object.keys(data).length === 0',
+            'data',
+            'hasData',
+          ),
+          buildError(
+            '!config || Object.keys(config).length === 0',
+            'config',
+            'hasConfig',
+          ),
         ],
       },
       // Object existence check with different variable name
@@ -1089,9 +1099,7 @@ ruleTesterJsx.run(
           return !user || !user.profile ? 'no profile' : user.profile.name;
         }, [!user || !user.profile]);
       `,
-        errors: [
-          buildError('!user || !user.profile', 'user', 'hasUser'),
-        ],
+        errors: [buildError('!user || !user.profile', 'user', 'hasUser')],
       },
       // Object existence in useCallback with arrow function
       {
@@ -1173,7 +1181,11 @@ ruleTesterJsx.run(
         }, [Object.keys(apiResponse).length > 0]);
       `,
         errors: [
-          buildError('Object.keys(apiResponse).length > 0', 'apiResponse', 'hasApiResponse'),
+          buildError(
+            'Object.keys(apiResponse).length > 0',
+            'apiResponse',
+            'hasApiResponse',
+          ),
         ],
       },
       // Multiple conditions with different objects
@@ -1184,8 +1196,16 @@ ruleTesterJsx.run(
         }, [!user || Object.keys(user).length === 0, !settings || Object.keys(settings).length === 0]);
       `,
         errors: [
-          buildError('!user || Object.keys(user).length === 0', 'user', 'hasUser'),
-          buildError('!settings || Object.keys(settings).length === 0', 'settings', 'hasSettings'),
+          buildError(
+            '!user || Object.keys(user).length === 0',
+            'user',
+            'hasUser',
+          ),
+          buildError(
+            '!settings || Object.keys(settings).length === 0',
+            'settings',
+            'hasSettings',
+          ),
         ],
       },
 
@@ -1235,7 +1255,11 @@ ruleTesterJsx.run(
         }, [(!data || Object.keys(data).length === 0)]);
       `,
         errors: [
-          buildError('!data || Object.keys(data).length === 0', 'data', 'hasData'),
+          buildError(
+            '!data || Object.keys(data).length === 0',
+            'data',
+            'hasData',
+          ),
         ],
       },
       // Object existence check with whitespace variations
@@ -1353,9 +1377,7 @@ ruleTesterJsx.run(
           return Object.keys(data).length < 1 ? 'empty' : 'not empty';
         }, [Object.keys(data).length < 1]);
       `,
-        errors: [
-          buildError('Object.keys(data).length < 1', 'data', 'hasData'),
-        ],
+        errors: [buildError('Object.keys(data).length < 1', 'data', 'hasData')],
       },
       // Object key count with different number comparisons (>= 1)
       {
@@ -1405,7 +1427,11 @@ ruleTesterJsx.run(
         }, [!data || Object.keys(data).length === 0]);
       `,
         errors: [
-          buildError('!data || Object.keys(data).length === 0', 'data', 'hasData'),
+          buildError(
+            '!data || Object.keys(data).length === 0',
+            'data',
+            'hasData',
+          ),
         ],
       },
       // Complex expression with AND operator

@@ -6,9 +6,9 @@ const messageTemplate =
 
 describe('no-mixed-firestore-transactions messages', () => {
   it('explains why transaction-safe helpers are required', () => {
-    expect(
-      noMixedFirestoreTransactions.meta.messages.noMixedTransactions,
-    ).toBe(messageTemplate);
+    expect(noMixedFirestoreTransactions.meta.messages.noMixedTransactions).toBe(
+      messageTemplate,
+    );
   });
 });
 

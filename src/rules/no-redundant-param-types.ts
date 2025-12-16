@@ -138,7 +138,10 @@ export const noRedundantParamTypes = createRule<[], MessageIds>({
         const sourceCode = context.getSourceCode();
 
         params.forEach((param) => {
-          const paramText = sourceCode.getText(param).replace(/\s+/g, ' ').trim();
+          const paramText = sourceCode
+            .getText(param)
+            .replace(/\s+/g, ' ')
+            .trim();
           if (isIdentifierWithTypeAnnotation(param)) {
             context.report({
               node: param,

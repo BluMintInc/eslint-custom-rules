@@ -37,9 +37,9 @@ describe('no-entire-object-hook-deps messages', () => {
     expect(noEntireObjectHookDeps.meta.messages.avoidEntireObject).toBe(
       avoidEntireObjectMessage,
     );
-    expect(
-      noEntireObjectHookDeps.meta.messages.removeUnusedDependency,
-    ).toBe(removeUnusedDependencyMessage);
+    expect(noEntireObjectHookDeps.meta.messages.removeUnusedDependency).toBe(
+      removeUnusedDependencyMessage,
+    );
   });
 });
 
@@ -487,9 +487,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{uidFull}</div>;
         };
       `,
-      errors: [
-        avoid('userFull', 'userFull?.uid'),
-      ],
+      errors: [avoid('userFull', 'userFull?.uid')],
       output: `
         const MyComponent = ({ userFull }: { userFull: { uid?: string } }) => {
           const uidFull = useMemo(() => {
@@ -509,9 +507,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <button onClick={greetUser}>Greet</button>;
         };
       `,
-      errors: [
-        avoid('user', 'user.name'),
-      ],
+      errors: [avoid('user', 'user.name')],
       output: `
         const MyComponent = ({ user }: { user: { name: string } }) => {
           const greetUser = useCallback(() => {
@@ -532,9 +528,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <button onClick={greetUser}>Greet</button>;
         };
       `,
-      errors: [
-        avoid('user', 'user.name, user.age'),
-      ],
+      errors: [avoid('user', 'user.name, user.age')],
       output: `
         const MyComponent = ({ user }: { user: { name: string; age: number } }) => {
           const greetUser = useCallback(() => {
@@ -555,9 +549,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <button onClick={showAddress}>Show Address</button>;
         };
       `,
-      errors: [
-        avoid('user', 'user.address.city'),
-      ],
+      errors: [avoid('user', 'user.address.city')],
       output: `
         const MyComponent = ({ user }: { user: { address: { city: string } } }) => {
           const showAddress = useCallback(() => {
@@ -594,9 +586,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return null;
         };
       `,
-      errors: [
-        removeUnused('channelGroupActive'),
-      ],
+      errors: [removeUnused('channelGroupActive')],
       output: `
         const MyComponent = ({ channelGroupActive, channelGroupIdRouter, findByChannelGroupId }) => {
           useEffect(() => {
@@ -633,9 +623,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{value}</div>;
         };
       `,
-      errors: [
-        avoid('config', 'config.value'),
-      ],
+      errors: [avoid('config', 'config.value')],
       output: `
         const MyComponent = ({ config }: { config: { value: string } }) => {
           const value = useMemo(() => {
@@ -655,9 +643,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{isEnabled}</div>;
         };
       `,
-      errors: [
-        avoid('settings', 'settings.enabled'),
-      ],
+      errors: [avoid('settings', 'settings.enabled')],
       output: `
         const MyComponent = ({ settings }: { settings: { enabled: boolean } }) => {
           const isEnabled = useMemo(() => {
@@ -677,9 +663,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div style={{ color }}></div>;
         };
       `,
-      errors: [
-        avoid('theme', 'theme?.color'),
-      ],
+      errors: [avoid('theme', 'theme?.color')],
       output: `
         const MyComponent = ({ theme }: { theme: { color?: string } }) => {
           const color = useMemo(() => {
@@ -699,9 +683,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{endpoint}</div>;
         };
       `,
-      errors: [
-        avoid('config', 'config.api.endpoints.users'),
-      ],
+      errors: [avoid('config', 'config.api.endpoints.users')],
       output: `
         const MyComponent = ({ config }: { config: { api: { endpoints: { users: string } } } }) => {
           const endpoint = useMemo(() => {
@@ -721,9 +703,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{firstItem}</div>;
         };
       `,
-      errors: [
-        avoid('data', 'data.items[0]'),
-      ],
+      errors: [avoid('data', 'data.items[0]')],
       output: `
         const MyComponent = ({ data }: { data: { items: string[] } }) => {
           const firstItem = useMemo(() => {
@@ -743,9 +723,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{value}</div>;
         };
       `,
-      errors: [
-        avoid('matrix', 'matrix.rows[0][1], matrix.rows[1][0]'),
-      ],
+      errors: [avoid('matrix', 'matrix.rows[0][1], matrix.rows[1][0]')],
       output: `
         const MyComponent = ({ matrix }: { matrix: { rows: number[][] } }) => {
           const value = useMemo(() => {
@@ -765,9 +743,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{value}</div>;
         };
       `,
-      errors: [
-        avoid('data', 'data["special-key"]'),
-      ],
+      errors: [avoid('data', 'data["special-key"]')],
       output: `
         const MyComponent = ({ data }: { data: { [key: string]: any } }) => {
           const value = useMemo(() => {
@@ -787,10 +763,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{result}</div>;
         };
       `,
-      errors: [
-        removeUnused('unusedObject'),
-        removeUnused('usedValue'),
-      ],
+      errors: [removeUnused('unusedObject'), removeUnused('usedValue')],
       output: `
         const MyComponent = ({ unusedObject, usedValue }) => {
           const result = useMemo(() => {
@@ -876,9 +849,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return { status } as const;
         };
       `,
-      errors: [
-        avoid('userData', 'userData?.id'),
-      ],
+      errors: [avoid('userData', 'userData?.id')],
       output: `
         import { useEffect, useState } from 'react';
         import { useAuth } from '../../contexts/AuthContext';
@@ -940,9 +911,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{userInfo}</div>;
         };
       `,
-      errors: [
-        avoid('userData', 'userData?.id, userData?.name'),
-      ],
+      errors: [avoid('userData', 'userData?.id, userData?.name')],
       output: `
         const MyComponent = ({ userData }: { userData: { id?: string; name?: string } }) => {
           const userInfo = useMemo(() => {
@@ -984,9 +953,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <button onClick={userInfo}>Show Info</button>;
         };
       `,
-      errors: [
-        avoid('userData', 'userData?.name, userData.id'),
-      ],
+      errors: [avoid('userData', 'userData?.name, userData.id')],
       output: `
         const MyComponent = ({ userData }: { userData: { id: string; name?: string } }) => {
           const userInfo = useCallback(() => {
@@ -1006,9 +973,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{userId}</div>;
         };
       `,
-      errors: [
-        avoid('userData', 'userData?.id'),
-      ],
+      errors: [avoid('userData', 'userData?.id')],
       output: `
         const MyComponent = ({ userData }: { userData: { id?: string } }) => {
           const userId = useMemo(() => {
@@ -1028,9 +993,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{greeting}</div>;
         };
       `,
-      errors: [
-        avoid('userData', 'userData?.name'),
-      ],
+      errors: [avoid('userData', 'userData?.name')],
       output: `
         const MyComponent = ({ userData }: { userData: { name?: string } }) => {
           const greeting = useMemo(() => {
@@ -1050,9 +1013,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return content;
         };
       `,
-      errors: [
-        avoid('userData', 'userData?.name'),
-      ],
+      errors: [avoid('userData', 'userData?.name')],
       output: `
         const MyComponent = ({ userData }: { userData: { name?: string } }) => {
           const content = useMemo(() => {
@@ -1072,9 +1033,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{name}</div>;
         };
       `,
-      errors: [
-        avoid('userData', 'userData?.getName'),
-      ],
+      errors: [avoid('userData', 'userData?.getName')],
       output: `
         const MyComponent = ({ userData }: { userData: { getName?: () => string } }) => {
           const name = useMemo(() => {
@@ -1094,9 +1053,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{firstItem}</div>;
         };
       `,
-      errors: [
-        avoid('userData', 'userData?.items[0], userData?.items'),
-      ],
+      errors: [avoid('userData', 'userData?.items[0], userData?.items')],
       output: `
         const MyComponent = ({ userData }: { userData: { items?: string[] } }) => {
           const firstItem = useMemo(() => {
@@ -1116,9 +1073,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{result}</div>;
         };
       `,
-      errors: [
-        avoid('userData', 'userData?.id'),
-      ],
+      errors: [avoid('userData', 'userData?.id')],
       output: `
         const MyComponent = ({ userData }: { userData: { id?: string } }) => {
           const result = useMemo(() => {
@@ -1138,9 +1093,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{userInfo.userId}</div>;
         };
       `,
-      errors: [
-        avoid('userData', 'userData?.id, userData?.name'),
-      ],
+      errors: [avoid('userData', 'userData?.id, userData?.name')],
       output: `
         const MyComponent = ({ userData }: { userData: { id?: string; name?: string } }) => {
           const userInfo = useMemo(() => {
@@ -1160,9 +1113,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{userArray[0]}</div>;
         };
       `,
-      errors: [
-        avoid('userData', 'userData?.id, userData?.name'),
-      ],
+      errors: [avoid('userData', 'userData?.id, userData?.name')],
       output: `
         const MyComponent = ({ userData }: { userData: { id?: string; name?: string } }) => {
           const userArray = useMemo(() => {
@@ -1182,9 +1133,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{displayName}</div>;
         };
       `,
-      errors: [
-        avoid('userData', 'userData?.name'),
-      ],
+      errors: [avoid('userData', 'userData?.name')],
       output: `
         const MyComponent = ({ userData }: { userData: { name?: string } }) => {
           const displayName = useMemo(() => {
@@ -1204,9 +1153,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{isValid ? 'Valid' : 'Invalid'}</div>;
         };
       `,
-      errors: [
-        avoid('userData', 'userData?.id, userData?.name'),
-      ],
+      errors: [avoid('userData', 'userData?.id, userData?.name')],
       output: `
         const MyComponent = ({ userData }: { userData: { id?: string; name?: string } }) => {
           const isValid = useMemo(() => {
@@ -1249,9 +1196,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return null;
         };
       `,
-      errors: [
-        avoid('userData', 'userData?.id'),
-      ],
+      errors: [avoid('userData', 'userData?.id')],
       output: `
         const MyComponent = ({ userData }: { userData: { id?: string } }) => {
           useEffect(() => {
@@ -1271,9 +1216,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <button onClick={handleClick}>Click</button>;
         };
       `,
-      errors: [
-        avoid('userData', 'userData?.id'),
-      ],
+      errors: [avoid('userData', 'userData?.id')],
       output: `
         const MyComponent = ({ userData }: { userData: { id?: string } }) => {
           const handleClick = useCallback(() => {
@@ -1293,9 +1236,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{isActiveUser ? 'Active' : 'Inactive'}</div>;
         };
       `,
-      errors: [
-        avoid('userData', 'userData?.id, userData?.status'),
-      ],
+      errors: [avoid('userData', 'userData?.id, userData?.status')],
       output: `
         const MyComponent = ({ userData }: { userData: { id?: string; status?: string } }) => {
           const isActiveUser = useMemo(() => {
@@ -1316,9 +1257,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{result}</div>;
         };
       `,
-      errors: [
-        avoid('userData', 'userData?.id'),
-      ],
+      errors: [avoid('userData', 'userData?.id')],
       output: `
         const MyComponent = ({ userData }: { userData: { id?: string } }) => {
           const result = useMemo(() => {
@@ -1346,9 +1285,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{result}</div>;
         };
       `,
-      errors: [
-        avoid('userData', 'userData?.status'),
-      ],
+      errors: [avoid('userData', 'userData?.status')],
       output: `
         const MyComponent = ({ userData }: { userData: { status?: string } }) => {
           const result = useMemo(() => {
@@ -1379,9 +1316,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{result}</div>;
         };
       `,
-      errors: [
-        avoid('userData', 'userData?.getData'),
-      ],
+      errors: [avoid('userData', 'userData?.getData')],
       output: `
         const MyComponent = ({ userData }: { userData: { getData?: () => string } }) => {
           const result = useMemo(() => {
@@ -1405,9 +1340,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{result}</div>;
         };
       `,
-      errors: [
-        avoid('userData', 'userData?.id'),
-      ],
+      errors: [avoid('userData', 'userData?.id')],
       output: `
         const MyComponent = ({ userData }: { userData: { id?: string } }) => {
           const result = useMemo(() => {
@@ -1427,9 +1360,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{result}</div>;
         };
       `,
-      errors: [
-        avoid('userData', 'userData?.date.toISOString, userData?.date'),
-      ],
+      errors: [avoid('userData', 'userData?.date.toISOString, userData?.date')],
       output: `
         const MyComponent = ({ userData }: { userData: { date?: Date } }) => {
           const result = useMemo(() => {
@@ -1449,9 +1380,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{result.join(', ')}</div>;
         };
       `,
-      errors: [
-        avoid('userData', 'userData?.items'),
-      ],
+      errors: [avoid('userData', 'userData?.items')],
       output: `
         const MyComponent = ({ userData }: { userData: { items?: { id: string }[] } }) => {
           const result = useMemo(() => {

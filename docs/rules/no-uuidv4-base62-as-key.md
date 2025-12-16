@@ -45,7 +45,7 @@ const itemKeys = items.map((item) => ({ ...item, key: uuidv4Base62() }));
 function Component() {
   const memoizedIds = React.useMemo(
     () => items.map(() => uuidv4Base62()),
-    [items.length],
+    [items],
   );
   return items.map((item, index) => (
     <div key={memoizedIds[index]}>{item.name}</div>

@@ -182,7 +182,9 @@ export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
         return { isRead, isWrite, methodName };
       }
 
-      function formatMethodName(callExpression: TSESTree.CallExpression): string {
+      function formatMethodName(
+        callExpression: TSESTree.CallExpression,
+      ): string {
         const callee = callExpression.callee;
         if (callee.type !== AST_NODE_TYPES.MemberExpression) {
           return 'this transaction read';

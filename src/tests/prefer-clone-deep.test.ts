@@ -5,8 +5,9 @@ import { preferCloneDeep } from '../rules/prefer-clone-deep';
 const message =
   'Nested spread copies only clone one level, so inner objects still point at the original and later mutations leak back. Use cloneDeep from functions/src/util/cloneDeep.ts and pass overrides as the second argument so the base object is deeply cloned before applying updates.';
 // Cast keeps explicit message assertions while satisfying RuleTester typings that expect messageId-only errors.
-const expectPreferCloneDeepError =
-  ({ message } as unknown as TestCaseError<'preferCloneDeep'>);
+const expectPreferCloneDeepError = {
+  message,
+} as unknown as TestCaseError<'preferCloneDeep'>;
 
 ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
   valid: [

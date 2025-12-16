@@ -256,13 +256,11 @@ function findLoopNode(
   return undefined;
 }
 
-function describeLoopContext(
-  loopInfo: {
-    node: TSESTree.Node;
-    isArrayMethod?: string;
-    isPromiseAll?: boolean;
-  },
-): string {
+function describeLoopContext(loopInfo: {
+  node: TSESTree.Node;
+  isArrayMethod?: string;
+  isPromiseAll?: boolean;
+}): string {
   if (loopInfo.isPromiseAll) return 'Promise.all()';
 
   if (loopInfo.isArrayMethod) {

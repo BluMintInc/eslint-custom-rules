@@ -691,7 +691,10 @@ export const noCircularReferences = createRule<[], MessageIds>({
                                 const leftObjRef = getReferencedObject(leftObj);
                                 if (leftObjRef === referencedObj) {
                                   const reference = assignment.right;
-                                  reportCircularReference(assignment, reference);
+                                  reportCircularReference(
+                                    assignment,
+                                    reference,
+                                  );
                                 }
                               }
                             }

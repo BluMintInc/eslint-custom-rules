@@ -491,10 +491,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         obj.ref1 = obj;
         obj.ref2 = obj;
       `,
-      errors: [
-        error('obj'),
-        error('obj'),
-      ],
+      errors: [error('obj'), error('obj')],
     },
     // Circular reference through array index
     {
@@ -618,10 +615,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const wrapper = obj.getWrapper();
         wrapper.wrapped.source = wrapper;
       `,
-      errors: [
-        error('obj'),
-        error('wrapper'),
-      ],
+      errors: [error('obj'), error('wrapper')],
     },
     // Circular reference with property that is a function returning a method object
     {
@@ -692,10 +686,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const computedObj = obj.getComputedObj();
         computedObj.self = computedObj;
       `,
-      errors: [
-        error('obj'),
-        error('computedObj'),
-      ],
+      errors: [error('obj'), error('computedObj')],
     },
     // Circular reference with property that is a function returning a spread object
     {
@@ -712,10 +703,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const spreadObj = obj.getSpreadObj();
         spreadObj.self = spreadObj;
       `,
-      errors: [
-        error('obj'),
-        error('spreadObj'),
-      ],
+      errors: [error('obj'), error('spreadObj')],
     },
     // Circular reference with property that is a function returning a destructured object
     {
@@ -730,10 +718,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const destructuredObj = obj.getDestructuredObj();
         destructuredObj.self = destructuredObj;
       `,
-      errors: [
-        error('a'),
-        error('destructuredObj'),
-      ],
+      errors: [error('a'), error('destructuredObj')],
     },
     // Circular reference with property that is a function returning a rest object
     {
@@ -748,10 +733,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const restObj = obj.getRestObj();
         restObj.self = restObj;
       `,
-      errors: [
-        error('a'),
-        error('restObj'),
-      ],
+      errors: [error('a'), error('restObj')],
     },
     // Circular reference with property that is a function returning a rest object with circular reference
     {
@@ -767,10 +749,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         };
         const restObj = obj.getRestObj();
       `,
-      errors: [
-        error('a'),
-        error('result'),
-      ],
+      errors: [error('a'), error('result')],
     },
     // Circular reference with property that is a function returning a rest object with circular reference to parent
     {

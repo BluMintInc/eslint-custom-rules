@@ -480,9 +480,7 @@ ruleTesterTs.run(
           return docSnapshot.data();
         });
         `,
-        errors: [
-          readsAfterWritesError('transaction.get', 'transaction.set'),
-        ],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Multiple reads after writes
       {
@@ -553,9 +551,7 @@ ruleTesterTs.run(
           return snapshots;
         });
         `,
-        errors: [
-          readsAfterWritesError('transaction.get', 'transaction.set'),
-        ],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write with promise.all
       {
@@ -570,9 +566,7 @@ ruleTesterTs.run(
           return snapshots;
         });
         `,
-        errors: [
-          readsAfterWritesError('transaction.get', 'transaction.set'),
-        ],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write with different transaction parameter name
       {
@@ -600,9 +594,7 @@ ruleTesterTs.run(
           }
         );
         `,
-        errors: [
-          readsAfterWritesError('transaction.get', 'transaction.set'),
-        ],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write in Admin SDK transaction
       {
@@ -615,9 +607,7 @@ ruleTesterTs.run(
           return docSnapshot.data();
         });
         `,
-        errors: [
-          readsAfterWritesError('transaction.get', 'transaction.set'),
-        ],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write in v9 SDK transaction
       {
@@ -632,9 +622,7 @@ ruleTesterTs.run(
           return docSnapshot.data();
         });
         `,
-        errors: [
-          readsAfterWritesError('transaction.get', 'transaction.set'),
-        ],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after multiple writes
       {
@@ -668,9 +656,7 @@ ruleTesterTs.run(
           return { data1: snapshot1.data(), data2: snapshot2.data() };
         });
         `,
-        errors: [
-          readsAfterWritesError('transaction.get', 'transaction.set'),
-        ],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write in try/catch block
       {
@@ -686,9 +672,7 @@ ruleTesterTs.run(
           }
         });
         `,
-        errors: [
-          readsAfterWritesError('transaction.get', 'transaction.set'),
-        ],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write in catch block
       {
@@ -703,9 +687,7 @@ ruleTesterTs.run(
           }
         });
         `,
-        errors: [
-          readsAfterWritesError('transaction.get', 'transaction.set'),
-        ],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write in switch statement
       {
@@ -747,7 +729,9 @@ ruleTesterTs.run(
           return categories;
         });
         `,
-        errors: [readsAfterWritesError('transaction.get', 'transaction.update')],
+        errors: [
+          readsAfterWritesError('transaction.get', 'transaction.update'),
+        ],
       },
       // Invalid: Read after write with Promise.all containing reads
       {
@@ -782,9 +766,7 @@ ruleTesterTs.run(
           return readData;
         });
         `,
-        errors: [
-          readsAfterWritesError('transaction.get', 'transaction.set'),
-        ],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write with different transaction variable name
       {
@@ -848,9 +830,7 @@ ruleTesterTs.run(
           return results;
         });
         `,
-        errors: [
-          readsAfterWritesError('transaction.get', 'transaction.set'),
-        ],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write in ternary operation
       {
@@ -899,9 +879,7 @@ ruleTesterTs.run(
           }
         });
         `,
-        errors: [
-          readsAfterWritesError('transaction.get', 'transaction.set'),
-        ],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write with array destructuring
       {
@@ -954,9 +932,7 @@ ruleTesterTs.run(
           return data;
         });
         `,
-        errors: [
-          readsAfterWritesError('transaction.get', 'transaction.set'),
-        ],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write in nested function expression
       {
@@ -971,9 +947,7 @@ ruleTesterTs.run(
           return result.data();
         });
         `,
-        errors: [
-          readsAfterWritesError('transaction.get', 'transaction.set'),
-        ],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write with setTimeout (async timing)
       {
@@ -988,9 +962,7 @@ ruleTesterTs.run(
           return snapshot.data();
         });
         `,
-        errors: [
-          readsAfterWritesError('transaction.get', 'transaction.set'),
-        ],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write in while loop
       {
@@ -1009,9 +981,7 @@ ruleTesterTs.run(
           return snapshots.map(s => s.data());
         });
         `,
-        errors: [
-          readsAfterWritesError('transaction.get', 'transaction.set'),
-        ],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write in do-while loop
       {
@@ -1030,9 +1000,7 @@ ruleTesterTs.run(
           return snapshots.map(s => s.data());
         });
         `,
-        errors: [
-          readsAfterWritesError('transaction.get', 'transaction.set'),
-        ],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write with complex conditional logic
       {
@@ -1075,9 +1043,7 @@ ruleTesterTs.run(
           return snapshots.map(s => s.data());
         });
         `,
-        errors: [
-          readsAfterWritesError('transaction.get', 'transaction.set'),
-        ],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write in reduce operation
       {
@@ -1095,9 +1061,7 @@ ruleTesterTs.run(
           return result;
         });
         `,
-        errors: [
-          readsAfterWritesError('transaction.get', 'transaction.set'),
-        ],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write with computed property access
       {
