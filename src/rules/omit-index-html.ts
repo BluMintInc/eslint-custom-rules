@@ -41,7 +41,7 @@ function hasQueryOrHash(url: string): boolean {
  */
 function fixUrl(url: string): string {
   // Replace /index.html with /
-  return url.replace(/\/index\.html($|[?#]|\$\{)/, '/$1');
+  return url.replace(/\/index\.html(?=\/|$|[?#]|\$\{)/, '/');
 }
 
 /**
@@ -49,6 +49,16 @@ function fixUrl(url: string): string {
  */
 function escapeForTemplateLiteral(text: string): string {
   return text.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
+}
+
+/**
+ * Returns the quote character used by a string literal, defaulting to double quote
+ */
+function getLiteralQuote(node: TSESTree.StringLiteral, sourceCode: Readonly<TSESLint.SourceCode>): '"' | "'" {
+  const raw = sourceCode.getText(node);
+  if (raw.startsWith("'")) return "'";
+  if (raw.startsWith('"')) return '"';
+  return '"';
 }
 
 /**
@@ -127,7 +137,12 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
               fixHint,
             },
             fix: (fixer) => {
-              return fixer.replaceText(node, `"${suggestedUrl}"`);
+              const quote = getLiteralQuote(node, sourceCode);
+              const escapedUrl = suggestedUrl.replace(
+                new RegExp(`\\${quote}`, 'g'),
+                `\\${quote}`,
+              );
+              return fixer.replaceText(node, `${quote}${escapedUrl}${quote}`);
             },
           });
         }
@@ -143,6 +158,16 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
         }
 
         const value = describeTemplateLiteral(node, sourceCode);
+
+        // Skip if it is not a URL (e.g., file system paths)
+        if (!isLikelyUrl(value)) {
+          return;
+        }
+
+        // Skip if it has query parameters or hash fragments and we're allowing those
+        if (allowWithQueryOrHash && hasQueryOrHash(value)) {
+          return;
+        }
 
         if (value.includes('/index.html')) {
           const hasDynamicParts = node.expressions.length > 0;

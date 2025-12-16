@@ -62,6 +62,7 @@ const pageWithHash = "https://example.com/index.html#section"; // Should be "htt
 ## Template literals
 
 - The rule flags `/index.html` that appears in the static portions of a template literal, even when expressions are present.
+- The same URL guards apply as string literals: non-URL file paths are skipped, and `allowWithQueryOrHash` prevents reporting when queries or hashes are allowed.
 - Template literals are not auto-fixed; adjust the static pieces so the rendered URL resolves to the directory path (error messages include a backticked example such as `` `https://example.com/${page}/` ``).
 
 ## When Not To Use It

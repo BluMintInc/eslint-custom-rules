@@ -1,7 +1,7 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { omitIndexHtml } from '../rules/omit-index-html';
 
-const fixUrl = (url: string) => url.replace(/\/index\.html($|[?#]|\$\{)/, '/$1');
+const fixUrl = (url: string) => url.replace(/\/index\.html(?=\/|$|[?#]|\$\{)/, '/');
 const escapeForTemplateLiteral = (text: string) =>
   text.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
 
@@ -30,6 +30,10 @@ ruleTesterTs.run('omit-index-html', omitIndexHtml, {
     {
       code: 'const homepage = "https://example.com/";',
     },
+    // Single quoted string preserved
+    {
+      code: "const homepage = 'https://example.com/';",
+    },
     {
       code: 'const aboutPage = "https://example.com/about/";',
     },
@@ -48,6 +52,14 @@ ruleTesterTs.run('omit-index-html', omitIndexHtml, {
     // Template literals without index.html
     {
       code: 'const url = `https://example.com/${page}/`;',
+    },
+    // Template literal with query/hash is allowed by default
+    {
+      code: 'const url = `https://example.com/index.html?${query}`;',
+    },
+    // Template literal pointing to filesystem path should be skipped
+    {
+      code: 'const path = `/usr/local/index.html`;',
     },
   ],
   invalid: [
@@ -68,6 +80,12 @@ ruleTesterTs.run('omit-index-html', omitIndexHtml, {
       code: 'const relativePath = "/about/index.html";',
       errors: [buildError('/about/index.html')],
       output: 'const relativePath = "/about/";',
+    },
+    // Single quoted literal preserves quote
+    {
+      code: "const homepage = 'https://example.com/index.html';",
+      errors: [buildError('https://example.com/index.html')],
+      output: "const homepage = 'https://example.com/';",
     },
     // URL with query parameters when not allowed
     {
@@ -93,6 +111,12 @@ ruleTesterTs.run('omit-index-html', omitIndexHtml, {
     {
       code: 'const url = `https://example.com/${page}/index.html`;',
       errors: [buildError('https://example.com/${page}/index.html', { hasExpressions: true })],
+      // No output as we don't auto-fix template literals
+    },
+    // Template literal with index.html before dynamic segment
+    {
+      code: 'const url = `https://example.com/index.html/${page}`;',
+      errors: [buildError('https://example.com/index.html/${page}', { hasExpressions: true })],
       // No output as we don't auto-fix template literals
     },
     // Template literal where expression follows index.html
