@@ -39,7 +39,7 @@ function hasQueryOrHash(url: string): boolean {
 /**
  * Removes '/index.html' from a URL by replacing it with '/' at path boundaries
  */
-function fixUrl(url: string): string {
+function removeIndexHtml(url: string): string {
   // Replace /index.html with /
   return url
     .replace(/\/index\.html\//, '/')
@@ -139,7 +139,7 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
           // Skip if it has query parameters or hash fragments and we're allowing those
           if (allowWithQueryOrHash && hasQueryOrHash(value)) return;
 
-          const suggestedUrl = fixUrl(value);
+          const suggestedUrl = removeIndexHtml(value);
           const fixHint = buildFixHint(suggestedUrl, false);
 
           context.report({
@@ -181,7 +181,7 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
         }
 
         const hasDynamicParts = node.expressions.length > 0;
-        const fixedUrl = fixUrl(value);
+        const fixedUrl = removeIndexHtml(value);
         const suggestedUrl = hasDynamicParts
           ? `\`${escapeForTemplateLiteral(fixedUrl)}\``
           : fixedUrl;

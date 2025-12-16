@@ -1,7 +1,7 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { omitIndexHtml } from '../rules/omit-index-html';
 
-const fixUrl = (url: string) =>
+const removeIndexHtml = (url: string) =>
   url
     .replace(/\/index\.html\//, '/')
     .replace(/\/index\.html(?=$|[?#]|\$\{)/, '/');
@@ -9,7 +9,7 @@ const escapeForTemplateLiteral = (text: string) =>
   text.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
 
 const buildError = (url: string, { hasExpressions = false } = {}) => {
-  const suggestedUrlRaw = fixUrl(url);
+  const suggestedUrlRaw = removeIndexHtml(url);
   const suggestedUrl = hasExpressions
     ? `\`${escapeForTemplateLiteral(suggestedUrlRaw)}\``
     : suggestedUrlRaw;
