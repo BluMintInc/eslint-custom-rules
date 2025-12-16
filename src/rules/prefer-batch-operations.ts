@@ -150,7 +150,9 @@ function getAllCallsFromExpression(
 
 function findLoopNode(
   node: TSESTree.Node,
-): { node: TSESTree.Node; isArrayMethod?: string; isPromiseAll?: boolean } | undefined {
+):
+  | { node: TSESTree.Node; isArrayMethod?: string; isPromiseAll?: boolean }
+  | undefined {
   let current: TSESTree.Node | undefined = node;
   let loopNode: TSESTree.Node | null = null;
 
@@ -410,7 +412,7 @@ export const preferBatchOperations = createRule<[], MessageIds>({
         if (!isValid || !methodName || !setterInstance) return;
 
         // Check if we're in a loop or Promise.all
-          const loopInfo = findLoopNode(node);
+        const loopInfo = findLoopNode(node);
         if (!loopInfo) return;
 
         const batchMethod =
