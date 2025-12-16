@@ -41,7 +41,9 @@ function hasQueryOrHash(url: string): boolean {
  */
 function fixUrl(url: string): string {
   // Replace /index.html with /
-  return url.replace(/\/index\.html(?=\/|$|[?#]|\$\{)/, '/');
+  return url
+    .replace(/\/index\.html\//, '/')
+    .replace(/\/index\.html(?=$|[?#]|\$\{)/, '/');
 }
 
 /**

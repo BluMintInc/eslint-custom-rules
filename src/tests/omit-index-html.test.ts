@@ -1,7 +1,10 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { omitIndexHtml } from '../rules/omit-index-html';
 
-const fixUrl = (url: string) => url.replace(/\/index\.html(?=\/|$|[?#]|\$\{)/, '/');
+const fixUrl = (url: string) =>
+  url
+    .replace(/\/index\.html\//, '/')
+    .replace(/\/index\.html(?=$|[?#]|\$\{)/, '/');
 const escapeForTemplateLiteral = (text: string) =>
   text.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
 
