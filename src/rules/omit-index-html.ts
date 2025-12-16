@@ -41,12 +41,19 @@ function hasQueryOrHash(url: string): boolean {
  */
 function fixUrl(url: string): string {
   // Replace /index.html with /
-  return url.replace(/\/index\.html(?=($|[?#]|\$\{))/, '/');
+  return url.replace(/\/index\.html($|[?#]|\$\{)/, '/$1');
 }
 
 /**
- * Reconstructs a template literal using cooked values so static checks and
- * reporting align with what runtime sees (escape sequences are resolved).
+ * Escapes backslashes and backticks so template literal wrappers remain valid
+ */
+function escapeForTemplateLiteral(text: string): string {
+  return text.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
+}
+
+/**
+ * Reconstructs a template literal as it appears in source, including expressions,
+ * using cooked text so escape sequences match the runtime string.
  */
 function describeTemplateLiteral(
   node: TSESTree.TemplateLiteral,
@@ -89,7 +96,7 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
     ],
     messages: {
       omitIndexHtml:
-        'URL "{{url}}" includes "index.html", which servers already serve implicitly for directory paths. Keeping the file name creates duplicate URLs, breaks canonical links, and can make caches treat the same page as different assets. Drop the file name and point to the directory path instead (e.g., "{{suggestedUrl}}").',
+        'URL "{{url}}" includes "index.html", which servers already serve implicitly for directory paths. Keeping the file name creates duplicate URLs, breaks canonical links, and can make caches treat the same page as different assets. {{fixHint}}',
     },
   },
   defaultOptions: [{ allowWithQueryOrHash: true }],
@@ -108,15 +115,19 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
           // Skip if it has query parameters or hash fragments and we're allowing those
           if (allowWithQueryOrHash && hasQueryOrHash(value)) return;
 
+          const suggestedUrl = fixUrl(value);
+          const fixHint = `Replace it with the directory path (e.g., "${suggestedUrl}").`;
+
           context.report({
             node,
             messageId: 'omitIndexHtml',
             data: {
               url: value,
-              suggestedUrl: fixUrl(value),
+              suggestedUrl,
+              fixHint,
             },
             fix: (fixer) => {
-              return fixer.replaceText(node, `"${fixUrl(value)}"`);
+              return fixer.replaceText(node, `"${suggestedUrl}"`);
             },
           });
         }
@@ -133,22 +144,27 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
 
         const value = describeTemplateLiteral(node, sourceCode);
 
-        if (!value.includes('/index.html')) return;
+        if (value.includes('/index.html')) {
+          const hasDynamicParts = node.expressions.length > 0;
+          const suggestedUrlRaw = fixUrl(value);
+          const suggestedUrl = hasDynamicParts
+            ? `\`${escapeForTemplateLiteral(suggestedUrlRaw)}\``
+            : suggestedUrlRaw;
+          const fixHint = hasDynamicParts
+            ? `Remove "index.html" from the static portion of the template so it resolves to the directory path (e.g., ${suggestedUrl}).`
+            : `Replace it with the directory path (e.g., "${suggestedUrl}").`;
 
-        const hasDynamicParts = node.expressions.length > 0;
-        const suggestedUrl = hasDynamicParts
-          ? `\`${fixUrl(value)}\``
-          : fixUrl(value);
-
-        context.report({
-          node,
-          messageId: 'omitIndexHtml',
-          data: {
-            url: value,
-            suggestedUrl,
-          },
-          // No automatic fix for template literals as they may contain dynamic parts
-        });
+          context.report({
+            node,
+            messageId: 'omitIndexHtml',
+            data: {
+              url: value,
+              suggestedUrl,
+              fixHint,
+            },
+            // No automatic fix for template literals as they may contain dynamic parts
+          });
+        }
       },
     };
   },

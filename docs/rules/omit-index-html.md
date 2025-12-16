@@ -24,6 +24,7 @@ Explicitly naming `index.html` in URLs is redundant because web servers already 
 const homepage = "https://example.com/index.html";
 const aboutPage = "https://example.com/about/index.html";
 const withParams = "https://example.com/index.html?ref=source"; // when allowWithQueryOrHash is false
+const dynamic = `https://example.com/${page}/index.html`;
 ```
 
 #### ✅ Correct
@@ -32,6 +33,7 @@ const withParams = "https://example.com/index.html?ref=source"; // when allowWit
 const homepage = "https://example.com/";
 const aboutPage = "https://example.com/about/";
 const withParams = "https://example.com/?ref=source"; // when allowWithQueryOrHash is false
+const dynamic = `https://example.com/${page}/`; // drop index.html from the static parts
 ```
 
 ## Options
@@ -56,6 +58,11 @@ const pageWithHash = "https://example.com/index.html#section";
 const pageWithParams = "https://example.com/index.html?ref=source"; // Should be "https://example.com/?ref=source"
 const pageWithHash = "https://example.com/index.html#section"; // Should be "https://example.com/#section"
 ```
+
+## Template literals
+
+- The rule flags `/index.html` that appears in the static portions of a template literal, even when expressions are present.
+- Template literals are not auto-fixed; adjust the static pieces so the rendered URL resolves to the directory path (error messages include a backticked example such as `` `https://example.com/${page}/` ``).
 
 ## When Not To Use It
 
