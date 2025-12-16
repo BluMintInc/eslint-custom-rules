@@ -390,7 +390,6 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
             : null;
         if (!returnType) return null;
 
-        // Create a fix that removes the return type annotation
         return fixer.remove(returnType);
       }
 
