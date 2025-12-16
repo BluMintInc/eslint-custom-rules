@@ -12,7 +12,7 @@ Separate loading booleans split the source of truth for fetching state. The flag
 
 ### Detection Heuristic
 
-The rule flags any `useState` identifier that matches `/^is.*Loading$/i` or `/^isLoading.+/i` and whose setter is invoked with a truthy value before an async boundary and with a falsy value afterwards. This heuristic targets booleans that mirror a separate piece of state instead of representing the data directly.
+The rule flags any `useState` identifier that matches `/^is.*Loading$/i` or `/^isLoading.+/i` and whose setter is invoked with a truthy value before an async boundary and with a falsy value afterward. This heuristic targets booleans that mirror a separate piece of state instead of representing the data directly.
 
 ### Scope
 
