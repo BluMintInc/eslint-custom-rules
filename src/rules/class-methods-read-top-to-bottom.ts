@@ -20,24 +20,32 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Ensures classes read linearly from top to bottom.',
+      description:
+        'Enforces a top-to-bottom class layout so callers lead into the helpers they rely on.',
       recommended: 'warn',
     },
     schema: [],
     messages: {
-      classMethodsReadTopToBottom:
-        'Methods should be ordered for top-down readability.',
+      classMethodsReadTopToBottom: [
+        "What's wrong: In {{className}}, {{actualMember}} appears before {{expectedMember}}.",
+        'Why it matters: Top-down flow enables local reasoning: you can verify each caller without scrolling back. Upward jumps make code reviews harder (must verify call chains in reverse), obscure which fields a helper assumes are initialized, and increase the risk of calling helpers before state is ready (leading to null reference errors or accessing uninitialized fields).',
+        'How to fix: Move {{expectedMember}} above {{actualMember}} so the class reads top-to-bottom (fields to constructor to callers to helpers).',
+      ].join('\n'),
     },
     fixable: 'code', // To allow ESLint to autofix issues.
   },
   defaultOptions: [],
   create(context) {
-    let className: string;
+    const classNames = new WeakMap<TSESTree.ClassBody, string>();
     return {
       ClassDeclaration(node: TSESTree.ClassDeclaration) {
-        className = node.id?.name || '';
+        classNames.set(node.body, node.id?.name || '');
+      },
+      ClassExpression(node: TSESTree.ClassExpression) {
+        classNames.set(node.body, node.id?.name || '');
       },
       'ClassBody:exit'(node: TSESTree.ClassBody) {
+        const className = classNames.get(node) || '';
         const graphBuilder = new ClassGraphBuilder(className, node);
         const sortedOrder = graphBuilder.memberNamesSorted;
         const actualOrder = node.body
@@ -62,7 +70,25 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
         }
 
         for (let i = 0; i < actualOrder.length; i++) {
-          if (actualOrder[i] !== sortedOrder[i]) {
+          const actualMember = actualOrder[i];
+          const expectedMember = sortedOrder[i];
+
+          if (!actualMember || !expectedMember) {
+            throw new Error(
+              `class-methods-read-top-to-bottom invariant violated while comparing members in ${
+                className || 'an unnamed class'
+              } at position ${i}: actualMember=${String(
+                actualMember,
+              )}, expectedMember=${String(
+                expectedMember,
+              )}, actualOrder.length=${
+                actualOrder.length
+              }, sortedOrder.length=${sortedOrder.length}`,
+            );
+          }
+
+          if (actualMember !== expectedMember) {
+            const classNameReport = className || 'this class';
             const sourceCode = context.getSourceCode();
             const newClassBody = sortedOrder
               .map((n) => {
@@ -99,6 +125,11 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
             return context.report({
               node,
               messageId: 'classMethodsReadTopToBottom',
+              data: {
+                className: classNameReport,
+                actualMember,
+                expectedMember,
+              },
               fix(fixer) {
                 return fixer.replaceTextRange(
                   [node.range[0] + 1, node.range[1] - 1], // Exclude the curly braces
