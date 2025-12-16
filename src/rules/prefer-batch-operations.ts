@@ -265,13 +265,6 @@ function describeLoopContext(
 ): string {
   if (loopInfo.isPromiseAll) return 'Promise.all()';
 
-  if (
-    loopInfo.node.type === AST_NODE_TYPES.CallExpression &&
-    isPromiseAll(loopInfo.node)
-  ) {
-    return 'Promise.all()';
-  }
-
   if (loopInfo.isArrayMethod) {
     return `${loopInfo.isArrayMethod}() callback`;
   }
