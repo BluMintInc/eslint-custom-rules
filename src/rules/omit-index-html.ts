@@ -54,7 +54,10 @@ function escapeForTemplateLiteral(text: string): string {
 /**
  * Returns the quote character used by a string literal, defaulting to double quote
  */
-function getLiteralQuote(node: TSESTree.StringLiteral, sourceCode: Readonly<TSESLint.SourceCode>): '"' | "'" {
+function getLiteralQuote(
+  node: TSESTree.StringLiteral,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+): '"' | "'" {
   const raw = sourceCode.getText(node);
   if (raw.startsWith("'")) return "'";
   if (raw.startsWith('"')) return '"';
@@ -169,27 +172,25 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
           return;
         }
 
-        if (value.includes('/index.html')) {
-          const hasDynamicParts = node.expressions.length > 0;
-          const suggestedUrlRaw = fixUrl(value);
-          const suggestedUrl = hasDynamicParts
-            ? `\`${escapeForTemplateLiteral(suggestedUrlRaw)}\``
-            : suggestedUrlRaw;
-          const fixHint = hasDynamicParts
-            ? `Remove "index.html" from the static portion of the template so it resolves to the directory path (e.g., ${suggestedUrl}).`
-            : `Replace it with the directory path (e.g., "${suggestedUrl}").`;
+        const hasDynamicParts = node.expressions.length > 0;
+        const suggestedUrlRaw = fixUrl(value);
+        const suggestedUrl = hasDynamicParts
+          ? `\`${escapeForTemplateLiteral(suggestedUrlRaw)}\``
+          : suggestedUrlRaw;
+        const fixHint = hasDynamicParts
+          ? `Remove "index.html" from the static portion of the template so it resolves to the directory path (e.g., ${suggestedUrl}).`
+          : `Replace it with the directory path (e.g., "${suggestedUrl}").`;
 
-          context.report({
-            node,
-            messageId: 'omitIndexHtml',
-            data: {
-              url: value,
-              suggestedUrl,
-              fixHint,
-            },
-            // No automatic fix for template literals as they may contain dynamic parts
-          });
-        }
+        context.report({
+          node,
+          messageId: 'omitIndexHtml',
+          data: {
+            url: value,
+            suggestedUrl,
+            fixHint,
+          },
+          // No automatic fix for template literals as they may contain dynamic parts
+        });
       },
     };
   },
