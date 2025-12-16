@@ -3,6 +3,8 @@ import { TSESLint, TSESTree } from '@typescript-eslint/utils';
 /**
  * Normalizes JSX child node types into short descriptors used inside lint messages.
  * Keeps message phrasing consistent regardless of the specific child node shape.
+ * @param child - The JSX child node to describe.
+ * @returns Human-readable descriptor for the child type used in lint messages.
  */
 const describeChild = (child: TSESTree.JSXChild): string => {
   switch (child.type) {
