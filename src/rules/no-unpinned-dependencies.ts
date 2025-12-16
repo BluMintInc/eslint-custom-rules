@@ -8,6 +8,39 @@ import {
   JSONStringLiteral,
 } from 'jsonc-eslint-parser/lib/parser/ast';
 
+const PINNED_SEMVER_PATTERN =
+  /^\d+\.\d+\.\d+(?:-(?:[0-9A-Za-z-]+)(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+const RANGE_OPERATOR_PATTERN = /[~^]/;
+const LEADING_RANGE_PATTERN = /^[~^]/;
+const DEFAULT_PINNED_VERSION = '1.2.3';
+const BASIC_SEMVER_PATTERN = /\d+\.\d+\.\d+/;
+
+/**
+ * Computes a pinned-version recommendation from a raw dependency version.
+ * Strips a leading range token (^ or ~), validates pinned candidates, and
+ * falls back to the first semver-like substring or a default placeholder
+ * when no safe candidate is present.
+ *
+ * @param version Dependency version string from package.json.
+ * @returns Object describing whether a safe fix is possible and the
+ * suggested pinned version.
+ */
+function computeVersionSuggestion(version: string) {
+  const startsWithRange = LEADING_RANGE_PATTERN.test(version);
+  const pinnedCandidate = startsWithRange
+    ? version.replace(LEADING_RANGE_PATTERN, '')
+    : version;
+  const firstSemverInString = version.match(BASIC_SEMVER_PATTERN)?.[0];
+  const isSimplePinned =
+    startsWithRange && PINNED_SEMVER_PATTERN.test(pinnedCandidate);
+  const suggestedVersion =
+    isSimplePinned && startsWithRange
+      ? pinnedCandidate
+      : firstSemverInString ?? DEFAULT_PINNED_VERSION;
+
+  return { isSimplePinned, suggestedVersion, pinnedCandidate };
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const noUnpinnedDependencies: TSESLint.RuleModule<'unexpected', any[]> =
   createRule({
@@ -21,7 +54,7 @@ export const noUnpinnedDependencies: TSESLint.RuleModule<'unexpected', any[]> =
       schema: [],
       messages: {
         unexpected:
-          "Dependency '{{ propertyName }}' should be pinned to a specific version, but '{{ version }}' was found.",
+          "Dependency '{{ propertyName }}' is declared with the range '{{ version }}'. Ranges let package managers pull newer releases outside code review, which breaks reproducible installs and can hide breaking changes. Pin to a single exact version without range operators (for example '{{ suggestedVersion }}') so dependency updates stay intentional and auditable; complex ranges must be pinned manually.",
       },
     },
     defaultOptions: [],
@@ -54,21 +87,29 @@ export const noUnpinnedDependencies: TSESLint.RuleModule<'unexpected', any[]> =
             const propertyName =
               (property.key as JSONIdentifier).name ||
               (property.key as JSONStringLiteral).value;
-            // Check if the version string starts with a caret (^) or tilde (~), indicating a non-pinned version
+            // Flag caret/tilde range operators anywhere; only auto-fix simple leading ranges
             if (
               typeof version === 'string' &&
-              (version.includes('^') || version.includes('~'))
+              RANGE_OPERATOR_PATTERN.test(version)
             ) {
+              const { isSimplePinned, suggestedVersion, pinnedCandidate } =
+                computeVersionSuggestion(version);
               context.report({
                 node: node as unknown as TSESTree.Node,
                 messageId: 'unexpected',
                 data: {
                   propertyName,
                   version,
+                  suggestedVersion,
                 },
                 fix: function (fixer) {
-                  const fixed = version.replace('^', '').replace('~', '');
-                  return fixer.replaceTextRange(node.range, `"${fixed}"`);
+                  if (!isSimplePinned) {
+                    return null;
+                  }
+                  return fixer.replaceTextRange(
+                    node.range,
+                    `"${pinnedCandidate}"`,
+                  );
                 },
               });
             }
