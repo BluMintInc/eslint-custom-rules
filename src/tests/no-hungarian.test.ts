@@ -464,10 +464,7 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
 
     {
       code: 'const nameString = "John", ageNumber = 30;',
-      errors: [
-        errorFor('nameString'),
-        errorFor('ageNumber'),
-      ],
+      errors: [errorFor('nameString'), errorFor('ageNumber')],
     },
 
     {
@@ -534,10 +531,7 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
       }
     }
     `,
-      errors: [
-        errorFor('TestClass'),
-        errorFor('inputString'),
-      ],
+      errors: [errorFor('TestClass'), errorFor('inputString')],
     },
     {
       code: `const fnF = function(param: string) {
@@ -566,10 +560,7 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
           }
         }
       `,
-      errors: [
-        errorFor('processArrayItems'),
-        errorFor('itemsArray'),
-      ],
+      errors: [errorFor('processArrayItems'), errorFor('itemsArray')],
     },
     {
       code: `
@@ -579,9 +570,7 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
           }
         }
       `,
-      errors: [
-        errorFor('getOptionsObject'),
-      ],
+      errors: [errorFor('getOptionsObject')],
     },
     // Tests for class properties with Hungarian notation
     {
@@ -605,10 +594,7 @@ ruleTesterTs.run('no-hungarian', noHungarian, {
           static maxCountNumber: number = 100;
         }
       `,
-      errors: [
-        errorFor('apiUrlString'),
-        errorFor('maxCountNumber'),
-      ],
+      errors: [errorFor('apiUrlString'), errorFor('maxCountNumber')],
     },
     {
       code: `
@@ -874,9 +860,7 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
     },
     {
       code: 'const userBoolIsActive = true;',
-      errors: [
-        errorFor('userBoolIsActive'),
-      ],
+      errors: [errorFor('userBoolIsActive')],
     },
     {
       code: 'function getUserObjData() { return {}; }',
@@ -884,9 +868,7 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
     },
     {
       code: 'const configArrOptions = [];',
-      errors: [
-        errorFor('configArrOptions'),
-      ],
+      errors: [errorFor('configArrOptions')],
     },
 
     // Type markers in the middle of SCREAMING_SNAKE_CASE names
@@ -900,9 +882,7 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
     },
     {
       code: 'const CONFIG_OBJ_SETTINGS = {};',
-      errors: [
-        errorFor('CONFIG_OBJ_SETTINGS'),
-      ],
+      errors: [errorFor('CONFIG_OBJ_SETTINGS')],
     },
 
     // Class methods and properties with type markers in the middle
@@ -915,10 +895,7 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
         userNumAge = 30;
       }
       `,
-      errors: [
-        errorFor('getUserStrName'),
-        errorFor('userNumAge'),
-      ],
+      errors: [errorFor('getUserStrName'), errorFor('userNumAge')],
     },
 
     // PascalCase with type markers in the middle
@@ -928,9 +905,7 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
     },
     {
       code: 'interface ConfigArrSettings {}',
-      errors: [
-        errorFor('ConfigArrSettings'),
-      ],
+      errors: [errorFor('ConfigArrSettings')],
     },
     {
       code: 'type UserStrName = string;',
@@ -948,29 +923,21 @@ ruleTesterTs.run('no-hungarian-screaming-snake-case', noHungarian, {
     },
     {
       code: 'function getUserObjectData() { return {}; }',
-      errors: [
-        errorFor('getUserObjectData'),
-      ],
+      errors: [errorFor('getUserObjectData')],
     },
     {
       code: 'const configArrayOptions = [];',
-      errors: [
-        errorFor('configArrayOptions'),
-      ],
+      errors: [errorFor('configArrayOptions')],
     },
 
     // Full words with SCREAMING_SNAKE_CASE
     {
       code: 'const USER_STRING_NAME = "John";',
-      errors: [
-        errorFor('USER_STRING_NAME'),
-      ],
+      errors: [errorFor('USER_STRING_NAME')],
     },
     {
       code: 'const CONFIG_ARRAY_OPTIONS = [];',
-      errors: [
-        errorFor('CONFIG_ARRAY_OPTIONS'),
-      ],
+      errors: [errorFor('CONFIG_ARRAY_OPTIONS')],
     },
     {
       code: `

@@ -151,7 +151,9 @@ export const noRestrictedPropertiesFix = createRule<
               data: {
                 objectName: restrictedProp.object,
                 propertyName: restrictedProp.property,
-                restrictionReason: formatRestrictionReason(restrictedProp.message),
+                restrictionReason: formatRestrictionReason(
+                  restrictedProp.message,
+                ),
               },
               fix: () => null,
             });
@@ -182,7 +184,9 @@ export const noRestrictedPropertiesFix = createRule<
               data: {
                 objectName,
                 propertyName: restrictedProp.property,
-                restrictionReason: formatRestrictionReason(restrictedProp.message),
+                restrictionReason: formatRestrictionReason(
+                  restrictedProp.message,
+                ),
               },
               fix: () => null,
             });
@@ -206,7 +210,9 @@ export const noRestrictedPropertiesFix = createRule<
               data: {
                 objectName: restrictedProp.object,
                 propertyName,
-                restrictionReason: formatRestrictionReason(restrictedProp.message),
+                restrictionReason: formatRestrictionReason(
+                  restrictedProp.message,
+                ),
               },
               fix: () => null,
             });

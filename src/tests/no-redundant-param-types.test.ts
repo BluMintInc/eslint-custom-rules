@@ -232,9 +232,7 @@ ruleTesterTs.run('no-redundant-param-types', noRedundantParamTypes, {
       errors: [
         {
           messageId: 'redundantParamType',
-          data: redundantParamData(
-            '{ x, y }: { x: number; y: string }',
-          ),
+          data: redundantParamData('{ x, y }: { x: number; y: string }'),
         },
       ],
     },

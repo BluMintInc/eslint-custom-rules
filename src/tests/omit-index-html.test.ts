@@ -113,19 +113,31 @@ ruleTesterTs.run('omit-index-html', omitIndexHtml, {
     // Template literal with dynamic part and index.html
     {
       code: 'const url = `https://example.com/${page}/index.html`;',
-      errors: [buildError('https://example.com/${page}/index.html', { hasExpressions: true })],
+      errors: [
+        buildError('https://example.com/${page}/index.html', {
+          hasExpressions: true,
+        }),
+      ],
       // No output as we don't auto-fix template literals
     },
     // Template literal with index.html before dynamic segment
     {
       code: 'const url = `https://example.com/index.html/${page}`;',
-      errors: [buildError('https://example.com/index.html/${page}', { hasExpressions: true })],
+      errors: [
+        buildError('https://example.com/index.html/${page}', {
+          hasExpressions: true,
+        }),
+      ],
       // No output as we don't auto-fix template literals
     },
     // Template literal where expression follows index.html
     {
       code: 'const url = `https://example.com/index.html${query}`;',
-      errors: [buildError('https://example.com/index.html${query}', { hasExpressions: true })],
+      errors: [
+        buildError('https://example.com/index.html${query}', {
+          hasExpressions: true,
+        }),
+      ],
       // No output as we don't auto-fix template literals
     },
     // Template literal with backslash-backtick sequence before index.html

@@ -755,10 +755,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         // Rest of the handler implementation...
       };
       `,
-      errors: [
-        error(4),
-        error(3),
-      ],
+      errors: [error(4), error(3)],
     },
     // Invalid case: Using excessive parent chain in RealtimeDbChangeHandler
     {
@@ -773,9 +770,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const path = change.after.ref.parent.parent.parent.key;
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Using excessive parent chain in transaction handler
     {
@@ -793,9 +788,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         await transaction.get(docPath);
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Using excessive parent chain in RealtimeDbChangeHandlerTransaction
     {
@@ -810,10 +803,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const path = change.after.ref.parent.parent.parent.parent.key;
       };
       `,
-      errors: [
-        error(4),
-        error(3),
-      ],
+      errors: [error(4), error(3)],
     },
     // Invalid case: Variable assignment with event data
     {
@@ -826,9 +816,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const uid = change.after.ref.parent.parent.parent.id;
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Destructuring assignment with event data
     {
@@ -841,9 +829,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const uid = data.after.ref.parent.parent.parent.id;
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Nested destructuring with event data
     {
@@ -857,9 +843,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const uid = after.ref.parent.parent.parent.id;
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Multiple excessive parent chains
     {
@@ -873,11 +857,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const uid2 = change.before.ref.parent.parent.parent.parent.id;
       };
       `,
-      errors: [
-        error(3),
-        error(4),
-        error(3),
-      ],
+      errors: [error(3), error(4), error(3)],
     },
     // Invalid case: Excessive parent chain with 5 calls
     {
@@ -890,11 +870,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const uid = change.after.ref.parent.parent.parent.parent.parent.id;
       };
       `,
-      errors: [
-        error(5),
-        error(4),
-        error(3),
-      ],
+      errors: [error(5), error(4), error(3)],
     },
     // Invalid case: Excessive parent chain with 6 calls
     {
@@ -907,12 +883,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const uid = change.after.ref.parent.parent.parent.parent.parent.parent.id;
       };
       `,
-      errors: [
-        error(6),
-        error(5),
-        error(4),
-        error(3),
-      ],
+      errors: [error(6), error(5), error(4), error(3)],
     },
     // Invalid case: Excessive parent chain in conditional expression
     {
@@ -927,11 +898,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
           change.before.ref.parent.parent.parent.parent.id;
       };
       `,
-      errors: [
-        error(3),
-        error(4),
-        error(3),
-      ],
+      errors: [error(3), error(4), error(3)],
     },
     // Invalid case: Excessive parent chain in logical expression
     {
@@ -945,11 +912,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
                    change.before.ref.parent.parent.parent.parent.id;
       };
       `,
-      errors: [
-        error(3),
-        error(4),
-        error(3),
-      ],
+      errors: [error(3), error(4), error(3)],
     },
     // Invalid case: Excessive parent chain in array method (direct access)
     {
@@ -964,10 +927,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const id2 = change.before.ref.parent.parent.parent.id;
       };
       `,
-      errors: [
-        error(3),
-        error(3),
-      ],
+      errors: [error(3), error(3)],
     },
     // Invalid case: Excessive parent chain in template literal
     {
@@ -980,9 +940,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const message = \`Path: \${change.after.ref.parent.parent.parent.id}\`;
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Excessive parent chain in try-catch block
     {
@@ -1000,11 +958,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         }
       };
       `,
-      errors: [
-        error(3),
-        error(4),
-        error(3),
-      ],
+      errors: [error(3), error(4), error(3)],
     },
     // Invalid case: Excessive parent chain in switch statement
     {
@@ -1025,11 +979,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         }
       };
       `,
-      errors: [
-        error(3),
-        error(4),
-        error(3),
-      ],
+      errors: [error(3), error(4), error(3)],
     },
     // Invalid case: Excessive parent chain in async/await
     {
@@ -1043,9 +993,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const result = await Promise.resolve(change.after.ref.parent.parent.parent.id);
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Excessive parent chain in Promise chain
     {
@@ -1061,11 +1009,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
           .catch(() => change.before.ref.parent.parent.parent.parent.id);
       };
       `,
-      errors: [
-        error(3),
-        error(4),
-        error(3),
-      ],
+      errors: [error(3), error(4), error(3)],
     },
     // Invalid case: Excessive parent chain with different parameter names
     {
@@ -1078,9 +1022,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const uid = changeData.after.ref.parent.parent.parent.id;
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Excessive parent chain with destructured parameters
     {
@@ -1092,9 +1034,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const uid = change.after.ref.parent.parent.parent.id;
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Excessive parent chain in object literal
     {
@@ -1113,11 +1053,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         };
       };
       `,
-      errors: [
-        error(3),
-        error(4),
-        error(3),
-      ],
+      errors: [error(3), error(4), error(3)],
     },
     // Invalid case: Excessive parent chain in return statement
     {
@@ -1131,9 +1067,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         return change.after.ref.parent.parent.parent.id;
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Excessive parent chain in function call argument
     {
@@ -1148,11 +1082,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         someFunction(change.before.ref.parent.parent.parent.parent.key);
       };
       `,
-      errors: [
-        error(3),
-        error(4),
-        error(3),
-      ],
+      errors: [error(3), error(4), error(3)],
     },
     // Invalid case: Excessive parent chain with assignment to another variable (false negative - limitation)
     // Note: This is a known limitation where the rule doesn't track ref assignments through variables
@@ -1186,9 +1116,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const uid = afterRef.ref.parent.parent.parent.id;
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Excessive parent chain with optional chaining
     {
@@ -1201,9 +1129,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const uid = change.after.ref.parent.parent.parent?.id;
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Excessive parent chain in nested object destructuring (false negative - limitation)
     // Note: This is a known limitation where the rule doesn't track ref assignments through nested destructuring
@@ -1382,9 +1308,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const uid = change.after.ref.parent.parent.parent.id;
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Excessive parent chain with rest parameters
     {
@@ -1397,9 +1321,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const uid = change.after.ref.parent.parent.parent.id;
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Excessive parent chain with JSDoc comments
     {
@@ -1416,9 +1338,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const uid = change.after.ref.parent.parent.parent.id;
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Excessive parent chain in different export patterns
     {
@@ -1433,9 +1353,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
 
       export { namedExcessiveHandler };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Excessive parent chain with union types
     {
@@ -1448,9 +1366,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const uid = change.after.ref.parent.parent.parent.id;
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Excessive parent chain with intersection types
     {
@@ -1463,9 +1379,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const uid = change.after.ref.parent.parent.parent.id;
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Excessive parent chain with spread operator in object
     {
@@ -1482,9 +1396,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         };
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Excessive parent chain with spread operator in array
     {
@@ -1501,9 +1413,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         ];
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Excessive parent chain in yield expression
     {
@@ -1516,9 +1426,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         yield change.after.ref.parent.parent.parent.id;
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Excessive parent chain in throw statement
     {
@@ -1534,9 +1442,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         }
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Excessive parent chain in new expression
     {
@@ -1550,9 +1456,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const instance = new SomeClass(change.after.ref.parent.parent.parent.id);
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Excessive parent chain in assignment expression
     {
@@ -1567,9 +1471,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         result = change.after.ref.parent.parent.parent.id;
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Excessive parent chain in update expression
     {
@@ -1584,9 +1486,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         counter.value += change.after.ref.parent.parent.parent.id.length;
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Excessive parent chain in sequence expression
     {
@@ -1600,9 +1500,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const result = (console.log('debug'), change.after.ref.parent.parent.parent.id);
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Excessive parent chain in unary expression
     {
@@ -1616,9 +1514,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const isValid = !!change.after.ref.parent.parent.parent.id;
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Excessive parent chain in binary expression
     {
@@ -1632,9 +1528,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const isEqual = change.after.ref.parent.parent.parent.id === 'expected';
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
     // Invalid case: Excessive parent chain in tagged template literal
     {
@@ -1648,9 +1542,7 @@ ruleTesterTs.run('no-excessive-parent-chain', noExcessiveParentChain, {
         const result = tag\`Path: \${change.after.ref.parent.parent.parent.id}\`;
       };
       `,
-      errors: [
-        error(3),
-      ],
+      errors: [error(3)],
     },
   ],
 });

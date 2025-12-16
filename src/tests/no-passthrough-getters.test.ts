@@ -547,9 +547,7 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
         }
       }
       `,
-      errors: [
-        error('deepProperty', 'this.settings.nested.deep.property'),
-      ],
+      errors: [error('deepProperty', 'this.settings.nested.deep.property')],
     },
 
     // Passthrough getter with different constructor parameter names

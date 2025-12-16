@@ -75,7 +75,9 @@ function describeMethodSignature(node: TSESTree.TSMethodSignature): string {
   return 'interface method';
 }
 
-function describeFunctionDeclaration(node: TSESTree.FunctionDeclaration): string {
+function describeFunctionDeclaration(
+  node: TSESTree.FunctionDeclaration,
+): string {
   if (node.id?.name) {
     return `function "${node.id.name}"`;
   }
@@ -262,8 +264,9 @@ function isOverloadedTsDeclareFunction(
         .filter(
           (
             value,
-          ): value is TSESTree.TSDeclareFunction & { id: TSESTree.Identifier } =>
-            Boolean(value?.id?.name),
+          ): value is TSESTree.TSDeclareFunction & {
+            id: TSESTree.Identifier;
+          } => Boolean(value?.id?.name),
         )
         .filter((decl) => decl.id.name === functionName);
 
@@ -323,221 +326,228 @@ function isTypeGuardFunction(node: TSESTree.Node): boolean {
 
 export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
   createRule<Options, MessageIds>({
-  name: 'no-explicit-return-type',
-  meta: {
-    type: 'suggestion',
-    docs: {
-      description:
-        "Disallow explicit return type annotations on functions when TypeScript can infer them. This reduces code verbosity and maintenance burden while leveraging TypeScript's powerful type inference. Exceptions are made for type guard functions (using the `is` keyword), recursive functions, overloaded functions, interface methods, and abstract methods where explicit types improve clarity.",
-      recommended: 'error',
-      requiresTypeChecking: false,
-      extendsBaseRule: false,
-    },
-    fixable: 'code',
-    schema: [
-      {
-        type: 'object',
-        properties: {
-          allowRecursiveFunctions: { type: 'boolean' },
-          allowOverloadedFunctions: { type: 'boolean' },
-          allowInterfaceMethodSignatures: { type: 'boolean' },
-          allowAbstractMethodSignatures: { type: 'boolean' },
-          allowDtsFiles: { type: 'boolean' },
-          allowFirestoreFunctionFiles: { type: 'boolean' },
+    name: 'no-explicit-return-type',
+    meta: {
+      type: 'suggestion',
+      docs: {
+        description:
+          "Disallow explicit return type annotations on functions when TypeScript can infer them. This reduces code verbosity and maintenance burden while leveraging TypeScript's powerful type inference. Exceptions are made for type guard functions (using the `is` keyword), recursive functions, overloaded functions, interface methods, and abstract methods where explicit types improve clarity.",
+        recommended: 'error',
+        requiresTypeChecking: false,
+        extendsBaseRule: false,
+      },
+      fixable: 'code',
+      schema: [
+        {
+          type: 'object',
+          properties: {
+            allowRecursiveFunctions: { type: 'boolean' },
+            allowOverloadedFunctions: { type: 'boolean' },
+            allowInterfaceMethodSignatures: { type: 'boolean' },
+            allowAbstractMethodSignatures: { type: 'boolean' },
+            allowDtsFiles: { type: 'boolean' },
+            allowFirestoreFunctionFiles: { type: 'boolean' },
+          },
+          additionalProperties: false,
         },
-        additionalProperties: false,
+      ],
+      messages: {
+        noExplicitReturnTypeInferable:
+          "What's wrong: {{functionKind}} has an explicit return type annotation. \u2192 Why it matters: it must be updated manually and can drift from what the implementation actually returns, hiding bugs behind a stale type. \u2192 How to fix: remove the return type annotation so TypeScript infers it from the implementation.",
+        noExplicitReturnTypeNonInferable:
+          "What's wrong: {{functionKind}} has an explicit return type annotation but no implementation body. \u2192 Why it matters: TypeScript cannot infer the return type here; removing it widens the return type to `any`. \u2192 How to fix: keep the annotation, or provide an implementation body where inference can succeed.",
       },
-    ],
-    messages: {
-      noExplicitReturnTypeInferable:
-        "What's wrong: {{functionKind}} has an explicit return type annotation. \u2192 Why it matters: it must be updated manually and can drift from what the implementation actually returns, hiding bugs behind a stale type. \u2192 How to fix: remove the return type annotation so TypeScript infers it from the implementation.",
-      noExplicitReturnTypeNonInferable:
-        "What's wrong: {{functionKind}} has an explicit return type annotation but no implementation body. \u2192 Why it matters: TypeScript cannot infer the return type here; removing it widens the return type to `any`. \u2192 How to fix: keep the annotation, or provide an implementation body where inference can succeed.",
     },
-  },
-  defaultOptions: [defaultOptions],
-  create(context, [options]) {
-    const mergedOptions = { ...defaultOptions, ...options };
-    const filename = context.getFilename();
+    defaultOptions: [defaultOptions],
+    create(context, [options]) {
+      const mergedOptions = { ...defaultOptions, ...options };
+      const filename = context.getFilename();
 
-    if (
-      (mergedOptions.allowDtsFiles && filename.endsWith('.d.ts')) ||
-      (mergedOptions.allowFirestoreFunctionFiles && filename.endsWith('.f.ts'))
-    ) {
-      return {};
-    }
+      if (
+        (mergedOptions.allowDtsFiles && filename.endsWith('.d.ts')) ||
+        (mergedOptions.allowFirestoreFunctionFiles &&
+          filename.endsWith('.f.ts'))
+      ) {
+        return {};
+      }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    function fixReturnType(fixer: any, node: any) {
-      const returnType = node.returnType || node.value?.returnType;
-      if (!returnType) return null;
+      type FixableNode =
+        | TSESTree.FunctionDeclaration
+        | TSESTree.FunctionExpression
+        | TSESTree.ArrowFunctionExpression
+        | TSESTree.MethodDefinition;
 
-      // Create a fix that removes the return type annotation
-      return fixer.remove(returnType);
-    }
+      function fixReturnType(
+        fixer: TSESLint.RuleFixer,
+        node: FixableNode,
+      ): TSESLint.RuleFix | null {
+        // Some nodes expose returnType directly while others nest it under value.
+        const returnType =
+          'returnType' in node
+            ? node.returnType
+            : 'value' in node
+            ? node.value.returnType
+            : null;
+        if (!returnType) return null;
 
-    return {
-      FunctionDeclaration(node) {
-        const returnType = node.returnType;
-        if (!returnType) return;
+        return fixer.remove(returnType);
+      }
 
-        if (
-          isTypeGuardFunction(node) ||
-          (mergedOptions.allowRecursiveFunctions && isRecursiveFunction(node))
-        ) {
-          return;
-        }
+      return {
+        FunctionDeclaration(node) {
+          const returnType = node.returnType;
+          if (!returnType) return;
 
-        const isInferable = Boolean(node.body);
+          if (
+            isTypeGuardFunction(node) ||
+            (mergedOptions.allowRecursiveFunctions && isRecursiveFunction(node))
+          ) {
+            return;
+          }
 
-        context.report({
-          node: returnType,
-          messageId: isInferable
-            ? 'noExplicitReturnTypeInferable'
-            : 'noExplicitReturnTypeNonInferable',
-          data: { functionKind: describeFunctionKind(node) },
-          ...(isInferable ? { fix: (fixer) => fixReturnType(fixer, node) } : {}),
-        });
-      },
+          const isInferable = Boolean(node.body);
 
-      FunctionExpression(node) {
-        const returnType = node.returnType;
-        if (!returnType) return;
+          context.report({
+            node: returnType,
+            messageId: isInferable
+              ? 'noExplicitReturnTypeInferable'
+              : 'noExplicitReturnTypeNonInferable',
+            data: { functionKind: describeFunctionKind(node) },
+            ...(isInferable
+              ? { fix: (fixer) => fixReturnType(fixer, node) }
+              : {}),
+          });
+        },
 
-        if (node.parent?.type === AST_NODE_TYPES.MethodDefinition) {
-          return;
-        }
+        FunctionExpression(node) {
+          const returnType = node.returnType;
+          if (!returnType) return;
 
-        if (
-          isTypeGuardFunction(node) ||
-          (mergedOptions.allowRecursiveFunctions && isRecursiveFunction(node))
-        ) {
-          return;
-        }
+          if (node.parent?.type === AST_NODE_TYPES.MethodDefinition) {
+            return;
+          }
 
-        const isInferable = Boolean(node.body);
+          if (
+            isTypeGuardFunction(node) ||
+            (mergedOptions.allowRecursiveFunctions && isRecursiveFunction(node))
+          ) {
+            return;
+          }
 
-        context.report({
-          node: returnType,
-          messageId: isInferable
-            ? 'noExplicitReturnTypeInferable'
-            : 'noExplicitReturnTypeNonInferable',
-          data: { functionKind: describeFunctionKind(node) },
-          ...(isInferable ? { fix: (fixer) => fixReturnType(fixer, node) } : {}),
-        });
-      },
+          context.report({
+            node: returnType,
+            messageId: 'noExplicitReturnTypeInferable',
+            data: { functionKind: describeFunctionKind(node) },
+            fix: (fixer) => fixReturnType(fixer, node),
+          });
+        },
 
-      ArrowFunctionExpression(node) {
-        const returnType = node.returnType;
-        if (!returnType) return;
+        ArrowFunctionExpression(node) {
+          const returnType = node.returnType;
+          if (!returnType) return;
 
-        if (isTypeGuardFunction(node)) {
-          return;
-        }
+          if (isTypeGuardFunction(node)) {
+            return;
+          }
 
-        const isInferable = true;
+          context.report({
+            node: returnType,
+            messageId: 'noExplicitReturnTypeInferable',
+            data: { functionKind: describeFunctionKind(node) },
+            fix: (fixer) => fixReturnType(fixer, node),
+          });
+        },
 
-        context.report({
-          node: returnType,
-          messageId: isInferable
-            ? 'noExplicitReturnTypeInferable'
-            : 'noExplicitReturnTypeNonInferable',
-          data: { functionKind: describeFunctionKind(node) },
-          ...(isInferable ? { fix: (fixer) => fixReturnType(fixer, node) } : {}),
-        });
-      },
+        TSMethodSignature(node) {
+          const returnType = node.returnType;
+          if (!returnType) return;
 
-      TSMethodSignature(node) {
-        const returnType = node.returnType;
-        if (!returnType) return;
+          if (mergedOptions.allowInterfaceMethodSignatures) {
+            return;
+          }
 
-        if (mergedOptions.allowInterfaceMethodSignatures) {
-          return;
-        }
+          if (
+            mergedOptions.allowOverloadedFunctions &&
+            isOverloadedFunction(node)
+          ) {
+            return;
+          }
 
-        if (
-          mergedOptions.allowOverloadedFunctions &&
-          isOverloadedFunction(node)
-        ) {
-          return;
-        }
+          context.report({
+            node: returnType,
+            messageId: 'noExplicitReturnTypeNonInferable',
+            data: { functionKind: describeFunctionKind(node) },
+          });
+        },
 
-        context.report({
-          node: returnType,
-          messageId: 'noExplicitReturnTypeNonInferable',
-          data: { functionKind: describeFunctionKind(node) },
-        });
-      },
+        MethodDefinition(node) {
+          const returnType = node.value.returnType;
+          if (!returnType) return;
 
-      MethodDefinition(node) {
-        const returnType = node.value.returnType;
-        if (!returnType) return;
+          if (
+            isTypeGuardFunction(node.value) ||
+            (mergedOptions.allowAbstractMethodSignatures &&
+              isInterfaceOrAbstractMethodSignature(node))
+          ) {
+            return;
+          }
 
-        if (
-          isTypeGuardFunction(node.value) ||
-          (mergedOptions.allowAbstractMethodSignatures &&
-            isInterfaceOrAbstractMethodSignature(node))
-        ) {
-          return;
-        }
+          const isInferable = Boolean(node.value.body);
 
-        const isInferable = Boolean(node.value.body);
+          context.report({
+            node: returnType,
+            messageId: isInferable
+              ? 'noExplicitReturnTypeInferable'
+              : 'noExplicitReturnTypeNonInferable',
+            data: { functionKind: describeFunctionKind(node) },
+            ...(isInferable
+              ? { fix: (fixer) => fixReturnType(fixer, node) }
+              : {}),
+          });
+        },
 
-        context.report({
-          node: returnType,
-          messageId: isInferable
-            ? 'noExplicitReturnTypeInferable'
-            : 'noExplicitReturnTypeNonInferable',
-          data: { functionKind: describeFunctionKind(node) },
-          ...(isInferable ? { fix: (fixer) => fixReturnType(fixer, node) } : {}),
-        });
-      },
+        TSAbstractMethodDefinition(node) {
+          const returnType = node.value.returnType;
+          if (!returnType) return;
 
-      TSAbstractMethodDefinition(node) {
-        const returnType = node.value.returnType;
-        if (!returnType) return;
+          if (
+            isTypeGuardFunction(node.value) ||
+            (mergedOptions.allowAbstractMethodSignatures &&
+              isInterfaceOrAbstractMethodSignature(node))
+          ) {
+            return;
+          }
 
-        if (
-          isTypeGuardFunction(node.value) ||
-          (mergedOptions.allowAbstractMethodSignatures &&
-            isInterfaceOrAbstractMethodSignature(node))
-        ) {
-          return;
-        }
+          // Abstract methods never have bodies; they are always non-inferable and
+          // intentionally have no fixer.
+          context.report({
+            node: returnType,
+            messageId: 'noExplicitReturnTypeNonInferable',
+            data: { functionKind: describeFunctionKind(node) },
+          });
+        },
 
-        const isInferable = Boolean(node.value.body);
+        TSDeclareFunction(node) {
+          const returnType = node.returnType;
+          if (!returnType) return;
 
-        context.report({
-          node: returnType,
-          messageId: isInferable
-            ? 'noExplicitReturnTypeInferable'
-            : 'noExplicitReturnTypeNonInferable',
-          data: { functionKind: describeFunctionKind(node) },
-          ...(isInferable ? { fix: (fixer) => fixReturnType(fixer, node) } : {}),
-        });
-      },
+          if (isTypeGuardFunction(node)) {
+            return;
+          }
 
-      TSDeclareFunction(node) {
-        const returnType = node.returnType;
-        if (!returnType) return;
+          if (
+            mergedOptions.allowOverloadedFunctions &&
+            isOverloadedTsDeclareFunction(node)
+          ) {
+            return;
+          }
 
-        if (isTypeGuardFunction(node)) {
-          return;
-        }
-
-        if (
-          mergedOptions.allowOverloadedFunctions &&
-          isOverloadedTsDeclareFunction(node)
-        ) {
-          return;
-        }
-
-        context.report({
-          node: returnType,
-          messageId: 'noExplicitReturnTypeNonInferable',
-          data: { functionKind: describeFunctionKind(node) },
-        });
-      },
-    };
-  },
-});
+          context.report({
+            node: returnType,
+            messageId: 'noExplicitReturnTypeNonInferable',
+            data: { functionKind: describeFunctionKind(node) },
+          });
+        },
+      };
+    },
+  });
