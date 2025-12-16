@@ -10,7 +10,7 @@ const buildMessage = (
     setterMethod === 'set()' ? 'setAll()' : 'overwriteAll()'
   } so the writes stay grouped and latency stays predictable.`;
 
-type MessageIds = 'preferSetAll' | 'preferOverwriteAll';
+type MessageIds = 'preferBatch';
 type ErrorExpectation = TSESLint.TestCaseError<MessageIds>;
 
 const expectSetAll = (contextDescription: string): ErrorExpectation =>
