@@ -120,6 +120,15 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
         }
       },
       TemplateLiteral(node) {
+        const hasIndexHtmlInStatic = node.quasis.some((quasi) => {
+          const text = quasi.value.cooked ?? quasi.value.raw;
+          return text.includes('/index.html');
+        });
+
+        if (!hasIndexHtmlInStatic) {
+          return;
+        }
+
         const value = describeTemplateLiteral(node, sourceCode);
 
         if (value.includes('/index.html')) {
