@@ -41,11 +41,12 @@ function hasQueryOrHash(url: string): boolean {
  */
 function fixUrl(url: string): string {
   // Replace /index.html with /
-  return url.replace(/\/index\.html($|[?#])/, '/$1');
+  return url.replace(/\/index\.html(?=($|[?#]|\$\{))/, '/');
 }
 
 /**
- * Reconstructs a template literal as it appears in source, including expressions.
+ * Reconstructs a template literal using cooked values so static checks and
+ * reporting align with what runtime sees (escape sequences are resolved).
  */
 function describeTemplateLiteral(
   node: TSESTree.TemplateLiteral,
@@ -54,7 +55,8 @@ function describeTemplateLiteral(
   const parts: string[] = [];
 
   node.quasis.forEach((quasi, index) => {
-    parts.push(quasi.value.raw);
+    const text = quasi.value.cooked ?? quasi.value.raw;
+    parts.push(text);
 
     const expression = node.expressions[index];
     if (expression) {
@@ -131,17 +133,22 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
 
         const value = describeTemplateLiteral(node, sourceCode);
 
-        if (value.includes('/index.html')) {
-          context.report({
-            node,
-            messageId: 'omitIndexHtml',
-            data: {
-              url: value,
-              suggestedUrl: fixUrl(value),
-            },
-            // No automatic fix for template literals as they may contain dynamic parts
-          });
-        }
+        if (!value.includes('/index.html')) return;
+
+        const hasDynamicParts = node.expressions.length > 0;
+        const suggestedUrl = hasDynamicParts
+          ? `\`${fixUrl(value)}\``
+          : fixUrl(value);
+
+        context.report({
+          node,
+          messageId: 'omitIndexHtml',
+          data: {
+            url: value,
+            suggestedUrl,
+          },
+          // No automatic fix for template literals as they may contain dynamic parts
+        });
       },
     };
   },
