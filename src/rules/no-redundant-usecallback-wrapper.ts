@@ -68,8 +68,7 @@ function getParams(
   for (const p of node.params) {
     if (p.type === AST_NODE_TYPES.Identifier) {
       names.add(p.name);
-    }
-    else if (p.type === AST_NODE_TYPES.ObjectPattern) {
+    } else if (p.type === AST_NODE_TYPES.ObjectPattern) {
       for (const prop of p.properties) {
         if (prop.type === AST_NODE_TYPES.Property) {
           // Collect bound identifier names (aliases/defaults)
@@ -221,9 +220,10 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
 
       CallExpression(node) {
         // Detect useCallback wrappers (including React.useCallback)
-        const calleeNode = unwrapChainExpression<TSESTree.LeftHandSideExpression>(
-          node.callee as TSESTree.Node,
-        );
+        const calleeNode =
+          unwrapChainExpression<TSESTree.LeftHandSideExpression>(
+            node.callee as TSESTree.Node,
+          );
         if (!calleeNode) return;
         const isUseCallback =
           (calleeNode.type === AST_NODE_TYPES.Identifier &&
