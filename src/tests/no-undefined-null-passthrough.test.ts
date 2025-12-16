@@ -1,6 +1,11 @@
 import { noUndefinedNullPassthrough } from '../rules/no-undefined-null-passthrough';
 import { ruleTesterTs } from '../utils/ruleTester';
 
+const error = (paramName: string) => ({
+  messageId: 'unexpected' as const,
+  data: { paramName },
+});
+
 ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
   valid: [
     // Functions that do something with null/undefined other than returning it
@@ -256,7 +261,7 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
         const localTrackPublication = audioTrackPublications.values().next().value;
         return localTrackPublication?.audioTrack;
       }`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('audioTrackPublications')],
     },
 
     // Arrow function with early return for null/undefined
@@ -268,7 +273,7 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
         const localTrackPublication = audioTrackPublications.values().next().value;
         return localTrackPublication?.audioTrack;
       }`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('audioTrackPublications')],
     },
 
     // Function expression with early return for null/undefined
@@ -280,7 +285,7 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
         const localTrackPublication = audioTrackPublications.values().next().value;
         return localTrackPublication?.audioTrack;
       }`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('audioTrackPublications')],
     },
 
     // Early return with null
@@ -289,7 +294,7 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
         if (!data) return null;
         return data.process();
       }`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('data')],
     },
 
     // Explicit null/undefined check
@@ -300,19 +305,19 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
         }
         return data.process();
       }`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('data')],
     },
 
     // Arrow function with implicit return using logical operators
     {
       code: `const getData = (data) => data && data.value`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('data')],
     },
 
     // Arrow function with conditional expression
     {
       code: `const getData = (data) => data ? data.value : null`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('data')],
     },
 
     // Function with multiple parameters and early return
@@ -321,7 +326,7 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
         if (!data) return;
         return data.process(options);
       }`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('data')],
     },
 
     // Arrow function with multiple parameters and early return
@@ -330,7 +335,7 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
         if (!items) return;
         return items.filter(filter);
       }`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('items')],
     },
 
     // Additional edge cases for comprehensive testing
@@ -358,7 +363,7 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
             });
           });
       };`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('rounds')],
     },
 
     // Function with default parameter
@@ -367,7 +372,7 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
         if (!data) return;
         return data.value;
       }`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('data')],
     },
 
     // Function with multiple null checks
@@ -377,7 +382,7 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
         if (options === undefined) return;
         return data.process(options);
       }`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('data')],
     },
 
     // Function with strict equality checks
@@ -386,7 +391,7 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
         if (data === null) return null;
         return data.items;
       }`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('data')],
     },
 
     // Function with loose equality checks
@@ -395,25 +400,25 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
         if (data == null) return;
         return data.items;
       }`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('data')],
     },
 
     // Arrow function with expression body returning parameter directly
     {
       code: `const getId = (user) => user && user.id`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('user')],
     },
 
     // Arrow function with ternary returning null
     {
       code: `const getName = (user) => user ? user.name : null`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('user')],
     },
 
     // Arrow function with ternary returning undefined
     {
       code: `const getName = (user) => user ? user.name : undefined`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('user')],
     },
 
     // Function with multiple parameters where second parameter is checked
@@ -422,7 +427,7 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
         if (!data) return;
         return data.filter(item => item.type === type);
       }`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('data')],
     },
 
     // Function with three parameters
@@ -431,7 +436,7 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
         if (!b) return;
         return b.process(a, c);
       }`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('b')],
     },
 
     // Function expression assigned to variable
@@ -440,7 +445,7 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
         if (!data) return null;
         return data.items;
       }`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('data')],
     },
 
     // Method in object literal
@@ -451,7 +456,7 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
           return data.items;
         }
       }`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('data')],
     },
 
     // Method in class
@@ -462,7 +467,7 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
           return data.items;
         }
       }`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('data')],
     },
 
     // Static method in class
@@ -473,7 +478,7 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
           return data.items;
         }
       }`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('data')],
     },
 
     // Async function
@@ -482,7 +487,7 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
         if (!data) return;
         return await data.process();
       }`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('data')],
     },
 
     // Generator function
@@ -491,7 +496,7 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
         if (!data) return;
         yield data.value;
       }`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('data')],
     },
 
     // Function with complex boolean logic
@@ -500,7 +505,7 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
         if (!data || !options) return;
         return data.process(options);
       }`,
-      errors: [{ messageId: 'unexpected' }],
+      errors: [error('data')],
     },
   ],
 });

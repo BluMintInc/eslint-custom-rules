@@ -48,7 +48,7 @@ export const noMarginProperties = createRule<Options, MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Discourage using margin properties (margin, marginLeft, marginRight, marginTop, marginBottom, mx, my, etc.) for spacing in MUI components. Instead, prefer defining spacing with padding, gap, or the spacing prop for more predictable layouts.',
+        'Prevent margin properties (margin, marginLeft, marginRight, marginTop, marginBottom, mx, my, etc.) in MUI styling because margins fight container-controlled spacing, double gutters, and misaligned breakpoints; keep spacing centralized with padding, gap, or spacing props instead.',
       recommended: 'warn',
     },
     schema: [
@@ -65,7 +65,7 @@ export const noMarginProperties = createRule<Options, MessageIds>({
     ],
     messages: {
       noMarginProperties:
-        'Avoid using {{property}} for spacing in MUI components. Use padding, gap, or the spacing prop instead for more predictable layouts. See https://www.youtube.com/watch?v=KVQMoEFUee8 for more details.',
+        'Margin property "{{property}}" in MUI styling fights container-controlled spacing (Stack/Grid spacing, gap, responsive gutters) and produces double gutters, misalignment, and overflow as layouts shift. Keep spacing inside the component with padding or let the parent handle separation via gap/spacing so layout remains predictable.',
     },
   },
   defaultOptions: [{ autofix: false }],

@@ -220,7 +220,9 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
 
       if (
         target.type === AST_NODE_TYPES.Identifier &&
-        (target.name === 'transaction' || target.name === 'tx' || target.name === 't')
+        (target.name === 'transaction' ||
+          target.name === 'tx' ||
+          target.name === 't')
       ) {
         firestoreTransactionVariables.add(varName);
         return true;
