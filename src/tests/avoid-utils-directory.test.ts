@@ -8,7 +8,7 @@ const formatError = (filePath: string) =>
   ({
     message: formatMessage(filePath),
     // RuleTester accepts a raw message, but its types expect messageId; cast keeps the assertion
-  }) as unknown as { messageId: 'avoidUtils' };
+  } as unknown as { messageId: 'avoidUtils' });
 
 ruleTesterTs.run('avoid-utils-directory', avoidUtilsDirectory, {
   valid: [
