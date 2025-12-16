@@ -4,24 +4,37 @@
 
 <!-- end auto-generated rule header -->
 
-This rule helps enforce better practices in Firestore and RealtimeDB change handlers by discouraging excessive use of the `ref.parent` property chain. When developers need to access parent/ancestor documents in Firestore paths, they often use multiple chained `.parent` calls (e.g., `ref.parent.parent.parent`), which is error-prone, difficult to read, and fragile to refactoring. Instead, handlers should access path parameters via the `params` object provided in the event parameter, which offers a type-safe, more maintainable approach to accessing path components.
+Firestore and RealtimeDB triggers already surface typed path segments through `event.params`. Long `ref.parent` chains bypass those params and assume the collection layout never changes, which makes handlers brittle and difficult to follow. This rule reports handler code that walks more than two consecutive `ref.parent` hops and points developers toward the typed params they already receive.
 
-## Rule Details
+## What this rule checks
 
-This rule is aimed at preventing long chains of `.parent` calls in Firestore and RealtimeDB change handlers. It only applies to functions that are typed as one of the following handler types:
+- Applies only to handler functions typed as:
+  - `DocumentChangeHandler`
+  - `DocumentChangeHandlerTransaction`
+  - `RealtimeDbChangeHandler`
+  - `RealtimeDbChangeHandlerTransaction`
+- Reports `ref.parent` chains longer than two consecutive hops inside those handlers, including when the event data is assigned to another variable.
+- Ignores non-handler functions and member access unrelated to a `ref.parent` chain.
 
-- `DocumentChangeHandler`
-- `DocumentChangeHandlerTransaction`
-- `RealtimeDbChangeHandler`
-- `RealtimeDbChangeHandlerTransaction`
+The rule allows up to two `.parent` hops for simple relative navigation; anything longer triggers a message explaining why the chain is risky and how to replace it with params-based access. The message template is:
+`Found {{count}} consecutive ref.parent hops in this handler. Long parent chains break when Firestore/RealtimeDB paths change and bypass the typed params the trigger already provides. Read path components from event.params (for example, params.userId) instead of walking ref.parent repeatedly.`
 
-The rule allows up to 2 consecutive `.parent` calls before raising a warning, as this is often reasonable for simple relative path navigation.
+## Why this rule matters
 
-## Options
+- **Path drift creates runtime bugs**: A collection rename or nesting change invalidates every `ref.parent.parent.parent` chain and fails at runtime.
+- **Params already hold the identifiers**: `event.params` is typed from the trigger path, so using it keeps handlers aligned with declared routes.
+- **Intent is clearer**: `params.userId` communicates which path component is being read, while a long parent chain hides intent.
+- **Consistent handler pattern**: Using params yields the same readable approach across all triggers.
 
-This rule has no options. The maximum allowed consecutive `.parent` calls is fixed at `2`.
+## How to fix
 
-Examples of **incorrect** code for this rule:
+- Prefer `event.params` for path data (for example, `const { userId } = event.params;`).
+- Keep `ref.parent` usage to at most two hops when necessary (for example, walking to the immediate parent collection).
+- When you see the lint message, replace the chained `ref.parent` access with the equivalent `params` lookup from the handler arguments.
+
+## Examples
+
+### Incorrect
 
 ```typescript
 export const propagateOverwolfPlacement: DocumentChangeHandler<
@@ -29,12 +42,9 @@ export const propagateOverwolfPlacement: DocumentChangeHandler<
   OverwolfUpdatePath
 > = async (event) => {
   const { data: change } = event;
-  const { gameId: overwolfGameId, data } = change.after.data() || {};
 
   // Brittle navigation using multiple parent calls
-  const uid = change.after.ref.parent.parent!.parent.parent!.id;
-
-  // Rest of the handler implementation...
+  const uid = change.after.ref.parent.parent.parent.parent.id;
 };
 
 // Also catches when event data is extracted to variables
@@ -44,7 +54,7 @@ export const anotherHandler: DocumentChangeHandler<SomeType, SomePath> = async (
 };
 ```
 
-Examples of **correct** code for this rule:
+### Correct
 
 ```typescript
 export const propagateOverwolfPlacement: DocumentChangeHandler<
@@ -53,11 +63,11 @@ export const propagateOverwolfPlacement: DocumentChangeHandler<
 > = async (event) => {
   const {
     data: change,
-    params: { userId } // Access path parameter directly from event params
+    params: { userId }, // Access path parameter directly from event params
   } = event;
-  const { gameId: overwolfGameId, data } = change.after.data() || {};
 
-  // Rest of the handler implementation using userId...
+  // Use params instead of walking parents
+  await doSomething(userId);
 };
 
 // Short parent chains are allowed (up to 2 consecutive calls)
