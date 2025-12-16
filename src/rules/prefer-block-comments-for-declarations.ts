@@ -88,12 +88,19 @@ export const preferBlockCommentsForDeclarations: TSESLint.RuleModule<
       const lastComment = comments[comments.length - 1];
 
       if (lastComment && isLineCommentBeforeDeclaration(lastComment, node)) {
+        const commentText = lastComment.value.trim();
+        const commentLabel = commentText || 'declaration comment';
+
         context.report({
           loc: lastComment.loc,
           messageId: 'preferBlockComment',
+          data: { commentText: commentLabel },
           fix: (fixer) => {
-            const commentText = lastComment.value.trim();
-            return fixer.replaceText(lastComment, `/** ${commentText} */`);
+            if (commentLabel.includes('*/')) {
+              return null;
+            }
+
+            return fixer.replaceText(lastComment, `/** ${commentLabel} */`);
           },
         });
       }
@@ -158,7 +165,7 @@ export const preferBlockCommentsForDeclarations: TSESLint.RuleModule<
     schema: [],
     messages: {
       preferBlockComment:
-        'Use block comments (/** */) instead of line comments (//) for declarations to improve IDE support.',
+        'Line comment "{{commentText}}" sits on a declaration, and IDE hovers and TypeScript docs ignore it as documentation. Rewrite it as a block comment (/** ... */) so the text stays attached to the declaration and tooling surfaces it.',
     },
   },
   defaultOptions: [],
