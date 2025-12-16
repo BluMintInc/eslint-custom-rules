@@ -371,9 +371,23 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
         return {};
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      function fixReturnType(fixer: any, node: any) {
-        const returnType = node.returnType || node.value?.returnType;
+      type FixableNode =
+        | TSESTree.FunctionDeclaration
+        | TSESTree.FunctionExpression
+        | TSESTree.ArrowFunctionExpression
+        | TSESTree.MethodDefinition
+        | TSESTree.TSAbstractMethodDefinition;
+
+      function fixReturnType(
+        fixer: TSESLint.RuleFixer,
+        node: FixableNode,
+      ): TSESLint.RuleFix | null {
+        const returnType =
+          'returnType' in node
+            ? node.returnType
+            : 'value' in node
+            ? node.value.returnType
+            : null;
         if (!returnType) return null;
 
         // Create a fix that removes the return type annotation
@@ -443,17 +457,11 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
             return;
           }
 
-          const isInferable = true;
-
           context.report({
             node: returnType,
-            messageId: isInferable
-              ? 'noExplicitReturnTypeInferable'
-              : 'noExplicitReturnTypeNonInferable',
+            messageId: 'noExplicitReturnTypeInferable',
             data: { functionKind: describeFunctionKind(node) },
-            ...(isInferable
-              ? { fix: (fixer) => fixReturnType(fixer, node) }
-              : {}),
+            fix: (fixer) => fixReturnType(fixer, node),
           });
         },
 
@@ -517,17 +525,12 @@ export const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options> =
             return;
           }
 
-          const isInferable = Boolean(node.value.body);
-
+          // Abstract methods never have bodies; they are always non-inferable and
+          // intentionally have no fixer.
           context.report({
             node: returnType,
-            messageId: isInferable
-              ? 'noExplicitReturnTypeInferable'
-              : 'noExplicitReturnTypeNonInferable',
+            messageId: 'noExplicitReturnTypeNonInferable',
             data: { functionKind: describeFunctionKind(node) },
-            ...(isInferable
-              ? { fix: (fixer) => fixReturnType(fixer, node) }
-              : {}),
           });
         },
 
