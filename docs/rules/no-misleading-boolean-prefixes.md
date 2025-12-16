@@ -66,7 +66,7 @@ function getConfig() {
 - Explicit `boolean` return types or `Promise<boolean>` (and unions with `null`/`undefined`/`void`)
 - Obvious boolean expressions: comparisons (`>`, `===`), negations (`!x`, `!!x`), or `Boolean(x)`
 
-#### How to fix
+### How to fix
 
 - Return a real boolean: add a comparison, wrap with `Boolean(...)`, or ensure the annotated return type is `boolean`/`Promise<boolean>`.
 - Rename the function to drop the boolean-style prefix if it legitimately returns a non-boolean value (e.g., `getUser`, `loadData`).
