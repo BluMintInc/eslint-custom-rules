@@ -28,7 +28,7 @@ function matchesAllowedSource(
   );
 }
 
-function isAstNode(value: unknown): value is TSESTree.Node {
+function hasNodeStructure(value: unknown): value is TSESTree.Node {
   return (
     !!value &&
     typeof value === 'object' &&
@@ -58,11 +58,11 @@ function walkAst(
     const child = anyNode[key];
     if (Array.isArray(child)) {
       for (const c of child) {
-        if (isAstNode(c)) {
+        if (hasNodeStructure(c)) {
           walkAst(c, visitor, visited);
         }
       }
-    } else if (isAstNode(child)) {
+    } else if (hasNodeStructure(child)) {
       walkAst(child, visitor, visited);
     }
   }
@@ -294,23 +294,23 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
         if (!useDynamicImportInfo) return;
 
         const identifierName = info.idText;
-        let usedInJsx = false;
-        const scopeBody = program.body;
-        scopeBody.forEach((b) =>
+        const usedInJsx = program.body.some((b) => {
+          let found = false;
           walkAst(b, (n) => {
-            if (usedInJsx) return false; // early exit
+            if (found) return false;
             if (n.type === AST_NODE_TYPES.JSXOpeningElement) {
               const name = n.name;
               if (name.type === AST_NODE_TYPES.JSXIdentifier) {
                 if (name.name === identifierName) {
-                  usedInJsx = true;
-                  return false; // stop walking
+                  found = true;
+                  return false;
                 }
               }
             }
             return undefined;
-          }),
-        );
+          });
+          return found;
+        });
 
         if (!usedInJsx) {
           // Skip to avoid flagging non-component dynamic imports
