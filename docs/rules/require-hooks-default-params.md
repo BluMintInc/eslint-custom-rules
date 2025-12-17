@@ -8,7 +8,7 @@
 
 This rule enforces that React hooks with a single parameter where all properties are optional should default to an empty object. This prevents potential runtime errors from accessing properties of undefined and makes the hook's API more predictable.
 
-React hooks often receive a single "options" object. When every property on that object is optional, callers naturally expect to be able to omit the argument. If the hook does not default the parameter, the hook receives `undefined`, destructuring throws, and the API implies the object itself is required even though each field is optional. Defaulting to `{}` keeps the hook safe to call with no arguments and makes the contract explicit.
+React hooks often receive a single "options" object. When every property on that object is optional, callers naturally expect to omit the argument. If the hook does not default the parameter, the parameter is `undefined`, so destructuring or property access throws even though each field is optional. Defaulting to `{}` keeps the hook safe to call with no arguments and makes the contract explicit.
 
 ## Why this matters
 
@@ -19,7 +19,6 @@ React hooks often receive a single "options" object. When every property on that
 ## How to fix
 
 - If a hook takes one object parameter and all properties are optional, add a default empty object: `({ foo, bar }: Options = {})`.
-- If you want to enforce that the object itself is required, add at least one required property instead of relying on this rule.
 
 ## Examples
 
@@ -73,4 +72,4 @@ const useConfig = ({ debug, timeout }: Config = {}) => {
 ## When Not To Use It
 
 - You want the options object itself to be required; in that case, add at least one required field instead of defaulting to `{}`.
-- The hook accepts multiple parameters or the first parameter is not an object; this rule only targets a single object parameter with all-optional fields.
+- The hook accepts multiple parameters, or the first parameter is not an object.
