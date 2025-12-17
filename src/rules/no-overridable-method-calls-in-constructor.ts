@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { getMethodName } from '../utils/getMethodName';
 
 type MessageIds = 'noOverridableMethodCallsInConstructor';
 
@@ -22,6 +23,7 @@ export const noOverridableMethodCallsInConstructor = createRule<[], MessageIds>(
     },
     defaultOptions: [],
     create(context) {
+      const sourceCode = context.getSourceCode();
       /**
        * Checks if a method is overridable (not private and not static)
        */
@@ -62,7 +64,7 @@ export const noOverridableMethodCallsInConstructor = createRule<[], MessageIds>(
 
         for (const member of classNode.body.body) {
           if (member.type === AST_NODE_TYPES.MethodDefinition) {
-            const methodName = getMethodName(member.key);
+            const methodName = getMethodNameFromDefinition(member);
             if (methodName) {
               if (isAbstractMethod(member)) {
                 abstractMethods.add(methodName);
@@ -73,7 +75,7 @@ export const noOverridableMethodCallsInConstructor = createRule<[], MessageIds>(
           } else if (
             member.type === AST_NODE_TYPES.TSAbstractMethodDefinition
           ) {
-            const methodName = getMethodName(member.key);
+            const methodName = getMethodNameFromDefinition(member);
             if (methodName) {
               abstractMethods.add(methodName);
             }
@@ -84,19 +86,18 @@ export const noOverridableMethodCallsInConstructor = createRule<[], MessageIds>(
       }
 
       /**
-       * Gets the method name from a property key
+       * Gets the method name from a method definition
        */
-      function getMethodName(key: TSESTree.PropertyName): string | null {
-        switch (key.type) {
-          case AST_NODE_TYPES.Identifier:
-            return key.name;
-          case AST_NODE_TYPES.Literal:
-            return typeof key.value === 'string'
-              ? key.value
-              : String(key.value);
-          default:
-            return null; // Computed property names are not handled
-        }
+      function getMethodNameFromDefinition(
+        method:
+          | TSESTree.MethodDefinition
+          | TSESTree.TSAbstractMethodDefinition,
+      ): string | null {
+        const name = getMethodName(method, sourceCode, {
+          computedFallbackToText: false,
+        });
+
+        return name || null; // Computed property names are not handled
       }
 
       /**

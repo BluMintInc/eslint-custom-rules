@@ -1,5 +1,6 @@
 import { createRule } from '../utils/createRule';
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { getMethodName } from '../utils/getMethodName';
 
 const COMPLEX_EXPRESSION_TYPES = new Set<TSESTree.Expression['type']>([
   AST_NODE_TYPES.CallExpression,
@@ -12,6 +13,7 @@ const COMPLEX_EXPRESSION_TYPES = new Set<TSESTree.Expression['type']>([
 
 export const noPassthroughGetters = createRule({
   create(context) {
+    const sourceCode = context.getSourceCode();
     return {
       // Target getter methods in classes
       MethodDefinition(node) {
@@ -65,7 +67,10 @@ export const noPassthroughGetters = createRule({
 
           // Check if the return statement is accessing a property from a constructor parameter
           if (isConstructorParameterPropertyAccess(returnStatement.argument)) {
-            const getterName = getMethodName(node);
+            const getterName =
+              getMethodName(node, sourceCode, {
+                computedFallbackToText: false,
+              }) || 'getter';
             const propertyPath =
               getMemberPath(returnStatement.argument) ??
               'nested property on a constructor-injected object';
@@ -132,18 +137,6 @@ export const noPassthroughGetters = createRule({
         current = current.object as TSESTree.Expression;
       }
       return false;
-    }
-
-    function getMethodName(node: TSESTree.MethodDefinition): string {
-      if (node.key.type === 'Identifier') {
-        return node.key.name;
-      }
-
-      if (node.key.type === 'Literal' && typeof node.key.value === 'string') {
-        return node.key.value;
-      }
-
-      return 'getter';
     }
 
     function getMemberPath(node: TSESTree.Expression): string | null {
