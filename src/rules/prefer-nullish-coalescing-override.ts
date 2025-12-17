@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'preferNullishCoalescing';
@@ -26,7 +26,12 @@ export const preferNullishCoalescingOverride = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.getSourceCode();
+    const contextWithSource = context as {
+      sourceCode?: TSESLint.SourceCode;
+      getSourceCode(): TSESLint.SourceCode;
+    };
+    const sourceCode =
+      contextWithSource.sourceCode ?? contextWithSource.getSourceCode();
 
     /**
      * Checks if a node is in a boolean context where truthiness matters
@@ -213,20 +218,17 @@ export const preferNullishCoalescingOverride = createRule<[], MessageIds>({
     return {
       LogicalExpression(node: TSESTree.LogicalExpression) {
         if (shouldConvertToNullishCoalescing(node)) {
+          const leftText = sourceCode.getText(node.left);
+          const rightText = sourceCode.getText(node.right);
           context.report({
             node,
             messageId: 'preferNullishCoalescing',
             data: {
-              left: sourceCode.getText(node.left),
-              right: sourceCode.getText(node.right),
+              left: leftText,
+              right: rightText,
             },
             fix(fixer) {
-              return fixer.replaceText(
-                node,
-                `${sourceCode.getText(node.left)} ?? ${sourceCode.getText(
-                  node.right,
-                )}`,
-              );
+              return fixer.replaceText(node, `${leftText} ?? ${rightText}`);
             },
           });
         }
