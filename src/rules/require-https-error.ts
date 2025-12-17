@@ -29,6 +29,16 @@ export = createRule({
 
     const httpsIdentifiers = new Map<string, string>();
     const httpsErrorIdentifiers = new Map<string, string>();
+    const reportProprietary = (
+      node: TSESTree.Node,
+      reference: string,
+      source: string,
+    ) =>
+      context.report({
+        node,
+        messageId: 'useProprietaryHttpsError',
+        data: { reference, source },
+      });
 
     return {
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
@@ -38,6 +48,8 @@ export = createRule({
         ) {
           const sourceModule = String(node.source.value);
 
+          // Report imports immediately so the forbidden dependency is blocked even
+          // when unused; throw sites below also report to cover runtime usage.
           // Check for direct HttpsError import
           const httpsErrorSpecifier = node.specifiers.find(
             (spec) =>
@@ -55,27 +67,13 @@ export = createRule({
           if (httpsErrorSpecifier && 'local' in httpsErrorSpecifier) {
             const localName = httpsErrorSpecifier.local.name;
             httpsErrorIdentifiers.set(localName, sourceModule);
-            context.report({
-              node,
-              messageId: 'useProprietaryHttpsError',
-              data: {
-                reference: localName,
-                source: sourceModule,
-              },
-            });
+            reportProprietary(node, localName, sourceModule);
           }
 
           if (httpsSpecifier && 'local' in httpsSpecifier) {
             const localName = httpsSpecifier.local.name;
             httpsIdentifiers.set(localName, sourceModule);
-            context.report({
-              node,
-              messageId: 'useProprietaryHttpsError',
-              data: {
-                reference: `${localName}.HttpsError`,
-                source: sourceModule,
-              },
-            });
+            reportProprietary(node, `${localName}.HttpsError`, sourceModule);
           }
         }
       },
@@ -120,14 +118,7 @@ export = createRule({
             return;
           }
 
-          context.report({
-            node,
-            messageId: 'useProprietaryHttpsError',
-            data: {
-              reference: `${objectName}.HttpsError`,
-              source,
-            },
-          });
+          reportProprietary(node, `${objectName}.HttpsError`, source);
           return;
         }
 
@@ -138,14 +129,7 @@ export = createRule({
             return;
           }
 
-          context.report({
-            node,
-            messageId: 'useProprietaryHttpsError',
-            data: {
-              reference: callee.name,
-              source,
-            },
-          });
+          reportProprietary(node, callee.name, source);
         }
       },
     };

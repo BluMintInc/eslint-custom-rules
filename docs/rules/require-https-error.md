@@ -11,16 +11,23 @@ Using the proprietary `HttpsError` keeps Cloud Functions responses consistent: c
 - Applies only to files in `functions/src`.
 - Reports `throw new Error(...)` so Cloud Functions do not return an unstructured 500 response.
 - Reports any use of `firebase-admin`’s `HttpsError`, including aliased imports and `https.HttpsError`, because it skips the proprietary wrapper and its logging/sanitization behavior.
+- Reports the forbidden `firebase-admin` `HttpsError` both when it is imported (to block unused but disallowed dependencies) and again when it is thrown, so runtime usage is always flagged.
 - Allows throwing the proprietary `HttpsError` (for example from `@our-company/errors`) or other project-specific error types.
 
 ## Examples
 
+The incorrect examples note whether the diagnostic appears at import time or when the throw is executed.
+
 ### ❌ Incorrect
+
+Throwing a generic `Error` is reported at the throw site.
 
 ```ts
 // Throws a generic Error: client receives an unstructured 500
 throw new Error('Missing user id');
 ```
+
+Importing `firebase-admin`’s `HttpsError` is reported immediately, and throwing it is also reported so the runtime path is blocked.
 
 ```ts
 // Uses firebase-admin HttpsError: bypasses proprietary logging and normalization
@@ -28,6 +35,8 @@ import { HttpsError } from 'firebase-admin';
 
 throw new HttpsError('failed-precondition', 'Payment source missing');
 ```
+
+Aliased `https.HttpsError` imports are reported at import time, and throwing through the alias is also reported.
 
 ```ts
 // Aliased firebase-admin https import still uses the wrong error class
