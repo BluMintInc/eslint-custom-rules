@@ -16,7 +16,7 @@ export const noComplexCloudParams = createRule<[], MessageIds>({
     schema: [],
     messages: {
       noComplexObjects:
-        'Do not pass complex objects to cloud functions. Complex objects include class instances, objects with methods, non-serializable values (RegExp, BigInt, TypedArray, etc.), or objects with nested complex properties.',
+        'Cloud function "{{callee}}" receives a value that is not JSON-serializable. Cloud params must stay plain data; class instances, functions, RegExp/BigInt/TypedArray values, or nested complex properties are dropped or cause runtime errors during transport to Firebase. Send only primitives and plain objects/arrays, or serialize the value first (for example, convert a RegExp to a string or JSON.stringify the payload) before calling "{{callee}}".',
     },
   },
   defaultOptions: [],
@@ -395,9 +395,10 @@ export const noComplexCloudParams = createRule<[], MessageIds>({
     }
 
     function checkCloudFunctionCall(node: TSESTree.CallExpression): void {
+      const callee = node.callee;
       if (
-        node.callee.type === AST_NODE_TYPES.Identifier &&
-        cloudFunctions.has(node.callee.name)
+        callee.type === AST_NODE_TYPES.Identifier &&
+        cloudFunctions.has(callee.name)
       ) {
         // Check each argument for complex objects
         node.arguments.forEach((arg) => {
@@ -406,6 +407,9 @@ export const noComplexCloudParams = createRule<[], MessageIds>({
             context.report({
               node,
               messageId: 'noComplexObjects',
+              data: {
+                callee: callee.name,
+              },
             });
           }
         });
