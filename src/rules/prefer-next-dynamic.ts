@@ -19,7 +19,10 @@ const DEFAULT_USE_DYNAMIC_SOURCES = [
   '../../hooks/useDynamic',
 ];
 
-function matchesAllowedSource(source: string, allowedSources: string[]): boolean {
+function matchesAllowedSource(
+  source: string,
+  allowedSources: string[],
+): boolean {
   return allowedSources.some(
     (pattern) => source === pattern || source.endsWith(`/${pattern}`),
   );
@@ -453,7 +456,10 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
                       .join(', ');
                     const newText = `import { ${specText} } from '${latestUseDynamicImport.importNode.source.value}';`;
                     fixes.push(
-                      fixer.replaceText(latestUseDynamicImport.importNode, newText),
+                      fixer.replaceText(
+                        latestUseDynamicImport.importNode,
+                        newText,
+                      ),
                     );
                   } else {
                     // Otherwise, remove the specifier with proper comma handling
