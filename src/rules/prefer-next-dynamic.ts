@@ -52,7 +52,7 @@ function walkAst(
   const shouldContinue = visitor(node);
   if (shouldContinue === false) return;
 
-  const anyNode = node as Record<string, unknown>;
+  const anyNode = node as unknown as Record<string, unknown>;
   for (const key of Object.keys(anyNode)) {
     if (key === 'parent') continue;
     const child = anyNode[key];
