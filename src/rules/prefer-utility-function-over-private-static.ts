@@ -117,7 +117,10 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
 
         // If the method doesn't use 'this', it's a good candidate for extraction
         if (!usesThis) {
-          const methodName = getMethodName(node, sourceCode);
+          const methodName =
+            getMethodName(node, sourceCode, {
+              computedFallbackToText: false,
+            }) || '<unknown>';
           const className = getClassName(node);
 
           context.report({

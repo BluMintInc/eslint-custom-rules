@@ -1,7 +1,20 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 
+/**
+ * Extracts a stable, human-readable name from method/property/member nodes.
+ * Use the options to align prefixing and computed-key handling with rule semantics.
+ */
 export type GetMethodNameOptions = {
+  /**
+   * Prefix applied to private identifiers:
+   * - undefined (default): empty prefix
+   * - null: return the raw name without any prefix
+   * - string (e.g., '#'): prepend the given prefix
+   */
   privateIdentifierPrefix?: string | null;
+  /**
+   * When true (default), computed keys fall back to source text; when false, returns empty string.
+   */
   computedFallbackToText?: boolean;
 };
 
