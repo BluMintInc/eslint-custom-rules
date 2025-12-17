@@ -203,7 +203,7 @@ export const preferUrlToStringOverToJson: TSESLint.RuleModule<
     schema: [],
     messages: {
       preferToString:
-        'URL value {{urlText}} calls toJSON() explicitly. JSON.stringify already invokes toJSON on URL objects, so this indirection obscures when conversion happens, can mislead readers into thinking toJSON differs from toString, and adds maintenance overhead when debugging or comparing payloads. Use toString() when you need a string, or pass the URL directly to JSON.stringify to rely on its built-in serialization.',
+        'URL value {{urlText}} calls toJSON() explicitly. URL.toJSON() delegates directly to toString(), so the call is redundant. Inside JSON.stringify it adds an extra hop even though JSON.stringify already invokes toJSON automatically; elsewhere it hides intent because readers must remember the delegation to see it produces the same string as toString. Use toString() when you need an explicit string, or pass the URL directly to JSON.stringify to rely on its built-in serialization.',
     },
   },
   defaultOptions: [],
