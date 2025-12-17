@@ -80,10 +80,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
       return fixes;
     };
 
-    const reportUseAssertSafe = (
-      node: TSESTree.Node,
-      expressionText: string,
-    ) =>
+    const reportUseAssertSafe = (node: TSESTree.Node, expressionText: string) =>
       context.report({
         node,
         messageId: 'useAssertSafe',

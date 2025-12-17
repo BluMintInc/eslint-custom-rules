@@ -12,7 +12,8 @@ ruleTesterJson.run(
         code: '{dependencies: {eslint: "^8.19.0"}}',
         errors: [
           {
-            messageId: 'unexpected',
+            message:
+              "Dependency 'eslint' is declared with the range '^8.19.0'. Ranges let package managers pull newer releases outside code review, which breaks reproducible installs and can hide breaking changes. Pin to a single exact version without range operators (for example '8.19.0') so dependency updates stay intentional and auditable; complex ranges must be pinned manually.",
           },
         ],
         output: '{dependencies: {eslint: "8.19.0"}}',
@@ -21,10 +22,31 @@ ruleTesterJson.run(
         code: `{dependencies: {eslint: "~8.19.0"}}`,
         errors: [
           {
-            messageId: 'unexpected',
+            message:
+              "Dependency 'eslint' is declared with the range '~8.19.0'. Ranges let package managers pull newer releases outside code review, which breaks reproducible installs and can hide breaking changes. Pin to a single exact version without range operators (for example '8.19.0') so dependency updates stay intentional and auditable; complex ranges must be pinned manually.",
           },
         ],
         output: '{dependencies: {eslint: "8.19.0"}}',
+      },
+      {
+        code: '{dependencies: {eslint: "~1 || ^2"}}',
+        errors: [
+          {
+            message:
+              "Dependency 'eslint' is declared with the range '~1 || ^2'. Ranges let package managers pull newer releases outside code review, which breaks reproducible installs and can hide breaking changes. Pin to a single exact version without range operators (for example '1.2.3') so dependency updates stay intentional and auditable; complex ranges must be pinned manually.",
+          },
+        ],
+        output: null,
+      },
+      {
+        code: '{dependencies: {eslint: "1.0.0 || ^2.0.0"}}',
+        errors: [
+          {
+            message:
+              "Dependency 'eslint' is declared with the range '1.0.0 || ^2.0.0'. Ranges let package managers pull newer releases outside code review, which breaks reproducible installs and can hide breaking changes. Pin to a single exact version without range operators (for example '1.0.0') so dependency updates stay intentional and auditable; complex ranges must be pinned manually.",
+          },
+        ],
+        output: null,
       },
       {
         code: `{
@@ -53,10 +75,12 @@ ruleTesterJson.run(
           `,
         errors: [
           {
-            messageId: 'unexpected',
+            message:
+              "Dependency 'requireindex' is declared with the range '^1.2.3'. Ranges let package managers pull newer releases outside code review, which breaks reproducible installs and can hide breaking changes. Pin to a single exact version without range operators (for example '1.2.3') so dependency updates stay intentional and auditable; complex ranges must be pinned manually.",
           },
           {
-            messageId: 'unexpected',
+            message:
+              "Dependency 'eslint-doc-generator' is declared with the range '~4.5.6'. Ranges let package managers pull newer releases outside code review, which breaks reproducible installs and can hide breaking changes. Pin to a single exact version without range operators (for example '4.5.6') so dependency updates stay intentional and auditable; complex ranges must be pinned manually.",
           },
         ],
         output: `{

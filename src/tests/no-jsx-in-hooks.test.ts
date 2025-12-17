@@ -89,7 +89,12 @@ ruleTesterJsx.run('no-jsx-in-hooks', noJsxInHooks, {
           return livestreamCarousel;
         };
       `,
-      errors: [{ messageId: 'noJsxInHooks' }],
+      errors: [
+        {
+          messageId: 'noJsxInHooks',
+          data: { hookName: 'useLivestreamPlayer' },
+        },
+      ],
     },
     // Invalid hook with early return of ReactNode via ternary
     {
@@ -98,7 +103,12 @@ ruleTesterJsx.run('no-jsx-in-hooks', noJsxInHooks, {
           return condition ? <div>Content</div> : placeholder;
         };
       `,
-      errors: [{ messageId: 'noJsxInHooks' }],
+      errors: [
+        {
+          messageId: 'noJsxInHooks',
+          data: { hookName: 'useConditionalElement' },
+        },
+      ],
     },
     // Invalid hook with early return of JSX in if statement
     {
@@ -110,7 +120,12 @@ ruleTesterJsx.run('no-jsx-in-hooks', noJsxInHooks, {
           return data;
         };
       `,
-      errors: [{ messageId: 'noJsxInHooks' }],
+      errors: [
+        {
+          messageId: 'noJsxInHooks',
+          data: { hookName: 'useLoadingState' },
+        },
+      ],
     },
     // Invalid hook that returns JSX via useMemo
     {
@@ -119,7 +134,12 @@ ruleTesterJsx.run('no-jsx-in-hooks', noJsxInHooks, {
           return useMemo(() => <div>Element</div>, []);
         };
       `,
-      errors: [{ messageId: 'noJsxInHooks' }],
+      errors: [
+        {
+          messageId: 'noJsxInHooks',
+          data: { hookName: 'useGetElement' },
+        },
+      ],
     },
     // Invalid hook with explicit ReactNode return type
     {
@@ -128,7 +148,7 @@ ruleTesterJsx.run('no-jsx-in-hooks', noJsxInHooks, {
           return <div>Element</div>;
         };
       `,
-      errors: [{ messageId: 'noJsxInHooks' }],
+      errors: [{ messageId: 'noJsxInHooks', data: { hookName: 'useElement' } }],
     },
     // Invalid function declaration hook
     {
@@ -137,7 +157,7 @@ ruleTesterJsx.run('no-jsx-in-hooks', noJsxInHooks, {
           return <header>App Header</header>;
         }
       `,
-      errors: [{ messageId: 'noJsxInHooks' }],
+      errors: [{ messageId: 'noJsxInHooks', data: { hookName: 'useHeader' } }],
     },
     // Invalid hook with JSX.Element return type
     {
@@ -146,7 +166,9 @@ ruleTesterJsx.run('no-jsx-in-hooks', noJsxInHooks, {
           return <nav>Navigation</nav>;
         };
       `,
-      errors: [{ messageId: 'noJsxInHooks' }],
+      errors: [
+        { messageId: 'noJsxInHooks', data: { hookName: 'useNavigation' } },
+      ],
     },
     // Invalid hook with block body and JSX return
     {
@@ -156,7 +178,12 @@ ruleTesterJsx.run('no-jsx-in-hooks', noJsxInHooks, {
           return <div>{value}</div>;
         };
       `,
-      errors: [{ messageId: 'noJsxInHooks' }],
+      errors: [
+        {
+          messageId: 'noJsxInHooks',
+          data: { hookName: 'useComplexElement' },
+        },
+      ],
     },
   ],
 });
