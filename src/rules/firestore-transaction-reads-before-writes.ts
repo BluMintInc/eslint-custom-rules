@@ -20,7 +20,7 @@ export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
       schema: [],
       messages: {
         readsAfterWrites:
-          'Firestore transaction read operations must be performed before any write operations. Move this read operation before any write operations.',
+          'Read operation "{{readMethod}}" runs after transaction writes ({{writeMethods}}). Firestore transactions must collect every read before any write to keep a consistent snapshot and avoid Firestore retries that reapply writes with stale data. Move this read before the first write in the same transaction callback.',
       },
     },
     defaultOptions: [],
@@ -182,6 +182,63 @@ export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
         return { isRead, isWrite, methodName };
       }
 
+      function formatMethodName(
+        callExpression: TSESTree.CallExpression,
+      ): string {
+        const callee = callExpression.callee;
+        if (callee.type !== AST_NODE_TYPES.MemberExpression) {
+          return 'this transaction read';
+        }
+
+        const objectName =
+          callee.object.type === AST_NODE_TYPES.Identifier
+            ? callee.object.name
+            : 'transaction';
+
+        if (callee.computed) {
+          if (callee.property.type === AST_NODE_TYPES.Literal) {
+            return `${objectName}[${String(callee.property.value)}]`;
+          }
+          if (callee.property.type === AST_NODE_TYPES.Identifier) {
+            return `${objectName}[${callee.property.name}]`;
+          }
+          return `${objectName}[computed]`;
+        }
+
+        if (callee.property.type === AST_NODE_TYPES.Identifier) {
+          return `${objectName}.${callee.property.name}`;
+        }
+
+        return `${objectName}[unknown]`;
+      }
+
+      function formatWriteMethods(writeNodes: TSESTree.Node[]): string {
+        const methodNames = writeNodes
+          .map((node) =>
+            node.type === AST_NODE_TYPES.CallExpression
+              ? formatMethodName(node)
+              : null,
+          )
+          .filter((name): name is string => Boolean(name));
+
+        if (!methodNames.length) {
+          return 'earlier transaction writes';
+        }
+
+        const uniqueNames = [...new Set(methodNames)];
+        if (uniqueNames.length === 1) {
+          return uniqueNames[0];
+        }
+
+        if (uniqueNames.length === 2) {
+          return `${uniqueNames[0]} and ${uniqueNames[1]}`;
+        }
+
+        return `${uniqueNames
+          .slice(0, uniqueNames.length - 1)
+          .join(', ')} and ${uniqueNames[uniqueNames.length - 1]}`;
+      }
+
       return {
         // Track transaction scopes from runTransaction calls
         'CallExpression[callee.property.name="runTransaction"]'(
@@ -248,7 +305,7 @@ export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
         // Check all call expressions for transaction operations
         CallExpression(node) {
           const transactionScope = findTransactionScope(node);
-          const { isRead, isWrite, methodName } = isTransactionMethodCall(
+          const { isRead, isWrite } = isTransactionMethodCall(
             node,
             transactionScope,
           );
@@ -271,10 +328,12 @@ export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
             // This is a computed property access - we need to be more careful
             // Only flag as a read if we already have writes in this scope
             if (scopeInfo.hasWriteOperation) {
+              const readMethod = formatMethodName(node);
+              const writeMethods = formatWriteMethods(scopeInfo.writeNodes);
               context.report({
                 node,
                 messageId: 'readsAfterWrites',
-                data: { method: methodName ?? 'unknown' },
+                data: { readMethod, writeMethods },
               });
             }
             // Don't mark as write since we don't know what method it is
@@ -289,10 +348,12 @@ export const firestoreTransactionReadsBeforeWrites = createRule<[], MessageIds>(
 
           // If it's a read operation and the scope already has a write, report an error
           if (isRead && scopeInfo.hasWriteOperation) {
+            const readMethod = formatMethodName(node);
+            const writeMethods = formatWriteMethods(scopeInfo.writeNodes);
             context.report({
               node,
               messageId: 'readsAfterWrites',
-              data: { method: methodName ?? 'unknown' },
+              data: { readMethod, writeMethods },
             });
           }
         },
