@@ -40,6 +40,9 @@ function hasNodeStructure(value: unknown): value is TSESTree.Node {
 /**
  * Walks the AST and invokes the visitor on each node.
  * Uses WeakSet to prevent infinite cycles.
+ *
+ * @param visitor - Callback invoked on each node. Return `false` to stop
+ * traversal; return `undefined` (or nothing) to continue walking.
  */
 function walkAst(
   node: TSESTree.Node,
@@ -397,21 +400,22 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
             );
             if (latestUseDynamicImport) {
               // Abort removal if there are other useDynamic(import(...)) calls in the file
-              let otherUseDynamicCalls = false;
-              programNode.body.forEach((b) =>
+              const otherUseDynamicCalls = programNode.body.some((b) => {
+                let found = false;
                 walkAst(b, (n) => {
-                  if (otherUseDynamicCalls) return false;
+                  if (found) return false;
                   if (
                     n.type === AST_NODE_TYPES.CallExpression &&
                     isUseDynamicCall(n) &&
                     n !== init
                   ) {
-                    otherUseDynamicCalls = true;
+                    found = true;
                     return false;
                   }
                   return undefined;
-                }),
-              );
+                });
+                return found;
+              });
               if (otherUseDynamicCalls) {
                 return fixes; // keep the import; other occurrences still rely on it
               }
