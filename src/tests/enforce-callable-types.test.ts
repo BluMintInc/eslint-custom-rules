@@ -106,10 +106,7 @@ ruleTester.run('enforce-callable-types', enforceCallableTypes, {
         export default onCall(myCallableFunction);
       `,
       filename: 'src/callable/myFunction.f.ts',
-      errors: [
-        missingPropsError,
-        unusedResponseError,
-      ],
+      errors: [missingPropsError, unusedResponseError],
     },
     {
       // Missing Response type with Props

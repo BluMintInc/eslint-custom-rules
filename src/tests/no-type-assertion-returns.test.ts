@@ -1,6 +1,16 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noTypeAssertionReturns } from '../rules/no-type-assertion-returns';
 
+const typeAssertionError = (assertedType: string) => ({
+  messageId: 'noTypeAssertionReturns' as const,
+  data: { assertedType },
+});
+
+const explicitReturnError = (returnType: string) => ({
+  messageId: 'useExplicitVariable' as const,
+  data: { returnType },
+});
+
 ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
   valid: [
     // ==================== TYPE ASSERTION IN CONDITIONAL STATEMENTS ====================
@@ -425,7 +435,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
         return [...someFilters] as TournamentGroupFilterParams;
       }
       `,
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('TournamentGroupFilterParams')],
     },
 
     // Bad: Type assertion with angle brackets
@@ -435,7 +445,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
         return <UserSettings>{ theme: 'dark', notifications: true };
       }
       `,
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('UserSettings')],
     },
 
     // Bad: Explicit return type with potential silent upcast
@@ -448,7 +458,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
         };
       }
       `,
-      errors: [{ messageId: 'useExplicitVariable' }],
+      errors: [explicitReturnError('PlayerStats')],
     },
 
     // Bad: Inline type assertion
@@ -462,7 +472,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
         } as TournamentConfig;
       }
       `,
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('TournamentConfig')],
     },
 
     // Bad: Multiple type assertions
@@ -476,8 +486,8 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
       }
       `,
       errors: [
-        { messageId: 'noTypeAssertionReturns' },
-        { messageId: 'noTypeAssertionReturns' },
+        typeAssertionError('MatchResult'),
+        typeAssertionError('MatchScore'),
       ],
     },
 
@@ -488,7 +498,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
         return players.filter(p => p.active) as ActivePlayer[];
       }
       `,
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('ActivePlayer[]')],
     },
 
     // Bad: Arrow function with type assertion
@@ -496,7 +506,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
       code: `
       const getConfig = () => ({ id: 1, name: 'config' } as Config);
       `,
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('Config')],
     },
 
     // Bad: Arrow function with explicit return type
@@ -507,7 +517,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
         name: 'John'
       });
       `,
-      errors: [{ messageId: 'useExplicitVariable' }],
+      errors: [explicitReturnError('User')],
     },
 
     // Bad: as const should not be permitted when option is false
@@ -522,7 +532,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
       }
       `,
       options: [{ allowAsConst: false }],
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('const')],
     },
 
     // Bad: Type predicate should not be permitted when option is false
@@ -533,7 +543,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
       }
       `,
       options: [{ allowTypePredicates: false }],
-      errors: [{ messageId: 'useExplicitVariable' }],
+      errors: [explicitReturnError('error is Error')],
     },
 
     // ==================== ADDITIONAL INVALID CASES ====================
@@ -545,7 +555,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
         return condition ? item1 : item2 as Item;
       }
       `,
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('Item')],
     },
 
     // Bad: Type assertion in template literal
@@ -555,7 +565,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
         return \`Status: \${getStatus()}\` as StatusMessage;
       }
       `,
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('StatusMessage')],
     },
 
     // Bad: Type assertion in array literal
@@ -565,7 +575,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
         return [1, 2, 3] as Item[];
       }
       `,
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('Item[]')],
     },
 
     // Bad: Type assertion in object spread
@@ -575,7 +585,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
         return { ...obj1, ...obj2 } as MergedObject;
       }
       `,
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('MergedObject')],
     },
 
     // Bad: Type assertion in function call
@@ -585,7 +595,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
         return transform(data) as ProcessedData;
       }
       `,
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('ProcessedData')],
     },
 
     // Bad: Type assertion in array method chain
@@ -595,7 +605,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
         return users.map(user => user.name) as string[];
       }
       `,
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('string[]')],
     },
 
     // Bad: Type assertion in Promise chain
@@ -607,7 +617,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
           .then(data => data as User[]);
       }
       `,
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('User[]')],
     },
 
     // Bad: Type assertion in async function
@@ -618,7 +628,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
         return await response.json() as User;
       }
       `,
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('User')],
     },
 
     // ==================== EDGE CASES - INVALID ====================
@@ -630,7 +640,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
         return value as T;
       }
       `,
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('T')],
     },
 
     // Bad: Arrow function with generic type assertion
@@ -638,7 +648,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
       code: `
       const transform = <T>(value: any) => value as T;
       `,
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('T')],
     },
 
     // Bad: Function expression with generic type assertion
@@ -648,7 +658,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
         return value as T;
       };
       `,
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('T')],
     },
 
     // Bad: Type assertion with external API data
@@ -658,7 +668,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
         return data as ApiResponse;
       }
       `,
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('ApiResponse')],
     },
 
     // Bad: Multiple nested type assertions
@@ -669,9 +679,9 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
       }
       `,
       errors: [
-        { messageId: 'noTypeAssertionReturns' },
-        { messageId: 'noTypeAssertionReturns' },
-        { messageId: 'noTypeAssertionReturns' },
+        typeAssertionError('FinalResult'),
+        typeAssertionError('ProcessedData'),
+        typeAssertionError('RawData'),
       ],
     },
 
@@ -685,7 +695,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
         } as Config;
       }
       `,
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('Config')],
     },
 
     // Bad: Type assertion in array method chain with multiple methods
@@ -698,7 +708,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
           .sort() as string[];
       }
       `,
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('string[]')],
     },
 
     // Bad: Type assertion in complex Promise chain
@@ -711,7 +721,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
           .then(result => result as ProcessedUsers);
       }
       `,
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('ProcessedUsers')],
     },
 
     // Bad: Type assertion in async/await with try/catch
@@ -727,8 +737,8 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
       }
       `,
       errors: [
-        { messageId: 'noTypeAssertionReturns' },
-        { messageId: 'noTypeAssertionReturns' },
+        typeAssertionError('User'),
+        typeAssertionError('User'),
       ],
     },
 
@@ -739,7 +749,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
         return (user ?? { id: '0', name: 'Guest' }) as User;
       }
       `,
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('User')],
     },
 
     // Bad: Type assertion with optional chaining
@@ -749,7 +759,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
         return obj?.nested?.value as string;
       }
       `,
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('string')],
     },
 
     // Bad: Type assertion in callback function
@@ -761,7 +771,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
         });
       }
       `,
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('ProcessedItem')],
     },
 
     // Bad: Type assertion in reduce method
@@ -773,7 +783,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
         }, {}) as CombinedObject;
       }
       `,
-      errors: [{ messageId: 'noTypeAssertionReturns' }],
+      errors: [typeAssertionError('CombinedObject')],
     },
   ],
 });
