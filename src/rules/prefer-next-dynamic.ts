@@ -248,7 +248,7 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
       description:
         'Prefer Next.js dynamic() over custom useDynamic() for component imports',
       recommended: 'error',
-      requiresTypeChecking: true,
+      requiresTypeChecking: false,
     },
     fixable: 'code',
     schema: [
@@ -332,7 +332,7 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
             const fixes: TSESLint.RuleFix[] = [];
 
             // ensure dynamic import is present
-            const programNode = findProgramNode(node)!;
+            const programNode = program;
             let dynamicLocal = getNextDynamicLocalName(programNode);
             const hasDynamic = !!dynamicLocal;
             if (!hasDynamic) {
