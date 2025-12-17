@@ -315,7 +315,7 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
         if (!node.init) return;
         if (node.init.type !== AST_NODE_TYPES.MemberExpression) return;
 
-        const memberInit = node.init as TSESTree.MemberExpression;
+        const memberInit = node.init;
         if (!shouldUseDestructuring(memberInit, node.id)) {
           return;
         }
@@ -354,7 +354,7 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
           node.operator === '=' &&
           node.right.type === AST_NODE_TYPES.MemberExpression
         ) {
-          const memberRight = node.right as TSESTree.MemberExpression;
+          const memberRight = node.right;
           if (!shouldUseDestructuring(node.right, node.left)) {
             return;
           }
