@@ -112,34 +112,68 @@ function isArrayIncludesCheck(
 export const noTypeAssertionReturns = createRule<Options, MessageIds>({
   name: 'no-type-assertion-returns',
   meta: {
-    type: 'suggestion',
-    docs: {
-      description:
-        'Enforce typing variables before returning them, rather than using type assertions or explicit return types',
-      recommended: 'error',
-      requiresTypeChecking: false,
-    },
-    fixable: 'code',
-    schema: [
-      {
-        type: 'object',
-        properties: {
-          allowAsConst: { type: 'boolean' },
-          allowTypePredicates: { type: 'boolean' },
-        },
-        additionalProperties: false,
+  type: 'suggestion',
+  docs: {
+    description:
+      'Enforce typing variables before returning them, rather than using type assertions or explicit return types',
+    recommended: 'error',
+    requiresTypeChecking: false,
+  },
+  fixable: 'code',
+  schema: [
+    {
+      type: 'object',
+      properties: {
+        allowAsConst: { type: 'boolean' },
+        allowTypePredicates: { type: 'boolean' },
       },
-    ],
-    messages: {
-      noTypeAssertionReturns:
-        'Type assertions in return statements are not allowed. Type the variable explicitly before returning it.',
-      useExplicitVariable:
-        'Explicit return type annotations are not allowed. Type the variable explicitly before returning it.',
+      additionalProperties: false,
     },
+  ],
+  messages: {
+    noTypeAssertionReturns:
+      'Return value uses a type assertion to "{{assertedType}}", which bypasses TypeScript checks and can hide missing or invalid data. Create a typed variable or add a narrowing step before returning so the value is validated without casting.',
+    useExplicitVariable:
+      'Return type "{{returnType}}" is declared while returning an unchecked expression, so TypeScript trusts the annotation instead of validating the value. Assign the expression to a typed variable or narrow it first, then return that variable.',
+  },
   },
   defaultOptions: [defaultOptions],
   create(context, [options]) {
     const mergedOptions = { ...defaultOptions, ...options };
+    const sourceCode = context.getSourceCode();
+
+    function getTypeText(
+      typeNode: TSESTree.Node | undefined,
+      fallback: string,
+    ): string {
+      const text = typeNode ? sourceCode.getText(typeNode).trim() : '';
+      return text || fallback;
+    }
+
+    function reportTypeAssertion(
+      node: TSESTree.TSAsExpression | TSESTree.TSTypeAssertion,
+    ) {
+      context.report({
+        node,
+        messageId: 'noTypeAssertionReturns',
+        data: {
+          assertedType: getTypeText(node.typeAnnotation, 'the asserted type'),
+        },
+      });
+    }
+
+    function reportReturnTypeAnnotation(typeAnnotation: TSESTree.TSTypeAnnotation) {
+      context.report({
+        node: typeAnnotation,
+        messageId: 'useExplicitVariable',
+        data: {
+          returnType: getTypeText(
+            typeAnnotation.typeAnnotation,
+            'the declared return type',
+          ),
+        },
+      });
+    }
 
     /**
      * Checks if a node is inside a JSX attribute or object property (which could be JSX props)
@@ -307,10 +341,7 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
         !mergedOptions.allowTypePredicates &&
         isTypePredicate(node.returnType)
       ) {
-        context.report({
-          node: node.returnType,
-          messageId: 'useExplicitVariable',
-        });
+        reportReturnTypeAnnotation(node.returnType);
         return;
       }
 
@@ -333,10 +364,7 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
               statement.argument.type === AST_NODE_TYPES.ArrayExpression ||
               statement.argument.type === AST_NODE_TYPES.CallExpression
             ) {
-              context.report({
-                node: node.returnType,
-                messageId: 'useExplicitVariable',
-              });
+              reportReturnTypeAnnotation(node.returnType);
               break;
             }
           }
@@ -358,25 +386,16 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
 
           // For nested type assertions, only report the outermost one
           if (node.argument.expression.type === AST_NODE_TYPES.TSAsExpression) {
-            context.report({
-              node: node.argument,
-              messageId: 'noTypeAssertionReturns',
-            });
+            reportTypeAssertion(node.argument);
             return;
           }
 
-          context.report({
-            node: node.argument,
-            messageId: 'noTypeAssertionReturns',
-          });
+          reportTypeAssertion(node.argument);
         }
 
         // Check for type assertions using angle bracket syntax
         if (node.argument.type === AST_NODE_TYPES.TSTypeAssertion) {
-          context.report({
-            node: node.argument,
-            messageId: 'noTypeAssertionReturns',
-          });
+          reportTypeAssertion(node.argument);
         }
       },
 
@@ -414,10 +433,7 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
               !mergedOptions.allowTypePredicates &&
               isTypePredicate(node.returnType)
             ) {
-              context.report({
-                node: node.returnType,
-                messageId: 'useExplicitVariable',
-              });
+              reportReturnTypeAnnotation(node.returnType);
               return;
             }
 
@@ -426,10 +442,7 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
               node.body.type === AST_NODE_TYPES.ObjectExpression ||
               node.body.type === AST_NODE_TYPES.ArrayExpression
             ) {
-              context.report({
-                node: node.returnType,
-                messageId: 'useExplicitVariable',
-              });
+              reportReturnTypeAnnotation(node.returnType);
             }
           }
 
@@ -440,15 +453,9 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
               return;
             }
 
-            context.report({
-              node: node.body,
-              messageId: 'noTypeAssertionReturns',
-            });
+            reportTypeAssertion(node.body);
           } else if (node.body.type === AST_NODE_TYPES.TSTypeAssertion) {
-            context.report({
-              node: node.body,
-              messageId: 'noTypeAssertionReturns',
-            });
+            reportTypeAssertion(node.body);
           }
         } else if (node.returnType) {
           // For arrow functions with block bodies
@@ -474,10 +481,7 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
         }
 
         // For standalone type assertions in expressions
-        context.report({
-          node,
-          messageId: 'noTypeAssertionReturns',
-        });
+        reportTypeAssertion(node);
       },
 
       // Check for type assertions using angle bracket syntax
@@ -488,10 +492,7 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
         }
 
         // For standalone type assertions in expressions
-        context.report({
-          node,
-          messageId: 'noTypeAssertionReturns',
-        });
+        reportTypeAssertion(node);
       },
     };
   },

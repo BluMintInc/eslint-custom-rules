@@ -31,10 +31,10 @@ export const arrayMethodsThisContext: TSESLint.RuleModule<
           const methodAccessor = node.arguments[0].computed
             ? `[${sourceCode.getText(methodProperty)}]`
             : methodProperty.type === 'Identifier'
-              ? `.${methodProperty.name}`
-              : methodProperty.type === 'PrivateIdentifier'
-                ? `.#${methodProperty.name}`
-                : `.${sourceCode.getText(methodProperty)}`;
+            ? `.${methodProperty.name}`
+            : methodProperty.type === 'PrivateIdentifier'
+            ? `.#${methodProperty.name}`
+            : `.${sourceCode.getText(methodProperty)}`;
 
           const methodReference = `this${methodAccessor}`;
 

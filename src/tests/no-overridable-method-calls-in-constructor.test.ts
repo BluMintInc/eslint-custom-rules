@@ -1,6 +1,20 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noOverridableMethodCallsInConstructor } from '../rules/no-overridable-method-calls-in-constructor';
 
+const error = (
+  methodName: string,
+  target: 'this' | 'super' = 'this',
+): {
+  messageId: 'noOverridableMethodCallsInConstructor';
+  data: { methodName: string; target: 'this' | 'super' };
+} => ({
+  messageId: 'noOverridableMethodCallsInConstructor',
+  data: {
+    methodName,
+    target,
+  },
+});
+
 ruleTesterTs.run(
   'no-overridable-method-calls-in-constructor',
   noOverridableMethodCallsInConstructor,
@@ -344,7 +358,7 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'noOverridableMethodCallsInConstructor' }],
+        errors: [error('displayType')],
       },
 
       // Constructor calling protected instance method
@@ -360,7 +374,7 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'noOverridableMethodCallsInConstructor' }],
+        errors: [error('displayType')],
       },
 
       // Constructor calling abstract method
@@ -374,7 +388,7 @@ ruleTesterTs.run(
           abstract getDetails(): string;
         }
         `,
-        errors: [{ messageId: 'noOverridableMethodCallsInConstructor' }],
+        errors: [error('getDetails')],
       },
 
       // Constructor calling abstract method on super (same method declared in current class)
@@ -393,7 +407,7 @@ ruleTesterTs.run(
           abstract getDetails(): string;
         }
         `,
-        errors: [{ messageId: 'noOverridableMethodCallsInConstructor' }],
+        errors: [error('getDetails', 'super')],
       },
 
       // Constructor with multiple overridable method calls
@@ -414,10 +428,7 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [
-          { messageId: 'noOverridableMethodCallsInConstructor' },
-          { messageId: 'noOverridableMethodCallsInConstructor' },
-        ],
+        errors: [error('displayType'), error('showDetails')],
       },
 
       // Constructor calling method inside if statement
@@ -435,7 +446,7 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'noOverridableMethodCallsInConstructor' }],
+        errors: [error('displayType')],
       },
 
       // Constructor calling method inside try-catch
@@ -455,7 +466,7 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'noOverridableMethodCallsInConstructor' }],
+        errors: [error('displayType')],
       },
 
       // Constructor calling method inside loop
@@ -473,7 +484,7 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'noOverridableMethodCallsInConstructor' }],
+        errors: [error('displayType')],
       },
 
       // Constructor calling method with parameters
@@ -489,7 +500,7 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'noOverridableMethodCallsInConstructor' }],
+        errors: [error('displayType')],
       },
 
       // Constructor calling method with complex expressions
@@ -509,10 +520,7 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [
-          { messageId: 'noOverridableMethodCallsInConstructor' },
-          { messageId: 'noOverridableMethodCallsInConstructor' },
-        ],
+        errors: [error('displayType'), error('getName')],
       },
 
       // Class expression with invalid constructor
@@ -528,7 +536,7 @@ ruleTesterTs.run(
           }
         };
         `,
-        errors: [{ messageId: 'noOverridableMethodCallsInConstructor' }],
+        errors: [error('displayType')],
       },
 
       // Constructor calling getter (overridable)
@@ -544,7 +552,7 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'noOverridableMethodCallsInConstructor' }],
+        errors: [error('type')],
       },
 
       // Constructor calling setter (overridable)
@@ -562,7 +570,7 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'noOverridableMethodCallsInConstructor' }],
+        errors: [error('type')],
       },
 
       // Constructor calling method with method chaining
@@ -579,7 +587,7 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'noOverridableMethodCallsInConstructor' }],
+        errors: [error('displayType')],
       },
 
       // Constructor calling async method
@@ -595,7 +603,7 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'noOverridableMethodCallsInConstructor' }],
+        errors: [error('initAsync')],
       },
 
       // Constructor calling generator method
@@ -611,7 +619,7 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'noOverridableMethodCallsInConstructor' }],
+        errors: [error('generateData')],
       },
 
       // Constructor with switch statement calling methods
@@ -637,10 +645,7 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [
-          { messageId: 'noOverridableMethodCallsInConstructor' },
-          { messageId: 'noOverridableMethodCallsInConstructor' },
-        ],
+        errors: [error('displayType'), error('showDefault')],
       },
 
       // Constructor calling method with destructuring assignment
@@ -656,7 +661,7 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'noOverridableMethodCallsInConstructor' }],
+        errors: [error('getConfig')],
       },
 
       // Constructor calling method in template literal
@@ -672,7 +677,7 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'noOverridableMethodCallsInConstructor' }],
+        errors: [error('getType')],
       },
 
       // Constructor calling method with spread operator
@@ -689,7 +694,7 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'noOverridableMethodCallsInConstructor' }],
+        errors: [error('getArgs')],
       },
 
       // Constructor calling method in conditional expression
@@ -709,10 +714,7 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [
-          { messageId: 'noOverridableMethodCallsInConstructor' },
-          { messageId: 'noOverridableMethodCallsInConstructor' },
-        ],
+        errors: [error('getTrue'), error('getFalse')],
       },
 
       // Constructor calling method in logical expression
@@ -732,10 +734,7 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [
-          { messageId: 'noOverridableMethodCallsInConstructor' },
-          { messageId: 'noOverridableMethodCallsInConstructor' },
-        ],
+        errors: [error('getValue'), error('getDefault')],
       },
 
       // Constructor calling method in array expression
@@ -751,7 +750,7 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'noOverridableMethodCallsInConstructor' }],
+        errors: [error('getValue')],
       },
 
       // Constructor calling method in object expression
@@ -770,7 +769,7 @@ ruleTesterTs.run(
           }
         }
         `,
-        errors: [{ messageId: 'noOverridableMethodCallsInConstructor' }],
+        errors: [error('getValue')],
       },
     ],
   },
