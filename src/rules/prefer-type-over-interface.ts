@@ -16,7 +16,7 @@ export const preferTypeOverInterface: TSESLint.RuleModule<
     messages: {
       preferType:
         'Interface "{{interfaceName}}" should be declared as a type alias. ' +
-        'Interfaces merge across declarations and can reorder properties, which makes the public shape change without touching this file. ' +
+        'Interfaces can merge across declarations and extend in chains, which fragments the resulting shape across files and makes composition harder to predict and trace. ' +
         'Replace `interface` with `type` and use intersections (for example, `type {{interfaceName}} = Base & { field: string }`) to keep the contract closed and predictable.',
     },
     fixable: 'code',

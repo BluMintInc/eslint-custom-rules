@@ -8,13 +8,15 @@
 
 This rule enforces `type` aliases instead of `interface` declarations so object shapes stay closed and predictable.
 
-Interfaces can merge across files and dependencies, which means a shape may change without edits to the file that declared it. Extends chains can also reorder properties, making the resulting surface less obvious. Using `type` aliases keeps the contract sealed and uses intersections explicitly when you need to compose shapes, so readers see exactly what is included.
+Interfaces can merge across files and dependencies, which means a shape may change without edits to the file that declared it. Extends chains can spread properties across multiple declarations, making the resulting surface harder to trace. Using `type` aliases keeps the contract sealed and uses intersections explicitly when you need to compose shapes, so readers see exactly what is included.
 
 ## Rule Details
 
 The rule reports every `interface` declaration and offers an autofix that rewrites it to a `type` alias. When an interface extends another interface, the fix converts `extends` to an intersection so the composed shape stays explicit.
 
 Examples of **incorrect** code for this rule:
+
+The following interface declarations are reported and autofixed:
 
 ```typescript
 interface UserProfile {
@@ -27,6 +29,8 @@ interface TeamMember extends UserProfile {
 ```
 
 Examples of **correct** code for this rule:
+
+Equivalent shapes written as type aliases (allowed):
 
 ```typescript
 type UserProfile = {
