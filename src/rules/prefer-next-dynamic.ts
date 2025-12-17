@@ -43,6 +43,7 @@ function hasNodeStructure(value: unknown): value is TSESTree.Node {
  *
  * @param visitor - Callback invoked on each node. Return `false` to stop
  * traversal; return `undefined` (or nothing) to continue walking.
+ * @returns `false` if traversal stopped early; `true` when traversal completes.
  */
 function walkAst(
   node: TSESTree.Node,
@@ -267,7 +268,7 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
       preferNextDynamic:
         'Component "{{componentName}}" is created with useDynamic(import(...)), which bypasses Next.js dynamic() handling for client-only components and leaves SSR control to a custom wrapper. Wrap the import in dynamic(() => import(...), { ssr: false }) so Next.js manages code-splitting and disables server rendering safely.',
       addNextDynamicImport:
-        "Add `import dynamic from 'next/dynamic'` so the fixer can call Next.js dynamic() and avoid a runtime ReferenceError when replacing useDynamic(import(...)).",
+        "The auto-fix will replace useDynamic(import(...)) with dynamic(() => import(...), { ssr: false }), which references Next.js's dynamic function. Without importing dynamic from 'next/dynamic', the fixed code will throw a ReferenceError at runtime when the module loads. Add `import dynamic from 'next/dynamic'` at the top of the file to make the dynamic identifier available.",
       removeUseDynamicImport:
         'Remove the unused useDynamic import after migrating to dynamic(); leaving the custom hook imported invites accidental reuse and keeps dead code in the bundle.',
     },
@@ -298,6 +299,7 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
         if (!useDynamicImportInfo) return;
 
         const identifierName = info.idText;
+        // walkAst returns false when visitor returns false (early exit on match)
         const usedInJsx = program.body.some(
           (b) =>
             walkAst(b, (n) => {
