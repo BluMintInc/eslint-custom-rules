@@ -1,5 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
-import type { SourceCode } from '@typescript-eslint/utils/dist/ts-eslint';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'preferDestructuring';
@@ -217,7 +216,7 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
       exampleSuffix: string,
     ) {
       const contextWithSource = context as typeof context & {
-        sourceCode?: SourceCode;
+        sourceCode?: TSESLint.SourceCode;
       };
       const sourceCode =
         contextWithSource.sourceCode ?? context.getSourceCode();
@@ -246,6 +245,68 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
             : `${examplePrefix}{ ${propertyText} } = ${objectText}${exampleSuffix}`,
         },
       };
+    }
+
+    function generateVariableDeclaratorFix(
+      fixer: TSESLint.RuleFixer,
+      node: TSESTree.VariableDeclarator,
+      propertyText: string,
+      objectText: string,
+      memberExpr: TSESTree.MemberExpression,
+    ) {
+      const parentNode = node.parent;
+      if (
+        !parentNode ||
+        parentNode.type !== AST_NODE_TYPES.VariableDeclaration
+      ) {
+        return null;
+      }
+
+      if (parentNode.declarations.length > 1) {
+        return null;
+      }
+
+      const kind = parentNode.kind;
+
+      if (
+        options.enforceForRenamedProperties &&
+        node.id.type === AST_NODE_TYPES.Identifier &&
+        !isMatchingPropertyName(memberExpr.property, node.id.name)
+      ) {
+        return fixer.replaceText(
+          parentNode,
+          `${kind} { ${propertyText}: ${node.id.name} } = ${objectText};`,
+        );
+      }
+
+      return fixer.replaceText(
+        parentNode,
+        `${kind} { ${propertyText} } = ${objectText};`,
+      );
+    }
+
+    function generateAssignmentExpressionFix(
+      fixer: TSESLint.RuleFixer,
+      node: TSESTree.AssignmentExpression,
+      propertyText: string,
+      objectText: string,
+      memberExpr: TSESTree.MemberExpression,
+    ) {
+      if (
+        options.enforceForRenamedProperties &&
+        node.left.type === AST_NODE_TYPES.Identifier &&
+        !isMatchingPropertyName(memberExpr.property, node.left.name)
+      ) {
+        return fixer.replaceText(
+          node,
+          `({ ${propertyText}: ${node.left.name} } = ${objectText})`,
+        );
+      }
+
+      return fixer.replaceText(
+        node,
+        `({ ${propertyText} } = ${objectText})`,
+      );
     }
 
     return {
@@ -277,35 +338,12 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
           messageId: 'preferDestructuring',
           data,
           fix(fixer) {
-            // Get the variable declaration kind (const, let, var)
-            const parentNode = node.parent;
-            if (
-              !parentNode ||
-              parentNode.type !== AST_NODE_TYPES.VariableDeclaration
-            ) {
-              return null;
-            }
-
-            if (parentNode.declarations.length > 1) {
-              return null;
-            }
-            const kind = parentNode.kind;
-
-            // Handle renamed properties
-            if (
-              options.enforceForRenamedProperties &&
-              node.id.type === AST_NODE_TYPES.Identifier &&
-              !isMatchingPropertyName(memberInit.property, node.id.name)
-            ) {
-              return fixer.replaceText(
-                parentNode,
-                `${kind} { ${propertyText}: ${node.id.name} } = ${objectText};`,
-              );
-            }
-
-            return fixer.replaceText(
-              parentNode,
-              `${kind} { ${propertyText} } = ${objectText};`,
+            return generateVariableDeclaratorFix(
+              fixer,
+              node,
+              propertyText,
+              objectText,
+              memberInit,
             );
           },
         });
@@ -316,6 +354,7 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
           node.operator === '=' &&
           node.right.type === AST_NODE_TYPES.MemberExpression
         ) {
+          const memberRight = node.right as TSESTree.MemberExpression;
           if (!shouldUseDestructuring(node.right, node.left)) {
             return;
           }
@@ -325,7 +364,7 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
               ? node.left.name
               : null;
           const { propertyText, objectText, data } = buildReportDetails(
-            node.right,
+            memberRight,
             targetName,
             '(',
             ')',
@@ -336,22 +375,12 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
             messageId: 'preferDestructuring',
             data,
             fix(fixer) {
-              // Handle renamed properties
-              if (
-                options.enforceForRenamedProperties &&
-                node.left.type === AST_NODE_TYPES.Identifier &&
-                node.right.type === AST_NODE_TYPES.MemberExpression &&
-                !isMatchingPropertyName(node.right.property, node.left.name)
-              ) {
-                return fixer.replaceText(
-                  node,
-                  `({ ${propertyText}: ${node.left.name} } = ${objectText})`,
-                );
-              }
-
-              return fixer.replaceText(
+              return generateAssignmentExpressionFix(
+                fixer,
                 node,
-                `({ ${propertyText} } = ${objectText})`,
+                propertyText,
+                objectText,
+                memberRight,
               );
             },
           });
