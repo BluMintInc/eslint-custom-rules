@@ -107,7 +107,7 @@ export const enforceSingularTypeNames: TSESLint.RuleModule<
     schema: [],
     messages: {
       typeShouldBeSingular:
-        "Type name '{{name}}' should be singular. Consider using '{{suggestedName}}' instead.",
+        "Type name '{{name}}' is plural, which signals a collection and hides whether this alias, interface, or enum represents one value or many. Plural type identifiers push callers to misuse the symbol for arrays or maps. Rename it to a singular noun such as '{{suggestedName}}' so the declaration clearly models a single instance and leaves plural names for container types.",
     },
   },
   defaultOptions: [],

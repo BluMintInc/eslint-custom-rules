@@ -90,7 +90,15 @@ ruleTesterTs.run('enforce-timestamp-now', enforceTimestampNow, {
         import { Timestamp } from 'firebase-admin/firestore';
         const timestamp = Timestamp.fromDate(new Date());
       `,
-      errors: [{ messageId: 'preferTimestampNow' }],
+      errors: [
+        {
+          messageId: 'preferTimestampNow',
+          data: {
+            expression: 'Timestamp.fromDate(new Date())',
+            timestampAlias: 'Timestamp',
+          },
+        },
+      ],
       output: `
         import { Timestamp } from 'firebase-admin/firestore';
         const timestamp = Timestamp.now();
@@ -103,7 +111,15 @@ ruleTesterTs.run('enforce-timestamp-now', enforceTimestampNow, {
         import { Timestamp as FirestoreTimestamp } from 'firebase-admin/firestore';
         const timestamp = FirestoreTimestamp.fromDate(new Date());
       `,
-      errors: [{ messageId: 'preferTimestampNow' }],
+      errors: [
+        {
+          messageId: 'preferTimestampNow',
+          data: {
+            expression: 'FirestoreTimestamp.fromDate(new Date())',
+            timestampAlias: 'FirestoreTimestamp',
+          },
+        },
+      ],
       output: `
         import { Timestamp as FirestoreTimestamp } from 'firebase-admin/firestore';
         const timestamp = FirestoreTimestamp.now();
@@ -116,7 +132,15 @@ ruleTesterTs.run('enforce-timestamp-now', enforceTimestampNow, {
         import { Timestamp } from 'firebase-admin/firestore';
         const timestamp = Timestamp.fromMillis(Date.now());
       `,
-      errors: [{ messageId: 'preferTimestampNow' }],
+      errors: [
+        {
+          messageId: 'preferTimestampNow',
+          data: {
+            expression: 'Timestamp.fromMillis(Date.now())',
+            timestampAlias: 'Timestamp',
+          },
+        },
+      ],
       output: `
         import { Timestamp } from 'firebase-admin/firestore';
         const timestamp = Timestamp.now();
@@ -129,7 +153,15 @@ ruleTesterTs.run('enforce-timestamp-now', enforceTimestampNow, {
         import { Timestamp } from 'firebase-admin/firestore';
         const timestamp = new Date();
       `,
-      errors: [{ messageId: 'preferTimestampNow' }],
+      errors: [
+        {
+          messageId: 'preferTimestampNow',
+          data: {
+            expression: 'new Date()',
+            timestampAlias: 'Timestamp',
+          },
+        },
+      ],
       output: `
         import { Timestamp } from 'firebase-admin/firestore';
         const timestamp = Timestamp.now();
@@ -142,7 +174,15 @@ ruleTesterTs.run('enforce-timestamp-now', enforceTimestampNow, {
         import { Timestamp } from 'firebase-admin/firestore';
         const createdAt = new Date();
       `,
-      errors: [{ messageId: 'preferTimestampNow' }],
+      errors: [
+        {
+          messageId: 'preferTimestampNow',
+          data: {
+            expression: 'new Date()',
+            timestampAlias: 'Timestamp',
+          },
+        },
+      ],
       output: `
         import { Timestamp } from 'firebase-admin/firestore';
         const createdAt = Timestamp.now();
@@ -155,7 +195,15 @@ ruleTesterTs.run('enforce-timestamp-now', enforceTimestampNow, {
         import { Timestamp } from 'firebase-admin/firestore';
         const updatedAt = new Date();
       `,
-      errors: [{ messageId: 'preferTimestampNow' }],
+      errors: [
+        {
+          messageId: 'preferTimestampNow',
+          data: {
+            expression: 'new Date()',
+            timestampAlias: 'Timestamp',
+          },
+        },
+      ],
       output: `
         import { Timestamp } from 'firebase-admin/firestore';
         const updatedAt = Timestamp.now();
@@ -168,7 +216,15 @@ ruleTesterTs.run('enforce-timestamp-now', enforceTimestampNow, {
         const { Timestamp } = await import('firebase-admin/firestore');
         const timestamp = Timestamp.fromDate(new Date());
       `,
-      errors: [{ messageId: 'preferTimestampNow' }],
+      errors: [
+        {
+          messageId: 'preferTimestampNow',
+          data: {
+            expression: 'Timestamp.fromDate(new Date())',
+            timestampAlias: 'Timestamp',
+          },
+        },
+      ],
       output: `
         const { Timestamp } = await import('firebase-admin/firestore');
         const timestamp = Timestamp.now();
