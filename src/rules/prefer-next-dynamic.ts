@@ -48,12 +48,12 @@ function walkAst(
   node: TSESTree.Node,
   visitor: (n: TSESTree.Node) => boolean | void,
   visited = new WeakSet<object>(),
-): void {
-  if (visited.has(node)) return;
+): boolean {
+  if (visited.has(node)) return true;
   visited.add(node);
 
   const shouldContinue = visitor(node);
-  if (shouldContinue === false) return;
+  if (shouldContinue === false) return false;
 
   const anyNode = node as unknown as Record<string, unknown>;
   for (const key of Object.keys(anyNode)) {
@@ -62,13 +62,14 @@ function walkAst(
     if (Array.isArray(child)) {
       for (const c of child) {
         if (hasNodeStructure(c)) {
-          walkAst(c, visitor, visited);
+          if (!walkAst(c, visitor, visited)) return false;
         }
       }
     } else if (hasNodeStructure(child)) {
-      walkAst(child, visitor, visited);
+      if (!walkAst(child, visitor, visited)) return false;
     }
   }
+  return true;
 }
 
 function isUseDynamicCall(node: TSESTree.CallExpression): boolean {
@@ -297,23 +298,20 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
         if (!useDynamicImportInfo) return;
 
         const identifierName = info.idText;
-        const usedInJsx = program.body.some((b) => {
-          let found = false;
-          walkAst(b, (n) => {
-            if (found) return false;
-            if (n.type === AST_NODE_TYPES.JSXOpeningElement) {
-              const name = n.name;
-              if (name.type === AST_NODE_TYPES.JSXIdentifier) {
-                if (name.name === identifierName) {
-                  found = true;
-                  return false;
+        const usedInJsx = program.body.some(
+          (b) =>
+            walkAst(b, (n) => {
+              if (n.type === AST_NODE_TYPES.JSXOpeningElement) {
+                const name = n.name;
+                if (name.type === AST_NODE_TYPES.JSXIdentifier) {
+                  if (name.name === identifierName) {
+                    return false;
+                  }
                 }
               }
-            }
-            return undefined;
-          });
-          return found;
-        });
+              return undefined;
+            }) === false,
+        );
 
         if (!usedInJsx) {
           // Skip to avoid flagging non-component dynamic imports
@@ -400,22 +398,19 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
             );
             if (latestUseDynamicImport) {
               // Abort removal if there are other useDynamic(import(...)) calls in the file
-              const otherUseDynamicCalls = programNode.body.some((b) => {
-                let found = false;
-                walkAst(b, (n) => {
-                  if (found) return false;
-                  if (
-                    n.type === AST_NODE_TYPES.CallExpression &&
-                    isUseDynamicCall(n) &&
-                    n !== init
-                  ) {
-                    found = true;
-                    return false;
-                  }
-                  return undefined;
-                });
-                return found;
-              });
+              const otherUseDynamicCalls = programNode.body.some(
+                (b) =>
+                  walkAst(b, (n) => {
+                    if (
+                      n.type === AST_NODE_TYPES.CallExpression &&
+                      isUseDynamicCall(n) &&
+                      n !== init
+                    ) {
+                      return false;
+                    }
+                    return undefined;
+                  }) === false,
+              );
               if (otherUseDynamicCalls) {
                 return fixes; // keep the import; other occurrences still rely on it
               }
