@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { getMethodName } from '../utils/getMethodName';
 
 type MessageIds = 'noMemoizeOnStatic';
 
@@ -14,11 +15,12 @@ export const noMemoizeOnStatic = createRule<[], MessageIds>({
     schema: [],
     messages: {
       noMemoizeOnStatic:
-        '@Memoize() decorator should not be used on static methods',
+        'Static member "{{methodName}}" uses @Memoize(), which shares one cache across every caller instead of per instance. Static memoization can leak stale or cross-tenant data because the cache survives across requests for the lifetime of the process. Remove @Memoize() or move the logic into an instance method so each consumer gets its own cache lifecycle.',
     },
   },
   defaultOptions: [],
   create(context) {
+    const sourceCode = context.getSourceCode();
     // Track renamed imports of Memoize
     const memoizeAliases = new Set(['Memoize']);
 
@@ -48,6 +50,13 @@ export const noMemoizeOnStatic = createRule<[], MessageIds>({
               context.report({
                 node: decorator,
                 messageId: 'noMemoizeOnStatic',
+                data: {
+                  methodName:
+                    getMethodName(node, sourceCode, {
+                      privateIdentifierPrefix: '#',
+                      computedFallbackToText: false,
+                    }) || '<unknown>',
+                },
               });
             }
           }

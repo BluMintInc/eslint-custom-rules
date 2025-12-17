@@ -252,13 +252,9 @@ function removeImportSpecifierFixes(
   const tokenBefore = sourceCode.getTokenBefore(specifier);
 
   if (tokenAfter && tokenAfter.value === ',') {
-    fixes.push(
-      fixer.removeRange([specifier.range[0], tokenAfter.range![1]]),
-    );
+    fixes.push(fixer.removeRange([specifier.range[0], tokenAfter.range![1]]));
   } else if (tokenBefore && tokenBefore.value === ',') {
-    fixes.push(
-      fixer.removeRange([tokenBefore.range![0], specifier.range[1]]),
-    );
+    fixes.push(fixer.removeRange([tokenBefore.range![0], specifier.range[1]]));
   } else {
     fixes.push(fixer.remove(specifier));
   }
@@ -379,7 +375,7 @@ export const preferUseDeepCompareMemo = createRule<[], MessageIds>({
     schema: [],
     messages: {
       preferUseDeepCompareMemo:
-        'Use useDeepCompareMemo instead of useMemo because dependency array contains unmemoized non-primitive values.',
+        'Dependency array for "{{hook}}" includes objects/arrays/functions that change identity each render, so React treats them as changed and reruns the memoized computation, triggering avoidable renders. Use useDeepCompareMemo (or memoize those dependencies first) so comparisons use deep equality and the memo stays stable.',
     },
   },
   defaultOptions: [],
@@ -458,6 +454,9 @@ export const preferUseDeepCompareMemo = createRule<[], MessageIds>({
         context.report({
           node,
           messageId: 'preferUseDeepCompareMemo',
+          data: {
+            hook: 'useMemo',
+          },
           fix(fixer) {
             const fixes: TSESLint.RuleFix[] = [];
 

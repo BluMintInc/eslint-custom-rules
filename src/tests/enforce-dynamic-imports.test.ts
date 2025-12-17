@@ -2,11 +2,10 @@ import { ruleTesterTs } from '../utils/ruleTester';
 import rule, { RULE_NAME } from '../rules/enforce-dynamic-imports';
 
 const ruleTester = ruleTesterTs;
-const buildError = (source: string) =>
-  ({
-    messageId: 'dynamicImportRequired' as const,
-    data: { source },
-  });
+const buildError = (source: string) => ({
+  messageId: 'dynamicImportRequired' as const,
+  data: { source },
+});
 
 ruleTester.run(RULE_NAME, rule, {
   valid: [
