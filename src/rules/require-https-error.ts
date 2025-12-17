@@ -27,17 +27,21 @@ export = createRule({
       return {};
     }
 
+    type ProprietaryErrorData = {
+      reference: string;
+      source: string;
+    };
+
     const httpsIdentifiers = new Map<string, string>();
     const httpsErrorIdentifiers = new Map<string, string>();
     const reportProprietary = (
       node: TSESTree.Node,
-      reference: string,
-      source: string,
+      data: ProprietaryErrorData,
     ) =>
       context.report({
         node,
         messageId: 'useProprietaryHttpsError',
-        data: { reference, source },
+        data,
       });
 
     return {
@@ -67,13 +71,16 @@ export = createRule({
           if (httpsErrorSpecifier && 'local' in httpsErrorSpecifier) {
             const localName = httpsErrorSpecifier.local.name;
             httpsErrorIdentifiers.set(localName, sourceModule);
-            reportProprietary(node, localName, sourceModule);
+            reportProprietary(node, { reference: localName, source: sourceModule });
           }
 
           if (httpsSpecifier && 'local' in httpsSpecifier) {
             const localName = httpsSpecifier.local.name;
             httpsIdentifiers.set(localName, sourceModule);
-            reportProprietary(node, `${localName}.HttpsError`, sourceModule);
+            reportProprietary(node, {
+              reference: `${localName}.HttpsError`,
+              source: sourceModule,
+            });
           }
         }
       },
@@ -118,7 +125,7 @@ export = createRule({
             return;
           }
 
-          reportProprietary(node, `${objectName}.HttpsError`, source);
+          reportProprietary(node, { reference: `${objectName}.HttpsError`, source });
           return;
         }
 
@@ -129,7 +136,7 @@ export = createRule({
             return;
           }
 
-          reportProprietary(node, callee.name, source);
+          reportProprietary(node, { reference: callee.name, source });
         }
       },
     };
