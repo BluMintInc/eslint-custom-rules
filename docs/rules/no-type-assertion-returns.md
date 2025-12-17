@@ -39,12 +39,15 @@ const createUser = (): User => ({
 
 ```ts
 function getSettings() {
-  const settings: UserSettings = { theme: 'dark', notifications: true };
+  const settings: UserSettings = { theme: 'dark' }; // TypeScript enforces the full UserSettings shape here
   return settings;
 }
 
 const createUser = () => {
-  const user: User = fetchUser();
+  const user: User = {
+    id: 1,
+    name: 'Ava',
+  }; // TS checks this object matches User before returning
   return user;
 };
 ```
