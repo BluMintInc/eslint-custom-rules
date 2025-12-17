@@ -213,9 +213,6 @@ export const preferNullishCoalescingOverride = createRule<[], MessageIds>({
     return {
       LogicalExpression(node: TSESTree.LogicalExpression) {
         if (shouldConvertToNullishCoalescing(node)) {
-          const sc = context.getSourceCode();
-          const leftText = sc.getText(node.left);
-          const rightText = sc.getText(node.right);
           context.report({
             node,
             messageId: 'preferNullishCoalescing',
