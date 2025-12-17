@@ -203,7 +203,7 @@ export const preferUrlToStringOverToJson: TSESLint.RuleModule<
     schema: [],
     messages: {
       preferToString:
-        'URL value {{urlText}} calls toJSON(), which hides that JSON.stringify already invokes toJSON and adds an unnecessary method hop. Replace the call with toString() when you need a string, or pass the URL object directly to JSON.stringify so serialization stays explicit and stable.',
+        'URL value {{urlText}} calls toJSON() explicitly. JSON.stringify already invokes toJSON on URL objects, so this indirection hides when serialization happens and adds cognitive overhead. Use toString() when you need a string, or pass the URL directly to JSON.stringify to rely on its built-in serialization.',
     },
   },
   defaultOptions: [],

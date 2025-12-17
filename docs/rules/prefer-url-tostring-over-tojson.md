@@ -66,7 +66,7 @@ console.log(maybeUrl?.toString());
 
 ## When Not To Use It
 
-- If your project intentionally prefers `toJSON()` to signal JSON-only usage even outside of `JSON.stringify`. This is uncommon and discouraged because `URL#toJSON()` returns the same string as `toString()` and adds indirection without changing output.
+- If your project intentionally prefers `toJSON()` to signal JSON-only usage even outside `JSON.stringify`. This is uncommon and discouraged because `URL#toJSON()` returns the same string as `toString()` and adds indirection without changing output.
 
 ## Implementation Notes
 
