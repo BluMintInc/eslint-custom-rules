@@ -9,12 +9,22 @@ ruleTesterTs.run('prefer-type-over-interface', preferTypeOverInterface, {
   invalid: [
     {
       code: 'interface SomeInterface { field: string; }',
-      errors: [{ messageId: 'preferType' }],
+      errors: [
+        {
+          messageId: 'preferType',
+          data: { interfaceName: 'SomeInterface' },
+        },
+      ],
       output: 'type SomeInterface = { field: string; }',
     },
     {
       code: 'interface AnotherInterface extends SomeInterface { otherField: number; }',
-      errors: [{ messageId: 'preferType' }],
+      errors: [
+        {
+          messageId: 'preferType',
+          data: { interfaceName: 'AnotherInterface' },
+        },
+      ],
       output:
         'type AnotherInterface =  SomeInterface & { otherField: number; }',
     },
