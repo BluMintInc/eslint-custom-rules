@@ -1,5 +1,6 @@
 import { TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { getMethodName } from '../utils/getMethodName';
 
 type MessageIds = 'preferUtilityFunctionOverPrivateStatic';
 
@@ -55,24 +56,6 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
       }
 
       return false;
-    };
-
-    const getMethodName = (
-      method: TSESTree.MethodDefinition,
-      sourceCode: Readonly<{ getText: (node: TSESTree.Node) => string }>,
-    ): string => {
-      if (
-        method.key.type === 'PrivateIdentifier' ||
-        method.key.type === 'Identifier'
-      ) {
-        return method.key.name;
-      }
-
-      if (method.key.type === 'Literal' && method.key.value) {
-        return String(method.key.value);
-      }
-
-      return sourceCode.getText(method.key);
     };
 
     const getClassName = (method: TSESTree.MethodDefinition): string => {
