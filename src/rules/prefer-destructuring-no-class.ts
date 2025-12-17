@@ -1,4 +1,5 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import type { SourceCode } from '@typescript-eslint/utils/dist/ts-eslint';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'preferDestructuring';
@@ -209,43 +210,72 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
       return false;
     }
 
+    function buildReportDetails(
+      memberExpr: TSESTree.MemberExpression,
+      targetName: string | null,
+      examplePrefix: string,
+      exampleSuffix: string,
+    ) {
+      const contextWithSource = context as typeof context & {
+        sourceCode?: SourceCode;
+      };
+      const sourceCode =
+        contextWithSource.sourceCode ?? context.getSourceCode();
+      const objectText = sourceCode.getText(memberExpr.object);
+      const propertyText = getPropertyText(
+        memberExpr.property,
+        memberExpr.computed,
+        sourceCode,
+      );
+      const usesRenaming =
+        options.enforceForRenamedProperties &&
+        !!targetName &&
+        !isMatchingPropertyName(memberExpr.property, targetName);
+      const aliasName = targetName ?? propertyText;
+
+      return {
+        propertyText,
+        objectText,
+        data: {
+          property: propertyText,
+          object: objectText,
+          targetNote: usesRenaming && targetName ? ` to "${targetName}"` : '',
+          renamingHint: usesRenaming ? ' with renaming' : '',
+          example: usesRenaming
+            ? `${examplePrefix}{ ${propertyText}: ${aliasName} } = ${objectText}${exampleSuffix}`
+            : `${examplePrefix}{ ${propertyText} } = ${objectText}${exampleSuffix}`,
+        },
+      };
+    }
+
     return {
       VariableDeclarator(node) {
         // Skip if variable is declared without assignment or if init is not a MemberExpression
         if (!node.init) return;
         if (node.init.type !== AST_NODE_TYPES.MemberExpression) return;
 
-        if (!shouldUseDestructuring(node.init, node.id)) {
+        const memberInit = node.init as TSESTree.MemberExpression;
+        if (!shouldUseDestructuring(memberInit, node.id)) {
           return;
         }
 
-        const sourceCode = context.getSourceCode();
-        const objectText = sourceCode.getText(node.init.object);
-        const propertyText = getPropertyText(
-          node.init.property,
-          node.init.computed,
-          sourceCode,
-        );
         const targetName =
           node.id.type === AST_NODE_TYPES.Identifier ? node.id.name : null;
-        const usesRenaming =
-          options.enforceForRenamedProperties &&
-          !!targetName &&
-          !isMatchingPropertyName(node.init.property, targetName);
+        const { propertyText, objectText, data } = buildReportDetails(
+          memberInit,
+          targetName,
+          `${
+            node.parent?.type === AST_NODE_TYPES.VariableDeclaration
+              ? node.parent.kind
+              : 'const'
+          } `,
+          ';',
+        );
 
         context.report({
           node,
           messageId: 'preferDestructuring',
-          data: {
-            property: propertyText,
-            object: objectText,
-            targetNote:
-              usesRenaming && targetName ? ` to "${targetName}"` : '',
-            renamingHint: usesRenaming ? ' with renaming' : '',
-            example: usesRenaming
-              ? `${node.parent?.type === AST_NODE_TYPES.VariableDeclaration ? node.parent.kind : 'const'} { ${propertyText}: ${targetName ?? propertyText} } = ${objectText};`
-              : `${node.parent?.type === AST_NODE_TYPES.VariableDeclaration ? node.parent.kind : 'const'} { ${propertyText} } = ${objectText};`,
-          },
+          data,
           fix(fixer) {
             // Get the variable declaration kind (const, let, var)
             const parentNode = node.parent;
@@ -255,15 +285,17 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
             ) {
               return null;
             }
+
+            if (parentNode.declarations.length > 1) {
+              return null;
+            }
             const kind = parentNode.kind;
 
             // Handle renamed properties
             if (
               options.enforceForRenamedProperties &&
               node.id.type === AST_NODE_TYPES.Identifier &&
-              node.init &&
-              node.init.type === AST_NODE_TYPES.MemberExpression &&
-              !isMatchingPropertyName(node.init.property, node.id.name)
+              !isMatchingPropertyName(memberInit.property, node.id.name)
             ) {
               return fixer.replaceText(
                 parentNode,
@@ -288,35 +320,21 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
             return;
           }
 
-          const sourceCode = context.getSourceCode();
-          const objectText = sourceCode.getText(node.right.object);
-          const propertyText = getPropertyText(
-            node.right.property,
-            node.right.computed,
-            sourceCode,
-          );
           const targetName =
             node.left.type === AST_NODE_TYPES.Identifier
               ? node.left.name
               : null;
-          const usesRenaming =
-            options.enforceForRenamedProperties &&
-            !!targetName &&
-            !isMatchingPropertyName(node.right.property, targetName);
+          const { propertyText, objectText, data } = buildReportDetails(
+            node.right,
+            targetName,
+            '(',
+            ')',
+          );
 
           context.report({
             node,
             messageId: 'preferDestructuring',
-            data: {
-              property: propertyText,
-              object: objectText,
-              targetNote:
-                usesRenaming && targetName ? ` to "${targetName}"` : '',
-              renamingHint: usesRenaming ? ' with renaming' : '',
-              example: usesRenaming
-                ? `({ ${propertyText}: ${targetName ?? propertyText} } = ${objectText})`
-                : `({ ${propertyText} } = ${objectText})`,
-            },
+            data,
             fix(fixer) {
               // Handle renamed properties
               if (
