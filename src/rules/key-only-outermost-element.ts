@@ -4,6 +4,27 @@ import { createRule } from '../utils/createRule';
 type MessageIds = 'keyOnlyOutermostElement' | 'fragmentShouldHaveKey';
 type Options = [];
 
+const getJSXElementName = (name: TSESTree.JSXTagNameExpression): string => {
+  if (name.type === 'JSXIdentifier') {
+    return name.name;
+  }
+
+  if (name.type === 'JSXMemberExpression') {
+    const objectName =
+      name.object.type === 'JSXIdentifier'
+        ? name.object.name
+        : getJSXElementName(name.object);
+
+    return `${objectName}.${name.property.name}`;
+  }
+
+  if (name.type === 'JSXNamespacedName') {
+    return `${name.namespace.name}:${name.name.name}`;
+  }
+
+  return 'element';
+};
+
 export const keyOnlyOutermostElement = createRule<Options, MessageIds>({
   name: 'key-only-outermost-element',
   meta: {
@@ -15,9 +36,9 @@ export const keyOnlyOutermostElement = createRule<Options, MessageIds>({
     },
     messages: {
       keyOnlyOutermostElement:
-        'Only the outermost element in a list rendering should have a key prop. Remove the key from this nested element.',
+        'Nested element "{{elementName}}" has a key even though the list item already owns the identity. React reconciles list items using the key on the outermost element; nested keys create redundant identities and can mask ordering bugs. Remove this nested key and keep the key only on the element returned from map().',
       fragmentShouldHaveKey:
-        'Fragment used as the outermost element in a list should use <React.Fragment key={...}> instead of shorthand syntax.',
+        'List items returned as fragments need a key on the fragment. Shorthand fragments (<></>) cannot accept keys, so React cannot track each item when the list reorders. Replace the shorthand with <React.Fragment key={...}> or another keyed wrapper so every list item has a stable identity.',
     },
     schema: [],
     fixable: 'code',
@@ -133,6 +154,9 @@ export const keyOnlyOutermostElement = createRule<Options, MessageIds>({
               context.report({
                 node: attr,
                 messageId: 'keyOnlyOutermostElement',
+                data: {
+                  elementName: getJSXElementName(openingElement.name),
+                },
                 fix(fixer) {
                   // Find the exact range of the attribute in the source code
                   const startPos = attr.range[0];

@@ -7,12 +7,12 @@ export const noUnnecessaryDestructuring = createRule({
     type: 'suggestion',
     docs: {
       description:
-        'Avoid unnecessary object destructuring when there is only one property inside the destructured object',
+        'Avoid object patterns that only spread an existing object, since they clone the whole value without selecting properties',
       recommended: 'error',
     },
     messages: {
       noUnnecessaryDestructuring:
-        'Avoid unnecessary object destructuring with a single rest property. Use the object directly instead of `{ ...obj }`.',
+        'Destructuring only the rest of "{{source}}" into "{{target}}" just clones the entire object. The shallow copy adds allocations and hides that you keep every property unchanged. Assign the object directly instead, for example `{{target}} = {{source}}`.',
     },
     schema: [],
     fixable: 'code',
@@ -27,14 +27,20 @@ export const noUnnecessaryDestructuring = createRule({
           node.id.properties.length === 1 &&
           node.id.properties[0].type === 'RestElement'
         ) {
+          const sourceCode = context.getSourceCode();
           const restElement = node.id.properties[0] as TSESTree.RestElement;
 
           // Report the issue
           context.report({
             node,
             messageId: 'noUnnecessaryDestructuring',
+            data: {
+              target: sourceCode.getText(restElement.argument),
+              source: node.init
+                ? sourceCode.getText(node.init)
+                : 'the source object',
+            },
             fix(fixer) {
-              const sourceCode = context.getSourceCode();
               const restName = sourceCode.getText(restElement.argument);
 
               // Handle the case where init might be null
@@ -59,13 +65,17 @@ export const noUnnecessaryDestructuring = createRule({
           node.left.properties.length === 1 &&
           node.left.properties[0].type === 'RestElement'
         ) {
+          const sourceCode = context.getSourceCode();
           const restElement = node.left.properties[0] as TSESTree.RestElement;
 
           context.report({
             node,
             messageId: 'noUnnecessaryDestructuring',
+            data: {
+              target: sourceCode.getText(restElement.argument),
+              source: sourceCode.getText(node.right),
+            },
             fix(fixer) {
-              const sourceCode = context.getSourceCode();
               const restName = sourceCode.getText(restElement.argument);
               const rightText = sourceCode.getText(node.right);
 
