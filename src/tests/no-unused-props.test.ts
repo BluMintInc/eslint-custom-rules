@@ -227,6 +227,54 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
     },
     {
       code: `
+        type RecursiveProps = { value: string } & RecursiveProps;
+        const Component = ({ value }: RecursiveProps) => <div>{value}</div>;
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type Props = { 'data-testid': string; label: string };
+        const Component = ({ label, 'data-testid': dataTestId }: Props) => (
+          <div data-testid={dataTestId}>{label}</div>
+        );
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type SharedProps = { title: string };
+
+        function makeComponent() {
+          type LocalProps = SharedProps & { subtitle: string };
+          const Component = ({ title, subtitle }: LocalProps) => (
+            <h1>
+              {title}
+              {subtitle}
+            </h1>
+          );
+          return Component;
+        }
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
         type BaseProps = {
           used: string;
           unused: string;
@@ -266,6 +314,25 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
     },
     {
       code: `
+        type Props = { 'data-testid': string; label: string };
+        const Component = ({ label }: Props) => <div>{label}</div>;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'data-testid' },
+          type: AST_NODE_TYPES.Literal,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
         type ImageOptimizedProps = { src: string; alt: string; width: number; height: number };
         const ImageOptimized = ({ src, alt }: ImageOptimizedProps) => <img src={src} alt={alt} />;
       `,
@@ -279,6 +346,68 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
           messageId: 'unusedProp',
           data: { propName: 'height' },
           type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type Props = Omit<{ a: string; b: string }, 'a'>;
+        const Component = ({}: Props) => <div />;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'b' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type Props = Omit<{ a: string; b: string }, K>;
+        type K = 'c';
+        const Component = ({ a }: Props) => <div>{a}</div>;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'b' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        namespace Foo {
+          export type BarProps = { kept: string; unused: string };
+        }
+
+        type Props = Omit<Foo.BarProps, 'kept'>;
+        const Component = ({}: Props) => <div />;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: '...Foo.BarProps' },
+          type: AST_NODE_TYPES.TSQualifiedName,
         },
       ],
       filename: 'test.tsx',

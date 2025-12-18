@@ -32,7 +32,7 @@ export const useLatestCallback = createRule<[], MessageIds>({
     let useLatestCallbackImportName = 'useLatestCallback';
     // Track if any useCallback calls should be replaced
     let hasNonJsxUseCallbacks = false;
-    let useCallbackLocalNames = new Set<string>();
+    const useCallbackLocalNames = new Set<string>();
     const reactNamespaceNames = new Set<string>();
     const reactDefaultLikeNames = new Set<string>();
     let hasReactMemberUseCallback = false;
@@ -237,11 +237,8 @@ export const useLatestCallback = createRule<[], MessageIds>({
               fix(fixer) {
                 const sourceCode = context.getSourceCode();
                 const callbackText = sourceCode.getText(node.arguments[0]);
-                const typeParams = (node as TSESTree.CallExpression)
-                  .typeParameters
-                  ? sourceCode.getText(
-                      (node as TSESTree.CallExpression).typeParameters!,
-                    )
+                const typeParams = node.typeParameters
+                  ? sourceCode.getText(node.typeParameters)
                   : '';
 
                 // Replace useCallback with useLatestCallback and remove the dependency array

@@ -250,6 +250,7 @@ export const preferFieldPathsInTransforms = createRule<
   ],
   create(context, [options]) {
     const filename = context.getFilename();
+
     const containers = options?.containers ?? DEFAULT_CONTAINERS;
     const allowNestedIn = options?.allowNestedIn ?? [];
 
