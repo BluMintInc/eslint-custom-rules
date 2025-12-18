@@ -162,11 +162,11 @@ const getParentParamName = (depth: number) => {
 
 const findHandlerFunction = (
   node: TSESTree.Node,
-  handlerFunctions: Set<TSESTree.Node>,
+  handlerNodes: Set<TSESTree.Node>,
 ): TSESTree.Node | null => {
   let current: TSESTree.Node | undefined = node;
   while (current) {
-    if (handlerFunctions.has(current)) {
+    if (handlerNodes.has(current)) {
       return current;
     }
     current = current.parent;
@@ -254,59 +254,6 @@ const getParamsIdentifierInScope = (
   return null;
 };
 
-const hasParamsPropertyInPattern = (
-  pattern: TSESTree.ObjectPattern,
-): boolean => {
-  return pattern.properties.some(
-    (prop) =>
-      prop.type === AST_NODE_TYPES.Property &&
-      prop.key.type === AST_NODE_TYPES.Identifier &&
-      prop.key.name === 'params',
-  );
-};
-
-const hasParamsPropertyInScope = (
-  handlerNode: TSESTree.FunctionLike,
-): boolean => {
-  const firstParam = handlerNode.params[0];
-  if (firstParam?.type === AST_NODE_TYPES.ObjectPattern) {
-    if (hasParamsPropertyInPattern(firstParam)) {
-      return true;
-    }
-  }
-
-  if (
-    handlerNode.body &&
-    handlerNode.body.type === AST_NODE_TYPES.BlockStatement
-  ) {
-    const eventParamName =
-      firstParam && firstParam.type === AST_NODE_TYPES.Identifier
-        ? firstParam.name
-        : 'event';
-
-    for (const statement of handlerNode.body.body) {
-      if (statement.type !== AST_NODE_TYPES.VariableDeclaration) {
-        continue;
-      }
-      for (const declarator of statement.declarations) {
-        if (
-          declarator.id.type !== AST_NODE_TYPES.ObjectPattern ||
-          !declarator.init ||
-          declarator.init.type !== AST_NODE_TYPES.Identifier ||
-          declarator.init.name !== eventParamName
-        ) {
-          continue;
-        }
-        if (hasParamsPropertyInPattern(declarator.id)) {
-          return true;
-        }
-      }
-    }
-  }
-
-  return false;
-};
-
 export const preferParamsOverParentId = createRule<[], MessageIds>({
   name: 'prefer-params-over-parent-id',
   meta: {
@@ -331,7 +278,7 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     // Track functions that are Firebase change handlers
-    const handlerFunctions = new Set<TSESTree.Node>();
+    const handlerNodes = new Set<TSESTree.Node>();
 
     return {
       // Track Firebase change handler functions
@@ -342,7 +289,7 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
           | TSESTree.ArrowFunctionExpression,
       ): void {
         if (isFirebaseChangeHandler(node)) {
-          handlerFunctions.add(node);
+          handlerNodes.add(node);
         }
       },
 
@@ -350,7 +297,7 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
       MemberExpression(node: TSESTree.MemberExpression): void {
         const parentAccess = isParentIdAccess(node);
         if (parentAccess.isMatch) {
-          const handlerNode = findHandlerFunction(node, handlerFunctions);
+          const handlerNode = findHandlerFunction(node, handlerNodes);
 
           if (handlerNode) {
             const isFunctionLikeNode =
@@ -361,10 +308,8 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
             const paramsIdentifier = isFunctionLikeNode
               ? getParamsIdentifierInScope(handlerNode)
               : null;
-            const hasParamsProperty =
-              isFunctionLikeNode && hasParamsPropertyInScope(handlerNode);
 
-            if (!paramsIdentifier && !hasParamsProperty) {
+            if (!paramsIdentifier) {
               context.report({
                 node,
                 messageId: 'preferParams',
@@ -375,7 +320,7 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
               return;
             }
 
-            const paramsTarget = paramsIdentifier ?? 'params';
+            const paramsTarget = paramsIdentifier;
             // Suggest different parameter names based on depth
             // Note: These conventions may vary by data model; adjust if needed
             const paramSuggestion = getParentParamName(parentAccess.depth);

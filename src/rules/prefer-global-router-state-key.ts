@@ -320,16 +320,30 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                             ).find(([, source]) =>
                               isQueryKeysSource(source),
                             )?.[0];
+
+                            // Check if the constant is already imported (possibly with an alias)
+                            const existingNamedImport = Array.from(
+                              queryKeyImports.entries(),
+                            ).find(
+                              ([, info]) =>
+                                isQueryKeysSource(info.source) &&
+                                info.imported === suggestedConstant,
+                            );
+                            const localName = existingNamedImport?.[0];
+
                             const importAlias = namespaceAlias ?? defaultAlias;
                             const formatConstantReference = (
                               alias: string | undefined,
                               constant: string,
                             ): string =>
                               alias ? `${alias}.${constant}` : constant;
-                            const replacementText = formatConstantReference(
-                              importAlias,
-                              suggestedConstant,
-                            );
+
+                            const replacementText = localName
+                              ? localName
+                              : formatConstantReference(
+                                  importAlias,
+                                  suggestedConstant,
+                                );
 
                             // 1) Replace the literal with the constant (qualify if alias exists)
                             fixes.push(
@@ -337,17 +351,10 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                             );
 
                             // 2) Ensure an import exists for the suggested constant
-                            const alreadyImportedNamed = Array.from(
-                              queryKeyImports.values(),
-                            ).some(
-                              (info) =>
-                                isQueryKeysSource(info.source) &&
-                                info.imported === suggestedConstant,
-                            );
                             const hasNamespaceOrDefault = Boolean(importAlias);
 
                             if (
-                              !alreadyImportedNamed &&
+                              !existingNamedImport &&
                               !hasNamespaceOrDefault
                             ) {
                               const importText = `import { ${suggestedConstant} } from '@/util/routing/queryKeys';\n`;
