@@ -5,104 +5,94 @@ import { ruleTesterMarkdown } from '../utils/ruleTester';
 const rule = enforceTypescriptMarkdownCodeBlocks as unknown as Rule.RuleModule;
 const joinLines = (...lines: string[]) => lines.join('\n');
 
+const createValidTestCase = (code: string) => ({
+  filename: 'docs/example.md',
+  code,
+});
+
+const createInvalidTestCase = (
+  code: string,
+  output: string,
+  errors: { messageId: string; line: number }[],
+) => ({
+  filename: 'docs/example.md',
+  code,
+  output,
+  errors,
+});
+
 ruleTesterMarkdown.run('enforce-typescript-markdown-code-blocks', rule, {
   valid: [
-    {
-      filename: 'docs/example.md',
-      code: joinLines(
+    createValidTestCase(
+      joinLines(
         '# Some Title',
         '',
         '```typescript',
         'const example = 1;',
         '```',
       ),
-    },
-    {
-      filename: 'docs/example.md',
-      code: joinLines('```javascript', 'const jsExample = 1;', '```'),
-    },
-    {
-      filename: 'docs/example.md',
-      code: joinLines('```bash', 'echo "no change"', '```'),
-    },
-    {
-      filename: 'docs/example.md',
-      code: 'Some inline `code` snippet should not change.',
-    },
-    {
-      filename: 'docs/example.md',
-      code: joinLines('````', 'This is not a triple backtick fence.', '````'),
-    },
-    {
-      filename: 'docs/example.md',
-      code: joinLines('```typescript   ', 'const spaced = true;', '```'),
-    },
-    {
-      filename: 'docs/example.md',
-      code: joinLines('```ts', 'const shorthand = true;', '```'),
-    },
-    {
-      filename: 'docs/example.md',
-      code: joinLines(
+    ),
+    createValidTestCase(
+      joinLines('```javascript', 'const jsExample = 1;', '```'),
+    ),
+    createValidTestCase(joinLines('```bash', 'echo "no change"', '```')),
+    createValidTestCase('Some inline `code` snippet should not change.'),
+    createValidTestCase(
+      joinLines('````', 'This is not a triple backtick fence.', '````'),
+    ),
+    createValidTestCase(
+      joinLines('```typescript   ', 'const spaced = true;', '```'),
+    ),
+    createValidTestCase(joinLines('```ts', 'const shorthand = true;', '```')),
+    createValidTestCase(
+      joinLines(
         '    const example = "indented code block";',
         '    still part of code block',
       ),
-    },
-    {
-      filename: 'docs/example.md',
-      code: joinLines('```', '```'),
-    },
-    {
-      filename: 'docs/example.md',
-      code: joinLines('Text with inline ```code``` block on one line.'),
-    },
+    ),
+    createValidTestCase(joinLines('```', '```')),
+    createValidTestCase('Text with inline ```code``` block on one line.'),
   ],
   invalid: [
-    {
-      filename: 'docs/example.md',
-      code: joinLines(
+    createInvalidTestCase(
+      joinLines(
         '# Title',
         '',
         '```',
         'const example = "missing language";',
         '```',
       ),
-      output: joinLines(
+      joinLines(
         '# Title',
         '',
         '```typescript',
         'const example = "missing language";',
         '```',
       ),
-      errors: [{ messageId: 'missingLanguageSpecifier', line: 3 }],
-    },
-    {
-      filename: 'docs/example.md',
-      code: joinLines('```   ', 'const spaced = true;', '```'),
-      output: joinLines('```typescript', 'const spaced = true;', '```'),
-      errors: [{ messageId: 'missingLanguageSpecifier', line: 1 }],
-    },
-    {
-      filename: 'docs/example.md',
-      code: joinLines('  ```', '  const indented = true;', '  ```'),
-      output: joinLines('  ```typescript', '  const indented = true;', '  ```'),
-      errors: [{ messageId: 'missingLanguageSpecifier', line: 1 }],
-    },
-    {
-      filename: 'docs/example.md',
-      code: joinLines('\t```', '\tconst tabbed = true;', '\t```'),
-      output: joinLines('\t```typescript', '\tconst tabbed = true;', '\t```'),
-      errors: [{ messageId: 'missingLanguageSpecifier', line: 1 }],
-    },
-    {
-      filename: 'docs/example.md',
-      code: joinLines('```', '', 'const content = true;', '```'),
-      output: joinLines('```typescript', '', 'const content = true;', '```'),
-      errors: [{ messageId: 'missingLanguageSpecifier', line: 1 }],
-    },
-    {
-      filename: 'docs/example.md',
-      code: joinLines(
+      [{ messageId: 'missingLanguageSpecifier', line: 3 }],
+    ),
+    createInvalidTestCase(
+      joinLines('```   ', 'const spaced = true;', '```'),
+      joinLines('```typescript', 'const spaced = true;', '```'),
+      [{ messageId: 'missingLanguageSpecifier', line: 1 }],
+    ),
+    createInvalidTestCase(
+      joinLines('  ```', '  const indented = true;', '  ```'),
+      joinLines('  ```typescript', '  const indented = true;', '  ```'),
+      [{ messageId: 'missingLanguageSpecifier', line: 1 }],
+    ),
+    createInvalidTestCase(
+      joinLines('\t```', '\tconst tabbed = true;', '\t```'),
+      joinLines('\t```typescript', '\tconst tabbed = true;', '\t```'),
+      [{ messageId: 'missingLanguageSpecifier', line: 1 }],
+    ),
+    createInvalidTestCase(
+      joinLines('```', '', 'const content = true;', '```'),
+      joinLines('```typescript', '', 'const content = true;', '```'),
+      [{ messageId: 'missingLanguageSpecifier', line: 1 }],
+    ),
+    createInvalidTestCase(
+      joinLines(
         '```',
         'const first = 1;',
         '```',
@@ -111,7 +101,7 @@ ruleTesterMarkdown.run('enforce-typescript-markdown-code-blocks', rule, {
         'const second = 2;',
         '```',
       ),
-      output: joinLines(
+      joinLines(
         '```typescript',
         'const first = 1;',
         '```',
@@ -120,14 +110,13 @@ ruleTesterMarkdown.run('enforce-typescript-markdown-code-blocks', rule, {
         'const second = 2;',
         '```',
       ),
-      errors: [
+      [
         { messageId: 'missingLanguageSpecifier', line: 1 },
         { messageId: 'missingLanguageSpecifier', line: 5 },
       ],
-    },
-    {
-      filename: 'docs/example.md',
-      code: joinLines(
+    ),
+    createInvalidTestCase(
+      joinLines(
         '```',
         'const example = 1;',
         '```',
@@ -136,7 +125,7 @@ ruleTesterMarkdown.run('enforce-typescript-markdown-code-blocks', rule, {
         'const jsExample = 2;',
         '```',
       ),
-      output: joinLines(
+      joinLines(
         '```typescript',
         'const example = 1;',
         '```',
@@ -145,11 +134,10 @@ ruleTesterMarkdown.run('enforce-typescript-markdown-code-blocks', rule, {
         'const jsExample = 2;',
         '```',
       ),
-      errors: [{ messageId: 'missingLanguageSpecifier', line: 1 }],
-    },
-    {
-      filename: 'docs/example.md',
-      code: joinLines(
+      [{ messageId: 'missingLanguageSpecifier', line: 1 }],
+    ),
+    createInvalidTestCase(
+      joinLines(
         '```',
         'const example = true;',
         '```',
@@ -158,7 +146,7 @@ ruleTesterMarkdown.run('enforce-typescript-markdown-code-blocks', rule, {
         'const another = false;',
         '```',
       ),
-      output: joinLines(
+      joinLines(
         '```typescript',
         'const example = true;',
         '```',
@@ -167,40 +155,37 @@ ruleTesterMarkdown.run('enforce-typescript-markdown-code-blocks', rule, {
         'const another = false;',
         '```',
       ),
-      errors: [
+      [
         { messageId: 'missingLanguageSpecifier', line: 1 },
         { messageId: 'missingLanguageSpecifier', line: 5 },
       ],
-    },
-    {
-      filename: 'docs/example.md',
-      code: '```\r\nconst windows = true;\r\n```',
-      output: '```typescript\r\nconst windows = true;\r\n```',
-      errors: [{ messageId: 'missingLanguageSpecifier', line: 1 }],
-    },
-    {
-      filename: 'docs/example.md',
-      code: joinLines('```', 'const hasBackticks = "```";', '```'),
-      output: joinLines('```typescript', 'const hasBackticks = "```";', '```'),
-      errors: [{ messageId: 'missingLanguageSpecifier', line: 1 }],
-    },
-    {
-      filename: 'docs/example.md',
-      code: joinLines(
+    ),
+    createInvalidTestCase(
+      '```\r\nconst windows = true;\r\n```',
+      '```typescript\r\nconst windows = true;\r\n```',
+      [{ messageId: 'missingLanguageSpecifier', line: 1 }],
+    ),
+    createInvalidTestCase(
+      joinLines('```', 'const hasBackticks = "```";', '```'),
+      joinLines('```typescript', 'const hasBackticks = "```";', '```'),
+      [{ messageId: 'missingLanguageSpecifier', line: 1 }],
+    ),
+    createInvalidTestCase(
+      joinLines(
         '```',
         'function block() {',
         '  return `template`;',
         '}',
         '```',
       ),
-      output: joinLines(
+      joinLines(
         '```typescript',
         'function block() {',
         '  return `template`;',
         '}',
         '```',
       ),
-      errors: [{ messageId: 'missingLanguageSpecifier', line: 1 }],
-    },
+      [{ messageId: 'missingLanguageSpecifier', line: 1 }],
+    ),
   ],
 });
