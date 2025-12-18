@@ -578,7 +578,7 @@ jobs:
             --arg repository "https://github.com/${{ github.repository }}" \
             --arg source_ref "${{ steps.vars.outputs.source_ref }}" \
             --arg target_branch "${{ steps.vars.outputs.target_branch }}" \
-            --arg model "gpt-5.1-codex-max-high" \
+            --arg model "gemini-3-flash" \
             '{
               model: $model,
               prompt: { text: $prompt_text },
@@ -697,7 +697,7 @@ jobs:
             --arg repository "https://github.com/${{ github.repository }}" \
             --arg source_ref "${{ steps.vars.outputs.source_ref }}" \
             --arg target_branch "${{ steps.vars.outputs.target_branch }}" \
-            --arg model "gpt-5.1-codex-max-high" \
+            --arg model "gemini-3-flash" \
             '{
               model: $model,
               prompt: { text: $prompt_text },

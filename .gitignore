@@ -41,6 +41,9 @@ lib/package.json
 
 # Cursor hooks temporary files
 .cursor/tmp/
+.cursor/.agent-tools/
+core
+tmp/
 
 # Ignore interactive question-prompt rule not shipped with the plugin
 .cursor/rules/do-not-hesitate-to-ask-questions.mdc
