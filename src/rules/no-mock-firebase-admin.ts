@@ -15,13 +15,14 @@ export const noMockFirebaseAdmin = createRule<[], MessageIds>({
   meta: {
     type: 'problem',
     docs: {
-      description: 'Prevent mocking of functions/src/config/firebaseAdmin',
+      description:
+        'Prevent direct mocking of firebaseAdmin; use shared test helpers instead',
       recommended: 'error',
     },
     schema: [],
     messages: {
       noMockFirebaseAdmin:
-        'Do not mock firebaseAdmin directly. Use mockFirestore from __test-utils__/mockFirestore instead.',
+        'Do not mock firebaseAdmin module "{{modulePath}}". The project already ships a stable mock in jest.setup.node.js; overriding it creates divergent Firestore/Auth state and brittle test fixtures. Keep the shared mock and use __test-utils__/mockFirestore to seed data instead of replacing the module.',
     },
   },
   defaultOptions: [],
@@ -68,6 +69,9 @@ export const noMockFirebaseAdmin = createRule<[], MessageIds>({
             context.report({
               node,
               messageId: 'noMockFirebaseAdmin',
+              data: {
+                modulePath: mockPath,
+              },
             });
           }
         }

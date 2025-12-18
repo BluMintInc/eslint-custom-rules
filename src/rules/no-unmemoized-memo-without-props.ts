@@ -269,7 +269,10 @@ const isIgnoredHookCall = (
   callee: TSESTree.Expression | TSESTree.PrivateIdentifier,
   ignoreHooks: Set<string>,
 ): boolean => {
-  if (callee.type === AST_NODE_TYPES.Identifier && ignoreHooks.has(callee.name)) {
+  if (
+    callee.type === AST_NODE_TYPES.Identifier &&
+    ignoreHooks.has(callee.name)
+  ) {
     return true;
   }
 
@@ -304,7 +307,11 @@ const traverseAst = (
 
       if (Array.isArray(child)) {
         for (const value of child) {
-          if (value && typeof value === 'object' && 'type' in (value as object)) {
+          if (
+            value &&
+            typeof value === 'object' &&
+            'type' in (value as object)
+          ) {
             stack.push(value as TSESTree.Node);
           }
         }

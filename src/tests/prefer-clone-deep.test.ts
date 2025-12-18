@@ -1,5 +1,13 @@
+import type { TestCaseError } from '@typescript-eslint/utils/dist/ts-eslint/RuleTester';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { preferCloneDeep } from '../rules/prefer-clone-deep';
+
+const message =
+  'Nested spread copies only clone one level, so inner objects still point at the original and later mutations leak back. Use cloneDeep from functions/src/util/cloneDeep.ts and pass overrides as the second argument so the base object is deeply cloned before applying updates.';
+// Cast keeps explicit message assertions while satisfying RuleTester typings that expect messageId-only errors.
+const expectPreferCloneDeepError = {
+  message,
+} as unknown as TestCaseError<'preferCloneDeep'>;
 
 ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
   valid: [
@@ -138,7 +146,7 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
           }
         };
       `,
-      errors: [{ messageId: 'preferCloneDeep' }],
+      errors: [expectPreferCloneDeepError],
       output: `
         const result = cloneDeep(baseObj, {
           data: {
@@ -174,7 +182,7 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
           },
         };
       `,
-      errors: [{ messageId: 'preferCloneDeep' }],
+      errors: [expectPreferCloneDeepError],
       output: `
         const membership = {
           sender: 'unchanged',
@@ -214,7 +222,7 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
           }
         };
       `,
-      errors: [{ messageId: 'preferCloneDeep' }],
+      errors: [expectPreferCloneDeepError],
       output: `
         const config = cloneDeep(baseConfig, {
           features: {
@@ -248,7 +256,7 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
           }
         };
       `,
-      errors: [{ messageId: 'preferCloneDeep' }],
+      errors: [expectPreferCloneDeepError],
       output: `
         const key = 'config';
         const result = cloneDeep(baseObj, {
@@ -285,7 +293,7 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
           }
         };
       `,
-      errors: [{ messageId: 'preferCloneDeep' }],
+      errors: [expectPreferCloneDeepError],
       output: `
         const state = cloneDeep(prevState, {
           ui: {
@@ -322,7 +330,7 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
           }
         };
       `,
-      errors: [{ messageId: 'preferCloneDeep' }],
+      errors: [expectPreferCloneDeepError],
       output: `
         const result = cloneDeep(baseObj, {
           settings: {
@@ -353,7 +361,7 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
           }
         };
       `,
-      errors: [{ messageId: 'preferCloneDeep' }],
+      errors: [expectPreferCloneDeepError],
       output: `
         const prefix = 'test';
         const obj = cloneDeep(baseObj, {
@@ -379,7 +387,7 @@ ruleTesterTs.run('prefer-clone-deep', preferCloneDeep, {
           }
         };
       `,
-      errors: [{ messageId: 'preferCloneDeep' }],
+      errors: [expectPreferCloneDeepError],
       output: `
         const config = cloneDeep(baseConfig, {
           features: {

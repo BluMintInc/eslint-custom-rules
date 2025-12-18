@@ -18,6 +18,7 @@ export const preferFragmentShorthand: TSESLint.RuleModule<
           context.report({
             node,
             messageId: 'preferShorthand',
+            data: { fragmentName: 'React.Fragment' },
             fix: (fixer) => [
               fixer.replaceTextRange(openingElement.range, '<>'),
               // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
@@ -36,7 +37,7 @@ export const preferFragmentShorthand: TSESLint.RuleModule<
     },
     messages: {
       preferShorthand:
-        'Use <> shorthand for <React.Fragment>, unless a key is required for an iterator',
+        'Fragment "{{fragmentName}}" is written with the long <React.Fragment> syntax. That form adds React namespace noise and is only necessary when you need a key or other attributes on the fragment. Prefer the <>...</> shorthand to keep JSX concise, and keep the long form only when fragment attributes are required.',
     },
     schema: [],
     fixable: 'code',
