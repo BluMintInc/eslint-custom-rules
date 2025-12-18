@@ -1,12 +1,8 @@
-# enforce-stable-hash-spread-props
-
-Rule ID: `@blumintinc/blumint/enforce-stable-hash-spread-props`
+# Require stableHash wrapping when spread props rest objects are used in React hook dependency arrays to avoid re-renders triggered by new object references on every render (`@blumintinc/blumint/enforce-stable-hash-spread-props`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
 🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
-
-Type Information: 💭 Not required (AST-only).
 
 <!-- end auto-generated rule header -->
 

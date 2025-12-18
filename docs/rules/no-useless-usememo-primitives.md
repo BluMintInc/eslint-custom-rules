@@ -1,6 +1,7 @@
-# Disallow useMemo for primitive return values that do not need referential stability (`@blumintinc/blumint/no-useless-usememo-primitives`)
+# Disallow useMemo when the callback returns a primitive (string/number/boolean/null/undefined/bigint) because memoization does not provide referential stability benefits for pass-by-value results (`@blumintinc/blumint/no-useless-usememo-primitives`)
 
-💼 This rule is enabled in the ✅ `recommended` config.  
+💼 This rule is enabled in the ✅ `recommended` config.
+
 🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
 
 <!-- end auto-generated rule header -->

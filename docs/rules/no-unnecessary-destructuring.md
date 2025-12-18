@@ -1,4 +1,4 @@
-# Avoid unnecessary object destructuring when there is only one property inside the destructured object (`@blumintinc/blumint/no-unnecessary-destructuring`)
+# Avoid object patterns that only spread an existing object, since they clone the whole value without selecting properties (`@blumintinc/blumint/no-unnecessary-destructuring`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

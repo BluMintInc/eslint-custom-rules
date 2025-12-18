@@ -1,4 +1,4 @@
-# Keep render output in components, not hooks (`@blumintinc/blumint/no-jsx-in-hooks`)
+# Prevent hooks from returning JSX (`@blumintinc/blumint/no-jsx-in-hooks`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

@@ -1,4 +1,4 @@
-# Disallow explicit return type annotations when TypeScript can infer them (`@blumintinc/blumint/no-explicit-return-type`)
+# Disallow explicit return type annotations on functions when TypeScript can infer them. This reduces code verbosity and maintenance burden while leveraging TypeScript's powerful type inference. Exceptions are made for type guard functions (using the `is` keyword), recursive functions, overloaded functions, interface methods, and abstract methods where explicit types improve clarity (`@blumintinc/blumint/no-explicit-return-type`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

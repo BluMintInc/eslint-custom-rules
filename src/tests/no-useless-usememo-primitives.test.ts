@@ -186,8 +186,74 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
       `,
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
     },
+    {
+      code: `
+        const unionWithObject = useMemo(() => (flag ? 'yes' : { a: 1 }), [flag]);
+      `,
+      options: [{ tsOnly: true }],
+      parserOptions: typedParserOptions,
+      filename: 'src/union-non-primitive.ts',
+    },
+    {
+      code: `
+        const voidValue = useMemo(() => console.log('a'), []);
+      `,
+      options: [{ tsOnly: true, ignoreCallExpressions: false }],
+      parserOptions: typedParserOptions,
+      filename: 'src/void-value.ts',
+    },
+    {
+      code: `
+        const intersectionValue = useMemo(() => ({} as { a: number } & { b: number }), []);
+      `,
+      options: [{ tsOnly: true }],
+      parserOptions: typedParserOptions,
+      filename: 'src/intersection-value.ts',
+    },
+    {
+      code: `
+        function MyComponent<T>(props: { value: string | T }) {
+          const x = useMemo(() => props.value, [props.value]);
+        }
+      `,
+      options: [{ tsOnly: true }],
+      parserOptions: typedParserOptions,
+      filename: 'src/union-type-param.ts',
+    },
+    {
+      code: `
+        const sym = useMemo(() => Symbol('a'), []);
+      `,
+      options: [{ tsOnly: true, ignoreCallExpressions: false }],
+      parserOptions: typedParserOptions,
+      filename: 'src/symbol-ignored.ts',
+    },
   ],
   invalid: [
+    {
+      code: `
+        const unionWithAny = useMemo(() => (flag ? 'yes' : (undefined as any)), [flag]);
+      `,
+      options: [{ tsOnly: true }],
+      parserOptions: typedParserOptions,
+      filename: 'src/union-any.ts',
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+        const unionWithAny = (flag ? 'yes' : (undefined as any));
+      `,
+    },
+    {
+      code: `
+        const anyValue = useMemo(() => (undefined as any), []);
+      `,
+      options: [{ tsOnly: true }],
+      parserOptions: typedParserOptions,
+      filename: 'src/any-value.ts',
+      errors: [{ messageId: 'uselessUseMemoPrimitive' }],
+      output: `
+        const anyValue = (undefined as any);
+      `,
+    },
     {
       code: `
         const label = useMemo(() => {

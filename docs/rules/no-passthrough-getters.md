@@ -1,4 +1,4 @@
-# Avoid getter methods that only proxy constructor parameters (`@blumintinc/blumint/no-passthrough-getters`)
+# Avoid getter methods that only re-expose nested properties on constructor-injected objects without adding behavior (`@blumintinc/blumint/no-passthrough-getters`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

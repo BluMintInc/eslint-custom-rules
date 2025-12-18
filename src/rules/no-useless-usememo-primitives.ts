@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { classifyExpressionType as classifyExpressionTypeTs } from '../utils/tsTypeClassifier';
 
 type Options = [
   {
@@ -368,165 +369,25 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
     if (parserServices) {
       try {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
-        tsModule = require('typescript');
+        const ts = require('typescript');
+        tsModule = ts;
         checker = parserServices.program.getTypeChecker();
       } catch {
-        /* istanbul ignore next -- falls back to heuristic path */
+        /* istanbul ignore next -- TypeScript not available, falls back to heuristic path */
       }
     }
 
-    function classifyExpressionType(expr: TSESTree.Expression): {
-      status: 'primitive' | 'non-primitive' | 'unknown';
-      kind: string;
-    } {
+    function classifyExpressionType(expr: TSESTree.Expression) {
       if (!checker || !tsModule || !parserServices) {
-        return { status: 'unknown', kind: 'primitive value' };
+        return { status: 'unknown' as const, kind: 'primitive value' };
       }
 
-      try {
-        const tsNode = parserServices.esTreeNodeToTSNodeMap.get(expr);
-        if (!tsNode) {
-          /* istanbul ignore next -- rare when parser services mismatch */
-          return { status: 'unknown', kind: 'primitive value' };
-        }
-
-        const type = checker.getTypeAtLocation(tsNode);
-        const ts = tsModule;
-
-        function describeTypeKind(t: import('typescript').Type): string {
-          if (t.isUnion()) {
-            const kinds = new Set(
-              t.types
-                .map(describeTypeKind)
-                .filter((k) => k !== 'primitive value'),
-            );
-            if (kinds.size === 1) {
-              return kinds.values().next().value ?? 'primitive value';
-            }
-            return 'primitive value';
-          }
-
-          const flags = t.flags;
-
-          if (flags & ts.TypeFlags.String) return 'string value';
-          if (flags & ts.TypeFlags.StringLiteral) return 'string value';
-          if (flags & ts.TypeFlags.TemplateLiteral) return 'string value';
-          if (flags & ts.TypeFlags.Number) return 'number value';
-          if (flags & ts.TypeFlags.NumberLiteral) return 'number value';
-          if (flags & ts.TypeFlags.Enum) return 'number value';
-          if (flags & ts.TypeFlags.EnumLiteral) return 'number value';
-          if (flags & ts.TypeFlags.Boolean) return 'boolean value';
-          if (flags & ts.TypeFlags.BooleanLiteral) return 'boolean value';
-          if (flags & ts.TypeFlags.BigInt) return 'bigint value';
-          if (flags & ts.TypeFlags.BigIntLiteral) return 'bigint value';
-          if (flags & ts.TypeFlags.Null) return 'null value';
-          if (flags & ts.TypeFlags.Undefined) return 'undefined value';
-          if (
-            !options.ignoreSymbol &&
-            (flags & ts.TypeFlags.ESSymbol ||
-              flags & ts.TypeFlags.UniqueESSymbol)
-          ) {
-            return 'symbol value';
-          }
-
-          return 'primitive value';
-        }
-
-        function classifyType(
-          t: import('typescript').Type,
-        ): 'primitive' | 'non-primitive' | 'unknown' {
-          if (t.isUnion()) {
-            let sawUnknown = false;
-            for (const part of t.types) {
-              const result = classifyType(part);
-              if (result === 'non-primitive') {
-                return 'non-primitive';
-              }
-              if (result === 'unknown') {
-                sawUnknown = true;
-              }
-            }
-            return sawUnknown ? 'unknown' : 'primitive';
-          }
-
-          if (t.isIntersection()) return 'non-primitive';
-
-          const flags = t.getFlags();
-
-          if (
-            flags &
-            (ts.TypeFlags.Any |
-              ts.TypeFlags.Unknown |
-              ts.TypeFlags.Never |
-              ts.TypeFlags.TypeParameter)
-          ) {
-            return 'unknown';
-          }
-
-          if (
-            flags &
-            (ts.TypeFlags.Object |
-              ts.TypeFlags.NonPrimitive |
-              ts.TypeFlags.Index |
-              ts.TypeFlags.IndexedAccess |
-              ts.TypeFlags.Conditional |
-              ts.TypeFlags.Substitution)
-          ) {
-            return 'non-primitive';
-          }
-
-          if (flags & ts.TypeFlags.Void) {
-            return 'unknown';
-          }
-
-          if (
-            options.ignoreSymbol &&
-            (flags & ts.TypeFlags.ESSymbol ||
-              flags & ts.TypeFlags.UniqueESSymbol)
-          ) {
-            return 'non-primitive';
-          }
-
-          if (
-            flags &
-            (ts.TypeFlags.String |
-              ts.TypeFlags.StringLiteral |
-              ts.TypeFlags.TemplateLiteral |
-              ts.TypeFlags.Number |
-              ts.TypeFlags.NumberLiteral |
-              ts.TypeFlags.Enum |
-              ts.TypeFlags.EnumLiteral |
-              ts.TypeFlags.Boolean |
-              ts.TypeFlags.BooleanLiteral |
-              ts.TypeFlags.BigInt |
-              ts.TypeFlags.BigIntLiteral |
-              ts.TypeFlags.Null |
-              ts.TypeFlags.Undefined)
-          ) {
-            return 'primitive';
-          }
-
-          if (
-            !options.ignoreSymbol &&
-            (flags & ts.TypeFlags.ESSymbol ||
-              flags & ts.TypeFlags.UniqueESSymbol)
-          ) {
-            return 'primitive';
-          }
-
-          return 'unknown';
-        }
-
-        const classification = classifyType(type);
-        if (classification === 'primitive') {
-          return { status: 'primitive', kind: describeTypeKind(type) };
-        }
-
-        return { status: classification, kind: 'primitive value' };
-      } catch {
-        /* istanbul ignore next -- defensive fallback when type evaluation fails */
-        return { status: 'unknown', kind: 'primitive value' };
-      }
+      return classifyExpressionTypeTs(expr, {
+        checker,
+        tsModule,
+        parserServices,
+        options,
+      });
     }
 
     return {

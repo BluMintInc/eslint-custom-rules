@@ -1,4 +1,4 @@
-# Require JSDoc above fields (`@blumintinc/blumint/jsdoc-above-field`)
+# Require JSDoc blocks to sit above fields instead of trailing inline so IDE hovers surface the documentation (`@blumintinc/blumint/jsdoc-above-field`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
