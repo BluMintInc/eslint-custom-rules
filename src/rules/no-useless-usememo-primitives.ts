@@ -322,7 +322,7 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
     ],
     messages: {
       uselessUseMemoPrimitive:
-        'useMemo wraps a primitive {{valueKind}}, so memoization adds no referential-stability benefit. Inline the expression and drop the dependency array to reduce hook overhead and keep dependency lists focused on values that can change identity.',
+        'useMemo wraps a primitive {{valueKind}}. → Primitives are pass-by-value and have no identity to preserve, so memoization provides zero referential-stability benefit and only adds unnecessary hook overhead. → Remove useMemo and inline the expression directly.',
     },
   },
   defaultOptions: [DEFAULT_OPTIONS],

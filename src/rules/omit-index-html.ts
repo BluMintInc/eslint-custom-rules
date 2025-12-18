@@ -125,7 +125,8 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
               const quote = sourceCode.getText(node).startsWith("'")
                 ? "'"
                 : '"';
-              return fixer.replaceText(node, `${quote}${suggestedUrl}${quote}`);
+              const escapedUrl = suggestedUrl.split(quote).join(`\\${quote}`);
+              return fixer.replaceText(node, `${quote}${escapedUrl}${quote}`);
             },
           });
         }

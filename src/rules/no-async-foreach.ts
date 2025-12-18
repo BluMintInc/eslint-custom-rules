@@ -107,7 +107,11 @@ const getSourceCode = (
     context.sourceCode ??
     context.getSourceCode?.() ??
     (() => {
-      throw new Error('Unable to retrieve source code from context');
+      throw new Error(
+        `Unable to retrieve source code from context in rule "no-async-foreach". ` +
+          `Available properties: sourceCode=${typeof context.sourceCode}, ` +
+          `getSourceCode=${typeof context.getSourceCode}`,
+      );
     })()
   );
 };
@@ -121,13 +125,7 @@ const getScope = (
     getScope?: (scopedNode: TSESTree.Node) => TSESLint.Scope.Scope | null;
   };
 
-  const typedContext = context as {
-    getScope?: () => TSESLint.Scope.Scope | null;
-  };
-
-  return (
-    typedSourceCode.getScope?.(node) ?? typedContext.getScope?.() ?? null
-  );
+  return typedSourceCode.getScope?.(node) ?? context.getScope?.() ?? null;
 };
 
 const analyzeInlineCallback = (
