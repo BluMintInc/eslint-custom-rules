@@ -36,24 +36,23 @@ export function describeTypeKind(
   }
 
   const flags = t.flags;
-  const tsInternal = tsModule;
 
-  if (flags & tsInternal.TypeFlags.String) return 'string value';
-  if (flags & tsInternal.TypeFlags.StringLiteral) return 'string value';
-  if (flags & tsInternal.TypeFlags.TemplateLiteral) return 'string value';
-  if (flags & tsInternal.TypeFlags.Number) return 'number value';
-  if (flags & tsInternal.TypeFlags.NumberLiteral) return 'number value';
-  if (flags & tsInternal.TypeFlags.Enum) return 'number value';
-  if (flags & tsInternal.TypeFlags.EnumLiteral) return 'number value';
-  if (flags & tsInternal.TypeFlags.Boolean) return 'boolean value';
-  if (flags & tsInternal.TypeFlags.BooleanLiteral) return 'boolean value';
-  if (flags & tsInternal.TypeFlags.BigInt) return 'bigint value';
-  if (flags & tsInternal.TypeFlags.BigIntLiteral) return 'bigint value';
-  if (flags & tsInternal.TypeFlags.Null) return 'null value';
-  if (flags & tsInternal.TypeFlags.Undefined) return 'undefined value';
+  if (flags & tsModule.TypeFlags.String) return 'string value';
+  if (flags & tsModule.TypeFlags.StringLiteral) return 'string value';
+  if (flags & tsModule.TypeFlags.TemplateLiteral) return 'string value';
+  if (flags & tsModule.TypeFlags.Number) return 'number value';
+  if (flags & tsModule.TypeFlags.NumberLiteral) return 'number value';
+  if (flags & tsModule.TypeFlags.Enum) return 'number value';
+  if (flags & tsModule.TypeFlags.EnumLiteral) return 'number value';
+  if (flags & tsModule.TypeFlags.Boolean) return 'boolean value';
+  if (flags & tsModule.TypeFlags.BooleanLiteral) return 'boolean value';
+  if (flags & tsModule.TypeFlags.BigInt) return 'bigint value';
+  if (flags & tsModule.TypeFlags.BigIntLiteral) return 'bigint value';
+  if (flags & tsModule.TypeFlags.Null) return 'null value';
+  if (flags & tsModule.TypeFlags.Undefined) return 'undefined value';
   if (
     !options.ignoreSymbol &&
-    (flags & tsInternal.TypeFlags.ESSymbol || flags & tsInternal.TypeFlags.UniqueESSymbol)
+    (flags & tsModule.TypeFlags.ESSymbol || flags & tsModule.TypeFlags.UniqueESSymbol)
   ) {
     return 'symbol value';
   }
@@ -86,63 +85,62 @@ export function classifyType(
   if (t.isIntersection()) return 'non-primitive';
 
   const flags = t.getFlags();
-  const tsInternal = tsModule;
 
   if (
     flags &
-    (tsInternal.TypeFlags.Any |
-      tsInternal.TypeFlags.Unknown |
-      tsInternal.TypeFlags.Never |
-      tsInternal.TypeFlags.TypeParameter)
+    (tsModule.TypeFlags.Any |
+      tsModule.TypeFlags.Unknown |
+      tsModule.TypeFlags.Never |
+      tsModule.TypeFlags.TypeParameter)
   ) {
     return 'unknown';
   }
 
   if (
     flags &
-    (tsInternal.TypeFlags.Object |
-      tsInternal.TypeFlags.NonPrimitive |
-      tsInternal.TypeFlags.Index |
-      tsInternal.TypeFlags.IndexedAccess |
-      tsInternal.TypeFlags.Conditional |
-      tsInternal.TypeFlags.Substitution)
+    (tsModule.TypeFlags.Object |
+      tsModule.TypeFlags.NonPrimitive |
+      tsModule.TypeFlags.Index |
+      tsModule.TypeFlags.IndexedAccess |
+      tsModule.TypeFlags.Conditional |
+      tsModule.TypeFlags.Substitution)
   ) {
     return 'non-primitive';
   }
 
-  if (flags & tsInternal.TypeFlags.Void) {
+  if (flags & tsModule.TypeFlags.Void) {
     return 'unknown';
   }
 
   if (
     options.ignoreSymbol &&
-    (flags & tsInternal.TypeFlags.ESSymbol || flags & tsInternal.TypeFlags.UniqueESSymbol)
+    (flags & tsModule.TypeFlags.ESSymbol || flags & tsModule.TypeFlags.UniqueESSymbol)
   ) {
     return 'non-primitive';
   }
 
   if (
     flags &
-    (tsInternal.TypeFlags.String |
-      tsInternal.TypeFlags.StringLiteral |
-      tsInternal.TypeFlags.TemplateLiteral |
-      tsInternal.TypeFlags.Number |
-      tsInternal.TypeFlags.NumberLiteral |
-      tsInternal.TypeFlags.Enum |
-      tsInternal.TypeFlags.EnumLiteral |
-      tsInternal.TypeFlags.Boolean |
-      tsInternal.TypeFlags.BooleanLiteral |
-      tsInternal.TypeFlags.BigInt |
-      tsInternal.TypeFlags.BigIntLiteral |
-      tsInternal.TypeFlags.Null |
-      tsInternal.TypeFlags.Undefined)
+    (tsModule.TypeFlags.String |
+      tsModule.TypeFlags.StringLiteral |
+      tsModule.TypeFlags.TemplateLiteral |
+      tsModule.TypeFlags.Number |
+      tsModule.TypeFlags.NumberLiteral |
+      tsModule.TypeFlags.Enum |
+      tsModule.TypeFlags.EnumLiteral |
+      tsModule.TypeFlags.Boolean |
+      tsModule.TypeFlags.BooleanLiteral |
+      tsModule.TypeFlags.BigInt |
+      tsModule.TypeFlags.BigIntLiteral |
+      tsModule.TypeFlags.Null |
+      tsModule.TypeFlags.Undefined)
   ) {
     return 'primitive';
   }
 
   if (
     !options.ignoreSymbol &&
-    (flags & tsInternal.TypeFlags.ESSymbol || flags & tsInternal.TypeFlags.UniqueESSymbol)
+    (flags & tsModule.TypeFlags.ESSymbol || flags & tsModule.TypeFlags.UniqueESSymbol)
   ) {
     return 'primitive';
   }
