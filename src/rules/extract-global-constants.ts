@@ -147,6 +147,33 @@ function isAsConstExpression(node: TSESTree.Node | null): boolean {
   return false;
 }
 
+type DeclaratorAnalysis = {
+  isFunctionOrMutable: boolean;
+  hasDependencies: boolean;
+  hasAsConstAssertion: boolean;
+  hasIdentifier: boolean;
+};
+
+function analyzeDeclarator(
+  declaration: TSESTree.VariableDeclarator,
+): DeclaratorAnalysis {
+  const init = declaration.init ?? null;
+  const isFunctionOrMutable =
+    isFunctionDefinition(init) || isMutableValue(init);
+
+  return {
+    isFunctionOrMutable,
+    hasDependencies:
+      !isFunctionOrMutable && init
+        ? ASTHelpers.declarationIncludesIdentifier(init)
+        : false,
+    hasAsConstAssertion:
+      !isFunctionOrMutable && init ? isAsConstExpression(init) : false,
+    hasIdentifier:
+      declaration.id?.type === AST_NODE_TYPES.Identifier && !isFunctionOrMutable,
+  };
+}
+
 export const extractGlobalConstants: TSESLint.RuleModule<
   'extractGlobalConstants' | 'requireAsConst',
   never[]
@@ -173,31 +200,16 @@ export const extractGlobalConstants: TSESLint.RuleModule<
         let hasIdentifierDeclaration = false;
 
         for (const declaration of declarations) {
-          const init = declaration.init ?? null;
+          const analysis = analyzeDeclarator(declaration);
 
-          if (isFunctionDefinition(init) || isMutableValue(init)) {
+          if (analysis.isFunctionOrMutable) {
             hasFunctionOrMutableValue = true;
             break;
           }
 
-          if (!hasDependencies && init) {
-            hasDependencies = ASTHelpers.declarationIncludesIdentifier(init);
-          }
-
-          if (!hasAsConstAssertion && init) {
-            hasAsConstAssertion = isAsConstExpression(init);
-          }
-
-          if (
-            !hasIdentifierDeclaration &&
-            declaration.id?.type === AST_NODE_TYPES.Identifier
-          ) {
-            hasIdentifierDeclaration = true;
-          }
-
-          if (hasDependencies && hasAsConstAssertion && hasIdentifierDeclaration) {
-            continue;
-          }
+          hasDependencies ||= analysis.hasDependencies;
+          hasAsConstAssertion ||= analysis.hasAsConstAssertion;
+          hasIdentifierDeclaration ||= analysis.hasIdentifier;
         }
 
         if (hasFunctionOrMutableValue) {
