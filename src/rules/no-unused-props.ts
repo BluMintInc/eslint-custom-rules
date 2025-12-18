@@ -12,7 +12,7 @@ export const noUnusedProps = createRule({
     schema: [],
     messages: {
       unusedProp:
-        'Prop "{{propName}}" is defined in the Props type but not used in the component. Either use the prop in your component or remove it from the Props type. If you need to forward all props, use a rest spread operator: `const MyComponent = ({ usedProp, ...rest }: Props) => ...`',
+        'Prop "{{propName}}" is declared in the component Props type but never used inside the component body. Unused props make the component API misleading: callers keep passing values that are ignored and reviewers assume behavior that is not implemented. Remove "{{propName}}" from the Props type, consume it in the component, or forward it with a rest spread (e.g., `const MyComponent = ({ usedProp, ...rest }: Props) => <Child {...rest} />`).',
     },
     fixable: 'code',
   },
@@ -25,8 +25,9 @@ export const noUnusedProps = createRule({
       ((context.settings && context.settings['no-unused-props']) as {
         reactLikeExtensions?: string[];
       }) ?? {};
-    const reactLikeExtensions = (ruleSettings.reactLikeExtensions ??
-      ['.tsx']).map((ext) => ext.toLowerCase());
+    const reactLikeExtensions = (
+      ruleSettings.reactLikeExtensions ?? ['.tsx']
+    ).map((ext) => ext.toLowerCase());
     const fileExtension = filename.includes('.')
       ? filename.slice(filename.lastIndexOf('.')).toLowerCase()
       : '';
@@ -57,14 +58,12 @@ export const noUnusedProps = createRule({
       used: Set<string>;
       restUsed: boolean;
     }> = [];
-    let currentComponent:
-      | {
-          node: TSESTree.Node;
-          typeName: string;
-          used: Set<string>;
-          restUsed: boolean;
-        }
-      | null = null;
+    let currentComponent: {
+      node: TSESTree.Node;
+      typeName: string;
+      used: Set<string>;
+      restUsed: boolean;
+    } | null = null;
 
     const clearState = () => {
       propsTypes.clear();
@@ -250,7 +249,6 @@ export const noUnusedProps = createRule({
             ) {
               return;
             }
-
             const baseTypeName = baseType.typeName.name;
             const omittedPropNames = new Set<string>();
 

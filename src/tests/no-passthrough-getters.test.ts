@@ -1,6 +1,11 @@
 import { noPassthroughGetters } from '../rules/no-passthrough-getters';
 import { ruleTesterTs } from '../utils/ruleTester';
 
+const error = (getterName: string, propertyPath: string) => ({
+  messageId: 'noPassthroughGetter' as const,
+  data: { getterName, propertyPath },
+});
+
 ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
   valid: [
     // Getters that do more than just return a property
@@ -451,7 +456,7 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
         }
       }
       `,
-      errors: [{ messageId: 'noPassthroughGetter' }],
+      errors: [error('otherResults', 'this.settings.otherResults')],
     },
 
     // Multiple passthrough getters
@@ -470,8 +475,8 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
       }
       `,
       errors: [
-        { messageId: 'noPassthroughGetter' },
-        { messageId: 'noPassthroughGetter' },
+        error('otherResults', 'this.settings.otherResults'),
+        error('uid', 'this.settings.uid'),
       ],
     },
 
@@ -486,7 +491,7 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
         }
       }
       `,
-      errors: [{ messageId: 'noPassthroughGetter' }],
+      errors: [error('userId', 'this.settings.uid')],
     },
 
     // Protected passthrough getter
@@ -500,7 +505,7 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
         }
       }
       `,
-      errors: [{ messageId: 'noPassthroughGetter' }],
+      errors: [error('protectedValue', 'this.settings.value')],
     },
 
     // Passthrough getter with extra whitespace
@@ -514,7 +519,7 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
         }
       }
       `,
-      errors: [{ messageId: 'noPassthroughGetter' }],
+      errors: [error('spacedGetter', 'this.settings.otherResults')],
     },
 
     // Passthrough getter with parentheses around return expression
@@ -528,7 +533,7 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
         }
       }
       `,
-      errors: [{ messageId: 'noPassthroughGetter' }],
+      errors: [error('parenthesizedReturn', 'this.settings.otherResults')],
     },
 
     // Passthrough getter accessing deeply nested properties
@@ -542,7 +547,7 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
         }
       }
       `,
-      errors: [{ messageId: 'noPassthroughGetter' }],
+      errors: [error('deepProperty', 'this.settings.nested.deep.property')],
     },
 
     // Passthrough getter with different constructor parameter names
@@ -556,7 +561,7 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
         }
       }
       `,
-      errors: [{ messageId: 'noPassthroughGetter' }],
+      errors: [error('configValue', 'this.config.value')],
     },
 
     // Passthrough getter with bracket notation
@@ -570,7 +575,7 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
         }
       }
       `,
-      errors: [{ messageId: 'noPassthroughGetter' }],
+      errors: [error('bracketAccess', 'this.settings["otherResults"]')],
     },
 
     // Passthrough getter accessing different property patterns
@@ -584,7 +589,7 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
         }
       }
       `,
-      errors: [{ messageId: 'noPassthroughGetter' }],
+      errors: [error('dataProperty', 'this.data.property')],
     },
 
     // Passthrough getter with readonly modifier
@@ -598,7 +603,7 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
         }
       }
       `,
-      errors: [{ messageId: 'noPassthroughGetter' }],
+      errors: [error('readonlyGetter', 'this.settings.value')],
     },
 
     // Passthrough getter in different class contexts
@@ -612,7 +617,7 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
         }
       }
       `,
-      errors: [{ messageId: 'noPassthroughGetter' }],
+      errors: [error('simpleGetter', 'this.settings.prop')],
     },
 
     // Passthrough getter with different access modifiers
@@ -626,7 +631,7 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
         }
       }
       `,
-      errors: [{ messageId: 'noPassthroughGetter' }],
+      errors: [error('defaultGetter', 'this.settings.defaultValue')],
     },
 
     // Passthrough getter with complex property names
@@ -640,7 +645,12 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
         }
       }
       `,
-      errors: [{ messageId: 'noPassthroughGetter' }],
+      errors: [
+        error(
+          'complexPropertyName',
+          'this.settings.veryLongPropertyNameThatIsStillJustAProperty',
+        ),
+      ],
     },
 
     // Passthrough getter with numeric property access
@@ -654,7 +664,7 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
         }
       }
       `,
-      errors: [{ messageId: 'noPassthroughGetter' }],
+      errors: [error('numericProperty', 'this.settings[0]')],
     },
 
     // Multiple passthrough getters with different patterns
@@ -684,10 +694,10 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
       }
       `,
       errors: [
-        { messageId: 'noPassthroughGetter' },
-        { messageId: 'noPassthroughGetter' },
-        { messageId: 'noPassthroughGetter' },
-        { messageId: 'noPassthroughGetter' },
+        error('settingsValue', 'this.settings.value'),
+        error('configValue', 'this.config.value'),
+        error('protectedSetting', 'this.settings.protectedProp'),
+        error('publicConfig', 'this.config.publicProp'),
       ],
     },
 
@@ -702,7 +712,7 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
         }
       }
       `,
-      errors: [{ messageId: 'noPassthroughGetter' }],
+      errors: [error('abstractPassthrough', 'this.settings.value')],
     },
 
     // Static getters should not be flagged as they don't access constructor parameters
@@ -721,7 +731,7 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
         }
       }
       `,
-      errors: [{ messageId: 'noPassthroughGetter' }],
+      errors: [error('commentedGetter', 'this.settings.otherResults')],
     },
 
     // Passthrough getter with different formatting (should still be flagged)
@@ -735,7 +745,7 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
         }
       }
       `,
-      errors: [{ messageId: 'noPassthroughGetter' }],
+      errors: [error('formattedGetter', 'this.settings.otherResults')],
     },
 
     // Passthrough getter accessing array elements
@@ -749,7 +759,7 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
         }
       }
       `,
-      errors: [{ messageId: 'noPassthroughGetter' }],
+      errors: [error('firstResult', 'this.settings.otherResults[0]')],
     },
 
     // Passthrough getter accessing different constructor parameters
@@ -763,7 +773,7 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
         }
       }
       `,
-      errors: [{ messageId: 'noPassthroughGetter' }],
+      errors: [error('configValue', 'this.config.value')],
     },
   ],
 });
