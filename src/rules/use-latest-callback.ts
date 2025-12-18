@@ -237,9 +237,9 @@ export const useLatestCallback = createRule<[], MessageIds>({
               fix(fixer) {
                 const sourceCode = context.getSourceCode();
                 const callbackText = sourceCode.getText(node.arguments[0]);
-                const useCallbackCall = node as TSESTree.CallExpression;
-                const typeParams = useCallbackCall.typeParameters
-                  ? sourceCode.getText(useCallbackCall.typeParameters)
+                const callExpr = node as TSESTree.CallExpression;
+                const typeParams = callExpr.typeParameters
+                  ? sourceCode.getText(callExpr.typeParameters)
                   : '';
 
                 // Replace useCallback with useLatestCallback and remove the dependency array
