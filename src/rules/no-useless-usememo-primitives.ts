@@ -327,8 +327,7 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description:
-        'Disallow useMemo when the callback returns a primitive (string/number/boolean/null/undefined/bigint) because memoization does not provide referential stability benefits for pass-by-value results.',
+      description: 'Disallow useless useMemo with primitive values.',
       recommended: 'error',
     },
     fixable: 'code',

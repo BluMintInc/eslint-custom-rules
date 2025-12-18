@@ -195,7 +195,7 @@ export const preferUrlToStringOverToJson: TSESLint.RuleModule<
     type: 'suggestion',
     docs: {
       description:
-        'Enforce the use of toString() over toJSON() on URL objects. Prefer passing URL objects directly to JSON.stringify, which will call toJSON automatically. See docs/rules/prefer-url-tostring-over-tojson.md for examples.',
+        'Enforce the use of toString() over toJSON() on URL objects.',
       recommended: 'error',
       requiresTypeChecking: false,
     },

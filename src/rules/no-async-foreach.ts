@@ -99,7 +99,6 @@ const isAsyncFunctionExpression = (
  */
 interface SourceCodeContext {
   sourceCode: TSESLint.SourceCode;
-  getScope?: () => TSESLint.Scope.Scope | null;
 }
 
 /**
@@ -107,23 +106,27 @@ interface SourceCodeContext {
  */
 interface GetSourceCodeContext {
   getSourceCode: () => TSESLint.SourceCode;
-  getScope?: () => TSESLint.Scope.Scope | null;
 }
 
 /**
  * Union type representing ESLint contexts from different versions
  */
-type CompatibleRuleContext = SourceCodeContext | GetSourceCodeContext;
+type ESLintRuleContext = (SourceCodeContext | GetSourceCodeContext) & {
+  getScope?: () => TSESLint.Scope.Scope | null;
+};
 
 /**
  * Retrieves source code from an ESLint rule context
  */
-const getSourceCode = (context: CompatibleRuleContext): TSESLint.SourceCode => {
-  if ('sourceCode' in context) {
+const getSourceCode = (context: ESLintRuleContext): TSESLint.SourceCode => {
+  if ('sourceCode' in context && context.sourceCode) {
     return context.sourceCode;
   }
 
-  if ('getSourceCode' in context) {
+  if (
+    'getSourceCode' in context &&
+    typeof context.getSourceCode === 'function'
+  ) {
     return context.getSourceCode();
   }
 
@@ -134,7 +137,7 @@ const getSourceCode = (context: CompatibleRuleContext): TSESLint.SourceCode => {
 };
 
 const getScope = (
-  context: CompatibleRuleContext,
+  context: ESLintRuleContext,
   sourceCode: TSESLint.SourceCode,
   node: TSESTree.Node,
 ): TSESLint.Scope.Scope | null => {
