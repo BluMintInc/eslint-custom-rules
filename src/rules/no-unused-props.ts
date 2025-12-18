@@ -216,6 +216,29 @@ export const noUnusedProps = createRule({
             });
           };
 
+          type ScopeType = ReturnType<typeof context.getScope>;
+
+          const findVariableInScopeChain = (
+            scope: ScopeType | null,
+            name: string,
+          ) => {
+            let currentScope: ScopeType | null = scope;
+
+            while (currentScope) {
+              const variable = currentScope.variables.find(
+                (variableNode) => variableNode.name === name,
+              );
+
+              if (variable) {
+                return variable;
+              }
+
+              currentScope = (currentScope.upper as ScopeType | null) ?? null;
+            }
+
+            return null;
+          };
+
           const handleOmitType = (
             baseType: TSESTree.TypeNode,
             omittedProps: TSESTree.TypeNode,
@@ -226,7 +249,6 @@ export const noUnusedProps = createRule({
             ) {
               return;
             }
-
             const baseTypeName = baseType.typeName.name;
             const omittedPropNames = new Set<string>();
 
@@ -249,9 +271,7 @@ export const noUnusedProps = createRule({
             }
 
             const scope = context.getScope();
-            const variable = scope.variables.find(
-              (v) => v.name === baseTypeName,
-            );
+            const variable = findVariableInScopeChain(scope, baseTypeName);
 
             if (
               variable &&
