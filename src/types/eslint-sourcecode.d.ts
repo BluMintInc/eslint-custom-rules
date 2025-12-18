@@ -15,7 +15,7 @@ declare module '@typescript-eslint/utils/ts-eslint' {
   }
 }
 
-declare module '@typescript-eslint/utils/dist/ts-eslint/Rule' {
+declare module '@typescript-eslint/utils/dist/ts-eslint' {
   interface RuleContext<
     TMessageIds extends string,
     TOptions extends readonly unknown[],
