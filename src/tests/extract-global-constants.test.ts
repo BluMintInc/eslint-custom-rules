@@ -1,3 +1,4 @@
+import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { RuleTester } from '@typescript-eslint/utils/dist/ts-eslint';
 import type { TSESLint } from '@typescript-eslint/utils';
 import { extractGlobalConstants } from '../rules/extract-global-constants';
@@ -96,6 +97,33 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
           }
           return items;
         }, [MenuItemEdit, MenuItemRemove]);
+      `,
+    },
+    // Regression: nested destructuring with local const inside async handler must not crash
+    {
+      code: `
+        import { DocumentChangeHandler } from '../../../v2/handlerTypes';
+        import { GitHubIssue } from '../../../types/firestore/GitHubIssue';
+        import { GitHubIssuePath } from '../../../types/firestore/GitHubIssue/path';
+        import { extractChangedIssueParams } from '../../../util/github/extractIssueParamsChanged';
+
+        export const respondGitHubIssueChange: DocumentChangeHandler<
+          GitHubIssue,
+          GitHubIssuePath
+        > = async ({ data: { after, before } }) => {
+          const issueAfter = after.data();
+          const issueBefore = before.data();
+
+          if (!issueAfter) return;
+
+          const changedFields = extractChangedIssueParams({
+            before: issueBefore,
+            after: issueAfter,
+          });
+
+          // eslint-disable-next-line no-restricted-properties
+          if (Object.keys(changedFields).length === 0) return;
+        };
       `,
     },
     // Should handle jest.resetModules() without throwing TypeError
@@ -897,4 +925,30 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
       errors: [buildExtractError('CACHE_KEY')],
     },
   ],
+});
+
+describe('extract-global-constants visitor safety', () => {
+  it('ignores missing declarators without crashing', () => {
+    const context = {
+      report: jest.fn(),
+      getScope: () => ({ type: 'function' }),
+    } as unknown as TSESLint.RuleContext<
+      'extractGlobalConstants' | 'requireAsConst',
+      []
+    >;
+
+    const listeners = extractGlobalConstants.create(context);
+    const visitVariableDeclaration = listeners.VariableDeclaration!;
+
+    expect(() =>
+      visitVariableDeclaration({
+        type: AST_NODE_TYPES.VariableDeclaration,
+        kind: 'const',
+        declarations: [
+          undefined as unknown as TSESTree.VariableDeclarator,
+        ],
+        parent: null as unknown as TSESTree.Node,
+      } as TSESTree.VariableDeclaration),
+    ).not.toThrow();
+  });
 });
