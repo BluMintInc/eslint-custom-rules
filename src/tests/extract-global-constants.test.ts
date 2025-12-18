@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { RuleTester } from '@typescript-eslint/utils/dist/ts-eslint';
 import type { TSESLint } from '@typescript-eslint/utils';
 import { extractGlobalConstants } from '../rules/extract-global-constants';
