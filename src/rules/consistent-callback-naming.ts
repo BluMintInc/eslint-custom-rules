@@ -204,7 +204,7 @@ export = createRule<[], 'callbackPropPrefix' | 'callbackFunctionPrefix'>({
           // Get all references to this variable
           const scope = context.getScope();
           const variable = scope.variables.find((v) => v.name === functionName);
-          const references = new Set(variable?.references ?? []);
+          const references = new Set<import('@typescript-eslint/utils').TSESLint.Scope.Reference>(variable?.references ?? []);
 
           // Get references from all scopes
           const allScopes = [scope];

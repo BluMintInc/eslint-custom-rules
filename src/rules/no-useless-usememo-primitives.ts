@@ -335,18 +335,16 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
     }
 
     let tsModule: typeof import('typescript') | null = null;
-    const checker =
-      parserServices &&
-      (() => {
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-var-requires
-          tsModule = require('typescript');
-          return parserServices.program.getTypeChecker();
-        } catch {
-          /* istanbul ignore next -- falls back to heuristic path */
-          return null;
-        }
-      })();
+    let checker: import('typescript').TypeChecker | null = null;
+    if (parserServices) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        tsModule = require('typescript');
+        checker = parserServices.program.getTypeChecker();
+      } catch {
+        /* istanbul ignore next -- falls back to heuristic path */
+      }
+    }
 
     function classifyExpressionType(
       expr: TSESTree.Expression,

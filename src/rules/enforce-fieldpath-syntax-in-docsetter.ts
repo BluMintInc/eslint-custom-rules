@@ -265,6 +265,12 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       return undefined;
     }
 
+    type ViolationDetails = {
+      topLevelKey: string;
+      exampleFieldPath: string;
+      flattenedProperties: Record<string, string>;
+    };
+
     function extractViolationDetails(
       firstArg: TSESTree.ObjectExpression,
       sourceCode: TSESLint.SourceCode,
@@ -307,12 +313,6 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
         flattenedProperties,
       };
     }
-
-    type ViolationDetails = {
-      topLevelKey: string;
-      exampleFieldPath: string;
-      flattenedProperties: Record<string, string>;
-    };
 
     return {
       // Track DocSetter variable declarations

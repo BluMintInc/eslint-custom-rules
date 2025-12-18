@@ -298,7 +298,7 @@ export const noMarginProperties = createRule<Options, MessageIds>({
           node.id.type === AST_NODE_TYPES.Identifier
         ) {
           const variableName = node.id.name;
-          const sourceCode = context.sourceCode.getText();
+          const sourceText = context.sourceCode.getText();
 
           // Check for margin properties in the object
           node.init.properties.forEach((prop) => {
@@ -314,9 +314,9 @@ export const noMarginProperties = createRule<Options, MessageIds>({
               if (propertyName && checkProperty(propertyName)) {
                 // Check if this variable is used in an sx prop
                 if (
-                  sourceCode.includes(`sx={${variableName}}`) ||
-                  sourceCode.includes(`sx={{ ...${variableName}`) ||
-                  sourceCode.includes(`sx={Object.assign({}, ${variableName}`)
+                  sourceText.includes(`sx={${variableName}}`) ||
+                  sourceText.includes(`sx={{ ...${variableName}`) ||
+                  sourceText.includes(`sx={Object.assign({}, ${variableName}`)
                 ) {
                   context.report({
                     node: prop,

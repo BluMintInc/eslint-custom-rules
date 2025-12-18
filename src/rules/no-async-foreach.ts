@@ -95,9 +95,9 @@ const isAsyncFunctionExpression = (
 };
 
 const getSourceCode = (
-  context: TSESLint.RuleContext<'noAsyncForEach', []>,
+  context: any,
 ): TSESLint.SourceCode => {
-  const typedContext = context as TSESLint.RuleContext<'noAsyncForEach', []> & {
+  const typedContext = context as any & {
     sourceCode?: TSESLint.SourceCode;
   };
 
@@ -105,7 +105,7 @@ const getSourceCode = (
 };
 
 const getScope = (
-  context: TSESLint.RuleContext<'noAsyncForEach', []>,
+  context: any,
   sourceCode: TSESLint.SourceCode,
   node: TSESTree.Node,
 ): TSESLint.Scope.Scope | null => {

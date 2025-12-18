@@ -415,21 +415,6 @@ function isInBooleanContext(node: TSESTree.Node): boolean {
       }
     }
 
-    // If we're in delegating to a function call that starts with boolean prefix
-    if (
-      current.parent.type === AST_NODE_TYPES.CallExpression &&
-      current.parent.callee.type === AST_NODE_TYPES.Identifier
-    ) {
-      const functionName = current.parent.callee.name;
-      if (
-        /^(is|has|should|can|will|do|does|did|was|were|check|validate)/.test(
-          functionName,
-        )
-      ) {
-        return true;
-      }
-    }
-
     // If we're in destructuring assignment with boolean-like name
     if (
       current.parent.type === AST_NODE_TYPES.AssignmentPattern &&

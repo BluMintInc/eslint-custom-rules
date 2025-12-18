@@ -40,8 +40,10 @@ function hasQueryOrHash(url: string): boolean {
  * Removes 'index.html' from a URL and ensures proper trailing slash
  */
 function fixUrl(url: string): string {
-  // Replace /index.html with /
-  return url.replace(/\/index\.html(?=($|[?#]|\$\{))/, '/');
+  // Replace /index.html/ with / and /index.html with / at the end or before ?/#/${
+  return url
+    .replace(/\/index\.html\//g, '/')
+    .replace(/\/index\.html(?=(?:$|[?#]|\$\{))/g, '/');
 }
 
 /**
@@ -120,7 +122,10 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
               fixHint,
             },
             fix: (fixer) => {
-              return fixer.replaceText(node, `"${suggestedUrl}"`);
+              const quote = sourceCode.getText(node).startsWith("'")
+                ? "'"
+                : '"';
+              return fixer.replaceText(node, `${quote}${suggestedUrl}${quote}`);
             },
           });
         }
@@ -137,27 +142,33 @@ export const omitIndexHtml = createRule<Options, MessageIds>({
 
         const value = describeTemplateLiteral(node, sourceCode);
 
-        if (!value.includes('/index.html')) return;
+        // Check if it's a URL and contains index.html
+        if (isLikelyUrl(value) && value.includes('/index.html')) {
+          // Skip if it has query parameters or hash fragments and we're allowing those
+          if (allowWithQueryOrHash && hasQueryOrHash(value)) return;
 
-        const hasDynamicParts = node.expressions.length > 0;
-        const suggestedUrlRaw = fixUrl(value);
-        const suggestedUrl = hasDynamicParts
-          ? `\`${suggestedUrlRaw.replace(/`/g, '\\`')}\``
-          : suggestedUrlRaw;
-        const fixHint = hasDynamicParts
-          ? `Remove "index.html" from the static portion of the template so it resolves to the directory path (e.g., ${suggestedUrl}).`
-          : `Replace it with the directory path (e.g., "${suggestedUrl}").`;
+          const hasDynamicParts = node.expressions.length > 0;
+          const suggestedUrlRaw = fixUrl(value);
+          const suggestedUrl = hasDynamicParts
+            ? `\`${suggestedUrlRaw
+                .replace(/\\/g, '\\\\')
+                .replace(/`/g, '\\`')}\``
+            : suggestedUrlRaw;
+          const fixHint = hasDynamicParts
+            ? `Remove "index.html" from the static portion of the template so it resolves to the directory path (e.g., ${suggestedUrl}).`
+            : `Replace it with the directory path (e.g., "${suggestedUrl}").`;
 
-        context.report({
-          node,
-          messageId: 'omitIndexHtml',
-          data: {
-            url: value,
-            suggestedUrl,
-            fixHint,
-          },
-          // No automatic fix for template literals as they may contain dynamic parts
-        });
+          context.report({
+            node,
+            messageId: 'omitIndexHtml',
+            data: {
+              url: value,
+              suggestedUrl,
+              fixHint,
+            },
+            // No automatic fix for template literals as they may contain dynamic parts
+          });
+        }
       },
     };
   },
