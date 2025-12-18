@@ -142,15 +142,24 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
       comment: TSESTree.Comment,
       indent: string,
     ): string => {
-      const rawLines = sourceCode.getText(comment).split('\n');
+      const rawText = sourceCode.getText(comment);
+      const rawLines = rawText.split('\n');
       let minIndentAfterStar: number | undefined;
 
-      rawLines.slice(1).forEach((line) => {
+      // Calculate minimum indentation across all lines (excluding the first line and standard closing line)
+      rawLines.slice(1).forEach((line, index, arr) => {
+        const isLastLine = index === arr.length - 1;
         const starMatch = line.match(/^\s*\*(.*)$/);
         if (!starMatch) {
           return;
         }
         const afterStar = starMatch[1];
+
+        // Skip the standard " */" closing line
+        if (isLastLine && afterStar.trim() === '/') {
+          return;
+        }
+
         const contentIndent = afterStar.match(/^([ \t]*)\S/);
         if (contentIndent) {
           const indentLength = contentIndent[1].length;
@@ -161,11 +170,20 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
         }
       });
 
-      const indentToRemove = minIndentAfterStar ?? 0;
-      const stripIndent = (text: string) =>
-        indentToRemove === 0
-          ? text
-          : text.replace(new RegExp(`^[ \\t]{0,${indentToRemove}}`), '');
+      // Normalize indentation: we want the minimum indentation after '*' to be exactly 1 space.
+      // (e.g., if min indent is 3, we strip 2; if min indent is 0, we add 1).
+      const indentToAdjustment =
+        minIndentAfterStar === undefined ? 0 : minIndentAfterStar - 1;
+
+      const normalize = (text: string) => {
+        if (indentToAdjustment > 0) {
+          return text.replace(new RegExp(`^[ \\t]{0,${indentToAdjustment}}`), '');
+        }
+        if (indentToAdjustment < 0) {
+          return ' '.repeat(-indentToAdjustment) + text;
+        }
+        return text;
+      };
 
       const normalizedLines = rawLines.map((line, index) => {
         if (index === 0) {
@@ -177,7 +195,7 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
           return line.trimStart();
         }
 
-        const afterStar = stripIndent(starMatch[1]);
+        const afterStar = normalize(starMatch[1]);
         if (afterStar.trim() === '/') {
           return ' */';
         }

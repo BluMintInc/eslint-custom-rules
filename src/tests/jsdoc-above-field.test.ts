@@ -138,6 +138,22 @@ interface Account {
       errors: [{ messageId: 'moveJsdocAbove' }],
     },
     {
+      code: `type Nested = {
+  field: string; /** @remarks
+                  *   nested line 1
+                  *     nested line 2
+                  */
+};`,
+      output: `type Nested = {
+  /** @remarks
+   * nested line 1
+   *   nested line 2
+   */
+  field: string;
+};`,
+      errors: [{ messageId: 'moveJsdocAbove' }],
+    },
+    {
       code: `class User {
   @Column()
   private readonly email?: string; /** @remarks must be lowercase */
