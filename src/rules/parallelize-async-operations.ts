@@ -444,9 +444,7 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
           ) {
             const rangeStart = awaitNodes[0].range?.[0];
             const rangeEnd = awaitNodes[awaitNodes.length - 1].range?.[1];
-            // Range metadata should exist on parser-produced nodes; this guard
-            // only skips malformed or synthetic nodes to avoid forming an
-            // "undefined-undefined" deduplication key
+            // Skip nodes with missing range metadata to avoid "undefined-undefined" deduplication keys
             if (rangeStart == null || rangeEnd == null) {
               awaitNodes.length = 0;
               continue;

@@ -185,25 +185,42 @@ const hasOptionalChaining = (node: TSESTree.MemberExpression): boolean => {
   return false;
 };
 
-const findParamsIdentifier = (
+interface ParamsInScope {
+  identifier?: string;
+  properties?: Map<string, string>;
+}
+
+const findParamsInPattern = (
   pattern: TSESTree.ObjectPattern,
-): string | null => {
+): ParamsInScope | null => {
   for (const prop of pattern.properties) {
     if (
       prop.type === AST_NODE_TYPES.Property &&
       prop.key.type === AST_NODE_TYPES.Identifier &&
-      prop.key.name === 'params' &&
-      prop.value.type === AST_NODE_TYPES.Identifier
+      prop.key.name === 'params'
     ) {
-      return prop.value.name;
+      if (prop.value.type === AST_NODE_TYPES.Identifier) {
+        return { identifier: prop.value.name };
+      }
+      if (prop.value.type === AST_NODE_TYPES.ObjectPattern) {
+        const properties = new Map<string, string>();
+        for (const p of prop.value.properties) {
+          if (
+            p.type === AST_NODE_TYPES.Property &&
+            p.key.type === AST_NODE_TYPES.Identifier &&
+            p.value.type === AST_NODE_TYPES.Identifier
+          ) {
+            properties.set(p.key.name, p.value.name);
+          }
+        }
+        return { properties };
+      }
     }
   }
   return null;
 };
 
-const getParamsIdentifierInScope = (
-  handlerNode: TSESTree.Node,
-): string | null => {
+const getParamsInScope = (handlerNode: TSESTree.Node): ParamsInScope | null => {
   if (
     handlerNode.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
     handlerNode.type !== AST_NODE_TYPES.FunctionExpression &&
@@ -218,9 +235,9 @@ const getParamsIdentifierInScope = (
   }
 
   if (firstParam.type === AST_NODE_TYPES.ObjectPattern) {
-    const identifier = findParamsIdentifier(firstParam);
-    if (identifier) {
-      return identifier;
+    const paramsInScope = findParamsInPattern(firstParam);
+    if (paramsInScope) {
+      return paramsInScope;
     }
   }
 
@@ -243,9 +260,9 @@ const getParamsIdentifierInScope = (
         ) {
           continue;
         }
-        const identifier = findParamsIdentifier(declarator.id);
-        if (identifier) {
-          return identifier;
+        const paramsInScope = findParamsInPattern(declarator.id);
+        if (paramsInScope) {
+          return paramsInScope;
         }
       }
     }
@@ -305,11 +322,11 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
               handlerNode.type === AST_NODE_TYPES.FunctionExpression ||
               handlerNode.type === AST_NODE_TYPES.ArrowFunctionExpression;
             const hasOptional = hasOptionalChaining(node);
-            const paramsIdentifier = isFunctionLikeNode
-              ? getParamsIdentifierInScope(handlerNode)
+            const paramsInScope = isFunctionLikeNode
+              ? getParamsInScope(handlerNode)
               : null;
 
-            if (!paramsIdentifier) {
+            if (!paramsInScope) {
               context.report({
                 node,
                 messageId: 'preferParams',
@@ -320,10 +337,19 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
               return;
             }
 
-            const paramsTarget = paramsIdentifier;
-            // Suggest different parameter names based on depth
-            // Note: These conventions may vary by data model; adjust if needed
             const paramSuggestion = getParentParamName(parentAccess.depth);
+            let replacement: string | null = null;
+
+            if (paramsInScope.identifier) {
+              replacement = hasOptional
+                ? `${paramsInScope.identifier}?.${paramSuggestion}`
+                : `${paramsInScope.identifier}.${paramSuggestion}`;
+            } else if (paramsInScope.properties) {
+              const localName = paramsInScope.properties.get(paramSuggestion);
+              if (localName) {
+                replacement = localName;
+              }
+            }
 
             context.report({
               node,
@@ -331,12 +357,9 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
               data: {
                 paramName: paramSuggestion,
               },
-              fix: (fixer) => {
-                const replacement = hasOptional
-                  ? `${paramsTarget}?.${paramSuggestion}`
-                  : `${paramsTarget}.${paramSuggestion}`;
-                return fixer.replaceText(node, replacement);
-              },
+              fix: replacement
+                ? (fixer) => fixer.replaceText(node, replacement!)
+                : undefined,
             });
           }
         }
