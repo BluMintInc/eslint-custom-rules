@@ -205,10 +205,10 @@ const getAge = example.getAge;
           {
             messageId: 'noClassInstanceDestructuring',
             data: {
-              instance: '`new Person(\'John\', 30)`',
+              instance: "`new Person('John', 30)`",
               members: '`name`, `age`',
               suggestion:
-                '`new Person(\'John\', 30).name`, `new Person(\'John\', 30).age`',
+                "`new Person('John', 30).name`, `new Person('John', 30).age`",
             },
           },
         ],

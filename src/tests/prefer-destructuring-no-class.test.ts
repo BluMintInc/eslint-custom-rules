@@ -114,7 +114,18 @@ ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
         const obj = { foo: 123 };
         const foo = obj.foo;
       `,
-      errors: [{ messageId: 'preferDestructuring' }],
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'obj',
+            property: 'foo',
+            targetNote: '',
+            renamingHint: '',
+            example: 'const { foo } = obj;',
+          },
+        },
+      ],
       output: `
         const obj = { foo: 123 };
         const { foo } = obj;
@@ -126,7 +137,18 @@ ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
         const obj = { nested: { foo: 123 } };
         const foo = obj.nested.foo;
       `,
-      errors: [{ messageId: 'preferDestructuring' }],
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'obj.nested',
+            property: 'foo',
+            targetNote: '',
+            renamingHint: '',
+            example: 'const { foo } = obj.nested;',
+          },
+        },
+      ],
       output: `
         const obj = { nested: { foo: 123 } };
         const { foo } = obj.nested;
@@ -138,7 +160,18 @@ ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
         const obj = { foo: 123 };
         let foo = obj.foo;
       `,
-      errors: [{ messageId: 'preferDestructuring' }],
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'obj',
+            property: 'foo',
+            targetNote: '',
+            renamingHint: '',
+            example: 'let { foo } = obj;',
+          },
+        },
+      ],
       output: `
         const obj = { foo: 123 };
         let { foo } = obj;
@@ -150,7 +183,18 @@ ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
         const obj = { foo: 123 };
         var foo = obj.foo;
       `,
-      errors: [{ messageId: 'preferDestructuring' }],
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'obj',
+            property: 'foo',
+            targetNote: '',
+            renamingHint: '',
+            example: 'var { foo } = obj;',
+          },
+        },
+      ],
       output: `
         const obj = { foo: 123 };
         var { foo } = obj;
@@ -163,7 +207,18 @@ ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
         const obj = { foo: 123 };
         foo = obj.foo;
       `,
-      errors: [{ messageId: 'preferDestructuring' }],
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'obj',
+            property: 'foo',
+            targetNote: '',
+            renamingHint: '',
+            example: '({ foo } = obj)',
+          },
+        },
+      ],
       output: `
         let foo;
         const obj = { foo: 123 };
@@ -177,7 +232,18 @@ ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
         const bar = obj.foo;
       `,
       options: [{ object: true, enforceForRenamedProperties: true }],
-      errors: [{ messageId: 'preferDestructuring' }],
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'obj',
+            property: 'foo',
+            targetNote: ' to "bar"',
+            renamingHint: ' with renaming',
+            example: 'const { foo: bar } = obj;',
+          },
+        },
+      ],
       output: `
         const obj = { foo: 123 };
         const { foo: bar } = obj;

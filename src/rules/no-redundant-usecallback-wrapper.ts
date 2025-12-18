@@ -167,7 +167,7 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
     ],
     messages: {
       redundantWrapper:
-        'Redundant useCallback wrapper around an already memoized callback. Pass the memoized function directly.',
+        'useCallback is wrapping memoized callback "{{callbackName}}", adding a redundant dependency array without improving stability. Pass the hook/context callback directly so React keeps the original stable reference and avoids wrapper allocations and dependency drift.',
     },
   },
   defaultOptions: [{}],
@@ -175,6 +175,7 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
     const option = context.options?.[0] ?? {};
     const knownHooks = new Set(option.memoizedHookNames ?? []);
     const assumeAllUseAreMemoized = option.assumeAllUseAreMemoized === true;
+    const sourceCode = context.getSourceCode();
 
     // Track identifiers coming from hook-like calls
     const hookReturnObjects = new Set<string>(); // variables assigned to a hook call result (object or function)
@@ -255,11 +256,16 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
                 context.report({
                   node,
                   messageId: 'redundantWrapper',
+                  data: { callbackName: sourceCode.getText(unwrappedArg) },
                   fix: (fixer) => fixer.replaceText(node, replaceText),
                 });
               } else {
                 // Member function — report only, no fix to avoid breaking `this`.
-                context.report({ node, messageId: 'redundantWrapper' });
+                context.report({
+                  node,
+                  messageId: 'redundantWrapper',
+                  data: { callbackName: sourceCode.getText(unwrappedArg) },
+                });
               }
             }
             return;
@@ -305,11 +311,16 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
                       context.report({
                         node,
                         messageId: 'redundantWrapper',
+                        data: { callbackName: sourceCode.getText(callee) },
                         fix: (fixer) => fixer.replaceText(node, replaceText),
                       });
                     } else {
                       // Member function — report only, no fix to avoid breaking `this`.
-                      context.report({ node, messageId: 'redundantWrapper' });
+                      context.report({
+                        node,
+                        messageId: 'redundantWrapper',
+                        data: { callbackName: sourceCode.getText(callee) },
+                      });
                     }
                   }
                 }
@@ -363,6 +374,7 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
                           context.report({
                             node,
                             messageId: 'redundantWrapper',
+                            data: { callbackName: sourceCode.getText(callee) },
                             fix: (fixer) =>
                               fixer.replaceText(node, replaceText),
                           });
@@ -371,6 +383,7 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
                           context.report({
                             node,
                             messageId: 'redundantWrapper',
+                            data: { callbackName: sourceCode.getText(callee) },
                           });
                         }
                       }

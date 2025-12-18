@@ -375,7 +375,7 @@ export const preferUseDeepCompareMemo = createRule<[], MessageIds>({
     schema: [],
     messages: {
       preferUseDeepCompareMemo:
-        'Use useDeepCompareMemo instead of useMemo because dependency array contains unmemoized non-primitive values.',
+        'Dependency array for "{{hook}}" includes objects/arrays/functions that change identity each render, so React treats them as changed and reruns the memoized computation, triggering avoidable renders. Use useDeepCompareMemo (or memoize those dependencies first) so comparisons use deep equality and the memo stays stable.',
     },
   },
   defaultOptions: [],
@@ -454,6 +454,9 @@ export const preferUseDeepCompareMemo = createRule<[], MessageIds>({
         context.report({
           node,
           messageId: 'preferUseDeepCompareMemo',
+          data: {
+            hook: 'useMemo',
+          },
           fix(fixer) {
             const fixes: TSESLint.RuleFix[] = [];
 

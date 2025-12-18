@@ -20,6 +20,8 @@ const PRIMITIVE_TYPES = new Set([
   'GeoPoint',
 ]);
 
+const UNKNOWN_FIELD_LABEL = '<unknown field>';
+
 const isInFirestoreTypesDirectory = (filename: string): boolean => {
   if (!filename || filename === '<input>') return false;
   const normalized = filename.replace(/\\/g, '/');
@@ -99,6 +101,63 @@ const unwrapArrayElementType = (
   return current as TSESTree.TypeNode;
 };
 
+const literalToString = (
+  node: TSESTree.Node | null | undefined,
+): string | null => {
+  if (!node || node.type !== AST_NODE_TYPES.Literal) return null;
+  const value = (node as TSESTree.Literal).value;
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'bigint'
+  ) {
+    return String(value);
+  }
+  return null;
+};
+
+/**
+ * Derives a field label for diagnostics by walking ancestors.
+ * Prefers TSPropertySignature keys and returns identifier or string/number/bigint literal keys when present.
+ * Falls back to the surrounding TSTypeAliasDeclaration or TSInterfaceDeclaration name when no property key is available.
+ * This ensures declaration-level array aliases (for example, `type Foo = Object[]`) surface a meaningful label and avoid unlabeled diagnostics.
+ * Returns a placeholder when resolution fails so downstream messaging remains readable.
+ */
+const getFieldName = (node: TSESTree.Node): string => {
+  let current: TSESTree.Node | undefined = node;
+  while (current) {
+    if (current.type === AST_NODE_TYPES.TSPropertySignature) {
+      const key = current.key;
+      if (key.type === AST_NODE_TYPES.Identifier) return key.name;
+      const literalKey = literalToString(key);
+      if (literalKey !== null) return literalKey;
+      const computedKey = key as { type?: string; expression?: TSESTree.Node };
+      if (
+        computedKey.type === 'TSComputedPropertyName' &&
+        computedKey.expression
+      ) {
+        const expr = computedKey.expression;
+        if (expr.type === AST_NODE_TYPES.Identifier) return expr.name;
+        const literalExpr = literalToString(expr);
+        if (literalExpr !== null) return literalExpr;
+      }
+    }
+    if (
+      current.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
+      current.type === AST_NODE_TYPES.TSInterfaceDeclaration
+    ) {
+      const id = current.id;
+      if (id.type === AST_NODE_TYPES.Identifier) {
+        return id.name;
+      }
+    }
+    current = (current as { parent?: TSESTree.Node }).parent as
+      | TSESTree.Node
+      | undefined;
+  }
+  return UNKNOWN_FIELD_LABEL;
+};
+
 // Determine whether this type node appears in a Firestore model type context
 // i.e., within an interface or type alias declaration, and not within variable/function annotations
 const isInModelTypeContext = (node: TSESTree.Node): boolean => {
@@ -145,15 +204,14 @@ export const noFirestoreObjectArrays = createRule<[], MessageIds>({
     },
     schema: [],
     messages: {
-      noObjectArrays: `Arrays of objects are problematic in Firestore:
-- Not queryable
-- Destructive updates
-- Concurrency risks
-
-Prefer:
-- Record<string, T> keyed by id with an index field for order (use toMap/toArr)
-- Subcollections
-- Arrays of IDs where appropriate`,
+      noObjectArrays: [
+        // What's wrong
+        "What's wrong: {{fieldName}} stores an array of objects in a Firestore document.",
+        // Why it matters
+        'Why it matters: Firestore cannot query inside object arrays, and updating one item rewrites the whole array; concurrent writes can overwrite each other and lose data.',
+        // How to fix
+        'How to fix: Store items as Record<string, T> keyed by id with an index field for ordering (use toMap/toArr helpers), or move items into a subcollection or store only an array of IDs.',
+      ].join('\n'),
     },
   },
   defaultOptions: [],
@@ -436,6 +494,9 @@ Prefer:
           context.report({
             node,
             messageId: 'noObjectArrays',
+            data: {
+              fieldName: getFieldName(node),
+            },
           });
         }
       },
@@ -460,6 +521,9 @@ Prefer:
             context.report({
               node,
               messageId: 'noObjectArrays',
+              data: {
+                fieldName: getFieldName(node),
+              },
             });
           }
         }
