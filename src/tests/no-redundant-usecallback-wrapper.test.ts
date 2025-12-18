@@ -1,6 +1,13 @@
 import { ruleTesterJsx, ruleTesterTs } from '../utils/ruleTester';
 import { noRedundantUseCallbackWrapper } from '../rules/no-redundant-usecallback-wrapper';
 
+const redundantMessage = (callbackName: string) =>
+  `useCallback is wrapping memoized callback "${callbackName}", adding a redundant dependency array without improving stability. Pass the hook/context callback directly so React keeps the original stable reference and avoids wrapper allocations and dependency drift.`;
+
+const redundantError = (callbackName: string) => ({
+  message: redundantMessage(callbackName),
+});
+
 const valid = [
   // Substantial logic: allowed
   {
@@ -115,7 +122,7 @@ function C() {
     options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
       { memoizedHookNames: string[] },
     ],
-    errors: [{ messageId: 'redundantWrapper' as const }],
+    errors: [redundantError('signIn')],
     output: `import { useCallback } from 'react';
 import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
 
@@ -138,7 +145,7 @@ function C() {
     options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
       { memoizedHookNames: string[] },
     ],
-    errors: [{ messageId: 'redundantWrapper' as const }],
+    errors: [redundantError('signIn')],
     output: `import { useCallback } from 'react';
 import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
 
@@ -164,7 +171,7 @@ function C() {
     options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
       { memoizedHookNames: string[] },
     ],
-    errors: [{ messageId: 'redundantWrapper' as const }],
+    errors: [redundantError('signIn')],
     output: `import { useCallback } from 'react';
 import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
 
@@ -188,7 +195,7 @@ function C() {
     options: [{ memoizedHookNames: ['useSomething'] }] as [
       { memoizedHookNames: string[] },
     ],
-    errors: [{ messageId: 'redundantWrapper' as const }],
+    errors: [redundantError('svc.handle')],
   },
   // Redundant wrapper with known memoized hook list (custom hook name)
   {
@@ -202,7 +209,7 @@ function C(){
     options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
       { memoizedHookNames: string[] },
     ],
-    errors: [{ messageId: 'redundantWrapper' as const }],
+    errors: [redundantError('signIn')],
     output: `import { useCallback } from 'react';
 function useAuthSubmit(){ return { signIn: () => {} } }
 function C(){
@@ -224,7 +231,7 @@ function C(){
     options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
       { memoizedHookNames: string[] },
     ],
-    errors: [{ messageId: 'redundantWrapper' as const }],
+    errors: [redundantError('ctx.signIn')],
   },
   // React.useCallback, no-arg wrapper: auto-fix
   {
@@ -239,7 +246,7 @@ function C() {
     options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
       { memoizedHookNames: string[] },
     ],
-    errors: [{ messageId: 'redundantWrapper' as const }],
+    errors: [redundantError('signIn')],
     output: `import React from 'react';
 import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
 
@@ -262,7 +269,7 @@ function C() {
     options: [{ memoizedHookNames: ['useAuthSubmit'] }] as [
       { memoizedHookNames: string[] },
     ],
-    errors: [{ messageId: 'redundantWrapper' as const }],
+    errors: [redundantError('signIn')],
     output: `import React from 'react';
 import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
 
@@ -277,10 +284,7 @@ function C() {
 ruleTesterJsx.run(
   'no-redundant-usecallback-wrapper (jsx)',
   noRedundantUseCallbackWrapper,
-  {
-    valid,
-    invalid,
-  },
+  { valid, invalid } as any,
 );
 
 ruleTesterTs.run(

@@ -9,8 +9,9 @@ const buildExtractMessage = (name: string) =>
 const buildRequireAsConstMessage = (value: number) =>
   `What's wrong: Numeric literal ${value} is used directly as a loop boundary.\nWhy it matters: Without "as const", TypeScript widens it to number, so if you later extract or reuse the value you lose the literal-type boundary and it is easier for related loops to drift out of sync.\nHow to fix: Extract it to a named constant with "as const" (or add "as const" inline) to keep the boundary explicit and reusable.`;
 
-type ExtractGlobalConstantsError =
-  TSESLint.TestCaseError<'extractGlobalConstants' | 'requireAsConst'>;
+type ExtractGlobalConstantsError = TSESLint.TestCaseError<
+  'extractGlobalConstants' | 'requireAsConst'
+>;
 
 const buildExtractError = (name: string): ExtractGlobalConstantsError =>
   ({
@@ -889,10 +890,7 @@ ruleTester.run('extract-global-constants', extractGlobalConstants, {
           return { MAX_RETRIES, TIMEOUT };
         }
       `,
-      errors: [
-        buildExtractError('MAX_RETRIES'),
-        buildExtractError('TIMEOUT'),
-      ],
+      errors: [buildExtractError('MAX_RETRIES'), buildExtractError('TIMEOUT')],
     },
     // Should flag identifier constants in nested blocks
     {

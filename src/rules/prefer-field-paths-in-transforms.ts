@@ -99,8 +99,12 @@ function isBoundToName(
     parent.type === AST_NODE_TYPES.MethodDefinition ||
     parent.type === AST_NODE_TYPES.PropertyDefinition
   ) {
-    const key = (parent as TSESTree.Property | TSESTree.MethodDefinition | TSESTree.PropertyDefinition).key;
-    if ((parent as TSESTree.Property | TSESTree.MethodDefinition | TSESTree.PropertyDefinition).computed) {
+    const narrowedParent = parent as
+      | TSESTree.Property
+      | TSESTree.MethodDefinition
+      | TSESTree.PropertyDefinition;
+    const key = narrowedParent.key;
+    if (narrowedParent.computed) {
       return key.type === AST_NODE_TYPES.Literal && key.value === name;
     }
     if (key.type === AST_NODE_TYPES.Identifier) return key.name === name;
@@ -108,7 +112,9 @@ function isBoundToName(
   }
 
   if (parent.type === AST_NODE_TYPES.VariableDeclarator) {
-    return parent.id.type === AST_NODE_TYPES.Identifier && parent.id.name === name;
+    return (
+      parent.id.type === AST_NODE_TYPES.Identifier && parent.id.name === name
+    );
   }
 
   if (parent.type === AST_NODE_TYPES.AssignmentExpression) {
@@ -244,14 +250,8 @@ export const preferFieldPathsInTransforms = createRule<
   ],
   create(context, [options]) {
     const filename = context.getFilename();
-    const resolvedOptions =
-      options ?? {
-        containers: DEFAULT_CONTAINERS,
-        allowNestedIn: [],
-      };
-
-    const containers = resolvedOptions.containers ?? DEFAULT_CONTAINERS;
-    const allowNestedIn = resolvedOptions.allowNestedIn ?? [];
+    const containers = options?.containers ?? DEFAULT_CONTAINERS;
+    const allowNestedIn = options?.allowNestedIn ?? [];
 
     // Skip files explicitly allowed
     if (

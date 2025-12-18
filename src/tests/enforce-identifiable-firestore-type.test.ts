@@ -72,6 +72,35 @@ ruleTesterTs.run(
       `,
         filename: 'functions/src/types/firestore/UserItem/index.ts',
       },
+      {
+        code: `
+        import { Identifiable } from '../../Identifiable';
+        import { Timestamp } from 'firebase-admin/firestore';
+
+        export type GroupInfo<T = Timestamp> = Readonly<
+          Identifiable & {
+            username: string;
+            usernameLowercase: string;
+            imgUrl: string;
+            dateCreated: T;
+          }
+        >;
+
+        export type Guild<T = Timestamp> = Readonly<GroupInfo<T>>;
+      `,
+        filename: 'functions/src/types/firestore/Guild/index.ts',
+      },
+      {
+        code: `
+        type Resolve<T> = T;
+        type BaseType = { id: string; value: number };
+        type TypeA = BaseType;
+        type TypeB = Resolve<BaseType>;
+
+        export type Guild = TypeA & TypeB;
+      `,
+        filename: 'functions/src/types/firestore/Guild/index.ts',
+      },
     ],
     invalid: [
       {
@@ -131,6 +160,97 @@ ruleTesterTs.run(
           {
             messageId: 'missingType',
             data: { typeName: 'Connection', folderName: 'Connection' },
+          },
+        ],
+      },
+      {
+        code: `
+        import { Timestamp } from 'firebase-admin/firestore';
+
+        export type GroupInfo<T = Timestamp> = Readonly<{
+          username: string;
+          usernameLowercase: string;
+          imgUrl: string;
+          dateCreated: T;
+        }>;
+
+        export type Guild<T = Timestamp> = Readonly<GroupInfo<T>>;
+      `,
+        filename: 'functions/src/types/firestore/Guild/index.ts',
+        errors: [
+          {
+            messageId: 'notExtendingIdentifiable',
+            data: { typeName: 'Guild' },
+          },
+        ],
+      },
+      {
+        code: `
+        import { Identifiable } from '../../Identifiable';
+
+        export type Guild = Map<Identifiable, string>;
+      `,
+        filename: 'functions/src/types/firestore/Guild/index.ts',
+        errors: [
+          {
+            messageId: 'notExtendingIdentifiable',
+            data: { typeName: 'Guild' },
+          },
+        ],
+      },
+      {
+        code: `
+        export type Guild = Resolve<Map<{ id: string }, string>>;
+      `,
+        filename: 'functions/src/types/firestore/Guild/index.ts',
+        errors: [
+          {
+            messageId: 'notExtendingIdentifiable',
+            data: { typeName: 'Guild' },
+          },
+        ],
+      },
+      {
+        code: `
+        import { Identifiable } from '../../Identifiable';
+
+        export type Guild = Array<Identifiable>;
+      `,
+        filename: 'functions/src/types/firestore/Guild/index.ts',
+        errors: [
+          {
+            messageId: 'notExtendingIdentifiable',
+            data: { typeName: 'Guild' },
+          },
+        ],
+      },
+      {
+        code: `
+        type Loop = Readonly<Loop>;
+
+        export type Guild = Resolve<Loop>;
+      `,
+        filename: 'functions/src/types/firestore/Guild/index.ts',
+        errors: [
+          {
+            messageId: 'notExtendingIdentifiable',
+            data: { typeName: 'Guild' },
+          },
+        ],
+      },
+      {
+        code: `
+        import { Identifiable } from '../../Identifiable';
+
+        type Aliased = Identifiable;
+
+        export type Guild = keyof Aliased;
+      `,
+        filename: 'functions/src/types/firestore/Guild/index.ts',
+        errors: [
+          {
+            messageId: 'notExtendingIdentifiable',
+            data: { typeName: 'Guild' },
           },
         ],
       },
