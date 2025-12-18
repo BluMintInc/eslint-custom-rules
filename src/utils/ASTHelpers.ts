@@ -587,4 +587,15 @@ export class ASTHelpers {
   ): boolean {
     return node.params && node.params.length > 0;
   }
+
+  /**
+   * Helper to get ancestors of a node in a way that is compatible with both ESLint v8 and v9.
+   * In ESLint v9, context.getAncestors() is deprecated and moved to context.sourceCode.getAncestors(node).
+   */
+  public static getAncestors(context: any, node: TSESTree.Node): TSESTree.Node[] {
+    return (
+      context.sourceCode?.getAncestors?.(node) ??
+      (context.getAncestors ? context.getAncestors() : [])
+    );
+  }
 }
