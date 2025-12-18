@@ -254,6 +254,59 @@ const getParamsIdentifierInScope = (
   return null;
 };
 
+const hasParamsPropertyInPattern = (
+  pattern: TSESTree.ObjectPattern,
+): boolean => {
+  return pattern.properties.some(
+    (prop) =>
+      prop.type === AST_NODE_TYPES.Property &&
+      prop.key.type === AST_NODE_TYPES.Identifier &&
+      prop.key.name === 'params',
+  );
+};
+
+const hasParamsPropertyInScope = (
+  handlerNode: TSESTree.FunctionLike,
+): boolean => {
+  const firstParam = handlerNode.params[0];
+  if (firstParam?.type === AST_NODE_TYPES.ObjectPattern) {
+    if (hasParamsPropertyInPattern(firstParam)) {
+      return true;
+    }
+  }
+
+  if (
+    handlerNode.body &&
+    handlerNode.body.type === AST_NODE_TYPES.BlockStatement
+  ) {
+    const eventParamName =
+      firstParam && firstParam.type === AST_NODE_TYPES.Identifier
+        ? firstParam.name
+        : 'event';
+
+    for (const statement of handlerNode.body.body) {
+      if (statement.type !== AST_NODE_TYPES.VariableDeclaration) {
+        continue;
+      }
+      for (const declarator of statement.declarations) {
+        if (
+          declarator.id.type !== AST_NODE_TYPES.ObjectPattern ||
+          !declarator.init ||
+          declarator.init.type !== AST_NODE_TYPES.Identifier ||
+          declarator.init.name !== eventParamName
+        ) {
+          continue;
+        }
+        if (hasParamsPropertyInPattern(declarator.id)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+};
+
 export const preferParamsOverParentId = createRule<[], MessageIds>({
   name: 'prefer-params-over-parent-id',
   meta: {
@@ -300,8 +353,29 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
           const handlerNode = findHandlerFunction(node, handlerFunctions);
 
           if (handlerNode) {
+            const isFunctionLikeNode =
+              handlerNode.type === AST_NODE_TYPES.FunctionDeclaration ||
+              handlerNode.type === AST_NODE_TYPES.FunctionExpression ||
+              handlerNode.type === AST_NODE_TYPES.ArrowFunctionExpression;
             const hasOptional = hasOptionalChaining(node);
-            const paramsIdentifier = getParamsIdentifierInScope(handlerNode);
+            const paramsIdentifier = isFunctionLikeNode
+              ? getParamsIdentifierInScope(handlerNode)
+              : null;
+            const hasParamsProperty =
+              isFunctionLikeNode && hasParamsPropertyInScope(handlerNode);
+
+            if (!paramsIdentifier && !hasParamsProperty) {
+              context.report({
+                node,
+                messageId: 'preferParams',
+                data: {
+                  paramName: getParentParamName(parentAccess.depth),
+                },
+              });
+              return;
+            }
+
+            const paramsTarget = paramsIdentifier ?? 'params';
             // Suggest different parameter names based on depth
             // Note: These conventions may vary by data model; adjust if needed
             const paramSuggestion = getParentParamName(parentAccess.depth);
@@ -312,14 +386,12 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
               data: {
                 paramName: paramSuggestion,
               },
-              fix: paramsIdentifier
-                ? (fixer) => {
-                    const replacement = hasOptional
-                      ? `${paramsIdentifier}?.${paramSuggestion}`
-                      : `${paramsIdentifier}.${paramSuggestion}`;
-                    return fixer.replaceText(node, replacement);
-                  }
-                : undefined,
+              fix: (fixer) => {
+                const replacement = hasOptional
+                  ? `${paramsTarget}?.${paramSuggestion}`
+                  : `${paramsTarget}.${paramSuggestion}`;
+                return fixer.replaceText(node, replacement);
+              },
             });
           }
         }

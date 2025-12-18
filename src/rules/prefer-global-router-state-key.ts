@@ -365,9 +365,6 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                                 );
                               } else {
                                 const { body } = sourceCode.ast;
-                                let firstNonDirective:
-                                  | TSESTree.Statement
-                                  | undefined;
                                 let lastDirective:
                                   | TSESTree.ExpressionStatement
                                   | undefined;
@@ -384,18 +381,10 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                                     lastDirective = stmt;
                                     continue;
                                   }
-                                  firstNonDirective = stmt;
                                   break;
                                 }
 
-                                if (firstNonDirective) {
-                                  fixes.push(
-                                    fixer.insertTextBefore(
-                                      firstNonDirective,
-                                      importText,
-                                    ),
-                                  );
-                                } else if (lastDirective) {
+                                if (lastDirective) {
                                   fixes.push(
                                     fixer.insertTextAfter(
                                       lastDirective,

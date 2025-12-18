@@ -1,18 +1,8 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { avoidUtilsDirectory } from '../rules/avoid-utils-directory';
 
-type AvoidUtilsTestError = {
-  message: string;
-  messageId: 'avoidUtils';
-  data: { path: string };
-};
-
-const formatMessage = (filePath: string) =>
-  `Path "${filePath}" lives under a "utils/" directory. Generic "utils" folders become grab bags where unrelated helpers accumulate, which makes imports unpredictable and hides ownership. Move this file into a focused "util/" folder (e.g., "util/date" or "util/string") so callers know where to find it and understand its responsibility.`;
-
-const formatError = (filePath: string): AvoidUtilsTestError => ({
-  message: formatMessage(filePath),
-  messageId: 'avoidUtils',
+const formatError = (filePath: string) => ({
+  messageId: 'avoidUtils' as const,
   data: { path: filePath },
 });
 
