@@ -193,7 +193,7 @@ export const noArrayLengthInDeps = createRule<Options, MessageIds>({
     type: 'problem',
     docs: {
       description:
-        'Prevent using array.length in React hook dependency arrays. Instead, memoize stableHash(array) with useMemo and depend on the hash.',
+        'Detects array.length entries in React hook dependency arrays because length ignores content changes; auto-fixes by memoizing stableHash(array) with useMemo and depending on the hash instead.',
       recommended: 'error',
     },
     fixable: 'code',
@@ -215,7 +215,7 @@ export const noArrayLengthInDeps = createRule<Options, MessageIds>({
     ],
     messages: {
       noArrayLengthInDeps:
-        'Avoid using array.length in hook dependency arrays. Use a memoized stableHash(variable) via useMemo and depend on the hash instead.',
+        'Dependency array includes length-based entries ({{dependencies}}). Array length only changes when items are added or removed, so hooks miss updates when array contents change at the same size. Memoize a stableHash of each array with useMemo and depend on that hash so the hook reruns when contents change.',
     },
   },
   defaultOptions: [{}],
@@ -255,12 +255,19 @@ export const noArrayLengthInDeps = createRule<Options, MessageIds>({
 
         if (lengthDeps.length === 0) return;
 
+        const sourceCode = context.getSourceCode();
+        const dependencies = lengthDeps
+          .map(({ element }) => sourceCode.getText(element))
+          .join(', ');
+
         // Report once on the dependency array
         context.report({
           node: depsArg,
           messageId: 'noArrayLengthInDeps',
+          data: {
+            dependencies,
+          },
           fix(fixer) {
-            const sourceCode = context.sourceCode;
             const fixes: TSESLint.RuleFix[] = [];
             const hostFn =
               findEnclosingFunction(node) ?? (sourceCode.ast as TSESTree.Node);

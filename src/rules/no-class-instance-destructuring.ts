@@ -15,12 +15,78 @@ export const noClassInstanceDestructuring = createRule<[], MessageIds>({
     fixable: 'code',
     schema: [],
     messages: {
-      noClassInstanceDestructuring:
-        'Avoid destructuring class instances as it can lead to loss of `this` context. Use direct property access instead.',
+      noClassInstanceDestructuring: [
+        "What's wrong: Destructuring {{members}} from class instance {{instance}} detaches those members from the instance.",
+        'Why it matters: Methods can run with the wrong `this`, and getters become one-time snapshots that go stale when the instance changes.',
+        'How to fix: Access through the instance instead (for example, {{suggestion}}) and bind when you need to pass a method around.',
+      ].join('\n'),
     },
   },
   defaultOptions: [],
   create(context) {
+    const sourceCode = context.getSourceCode();
+
+    function describeMember(
+      prop: TSESTree.ObjectPattern['properties'][number],
+    ): string {
+      if (prop.type === AST_NODE_TYPES.Property) {
+        if (prop.computed) {
+          const keyText = sourceCode.getText(prop.key);
+          return `[${keyText}]`;
+        }
+        if (prop.key.type === AST_NODE_TYPES.Identifier) {
+          return prop.key.name;
+        }
+        return sourceCode.getText(prop.key);
+      }
+
+      if (
+        prop.type === AST_NODE_TYPES.RestElement &&
+        prop.argument.type === AST_NODE_TYPES.Identifier
+      ) {
+        return `...${prop.argument.name}`;
+      }
+
+      return 'member';
+    }
+
+    function buildAccessPath(
+      initText: string,
+      prop: TSESTree.Property,
+    ): string {
+      const keyText = sourceCode.getText(prop.key);
+      if (prop.key.type === AST_NODE_TYPES.Identifier && !prop.computed) {
+        return `${initText}.${keyText}`;
+      }
+      return `${initText}[${keyText}]`;
+    }
+
+    function formatMembers(
+      properties: TSESTree.ObjectPattern['properties'],
+    ): string {
+      const memberNames = properties.map(describeMember).filter(Boolean);
+      if (memberNames.length === 0) return '`<members>`';
+      return memberNames.map((name) => `\`${name}\``).join(', ');
+    }
+
+    function formatAccessExamples(
+      properties: TSESTree.ObjectPattern['properties'],
+      initText: string,
+    ): string {
+      const accessPaths = properties
+        .filter(
+          (prop): prop is TSESTree.Property =>
+            prop.type === AST_NODE_TYPES.Property,
+        )
+        .map((prop) => buildAccessPath(initText, prop));
+
+      if (accessPaths.length === 0) {
+        return `\`${initText}.<member>\``;
+      }
+
+      return accessPaths.map((path) => `\`${path}\``).join(', ');
+    }
+
     function isClassInstance(node: TSESTree.Expression): boolean {
       // Check for new expressions
       if (node.type === AST_NODE_TYPES.NewExpression) {
@@ -52,11 +118,19 @@ export const noClassInstanceDestructuring = createRule<[], MessageIds>({
           isClassInstance(node.init)
         ) {
           const objectPattern = node.id;
+          const initText = sourceCode.getText(node.init as TSESTree.Node);
           context.report({
             node,
             messageId: 'noClassInstanceDestructuring',
+            data: {
+              members: formatMembers(objectPattern.properties),
+              instance: `\`${initText}\``,
+              suggestion: formatAccessExamples(
+                objectPattern.properties,
+                initText,
+              ),
+            },
             fix(fixer) {
-              const sourceCode = context.sourceCode;
               const properties = objectPattern.properties;
 
               // Skip if there's no init expression
@@ -66,21 +140,12 @@ export const noClassInstanceDestructuring = createRule<[], MessageIds>({
               if (properties.length === 1) {
                 const prop = properties[0];
                 if (prop.type === AST_NODE_TYPES.Property) {
-                  const key =
-                    prop.key.type === AST_NODE_TYPES.Identifier
-                      ? prop.key.name
-                      : sourceCode.getText(prop.key);
                   const value =
                     prop.value.type === AST_NODE_TYPES.Identifier
                       ? prop.value.name
                       : sourceCode.getText(prop.value);
-                  const initText = sourceCode.getText(
-                    node.init as TSESTree.Node,
-                  );
-                  return fixer.replaceText(
-                    node,
-                    `${value} = ${initText}.${key}`,
-                  );
+                  const accessPath = buildAccessPath(initText, prop);
+                  return fixer.replaceText(node, `${value} = ${accessPath}`);
                 }
                 return null;
               }
@@ -92,18 +157,12 @@ export const noClassInstanceDestructuring = createRule<[], MessageIds>({
                     prop.type === AST_NODE_TYPES.Property,
                 )
                 .map((prop) => {
-                  const key =
-                    prop.key.type === AST_NODE_TYPES.Identifier
-                      ? prop.key.name
-                      : sourceCode.getText(prop.key);
                   const value =
                     prop.value.type === AST_NODE_TYPES.Identifier
                       ? prop.value.name
                       : sourceCode.getText(prop.value);
-                  const initText = sourceCode.getText(
-                    node.init as TSESTree.Node,
-                  );
-                  return `${value} = ${initText}.${key}`;
+                  const accessPath = buildAccessPath(initText, prop);
+                  return `${value} = ${accessPath}`;
                 })
                 .join(';\nconst ');
 

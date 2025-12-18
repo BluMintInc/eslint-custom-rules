@@ -415,6 +415,21 @@ function isInBooleanContext(node: TSESTree.Node): boolean {
       }
     }
 
+    // If we're in delegating to a function call that starts with boolean prefix
+    if (
+      current.parent.type === AST_NODE_TYPES.CallExpression &&
+      current.parent.callee.type === AST_NODE_TYPES.Identifier
+    ) {
+      const functionName = current.parent.callee.name;
+      if (
+        /^(is|has|should|can|will|do|does|did|was|were|check|validate)/.test(
+          functionName,
+        )
+      ) {
+        return true;
+      }
+    }
+
     // If we're in destructuring assignment with boolean-like name
     if (
       current.parent.type === AST_NODE_TYPES.AssignmentPattern &&
@@ -528,7 +543,7 @@ export const preferNullishCoalescingBooleanProps = createRule<[], MessageIds>({
     fixable: 'code',
     messages: {
       preferNullishCoalescing:
-        'Prefer using nullish coalescing operator (??) instead of logical OR operator (||) when checking for null/undefined',
+        'Logical OR between "{{left}}" and "{{right}}" treats every falsy value (false, 0, "", NaN) as missing and will override intentional boolean or empty states. Use the nullish coalescing operator (??) so "{{right}}" only applies when "{{left}}" is null or undefined, preserving explicit false/0/"" values.',
     },
     schema: [],
   },
@@ -545,16 +560,19 @@ export const preferNullishCoalescingBooleanProps = createRule<[], MessageIds>({
           // Check if this could benefit from nullish coalescing
           // We only suggest nullish coalescing when the left operand could be nullish
           if (couldBeNullish(node.left)) {
+            const sourceCode = context.getSourceCode();
+            const leftText = sourceCode.getText(node.left);
+            const rightText = sourceCode.getText(node.right);
+
             context.report({
               node,
               messageId: 'preferNullishCoalescing',
+              data: {
+                left: leftText,
+                right: rightText,
+              },
               fix(fixer) {
-                return fixer.replaceText(
-                  node,
-                  `${context.sourceCode.getText(node.left)} ?? ${context.sourceCode.getText(
-                    node.right,
-                  )}`,
-                );
+                return fixer.replaceText(node, `${leftText} ?? ${rightText}`);
               },
             });
           }

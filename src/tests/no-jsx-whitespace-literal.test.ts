@@ -25,19 +25,47 @@ ruleTesterJsx.run('no-jsx-whitespace-literal', noJsxWhitespaceLiteral, {
   invalid: [
     {
       code: '<div>Hello,{" "}world!</div>',
-      errors: [{ messageId: 'noWhitespaceLiteral' }],
+      errors: [
+        {
+          messageId: 'noWhitespaceLiteral',
+          data: {
+            literal: '{" "}',
+          },
+        },
+      ],
     },
     {
       code: '<Button>Click{" "}Me</Button>',
-      errors: [{ messageId: 'noWhitespaceLiteral' }],
+      errors: [
+        {
+          messageId: 'noWhitespaceLiteral',
+          data: {
+            literal: '{" "}',
+          },
+        },
+      ],
     },
     {
       code: '<div>{showGreeting && "Hello"}{" "}{username}</div>',
-      errors: [{ messageId: 'noWhitespaceLiteral' }],
+      errors: [
+        {
+          messageId: 'noWhitespaceLiteral',
+          data: {
+            literal: '{" "}',
+          },
+        },
+      ],
     },
     {
       code: '<div>{items.map((item) => <span key={item.id}>{item.name}</span>)}{" "}</div>',
-      errors: [{ messageId: 'noWhitespaceLiteral' }],
+      errors: [
+        {
+          messageId: 'noWhitespaceLiteral',
+          data: {
+            literal: '{" "}',
+          },
+        },
+      ],
     },
   ],
 });

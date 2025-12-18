@@ -4537,7 +4537,7 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
     schema: [],
     messages: {
       functionVerbPhrase:
-        'Function names should start with a verb phrase (e.g., fetchData, processRequest)',
+        'Function "{{name}}" should start with an action verb followed by the thing it acts on. Verb-first names tell readers this symbol performs work instead of representing data, which keeps APIs predictable and prevents accidental misuse. Rename "{{name}}" to a verb-noun phrase such as "fetchUsers" or "processRequest".',
     },
   },
   defaultOptions: [],
@@ -4807,6 +4807,7 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
           context.report({
             node: node.id,
             messageId: 'functionVerbPhrase',
+            data: { name: node.id.name },
           });
         }
       },
@@ -4827,6 +4828,7 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
             context.report({
               node: node.id,
               messageId: 'functionVerbPhrase',
+              data: { name: node.id.name },
             });
           }
         }
@@ -4845,6 +4847,7 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
           context.report({
             node: node.key,
             messageId: 'functionVerbPhrase',
+            data: { name: node.key.name },
           });
         }
       },

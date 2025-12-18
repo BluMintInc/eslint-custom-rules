@@ -419,7 +419,7 @@ const containsJsxInExpression = (node: TSESTree.Expression): boolean => {
         node.callee.type === AST_NODE_TYPES.MemberExpression &&
         node.callee.property.type === AST_NODE_TYPES.Identifier
       ) {
-      if (ARRAY_RETURNING_METHODS.has(node.callee.property.name)) {
+        if (ARRAY_RETURNING_METHODS.has(node.callee.property.name)) {
           return false;
         }
       }

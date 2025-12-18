@@ -107,7 +107,7 @@ ruleTesterTs.run(
           UserData,
           UserPath
         > = async ({ data: change, params: { userId } }) => {
-          const parentId = params.userId;
+          const parentId = userId;
         };
       `,
       },

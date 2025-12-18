@@ -29,6 +29,25 @@ function isPointerEventsProperty(propertyName: string): boolean {
   return propertyName === 'pointerEvents' || propertyName === 'pointer-events';
 }
 
+function formatSelector(selector?: string): string {
+  if (!selector) return 'pseudo-element';
+  const trimmedSelector = selector.trim();
+  const candidates = trimmedSelector
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  for (const candidate of candidates) {
+    const match = candidate.match(/::?(before|after)\b/i);
+    if (match) return `::${match[1].toLowerCase()}`;
+  }
+
+  if (trimmedSelector.length === 0) return 'pseudo-element';
+
+  const snippet = trimmedSelector.slice(0, 40);
+  return trimmedSelector.length > 40 ? `${snippet}...` : trimmedSelector;
+}
+
 export const ensurePointerEventsNone = createRule<Options, MessageIds>({
   name: 'ensure-pointer-events-none',
   meta: {
@@ -42,7 +61,9 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
     schema: [],
     messages: {
       missingPointerEventsNone:
-        'Pseudo-elements (::before, ::after) with position: absolute or fixed should have pointer-events: none to prevent blocking interactions with underlying elements',
+        'What\'s wrong: pseudo-element "{{selector}}" uses absolute or fixed positioning without pointer-events: none. ' +
+        'Why it matters: positioned overlays capture clicks, hover, and focus, blocking the underlying control and harming accessibility. ' +
+        'How to fix: add pointer-events: none so the pseudo-element stays decorative and does not intercept interactions.',
     },
   },
   defaultOptions: [],
@@ -132,6 +153,9 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
         context.report({
           node,
           messageId: 'missingPointerEventsNone',
+          data: {
+            selector: formatSelector(selector),
+          },
           fix(fixer) {
             // Find the last property in the object
             const sourceCode = context.sourceCode;
@@ -201,6 +225,9 @@ export const ensurePointerEventsNone = createRule<Options, MessageIds>({
               context.report({
                 node,
                 messageId: 'missingPointerEventsNone',
+                data: {
+                  selector: formatSelector(template),
+                },
               });
             }
           }

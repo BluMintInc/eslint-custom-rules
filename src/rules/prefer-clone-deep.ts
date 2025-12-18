@@ -15,7 +15,7 @@ export const preferCloneDeep = createRule<[], MessageIds>({
     schema: [],
     messages: {
       preferCloneDeep:
-        'Use cloneDeep from functions/src/util/cloneDeep.ts instead of nested spread operators for deep object copying',
+        'Nested spread copies only clone one level, so inner objects still point at the original and later mutations leak back. Use cloneDeep from functions/src/util/cloneDeep.ts and pass overrides as the second argument so the base object is deeply cloned before applying updates.',
     },
   },
   defaultOptions: [],
