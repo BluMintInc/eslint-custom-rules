@@ -106,6 +106,25 @@ ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
         }
       }
     `,
+    // this assignments outside classes should be ignored
+    `
+      function notAClass(props: { x: number }) {
+        this.value = props.x;
+      }
+    `,
+    // Nested functions inside constructors should not trigger this-based reports
+    `
+      class Example {
+        private value: number;
+
+        constructor(props: { value: number }) {
+          const assign = () => {
+            this.value = props.value;
+          };
+          assign();
+        }
+      }
+    `,
   ],
   invalid: [
     // Basic object property access
@@ -278,6 +297,57 @@ ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
       `,
       options: [{ enforceForRenamedProperties: true }],
       errors: [{ messageId: 'preferDestructuring' }],
+    },
+    // Computed property access with literal key should use computed destructuring
+    {
+      code: `
+        const obj = { foo: 123 };
+        const foo = obj['foo'];
+      `,
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'obj',
+            property: "'foo'",
+            targetNote: '',
+            renamingHint: '',
+            example: "const { ['foo']: foo } = obj;",
+          },
+        },
+      ],
+      output: `
+        const obj = { foo: 123 };
+        const { ['foo']: foo } = obj;
+      `,
+    },
+    // Computed property access with renamed binding should remain computed in fixer
+    {
+      code: `
+        const key = 'foo';
+        let value;
+        const obj = { foo: 123 };
+        value = obj[key];
+      `,
+      options: [{ enforceForRenamedProperties: true }],
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'obj',
+            property: 'key',
+            targetNote: ' to "value"',
+            renamingHint: ' with renaming',
+            example: '({ [key]: value } = obj)',
+          },
+        },
+      ],
+      output: `
+        const key = 'foo';
+        let value;
+        const obj = { foo: 123 };
+        ({ [key]: value } = obj);
+      `,
     },
   ],
 });

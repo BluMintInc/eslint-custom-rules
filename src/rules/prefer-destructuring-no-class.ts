@@ -153,6 +153,7 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
         defaultOptions[0].enforceForRenamedProperties,
       ...context.options[0],
     };
+    const sourceCode = context.getSourceCode();
 
     /**
      * Check if we're inside a class method
@@ -195,10 +196,53 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
       );
     }
 
+    function findEnclosingMethodDefinition(
+      node: TSESTree.Node,
+    ): TSESTree.MethodDefinition | null {
+      let current: TSESTree.Node | undefined = node;
+
+      while (current) {
+        if (current.type === AST_NODE_TYPES.MethodDefinition) {
+          return current;
+        }
+
+        current = current.parent ?? undefined;
+      }
+
+      return null;
+    }
+
+    function isInsideConstructorBody(node: TSESTree.Node): boolean {
+      let current: TSESTree.Node | undefined = node;
+
+      while (current) {
+        if (
+          current.type === AST_NODE_TYPES.FunctionDeclaration ||
+          current.type === AST_NODE_TYPES.FunctionExpression ||
+          current.type === AST_NODE_TYPES.ArrowFunctionExpression
+        ) {
+          const enclosingMethod = findEnclosingMethodDefinition(current);
+          return (
+            !!enclosingMethod &&
+            enclosingMethod.kind === 'constructor' &&
+            enclosingMethod.value === current
+          );
+        }
+
+        current = current.parent ?? undefined;
+      }
+
+      return false;
+    }
+
     function canDestructureObjectProperty(
       memberExpression: TSESTree.MemberExpression,
       identifier: TSESTree.Identifier,
     ): boolean {
+      if (memberExpression.property.type === AST_NODE_TYPES.PrivateIdentifier) {
+        return false;
+      }
+
       if (!options.object) {
         return false;
       }
@@ -208,6 +252,39 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
       }
 
       return isMatchingPropertyName(memberExpression.property, identifier.name);
+    }
+
+    function getPatternKeyText(
+      memberExpression: TSESTree.MemberExpression,
+      propertyText: string,
+    ): string {
+      if (memberExpression.computed) {
+        return `[${sourceCode.getText(memberExpression.property)}]`;
+      }
+
+      return propertyText;
+    }
+
+    function getDestructuringBindingText(
+      memberExpression: TSESTree.MemberExpression,
+      propertyText: string,
+      targetName: string,
+    ): string | null {
+      if (memberExpression.property.type === AST_NODE_TYPES.PrivateIdentifier) {
+        return null;
+      }
+
+      const patternKeyText = getPatternKeyText(memberExpression, propertyText);
+
+      if (
+        memberExpression.computed ||
+        (options.enforceForRenamedProperties &&
+          !isMatchingPropertyName(memberExpression.property, targetName))
+      ) {
+        return `${patternKeyText}: ${targetName}`;
+      }
+
+      return patternKeyText;
     }
 
     /**
@@ -305,11 +382,6 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
       examplePrefix: string,
       exampleSuffix: string,
     ) {
-      const contextWithSource = context as typeof context & {
-        sourceCode?: TSESLint.SourceCode;
-      };
-      const sourceCode =
-        contextWithSource.sourceCode ?? context.getSourceCode();
       const objectText = sourceCode.getText(memberExpr.object);
       const propertyText = getPropertyText(
         memberExpr.property,
@@ -321,18 +393,23 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
         !!targetName &&
         !isMatchingPropertyName(memberExpr.property, targetName);
       const aliasName = targetName ?? propertyText;
+      const patternKeyText = getPatternKeyText(memberExpr, propertyText);
+      const destructuringBinding =
+        getDestructuringBindingText(memberExpr, propertyText, aliasName) ??
+        patternKeyText;
 
       return {
         propertyText,
         objectText,
+        destructuringBinding,
         data: {
           property: propertyText,
           object: objectText,
           targetNote: usesRenaming && targetName ? ` to "${targetName}"` : '',
           renamingHint: usesRenaming ? ' with renaming' : '',
           example: usesRenaming
-            ? `${examplePrefix}{ ${propertyText}: ${aliasName} } = ${objectText}${exampleSuffix}`
-            : `${examplePrefix}{ ${propertyText} } = ${objectText}${exampleSuffix}`,
+            ? `${examplePrefix}{ ${destructuringBinding} } = ${objectText}${exampleSuffix}`
+            : `${examplePrefix}{ ${destructuringBinding} } = ${objectText}${exampleSuffix}`,
         },
       };
     }
@@ -357,21 +434,23 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
       }
 
       const kind = parentNode.kind;
+      if (node.id.type !== AST_NODE_TYPES.Identifier) {
+        return null;
+      }
 
-      if (
-        options.enforceForRenamedProperties &&
-        node.id.type === AST_NODE_TYPES.Identifier &&
-        !isMatchingPropertyName(memberExpr.property, node.id.name)
-      ) {
-        return fixer.replaceText(
-          parentNode,
-          `${kind} { ${propertyText}: ${node.id.name} } = ${objectText};`,
-        );
+      const destructuringBinding = getDestructuringBindingText(
+        memberExpr,
+        propertyText,
+        node.id.name,
+      );
+
+      if (!destructuringBinding) {
+        return null;
       }
 
       return fixer.replaceText(
         parentNode,
-        `${kind} { ${propertyText} } = ${objectText};`,
+        `${kind} { ${destructuringBinding} } = ${objectText};`,
       );
     }
 
@@ -382,18 +461,24 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
       objectText: string,
       memberExpr: TSESTree.MemberExpression,
     ) {
-      if (
-        options.enforceForRenamedProperties &&
-        node.left.type === AST_NODE_TYPES.Identifier &&
-        !isMatchingPropertyName(memberExpr.property, node.left.name)
-      ) {
-        return fixer.replaceText(
-          node,
-          `({ ${propertyText}: ${node.left.name} } = ${objectText})`,
-        );
+      if (node.left.type !== AST_NODE_TYPES.Identifier) {
+        return null;
       }
 
-      return fixer.replaceText(node, `({ ${propertyText} } = ${objectText})`);
+      const destructuringBinding = getDestructuringBindingText(
+        memberExpr,
+        propertyText,
+        node.left.name,
+      );
+
+      if (!destructuringBinding) {
+        return null;
+      }
+
+      return fixer.replaceText(
+        node,
+        `({ ${destructuringBinding} } = ${objectText})`,
+      );
     }
 
     /**
@@ -411,6 +496,10 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
         node.left.type !== AST_NODE_TYPES.MemberExpression ||
         node.left.object.type !== AST_NODE_TYPES.ThisExpression
       ) {
+        return;
+      }
+
+      if (!isInsideConstructorBody(node)) {
         return;
       }
 
