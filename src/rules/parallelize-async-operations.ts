@@ -425,6 +425,21 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       return fixer.replaceTextRange([startPos, endPos], promiseAllText);
     }
 
+    /**
+     * Generates a deduplication key from await nodes' range metadata.
+     * Returns null if range metadata is missing.
+     */
+    function getDeduplicationKey(awaitNodes: TSESTree.Node[]): string | null {
+      const rangeStart = awaitNodes[0].range?.[0];
+      const rangeEnd = awaitNodes[awaitNodes.length - 1].range?.[1];
+
+      if (rangeStart == null || rangeEnd == null) {
+        return null;
+      }
+
+      return `${rangeStart}-${rangeEnd}`;
+    }
+
     const processStatementList = (statements: TSESTree.Statement[]): void => {
       const awaitNodes: TSESTree.Node[] = [];
 
@@ -442,14 +457,13 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
             !areInTryCatchBlocks(awaitNodes) &&
             !areInLoop(awaitNodes)
           ) {
-            const rangeStart = awaitNodes[0].range?.[0];
-            const rangeEnd = awaitNodes[awaitNodes.length - 1].range?.[1];
-            // Skip nodes with missing range metadata to avoid "undefined-undefined" deduplication keys
-            if (rangeStart == null || rangeEnd == null) {
+            const key = getDeduplicationKey(awaitNodes);
+            // Skip reporting since generateFix requires valid ranges and we'd
+            // form a malformed deduplication key
+            if (key == null) {
               awaitNodes.length = 0;
               continue;
             }
-            const key = `${rangeStart}-${rangeEnd}`;
             if (!reportedRanges.has(key)) {
               reportedRanges.add(key);
               context.report({
@@ -477,13 +491,12 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
           !areInTryCatchBlocks(awaitNodes) &&
           !areInLoop(awaitNodes)
         ) {
-          const rangeStart = awaitNodes[0].range?.[0];
-          const rangeEnd = awaitNodes[awaitNodes.length - 1].range?.[1];
-          if (rangeStart == null || rangeEnd == null) {
-            // Defensive guard: skip reporting when range metadata is missing
+          const key = getDeduplicationKey(awaitNodes);
+          // Skip reporting since generateFix requires valid ranges and we'd
+          // form a malformed deduplication key
+          if (key == null) {
             return;
           }
-          const key = `${rangeStart}-${rangeEnd}`;
           if (!reportedRanges.has(key)) {
             reportedRanges.add(key);
             context.report({

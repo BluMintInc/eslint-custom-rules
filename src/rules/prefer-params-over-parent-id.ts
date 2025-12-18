@@ -317,14 +317,8 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
           const handlerNode = findHandlerFunction(node, handlerNodes);
 
           if (handlerNode) {
-            const isFunctionLikeNode =
-              handlerNode.type === AST_NODE_TYPES.FunctionDeclaration ||
-              handlerNode.type === AST_NODE_TYPES.FunctionExpression ||
-              handlerNode.type === AST_NODE_TYPES.ArrowFunctionExpression;
             const hasOptional = hasOptionalChaining(node);
-            const paramsInScope = isFunctionLikeNode
-              ? getParamsInScope(handlerNode)
-              : null;
+            const paramsInScope = getParamsInScope(handlerNode);
 
             if (!paramsInScope) {
               context.report({
