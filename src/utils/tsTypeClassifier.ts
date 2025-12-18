@@ -59,8 +59,8 @@ export function describeTypeKind(
   if (flags & tsModule.TypeFlags.Null) return 'null value';
   if (flags & tsModule.TypeFlags.Undefined) return 'undefined value';
   if (
-    !options.ignoreSymbol &&
-    (flags & tsModule.TypeFlags.ESSymbol || flags & tsModule.TypeFlags.UniqueESSymbol)
+    flags &
+    (tsModule.TypeFlags.ESSymbol | tsModule.TypeFlags.UniqueESSymbol)
   ) {
     return 'symbol value';
   }
@@ -170,7 +170,7 @@ export function classifyExpressionType(
     const tsNode = parserServices.esTreeNodeToTSNodeMap.get(expr);
     if (!tsNode) {
       /* istanbul ignore next -- rare when parser services mismatch */
-      return { status: 'unknown', kind: 'primitive value' };
+      return { status: 'unknown', kind: 'unknown value' };
     }
 
     const type = checker.getTypeAtLocation(tsNode);

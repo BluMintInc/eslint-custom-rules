@@ -378,7 +378,7 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
 
     function classifyExpressionTypeInternal(expr: TSESTree.Expression) {
       if (!checker || !tsModule || !parserServices) {
-        return { status: 'unknown' as const, kind: 'primitive value' };
+        return { status: 'unknown' as const, kind: 'unknown value' };
       }
 
       return classifyExpressionType(expr, {
