@@ -151,7 +151,7 @@ type DeclaratorAnalysis = {
   isFunctionOrMutable: boolean;
   hasDependencies: boolean;
   hasAsConstAssertion: boolean;
-  hasIdentifier: boolean;
+  hasReportableIdentifier: boolean;
 };
 
 function analyzeDeclarator(
@@ -169,7 +169,7 @@ function analyzeDeclarator(
         : false,
     hasAsConstAssertion:
       !isFunctionOrMutable && init ? isAsConstExpression(init) : false,
-    hasIdentifier:
+    hasReportableIdentifier:
       declaration.id?.type === AST_NODE_TYPES.Identifier && !isFunctionOrMutable,
   };
 }
@@ -197,7 +197,7 @@ export const extractGlobalConstants: TSESLint.RuleModule<
         let hasFunctionOrMutableValue = false;
         let hasDependencies = false;
         let hasAsConstAssertion = false;
-        let hasIdentifierDeclaration = false;
+        let hasReportableIdentifierDeclaration = false;
 
         for (const declaration of declarations) {
           const analysis = analyzeDeclarator(declaration);
@@ -209,7 +209,7 @@ export const extractGlobalConstants: TSESLint.RuleModule<
 
           hasDependencies ||= analysis.hasDependencies;
           hasAsConstAssertion ||= analysis.hasAsConstAssertion;
-          hasIdentifierDeclaration ||= analysis.hasIdentifier;
+          hasReportableIdentifierDeclaration ||= analysis.hasReportableIdentifier;
         }
 
         if (hasFunctionOrMutableValue) {
@@ -224,7 +224,7 @@ export const extractGlobalConstants: TSESLint.RuleModule<
           !hasAsConstAssertion &&
           (scope.type === 'function' || scope.type === 'block') &&
           isInsideFunction(node) &&
-          hasIdentifierDeclaration
+          hasReportableIdentifierDeclaration
         ) {
           for (const declaration of declarations) {
             if (declaration.id?.type !== AST_NODE_TYPES.Identifier) continue;
