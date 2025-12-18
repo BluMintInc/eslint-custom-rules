@@ -1,8 +1,10 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
-import { createRule } from '../utils/createRule';
 import path from 'path';
+import { createRule } from '../utils/createRule';
 
 type MessageIds = 'missingType' | 'notExtendingIdentifiable';
+
+const TRANSPARENT_TYPE_NAMES = new Set(['Readonly', 'Resolve']);
 
 export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
   name: 'enforce-identifiable-firestore-type',
@@ -98,8 +100,6 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
             return null;
           };
 
-          const transparentTypeNames = new Set(['Readonly', 'Resolve']);
-
           type ParenthesizedTypeNode = {
             type: 'TSParenthesizedType';
             typeAnnotation?: TSESTree.Node | null;
@@ -160,7 +160,7 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
               }
 
               if (
-                transparentTypeNames.has(typeName) &&
+                TRANSPARENT_TYPE_NAMES.has(typeName) &&
                 resolvedType.typeParameters?.params?.some((param) =>
                   findIdentifiable(param, checkedTypes),
                 )
@@ -227,7 +227,7 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
               }
 
               if (
-                transparentTypeNames.has(typeName) &&
+                TRANSPARENT_TYPE_NAMES.has(typeName) &&
                 resolvedType.typeParameters?.params?.some((param) =>
                   checkIdField(param, visitedTypes),
                 )
