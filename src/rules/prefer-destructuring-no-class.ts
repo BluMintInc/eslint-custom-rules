@@ -153,6 +153,7 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
         defaultOptions[0].enforceForRenamedProperties,
       ...context.options[0],
     };
+    const sourceCode = context.getSourceCode();
 
     /**
      * Check if we're inside a class method
@@ -171,6 +172,127 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
       return false;
     }
 
+    function isIdentifierTarget(
+      node: TSESTree.Node,
+    ): node is TSESTree.Identifier {
+      return node.type === AST_NODE_TYPES.Identifier;
+    }
+
+    function isSkippedClassMemberAccess(
+      memberExpression: TSESTree.MemberExpression,
+    ): boolean {
+      return (
+        isClassInstance(memberExpression, context) ||
+        isStaticClassMember(memberExpression, context)
+      );
+    }
+
+    function isThisMemberInClassMethod(
+      memberExpression: TSESTree.MemberExpression,
+    ): boolean {
+      return (
+        memberExpression.object.type === AST_NODE_TYPES.ThisExpression &&
+        isInsideClassMethod(memberExpression)
+      );
+    }
+
+    function findEnclosingMethodDefinition(
+      node: TSESTree.Node,
+    ): TSESTree.MethodDefinition | null {
+      let current: TSESTree.Node | undefined = node;
+
+      while (current) {
+        if (current.type === AST_NODE_TYPES.MethodDefinition) {
+          return current;
+        }
+
+        current = current.parent ?? undefined;
+      }
+
+      return null;
+    }
+
+    function isInsideConstructorBody(node: TSESTree.Node): boolean {
+      let current: TSESTree.Node | undefined = node;
+
+      while (current) {
+        if (
+          current.type === AST_NODE_TYPES.FunctionDeclaration ||
+          current.type === AST_NODE_TYPES.FunctionExpression ||
+          current.type === AST_NODE_TYPES.ArrowFunctionExpression
+        ) {
+          const enclosingMethod = findEnclosingMethodDefinition(current);
+          return (
+            !!enclosingMethod &&
+            enclosingMethod.kind === 'constructor' &&
+            enclosingMethod.value === current
+          );
+        }
+
+        current = current.parent ?? undefined;
+      }
+
+      return false;
+    }
+
+    function isPrivateIdentifierProperty(
+      property: TSESTree.MemberExpression['property'],
+    ): property is TSESTree.PrivateIdentifier {
+      return property.type === AST_NODE_TYPES.PrivateIdentifier;
+    }
+
+    function canDestructureObjectProperty(
+      memberExpression: TSESTree.MemberExpression,
+      identifier: TSESTree.Identifier,
+    ): boolean {
+      if (isPrivateIdentifierProperty(memberExpression.property)) {
+        return false;
+      }
+
+      if (!options.object) {
+        return false;
+      }
+
+      if (options.enforceForRenamedProperties) {
+        return true;
+      }
+
+      return isMatchingPropertyName(memberExpression.property, identifier.name);
+    }
+
+    function getPatternKeyText(
+      memberExpression: TSESTree.MemberExpression,
+      propertyText: string,
+    ): string {
+      if (memberExpression.computed) {
+        return `[${sourceCode.getText(memberExpression.property)}]`;
+      }
+
+      return propertyText;
+    }
+
+    function getDestructuringBindingText(
+      memberExpression: TSESTree.MemberExpression,
+      propertyText: string,
+      targetName: string,
+    ): string | null {
+      if (isPrivateIdentifierProperty(memberExpression.property)) {
+        return null;
+      }
+
+      const patternKeyText = getPatternKeyText(memberExpression, propertyText);
+
+      if (
+        memberExpression.computed ||
+        (options.enforceForRenamedProperties &&
+          !isMatchingPropertyName(memberExpression.property, targetName))
+      ) {
+        return `${patternKeyText}: ${targetName}`;
+      }
+
+      return patternKeyText;
+    }
+
     /**
      * Check if destructuring should be used for this node
      */
@@ -178,32 +300,83 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
       node: TSESTree.MemberExpression,
       leftNode: TSESTree.Node,
     ): boolean {
-      // Skip if this is a class instance or static class member
-      if (
-        isClassInstance(node, context) ||
-        isStaticClassMember(node, context)
-      ) {
+      if (!isIdentifierTarget(leftNode)) {
         return false;
       }
 
-      // Skip if the object is 'this' and we're inside a class method
+      return (
+        !isSkippedClassMemberAccess(node) &&
+        !isThisMemberInClassMethod(node) &&
+        canDestructureObjectProperty(node, leftNode)
+      );
+    }
+
+    /**
+     * Extracts the property name from a MemberExpression when it can be safely compared.
+     */
+    function getMemberExpressionPropertyName(
+      memberExpression: TSESTree.MemberExpression,
+    ): string | null {
+      if (isPrivateIdentifierProperty(memberExpression.property)) {
+        return null;
+      }
+
+      if (!memberExpression.computed) {
+        if (memberExpression.property.type === AST_NODE_TYPES.Identifier) {
+          return memberExpression.property.name;
+        }
+
+        return null;
+      }
+
       if (
-        node.object.type === AST_NODE_TYPES.ThisExpression &&
-        isInsideClassMethod(node)
+        memberExpression.property.type === AST_NODE_TYPES.Literal &&
+        typeof memberExpression.property.value === 'string'
       ) {
+        return memberExpression.property.value;
+      }
+
+      return null;
+    }
+
+    /**
+     * Look up a variable by name within a scope.
+     */
+    function findVariableInScope(
+      scope: TSESLint.Scope.Scope | null,
+      name: string,
+    ): TSESLint.Scope.Variable | undefined {
+      return scope?.variables.find((variable) => variable.name === name);
+    }
+
+    /**
+     * Check whether a variable definition originates from a parameter.
+     */
+    function isParameterDefinition(
+      variable: TSESLint.Scope.Variable | undefined,
+    ): boolean {
+      if (!variable || !Array.isArray(variable.defs)) {
         return false;
       }
 
-      // Check object destructuring
-      if (options.object) {
-        if (options.enforceForRenamedProperties) {
-          return true;
+      return variable.defs.some(
+        (definition) => definition.type === 'Parameter',
+      );
+    }
+
+    /**
+     * Determine whether an identifier refers to a function or method parameter.
+     */
+    function isFunctionParameter(identifier: TSESTree.Identifier): boolean {
+      let scope: TSESLint.Scope.Scope | null = context.getScope();
+
+      while (scope) {
+        const variable = findVariableInScope(scope, identifier.name);
+        if (variable) {
+          return isParameterDefinition(variable);
         }
 
-        // Only suggest destructuring when property name matches variable name
-        if (leftNode.type === AST_NODE_TYPES.Identifier) {
-          return isMatchingPropertyName(node.property, leftNode.name);
-        }
+        scope = scope.upper;
       }
 
       return false;
@@ -215,11 +388,6 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
       examplePrefix: string,
       exampleSuffix: string,
     ) {
-      const contextWithSource = context as typeof context & {
-        sourceCode?: TSESLint.SourceCode;
-      };
-      const sourceCode =
-        contextWithSource.sourceCode ?? context.getSourceCode();
       const objectText = sourceCode.getText(memberExpr.object);
       const propertyText = getPropertyText(
         memberExpr.property,
@@ -231,18 +399,23 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
         !!targetName &&
         !isMatchingPropertyName(memberExpr.property, targetName);
       const aliasName = targetName ?? propertyText;
+      const patternKeyText = getPatternKeyText(memberExpr, propertyText);
+      const destructuringBinding =
+        getDestructuringBindingText(memberExpr, propertyText, aliasName) ??
+        patternKeyText;
 
       return {
         propertyText,
         objectText,
+        destructuringBinding,
         data: {
           property: propertyText,
           object: objectText,
           targetNote: usesRenaming && targetName ? ` to "${targetName}"` : '',
           renamingHint: usesRenaming ? ' with renaming' : '',
           example: usesRenaming
-            ? `${examplePrefix}{ ${propertyText}: ${aliasName} } = ${objectText}${exampleSuffix}`
-            : `${examplePrefix}{ ${propertyText} } = ${objectText}${exampleSuffix}`,
+            ? `${examplePrefix}{ ${destructuringBinding} } = ${objectText}${exampleSuffix}`
+            : `${examplePrefix}{ ${destructuringBinding} } = ${objectText}${exampleSuffix}`,
         },
       };
     }
@@ -267,21 +440,23 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
       }
 
       const kind = parentNode.kind;
+      if (node.id.type !== AST_NODE_TYPES.Identifier) {
+        return null;
+      }
 
-      if (
-        options.enforceForRenamedProperties &&
-        node.id.type === AST_NODE_TYPES.Identifier &&
-        !isMatchingPropertyName(memberExpr.property, node.id.name)
-      ) {
-        return fixer.replaceText(
-          parentNode,
-          `${kind} { ${propertyText}: ${node.id.name} } = ${objectText};`,
-        );
+      const destructuringBinding = getDestructuringBindingText(
+        memberExpr,
+        propertyText,
+        node.id.name,
+      );
+
+      if (!destructuringBinding) {
+        return null;
       }
 
       return fixer.replaceText(
         parentNode,
-        `${kind} { ${propertyText} } = ${objectText};`,
+        `${kind} { ${destructuringBinding} } = ${objectText};`,
       );
     }
 
@@ -292,21 +467,91 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
       objectText: string,
       memberExpr: TSESTree.MemberExpression,
     ) {
-      if (
-        options.enforceForRenamedProperties &&
-        node.left.type === AST_NODE_TYPES.Identifier &&
-        !isMatchingPropertyName(memberExpr.property, node.left.name)
-      ) {
-        return fixer.replaceText(
-          node,
-          `({ ${propertyText}: ${node.left.name} } = ${objectText})`,
-        );
+      if (node.left.type !== AST_NODE_TYPES.Identifier) {
+        return null;
+      }
+
+      const destructuringBinding = getDestructuringBindingText(
+        memberExpr,
+        propertyText,
+        node.left.name,
+      );
+
+      if (!destructuringBinding) {
+        return null;
       }
 
       return fixer.replaceText(
         node,
-        `({ ${propertyText} } = ${objectText})`,
+        `({ ${destructuringBinding} } = ${objectText})`,
       );
+    }
+
+    /**
+     * Report assignments that copy properties from parameter objects to class fields.
+     * These are reported without a fixer to avoid changing function signatures.
+     */
+    function handleClassPropertyAssignment(
+      node: TSESTree.AssignmentExpression & {
+        right: TSESTree.MemberExpression;
+      },
+    ): void {
+      // Caller ensures node.right is a MemberExpression.
+      if (
+        !options.object ||
+        node.left.type !== AST_NODE_TYPES.MemberExpression ||
+        node.left.object.type !== AST_NODE_TYPES.ThisExpression
+      ) {
+        return;
+      }
+
+      if (!isInsideConstructorBody(node)) {
+        return;
+      }
+
+      const rightObject = node.right.object;
+
+      if (
+        rightObject.type !== AST_NODE_TYPES.Identifier ||
+        !isFunctionParameter(rightObject)
+      ) {
+        return;
+      }
+
+      const leftPropertyName = getMemberExpressionPropertyName(node.left);
+      const rightPropertyName = getMemberExpressionPropertyName(node.right);
+
+      if (!leftPropertyName || !rightPropertyName) {
+        return;
+      }
+
+      if (
+        !options.enforceForRenamedProperties &&
+        leftPropertyName !== rightPropertyName
+      ) {
+        return;
+      }
+
+      if (
+        isClassInstance(node.right, context) ||
+        isStaticClassMember(node.right, context)
+      ) {
+        return;
+      }
+
+      const { data } = buildReportDetails(
+        node.right,
+        leftPropertyName,
+        '(',
+        ')',
+      );
+
+      // No fixer here because destructuring parameters changes the function signature and must stay manual.
+      context.report({
+        node,
+        messageId: 'preferDestructuring',
+        data,
+      });
     }
 
     return {
@@ -351,14 +596,14 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
 
       AssignmentExpression(node) {
         if (
-          node.operator === '=' &&
-          node.right.type === AST_NODE_TYPES.MemberExpression
+          node.operator !== '=' ||
+          node.right.type !== AST_NODE_TYPES.MemberExpression
         ) {
-          const memberRight = node.right;
-          if (!shouldUseDestructuring(node.right, node.left)) {
-            return;
-          }
+          return;
+        }
 
+        const memberRight = node.right;
+        if (shouldUseDestructuring(memberRight, node.left)) {
           const targetName =
             node.left.type === AST_NODE_TYPES.Identifier
               ? node.left.name
@@ -384,7 +629,14 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
               );
             },
           });
+          return;
         }
+
+        handleClassPropertyAssignment(
+          node as TSESTree.AssignmentExpression & {
+            right: TSESTree.MemberExpression;
+          },
+        );
       },
     };
   },
