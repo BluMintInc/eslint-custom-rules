@@ -238,6 +238,22 @@ ruleTesterTs.run(
           },
         ],
       },
+      {
+        code: `
+        import { Identifiable } from '../../Identifiable';
+
+        type Aliased = Identifiable;
+
+        export type Guild = keyof Aliased;
+      `,
+        filename: 'functions/src/types/firestore/Guild/index.ts',
+        errors: [
+          {
+            messageId: 'notExtendingIdentifiable',
+            data: { typeName: 'Guild' },
+          },
+        ],
+      },
     ],
   },
 );

@@ -100,41 +100,60 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
 
           const transparentTypeNames = new Set(['Readonly', 'Resolve']);
 
-          const unwrapParenthesized = (
+          type ParenthesizedTypeNode = {
+            type: 'TSParenthesizedType';
+            typeAnnotation?: TSESTree.Node | null;
+          };
+
+          const isParenthesizedType = (
+            node: TSESTree.Node | null | undefined,
+          ): boolean =>
+            (node as { type?: string })?.type === 'TSParenthesizedType';
+
+          const isReadonlyTypeOperator = (
+            node: TSESTree.Node | null | undefined,
+          ): node is TSESTree.TSTypeOperator & { operator: 'readonly' } =>
+            node?.type === AST_NODE_TYPES.TSTypeOperator &&
+            (node as TSESTree.TSTypeOperator).operator === 'readonly';
+
+          const unwrapTransparentType = (
             typeNode: TSESTree.Node | null | undefined,
-          ): TSESTree.Node | null | undefined => {
-            if (
-              typeNode &&
-              (typeNode as { type?: string }).type === 'TSParenthesizedType'
-            ) {
-              return (
-                (typeNode as { typeAnnotation?: TSESTree.Node | null })
-                  .typeAnnotation ?? null
-              );
+          ): TSESTree.Node | null => {
+            let current = typeNode;
+
+            while (current) {
+              if (isParenthesizedType(current)) {
+                const parenthesized = current as unknown as ParenthesizedTypeNode;
+                current = parenthesized.typeAnnotation ?? null;
+                continue;
+              }
+
+              if (isReadonlyTypeOperator(current)) {
+                current = current.typeAnnotation ?? null;
+                continue;
+              }
+
+              break;
             }
 
-            return typeNode;
+            return current ?? null;
           };
 
           const findIdentifiable = (
             type: TSESTree.Node | null | undefined,
             checkedTypes = new Set<string>(),
           ): boolean => {
-            const currentType = unwrapParenthesized(type);
+            const resolvedType = unwrapTransparentType(type);
 
-            if (!currentType) {
+            if (!resolvedType) {
               return false;
             }
 
-            if (currentType !== type) {
-              return findIdentifiable(currentType, checkedTypes);
-            }
-
             if (
-              currentType.type === AST_NODE_TYPES.TSTypeReference &&
-              currentType.typeName.type === AST_NODE_TYPES.Identifier
+              resolvedType.type === AST_NODE_TYPES.TSTypeReference &&
+              resolvedType.typeName.type === AST_NODE_TYPES.Identifier
             ) {
-              const typeName = currentType.typeName.name;
+              const typeName = resolvedType.typeName.name;
 
               if (typeName === 'Identifiable') {
                 return true;
@@ -142,7 +161,7 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
 
               if (
                 transparentTypeNames.has(typeName) &&
-                currentType.typeParameters?.params?.some((param) =>
+                resolvedType.typeParameters?.params?.some((param) =>
                   findIdentifiable(param, checkedTypes),
                 )
               ) {
@@ -159,14 +178,10 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
               return findIdentifiable(aliasAnnotation, checkedTypes);
             }
 
-            if (currentType.type === AST_NODE_TYPES.TSIntersectionType) {
-              return currentType.types.some((part) =>
+            if (resolvedType.type === AST_NODE_TYPES.TSIntersectionType) {
+              return resolvedType.types.some((part) =>
                 findIdentifiable(part, new Set(checkedTypes)),
               );
-            }
-
-            if (currentType.type === AST_NODE_TYPES.TSTypeOperator) {
-              return findIdentifiable(currentType.typeAnnotation, checkedTypes);
             }
 
             return false;
@@ -177,18 +192,14 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
             type: TSESTree.Node | null | undefined,
             visitedTypes = new Set<string>(),
           ): boolean => {
-            const currentType = unwrapParenthesized(type);
+            const resolvedType = unwrapTransparentType(type);
 
-            if (!currentType) {
+            if (!resolvedType) {
               return false;
             }
 
-            if (currentType !== type) {
-              return checkIdField(currentType, visitedTypes);
-            }
-
-            if (currentType.type === AST_NODE_TYPES.TSTypeLiteral) {
-              return currentType.members.some(
+            if (resolvedType.type === AST_NODE_TYPES.TSTypeLiteral) {
+              return resolvedType.members.some(
                 (member) =>
                   member.type === AST_NODE_TYPES.TSPropertySignature &&
                   member.key.type === AST_NODE_TYPES.Identifier &&
@@ -198,18 +209,18 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
               );
             }
 
-            if (currentType.type === AST_NODE_TYPES.TSIntersectionType) {
-              return currentType.types.some((part) =>
+            if (resolvedType.type === AST_NODE_TYPES.TSIntersectionType) {
+              return resolvedType.types.some((part) =>
                 checkIdField(part, new Set(visitedTypes)),
               );
             }
 
-            if (currentType.type === AST_NODE_TYPES.TSTypeReference) {
-              if (currentType.typeName.type !== AST_NODE_TYPES.Identifier) {
+            if (resolvedType.type === AST_NODE_TYPES.TSTypeReference) {
+              if (resolvedType.typeName.type !== AST_NODE_TYPES.Identifier) {
                 return false;
               }
 
-              const typeName = currentType.typeName.name;
+              const typeName = resolvedType.typeName.name;
 
               if (typeName === 'Identifiable') {
                 return true;
@@ -217,7 +228,7 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
 
               if (
                 transparentTypeNames.has(typeName) &&
-                currentType.typeParameters?.params?.some((param) =>
+                resolvedType.typeParameters?.params?.some((param) =>
                   checkIdField(param, visitedTypes),
                 )
               ) {
@@ -232,10 +243,6 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
               const referencedType = findTypeAliasAnnotation(typeName);
 
               return checkIdField(referencedType, visitedTypes);
-            }
-
-            if (currentType.type === AST_NODE_TYPES.TSTypeOperator) {
-              return checkIdField(currentType.typeAnnotation, visitedTypes);
             }
 
             return false;
@@ -263,33 +270,29 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
             type: TSESTree.Node | null | undefined,
             visitedTypes = new Set<string>(),
           ): boolean => {
-            const currentType = unwrapParenthesized(type);
+            const resolvedType = unwrapTransparentType(type);
 
-            if (!currentType) {
+            if (!resolvedType) {
               return false;
             }
 
-            if (currentType !== type) {
-              return checkType(currentType, visitedTypes);
-            }
-
-            if (findIdentifiable(currentType)) {
+            if (findIdentifiable(resolvedType)) {
               return true;
             }
 
             if (
-              isUtilityType(currentType) &&
-              currentType.typeParameters?.params?.[0] &&
-              checkIdField(currentType.typeParameters.params[0])
+              isUtilityType(resolvedType) &&
+              resolvedType.typeParameters?.params?.[0] &&
+              checkIdField(resolvedType.typeParameters.params[0])
             ) {
               return true;
             }
 
             if (
-              currentType.type === AST_NODE_TYPES.TSTypeReference &&
-              currentType.typeName.type === AST_NODE_TYPES.Identifier
+              resolvedType.type === AST_NODE_TYPES.TSTypeReference &&
+              resolvedType.typeName.type === AST_NODE_TYPES.Identifier
             ) {
-              const typeName = currentType.typeName.name;
+              const typeName = resolvedType.typeName.name;
 
               if (visitedTypes.has(typeName)) {
                 return false;
@@ -301,14 +304,10 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
               return checkType(aliasAnnotation, visitedTypes);
             }
 
-            if (currentType.type === AST_NODE_TYPES.TSIntersectionType) {
-              return currentType.types.some((part) =>
+            if (resolvedType.type === AST_NODE_TYPES.TSIntersectionType) {
+              return resolvedType.types.some((part) =>
                 checkType(part, new Set(visitedTypes)),
               );
-            }
-
-            if (currentType.type === AST_NODE_TYPES.TSTypeOperator) {
-              return checkType(currentType.typeAnnotation, visitedTypes);
             }
 
             return false;
