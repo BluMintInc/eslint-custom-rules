@@ -1,5 +1,10 @@
 import { TSESTree, ParserServices } from '@typescript-eslint/utils';
-import type * as ts from 'typescript';
+import * as ts from 'typescript';
+
+/**
+ * Re-exporting the typescript namespace type to avoid TS4078.
+ */
+export type TypeScriptModule = typeof ts;
 
 export type ClassifierOptions = {
   ignoreSymbol?: boolean;
@@ -15,7 +20,7 @@ export type ClassificationResult = {
  */
 export function describeTypeKind(
   t: ts.Type,
-  tsModule: typeof ts,
+  tsModule: TypeScriptModule,
   options: ClassifierOptions,
 ): string {
   if (t.isUnion()) {
@@ -31,24 +36,24 @@ export function describeTypeKind(
   }
 
   const flags = t.flags;
-  const ts = tsModule;
+  const tsInternal = tsModule;
 
-  if (flags & ts.TypeFlags.String) return 'string value';
-  if (flags & ts.TypeFlags.StringLiteral) return 'string value';
-  if (flags & ts.TypeFlags.TemplateLiteral) return 'string value';
-  if (flags & ts.TypeFlags.Number) return 'number value';
-  if (flags & ts.TypeFlags.NumberLiteral) return 'number value';
-  if (flags & ts.TypeFlags.Enum) return 'number value';
-  if (flags & ts.TypeFlags.EnumLiteral) return 'number value';
-  if (flags & ts.TypeFlags.Boolean) return 'boolean value';
-  if (flags & ts.TypeFlags.BooleanLiteral) return 'boolean value';
-  if (flags & ts.TypeFlags.BigInt) return 'bigint value';
-  if (flags & ts.TypeFlags.BigIntLiteral) return 'bigint value';
-  if (flags & ts.TypeFlags.Null) return 'null value';
-  if (flags & ts.TypeFlags.Undefined) return 'undefined value';
+  if (flags & tsInternal.TypeFlags.String) return 'string value';
+  if (flags & tsInternal.TypeFlags.StringLiteral) return 'string value';
+  if (flags & tsInternal.TypeFlags.TemplateLiteral) return 'string value';
+  if (flags & tsInternal.TypeFlags.Number) return 'number value';
+  if (flags & tsInternal.TypeFlags.NumberLiteral) return 'number value';
+  if (flags & tsInternal.TypeFlags.Enum) return 'number value';
+  if (flags & tsInternal.TypeFlags.EnumLiteral) return 'number value';
+  if (flags & tsInternal.TypeFlags.Boolean) return 'boolean value';
+  if (flags & tsInternal.TypeFlags.BooleanLiteral) return 'boolean value';
+  if (flags & tsInternal.TypeFlags.BigInt) return 'bigint value';
+  if (flags & tsInternal.TypeFlags.BigIntLiteral) return 'bigint value';
+  if (flags & tsInternal.TypeFlags.Null) return 'null value';
+  if (flags & tsInternal.TypeFlags.Undefined) return 'undefined value';
   if (
     !options.ignoreSymbol &&
-    (flags & ts.TypeFlags.ESSymbol || flags & ts.TypeFlags.UniqueESSymbol)
+    (flags & tsInternal.TypeFlags.ESSymbol || flags & tsInternal.TypeFlags.UniqueESSymbol)
   ) {
     return 'symbol value';
   }
@@ -61,7 +66,7 @@ export function describeTypeKind(
  */
 export function classifyType(
   t: ts.Type,
-  tsModule: typeof ts,
+  tsModule: TypeScriptModule,
   options: ClassifierOptions,
 ): 'primitive' | 'non-primitive' | 'unknown' {
   if (t.isUnion()) {
@@ -81,63 +86,63 @@ export function classifyType(
   if (t.isIntersection()) return 'non-primitive';
 
   const flags = t.getFlags();
-  const ts = tsModule;
+  const tsInternal = tsModule;
 
   if (
     flags &
-    (ts.TypeFlags.Any |
-      ts.TypeFlags.Unknown |
-      ts.TypeFlags.Never |
-      ts.TypeFlags.TypeParameter)
+    (tsInternal.TypeFlags.Any |
+      tsInternal.TypeFlags.Unknown |
+      tsInternal.TypeFlags.Never |
+      tsInternal.TypeFlags.TypeParameter)
   ) {
     return 'unknown';
   }
 
   if (
     flags &
-    (ts.TypeFlags.Object |
-      ts.TypeFlags.NonPrimitive |
-      ts.TypeFlags.Index |
-      ts.TypeFlags.IndexedAccess |
-      ts.TypeFlags.Conditional |
-      ts.TypeFlags.Substitution)
+    (tsInternal.TypeFlags.Object |
+      tsInternal.TypeFlags.NonPrimitive |
+      tsInternal.TypeFlags.Index |
+      tsInternal.TypeFlags.IndexedAccess |
+      tsInternal.TypeFlags.Conditional |
+      tsInternal.TypeFlags.Substitution)
   ) {
     return 'non-primitive';
   }
 
-  if (flags & ts.TypeFlags.Void) {
+  if (flags & tsInternal.TypeFlags.Void) {
     return 'unknown';
   }
 
   if (
     options.ignoreSymbol &&
-    (flags & ts.TypeFlags.ESSymbol || flags & ts.TypeFlags.UniqueESSymbol)
+    (flags & tsInternal.TypeFlags.ESSymbol || flags & tsInternal.TypeFlags.UniqueESSymbol)
   ) {
     return 'non-primitive';
   }
 
   if (
     flags &
-    (ts.TypeFlags.String |
-      ts.TypeFlags.StringLiteral |
-      ts.TypeFlags.TemplateLiteral |
-      ts.TypeFlags.Number |
-      ts.TypeFlags.NumberLiteral |
-      ts.TypeFlags.Enum |
-      ts.TypeFlags.EnumLiteral |
-      ts.TypeFlags.Boolean |
-      ts.TypeFlags.BooleanLiteral |
-      ts.TypeFlags.BigInt |
-      ts.TypeFlags.BigIntLiteral |
-      ts.TypeFlags.Null |
-      ts.TypeFlags.Undefined)
+    (tsInternal.TypeFlags.String |
+      tsInternal.TypeFlags.StringLiteral |
+      tsInternal.TypeFlags.TemplateLiteral |
+      tsInternal.TypeFlags.Number |
+      tsInternal.TypeFlags.NumberLiteral |
+      tsInternal.TypeFlags.Enum |
+      tsInternal.TypeFlags.EnumLiteral |
+      tsInternal.TypeFlags.Boolean |
+      tsInternal.TypeFlags.BooleanLiteral |
+      tsInternal.TypeFlags.BigInt |
+      tsInternal.TypeFlags.BigIntLiteral |
+      tsInternal.TypeFlags.Null |
+      tsInternal.TypeFlags.Undefined)
   ) {
     return 'primitive';
   }
 
   if (
     !options.ignoreSymbol &&
-    (flags & ts.TypeFlags.ESSymbol || flags & ts.TypeFlags.UniqueESSymbol)
+    (flags & tsInternal.TypeFlags.ESSymbol || flags & tsInternal.TypeFlags.UniqueESSymbol)
   ) {
     return 'primitive';
   }
@@ -157,7 +162,7 @@ export function classifyExpressionType(
     options,
   }: {
     checker: ts.TypeChecker;
-    tsModule: typeof ts;
+    tsModule: TypeScriptModule;
     parserServices: ParserServices;
     options: ClassifierOptions;
   },

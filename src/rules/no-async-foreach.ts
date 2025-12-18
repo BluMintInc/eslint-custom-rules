@@ -94,25 +94,42 @@ const isAsyncFunctionExpression = (
   );
 };
 
-type CompatibleRuleContext = {
-  sourceCode?: TSESLint.SourceCode;
-  getSourceCode?: () => TSESLint.SourceCode;
+/**
+ * ESLint context with direct sourceCode property (newer versions)
+ */
+interface SourceCodeContext {
+  sourceCode: TSESLint.SourceCode;
   getScope?: () => TSESLint.Scope.Scope | null;
-};
+}
 
-const getSourceCode = (
-  context: CompatibleRuleContext,
-): TSESLint.SourceCode => {
-  return (
-    context.sourceCode ??
-    context.getSourceCode?.() ??
-    (() => {
-      throw new Error(
-        `Unable to retrieve source code from context in rule "no-async-foreach". ` +
-          `Available properties: sourceCode=${typeof context.sourceCode}, ` +
-          `getSourceCode=${typeof context.getSourceCode}`,
-      );
-    })()
+/**
+ * ESLint context with getSourceCode method (older versions)
+ */
+interface GetSourceCodeContext {
+  getSourceCode: () => TSESLint.SourceCode;
+  getScope?: () => TSESLint.Scope.Scope | null;
+}
+
+/**
+ * Union type representing ESLint contexts from different versions
+ */
+type CompatibleRuleContext = SourceCodeContext | GetSourceCodeContext;
+
+/**
+ * Retrieves source code from an ESLint rule context
+ */
+const getSourceCode = (context: CompatibleRuleContext): TSESLint.SourceCode => {
+  if ('sourceCode' in context) {
+    return context.sourceCode;
+  }
+
+  if ('getSourceCode' in context) {
+    return context.getSourceCode();
+  }
+
+  throw new Error(
+    'Unable to retrieve source code from context in rule "no-async-foreach". ' +
+      'Neither sourceCode property nor getSourceCode method is available.',
   );
 };
 

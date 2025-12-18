@@ -1,6 +1,6 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
-import { classifyExpressionType as classifyExpressionTypeTs } from '../utils/tsTypeClassifier';
+import { classifyExpressionType } from '../utils/tsTypeClassifier';
 
 type Options = [
   {
@@ -377,12 +377,12 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
       }
     }
 
-    function classifyExpressionType(expr: TSESTree.Expression) {
+    function classifyExpressionTypeInternal(expr: TSESTree.Expression) {
       if (!checker || !tsModule || !parserServices) {
         return { status: 'unknown' as const, kind: 'primitive value' };
       }
 
-      return classifyExpressionTypeTs(expr, {
+      return classifyExpressionType(expr, {
         checker,
         tsModule,
         parserServices,
@@ -436,7 +436,7 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
           return;
         }
 
-        const typeEvaluation = classifyExpressionType(returnedExpression);
+        const typeEvaluation = classifyExpressionTypeInternal(returnedExpression);
         let isPrimitive = false;
         let valueKind = typeEvaluation.kind;
 

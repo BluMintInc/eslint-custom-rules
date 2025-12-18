@@ -1,4 +1,4 @@
-# Disallow useMemo when the callback returns a primitive (string/number/boolean/null/undefined/bigint) because memoization does not provide referential stability benefits for pass-by-value results (`@blumintinc/blumint/no-useless-usememo-primitives`)
+# Disallow useMemo when the callback returns a primitive (`@blumintinc/blumint/no-useless-usememo-primitives`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
@@ -14,9 +14,9 @@
 - **What it checks**:
   - Flags `useMemo` (or `React.useMemo`) when the callback returns a primitive value.
 - Uses TypeScript type information when available; otherwise falls back to AST heuristics for simple primitive expressions (literals, template literals, unary/comparison expressions, and conditionals whose branches are primitive). Bare identifiers are treated as unknown to avoid false positives in JS files.
-  - Skips cases with obvious side effects or non-deterministic calls such as `Date.now()`, `new Date()`, `Math.random()`, or `crypto.getRandomValues`.
-  - Skips async callbacks because they return Promises; inlining a primitive expression from an async function would change the value type.
-  - Skips generator callbacks because they always return iterator objects; inlining their yielded primitives would change the return type and behavior.
+  - Ignored cases include those with obvious side effects or non-deterministic calls such as `Date.now()`, `new Date()`, `Math.random()`, or `crypto.getRandomValues`.
+  - Excludes async callbacks because they return Promises; inlining a primitive expression from an async function would change the value type.
+  - Does not apply to generator callbacks because they always return iterator objects; inlining their yielded primitives would change the return type and behavior.
   - Skips when the callback includes function calls if `ignoreCallExpressions` is enabled (default) to avoid flagging intentionally expensive computations.
 - **Auto-fix**: Replaces `useMemo(() => EXPR, [deps])` with `EXPR` and removes the dependency array.
 
