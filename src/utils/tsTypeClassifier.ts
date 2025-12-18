@@ -29,10 +29,18 @@ export function describeTypeKind(
         .map((part) => describeTypeKind(part, tsModule, options))
         .filter((k) => k !== 'primitive value'),
     );
+
+    if (kinds.size === 0) {
+      return 'primitive value';
+    }
+
     if (kinds.size === 1) {
       return kinds.values().next().value ?? 'primitive value';
     }
-    return 'primitive value';
+
+    // Multiple distinct primitive kinds
+    const sortedKinds = Array.from(kinds).sort();
+    return `${sortedKinds.join(' or ')}`;
   }
 
   const flags = t.flags;
@@ -113,10 +121,10 @@ export function classifyType(
   }
 
   if (
-    options.ignoreSymbol &&
-    (flags & tsModule.TypeFlags.ESSymbol || flags & tsModule.TypeFlags.UniqueESSymbol)
+    flags &
+    (tsModule.TypeFlags.ESSymbol | tsModule.TypeFlags.UniqueESSymbol)
   ) {
-    return 'non-primitive';
+    return options.ignoreSymbol ? 'non-primitive' : 'primitive';
   }
 
   if (
@@ -134,13 +142,6 @@ export function classifyType(
       tsModule.TypeFlags.BigIntLiteral |
       tsModule.TypeFlags.Null |
       tsModule.TypeFlags.Undefined)
-  ) {
-    return 'primitive';
-  }
-
-  if (
-    !options.ignoreSymbol &&
-    (flags & tsModule.TypeFlags.ESSymbol || flags & tsModule.TypeFlags.UniqueESSymbol)
   ) {
     return 'primitive';
   }
@@ -181,9 +182,15 @@ export function classifyExpressionType(
       };
     }
 
-    return { status: classification, kind: 'primitive value' };
+    return {
+      status: classification,
+      kind:
+        classification === 'non-primitive'
+          ? 'non-primitive value'
+          : 'unknown value',
+    };
   } catch {
     /* istanbul ignore next -- defensive fallback when type evaluation fails */
-    return { status: 'unknown', kind: 'primitive value' };
+    return { status: 'unknown', kind: 'unknown value' };
   }
 }

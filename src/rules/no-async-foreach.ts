@@ -116,17 +116,34 @@ type ESLintRuleContext = (SourceCodeContext | GetSourceCodeContext) & {
 };
 
 /**
+ * Checks if context has direct sourceCode property
+ */
+const hasSourceCodeProperty = (
+  context: ESLintRuleContext,
+): context is SourceCodeContext => {
+  return 'sourceCode' in context && !!context.sourceCode;
+};
+
+/**
+ * Checks if context has getSourceCode method
+ */
+const hasGetSourceCodeMethod = (
+  context: ESLintRuleContext,
+): context is GetSourceCodeContext => {
+  return (
+    'getSourceCode' in context && typeof context.getSourceCode === 'function'
+  );
+};
+
+/**
  * Retrieves source code from an ESLint rule context
  */
 const getSourceCode = (context: ESLintRuleContext): TSESLint.SourceCode => {
-  if ('sourceCode' in context && context.sourceCode) {
+  if (hasSourceCodeProperty(context)) {
     return context.sourceCode;
   }
 
-  if (
-    'getSourceCode' in context &&
-    typeof context.getSourceCode === 'function'
-  ) {
+  if (hasGetSourceCodeMethod(context)) {
     return context.getSourceCode();
   }
 
