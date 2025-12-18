@@ -16,7 +16,8 @@ interface BooleanConditionPattern {
 function isHookCall(node: TSESTree.CallExpression): boolean {
   const callee = node.callee;
   return (
-    (callee.type === AST_NODE_TYPES.Identifier && HOOK_NAMES.has(callee.name)) ||
+    (callee.type === AST_NODE_TYPES.Identifier &&
+      HOOK_NAMES.has(callee.name)) ||
     (callee.type === AST_NODE_TYPES.MemberExpression &&
       !callee.computed &&
       callee.object.type === AST_NODE_TYPES.Identifier &&
@@ -50,7 +51,10 @@ function isObjectExistenceCheck(node: TSESTree.Node): boolean {
   // Check for patterns like !obj
   if (node.type === AST_NODE_TYPES.UnaryExpression) {
     // !obj
-    if (node.operator === '!' && node.argument.type === AST_NODE_TYPES.Identifier) {
+    if (
+      node.operator === '!' &&
+      node.argument.type === AST_NODE_TYPES.Identifier
+    ) {
       return true;
     }
     // !!obj
@@ -204,7 +208,11 @@ function analyzeBooleanCondition(
         type: 'complex',
         objectName,
         expression,
-        suggestedName: generateBooleanVariableName(objectName, 'complex', false),
+        suggestedName: generateBooleanVariableName(
+          objectName,
+          'complex',
+          false,
+        ),
         node,
       };
     }
@@ -268,7 +276,7 @@ export const optimizeObjectBooleanConditions = createRule<[], MessageIds>({
     schema: [],
     messages: {
       extractBooleanCondition:
-        'Extract boolean condition "{{expression}}" into a separate variable "{{suggestedName}}" to optimize hook re-runs. The condition depends on object "{{objectName}}" which may change frequently, but the boolean result changes less often.',
+        'Dependency array includes boolean condition "{{expression}}" derived from object "{{objectName}}". Hook re-runs every time the object reference changes even when the boolean outcome stays the same, leading to wasted renders and unstable memoization. Extract the condition into a stable boolean like "{{suggestedName}}" and depend on that variable instead.',
     },
   },
   defaultOptions: [],

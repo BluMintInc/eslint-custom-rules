@@ -11,9 +11,9 @@ const error = (name: string, suggestedName: string) => ({
 
 describe('enforce-singular-type-names message', () => {
   it('uses an educational template', () => {
-    expect(
-      enforceSingularTypeNames.meta.messages.typeShouldBeSingular,
-    ).toBe(messageTemplate);
+    expect(enforceSingularTypeNames.meta.messages.typeShouldBeSingular).toBe(
+      messageTemplate,
+    );
   });
 });
 
