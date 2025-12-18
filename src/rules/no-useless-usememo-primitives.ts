@@ -17,7 +17,13 @@ const DEFAULT_OPTIONS: Required<Options[number]> = {
   tsOnly: false,
 };
 
-const NON_DETERMINISTIC_MEMBERS = new Set(['Date.now', 'Math.random', 'performance.now']);
+const NON_DETERMINISTIC_MEMBERS = new Set([
+  'Date.now',
+  'Math.random',
+  'performance.now',
+  'crypto.randomUUID',
+  'crypto.getRandomValues',
+]);
 const NON_DETERMINISTIC_CONSTRUCTORS = new Set(['Date']);
 const COMPARISON_OPERATORS = new Set([
   '==',
@@ -142,12 +148,12 @@ function isNonDeterministicCall(node: TSESTree.CallExpression) {
   if (callee.type === AST_NODE_TYPES.MemberExpression && !callee.computed) {
     const object = callee.object;
     const property = callee.property;
-    if (object.type === AST_NODE_TYPES.Identifier && property.type === AST_NODE_TYPES.Identifier) {
+    if (
+      object.type === AST_NODE_TYPES.Identifier &&
+      property.type === AST_NODE_TYPES.Identifier
+    ) {
       const key = `${object.name}.${property.name}`;
       if (NON_DETERMINISTIC_MEMBERS.has(key)) {
-        return true;
-      }
-      if (object.name === 'crypto' && property.name === 'getRandomValues') {
         return true;
       }
     }
@@ -180,15 +186,18 @@ function isNonDeterministicInvocation(expr: TSESTree.Expression): boolean {
 }
 
 function hasUnsafeSideEffects(expr: TSESTree.Expression): boolean {
-  return walkExpression(expr, (node) =>
-    [
-      AST_NODE_TYPES.AssignmentExpression,
-      AST_NODE_TYPES.AwaitExpression,
-      AST_NODE_TYPES.UpdateExpression,
-      AST_NODE_TYPES.YieldExpression,
-      AST_NODE_TYPES.SequenceExpression,
-    ].includes(node.type as AST_NODE_TYPES) ||
-    (node.type === AST_NODE_TYPES.UnaryExpression && node.operator === 'delete'),
+  return walkExpression(
+    expr,
+    (node) =>
+      [
+        AST_NODE_TYPES.AssignmentExpression,
+        AST_NODE_TYPES.AwaitExpression,
+        AST_NODE_TYPES.UpdateExpression,
+        AST_NODE_TYPES.YieldExpression,
+        AST_NODE_TYPES.SequenceExpression,
+      ].includes(node.type as AST_NODE_TYPES) ||
+      (node.type === AST_NODE_TYPES.UnaryExpression &&
+        node.operator === 'delete'),
   );
 }
 
@@ -230,7 +239,8 @@ function describePrimitiveExpression(expr: TSESTree.Expression): string {
       return 'primitive value';
     case AST_NODE_TYPES.Identifier:
       if (expr.name === 'undefined') return 'undefined value';
-      if (expr.name === 'Infinity' || expr.name === 'NaN') return 'number value';
+      if (expr.name === 'Infinity' || expr.name === 'NaN')
+        return 'number value';
       return 'primitive value';
     default:
       /* istanbul ignore next -- unreachable with current node set */
@@ -267,8 +277,10 @@ function isPrimitiveExpressionWithoutTypes(expr: TSESTree.Expression): {
     case AST_NODE_TYPES.BinaryExpression: {
       const primitive =
         COMPARISON_OPERATORS.has(expr.operator) ||
-        (isPrimitiveExpressionWithoutTypes(expr.left as TSESTree.Expression).primitive &&
-          isPrimitiveExpressionWithoutTypes(expr.right as TSESTree.Expression).primitive);
+        (isPrimitiveExpressionWithoutTypes(expr.left as TSESTree.Expression)
+          .primitive &&
+          isPrimitiveExpressionWithoutTypes(expr.right as TSESTree.Expression)
+            .primitive);
       return {
         primitive,
         kind: describePrimitiveExpression(expr),
@@ -277,23 +289,33 @@ function isPrimitiveExpressionWithoutTypes(expr: TSESTree.Expression): {
     case AST_NODE_TYPES.LogicalExpression:
       return {
         primitive:
-          isPrimitiveExpressionWithoutTypes(expr.left as TSESTree.Expression).primitive &&
-          isPrimitiveExpressionWithoutTypes(expr.right as TSESTree.Expression).primitive,
+          isPrimitiveExpressionWithoutTypes(expr.left as TSESTree.Expression)
+            .primitive &&
+          isPrimitiveExpressionWithoutTypes(expr.right as TSESTree.Expression)
+            .primitive,
         kind: describePrimitiveExpression(expr),
       };
     case AST_NODE_TYPES.ConditionalExpression:
       return {
         primitive:
-          isPrimitiveExpressionWithoutTypes(expr.consequent as TSESTree.Expression).primitive &&
-          isPrimitiveExpressionWithoutTypes(expr.alternate as TSESTree.Expression).primitive,
+          isPrimitiveExpressionWithoutTypes(
+            expr.consequent as TSESTree.Expression,
+          ).primitive &&
+          isPrimitiveExpressionWithoutTypes(
+            expr.alternate as TSESTree.Expression,
+          ).primitive,
         kind: describePrimitiveExpression(expr),
       };
     case AST_NODE_TYPES.ChainExpression:
-      return isPrimitiveExpressionWithoutTypes(expr.expression as TSESTree.Expression);
+      return isPrimitiveExpressionWithoutTypes(
+        expr.expression as TSESTree.Expression,
+      );
     case AST_NODE_TYPES.TSAsExpression:
     case AST_NODE_TYPES.TSTypeAssertion:
     case AST_NODE_TYPES.TSNonNullExpression:
-      return isPrimitiveExpressionWithoutTypes(expr.expression as TSESTree.Expression);
+      return isPrimitiveExpressionWithoutTypes(
+        expr.expression as TSESTree.Expression,
+      );
     default:
       return { primitive: false, kind: 'primitive value' };
   }
@@ -331,7 +353,9 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
     const sourceCode = context.sourceCode;
     const services = sourceCode.parserServices;
     const parserServices =
-      services && 'hasFullTypeInformation' in services && services.hasFullTypeInformation
+      services &&
+      'hasFullTypeInformation' in services &&
+      services.hasFullTypeInformation
         ? services
         : null;
 
@@ -351,9 +375,10 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
       }
     }
 
-    function classifyExpressionType(
-      expr: TSESTree.Expression,
-    ): { status: 'primitive' | 'non-primitive' | 'unknown'; kind: string } {
+    function classifyExpressionType(expr: TSESTree.Expression): {
+      status: 'primitive' | 'non-primitive' | 'unknown';
+      kind: string;
+    } {
       if (!checker || !tsModule || !parserServices) {
         return { status: 'unknown', kind: 'primitive value' };
       }
@@ -371,7 +396,9 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
         function describeTypeKind(t: import('typescript').Type): string {
           if (t.isUnion()) {
             const kinds = new Set(
-              t.types.map(describeTypeKind).filter((k) => k !== 'primitive value'),
+              t.types
+                .map(describeTypeKind)
+                .filter((k) => k !== 'primitive value'),
             );
             if (kinds.size === 1) {
               return kinds.values().next().value ?? 'primitive value';
@@ -396,7 +423,8 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
           if (flags & ts.TypeFlags.Undefined) return 'undefined value';
           if (
             !options.ignoreSymbol &&
-            (flags & ts.TypeFlags.ESSymbol || flags & ts.TypeFlags.UniqueESSymbol)
+            (flags & ts.TypeFlags.ESSymbol ||
+              flags & ts.TypeFlags.UniqueESSymbol)
           ) {
             return 'symbol value';
           }
@@ -453,7 +481,8 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
 
           if (
             options.ignoreSymbol &&
-            (flags & ts.TypeFlags.ESSymbol || flags & ts.TypeFlags.UniqueESSymbol)
+            (flags & ts.TypeFlags.ESSymbol ||
+              flags & ts.TypeFlags.UniqueESSymbol)
           ) {
             return 'non-primitive';
           }
@@ -479,7 +508,8 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
 
           if (
             !options.ignoreSymbol &&
-            (flags & ts.TypeFlags.ESSymbol || flags & ts.TypeFlags.UniqueESSymbol)
+            (flags & ts.TypeFlags.ESSymbol ||
+              flags & ts.TypeFlags.UniqueESSymbol)
           ) {
             return 'primitive';
           }
@@ -538,7 +568,10 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
           return;
         }
 
-        if (options.ignoreCallExpressions && containsCallExpression(returnedExpression)) {
+        if (
+          options.ignoreCallExpressions &&
+          containsCallExpression(returnedExpression)
+        ) {
           return;
         }
 
@@ -549,7 +582,8 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
         if (typeEvaluation.status === 'primitive') {
           isPrimitive = true;
         } else if (typeEvaluation.status !== 'non-primitive') {
-          const heuristic = isPrimitiveExpressionWithoutTypes(returnedExpression);
+          const heuristic =
+            isPrimitiveExpressionWithoutTypes(returnedExpression);
           if (heuristic.primitive) {
             isPrimitive = true;
             valueKind = heuristic.kind;

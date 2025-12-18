@@ -104,6 +104,13 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
     },
     {
       code: `
+        const uuid = useMemo(() => crypto.randomUUID(), []);
+      `,
+      options: [{ ignoreCallExpressions: false }],
+      parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
+    },
+    {
+      code: `
         const seq = useMemo(() => (count++, count), [count]);
       `,
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
@@ -211,7 +218,12 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
       `,
       parserOptions: typedParserOptions,
       filename: 'src/typed-and-and.ts',
-      errors: [{ messageId: 'uselessUseMemoPrimitive', data: { valueKind: 'boolean value' } }],
+      errors: [
+        {
+          messageId: 'uselessUseMemoPrimitive',
+          data: { valueKind: 'boolean value' },
+        },
+      ],
       output: `
         const flagA: boolean = true;
         const flagB: boolean = false;
@@ -251,7 +263,12 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
         const constant = useMemo(() => 'static');
       `,
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
-      errors: [{ messageId: 'uselessUseMemoPrimitive', data: { valueKind: 'string value' } }],
+      errors: [
+        {
+          messageId: 'uselessUseMemoPrimitive',
+          data: { valueKind: 'string value' },
+        },
+      ],
       output: `
         const constant = ('static');
       `,
@@ -261,7 +278,12 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
         const combined = useMemo(() => 'a' + 'b', []);
       `,
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
-      errors: [{ messageId: 'uselessUseMemoPrimitive', data: { valueKind: 'string value' } }],
+      errors: [
+        {
+          messageId: 'uselessUseMemoPrimitive',
+          data: { valueKind: 'string value' },
+        },
+      ],
       output: `
         const combined = ('a' + 'b');
       `,
@@ -271,7 +293,12 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
         const alwaysTrue = useMemo(() => true, []);
       `,
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
-      errors: [{ messageId: 'uselessUseMemoPrimitive', data: { valueKind: 'boolean value' } }],
+      errors: [
+        {
+          messageId: 'uselessUseMemoPrimitive',
+          data: { valueKind: 'boolean value' },
+        },
+      ],
       output: `
         const alwaysTrue = (true);
       `,
@@ -281,7 +308,12 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
         const zero = useMemo(() => 0, []);
       `,
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
-      errors: [{ messageId: 'uselessUseMemoPrimitive', data: { valueKind: 'number value' } }],
+      errors: [
+        {
+          messageId: 'uselessUseMemoPrimitive',
+          data: { valueKind: 'number value' },
+        },
+      ],
       output: `
         const zero = (0);
       `,
@@ -291,7 +323,12 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
         const nothing = useMemo(() => null, []);
       `,
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
-      errors: [{ messageId: 'uselessUseMemoPrimitive', data: { valueKind: 'null value' } }],
+      errors: [
+        {
+          messageId: 'uselessUseMemoPrimitive',
+          data: { valueKind: 'null value' },
+        },
+      ],
       output: `
         const nothing = (null);
       `,
@@ -301,7 +338,12 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
         const id = useMemo(() => 1n, []);
       `,
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
-      errors: [{ messageId: 'uselessUseMemoPrimitive', data: { valueKind: 'bigint value' } }],
+      errors: [
+        {
+          messageId: 'uselessUseMemoPrimitive',
+          data: { valueKind: 'bigint value' },
+        },
+      ],
       output: `
         const id = (1n);
       `,
@@ -321,7 +363,12 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
         const value = useMemo(() => undefined, []);
       `,
       parserOptions: { ecmaVersion: 2020, sourceType: 'module' },
-      errors: [{ messageId: 'uselessUseMemoPrimitive', data: { valueKind: 'undefined value' } }],
+      errors: [
+        {
+          messageId: 'uselessUseMemoPrimitive',
+          data: { valueKind: 'undefined value' },
+        },
+      ],
       output: `
         const value = (undefined);
       `,
@@ -336,7 +383,12 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
       options: [{ ignoreCallExpressions: false }],
       parserOptions: { ...typedParserOptions, ecmaFeatures: { jsx: true } },
       filename: 'src/typed-file.tsx',
-      errors: [{ messageId: 'uselessUseMemoPrimitive', data: { valueKind: 'string value' } }],
+      errors: [
+        {
+          messageId: 'uselessUseMemoPrimitive',
+          data: { valueKind: 'string value' },
+        },
+      ],
       output: `
         const label = (computeLabel(status));
         function computeLabel(input: string): string {
@@ -352,7 +404,12 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
       options: [{ ignoreCallExpressions: false }],
       parserOptions: typedParserOptions,
       filename: 'src/tagged-template-invalid.ts',
-      errors: [{ messageId: 'uselessUseMemoPrimitive', data: { valueKind: 'string value' } }],
+      errors: [
+        {
+          messageId: 'uselessUseMemoPrimitive',
+          data: { valueKind: 'string value' },
+        },
+      ],
       output: `
         const format = (strings: TemplateStringsArray, value: string) => \`Hello \${value}\`;
         const label = (format\`Hello \${name}\`);
@@ -366,7 +423,12 @@ ruleTesterTs.run('no-useless-usememo-primitives', noUselessUsememoPrimitives, {
       options: [{ tsOnly: true }],
       parserOptions: typedParserOptions,
       filename: 'src/typed-total.ts',
-      errors: [{ messageId: 'uselessUseMemoPrimitive', data: { valueKind: 'number value' } }],
+      errors: [
+        {
+          messageId: 'uselessUseMemoPrimitive',
+          data: { valueKind: 'number value' },
+        },
+      ],
       output: `
         const total = (value + 1);
         const value: number = 2;
