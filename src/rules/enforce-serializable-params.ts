@@ -18,7 +18,7 @@ export default createRule({
     type: 'problem',
     docs: {
       description:
-        "What's wrong: callable/HTTPS request parameters include non-JSON-safe values (Date, Timestamp, DocumentReference, Map, Set, Symbol, Function, undefined) → Why it matters: Firebase serializes requests as JSON, so these values may be coerced, dropped, or lose semantic meaning in transit → How to fix: convert complex values to JSON-safe primitives, arrays, or plain objects before adding them to request types.",
+        'Enforce serializable parameters for Firebase callable/HTTPS functions.',
       recommended: 'error',
     },
     schema: [

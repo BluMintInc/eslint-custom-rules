@@ -1,4 +1,4 @@
-# Prevent margin properties (margin, marginLeft, marginRight, marginTop, marginBottom, mx, my, etc.) in MUI styling to keep spacing centralized with padding, gap, or spacing props (`@blumintinc/blumint/no-margin-properties`)
+# Prevent margin properties (margin, marginLeft, marginRight, marginTop, marginBottom, mx, my, etc.) in MUI styling because margins fight container-controlled spacing, double gutters, and misaligned breakpoints; keep spacing centralized with padding, gap, or spacing props instead (`@blumintinc/blumint/no-margin-properties`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

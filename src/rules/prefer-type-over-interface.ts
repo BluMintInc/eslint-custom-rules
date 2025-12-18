@@ -33,7 +33,7 @@ export const preferTypeOverInterface: TSESLint.RuleModule<
             interfaceName: node.id.name,
           },
           fix(fixer) {
-            const sourceCode = context.getSourceCode();
+            const sourceCode = context.sourceCode;
             const openingBrace = sourceCode.getTokenAfter(node.id, {
               filter: (token) => token.value === '{',
             });

@@ -235,7 +235,7 @@ export const useLatestCallback = createRule<[], MessageIds>({
                 recommendedHook: replacementName,
               },
               fix(fixer) {
-                const sourceCode = context.getSourceCode();
+                const sourceCode = context.sourceCode;
                 const callbackText = sourceCode.getText(node.arguments[0]);
                 const typeParams = node.typeParameters
                   ? sourceCode.getText(node.typeParameters)
@@ -258,7 +258,7 @@ export const useLatestCallback = createRule<[], MessageIds>({
           return; // Don't modify imports if all useCallback calls return JSX
         }
 
-        const sourceCode = context.getSourceCode();
+        const sourceCode = context.sourceCode;
         const program = sourceCode.ast;
 
         for (const statement of program.body) {

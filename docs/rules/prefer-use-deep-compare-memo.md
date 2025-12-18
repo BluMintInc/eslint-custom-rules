@@ -1,4 +1,4 @@
-# Prefer useDeepCompareMemo when dependencies are non-primitive (`@blumintinc/blumint/prefer-use-deep-compare-memo`)
+# Enforce using useDeepCompareMemo when dependency array contains non-primitive values (objects, arrays, functions) that are not already memoized. This prevents unnecessary re-renders due to reference changes (`@blumintinc/blumint/prefer-use-deep-compare-memo`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

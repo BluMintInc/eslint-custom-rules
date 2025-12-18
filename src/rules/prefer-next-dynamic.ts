@@ -280,7 +280,7 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
       options.useDynamicSources && options.useDynamicSources.length > 0
         ? options.useDynamicSources
         : DEFAULT_USE_DYNAMIC_SOURCES;
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode;
 
     return {
       VariableDeclarator(node) {

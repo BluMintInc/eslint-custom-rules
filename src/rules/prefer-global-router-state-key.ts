@@ -28,7 +28,7 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode;
     // Track imports from queryKeys.ts
     const queryKeyImports = new Map<
       string,

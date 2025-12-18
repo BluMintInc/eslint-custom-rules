@@ -1,5 +1,6 @@
-import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds = 'noUuidv4Base62AsKey';
 
@@ -21,10 +22,7 @@ export const noUuidv4Base62AsKey = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    // Prefer the ESLint v9 sourceCode property; fall back for typings compatibility.
-    const sourceCode =
-      (context as unknown as { sourceCode?: TSESLint.SourceCode }).sourceCode ??
-      context.getSourceCode();
+    const sourceCode = context.sourceCode;
 
     // Track imported uuidv4Base62 identifiers
     const importedUuidv4Base62 = new Set<string>();
@@ -191,7 +189,7 @@ export const noUuidv4Base62AsKey = createRule<[], MessageIds>({
 
             // Special case for the failing 'itemKeys' test
             if (hasPreGeneratedKeys) {
-              const ancestors = context.getAncestors();
+              const ancestors = ASTHelpers.getAncestors(context, jsxElement);
               // Check if we're inside a map callback
               for (let i = ancestors.length - 1; i >= 0; i--) {
                 const ancestor = ancestors[i];
@@ -220,8 +218,8 @@ export const noUuidv4Base62AsKey = createRule<[], MessageIds>({
     }
 
     // Helper to check for react mapping functions
-    function isInsideMapCallback(): boolean {
-      const ancestors = context.getAncestors();
+    function isInsideMapCallback(node: TSESTree.Node): boolean {
+      const ancestors = ASTHelpers.getAncestors(context, node);
 
       for (let i = ancestors.length - 1; i >= 0; i--) {
         const ancestor = ancestors[i];
@@ -377,7 +375,7 @@ export const noUuidv4Base62AsKey = createRule<[], MessageIds>({
 
       // Check JSX elements for uuidv4Base62 keys
       JSXElement(node) {
-        if (!isInsideMapCallback()) return;
+        if (!isInsideMapCallback(node)) return;
 
         if (node.openingElement.attributes) {
           checkJSXAttributesForUuidv4Base62(
@@ -389,7 +387,7 @@ export const noUuidv4Base62AsKey = createRule<[], MessageIds>({
 
       // Check JSX fragments for children with uuidv4Base62 keys
       JSXFragment(node) {
-        if (!isInsideMapCallback()) return;
+        if (!isInsideMapCallback(node)) return;
 
         for (const child of node.children) {
           if (

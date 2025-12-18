@@ -62,7 +62,7 @@ export const noUnusedUseState = createRule({
                 },
                 fix: (fixer) => {
                   // Remove the entire useState declaration
-                  const sourceCode = context.getSourceCode();
+                  const sourceCode = context.sourceCode;
                   const parentStatement = node.parent;
 
                   if (

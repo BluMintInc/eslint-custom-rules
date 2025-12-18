@@ -1,6 +1,4 @@
-# Avoid entire objects in hook deps (`@blumintinc/blumint/no-entire-object-hook-deps`)
-
-Depend on the specific fields your hook reads; listing an entire object forces your hook to rerun when unrelated properties change and can leave memoized values stale.
+# Avoid using entire objects in React hook dependency arrays (`@blumintinc/blumint/no-entire-object-hook-deps`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

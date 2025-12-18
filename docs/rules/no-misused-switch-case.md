@@ -1,4 +1,4 @@
-# Disallow logical OR in switch case labels (`@blumintinc/blumint/no-misused-switch-case`)
+# Prevent misuse of logical OR (||) in switch case statements, which can lead to confusing and error-prone code. Instead of using OR operators in case expressions, use multiple case statements in sequence to handle multiple values. This improves code readability and follows the standard switch-case pattern (`@blumintinc/blumint/no-misused-switch-case`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
