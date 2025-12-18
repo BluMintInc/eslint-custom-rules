@@ -1,4 +1,4 @@
-# Avoid using entire objects in React hook dependency arrays when only specific fields are used, as this can cause unnecessary re-renders. When a hook only uses obj.name but obj is in the deps array, any change to obj.age will trigger the hook. Use individual fields (obj.name) instead of the entire object. Requires TypeScript and `parserOptions.project` to be configured (`@blumintinc/blumint/no-entire-object-hook-deps`)
+# Avoid using entire objects in React hook dependency arrays (`@blumintinc/blumint/no-entire-object-hook-deps`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
