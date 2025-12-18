@@ -175,7 +175,7 @@ export const noRedundantUseCallbackWrapper = createRule<Options, MessageIds>({
     const option = context.options?.[0] ?? {};
     const knownHooks = new Set<string>(option.memoizedHookNames ?? []);
     const assumeAllUseAreMemoized = option.assumeAllUseAreMemoized === true;
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode;
 
     // Track identifiers coming from hook-like calls
     const hookReturnObjects = new Set<string>(); // variables assigned to a hook call result (object or function)

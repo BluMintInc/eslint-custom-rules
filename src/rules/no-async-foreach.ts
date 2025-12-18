@@ -94,18 +94,26 @@ const isAsyncFunctionExpression = (
   );
 };
 
-const getSourceCode = (
-  context: any,
-): TSESLint.SourceCode => {
-  const typedContext = context as any & {
-    sourceCode?: TSESLint.SourceCode;
-  };
+type CompatibleRuleContext = {
+  sourceCode?: TSESLint.SourceCode;
+  getSourceCode?: () => TSESLint.SourceCode;
+  getScope?: () => TSESLint.Scope.Scope | null;
+};
 
-  return typedContext.sourceCode ?? context.getSourceCode();
+const getSourceCode = (
+  context: CompatibleRuleContext,
+): TSESLint.SourceCode => {
+  return (
+    context.sourceCode ??
+    context.getSourceCode?.() ??
+    (() => {
+      throw new Error('Unable to retrieve source code from context');
+    })()
+  );
 };
 
 const getScope = (
-  context: any,
+  context: CompatibleRuleContext,
   sourceCode: TSESLint.SourceCode,
   node: TSESTree.Node,
 ): TSESLint.Scope.Scope | null => {
@@ -113,7 +121,13 @@ const getScope = (
     getScope?: (scopedNode: TSESTree.Node) => TSESLint.Scope.Scope | null;
   };
 
-  return typedSourceCode.getScope?.(node) ?? context.getScope();
+  const typedContext = context as {
+    getScope?: () => TSESLint.Scope.Scope | null;
+  };
+
+  return (
+    typedSourceCode.getScope?.(node) ?? typedContext.getScope?.() ?? null
+  );
 };
 
 const analyzeInlineCallback = (

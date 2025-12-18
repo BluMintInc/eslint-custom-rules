@@ -93,10 +93,15 @@ function getReturnedExpression(
 function walkExpression(
   expr: TSESTree.Expression,
   predicate: (node: TSESTree.Node) => boolean,
+  maxDepth = 100,
 ): boolean {
-  const stack: TSESTree.Node[] = [expr];
+  const stack: Array<{ node: TSESTree.Node; depth: number }> = [
+    { node: expr, depth: 0 },
+  ];
   while (stack.length > 0) {
-    const current = stack.pop()!;
+    const { node: current, depth } = stack.pop()!;
+    if (depth > maxDepth) continue;
+
     if (predicate(current)) {
       return true;
     }
@@ -110,11 +115,11 @@ function walkExpression(
       if (Array.isArray(value)) {
         for (const child of value) {
           if (child && typeof child === 'object' && 'type' in child) {
-            stack.push(child as TSESTree.Node);
+            stack.push({ node: child as TSESTree.Node, depth: depth + 1 });
           }
         }
       } else if (typeof value === 'object' && 'type' in value) {
-        stack.push(value as TSESTree.Node);
+        stack.push({ node: value as TSESTree.Node, depth: depth + 1 });
       }
     }
   }
