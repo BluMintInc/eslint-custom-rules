@@ -32,7 +32,7 @@ export const useLatestCallback = createRule<[], MessageIds>({
     let useLatestCallbackImportName = 'useLatestCallback';
     // Track if any useCallback calls should be replaced
     let hasNonJsxUseCallbacks = false;
-    let useCallbackLocalNames = new Set<string>();
+    const useCallbackLocalNames = new Set<string>();
     const reactNamespaceNames = new Set<string>();
     const reactDefaultLikeNames = new Set<string>();
     let hasReactMemberUseCallback = false;

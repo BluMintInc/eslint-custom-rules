@@ -312,10 +312,14 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
 
                             const namespaceAlias = Array.from(
                               namespaceImports.entries(),
-                            ).find(([, source]) => isQueryKeysSource(source))?.[0];
+                            ).find(([, source]) =>
+                              isQueryKeysSource(source),
+                            )?.[0];
                             const defaultAlias = Array.from(
                               defaultImports.entries(),
-                            ).find(([, source]) => isQueryKeysSource(source))?.[0];
+                            ).find(([, source]) =>
+                              isQueryKeysSource(source),
+                            )?.[0];
                             const importAlias = namespaceAlias ?? defaultAlias;
                             const formatConstantReference = (
                               alias: string | undefined,
@@ -328,7 +332,9 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                             );
 
                             // 1) Replace the literal with the constant (qualify if alias exists)
-                            fixes.push(fixer.replaceText(keyValue, replacementText));
+                            fixes.push(
+                              fixer.replaceText(keyValue, replacementText),
+                            );
 
                             // 2) Ensure an import exists for the suggested constant
                             const alreadyImportedNamed = Array.from(

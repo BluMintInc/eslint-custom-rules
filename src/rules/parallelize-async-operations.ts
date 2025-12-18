@@ -52,7 +52,7 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     ],
     messages: {
       parallelizeAsyncOperations:
-        'Multiple sequential awaits detected. Consider using Promise.all() to parallelize independent async operations for better performance.',
+        'Awaiting {{awaitCount}} independent async operations sequentially makes their network and I/O latency add up, which slows responses and wastes compute. These awaits have no data dependency or per-call error handling, so run them together with Promise.all([...]) and destructure the results when you need individual values.',
     },
   },
   defaultOptions,
@@ -405,7 +405,7 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       }
 
       // Find the start position, accounting for leading comments
-      let startPos = awaitNodes[0].range[0];
+      const startPos = awaitNodes[0].range[0];
 
       // Replace the range from the start of the first await to the end of the last await
       const endPos = awaitNodes[awaitNodes.length - 1].range[1];
@@ -445,6 +445,9 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
               context.report({
                 node: awaitNodes[0],
                 messageId: 'parallelizeAsyncOperations',
+                data: {
+                  awaitCount: awaitNodes.length.toString(),
+                },
                 fix: (fixer) => generateFix(fixer, awaitNodes),
               });
             }
@@ -476,6 +479,9 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
             context.report({
               node: awaitNodes[0],
               messageId: 'parallelizeAsyncOperations',
+              data: {
+                awaitCount: awaitNodes.length.toString(),
+              },
               fix: (fixer) => generateFix(fixer, awaitNodes),
             });
           }

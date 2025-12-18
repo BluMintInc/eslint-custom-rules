@@ -9,7 +9,13 @@ ruleTesterMarkdown.run('enforce-typescript-markdown-code-blocks', rule, {
   valid: [
     {
       filename: 'docs/example.md',
-      code: joinLines('# Some Title', '', '```typescript', 'const example = 1;', '```'),
+      code: joinLines(
+        '# Some Title',
+        '',
+        '```typescript',
+        'const example = 1;',
+        '```',
+      ),
     },
     {
       filename: 'docs/example.md',
@@ -54,8 +60,20 @@ ruleTesterMarkdown.run('enforce-typescript-markdown-code-blocks', rule, {
   invalid: [
     {
       filename: 'docs/example.md',
-      code: joinLines('# Title', '', '```', 'const example = "missing language";', '```'),
-      output: joinLines('# Title', '', '```typescript', 'const example = "missing language";', '```'),
+      code: joinLines(
+        '# Title',
+        '',
+        '```',
+        'const example = "missing language";',
+        '```',
+      ),
+      output: joinLines(
+        '# Title',
+        '',
+        '```typescript',
+        'const example = "missing language";',
+        '```',
+      ),
       errors: [{ messageId: 'missingLanguageSpecifier', line: 3 }],
     },
     {
@@ -168,7 +186,13 @@ ruleTesterMarkdown.run('enforce-typescript-markdown-code-blocks', rule, {
     },
     {
       filename: 'docs/example.md',
-      code: joinLines('```', 'function block() {', '  return `template`;', '}', '```'),
+      code: joinLines(
+        '```',
+        'function block() {',
+        '  return `template`;',
+        '}',
+        '```',
+      ),
       output: joinLines(
         '```typescript',
         'function block() {',
