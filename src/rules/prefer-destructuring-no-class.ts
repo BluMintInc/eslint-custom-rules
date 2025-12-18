@@ -235,11 +235,17 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
       return false;
     }
 
+    function isPrivateIdentifierProperty(
+      property: TSESTree.MemberExpression['property'],
+    ): property is TSESTree.PrivateIdentifier {
+      return property.type === AST_NODE_TYPES.PrivateIdentifier;
+    }
+
     function canDestructureObjectProperty(
       memberExpression: TSESTree.MemberExpression,
       identifier: TSESTree.Identifier,
     ): boolean {
-      if (memberExpression.property.type === AST_NODE_TYPES.PrivateIdentifier) {
+      if (isPrivateIdentifierProperty(memberExpression.property)) {
         return false;
       }
 
@@ -270,7 +276,7 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
       propertyText: string,
       targetName: string,
     ): string | null {
-      if (memberExpression.property.type === AST_NODE_TYPES.PrivateIdentifier) {
+      if (isPrivateIdentifierProperty(memberExpression.property)) {
         return null;
       }
 
@@ -311,7 +317,7 @@ export const preferDestructuringNoClass = createRule<Options, MessageIds>({
     function getMemberExpressionPropertyName(
       memberExpression: TSESTree.MemberExpression,
     ): string | null {
-      if (memberExpression.property.type === AST_NODE_TYPES.PrivateIdentifier) {
+      if (isPrivateIdentifierProperty(memberExpression.property)) {
         return null;
       }
 
