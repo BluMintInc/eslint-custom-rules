@@ -130,6 +130,21 @@ function getUser(): User {
 }
       `,
       `let x: string = getValue() as "hello";`,
+      `
+class Foo {
+  bar!: string;
+  constructor() {
+    this.bar = "hello" as string;
+  }
+}
+      `,
+      `
+class Foo {
+  // This is a syntax error in TS but we should still skip it if the parser allows it
+  bar!: string = "hello" as string;
+}
+      `,
+      `let x!: string = "hello" as string;`,
     ],
     invalid: [
       {
@@ -350,6 +365,32 @@ type Alias = Payload;
 type Exported = Alias;
 declare function load(): Payload;
 const result = load() as Alias;
+        `,
+      },
+      {
+        code: `
+namespace NS { export type T = string; }
+import T = NS.T;
+const x: T = "a" as T;
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+namespace NS { export type T = string; }
+import T = NS.T;
+const x = "a" as T;
+        `,
+      },
+      {
+        code: `
+type A = { x: number };
+type B = { x: number };
+const val: A = { x: 1 } as B;
+        `,
+        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
+        output: `
+type A = { x: number };
+type B = { x: number };
+const val = { x: 1 } as B;
         `,
       },
     ],

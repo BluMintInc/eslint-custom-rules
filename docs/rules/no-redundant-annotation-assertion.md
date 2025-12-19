@@ -46,5 +46,6 @@ The fixer removes the explicit type annotation and leaves the assertion intact, 
 ### Not covered
 
 - Destructuring patterns are intentionally ignored to avoid surprising edits.
+- Optional properties (`?`) and definite assignment assertions (`!`) on class properties or variables are skipped to prevent syntax errors or unintended behavior changes.
 - The rule only triggers when the annotation and assertion resolve to the **same** type; widening/narrowing pairs (e.g., `any` to `string`) are left untouched.
 - Functions with multiple `return` statements are skipped because different branches can assert different types.

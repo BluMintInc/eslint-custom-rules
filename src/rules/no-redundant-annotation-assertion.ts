@@ -429,7 +429,7 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
     schema: [],
     messages: {
       redundantAnnotationAndAssertion:
-        'Type "{{type}}" is declared twice: once as an annotation and again as an assertion. When one copy changes without the other, the redundant type misleads readers and increases the risk of incorrect assumptions during refactors. Remove the annotation and keep only the assertion to maintain a single source of truth.',
+        'What\'s wrong: Type "{{type}}" is declared twice: once as an annotation and again as an assertion. \u2192 Why it matters: If you later update the assertion but forget the annotation (or vice-versa), they can drift apart and cause TypeScript to silently bypass type checks or lead to incorrect runtime assumptions. \u2192 How to fix: Remove the annotation and keep the assertion to maintain a single source of truth.',
     },
   },
   defaultOptions: [],
@@ -479,7 +479,8 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
         if (
           node.id.type !== AST_NODE_TYPES.Identifier ||
           !node.id.typeAnnotation ||
-          node.id.optional
+          node.id.optional ||
+          node.definite
         ) {
           return;
         }
@@ -495,7 +496,7 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
         );
       },
       PropertyDefinition(node) {
-        if (!node.typeAnnotation || !node.value || node.optional) return;
+        if (!node.typeAnnotation || !node.value || node.optional || node.definite) return;
 
         const assertionType = getAssertionTypeNode(node.value);
         if (!assertionType) return;
