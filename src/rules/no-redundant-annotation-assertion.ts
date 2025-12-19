@@ -19,10 +19,6 @@ const TYPE_FORMAT_FLAGS =
   ts.TypeFormatFlags.UseFullyQualifiedType |
   ts.TypeFormatFlags.UseStructuralFallback;
 
-function isTypeNode(node: ts.Node): node is ts.TypeNode {
-  return ts.isTypeNode(node);
-}
-
 function getAssertionTypeNode(
   expression: TSESTree.Node | null | undefined,
 ): TSESTree.TypeNode | null {
@@ -238,7 +234,7 @@ function getComparableType(
   services: ParserServices,
 ): ts.Type | null {
   const tsNode = services.esTreeNodeToTSNodeMap.get(typeNode);
-  if (!isTypeNode(tsNode)) return null;
+  if (!ts.isTypeNode(tsNode)) return null;
 
   const type = checker.getTypeFromTypeNode(tsNode);
   const unwrapped = unwrapAlias(type, checker);
@@ -433,7 +429,7 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
     schema: [],
     messages: {
       redundantAnnotationAndAssertion:
-        'Type "{{type}}" is declared twice: once as an annotation and again as an assertion. Duplicating the same type leaves two sources of truth that can diverge; keep only one (prefer keeping the assertion) to keep the declaration maintainable.',
+        'Type "{{type}}" is declared twice: once as an annotation and again as an assertion. When one copy changes without the other, the redundant type misleads readers and increases the risk of incorrect assumptions during refactors. Remove the annotation and keep only the assertion to maintain a single source of truth.',
     },
   },
   defaultOptions: [],
