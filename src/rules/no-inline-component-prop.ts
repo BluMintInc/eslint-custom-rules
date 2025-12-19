@@ -142,9 +142,7 @@ function isFunctionNode(
   );
 }
 
-function getCalleeName(
-  callee: TSESTree.LeftHandSideExpression,
-): string | null {
+function getCalleeName(callee: TSESTree.LeftHandSideExpression): string | null {
   const unwrapped = unwrapExpression(callee as TSESTree.Expression);
   if (!unwrapped) return null;
   if (unwrapped.type === AST_NODE_TYPES.Identifier) {
@@ -169,10 +167,7 @@ function getCalleeName(
 
 function getFunctionFromCall(
   call: TSESTree.CallExpression,
-):
-  | TSESTree.ArrowFunctionExpression
-  | TSESTree.FunctionExpression
-  | undefined {
+): TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression | undefined {
   const calleeName = getCalleeName(call.callee);
   const firstArg = unwrapExpression(
     (call.arguments[0] as TSESTree.Expression | null | undefined) ?? null,
@@ -261,7 +256,7 @@ function findVariableInScopes(
   context: Readonly<TSESLint.RuleContext<MessageIds, Options>>,
   identifier: TSESTree.Identifier,
 ): TSESLint.Scope.Variable | undefined {
-  const sourceCode = context.getSourceCode() as TSESLint.SourceCode & {
+  const sourceCode = context.sourceCode as TSESLint.SourceCode & {
     getScope?: (node: TSESTree.Node) => TSESLint.Scope.Scope | null;
   };
   let scope: TSESLint.Scope.Scope | null =
@@ -277,10 +272,7 @@ function findVariableInScopes(
 function findObjectPropertyFunction(
   objExpr: TSESTree.ObjectExpression,
   propertyName: string,
-):
-  | TSESTree.ArrowFunctionExpression
-  | TSESTree.FunctionExpression
-  | undefined {
+): TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression | undefined {
   for (const prop of objExpr.properties) {
     if (prop.type !== AST_NODE_TYPES.Property) continue;
     if (prop.computed) continue;
@@ -383,7 +375,9 @@ export const noInlineComponentProp = createRule<Options, MessageIds>({
         matchesPattern(name, pattern),
       );
       const looksComponent =
-        isPascalCase(name) || name.endsWith('Wrapper') || name.endsWith('Component');
+        isPascalCase(name) ||
+        name.endsWith('Wrapper') ||
+        name.endsWith('Component');
       if (patternMatch) {
         return true;
       }
@@ -491,7 +485,10 @@ export const noInlineComponentProp = createRule<Options, MessageIds>({
         return;
       }
 
-      if (isInModuleScope(defNode) && resolvedOptions.allowModuleScopeFactories) {
+      if (
+        isInModuleScope(defNode) &&
+        resolvedOptions.allowModuleScopeFactories
+      ) {
         return;
       }
 
@@ -548,9 +545,7 @@ export const noInlineComponentProp = createRule<Options, MessageIds>({
           return;
         }
 
-        if (
-          node.value.expression.type === AST_NODE_TYPES.JSXEmptyExpression
-        ) {
+        if (node.value.expression.type === AST_NODE_TYPES.JSXEmptyExpression) {
           return;
         }
 

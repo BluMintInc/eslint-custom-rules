@@ -64,7 +64,7 @@ const isUsedAsComponentProp = (
     }
   }
 
-  const sourceCode = context.getSourceCode();
+  const sourceCode = context.sourceCode;
   const scopeManager = sourceCode.scopeManager;
   const scope =
     scopeManager &&
@@ -105,7 +105,7 @@ const isUsedAsJsxChild = (
 ): boolean => {
   // Traverse the nearest function (or program) to see if the identifier appears
   // as a JSX child expression.
-  const sourceCode = context.getSourceCode();
+  const sourceCode = context.sourceCode;
 
   let container: TSESTree.Node = sourceCode.ast;
   let current: TSESTree.Node | undefined = node;
@@ -419,7 +419,7 @@ const containsJsxInExpression = (node: TSESTree.Expression): boolean => {
         node.callee.type === AST_NODE_TYPES.MemberExpression &&
         node.callee.property.type === AST_NODE_TYPES.Identifier
       ) {
-      if (ARRAY_RETURNING_METHODS.has(node.callee.property.name)) {
+        if (ARRAY_RETURNING_METHODS.has(node.callee.property.name)) {
           return false;
         }
       }

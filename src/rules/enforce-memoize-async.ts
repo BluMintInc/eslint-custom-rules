@@ -113,7 +113,7 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
           messageId: 'requireMemoize',
           fix(fixer) {
             const fixes: TSESLint.RuleFix[] = [];
-            const sourceCode = context.getSourceCode();
+            const sourceCode = context.sourceCode;
             const decoratorIdent = memoizeNamespace
               ? `${memoizeNamespace}.Memoize`
               : memoizeAlias;
@@ -168,8 +168,8 @@ export const enforceMemoizeAsync = createRule<Options, MessageIds>({
             const insertionStart = insertionTarget.range
               ? insertionTarget.range[0]
               : node.range
-                ? node.range[0]
-                : 0;
+              ? node.range[0]
+              : 0;
             const text = sourceCode.text;
             const lineStart = text.lastIndexOf('\n', insertionStart - 1) + 1;
             const leadingWhitespace =

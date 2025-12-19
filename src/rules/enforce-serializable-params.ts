@@ -18,7 +18,7 @@ export default createRule({
     type: 'problem',
     docs: {
       description:
-        'Enforce serializable parameters in Firebase Callable/HTTPS Cloud Functions to prevent runtime errors. Firebase Functions can only pass JSON-serializable data, so using non-serializable types like Date, DocumentReference, or Map will cause failures. Use primitive types, plain objects, and arrays instead, converting complex types to their serializable representations (e.g., Date to ISO string).',
+        'Enforce serializable parameters for Firebase callable/HTTPS functions.',
       recommended: 'error',
     },
     schema: [
@@ -40,9 +40,9 @@ export default createRule({
     ],
     messages: {
       nonSerializableParam:
-        'Parameter type "{{ type }}" is not serializable in Firebase Cloud Functions. Use JSON-serializable types like string, number, boolean, arrays, or plain objects. Instead of `Date`, use ISO strings: `new Date().toISOString()`.',
+        'What\'s wrong: parameter type "{{ type }}" is not JSON-safe for Firebase Callable/HTTPS functions → Why it matters: Firebase transports request payloads as JSON, so {{ type }} values may be coerced, dropped, or lose semantic type in transit → How to fix: convert {{ type }} to a JSON-safe primitive, array, or plain object (e.g., ISO date string, document path string, Map/Set as arrays/objects) before adding it to the request type.',
       nonSerializableProperty:
-        'Property "{{ prop }}" has non-serializable type "{{ type }}". Use JSON-serializable types. For example, instead of `{ timestamp: Date }`, use `{ timestamp: string }` with ISO format.',
+        'What\'s wrong: property "{{ prop }}" uses a non-JSON-safe type "{{ type }}" → Why it matters: Firebase may coerce, drop, or strip semantic type when serializing callable/HTTPS request payloads → How to fix: accept only JSON-safe primitives, arrays, or plain objects, and convert {{ type }} to a safe representation (e.g., Date/Timestamp -> ISO string, DocumentReference -> document path string, Map/Set -> an array or object).',
     },
   },
   defaultOptions: [
