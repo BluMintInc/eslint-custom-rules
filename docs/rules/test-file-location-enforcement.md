@@ -1,4 +1,8 @@
-# Test files must live next to the code they cover (`@blumintinc/blumint/test-file-location-enforcement`)
+# Enforce colocating *.test.ts(x) files with the code they cover (`@blumintinc/blumint/test-file-location-enforcement`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

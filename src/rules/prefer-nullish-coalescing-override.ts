@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'preferNullishCoalescing';
@@ -21,11 +21,18 @@ export const preferNullishCoalescingOverride = createRule<[], MessageIds>({
     schema: [],
     messages: {
       preferNullishCoalescing:
-        'Prefer using nullish coalescing operator (`??`) instead of logical OR operator (`||`) when only checking for null/undefined.',
+        'Replace "{{left}} || {{right}}" with nullish coalescing when you only want a fallback for null or undefined. The logical OR operator treats "", 0, and false as missing values and silently swaps in the fallback, which hides valid data. Use "{{left}} ?? {{right}}" so only nullish inputs trigger the fallback.',
     },
   },
   defaultOptions: [],
   create(context) {
+    const contextWithSource = context as {
+      sourceCode?: TSESLint.SourceCode;
+      getSourceCode(): TSESLint.SourceCode;
+    };
+    const sourceCode =
+      contextWithSource.sourceCode ?? contextWithSource.getSourceCode();
+
     /**
      * Checks if a node is in a boolean context where truthiness matters
      */
@@ -211,12 +218,15 @@ export const preferNullishCoalescingOverride = createRule<[], MessageIds>({
     return {
       LogicalExpression(node: TSESTree.LogicalExpression) {
         if (shouldConvertToNullishCoalescing(node)) {
-          const sc = context.getSourceCode();
-          const leftText = sc.getText(node.left);
-          const rightText = sc.getText(node.right);
+          const leftText = sourceCode.getText(node.left);
+          const rightText = sourceCode.getText(node.right);
           context.report({
             node,
             messageId: 'preferNullishCoalescing',
+            data: {
+              left: leftText,
+              right: rightText,
+            },
             fix(fixer) {
               return fixer.replaceText(node, `${leftText} ?? ${rightText}`);
             },

@@ -1,4 +1,8 @@
-# Enforce memoization for adaptValue transforms (`@blumintinc/blumint/enforce-transform-memoization`)
+# Enforce memoization of adaptValue transformValue/transformOnChange so the adapted component receives stable handlers and avoids unnecessary re-renders (`@blumintinc/blumint/enforce-transform-memoization`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

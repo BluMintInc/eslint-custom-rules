@@ -1,4 +1,10 @@
-# Ensure Markdown code fences default to TypeScript (`@blumintinc/blumint/enforce-typescript-markdown-code-blocks`)
+# Ensure Markdown fenced code blocks without a language specifier default to typescript for consistent highlighting (`@blumintinc/blumint/enforce-typescript-markdown-code-blocks`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

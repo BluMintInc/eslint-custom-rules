@@ -85,6 +85,46 @@ ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
         }
       }
     `,
+    // Renamed properties should stay valid when enforceForRenamedProperties is false
+    `
+      class Example {
+        constructor(props: { value: string; renamed: string }) {
+          this.value = props.renamed;
+        }
+      }
+    `,
+    // Shadowed parameter name should not be treated as a parameter
+    `
+      class Example {
+        private value: number;
+
+        constructor(props: { value: number }) {
+          if (props) {
+            const props = { value: 2 };
+            this.value = props.value;
+          }
+        }
+      }
+    `,
+    // this assignments outside classes should be ignored
+    `
+      function notAClass(props: { x: number }) {
+        this.value = props.x;
+      }
+    `,
+    // Nested functions inside constructors should not trigger this-based reports
+    `
+      class Example {
+        private value: number;
+
+        constructor(props: { value: number }) {
+          const assign = () => {
+            this.value = props.value;
+          };
+          assign();
+        }
+      }
+    `,
   ],
   invalid: [
     // Basic object property access
@@ -93,7 +133,18 @@ ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
         const obj = { foo: 123 };
         const foo = obj.foo;
       `,
-      errors: [{ messageId: 'preferDestructuring' }],
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'obj',
+            property: 'foo',
+            targetNote: '',
+            renamingHint: '',
+            example: 'const { foo } = obj;',
+          },
+        },
+      ],
       output: `
         const obj = { foo: 123 };
         const { foo } = obj;
@@ -105,7 +156,18 @@ ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
         const obj = { nested: { foo: 123 } };
         const foo = obj.nested.foo;
       `,
-      errors: [{ messageId: 'preferDestructuring' }],
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'obj.nested',
+            property: 'foo',
+            targetNote: '',
+            renamingHint: '',
+            example: 'const { foo } = obj.nested;',
+          },
+        },
+      ],
       output: `
         const obj = { nested: { foo: 123 } };
         const { foo } = obj.nested;
@@ -117,7 +179,18 @@ ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
         const obj = { foo: 123 };
         let foo = obj.foo;
       `,
-      errors: [{ messageId: 'preferDestructuring' }],
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'obj',
+            property: 'foo',
+            targetNote: '',
+            renamingHint: '',
+            example: 'let { foo } = obj;',
+          },
+        },
+      ],
       output: `
         const obj = { foo: 123 };
         let { foo } = obj;
@@ -129,7 +202,18 @@ ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
         const obj = { foo: 123 };
         var foo = obj.foo;
       `,
-      errors: [{ messageId: 'preferDestructuring' }],
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'obj',
+            property: 'foo',
+            targetNote: '',
+            renamingHint: '',
+            example: 'var { foo } = obj;',
+          },
+        },
+      ],
       output: `
         const obj = { foo: 123 };
         var { foo } = obj;
@@ -142,7 +226,18 @@ ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
         const obj = { foo: 123 };
         foo = obj.foo;
       `,
-      errors: [{ messageId: 'preferDestructuring' }],
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'obj',
+            property: 'foo',
+            targetNote: '',
+            renamingHint: '',
+            example: '({ foo } = obj)',
+          },
+        },
+      ],
       output: `
         let foo;
         const obj = { foo: 123 };
@@ -156,10 +251,102 @@ ruleTesterTs.run('prefer-destructuring-no-class', preferDestructuringNoClass, {
         const bar = obj.foo;
       `,
       options: [{ object: true, enforceForRenamedProperties: true }],
-      errors: [{ messageId: 'preferDestructuring' }],
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'obj',
+            property: 'foo',
+            targetNote: ' to "bar"',
+            renamingHint: ' with renaming',
+            example: 'const { foo: bar } = obj;',
+          },
+        },
+      ],
       output: `
         const obj = { foo: 123 };
         const { foo: bar } = obj;
+      `,
+    },
+    // Constructor parameter properties assigned to class fields should be destructured
+    {
+      code: `
+        class Example {
+          private x: string;
+          private y: number;
+
+          constructor(props: { x: string; y: number }) {
+            this.x = props.x;
+            this.y = props.y;
+          }
+        }
+      `,
+      errors: [
+        { messageId: 'preferDestructuring' },
+        { messageId: 'preferDestructuring' },
+      ],
+    },
+    // Renamed constructor property access should be reported when enforced
+    {
+      code: `
+        class Example {
+          constructor(props: { value: string }) {
+            this.displayValue = props.value;
+          }
+        }
+      `,
+      options: [{ enforceForRenamedProperties: true }],
+      errors: [{ messageId: 'preferDestructuring' }],
+    },
+    // Computed property access with literal key should use computed destructuring
+    {
+      code: `
+        const obj = { foo: 123 };
+        const foo = obj['foo'];
+      `,
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'obj',
+            property: "'foo'",
+            targetNote: '',
+            renamingHint: '',
+            example: "const { ['foo']: foo } = obj;",
+          },
+        },
+      ],
+      output: `
+        const obj = { foo: 123 };
+        const { ['foo']: foo } = obj;
+      `,
+    },
+    // Computed property access with renamed binding should remain computed in fixer
+    {
+      code: `
+        const key = 'foo';
+        let value;
+        const obj = { foo: 123 };
+        value = obj[key];
+      `,
+      options: [{ enforceForRenamedProperties: true }],
+      errors: [
+        {
+          messageId: 'preferDestructuring',
+          data: {
+            object: 'obj',
+            property: 'key',
+            targetNote: ' to "value"',
+            renamingHint: ' with renaming',
+            example: '({ [key]: value } = obj)',
+          },
+        },
+      ],
+      output: `
+        const key = 'foo';
+        let value;
+        const obj = { foo: 123 };
+        ({ [key]: value } = obj);
       `,
     },
   ],

@@ -4,27 +4,31 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 ## Rule Details
 
-This rule warns when a component introduces a _second_ `useState` pair such as **`[isXLoading, setIsXLoading]`** _or_ **`[isLoadingX, setIsLoadingX]`** whose only job is to track whether **another** piece of state is still being fetched.
+This rule warns when a component introduces a _second_ `useState` pair such as **`[isXLoading, setIsXLoading]`** or **`[isLoadingX, setIsLoadingX]`** whose only job is to track whether **another** piece of state is still being fetched.
 
-BluMint's guideline is to encode the temporary "loading" phase **inside the primary state** itself (with a `'loading'` sentinel or a discriminated-union type). This keeps component APIs minimal, removes two extra re-renders (`true → false`), and prevents drift between the boolean and the data.
+Separate loading booleans split the source of truth for fetching state. The flag can drift from the data (`false` before the data arrives, `true` after an error), and the extra toggles add renders without exposing the data's real lifecycle. Encode the loading phase inside the primary state instead (for example with a `'loading'` sentinel or a discriminated union) so every consumer reads a single authoritative value.
 
 ### Detection Heuristic
 
-The rule flags any `useState` identifier that matches the configured patterns (defaults: `/^is.*Loading$/i`, `/^isLoading.+/i`) and whose setter is invoked with a truthy value before an async boundary and with a falsy value afterward.
+The rule flags any `useState` identifier that matches `/^is.*Loading$/i` or `/^isLoading.+/i` and whose setter is invoked with a truthy value before an async boundary and with a falsy value afterward. This heuristic targets booleans that mirror a separate piece of state instead of representing the data directly.
 
 ### Scope
 
-React function components & custom hooks. Loading flags that come from external data/state libraries (e.g., Redux selectors, SWR/React Query hooks) are not reported; this rule only targets separate local `useState` loading booleans.
+React function components and custom hooks. Redux/SWR/React-Query flags are ignored.
 
 ### Allowed Uses
 
-Booleans whose names do not match the patterns (e.g. `isModalOpen`).
+Booleans whose names do not match the patterns (for example `isModalOpen`) are allowed.
 
 ### Autofix
 
-Not provided – switching to a sentinel requires manual type widening and consumer updates.
+Not provided – switching to a sentinel or discriminated union requires manual type updates and consumer changes.
 
 ### Options
 
@@ -36,7 +40,7 @@ Not provided – switching to a sentinel requires manual type widening and consu
 
 ```tsx
 const [profile, setProfile] = useState<User | null>(null);
-const [isProfileLoading, setIsProfileLoading] = useState(false);   // ❌ pattern "isXLoading"
+const [isProfileLoading, setIsProfileLoading] = useState(false);   // ❌ duplicate loading flag
 
 async function loadProfile(id: string) {
   setIsProfileLoading(true);
@@ -51,7 +55,7 @@ async function loadProfile(id: string) {
 
 ```tsx
 const [avatar, setAvatar] = useState(null);
-const [isLoadingAvatar, setIsLoadingAvatar] = useState(false);   // ❌ pattern "isLoadingX"
+const [isLoadingAvatar, setIsLoadingAvatar] = useState(false);   // ❌ duplicate loading flag
 
 async function loadAvatar() {
   setIsLoadingAvatar(true);
@@ -64,13 +68,16 @@ async function loadAvatar() {
 ### ✅ Correct
 
 ```tsx
-const [profile, setProfile] = useState<User | null | 'loading'>(null);
+const [profile, setProfile] = useState<User | 'loading' | { kind: 'error'; message: string } | null>(null);
 
 async function loadProfile(id: string) {
-  // eslint-disable-next-line @blumintinc/blumint/no-stale-state-across-await
-  setProfile('loading');                        // sentinel
-  const data = await api.get(`/users/${id}`);
-  setProfile(data);
+  setProfile('loading');                        // sentinel to mark the fetch lifecycle
+  try {
+    const data = await api.get(`/users/${id}`);
+    setProfile(data);
+  } catch (error) {
+    setProfile({ kind: 'error', message: (error as Error).message });
+  }
 }
 ```
 
@@ -86,7 +93,7 @@ function toggleModal() {
 
 ## Interaction with react/no-stale-state-across-await
 
-After adopting the sentinel you'll usually disable that rule for the intentional double update:
+Disable `react/no-stale-state-across-await` when intentionally double updating:
 
 ```tsx
 // eslint-disable-next-line @blumintinc/blumint/no-stale-state-across-await
@@ -95,4 +102,4 @@ setProfile('loading');
 
 ## Benefits
 
-By detecting **both** `isXLoading` _and_ `isLoadingX` patterns, this rule ensures BluMint teams consistently encode loading directly into the primary state, reducing boilerplate and avoiding subtle desynchronisation bugs.
+By detecting **both** `isXLoading` and `isLoadingX` patterns, this rule keeps loading semantics co-located with the data they describe, removes redundant renders (`true → false`), and prevents desynchronisation between a boolean flag and the actual fetch result.

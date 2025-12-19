@@ -1,4 +1,8 @@
-# Enforce batching DocSetter writes with setAll (`@blumintinc/blumint/prefer-docsetter-setall`)
+# Enforce batching DocSetter and DocSetterTransaction writes by using setAll instead of set inside loops or array callbacks (`@blumintinc/blumint/prefer-docsetter-setall`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

@@ -1,4 +1,8 @@
-# Disallow async callbacks in Array.filter() because async predicates never filter (`@blumintinc/blumint/no-async-array-filter`)
+# Disallow async callbacks in Array.filter(). Async predicates return Promises that are always truthy to the filter, so no element is ever removed. Resolve async checks first (Promise.all + map) or use a synchronous predicate to decide which items to keep (`@blumintinc/blumint/no-async-array-filter`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

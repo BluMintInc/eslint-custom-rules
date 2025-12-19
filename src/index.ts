@@ -28,6 +28,7 @@ import { noUnpinnedDependencies } from './rules/no-unpinned-dependencies';
 import { noUnusedProps } from './rules/no-unused-props';
 import { noUselessFragment } from './rules/no-useless-fragment';
 import { preferFragmentShorthand } from './rules/prefer-fragment-shorthand';
+import { preferGetterOverParameterlessMethod } from './rules/prefer-getter-over-parameterless-method';
 import { preferTypeOverInterface } from './rules/prefer-type-over-interface';
 import { preferTypeAliasOverTypeofConstant } from './rules/prefer-type-alias-over-typeof-constant';
 import { requireMemo } from './rules/require-memo';
@@ -136,6 +137,8 @@ import { preferUseDeepCompareMemo } from './rules/prefer-use-deep-compare-memo';
 import { noCircularReferences } from './rules/no-circular-references';
 import { noPassthroughGetters } from './rules/no-passthrough-getters';
 import { noTryCatchAlreadyExistsInTransaction } from './rules/no-try-catch-already-exists-in-transaction';
+import { noUselessUsememoPrimitives } from './rules/no-useless-usememo-primitives';
+import { jsdocAboveField } from './rules/jsdoc-above-field';
 import { enforceTransformMemoization } from './rules/enforce-transform-memoization';
 import { verticallyGroupRelatedFunctions } from './rules/vertically-group-related-functions';
 import { default as noStaticConstantsInDynamicFiles } from './rules/no-static-constants-in-dynamic-files';
@@ -192,7 +195,9 @@ module.exports = {
         '@blumintinc/blumint/no-unused-props': 'error',
         '@blumintinc/blumint/no-uuidv4-base62-as-key': 'error',
         '@blumintinc/blumint/no-useless-fragment': 'error',
+        '@blumintinc/blumint/no-useless-usememo-primitives': 'error',
         '@blumintinc/blumint/prefer-fragment-shorthand': 'error',
+        '@blumintinc/blumint/prefer-getter-over-parameterless-method': 'error',
         '@blumintinc/blumint/prefer-type-over-interface': 'error',
         '@blumintinc/blumint/prefer-type-alias-over-typeof-constant': 'error',
         '@blumintinc/blumint/require-memo': 'error',
@@ -287,6 +292,7 @@ module.exports = {
         '@blumintinc/blumint/no-misleading-boolean-prefixes': 'error',
         '@blumintinc/blumint/prefer-url-tostring-over-tojson': 'error',
         '@blumintinc/blumint/prefer-next-dynamic': 'error',
+        '@blumintinc/blumint/jsdoc-above-field': 'error',
         '@blumintinc/blumint/no-redundant-usecallback-wrapper': 'error',
         '@blumintinc/blumint/no-array-length-in-deps': 'error',
         '@blumintinc/blumint/enforce-stable-hash-spread-props': 'error',
@@ -343,6 +349,7 @@ module.exports = {
     'no-uuidv4-base62-as-key': noUuidv4Base62AsKey,
     'enforce-dynamic-file-naming': enforceDynamicFileNaming,
     'prefer-fragment-shorthand': preferFragmentShorthand,
+    'prefer-getter-over-parameterless-method': preferGetterOverParameterlessMethod,
     'prefer-type-over-interface': preferTypeOverInterface,
     'prefer-type-alias-over-typeof-constant': preferTypeAliasOverTypeofConstant,
     'require-memo': requireMemo,
@@ -424,6 +431,7 @@ module.exports = {
     'omit-index-html': omitIndexHtml,
     'enforce-id-capitalization': enforceIdCapitalization,
     'no-unused-usestate': noUnusedUseState,
+    'no-useless-usememo-primitives': noUselessUsememoPrimitives,
     'prefer-usecallback-over-usememo-for-functions':
       preferUseCallbackOverUseMemoForFunctions,
     'no-margin-properties': noMarginProperties,
@@ -444,6 +452,7 @@ module.exports = {
     'no-misleading-boolean-prefixes': noMisleadingBooleanPrefixes,
     'prefer-url-tostring-over-tojson': preferUrlToStringOverToJson,
     'prefer-next-dynamic': preferNextDynamic,
+    'jsdoc-above-field': jsdocAboveField,
     'no-redundant-usecallback-wrapper': noRedundantUseCallbackWrapper,
     'no-array-length-in-deps': noArrayLengthInDeps,
     'prefer-use-deep-compare-memo': preferUseDeepCompareMemo,

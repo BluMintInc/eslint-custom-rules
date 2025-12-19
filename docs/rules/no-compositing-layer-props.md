@@ -1,4 +1,8 @@
-# Discourage CSS properties that force GPU compositing layers (e.g., transform, filter, will-change) (`@blumintinc/blumint/no-compositing-layer-props`)
+# Discourage CSS properties that force GPU compositing layers (e.g., transform, filter, will-change). Extra layers consume GPU memory and split rendering work, which slows scrolling and animation when sprinkled across a page. The rule inspects inline style objects and MUI sx props so layer promotion stays intentional rather than incidental (`@blumintinc/blumint/no-compositing-layer-props`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

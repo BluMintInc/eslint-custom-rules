@@ -4,23 +4,31 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 ## Rule Details
 
-This rule targets hooks that take dependency arrays—`useMemo`, `useCallback`, `useEffect`, and custom hooks that mirror their behavior. It flags boolean conditions formed over objects (for example `!!obj`, `Object.keys(obj).length === 0`, `obj === other`) when those conditions are placed directly in dependency arrays. Extract these expressions into stable boolean variables or memoized helpers so dependency arrays track primitives instead of churny object references.
+This rule flags boolean expressions that are derived from objects when they appear directly inside React hook dependency arrays. Object references change any time a property changes, so a dependency like `!data` will retrigger the hook even if the boolean outcome did not change. Depending on the derived boolean instead keeps hooks focused on meaningful changes and reduces wasted renders.
 
-The rule addresses a common React performance anti-pattern where `useMemo`, `useCallback`, and `useEffect` hooks re-run unnecessarily because they depend on entire objects when they only care about specific boolean conditions derived from those objects.
+### Why this matters
+
+- Hooks re-run whenever an object reference changes, even when the boolean meaning stays constant, which wastes renders and time.
+- Stable boolean dependencies make memoization predictable and protect expensive callbacks from unnecessary invalidation.
+- Named booleans (for example, `hasData`) make intent obvious without scanning the dependency list.
 
 ### Patterns Detected
 
-The rule detects the following patterns in hook dependency arrays:
+The rule inspects dependency arrays of `useEffect`, `useCallback`, and `useMemo` for boolean conditions sourced from objects:
 
 - **Object existence checks**: `!obj`
 - **Object key count checks**: `Object.keys(obj).length === 0`, `Object.keys(obj).length > 0`, etc.
-- **Complex boolean expressions**: `!obj || Object.keys(obj).length === 0`
+- **Combined boolean expressions**: `!obj || Object.keys(obj).length === 0`
 
 ### Examples
 
-❌ **Incorrect** - Boolean conditions directly in dependency arrays:
+❌ **Incorrect** – Boolean conditions remain inline in dependency arrays, so any object reference change forces a rerun even when the boolean outcome is identical:
 
 ```javascript
 const tabPanes = useMemo(() => {
@@ -43,7 +51,7 @@ const tabPanes = useMemo(() => {
 ```javascript
 const result = useMemo(() => {
   return !data ? [] : processData();
-}, [!data]); // Boolean condition in dependency array
+}, [!data]); // Boolean condition in dependency array → triggers the rule
 ```
 
 ```javascript
@@ -52,10 +60,10 @@ const callback = useCallback(() => {
 }, [Object.keys(items).length === 0]); // Object key count check in dependency array
 ```
 
-✅ **Correct** - Extract boolean conditions into separate variables:
+✅ **Correct** – Extract boolean conditions into named variables and depend on them:
 
 ```javascript
-// Extract boolean conditions to optimize useMemo re-runs
+// Extract boolean conditions to optimize hook re-runs
 const hasRoundPreviews = roundPreviews && Object.keys(roundPreviews).length > 0;
 const hasCohortPreviews = cohortPreviews && Object.keys(cohortPreviews).length > 0;
 
@@ -88,17 +96,15 @@ const callback = useCallback(() => {
 }, [hasItems]);
 ```
 
-### Performance Benefits
+### How to fix when you see the lint message
 
-By extracting boolean conditions:
-
-1. **Reduced re-computations**: The hook only re-runs when the boolean result changes, not when unrelated object properties change
-2. **Better memoization**: More precise dependency tracking leads to better memoization effectiveness
-3. **Improved readability**: Boolean variables with descriptive names make the code more self-documenting
+1. Move the boolean condition out of the dependency array into a clearly named variable.
+2. Use that variable inside the hook callback and in the dependency list.
+3. Prefer boolean prefixes (`has`, `is`, `should`) so the dependency communicates intent at a glance.
 
 ### Suggested Variable Names
 
-The rule suggests boolean variable names following common conventions:
+The rule proposes boolean names following common conventions (feel free to rename to fit context):
 
 - `hasData` for existence checks
 - `hasItems` for key count checks
@@ -117,5 +123,4 @@ You might want to disable this rule if:
 - You intentionally want hooks to re-run on any object change
 - You're working with objects that change infrequently
 - The performance impact is negligible for your use case
-
 This rule has no configuration options and works out of the box.

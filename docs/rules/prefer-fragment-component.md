@@ -6,6 +6,12 @@
 
 <!-- end auto-generated rule header -->
 
+🚫 This rule is _disabled_ in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 Using a single fragment style keeps React dependencies explicit and avoids shorthand limitations. This rule replaces `<>` and `<React.Fragment>` with `<Fragment>` imported from `'react'`.
 
 ## Why?

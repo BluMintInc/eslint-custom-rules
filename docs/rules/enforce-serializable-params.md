@@ -1,34 +1,74 @@
-# Enforce serializable parameters in Firebase Callable/HTTPS Cloud Functions to prevent runtime errors. Firebase Functions can only pass JSON-serializable data, so using non-serializable types like Date, DocumentReference, or Map will cause failures. Use primitive types, plain objects, and arrays instead, converting complex types to their serializable representations (e.g., Date to ISO string) (`@blumintinc/blumint/enforce-serializable-params`)
+# Enforce serializable parameters for Firebase callable/HTTPS functions (`@blumintinc/blumint/enforce-serializable-params`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
+Firebase Callable/HTTPS functions send and receive data over JSON. Some values (for example, `DocumentReference`, `Timestamp`, `Map`, `Set`, `Symbol`, `Function`, or `undefined`) are not JSON-safe and may be coerced, dropped, or fail serialization at runtime. This rule prevents those types from appearing in request parameter types so your request contracts stay JSON-safe.
+
+## Rule Details
+
+- Flags parameter properties typed as not JSON-safe values (defaults: `Date`, `DocumentReference`, `Timestamp`, `Map`, `Set`, `Symbol`, `Function`, `undefined`), including nested and generic usages.
+- Encourages converting complex values to JSON-safe shapes before sending them (e.g., `Date` -> ISO string, `DocumentReference` -> document path string, `Map`/`Set` -> plain object or array).
+
+### Why this matters
+
+Firebase callable/HTTPS functions run over JSON. If parameters include not JSON-safe values, Firebase either fails to encode them (for example, `undefined`) or coerces them into JSON shapes that lose their semantic type (for example, `Timestamp` becomes a plain object shape, and `Date` typically stringifies to an ISO string that no longer behaves like a `Date`). Some runtime-only values such as `NaN` or `Infinity` also fail JSON encoding even though they are typed as `number`; validate or normalize those at runtime because the type-based rule cannot flag them. Declaring parameters as JSON-safe shapes makes request/response contracts reliable and avoids hidden data loss.
+
+## Examples
+
+### ✅ Good
+
+```ts
+type ValidParams = {
+  userPath: string; // DocumentReference represented as a path string
+  createdAt: string; // ISO string derived from a Date
+  tags: string[];
+  metadata?: { retryCount: number } | null;
+};
+
+export const validFunction = async (
+  request: CallableRequest<ValidParams>,
+) => {
+  // Handle request safely; everything is JSON-serializable
+};
+```
+
+### ❌ Bad
+
+```ts
+type InvalidParams = {
+  userRef: DocumentReference;
+  createdAt: Date;
+  cache: Map<string, number>;
+};
+
+export const invalidFunction = async (
+  request: CallableRequest<InvalidParams>,
+) => {
+  // These types are not JSON-safe; they may be coerced or lose meaning (e.g., send Date as an ISO string, DocumentReference as a path, Map/Set as arrays/objects)
+};
+```
+
 ## Options
 
-This rule accepts an options object with the following properties:
+This rule accepts an options object:
 
 ```ts
 {
-  // Additional types to consider as non-serializable
-  additionalNonSerializableTypes: string[];
-  // Function types to check for serializable parameters
-  functionTypes: string[];
+  additionalNonSerializableTypes?: string[];
+  functionTypes?: string[];
 }
 ```
 
 ### `additionalNonSerializableTypes`
 
-An array of additional type names to consider as non-serializable. By default, the following types are considered non-serializable:
-- `Date`
-- `DocumentReference`
-- `Timestamp`
-- `Map`
-- `Set`
-- `Symbol`
-- `Function`
-- `undefined`
+Additional type names to treat as not JSON-safe beyond the defaults. Use this when your project wraps complex values in domain-specific types that still are not JSON-safe.
 
 ### `functionTypes`
 
-An array of function type names to check for serializable parameters. Defaults to `['CallableRequest']`.
+Type names that represent Firebase request wrappers to inspect. Defaults to `['CallableRequest']`. Include additional wrapper names if your codebase uses custom request types.

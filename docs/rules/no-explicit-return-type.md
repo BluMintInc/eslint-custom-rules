@@ -6,9 +6,72 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
+## Why this rule matters
+
+- Type annotations duplicate what TypeScript can already infer, which bloats signatures and slows code review.
+- When the implementation changes, explicit return types can drift from the actual value returned, hiding bugs behind an out-of-date annotation.
+- Relying on inference keeps the function signature synchronized automatically and makes the true return shape obvious to readers and tooling.
+
+## Rule details
+
+This rule reports explicit return type annotations on functions that include an implementation body where TypeScript can infer the return value. The fixer (`--fix`) removes only the return type annotation while keeping the rest of the signature intact. Interface method signatures and abstract methods are allowed by default because they lack bodies for inference; setting `allowInterfaceMethodSignatures` or `allowAbstractMethodSignatures` to `false` makes the rule report these signatures (no auto-fix) instead of treating them as allowed. The rule keeps the annotation for cases where the annotation conveys additional meaning:
+
+- Type predicates (`value is Type`) and assertion functions (`asserts value is Type`) where the return type changes control flow.
+- Recursive functions, overloads, interface method signatures, and abstract methods when those allowances are enabled.
+- `.d.ts` declaration files and `.f.ts` Firestore function files when configured to allow them.
+
+### Examples of incorrect code
+
+```ts
+function add(a: number, b: number): number {
+  return a + b;
+}
+
+const multiply = (a: number, b: number): number => a * b;
+
+const obj = {
+  method(value: string): string {
+    return value.trim();
+  },
+};
+
+// Computed class method with an explicit return type is flagged
+class Service {
+  [Symbol.toStringTag](): string {
+    return 'Service';
+  }
+}
+```
+
+### Examples of correct code
+
+```ts
+function add(a: number, b: number) {
+  return a + b;
+}
+
+const multiply = (a: number, b: number) => a * b;
+
+// Type predicate: annotation is required to narrow callers
+function isString(value: unknown): value is string {
+  return typeof value === 'string';
+}
+
+// Interface method annotations are allowed by default
+interface Logger {
+  log(message: string): void;
+}
+```
+
 ## Options
 
-This rule accepts an options object with the following properties:
+This rule accepts an options object:
 
 ```ts
 {

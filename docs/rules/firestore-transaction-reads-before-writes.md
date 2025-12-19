@@ -4,9 +4,13 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 ## Rule Details
 
-This rule detects when Firestore transaction read operations are performed after write operations within the same transaction. In Firestore transactions, all read operations should be performed before any write operations to ensure transaction integrity and prevent potential errors.
+Firestore transactions must complete every read before performing any writes so the callback runs against a consistent snapshot. If a read happens after a write, the Firestore SDK can throw (`All reads must be before any writes`) or retry the transaction with stale data, reapplying writes that were computed from outdated snapshots. This rule reports reads that occur after writes inside the same transaction callback.
 
 Reading after writing can lead to:
 
@@ -15,36 +19,35 @@ Reading after writing can lead to:
 - Infinite retry loops
 - Inconsistent data states
 
-This rule enforces a critical pattern for reliable Firestore transaction usage throughout your codebase.
+- `Read operation "transaction.get" runs after transaction writes (transaction.set). Firestore transactions must collect every read before any write to keep a consistent snapshot and avoid Firestore retries that reapply writes with stale data. Move this read before the first write in the same transaction callback.`
+
+### How to fix
+
+- Move all `transaction.get` calls (or helpers that perform reads) before any `set`, `update`, or `delete`.
+- Store snapshot data in locals and perform writes only after all reads finish.
+- For conditional logic, perform the needed reads first and branch on the in-memory data afterward.
 
 ## Examples
 
 ### ❌ Incorrect
 
 ```typescript
-// Read operation AFTER a write operation (problematic)
-const transactionResult = await firestore.runTransaction(async (transaction) => {
-  // Write operation before read
+await firestore.runTransaction(async (transaction) => {
   transaction.set(docRef, { status: 'processing' });
 
-  // Read operation AFTER a write (problematic)
-  const docSnapshot = await transaction.get(otherDocRef);
+  const docSnapshot = await transaction.get(otherDocRef); // ❌ Read after a write
 
   return docSnapshot.data();
 });
 ```
 
 ```typescript
-// Conditional write followed by read
-await firestore.runTransaction(async (transaction) => {
-  const snapshot = await transaction.get(docRef);
+await firestore.runTransaction(async (tx) => {
+  tx.update(docRef, { count: 1 });
+  tx.delete(otherDocRef);
 
-  if (condition) {
-    transaction.update(docRef, { field: 'value' });
-
-    // This read happens after a conditional write
-    const secondSnapshot = await transaction.get(otherDocRef); // ❌ Error
-  }
+  const snapshot = await tx.get(summaryRef); // ❌ After update/delete writes
+  return snapshot.data();
 });
 ```
 
@@ -71,45 +74,43 @@ await firestore.runTransaction(async (t) => {
 ### ✅ Correct
 
 ```typescript
-// All read operations performed first
-const transactionResult = await firestore.runTransaction(async (transaction) => {
-  // All read operations performed first
+await firestore.runTransaction(async (transaction) => {
   const docSnapshot = await transaction.get(otherDocRef);
   const additionalSnapshot = await transaction.get(anotherDocRef);
 
-  // All write operations performed after all reads
   transaction.set(docRef, { status: 'processing' });
   transaction.update(otherDocRef, { lastUpdated: Date.now() });
 
-  return docSnapshot.data();
+  return {
+    first: docSnapshot.data(),
+    second: additionalSnapshot.data(),
+  };
 });
 ```
 
 ```typescript
-// Proper ordering with conditional logic
 await firestore.runTransaction(async (transaction) => {
-  // Perform all reads first
-  const snapshot = await transaction.get(docRef);
-  const secondSnapshot = await transaction.get(otherDocRef);
+  const userSnapshot = await transaction.get(userRef);
 
-  // Then perform writes based on read results
-  if (condition) {
-    transaction.update(docRef, { field: 'value' });
-    transaction.set(anotherDocRef, { data: snapshot.data() });
-  }
+  const updates = userSnapshot.exists
+    ? { status: 'active' }
+    : { status: 'pending' };
+
+  transaction.set(userRef, updates);
 });
 ```
 
 ```typescript
-// Works with different SDK versions
 import { runTransaction, getFirestore } from 'firebase/firestore';
 
 await runTransaction(getFirestore(), async (transaction) => {
-  // Reads first
-  const doc = await transaction.get(docRef);
+  const [settings, profile] = await Promise.all([
+    transaction.get(settingsRef),
+    transaction.get(profileRef),
+  ]);
 
-  // Writes after
-  transaction.update(docRef, { field: 'value' });
+  transaction.set(settingsRef, { ...settings.data(), updatedBy: adminId });
+  transaction.update(profileRef, { syncedAt: Date.now() });
 });
 ```
 
@@ -155,10 +156,10 @@ Computed property access (e.g., `transaction['get']`) is treated conservatively.
 
 ## When Not To Use It
 
-This rule should generally always be enabled when working with Firestore transactions, as it enforces a fundamental requirement of Firestore's transaction model. However, you might consider disabling it if:
+Keep this rule enabled wherever you use Firestore transactions. Consider disabling only if:
 
-- You're working with a custom transaction-like abstraction that doesn't follow Firestore's read-before-write requirement
-- You're in a migration phase and need to temporarily allow the pattern while refactoring
+- You work with a custom transaction abstraction that does not require read-before-write ordering.
+- You are in a short migration window where enforcing the pattern would block staged refactors.
 
 ## Further Reading
 

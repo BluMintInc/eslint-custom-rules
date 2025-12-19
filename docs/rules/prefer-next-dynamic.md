@@ -4,21 +4,25 @@
 
 🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
 
-💭 This rule requires [type information](https://typescript-eslint.io/linting/typed-linting).
+<!-- end auto-generated rule header -->
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
 
 <!-- end auto-generated rule header -->
 
 ## Description
 
-Enforce using Next.js `dynamic` for dynamically importing React components instead of custom `useDynamic` hooks. This promotes best practices, performance, and consistency in Next.js apps.
+Enforce Next.js `dynamic()` for dynamically importing React components instead of a custom `useDynamic` hook.
 
-- **Why**: Next.js `dynamic` handles code-splitting, SSR control, and optimizations. Custom wrappers like `useDynamic` are discouraged.
-- **Scope**: Flags only cases where `useDynamic(import(...))` results are used as React components (appear in JSX). Non-component dynamic imports are ignored.
+- **Why**: `dynamic()` is the supported way to ship client-only components without server rendering and to let Next.js manage code-splitting. Custom wrappers bypass these guarantees and risk shipping server-only code to the client or vice versa.
+- **Scope**: Only flags `useDynamic(import(...))` results that are used as JSX components. Non-component dynamic imports are intentionally ignored to avoid false positives.
+- **Fix**: Converts the hook call to `dynamic(() => import(...), { ssr: false })`, ensures `dynamic` is imported, and drops the unused `useDynamic` import.
 
 ## Rule Details
 
 ### Examples
-
 Bad:
 
 ```ts

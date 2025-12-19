@@ -6,6 +6,12 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 ## Rule Details
 
 Use the shared `src/components/Link` wrapper instead of importing `next/link` directly. The wrapper centralizes design system defaults, analytics hooks, and navigation safeguards. Bypassing it with `next/link` leads to inconsistent styling, missing instrumentation, and navigation paths that skip our shared behavior.

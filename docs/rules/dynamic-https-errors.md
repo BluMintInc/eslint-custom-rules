@@ -1,4 +1,8 @@
-# Keep HttpsError messages static and put request context in the third argument (`@blumintinc/blumint/dynamic-https-errors`)
+# Keep HttpsError messages static and move request-specific details to the third argument so error identifiers remain stable and debugging context is preserved (`@blumintinc/blumint/dynamic-https-errors`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

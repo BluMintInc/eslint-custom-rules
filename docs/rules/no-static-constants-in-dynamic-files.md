@@ -1,4 +1,10 @@
-# Disallow exporting SCREAMING_SNAKE_CASE constants from .dynamic files (`@blumintinc/blumint/no-static-constants-in-dynamic-files`)
+# Disallow exporting SCREAMING_SNAKE_CASE constants from .dynamic.ts/.dynamic.tsx files; move static constants to non-dynamic modules instead (`@blumintinc/blumint/no-static-constants-in-dynamic-files`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
+💼 This rule is enabled in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
 

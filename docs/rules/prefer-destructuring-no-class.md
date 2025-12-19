@@ -6,6 +6,18 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
+## Why this rule?
+
+- For plain objects, dot assignments scatter property reads and hide the dependency between a variable and its source object. Destructuring declares the dependency once and keeps aliases aligned when object shapes change.
+- Destructuring avoids duplicating property names and makes renames explicit, which reduces drift when refactoring.
+- Class instances are exempt because destructuring methods or fields can unbind `this` or copy mutable instance state in ways that diverge from the class semantics.
+
 ## Options
 
 This rule accepts an options object with the following properties:
@@ -39,6 +51,11 @@ const age = user.age;
 
 // With enforceForRenamedProperties: true
 const userName = user.name;
+
+// Assignment expressions also need destructuring
+let role;
+const user = { role: 'admin' };
+role = user.role;
 ```
 
 ### ✅ Correct
@@ -50,6 +67,11 @@ const { name, age } = user;
 
 // With enforceForRenamedProperties: true
 const { name: userName } = user;
+
+// Assignment expressions
+let role;
+const user = { role: 'admin' };
+({ role } = user);
 
 // Class instances are always exempt
 class User {
