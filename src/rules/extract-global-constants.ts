@@ -170,7 +170,8 @@ function analyzeDeclarator(
     hasAsConstAssertion:
       !isFunctionOrMutable && init ? isAsConstExpression(init) : false,
     hasReportableIdentifier:
-      declaration.id?.type === AST_NODE_TYPES.Identifier && !isFunctionOrMutable,
+      declaration.id?.type === AST_NODE_TYPES.Identifier &&
+      !isFunctionOrMutable,
   };
 }
 
@@ -209,7 +210,8 @@ export const extractGlobalConstants: TSESLint.RuleModule<
 
           hasDependencies ||= analysis.hasDependencies;
           hasAsConstAssertion ||= analysis.hasAsConstAssertion;
-          hasReportableIdentifierDeclaration ||= analysis.hasReportableIdentifier;
+          hasReportableIdentifierDeclaration ||=
+            analysis.hasReportableIdentifier;
         }
 
         if (hasFunctionOrMutableValue) {

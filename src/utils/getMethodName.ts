@@ -21,7 +21,10 @@ export type GetMethodNameOptions = {
 const getKeyName = (
   key: TSESTree.Node,
   sourceCode: Readonly<{ getText: (node: TSESTree.Node) => string }>,
-  { privateIdentifierPrefix = '', computedFallbackToText = true }: GetMethodNameOptions,
+  {
+    privateIdentifierPrefix = '',
+    computedFallbackToText = true,
+  }: GetMethodNameOptions,
 ): string => {
   if (key.type === AST_NODE_TYPES.Identifier) {
     return key.name;
@@ -72,4 +75,3 @@ export const getMemberExpressionName = (
 ): string => {
   return getKeyName(member.property, sourceCode, options);
 };
-

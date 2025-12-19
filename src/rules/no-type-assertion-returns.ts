@@ -112,30 +112,30 @@ function isArrayIncludesCheck(
 export const noTypeAssertionReturns = createRule<Options, MessageIds>({
   name: 'no-type-assertion-returns',
   meta: {
-  type: 'suggestion',
-  docs: {
-    description:
-      'Enforce typing variables before returning them, rather than using type assertions or explicit return types',
-    recommended: 'error',
-    requiresTypeChecking: false,
-  },
-  fixable: 'code',
-  schema: [
-    {
-      type: 'object',
-      properties: {
-        allowAsConst: { type: 'boolean' },
-        allowTypePredicates: { type: 'boolean' },
-      },
-      additionalProperties: false,
+    type: 'suggestion',
+    docs: {
+      description:
+        'Enforce typing variables before returning them, rather than using type assertions or explicit return types',
+      recommended: 'error',
+      requiresTypeChecking: false,
     },
-  ],
-  messages: {
-    noTypeAssertionReturns:
-      'Return value uses a type assertion to "{{assertedType}}", which bypasses TypeScript checks and can hide missing or invalid data. Create a typed variable or add a narrowing step before returning so the value is validated without casting.',
-    useExplicitVariable:
-      'Return type "{{returnType}}" is declared while returning an unchecked expression, so TypeScript trusts the annotation instead of validating the value. Assign the expression to a typed variable or narrow it first, then return that variable.',
-  },
+    fixable: 'code',
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          allowAsConst: { type: 'boolean' },
+          allowTypePredicates: { type: 'boolean' },
+        },
+        additionalProperties: false,
+      },
+    ],
+    messages: {
+      noTypeAssertionReturns:
+        'Return value uses a type assertion to "{{assertedType}}", which bypasses TypeScript checks and can hide missing or invalid data. Create a typed variable or add a narrowing step before returning so the value is validated without casting.',
+      useExplicitVariable:
+        'Return type "{{returnType}}" is declared while returning an unchecked expression, so TypeScript trusts the annotation instead of validating the value. Assign the expression to a typed variable or narrow it first, then return that variable.',
+    },
   },
   defaultOptions: [defaultOptions],
   create(context, [options]) {
@@ -162,7 +162,9 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
       });
     }
 
-    function reportReturnTypeAnnotation(typeAnnotation: TSESTree.TSTypeAnnotation) {
+    function reportReturnTypeAnnotation(
+      typeAnnotation: TSESTree.TSTypeAnnotation,
+    ) {
       context.report({
         node: typeAnnotation,
         messageId: 'useExplicitVariable',

@@ -351,7 +351,8 @@ module.exports = {
     'no-uuidv4-base62-as-key': noUuidv4Base62AsKey,
     'enforce-dynamic-file-naming': enforceDynamicFileNaming,
     'prefer-fragment-shorthand': preferFragmentShorthand,
-    'prefer-getter-over-parameterless-method': preferGetterOverParameterlessMethod,
+    'prefer-getter-over-parameterless-method':
+      preferGetterOverParameterlessMethod,
     'prefer-type-over-interface': preferTypeOverInterface,
     'prefer-type-alias-over-typeof-constant': preferTypeAliasOverTypeofConstant,
     'require-memo': requireMemo,

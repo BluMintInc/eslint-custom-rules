@@ -177,7 +177,10 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
 
       const normalize = (text: string) => {
         if (indentToAdjustment > 0) {
-          return text.replace(new RegExp(`^[ \\t]{0,${indentToAdjustment}}`), '');
+          return text.replace(
+            new RegExp(`^[ \\t]{0,${indentToAdjustment}}`),
+            '',
+          );
         }
         if (indentToAdjustment < 0) {
           return ' '.repeat(-indentToAdjustment) + text;
@@ -225,9 +228,14 @@ export const jsdocAboveField = createRule<Options, MessageIds>({
       let removalStart = comment.range[0];
       const removalEnd = comment.range[1];
       const lineStart = insertTarget.range[0] - insertTarget.loc.start.column;
-      const textBeforeNode = sourceCode.text.slice(lineStart, insertTarget.range[0]);
+      const textBeforeNode = sourceCode.text.slice(
+        lineStart,
+        insertTarget.range[0],
+      );
       const hasCodeBeforeNode = /\S/.test(textBeforeNode);
-      const insertionPoint = hasCodeBeforeNode ? insertTarget.range[0] : lineStart;
+      const insertionPoint = hasCodeBeforeNode
+        ? insertTarget.range[0]
+        : lineStart;
       const insertionText = hasCodeBeforeNode
         ? `\n${commentText}\n${indent}`
         : `${commentText}\n`;

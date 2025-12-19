@@ -944,9 +944,7 @@ describe('extract-global-constants visitor safety', () => {
       visitVariableDeclaration({
         type: AST_NODE_TYPES.VariableDeclaration,
         kind: 'const',
-        declarations: [
-          undefined as unknown as TSESTree.VariableDeclarator,
-        ],
+        declarations: [undefined as unknown as TSESTree.VariableDeclarator],
         parent: null as unknown as TSESTree.Node,
       } as TSESTree.VariableDeclaration),
     ).not.toThrow();

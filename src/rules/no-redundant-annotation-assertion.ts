@@ -19,7 +19,7 @@ const TYPE_FORMAT_FLAGS =
   ts.TypeFormatFlags.UseFullyQualifiedType |
   ts.TypeFormatFlags.UseStructuralFallback;
 
-function getAssertionTypeNode(
+function extractAssertionTypeNode(
   expression: TSESTree.Node | null | undefined,
 ): TSESTree.TypeNode | null {
   if (!expression) return null;
@@ -56,7 +56,7 @@ function recordReturnStatement(
 ): void {
   if (!node.argument) return;
 
-  const assertion = getAssertionTypeNode(node.argument);
+  const assertion = extractAssertionTypeNode(node.argument);
   if (assertion) assertions.push(assertion);
 }
 
@@ -85,9 +85,10 @@ function addChildNodesToStack(
   }
 }
 
-function collectReturnInfo(
-  body: TSESTree.BlockStatement,
-): { assertions: TSESTree.TypeNode[]; returnCount: number } {
+function collectReturnInfo(body: TSESTree.BlockStatement): {
+  assertions: TSESTree.TypeNode[];
+  returnCount: number;
+} {
   const assertions: TSESTree.TypeNode[] = [];
   let returnCount = 0;
   const stack: TSESTree.Node[] = [...body.body];
@@ -157,7 +158,8 @@ function typeText(type: ts.Type, checker: ts.TypeChecker): string {
 }
 
 function unwrapAlias(type: ts.Type, checker: ts.TypeChecker): ts.Type {
-  const aliasSymbol = (type as ts.Type & { aliasSymbol?: ts.Symbol }).aliasSymbol;
+  const aliasSymbol = (type as ts.Type & { aliasSymbol?: ts.Symbol })
+    .aliasSymbol;
   if (!aliasSymbol) return type;
 
   if ((aliasSymbol.flags & ts.SymbolFlags.Alias) !== 0) {
@@ -293,11 +295,13 @@ function areTypesIdentical(
 ): boolean {
   if (annotationType === assertionType) return true;
 
-  const isTypeIdenticalTo = (checker as {
-    isTypeIdenticalTo?: (a: ts.Type, b: ts.Type) => boolean;
-  }).isTypeIdenticalTo;
+  const isTypeIdenticalTo = (
+    checker as {
+      isTypeIdenticalTo?: (a: ts.Type, b: ts.Type) => boolean;
+    }
+  ).isTypeIdenticalTo;
 
-  // Guard the internal TypeScript helper; newer compiler versions may drop or change it.
+  /** Guard the internal TypeScript helper; newer compiler versions may drop or change it. */
   if (typeof isTypeIdenticalTo !== 'function') {
     return false;
   }
@@ -310,11 +314,13 @@ function areTypesAssignableBothWays(
   assertionType: ts.Type,
   checker: ts.TypeChecker,
 ): boolean {
-  const isTypeAssignableTo = (checker as {
-    isTypeAssignableTo?: (a: ts.Type, b: ts.Type) => boolean;
-  }).isTypeAssignableTo;
+  const isTypeAssignableTo = (
+    checker as {
+      isTypeAssignableTo?: (a: ts.Type, b: ts.Type) => boolean;
+    }
+  ).isTypeAssignableTo;
 
-  // Guard for checker.isTypeAssignableTo which may be absent from some d.ts versions.
+  /** Guard for checker.isTypeAssignableTo which may be absent from some d.ts versions. */
   if (typeof isTypeAssignableTo !== 'function') {
     return false;
   }
@@ -377,8 +383,15 @@ function areTypesEffectivelyEqual(
   return assignableBothWays && textMatches;
 }
 
-// Compare annotation and assertion types across identity, assignability, and
-// multiple textual forms so equivalent aliases still count as redundant.
+/**
+ * Compare annotation and assertion types across identity, assignability, and
+ * multiple textual forms so equivalent aliases still count as redundant.
+ * @param annotation The type annotation node to compare.
+ * @param assertion The type assertion node to compare.
+ * @param checker The TypeScript type checker.
+ * @param services The parser services.
+ * @returns The matching type string if the types are effectively equal, null otherwise.
+ */
 function haveMatchingTypes(
   annotation: TSESTree.TypeNode,
   assertion: TSESTree.TypeNode,
@@ -444,7 +457,7 @@ function getReturnAssertion(
 
   if (!body) return null;
 
-  return getAssertionTypeNode(body);
+  return extractAssertionTypeNode(body);
 }
 
 export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
@@ -467,8 +480,8 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     const sourceCode =
-      (context as typeof context & { sourceCode?: TSESLint.SourceCode }).sourceCode ??
-      context.getSourceCode?.();
+      (context as typeof context & { sourceCode?: TSESLint.SourceCode })
+        .sourceCode ?? context.getSourceCode?.();
     const parserServices = sourceCode?.parserServices ?? context.parserServices;
 
     if (
@@ -517,7 +530,7 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
           return;
         }
 
-        const assertionType = getAssertionTypeNode(node.init);
+        const assertionType = extractAssertionTypeNode(node.init);
         if (!assertionType) return;
 
         reportIfRedundant(
@@ -528,9 +541,15 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
         );
       },
       PropertyDefinition(node) {
-        if (!node.typeAnnotation || !node.value || node.optional || node.definite) return;
+        if (
+          !node.typeAnnotation ||
+          !node.value ||
+          node.optional ||
+          node.definite
+        )
+          return;
 
-        const assertionType = getAssertionTypeNode(node.value);
+        const assertionType = extractAssertionTypeNode(node.value);
         if (!assertionType) return;
 
         reportIfRedundant(

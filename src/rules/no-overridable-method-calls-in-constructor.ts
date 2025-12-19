@@ -89,9 +89,7 @@ export const noOverridableMethodCallsInConstructor = createRule<[], MessageIds>(
        * Gets the method name from a method definition
        */
       function getMethodNameFromDefinition(
-        method:
-          | TSESTree.MethodDefinition
-          | TSESTree.TSAbstractMethodDefinition,
+        method: TSESTree.MethodDefinition | TSESTree.TSAbstractMethodDefinition,
       ): string | null {
         const name = getMethodName(method, sourceCode, {
           computedFallbackToText: false,

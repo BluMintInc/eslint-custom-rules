@@ -20,14 +20,16 @@ ruleTesterTs.run(
           }
         }
       `,
-        filename: 'functions/src/util/tournaments/moderation/DisputeDetector.ts',
+        filename:
+          'functions/src/util/tournaments/moderation/DisputeDetector.ts',
       },
       {
         code: `
         const hasDispute = true;
         const isDisputed = false;
       `,
-        filename: 'functions/src/util/tournaments/moderation/DisputeDetector.ts',
+        filename:
+          'functions/src/util/tournaments/moderation/DisputeDetector.ts',
       },
     ],
     invalid: [
@@ -36,7 +38,8 @@ ruleTesterTs.run(
         code: `
         const isDisallowed = true;
       `,
-        filename: 'functions/src/util/tournaments/moderation/DisputeDetector.ts',
+        filename:
+          'functions/src/util/tournaments/moderation/DisputeDetector.ts',
         errors: [{ messageId: 'avoidNegativeNaming' }],
       },
     ],
