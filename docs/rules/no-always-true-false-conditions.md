@@ -4,52 +4,77 @@
 
 <!-- end auto-generated rule header -->
 
-Unreachable branches and dead code often come from conditions that can never change (e.g., `if (true)`, `while (0)`, `'foo' === 'foo'`). This rule flags conditions that the rule can prove are always truthy or always falsy so you can simplify control flow or fix likely bugs.
+Conditions that the linter can prove are always true or always false create unreachable branches and redundant guards. The rule reports the specific constant expression in each lint message so you can see which part of the condition is ineffective and simplify the control flow.
 
 ## Rule Details
 
-The rule evaluates many constant patterns and reports when the result is known at lint time, including:
+The rule reports when the condition result is known at lint time, including:
 
 - Literal booleans (`if (true)`, `while (false)`), empty strings, `null`, `undefined`, `NaN`, and `Infinity`.
 - Literal comparisons such as `3 > 5`, `'a' === 'a'`, bitwise results that are constant, and `typeof` checks against literals.
 - Always truthy values like object/array literals used directly as conditions.
 - Switch cases whose test literal can never match (or always matches) the discriminant literal.
-- Constant results from simple calls (`/[a]/.test('b')`, `[1,2].includes(3)`, `Math.max(1,2) === 0`, `Object.keys({}).length > 0`, `JSON.stringify({ a: 1 }) === '{}'`).
+- Constant results from simple calls (`/[a]/.test('b')`, `[1, 2].includes(3)`, `Math.max(1, 2) === 0`, `Object.keys({}).length > 0`, `JSON.stringify({ a: 1 }) === '{}'`).
 
-The rule intentionally **ignores** common default-value patterns to avoid false positives:
+The rule intentionally ignores common default-value patterns to avoid false positives:
 
 - Logical fallbacks (`foo || {}`, `bar ?? defaultValue`).
 - Ternaries used as defaults (`status ? status : 'offline'`).
-- Destructuring fallbacks (`const { x } = obj || {}`) and optional chaining in similar contexts.
+- Destructuring fallbacks (`const { name = 'Unknown' } = user || {};`) and optional chaining checks (`maybe?.length`).
 
-### Examples of **incorrect** code for this rule:
+### Examples of incorrect code for this rule:
 
 ```ts
-if (true) { doWork(); }
-while (0) { retry(); }
-if ('a' === 'a') { /* always */ }
+if (true) {
+  doWork();
+}
+
+while (0) {
+  retry();
+}
+
+if ('a' === 'a') {
+  // always
+}
+
 const result = 5 > 10 ? 'yes' : 'no'; // condition always false
-if (/foo/.test('bar')) { /* never runs */ }
+
+if (/foo/.test('bar')) {
+  // never runs
+}
+
 switch (42) {
-  case 99: /* always false */ break;
+  case 99:
+    break; // always false
 }
 ```
 
-### Examples of **correct** code for this rule:
+### Examples of correct code for this rule:
 
 ```ts
-if (count > 0) log(count);
-while (shouldRetry()) retry();
-const label = status ? status : 'offline';      // default value pattern allowed
-const options = config || {};                   // fallback allowed
-if (value?.length) show(value);
+if (shouldStart) {
+  startJob();
+}
+
+while (shouldRetry()) {
+  retry();
+}
+
+const label = status ? status : 'offline'; // default value pattern allowed
+const options = config || {}; // fallback allowed
+
+if (value?.length) {
+  show(value);
+}
 ```
 
-## Options
+## How to fix
 
-This rule does not have any options.
+- Replace the constant guard with a runtime check (variables, function calls, or comparisons).
+- Remove unreachable branches when no runtime path can enter them.
+- For defaults, use the standard fallback patterns above instead of wrapping them in constant conditions.
 
 ## When Not To Use It
 
 - Generated code or tests that deliberately use constant conditions.
-- Codebases that rely heavily on compile-time constants and prefer to keep them explicit; disable locally for those cases.
+- Codebases that rely on explicit compile-time constants and prefer to keep them; disable locally for those cases.

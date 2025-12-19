@@ -192,7 +192,7 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
         return;
       }
 
-      const sourceCode = context.getSourceCode();
+      const sourceCode = context.sourceCode;
 
       node.params.forEach((param) => {
         if (isDestructuredParameter(param)) {
@@ -241,7 +241,7 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
     // Check class method parameters (including constructors)
     function checkClassMethod(node: TSESTree.MethodDefinition): void {
       const method = node.value;
-      const sourceCode = context.getSourceCode();
+      const sourceCode = context.sourceCode;
 
       method.params.forEach((param) => {
         if (isDestructuredParameter(param)) {

@@ -1,6 +1,7 @@
 import { arrayMethodsThisContext } from './rules/array-methods-this-context';
 import { classMethodsReadTopToBottom } from './rules/class-methods-read-top-to-bottom';
 import { default as consistentCallbackNaming } from './rules/consistent-callback-naming';
+import { noHandlerSuffix } from './rules/no-handler-suffix';
 import { parallelizeAsyncOperations } from './rules/parallelize-async-operations';
 import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
 import { enforceIdentifiableFirestoreType } from './rules/enforce-identifiable-firestore-type';
@@ -27,6 +28,7 @@ import { noUnpinnedDependencies } from './rules/no-unpinned-dependencies';
 import { noUnusedProps } from './rules/no-unused-props';
 import { noUselessFragment } from './rules/no-useless-fragment';
 import { preferFragmentShorthand } from './rules/prefer-fragment-shorthand';
+import { preferGetterOverParameterlessMethod } from './rules/prefer-getter-over-parameterless-method';
 import { preferTypeOverInterface } from './rules/prefer-type-over-interface';
 import { preferTypeAliasOverTypeofConstant } from './rules/prefer-type-alias-over-typeof-constant';
 import { requireMemo } from './rules/require-memo';
@@ -55,6 +57,7 @@ import { default as enforceSerializableParams } from './rules/enforce-serializab
 import { enforceRealtimedbPathUtils } from './rules/enforce-realtimedb-path-utils';
 import { enforceMemoizeAsync } from './rules/enforce-memoize-async';
 import { enforceExportedFunctionTypes } from './rules/enforce-exported-function-types';
+import { noRedundantAnnotationAssertion } from './rules/no-redundant-annotation-assertion';
 import { enforceMemoizeGetters } from './rules/enforce-memoize-getters';
 import { noRedundantParamTypes } from './rules/no-redundant-param-types';
 import { noClassInstanceDestructuring } from './rules/no-class-instance-destructuring';
@@ -135,6 +138,8 @@ import { preferUseDeepCompareMemo } from './rules/prefer-use-deep-compare-memo';
 import { noCircularReferences } from './rules/no-circular-references';
 import { noPassthroughGetters } from './rules/no-passthrough-getters';
 import { noTryCatchAlreadyExistsInTransaction } from './rules/no-try-catch-already-exists-in-transaction';
+import { noUselessUsememoPrimitives } from './rules/no-useless-usememo-primitives';
+import { jsdocAboveField } from './rules/jsdoc-above-field';
 import { enforceTransformMemoization } from './rules/enforce-transform-memoization';
 import { verticallyGroupRelatedFunctions } from './rules/vertically-group-related-functions';
 import { default as noStaticConstantsInDynamicFiles } from './rules/no-static-constants-in-dynamic-files';
@@ -185,12 +190,15 @@ module.exports = {
         '@blumintinc/blumint/no-conditional-literals-in-jsx': 'error',
         '@blumintinc/blumint/no-filter-without-return': 'error',
         '@blumintinc/blumint/no-hungarian': 'error',
+        '@blumintinc/blumint/no-handler-suffix': 'error',
         '@blumintinc/blumint/no-misused-switch-case': 'error',
         '@blumintinc/blumint/no-unpinned-dependencies': 'error',
         '@blumintinc/blumint/no-unused-props': 'error',
         '@blumintinc/blumint/no-uuidv4-base62-as-key': 'error',
         '@blumintinc/blumint/no-useless-fragment': 'error',
+        '@blumintinc/blumint/no-useless-usememo-primitives': 'error',
         '@blumintinc/blumint/prefer-fragment-shorthand': 'error',
+        '@blumintinc/blumint/prefer-getter-over-parameterless-method': 'error',
         '@blumintinc/blumint/prefer-type-over-interface': 'error',
         '@blumintinc/blumint/prefer-type-alias-over-typeof-constant': 'error',
         '@blumintinc/blumint/require-memo': 'error',
@@ -217,6 +225,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-realtimedb-path-utils': 'error',
         '@blumintinc/blumint/enforce-memoize-async': 'error',
         '@blumintinc/blumint/enforce-exported-function-types': 'error',
+        '@blumintinc/blumint/no-redundant-annotation-assertion': 'error',
         '@blumintinc/blumint/no-redundant-param-types': 'error',
         '@blumintinc/blumint/enforce-memoize-getters': 'error',
         '@blumintinc/blumint/no-class-instance-destructuring': 'error',
@@ -285,6 +294,7 @@ module.exports = {
         '@blumintinc/blumint/no-misleading-boolean-prefixes': 'error',
         '@blumintinc/blumint/prefer-url-tostring-over-tojson': 'error',
         '@blumintinc/blumint/prefer-next-dynamic': 'error',
+        '@blumintinc/blumint/jsdoc-above-field': 'error',
         '@blumintinc/blumint/no-redundant-usecallback-wrapper': 'error',
         '@blumintinc/blumint/no-array-length-in-deps': 'error',
         '@blumintinc/blumint/enforce-stable-hash-spread-props': 'error',
@@ -333,6 +343,7 @@ module.exports = {
     'no-conditional-literals-in-jsx': noConditionalLiteralsInJsx,
     'no-filter-without-return': noFilterWithoutReturn,
     'no-hungarian': noHungarian,
+    'no-handler-suffix': noHandlerSuffix,
     'no-misused-switch-case': noMisusedSwitchCase,
     'no-unpinned-dependencies': noUnpinnedDependencies,
     'no-unused-props': noUnusedProps,
@@ -340,6 +351,8 @@ module.exports = {
     'no-uuidv4-base62-as-key': noUuidv4Base62AsKey,
     'enforce-dynamic-file-naming': enforceDynamicFileNaming,
     'prefer-fragment-shorthand': preferFragmentShorthand,
+    'prefer-getter-over-parameterless-method':
+      preferGetterOverParameterlessMethod,
     'prefer-type-over-interface': preferTypeOverInterface,
     'prefer-type-alias-over-typeof-constant': preferTypeAliasOverTypeofConstant,
     'require-memo': requireMemo,
@@ -369,6 +382,7 @@ module.exports = {
     'enforce-realtimedb-path-utils': enforceRealtimedbPathUtils,
     'enforce-memoize-async': enforceMemoizeAsync,
     'enforce-exported-function-types': enforceExportedFunctionTypes,
+    'no-redundant-annotation-assertion': noRedundantAnnotationAssertion,
     'no-redundant-param-types': noRedundantParamTypes,
     'enforce-memoize-getters': enforceMemoizeGetters,
     'no-class-instance-destructuring': noClassInstanceDestructuring,
@@ -421,6 +435,7 @@ module.exports = {
     'omit-index-html': omitIndexHtml,
     'enforce-id-capitalization': enforceIdCapitalization,
     'no-unused-usestate': noUnusedUseState,
+    'no-useless-usememo-primitives': noUselessUsememoPrimitives,
     'prefer-usecallback-over-usememo-for-functions':
       preferUseCallbackOverUseMemoForFunctions,
     'no-margin-properties': noMarginProperties,
@@ -441,6 +456,7 @@ module.exports = {
     'no-misleading-boolean-prefixes': noMisleadingBooleanPrefixes,
     'prefer-url-tostring-over-tojson': preferUrlToStringOverToJson,
     'prefer-next-dynamic': preferNextDynamic,
+    'jsdoc-above-field': jsdocAboveField,
     'no-redundant-usecallback-wrapper': noRedundantUseCallbackWrapper,
     'no-array-length-in-deps': noArrayLengthInDeps,
     'prefer-use-deep-compare-memo': preferUseDeepCompareMemo,

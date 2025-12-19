@@ -139,10 +139,7 @@ ruleTesterTs.run('no-memoize-on-static', noMemoizeOnStatic, {
           }
         }
       `,
-      errors: [
-        error('method1'),
-        error('method2'),
-      ],
+      errors: [error('method1'), error('method2')],
     },
     // Nested class with @Memoize() on static method
     {
@@ -200,10 +197,7 @@ ruleTesterTs.run('no-memoize-on-static', noMemoizeOnStatic, {
           }
         }
       `,
-      errors: [
-        error('method1'),
-        error('method2'),
-      ],
+      errors: [error('method1'), error('method2')],
     },
     // Static getter with @Memoize()
     {

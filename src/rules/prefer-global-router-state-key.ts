@@ -28,7 +28,7 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode;
     // Track imports from queryKeys.ts
     const queryKeyImports = new Map<
       string,
@@ -227,6 +227,42 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
       return `QUERY_KEY_${normalizedKey}`;
     }
 
+    /**
+     * Helper to find a key in an import map based on a predicate
+     */
+    function findImportKey<T>(
+      importMap: Map<string, T>,
+      predicate: (value: T) => boolean,
+    ): string | undefined {
+      return Array.from(importMap.entries()).find(([, value]) =>
+        predicate(value),
+      )?.[0];
+    }
+
+    /**
+     * Helper to find the last directive prologue in a statement list
+     */
+    function findLastDirective(
+      body: TSESTree.Statement[],
+    ): TSESTree.ExpressionStatement | undefined {
+      let lastDirective: TSESTree.ExpressionStatement | undefined;
+
+      for (const stmt of body) {
+        if (
+          stmt.type === AST_NODE_TYPES.ExpressionStatement &&
+          stmt.expression.type === AST_NODE_TYPES.Literal &&
+          typeof stmt.expression.value === 'string' &&
+          typeof stmt.directive === 'string'
+        ) {
+          lastDirective = stmt;
+          continue;
+        }
+        break;
+      }
+
+      return lastDirective;
+    }
+
     return {
       // Track imports from queryKeys.ts
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
@@ -310,26 +346,48 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                           if (suggestedConstant) {
                             const fixes: TSESLint.RuleFix[] = [];
 
-                            // 1) Replace the literal with the constant
-                            fixes.push(
-                              fixer.replaceText(keyValue, suggestedConstant),
+                            const namespaceAlias = findImportKey(
+                              namespaceImports,
+                              isQueryKeysSource,
+                            );
+                            const defaultAlias = findImportKey(
+                              defaultImports,
+                              isQueryKeysSource,
                             );
 
-                            // 2) Ensure an import exists for the suggested constant
-                            const sourceCode = context.getSourceCode();
-                            const alreadyImportedNamed = Array.from(
-                              queryKeyImports.values(),
-                            ).some(
+                            // Check if the constant is already imported (possibly with an alias)
+                            const existingNamedImport = findImportKey(
+                              queryKeyImports,
                               (info) =>
                                 isQueryKeysSource(info.source) &&
                                 info.imported === suggestedConstant,
                             );
-                            const hasNamespaceOrDefault =
-                              namespaceImports.size > 0 ||
-                              defaultImports.size > 0;
+                            const localName = existingNamedImport;
+
+                            const importAlias = namespaceAlias ?? defaultAlias;
+                            const formatConstantReference = (
+                              alias: string | undefined,
+                              constant: string,
+                            ): string =>
+                              alias ? `${alias}.${constant}` : constant;
+
+                            const replacementText = localName
+                              ? localName
+                              : formatConstantReference(
+                                  importAlias,
+                                  suggestedConstant,
+                                );
+
+                            // 1) Replace the literal with the constant (qualify if alias exists)
+                            fixes.push(
+                              fixer.replaceText(keyValue, replacementText),
+                            );
+
+                            // 2) Ensure an import exists for the suggested constant
+                            const hasNamespaceOrDefault = Boolean(importAlias);
 
                             if (
-                              !alreadyImportedNamed &&
+                              !existingNamedImport &&
                               !hasNamespaceOrDefault
                             ) {
                               const importText = `import { ${suggestedConstant} } from '@/util/routing/queryKeys';\n`;
@@ -346,12 +404,25 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                                   ),
                                 );
                               } else {
-                                fixes.push(
-                                  fixer.insertTextBeforeRange(
-                                    [0, 0],
-                                    importText,
-                                  ),
+                                const lastDirective = findLastDirective(
+                                  sourceCode.ast.body,
                                 );
+
+                                if (lastDirective) {
+                                  fixes.push(
+                                    fixer.insertTextAfter(
+                                      lastDirective,
+                                      `\n${importText}`,
+                                    ),
+                                  );
+                                } else {
+                                  fixes.push(
+                                    fixer.insertTextBeforeRange(
+                                      [0, 0],
+                                      importText,
+                                    ),
+                                  );
+                                }
                               }
                             }
 

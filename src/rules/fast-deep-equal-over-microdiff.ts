@@ -27,7 +27,7 @@ export const fastDeepEqualOverMicrodiff = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode;
     let hasFastDeepEqualImport = false;
     let hasMicrodiffImport = false;
     let microdiffImportName = 'diff';
