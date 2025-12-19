@@ -36,8 +36,10 @@ function getAssertionTypeNode(
 }
 
 function isTraversalBoundary(node: TSESTree.Node): boolean {
-  // Nested functions/classes have their own return semantics; inner returns should not
-  // influence the outer function's return-type check.
+  /**
+   * Nested functions/classes have their own return semantics; inner returns should not
+   * influence the outer function's return-type check.
+   */
   return (
     node.type === AST_NODE_TYPES.FunctionDeclaration ||
     node.type === AST_NODE_TYPES.FunctionExpression ||
@@ -116,9 +118,11 @@ function findTypeAnnotationStart(
 
   let removalStart = start;
 
-  // Scan backward to remove any whitespace before `: Type`, but avoid consuming tokens
-  // that belong to the declared name (e.g. `!` definite assignment assertions or `?`
-  // optional markers).
+  /**
+   * Scan backward to remove any whitespace before `: Type`, but avoid consuming tokens
+   * that belong to the declared name (e.g. `!` definite assignment assertions or `?`
+   * optional markers).
+   */
   for (let i = start - 1; i >= 0; i -= 1) {
     const char = text.charAt(i);
 
