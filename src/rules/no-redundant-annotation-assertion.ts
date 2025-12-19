@@ -344,6 +344,35 @@ function selectMatchingTypeRepresentation(
   return representations.annotationText;
 }
 
+/**
+ * Checks if two types are effectively equal for the purpose of identifying redundant assertions.
+ * Types are effectively equal if they are:
+ * 1. Identical according to TypeScript's internal identity check.
+ * 2. Or, they are assignable both ways AND share at least one string representation
+ *    (canonical, structural, or default formatting).
+ */
+function areTypesEffectivelyEqual(
+  annotationType: ts.Type,
+  assertionType: ts.Type,
+  representations: TypeRepresentations,
+  checker: ts.TypeChecker,
+): boolean {
+  const identical = areTypesIdentical(annotationType, assertionType, checker);
+
+  if (identical) {
+    return true;
+  }
+
+  const assignableBothWays = areTypesAssignableBothWays(
+    annotationType,
+    assertionType,
+    checker,
+  );
+  const textMatches = doTypeTextsMatch(representations);
+
+  return assignableBothWays && textMatches;
+}
+
 // Compare annotation and assertion types across identity, assignability, and
 // multiple textual forms so equivalent aliases still count as redundant.
 function haveMatchingTypes(
@@ -363,15 +392,14 @@ function haveMatchingTypes(
     checker,
   );
 
-  const identical = areTypesIdentical(annotationType, assertionType, checker);
-  const assignableBothWays = areTypesAssignableBothWays(
-    annotationType,
-    assertionType,
-    checker,
-  );
-  const textMatches = doTypeTextsMatch(representations);
-
-  if (!identical && (!assignableBothWays || !textMatches)) {
+  if (
+    !areTypesEffectivelyEqual(
+      annotationType,
+      assertionType,
+      representations,
+      checker,
+    )
+  ) {
     return null;
   }
 
