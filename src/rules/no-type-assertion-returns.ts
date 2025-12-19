@@ -132,9 +132,9 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
   ],
   messages: {
     noTypeAssertionReturns:
-      'Return value uses a type assertion to "{{assertedType}}", which bypasses TypeScript checks and can hide missing or invalid data. Create a typed variable or add a narrowing step before returning so the value is validated without casting.',
+      'What\'s wrong: Return value uses a type assertion to "{{assertedType}}", which bypasses TypeScript checks. → Why it matters: Casts can hide missing or invalid data and let unsafe values reach callers without compile-time errors. → How to fix: Create a typed variable or add a narrowing step before returning so the value is validated by the type system instead of forced with a cast.',
     useExplicitVariable:
-      'Return type "{{returnType}}" is declared while returning an unchecked expression, so TypeScript trusts the annotation instead of validating the value. Assign the expression to a typed variable or narrow it first, then return that variable.',
+      'What\'s wrong: Return type "{{returnType}}" is declared while returning an unchecked expression, so TypeScript trusts the annotation instead of validating the actual value. → Why it matters: This hides mismatches between implementation and contract, letting incorrect return values propagate without type errors. → How to fix: Assign the expression to a typed variable or narrow it first, then return that variable so TypeScript can verify it against the declared return type.',
   },
   },
   defaultOptions: [defaultOptions],

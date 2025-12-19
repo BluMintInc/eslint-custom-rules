@@ -19,7 +19,7 @@ const TYPE_FORMAT_FLAGS =
   ts.TypeFormatFlags.UseFullyQualifiedType |
   ts.TypeFormatFlags.UseStructuralFallback;
 
-function getAssertionTypeNode(
+function extractAssertionTypeNode(
   expression: TSESTree.Node | null | undefined,
 ): TSESTree.TypeNode | null {
   if (!expression) return null;
@@ -56,7 +56,7 @@ function recordReturnStatement(
 ): void {
   if (!node.argument) return;
 
-  const assertion = getAssertionTypeNode(node.argument);
+  const assertion = extractAssertionTypeNode(node.argument);
   if (assertion) assertions.push(assertion);
 }
 
@@ -444,7 +444,7 @@ function getReturnAssertion(
 
   if (!body) return null;
 
-  return getAssertionTypeNode(body);
+  return extractAssertionTypeNode(body);
 }
 
 export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
@@ -517,7 +517,7 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
           return;
         }
 
-        const assertionType = getAssertionTypeNode(node.init);
+        const assertionType = extractAssertionTypeNode(node.init);
         if (!assertionType) return;
 
         reportIfRedundant(
@@ -530,7 +530,7 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
       PropertyDefinition(node) {
         if (!node.typeAnnotation || !node.value || node.optional || node.definite) return;
 
-        const assertionType = getAssertionTypeNode(node.value);
+        const assertionType = extractAssertionTypeNode(node.value);
         if (!assertionType) return;
 
         reportIfRedundant(
