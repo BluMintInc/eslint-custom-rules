@@ -1,4 +1,4 @@
-# Enforce the use of toString() over toJSON() on URL objects. Prefer passing URL objects directly to JSON.stringify, which will call toJSON automatically (`@blumintinc/blumint/prefer-url-tostring-over-tojson`)
+# Enforce the use of toString() over toJSON() on URL objects (`@blumintinc/blumint/prefer-url-tostring-over-tojson`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

@@ -6,8 +6,6 @@
 
 <!-- end auto-generated rule header -->
 
-💭 This rule does not require type information.
-
 Prevent wrapping already memoized callbacks from hooks/contexts with an extra `useCallback`.
 
 ## Why

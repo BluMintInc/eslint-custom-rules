@@ -4,61 +4,87 @@
 
 <!-- end auto-generated rule header -->
 
+This rule identifies usage of non-transactional Firestore operations within a transaction scope. Mixing these can lead to race conditions and inconsistent data, as transactional reads must occur before any writes, and all operations within a transaction should use the transaction object.
+
 ## Rule Details
 
-Firestore only guarantees atomicity when every read and write inside `runTransaction` uses the transaction object provided to the callback. Instantiating non-transactional helpers inside the callback (for example, `DocSetter`, `FirestoreDocFetcher`, or `FirestoreFetcher`) performs reads and writes outside that transaction. Those calls are not retried with the transaction and can commit even if the transaction aborts, leaving partial data or stale reads.
+Within a `db.runTransaction()` callback or functions that receive a `FirebaseFirestore.Transaction` as a parameter, you must ensure that all Firestore operations are aware of the transaction.
 
-This rule flags new expressions for non-transactional helpers inside transaction scopes and directs you to their transaction-aware counterparts.
+- For **writes** using `DocSetter`, you should use `DocSetterTransaction` and pass the transaction object in the options.
+- For **reads** using `FirestoreDocFetcher` or `FirestoreFetcher`, you should pass `{ transaction: tx }` to the constructor or the `fetch()` method.
 
-## Lint Message
+### Why It Matters
 
-`Non-transactional Firestore helper "{{ className }}" is instantiated inside a transaction callback, so its reads and writes bypass the transaction context. That breaks Firestore's atomicity guarantees and can commit partial updates. Use the transaction-safe "{{ transactionalClass }}" and pass the provided transaction so every operation participates in the same commit.`
-
-## Why Mixing Contexts Is Risky
-
-- Atomicity: writes performed outside the transaction can commit while the transaction retries, leaving partial updates.
-- Consistency: reads that skip the transaction return stale data and ignore pending writes in the transaction’s view.
-- Side effects and billing: helpers invoked in a retried transaction callback can run multiple times even though their work is not tied to the transaction, causing duplicate side effects or extra billing.
+1.  **Atomicity**: Non-transactional operations happen outside the transaction's atomic scope.
+2.  **Consistency**: Mixing operations can violate Firestore's requirement that all reads must precede all writes in a transaction.
+3.  **Isolation**: Non-transactional reads might see partially applied changes from other concurrent transactions.
 
 ## How to Fix
 
-- Inside transaction callbacks, use `DocSetterTransaction`, `FirestoreDocFetcherTransaction`, or `FirestoreFetcherTransaction`.
-- Pass the provided transaction object to the helper (for example, `{ transaction: tx }`) so every operation participates in the same commit.
-- Keep non-transactional helpers outside the transaction, or refactor them to accept the transaction object.
+### For Reads (FirestoreDocFetcher / FirestoreFetcher)
+
+Pass the transaction object to the constructor or the `fetch` method:
+
+```typescript
+await db.runTransaction(async (tx) => {
+  // Option 1: Pass to constructor
+  const fetcher = new FirestoreDocFetcher(ref, { transaction: tx });
+  const data = await fetcher.fetch();
+
+  // Option 2: Pass to fetch method
+  const fetcher2 = new FirestoreDocFetcher(ref);
+  const data2 = await fetcher2.fetch({ transaction: tx });
+});
+```
+
+### For Writes (DocSetter)
+
+Use `DocSetterTransaction` instead of `DocSetter`:
+
+```typescript
+await db.runTransaction(async (tx) => {
+  // INCORRECT: new DocSetter(ref).set(...)
+  const setter = new DocSetterTransaction(ref, { transaction: tx }); // CORRECT
+  await setter.set(data);
+});
+```
 
 ## Examples
 
-### ❌ Incorrect
+### Examples of incorrect code for this rule:
 
 ```typescript
 await db.runTransaction(async (tx) => {
-  const setter = new DocSetter(ref); // ❌ bypasses the transaction
-  await setter.set(doc);
+  const fetcher = new FirestoreDocFetcher(ref);
+  const data = await fetcher.fetch(); // Missing transaction
 });
+
+await db.runTransaction(async (tx) => {
+  const setter = new DocSetter(ref); // Non-transactional setter
+  await setter.set(data);
+});
+
+async function updateData(tx: FirebaseFirestore.Transaction) {
+  const fetcher = new FirestoreDocFetcher(ref);
+  await fetcher.fetch(); // Missing transaction in helper
+}
 ```
+
+### Examples of correct code for this rule:
 
 ```typescript
 await db.runTransaction(async (tx) => {
-  const fetcher = new FirestoreDocFetcher(ref); // ❌ outside transaction context
-  const doc = await fetcher.fetch();
+  const fetcher = new FirestoreDocFetcher(ref);
+  const data = await fetcher.fetch({ transaction: tx });
 });
-```
 
-### ✅ Correct
-
-```typescript
 await db.runTransaction(async (tx) => {
   const setter = new DocSetterTransaction(ref, { transaction: tx });
-  await setter.set(doc);
+  await setter.set(data);
 });
-```
 
-```typescript
-const setter = new DocSetter(ref);
-await setter.set(doc); // ✅ safe because it is outside any transaction
-
-await db.runTransaction(async (tx) => {
-  const txSetter = new DocSetterTransaction(ref, { transaction: tx });
-  await txSetter.set(otherDoc);
-});
+async function updateData(tx: FirebaseFirestore.Transaction) {
+  const fetcher = new FirestoreDocFetcher(ref);
+  await fetcher.fetch({ transaction: tx });
+}
 ```
