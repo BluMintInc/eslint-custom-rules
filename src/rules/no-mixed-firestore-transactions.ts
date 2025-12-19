@@ -265,12 +265,17 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
     }
 
     /**
-     * Reports only when a fetcher is ever used without a transaction.
-     * Constructor-level transactions make the instance always safe. If any call
-     * occurs without a transaction, we report even if other calls were safe to
-     * avoid mixed usage. If the constructor lacked a transaction but at least one
-     * call provided it, we skip reporting because the caller opted into explicit
-     * transactional use.
+     * Determines whether a fetcher instance should be reported for mixed or unsafe
+     * usage.
+     *
+     * Reporting occurs in three scenarios:
+     * 1. The constructor lacks a transaction AND any call occurs without a transaction.
+     * 2. The constructor lacks a transaction AND no calls occur at all (suspicious
+     *    unused instance in a transaction scope).
+     * 3. Constructor-level transactions make the instance always safe.
+     *
+     * If the constructor lacked a transaction but at least one call provided it, we
+     * skip reporting because the caller opted into explicit transactional use.
      */
     function shouldReportFetcher(instance: FetcherInstance): boolean {
       if (instance.constructorHasTransaction) return false;

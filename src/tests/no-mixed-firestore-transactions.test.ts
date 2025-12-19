@@ -235,6 +235,19 @@ ruleTesterTs.run(
         });
       `,
       },
+      // Valid: Concise arrow function with transaction parameter
+      {
+        code: `
+        const myHelper = (tx: FirebaseFirestore.Transaction) => new DocSetterTransaction(ref, { transaction: tx }).set(doc);
+        await db.runTransaction(async (tx) => myHelper(tx));
+      `,
+      },
+      // Valid: Concise arrow function in runTransaction
+      {
+        code: `
+        await db.runTransaction(async (tx) => new FirestoreDocFetcher(ref).fetch({ transaction: tx }));
+      `,
+      },
     ],
     invalid: [
       // Invalid: Using DocSetter inside transaction
@@ -251,6 +264,35 @@ ruleTesterTs.run(
             data: {
               className: 'DocSetter',
               transactionalClass: 'DocSetterTransaction',
+            },
+          },
+        ],
+      },
+      // Invalid: Concise arrow function with non-transactional class
+      {
+        code: `
+        const myHelper = (tx: FirebaseFirestore.Transaction) => new DocSetter(ref).set(doc);
+      `,
+        errors: [
+          {
+            messageId: 'noMixedTransactions',
+            data: {
+              className: 'DocSetter',
+              transactionalClass: 'DocSetterTransaction',
+            },
+          },
+        ],
+      },
+      // Invalid: Concise arrow function in runTransaction with non-transactional class
+      {
+        code: `
+        await db.runTransaction(async (tx) => new FirestoreDocFetcher(ref).fetch());
+      `,
+        errors: [
+          {
+            messageId: 'noMixedTransactionsFetcher',
+            data: {
+              className: 'FirestoreDocFetcher',
             },
           },
         ],
