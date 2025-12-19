@@ -8,6 +8,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 > Enforce that useMemo hooks returning React nodes are extracted into real components instead of memoized values.
 
 - ⚙️ This rule is enabled in the ✅ `recommended` config.

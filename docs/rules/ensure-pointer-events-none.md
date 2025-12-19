@@ -12,13 +12,19 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 Absolutely or fixed-positioned pseudo-elements (`::before`/`::after`) can block clicks and hovers on the elements they decorate. This rule ensures those pseudo-elements explicitly set `pointer-events: none` so decorations never intercept user input.
 
 ## Rule Details
 
 This rule reports when:
 
-- A styled-components/emotion template defines `::before` or `::after` with `position: absolute` or `position: fixed` and omits `pointer-events: none`.
+- Plain CSS, styled-components, or emotion templates define `::before` or `::after` with `position: absolute` or `position: fixed` and omit `pointer-events: none`.
 - A CSS-in-JS object for a pseudo-selector (e.g., `{ '&::before': { ... } }`) has absolute/fixed positioning without `pointerEvents: 'none'`.
 - A JSX `style={{ ... }}` object represents a pseudo-element style (via nested selector keys) and lacks `pointerEvents: 'none'`.
 
@@ -27,6 +33,11 @@ The rule allows:
 - Pseudo-elements that already specify `pointer-events`.
 - Explicit `pointer-events: auto` for intentionally interactive pseudo-elements.
 - Non-pseudo-element styles.
+
+## How to fix
+
+- Set `pointer-events: none` (or `pointerEvents: 'none'` in JS objects) on positioned pseudo-elements that are meant to be decorative overlays.
+- If the overlay must remain interactive, set `pointer-events: auto` explicitly so the intent is clear.
 
 ### Examples of **incorrect** code for this rule:
 
@@ -78,6 +89,19 @@ const styles = {
     background: 'rgba(0,0,0,0.3)',
   },
 };
+```
+
+### Styled-components overlay example
+
+```tsx
+const Overlay = styled.div`
+  &::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+  }
+`;
 ```
 
 ## Options

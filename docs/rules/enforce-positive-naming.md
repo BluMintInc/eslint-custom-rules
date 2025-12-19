@@ -8,6 +8,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 Negative boolean names force readers to mentally invert conditions (`if (!isNotReady)`) and often hide intent. This rule enforces positive, self-describing names for boolean variables, functions, parameters, properties, and class members.
 
 ## Rule Details

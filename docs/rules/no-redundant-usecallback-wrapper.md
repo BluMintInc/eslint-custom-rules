@@ -12,17 +12,28 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 💭 This rule does not require type information.
 
 Prevent wrapping already memoized callbacks from hooks/contexts with an extra `useCallback`.
 
 ## Why
 
-- Reduces unnecessary function allocations.
-- Avoids type mismatches from wrapper signatures.
-- Improves readability by passing stable callbacks directly.
+- Hook/context callbacks are already referentially stable; wrapping them in `useCallback` adds a second dependency array without improving stability and can drift from the hook's own deps.
+- Redundant wrappers hide the fact that the hook returns a stable function, forcing readers to reason about two dependency lists and a wrapper signature that does nothing.
+- Removing the wrapper keeps React's dependency tracking focused on the original callback and avoids extra allocations and needless code.
 
 ## Rule Details
+
+The rule reports `useCallback` when it only forwards a callback that was already memoized by a hook/context (identifier or member) without adding logic or changing arguments. Wrappers that transform parameters, add side effects, or pass additional arguments are allowed.
+
+Example message:
+`useCallback is wrapping memoized callback "signIn", adding a redundant dependency array without improving stability. Pass the hook/context callback directly so React keeps the original stable reference and avoids wrapper allocations and dependency drift.`
 
 Flags cases like:
 
@@ -32,7 +43,7 @@ import { useAuthSubmit } from 'src/contexts/AuthSubmitContext';
 
 function SignInButton() {
   const { signIn } = useAuthSubmit();
-  const handleSignIn = useCallback(() => signIn(), [signIn]); // ✖ redundant
+  const handleSignIn = useCallback(() => signIn(), [signIn]); // ✖ redundant wrapper around memoized callback
   return <LoadingButton onClick={handleSignIn}>Sign In</LoadingButton>;
 }
 ```

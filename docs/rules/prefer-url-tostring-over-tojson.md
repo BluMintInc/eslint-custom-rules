@@ -12,6 +12,12 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 Enforce the use of `toString()` over `toJSON()` when working with `URL` objects in JavaScript, unless explicitly serializing as part of a JSON object. Both methods return the fully qualified URL as a string, but `toJSON()` simply calls `toString()` internally. This rule promotes clarity and consistency by ensuring developers default to `toString()` unless a JSON-specific context is required, avoiding unnecessary indirection and making intent clearer in Node.js and browser codebases.
 
 - **Configuration**: ✅ Recommended
@@ -20,26 +26,33 @@ Enforce the use of `toString()` over `toJSON()` when working with `URL` objects 
 
 ## Rule Details
 
-This rule reports usage of `URL#toJSON()` and suggests either:
+`URL#toJSON()` only delegates to `toString()`. Calling it directly adds an unnecessary hop and hides that `JSON.stringify` already invokes `toJSON` on `URL` objects. The rule reports any `toJSON()` call on a `URL` instance and guides you to:
 
-- Replacing it with `URL#toString()` in general code, or
-- Passing the `URL` object directly to `JSON.stringify` if the call occurs within the argument to `JSON.stringify`. In that context, `JSON.stringify` automatically invokes `toJSON` on the `URL` object.
+- Use `toString()` when you need a string representation explicitly.
+- Pass the `URL` object directly to `JSON.stringify` so serialization remains obvious and consistent.
+
+This keeps URL serialization explicit, avoids redundant calls, and prevents readers from assuming a different JSON-specific payload.
 
 ### Incorrect
 
 ```javascript
 const url = new URL('https://example.com/path');
-console.log(url.toJSON()); // Works, but unnecessary
+console.log(url.toJSON()); // Redundant hop; same output as toString()
 ```
 
 ```javascript
 const url = new URL('https://example.com/path');
-const payload = { link: url.toJSON() }; // Not needed unless part of a JSON serialization pipeline
+const payload = { link: url.toJSON() }; // Hides that JSON.stringify will call toJSON for you
 ```
 
 ```javascript
 const u = new URL('https://e.com');
-JSON.stringify({ link: u.toJSON() }); // toJSON() is redundant here
+JSON.stringify({ link: u.toJSON() }); // JSON.stringify already invokes toJSON on URL objects
+```
+
+```javascript
+const u = new URL('https://e.com');
+u?.toJSON(); // Optional chaining still adds the redundant call
 ```
 
 ### Correct
@@ -65,7 +78,7 @@ console.log(maybeUrl?.toString());
 
 ## When Not To Use It
 
-- If your project intentionally prefers `toJSON()` to signal JSON-only usage even outside `JSON.stringify`. This is uncommon and discouraged due to redundancy with `toString()` on `URL`.
+- If your project intentionally prefers `toJSON()` to signal JSON-only usage even outside `JSON.stringify`. This is uncommon and discouraged because `URL#toJSON()` returns the same string as `toString()` and adds indirection without changing output.
 
 ## Implementation Notes
 

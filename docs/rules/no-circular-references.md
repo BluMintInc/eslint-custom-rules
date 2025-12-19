@@ -8,16 +8,25 @@
 
 <!-- end auto-generated rule header -->
 
-Disallow circular references in objects to prevent issues with JSON serialization and memory leaks.
+Circular object graphs throw during `JSON.stringify()`, keep objects reachable longer (leading to leaks), and make mutation paths harder to reason about. This rule reports any assignment or property wiring that makes an object point back to itself, directly or through another object, method, or promise callback.
 
 ## Rule Details
 
-This rule aims to detect and prevent circular references in JavaScript/TypeScript objects. A circular reference occurs when an object contains a reference to itself, either directly or indirectly through other objects. Such references can cause issues when:
+When the rule fires, the message explains which expression created the cycle and how to break it:
 
-- Attempting to serialize objects with `JSON.stringify()`
-- Managing memory and garbage collection
-- Debugging complex object structures
-- Creating infinite loops in object traversal
+> Reference "{{referenceText}}" makes this object point back to itself (directly or through other objects). Circular object graphs throw in `JSON.stringify()` and keep members reachable longer, which causes memory leaks and unexpected mutations. Store a copy or a serialize-safe identifier instead of the original object when assigning.
+
+Why this matters:
+
+- `JSON.stringify()` throws on circular structures, blocking logging, telemetry, and API payloads.
+- Cycles keep entire graphs reachable, which delays garbage collection and can leak large trees.
+- Shared references spread mutations in surprising directions, hiding the source of state changes.
+
+How to fix:
+
+- Store stable identifiers (IDs, paths) instead of assigning the original object.
+- Clone data (`structuredClone`, spread, or serialization) before attaching it back to a parent.
+- Avoid reattaching resolved values in async chains back onto the source object.
 
 ## Examples
 
@@ -28,46 +37,40 @@ Examples of **incorrect** code for this rule:
 const obj = {};
 obj.self = obj;
 
-// Indirect circular reference between two objects
+// Indirect cycle across objects
 const obj1 = {};
 const obj2 = { ref: obj1 };
 obj1.ref = obj2;
 
-// Deeply nested circular reference
-const obj = {
-  level1: {
-    level2: {}
-  }
-};
-obj.level1.level2.circular = obj;
+// Async path that reattaches the resolved value back to the source
+const obj = {};
+const promise = Promise.resolve(obj);
+promise.then((result) => (obj.self = result));
 ```
 
 Examples of **correct** code for this rule:
 
 ```ts
-// Simple object without circular references
-const obj = { key: "value" };
+// Store a serializable ID instead of the full object
+const user = { id: 'u123', name: 'Ada' };
+const profile = { userId: user.id };
 
-// Object referencing another object without circular reference
-const obj1 = { key: "value" };
-const obj2 = { ref: obj1 };
+// Clone data before attaching it back to the parent
+const original = { settings: { theme: 'dark' } };
+const snapshot = structuredClone(original.settings);
+const viewModel = { settings: snapshot };
 
-// Nested objects without circular references
-const obj1 = { key: "value" };
-const obj2 = { nested: { ref: obj1 } };
-
-// Object with toJSON method to handle serialization
-const obj = {};
-obj.toJSON = () => ({ key: "value" });
+// Keep async flows acyclic
+const obj = { id: 'u123' };
+const promise = Promise.resolve(obj);
+promise.then((result) => {
+  obj.selfId = result.id; // store a stable identifier, not the object
+});
 ```
 
 ## When Not To Use It
 
-You might want to disable this rule if:
-
-- You have a specific use case that requires circular references
-- You are implementing a custom serialization mechanism that handles circular references
-- You are working with data structures that intentionally use circular references (e.g., doubly-linked lists, graph structures)
+Consider disabling this rule when you intentionally model cyclic graphs (for example, linked structures, graph nodes, or caches) and you handle serialization or memory considerations yourself.
 
 ## Further Reading
 

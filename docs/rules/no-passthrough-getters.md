@@ -10,7 +10,18 @@
 
 ## Rule Details
 
-This rule identifies and discourages the use of unnecessary getter methods that simply return properties from a class's constructor parameters (like `this.settings.property`). These redundant getters add complexity without providing value, make the code harder to maintain, and introduce potential for errors when developers mistakenly access the wrong field. The rule promotes direct access to constructor parameters when appropriate, resulting in more maintainable and less error-prone code.
+This rule flags getters that only forward a constructor-injected object property (for example `this.settings.uid`) without adding logic. These passthrough getters expand the public API without adding behavior, hide where state actually lives, and create extra names developers must keep in sync. Prefer direct property access or add meaningful logic (validation, memoization, fallbacks, transformation) that justifies the getter.
+
+### Why it matters
+
+- A passthrough getter hides the real state location (`this.settings.uid`) behind another name, which slows down debugging and code navigation.
+- Every extra getter increases the class surface area; callers must learn both `otherResults` and `settings.otherResults` even though only one is real data.
+- Indirection invites drift: if invariants change on the constructor parameter, the passthrough getter can mask that the data source changed.
+
+### How to fix
+
+- Access the constructor parameter directly where you use it.
+- If indirection is valuable, add logic that earns the getter: memoization, validation, transformations, or defensive defaults.
 
 ## Examples
 
@@ -91,7 +102,7 @@ export class MatchAdmin {
 
 ## When to Use Getters
 
-Getters should be used when they provide value beyond simple property access, such as when they:
+Use a getter only when it adds behavior beyond simple property access, for example:
 
 1. **Perform calculations or transformations**
 2. **Apply conditional logic**
@@ -101,27 +112,15 @@ Getters should be used when they provide value beyond simple property access, su
 6. **Include type assertions or casting**
 7. **Access parent class properties** (using `super`)
 
-Simple property access doesn't warrant the additional abstraction layer of a getter.
+Simple property access alone does not justify a getter.
 
-## Edge Cases
+## Edge Cases the Rule Ignores
 
-The rule automatically exempts getters in the following scenarios:
+The rule intentionally allows getters that already add meaningful handling:
 
-- **Memoization**: Getters decorated with `@Memoize()` or other decorators
-- **Null/undefined handling**: Getters using logical operators (`||`, `??`) or conditional expressions
-- **Type assertions**: Getters that include type casting (`as Type`)
-- **Parent class access**: Getters that use the `super` keyword
-- **Optional chaining**: Getters using optional chaining (`?.`)
-- **Complex logic**: Getters with more than a simple return statement
-
-## Why This Rule Exists
-
-This rule helps prevent code bloat and maintains clarity by discouraging unnecessary abstraction. It encourages developers to:
-
-- Write more direct and readable code
-- Reduce the cognitive overhead of understanding class interfaces
-- Minimize potential points of failure
-- Avoid creating unnecessary indirection layers
-- Focus getter usage on cases where they provide actual value
-
-By following this rule, codebases become more maintainable and less prone to errors caused by accessing the wrong property or method.
+- Decorated getters (for memoization or other behaviors)
+- Null/undefined handling with logical operators or conditional expressions
+- Type assertions or casting
+- Access to parent class properties via `super`
+- Optional chaining
+- Any getter whose body contains anything besides a single bare `return` statement

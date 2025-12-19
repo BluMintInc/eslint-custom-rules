@@ -8,6 +8,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 Firestore documents must always expose an `id` to avoid ad-hoc `string` plumbing. This rule enforces that each `functions/src/types/firestore/<Name>/index.ts` file exports a type whose name matches the folder (`<Name>`) and that the type either extends `Identifiable` or includes an `id: string` field (directly or through `Resolve<...>`).
 
 ## Rule Details

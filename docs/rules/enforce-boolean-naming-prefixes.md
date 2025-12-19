@@ -12,6 +12,12 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 When you name a boolean without a clear prefix, it reads like a generic noun. In conditions, props, or configuration objects, readers cannot tell that it is a true/false value and may treat it as a string or object. This rule helps you require an approved boolean prefix so every boolean value advertises its contract at the call site.
 
 ## Rule Details

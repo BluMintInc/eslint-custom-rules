@@ -12,11 +12,22 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 Enforces the use of block comments (`/** */`) instead of single-line comments (`//`) for all declarations, including type declarations, variable declarations, and function declarations.
 
 ## Rule Details
 
-This rule aims to improve code readability and developer experience by ensuring that documentation-like comments are properly formatted as block comments. Block comments are picked up by VSCode and other IDEs for autocomplete and hover tooltips, making the codebase more maintainable and developer-friendly.
+Line comments placed directly above a declaration look like documentation but TypeScript and IDEs ignore them for hovers, signature help, and generated docs. Converting them to block comments keeps the text attached to the declaration so refactors and API exploration still show the intent.
+
+- Reports line comments immediately before declarations (functions, variables, types, interfaces, classes, properties, enums) except inside function bodies.
+- Leaves existing block comments untouched, including block ESLint directives.
+- Ignores ESLint directive comments so configuration comments remain untouched.
+- Auto-fix rewrites `//` comments into `/** ... */` while preserving the text; whitespace-only comments become `/** declaration comment */` as a generic label so the declaration still has a visible doc stub.
 
 ### ❌ Incorrect
 
@@ -37,6 +48,15 @@ interface User {
 }
 ```
 
+### Exceptions
+
+ESLint directive comments are ignored by this rule so configuration stays intact.
+
+```ts
+// eslint-disable-next-line no-unused-vars
+const ignored = true;
+```
+
 ### ✅ Correct
 
 ```ts
@@ -53,6 +73,12 @@ interface User {
   id: number;
   /** Name of user */
   name: string;
+}
+
+/* Block comments of any kind are not checked by this rule */
+/* eslint-disable no-console */
+function log() {
+  console.log('safe');
 }
 ```
 

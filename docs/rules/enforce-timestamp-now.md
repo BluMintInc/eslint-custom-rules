@@ -12,6 +12,12 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 Firestore timestamps should originate from the Firestore SDK instead of the local JavaScript clock. Converting `new Date()` or `Date.now()` into a `Timestamp` uses the machine clock, which can drift across servers, cold starts, or developer machines. That drift produces inconsistent audit fields and undermines Firestore server timestamp semantics. This rule flags backend code in `functions/src/` that builds Firestore timestamps from JS `Date` values instead of calling `Timestamp.now()`. Test files are ignored.
 
 ## Rule Details

@@ -12,21 +12,24 @@
 
 <!-- end auto-generated rule header -->
 
-Enforces the use of `Promise.all()` when multiple independent asynchronous operations are awaited sequentially.
+Parallelizing independent awaits keeps total latency bounded by the slowest call instead of the sum of every call. This rule flags back-to-back awaits with no detected dependency, loop, or per-call error boundary and suggests `Promise.all` so network and I/O overlap.
 
 ## Rule Details
 
-This rule identifies sequences of `await` expressions that could be executed concurrently using `Promise.all()` to improve performance. By parallelizing independent async operations, we can reduce execution time, which is particularly important in cloud functions where execution time directly impacts cost and user experience.
+Serializing independent async work stretches response time and wastes compute billed per millisecond. Running the calls together lets the runtime issue network or I/O requests concurrently while you preserve clarity by destructuring the results.
+
+The rule reports when all of these are true:
+- Two or more awaits or await-based variable declarations appear consecutively.
+- Later awaits do not reference identifiers created by earlier awaits (simple dependency check).
+- The awaits are not inside try blocks or loops, which signal intentional ordering or per-call error handling.
+- The calls do not match a small list of side-effect-heavy patterns (e.g., update/check counters) that should stay ordered.
 
 ### ❌ Incorrect
 
 ```typescript
 async function cleanUpReferences(params, ref) {
-  // Sequential async operations that could run in parallel
   await realtimeDb.ref(buildPath(params)).remove();
   await realtimeDb.ref(ref).remove();
-
-  return true;
 }
 ```
 
@@ -34,44 +37,24 @@ async function cleanUpReferences(params, ref) {
 
 ```typescript
 async function cleanUpReferences(params, ref) {
-  // Parallel async operations using Promise.all
   await Promise.all([
     realtimeDb.ref(buildPath(params)).remove(),
-    realtimeDb.ref(ref).remove()
+    realtimeDb.ref(ref).remove(),
   ]);
-
-  return true;
 }
 ```
 
-## When Not To Use It
+### ✅ Correct (with assignments)
 
-This rule should not be used in the following scenarios:
-
-1. **Operations with Dependencies**: When later operations depend on the results of earlier ones.
-
-   ```typescript
-   // These operations CANNOT be parallelized
-   const user = await db.collection('users').doc(userId).get();
-   const profile = await db.collection('profiles').doc(user.data().profileId).get();
-   ```
-
-2. **Individual Error Handling**: When operations need specific error handling.
-
-   ```typescript
-   // Individual error handling
-   try {
-     await operation1();
-   } catch (error) {
-     // Handle error for operation1 specifically
-   }
-
-   try {
-     await operation2();
-   } catch (error) {
-     // Handle error for operation2 specifically
-   }
-   ```
+```typescript
+async function loadProfiles(userIds) {
+  const [primary, secondary] = await Promise.all([
+    db.getProfile(userIds.primary),
+    db.getProfile(userIds.secondary),
+  ]);
+  return { primary, secondary };
+}
+```
 
    When you still want concurrency but independent error paths, prefer:
 
@@ -84,19 +67,17 @@ This rule should not be used in the following scenarios:
 
 3. **Operations with Side Effects**: When operations have side effects that affect other operations.
 
-   ```typescript
-   // The second operation might depend on side effects from the first
-   await updateCounter();
-   await checkThreshold(); // Might check the value updated by updateCounter
-   ```
+- Wrap the independent await targets in a single `Promise.all([...])`.
+- Destructure the array result when you need distinct variables.
+- Keep operations that require per-call error handling or deliberate ordering outside the combined array.
 
-4. **Operations in Loops**: Sequential awaits inside loops present a special case.
+## When Not To Use It
 
-   ```typescript
-   for (const item of items) {
-     await processItem(item);
-   }
-   ```
+Skip or disable the rule if any of the following apply:
+1. Later operations truly depend on values produced by earlier awaits.
+2. Each await needs its own try/catch or error boundary.
+3. The operations rely on ordered side effects that must not overlap.
+4. The awaits sit inside a loop where batching or chunked parallelism would be safer.
 
    ### ✅ Recommended in loops
 

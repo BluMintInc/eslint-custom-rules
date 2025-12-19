@@ -8,6 +8,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 Inline functions and freshly created objects inside JSX props change on every render. React treats them as new references, which causes child components to re-render even when props are otherwise stable. This rule enforces `useCallback` for inline functions and `useMemo` for object/array/JSX literals that contain functions so that prop references stay stable.
 
 ## Rule Details

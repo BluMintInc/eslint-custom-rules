@@ -12,6 +12,12 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 Firestore merge updates treat each field you provide as a complete value. Spreading objects or arrays into the merge payload serializes the entire nested value, bypassing Firestore's field-path merges and atomic array helpers. That can overwrite sibling fields you did not include and lose concurrent array changes.
 
 ## What does this rule prevent?

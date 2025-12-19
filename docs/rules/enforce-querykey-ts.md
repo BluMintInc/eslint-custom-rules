@@ -12,6 +12,12 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 ## Rule Details
 
 This ESLint rule enforces the use of centralized router state key constants imported from `src/util/routing/queryKeys.ts` instead of arbitrary string literals when calling router methods that accept key parameters. The rule addresses the anti-pattern of scattered string literals throughout the codebase for router state management, which leads to inconsistency, typos, and maintenance difficulties.

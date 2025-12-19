@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds = 'preferSetMerge';
 
@@ -114,9 +115,7 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
             }
 
             // Check if it's a Firestore document reference by looking at imports
-            const program = context
-              .getAncestors()
-              .find(
+            const program = ASTHelpers.getAncestors(context, node).find(
                 (node): node is TSESTree.Program =>
                   node.type === AST_NODE_TYPES.Program,
               );
@@ -262,7 +261,7 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
             fix(fixer) {
               const newText = convertUpdateToSetMerge(
                 node,
-                context.getSourceCode(),
+                context.sourceCode,
               );
               return fixer.replaceText(node, newText);
             },

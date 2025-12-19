@@ -8,6 +8,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 Ensure every callable Cloud Function file exports `Props` and `Response` types and applies them to the handler signature. This keeps the request/response contract explicit for both the callable implementation and the clients that consume it.
 
 ## Rule Details
