@@ -1,6 +1,7 @@
 import { arrayMethodsThisContext } from './rules/array-methods-this-context';
 import { classMethodsReadTopToBottom } from './rules/class-methods-read-top-to-bottom';
 import { default as consistentCallbackNaming } from './rules/consistent-callback-naming';
+import { noHandlerSuffix } from './rules/no-handler-suffix';
 import { parallelizeAsyncOperations } from './rules/parallelize-async-operations';
 import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
 import { enforceIdentifiableFirestoreType } from './rules/enforce-identifiable-firestore-type';
@@ -188,6 +189,7 @@ module.exports = {
         '@blumintinc/blumint/no-conditional-literals-in-jsx': 'error',
         '@blumintinc/blumint/no-filter-without-return': 'error',
         '@blumintinc/blumint/no-hungarian': 'error',
+        '@blumintinc/blumint/no-handler-suffix': 'error',
         '@blumintinc/blumint/no-misused-switch-case': 'error',
         '@blumintinc/blumint/no-unpinned-dependencies': 'error',
         '@blumintinc/blumint/no-unused-props': 'error',
@@ -339,6 +341,7 @@ module.exports = {
     'no-conditional-literals-in-jsx': noConditionalLiteralsInJsx,
     'no-filter-without-return': noFilterWithoutReturn,
     'no-hungarian': noHungarian,
+    'no-handler-suffix': noHandlerSuffix,
     'no-misused-switch-case': noMisusedSwitchCase,
     'no-unpinned-dependencies': noUnpinnedDependencies,
     'no-unused-props': noUnusedProps,
