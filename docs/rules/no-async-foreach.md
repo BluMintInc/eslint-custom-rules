@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 Passing an async function to `Array.forEach` does not behave like a sequential loop. `forEach` ignores returned promises, so async work runs in parallel, iterations finish before awaits complete, and rejected promises become unhandled. Use `for...of` when you need to await each item or `map` with `Promise.all` when you want deliberate concurrency.
 
 ## Rule Details

@@ -4,14 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 Inline object and array literals in JSX props create a brand-new reference on every render. React treats that as a prop change, which cascades into child components even when the literal contents are identical. Memoizing those literals with `useMemo` (or hoisting them to a stable module-level constant) keeps prop references stable and avoids wasted re-renders.
 
 ## Rule Details

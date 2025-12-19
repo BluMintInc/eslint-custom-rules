@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 ## Rule Details
 
 This rule flags functions that respond to a null or undefined argument by immediately returning null, undefined, or nothing. Passing the absence straight through hides where validation should happen, makes the function partial, and pushes callers to chase nullish values at runtime. The rule exempts React hooks (functions starting with `use`) and functions that actually transform the argument instead of just handing the emptiness back.

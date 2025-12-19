@@ -4,14 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 ## Why this rule exists
 
 Generic `utils/` directories attract unrelated helpers, which turns them into dumping grounds with unclear ownership. When utilities pile up behind a vague folder name, teammates and AI agents struggle to discover the right helper, duplicate logic, or keep track of who maintains which file. Using a singular `util/` directory encourages purpose-specific utilities—callers can infer responsibility from the path and know where to add related helpers.

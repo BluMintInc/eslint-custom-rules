@@ -4,14 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 Assert-prefixed helpers are meant to be fail-fast guards: they signal invariants, throw when those invariants break, and stop execution so the caller cannot proceed in an invalid state. If an assert helper silently returns, it hides the failure. Likewise, when a function calls an assert helper but does not carry the `assert-` prefix, callers cannot tell it will terminate on failure and may keep running after an assertion aborts. This rule enforces both sides of that contract so assertion failures are explicit and predictable.
 
 ## Rule Details

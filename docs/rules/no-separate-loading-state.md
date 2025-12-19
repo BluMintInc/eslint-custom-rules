@@ -4,14 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 ## Rule Details
 
 This rule warns when a component introduces a _second_ `useState` pair such as **`[isXLoading, setIsXLoading]`** or **`[isLoadingX, setIsLoadingX]`** whose only job is to track whether **another** piece of state is still being fetched.

@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 Pair every user-facing alert opened via `useAlertDialog` with console logging so observability captures the underlying error or warning.
 
 ## Why

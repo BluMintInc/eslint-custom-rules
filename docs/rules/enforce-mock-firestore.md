@@ -4,14 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 Ad-hoc Firestore mocks lead to inconsistent behavior across tests and fragile expectations. The repository ships a vetted `mockFirestore` helper under `__test-utils__/mockFirestore` that aligns with production usage. This rule blocks manual `jest.mock("firebase-admin"…)` Firestore stubs and imports from `firestore-jest-mock`.
 
 ## Rule Details

@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 If you call an overridable or abstract member inside a constructor, you execute subclass code before the subclass finishes initializing its fields. The subclass version can read `undefined`, mutate partially constructed state, or trigger side effects that rely on initialization that has not happened yet.
 
 ## Rule Details

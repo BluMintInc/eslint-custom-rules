@@ -2,10 +2,6 @@
 
 <!-- end auto-generated rule header -->
 
-<!-- end auto-generated rule header -->
-
-<!-- end auto-generated rule header -->
-
 This rule keeps exceptions to our dynamic import rules explicit. When you disable `@blumintinc/blumint/enforce-dynamic-imports` or `@blumintinc/blumint/require-dynamic-firebase-imports`, name the file with the `.dynamic.ts` or `.dynamic.tsx` suffix. The suffix tells reviewers that your static imports are intentional. The reverse also holds: if you choose a `.dynamic.ts(x)` filename, include a disable directive for one of those rules so the suffix is truthful signal rather than noise.
 
 Why it matters:

@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 This rule disallows `Array.filter` callbacks that use braces but never return a value. A block-bodied arrow function defaults to returning `undefined`, which `filter` treats as falsy for every element. That silently drops all items and hides the actual intent of the predicate.
 
 ## Rule Details

@@ -4,14 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 ## Why
 
 When you memoize a static member, you share one cache across every caller for the lifetime of the process. If your static method depends on request-specific context (tenant, locale, user role, or environment flags), caching the result at the class level leaks data between callers and hides configuration changes because the cache never resets with a new instance. Memoization belongs on per-request or per-instance code paths where the lifecycle is scoped and cache invalidation is predictable.

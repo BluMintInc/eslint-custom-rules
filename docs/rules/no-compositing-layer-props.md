@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 Properties such as `transform`, `filter`, `will-change`, `backdrop-filter`, and
 fractional `opacity` promote elements to their own GPU compositing layers. Each
 layer allocates texture memory and requires separate rasterization; when
