@@ -112,30 +112,34 @@ function isArrayIncludesCheck(
 export const noTypeAssertionReturns = createRule<Options, MessageIds>({
   name: 'no-type-assertion-returns',
   meta: {
-  type: 'suggestion',
-  docs: {
-    description:
-      'Enforce typing variables before returning them, rather than using type assertions or explicit return types',
-    recommended: 'error',
-    requiresTypeChecking: false,
-  },
-  fixable: 'code',
-  schema: [
-    {
-      type: 'object',
-      properties: {
-        allowAsConst: { type: 'boolean' },
-        allowTypePredicates: { type: 'boolean' },
-      },
-      additionalProperties: false,
+    type: 'suggestion',
+    docs: {
+      description:
+        'Enforce typing variables before returning them, rather than using type assertions or explicit return types',
+      recommended: 'error',
+      requiresTypeChecking: false,
     },
-  ],
-  messages: {
-    noTypeAssertionReturns:
-      'What\'s wrong: Return value uses a type assertion to "{{assertedType}}", which bypasses TypeScript checks. → Why it matters: Casts can hide missing or invalid data and let unsafe values reach callers without compile-time errors. → How to fix: Create a typed variable or add a narrowing step before returning so the value is validated by the type system instead of forced with a cast.',
-    useExplicitVariable:
-      'What\'s wrong: Return type "{{returnType}}" is declared while returning an unchecked expression, so TypeScript trusts the annotation instead of validating the actual value. → Why it matters: This hides mismatches between implementation and contract, letting incorrect return values propagate without type errors. → How to fix: Assign the expression to a typed variable or narrow it first, then return that variable so TypeScript can verify it against the declared return type.',
-  },
+    fixable: 'code',
+    schema: [
+      {
+        type: 'object',
+        properties: {
+          allowAsConst: { type: 'boolean' },
+          allowTypePredicates: { type: 'boolean' },
+        },
+        additionalProperties: false,
+      },
+    ],
+    messages: {
+      noTypeAssertionReturns:
+        `What's wrong: Return value uses a type assertion to "{{assertedType}}", which bypasses TypeScript checks. ` +
+        `→ Why it matters: Casts can hide missing or invalid data and let unsafe values reach callers without compile-time errors. ` +
+        `→ How to fix: Create a typed variable or add a narrowing step before returning so the value is validated by the type system instead of forced with a cast.`,
+      useExplicitVariable:
+        `What's wrong: Return type "{{returnType}}" is declared while returning an unchecked expression, so TypeScript trusts the annotation instead of validating the actual value. ` +
+        `→ Why it matters: This hides mismatches between implementation and contract, letting incorrect return values propagate without type errors. ` +
+        `→ How to fix: Assign the expression to a typed variable or narrow it first, then return that variable so TypeScript can verify it against the declared return type.`,
+    },
   },
   defaultOptions: [defaultOptions],
   create(context, [options]) {
@@ -162,7 +166,9 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
       });
     }
 
-    function reportReturnTypeAnnotation(typeAnnotation: TSESTree.TSTypeAnnotation) {
+    function reportReturnTypeAnnotation(
+      typeAnnotation: TSESTree.TSTypeAnnotation,
+    ) {
       context.report({
         node: typeAnnotation,
         messageId: 'useExplicitVariable',
@@ -307,7 +313,7 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
     /**
      * Check if the current file is a .f.ts file
      */
-    function isFunctionFile(context: any): boolean {
+    function isFunctionFile(): boolean {
       const filename = context.getFilename();
       return filename.endsWith('.f.ts');
     }
@@ -324,7 +330,7 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
       if (!node.returnType) return;
 
       // Skip checking return types in .f.ts files
-      if (isFunctionFile(context)) {
+      if (isFunctionFile()) {
         return;
       }
 
@@ -416,7 +422,7 @@ export const noTypeAssertionReturns = createRule<Options, MessageIds>({
           // Check for explicit return type
           if (node.returnType) {
             // Skip checking return types in .f.ts files
-            if (isFunctionFile(context)) {
+            if (isFunctionFile()) {
               return;
             }
 

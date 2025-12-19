@@ -355,11 +355,11 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
           node: firstArg,
           messageId: 'enforceFieldPathSyntax',
           data: {
-            methodName: `${getMemberExpressionName(
-              callee,
-              sourceCode,
-              { computedFallbackToText: false },
-            ) || 'set'}()`,
+            methodName: `${
+              getMemberExpressionName(callee, sourceCode, {
+                computedFallbackToText: false,
+              }) || 'set'
+            }()`,
             topLevelKey: violationDetails.topLevelKey,
             exampleFieldPath: violationDetails.exampleFieldPath,
           },

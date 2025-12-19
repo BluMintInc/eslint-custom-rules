@@ -76,9 +76,7 @@ ruleTesterTs.run('no-handler-suffix', noHandlerSuffix, {
           onEventHandler() {}
         }
       `,
-      options: [
-        { interfaceAllowlist: ['External.Events.Contracts.Handler'] },
-      ],
+      options: [{ interfaceAllowlist: ['External.Events.Contracts.Handler'] }],
     },
     // Ignored when class implementations are globally skipped
     {
@@ -267,23 +265,19 @@ describe('no-handler-suffix configuration validation', () => {
 
   it('throws when allowPatterns contains invalid regex', () => {
     expect(() =>
-      createRuleValidator(
-        {
-          ...baseContext,
-          options: [{ allowPatterns: ['[invalid'] }],
-        } as Parameters<typeof createRuleValidator>[0],
-      ),
+      createRuleValidator({
+        ...baseContext,
+        options: [{ allowPatterns: ['[invalid'] }],
+      } as Parameters<typeof createRuleValidator>[0]),
     ).toThrow(/invalid allowPatterns/i);
   });
 
   it('throws when allowPatterns contains unsafe regex', () => {
     expect(() =>
-      createRuleValidator(
-        {
-          ...baseContext,
-          options: [{ allowPatterns: ['(a+)+$'] }],
-        } as Parameters<typeof createRuleValidator>[0],
-      ),
+      createRuleValidator({
+        ...baseContext,
+        options: [{ allowPatterns: ['(a+)+$'] }],
+      } as Parameters<typeof createRuleValidator>[0]),
     ).toThrow(/unsafe allowPatterns/i);
   });
 });

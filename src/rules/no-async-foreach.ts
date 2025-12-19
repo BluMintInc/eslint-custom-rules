@@ -149,8 +149,13 @@ const getSourceCode = (context: ESLintRuleContext): TSESLint.SourceCode => {
 
   throw new Error(
     `Unable to retrieve source code from context in rule "no-async-foreach". ` +
-      `File: ${(context as any).filename ?? (context as any).getFilename?.() ?? 'unknown'}. ` +
-      `Available properties: sourceCode=${typeof (context as any).sourceCode}, ` +
+      `File: ${
+        (context as any).filename ??
+        (context as any).getFilename?.() ??
+        'unknown'
+      }. ` +
+      `Available properties: sourceCode=${typeof (context as any)
+        .sourceCode}, ` +
       `getSourceCode=${typeof (context as any).getSourceCode}.`,
   );
 };

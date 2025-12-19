@@ -4763,7 +4763,9 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
                 id.type === AST_NODE_TYPES.Identifier &&
                 id.typeAnnotation?.type === AST_NODE_TYPES.TSTypeAnnotation
               ) {
-                const typeText = context.sourceCode.getText(id.typeAnnotation.typeAnnotation);
+                const typeText = context.sourceCode.getText(
+                  id.typeAnnotation.typeAnnotation,
+                );
                 return (
                   typeText.includes('React.') ||
                   typeText.includes('FC') ||

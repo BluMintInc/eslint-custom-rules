@@ -181,7 +181,9 @@ function getObjectUsagesInHook(
         } else {
           // For other computed properties, use the exact expression
           try {
-            const propertyText = context.sourceCode.getText(memberExpr.property);
+            const propertyText = context.sourceCode.getText(
+              memberExpr.property,
+            );
             parts.unshift(`[${propertyText}]`);
           } catch (e) {
             // Fallback to wildcard if we can't get the source text
@@ -525,7 +527,8 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Avoid using entire objects in React hook dependency arrays.',
+      description:
+        'Avoid using entire objects in React hook dependency arrays.',
       recommended: 'error',
       requiresTypeChecking: true,
     },

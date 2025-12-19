@@ -194,9 +194,7 @@ function hasOverloadSignatures(node: MethodLikeDefinition): boolean {
     }
 
     const hasBody = (
-      member as
-        | TSESTree.MethodDefinition
-        | TSESTree.TSAbstractMethodDefinition
+      member as TSESTree.MethodDefinition | TSESTree.TSAbstractMethodDefinition
     ).value?.body;
 
     return !hasBody && key.name === targetName;
@@ -262,7 +260,8 @@ export const preferGetterOverParameterlessMethod = createRule<
       ...DEFAULT_OPTIONS,
       ...userOptions,
       stripPrefixes: userOptions.stripPrefixes ?? DEFAULT_OPTIONS.stripPrefixes,
-      ignoredMethods: userOptions.ignoredMethods ?? DEFAULT_OPTIONS.ignoredMethods,
+      ignoredMethods:
+        userOptions.ignoredMethods ?? DEFAULT_OPTIONS.ignoredMethods,
     };
 
     const ignoredMethods = new Set(config.ignoredMethods);
@@ -271,7 +270,9 @@ export const preferGetterOverParameterlessMethod = createRule<
     const ignoredTraversalKeys = new Set(['parent', 'loc', 'range']);
 
     function ensureGlobalPattern(pattern: RegExp) {
-      const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
+      const flags = pattern.flags.includes('g')
+        ? pattern.flags
+        : `${pattern.flags}g`;
       return new RegExp(pattern.source, flags);
     }
 
@@ -492,7 +493,10 @@ export const preferGetterOverParameterlessMethod = createRule<
         return false;
       }
 
-      if (!member.computed && member.property.type === AST_NODE_TYPES.Identifier) {
+      if (
+        !member.computed &&
+        member.property.type === AST_NODE_TYPES.Identifier
+      ) {
         return member.property.name === propName;
       }
 
@@ -551,7 +555,10 @@ export const preferGetterOverParameterlessMethod = createRule<
       callUsedNamesByClass: WeakMap<TSESTree.ClassBody, Set<string>>,
       callUsedNamesInFile: Set<string>,
     ) {
-      if (member.computed || member.property.type !== AST_NODE_TYPES.Identifier) {
+      if (
+        member.computed ||
+        member.property.type !== AST_NODE_TYPES.Identifier
+      ) {
         return;
       }
 
@@ -651,7 +658,10 @@ export const preferGetterOverParameterlessMethod = createRule<
       callUsedNamesByClass: WeakMap<TSESTree.ClassBody, Set<string>>,
       callUsedNamesInFile: Set<string>,
     ) {
-      if (member.computed || member.property.type !== AST_NODE_TYPES.Identifier) {
+      if (
+        member.computed ||
+        member.property.type !== AST_NODE_TYPES.Identifier
+      ) {
         return;
       }
 
@@ -821,7 +831,7 @@ export const preferGetterOverParameterlessMethod = createRule<
           }
 
           const scopeKey = `${
-            ((node as { static?: boolean }).static ?? false)
+            (node as { static?: boolean }).static ?? false
               ? 'static'
               : 'instance'
           }:${suggestedName}`;
@@ -835,7 +845,7 @@ export const preferGetterOverParameterlessMethod = createRule<
           const name = (node.key as TSESTree.Identifier).name;
           const classBody = node.parent;
           const scopeKey = `${
-            ((node as { static?: boolean }).static ?? false)
+            (node as { static?: boolean }).static ?? false
               ? 'static'
               : 'instance'
           }:${suggestedName}`;

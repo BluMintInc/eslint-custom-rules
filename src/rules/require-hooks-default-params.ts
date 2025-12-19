@@ -205,7 +205,7 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
                         messageId: 'requireDefaultParams',
                         data: messageData,
                         fix(fixer) {
-                        const paramText = context.sourceCode.getText(param);
+                          const paramText = context.sourceCode.getText(param);
                           return fixer.replaceText(param, `${paramText} = {}`);
                         },
                       });
@@ -228,7 +228,7 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
                         messageId: 'requireDefaultParams',
                         data: messageData,
                         fix(fixer) {
-                        const paramText = context.sourceCode.getText(param);
+                          const paramText = context.sourceCode.getText(param);
                           return fixer.replaceText(param, `${paramText} = {}`);
                         },
                       });

@@ -123,7 +123,8 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
 
             while (current) {
               if (isParenthesizedType(current)) {
-                const parenthesized = current as unknown as ParenthesizedTypeNode;
+                const parenthesized =
+                  current as unknown as ParenthesizedTypeNode;
                 current = parenthesized.typeAnnotation ?? null;
                 continue;
               }

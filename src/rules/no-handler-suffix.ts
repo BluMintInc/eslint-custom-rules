@@ -58,9 +58,9 @@ function getStaticKeyName(
   return null;
 }
 
-function getHandlerSuffix(name: string):
-  | { baseName: string; suffix: 'Handler' | 'Handlers' }
-  | null {
+function getHandlerSuffix(
+  name: string,
+): { baseName: string; suffix: 'Handler' | 'Handlers' } | null {
   const match = name.match(/^(.*?)(Handlers?)$/i);
   if (!match) return null;
 
@@ -94,8 +94,8 @@ function toMemberExpressionName(
     expr.object.type === AST_NODE_TYPES.Identifier
       ? expr.object.name
       : expr.object.type === AST_NODE_TYPES.MemberExpression
-        ? toMemberExpressionName(expr.object)
-        : null;
+      ? toMemberExpressionName(expr.object)
+      : null;
 
   return objectName ? `${objectName}.${expr.property.name}` : null;
 }
@@ -110,8 +110,8 @@ function getImplementedInterfaces(
         expr.type === AST_NODE_TYPES.Identifier
           ? expr.name
           : expr.type === AST_NODE_TYPES.MemberExpression
-            ? toMemberExpressionName(expr)
-            : null;
+          ? toMemberExpressionName(expr)
+          : null;
 
       return name ? [name] : [];
     }) ?? []
@@ -225,9 +225,7 @@ export const noHandlerSuffix = createRule<Options, MessageIds>({
       throw new Error(`no-handler-suffix: ${errorParts.join('; ')}`);
     }
 
-    if (
-      isInAllowedFile(filename, resolvedOptions.allowFilePatterns ?? [])
-    ) {
+    if (isInAllowedFile(filename, resolvedOptions.allowFilePatterns ?? [])) {
       return {};
     }
 
