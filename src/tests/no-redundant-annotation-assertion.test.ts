@@ -106,6 +106,30 @@ function getUser(): User {
       `let x: string = "hello" as "hello";`,
       `let x: number = 1 as 1;`,
       `let x: boolean = true as true;`,
+      `
+type UserRef = { id: string };
+declare function read(): UserRef | undefined;
+class Repo {
+  ref?: UserRef = read() as UserRef;
+}
+      `,
+      `
+type UserRef = { id: string };
+declare function read(): UserRef | undefined;
+class Repo {
+  ref? : UserRef = read() as UserRef;
+}
+      `,
+      `
+type User = { id: string };
+declare function fetchUser(): User;
+function getUser(): User {
+  if (Math.random() > 0.5) {
+    return fetchUser() as User;
+  }
+}
+      `,
+      `let x: string = getValue() as "hello";`,
     ],
     invalid: [
       {
@@ -287,40 +311,6 @@ class Repo {
       },
       {
         code: `
-type UserRef = { id: string };
-declare function read(): UserRef | undefined;
-class Repo {
-  ref?: UserRef = read() as UserRef;
-}
-        `,
-        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
-        output: `
-type UserRef = { id: string };
-declare function read(): UserRef | undefined;
-class Repo {
-  ref? = read() as UserRef;
-}
-        `,
-      },
-      {
-        code: `
-type UserRef = { id: string };
-declare function read(): UserRef | undefined;
-class Repo {
-  ref? : UserRef = read() as UserRef;
-}
-        `,
-        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
-        output: `
-type UserRef = { id: string };
-declare function read(): UserRef | undefined;
-class Repo {
-  ref? = read() as UserRef;
-}
-        `,
-      },
-      {
-        code: `
 type User = { id: string };
 declare function fetchUser(): User;
 const getUser = (): User => (fetchUser() as User);
@@ -360,27 +350,6 @@ type Alias = Payload;
 type Exported = Alias;
 declare function load(): Payload;
 const result = load() as Alias;
-        `,
-      },
-      {
-        code: `
-type User = { id: string };
-declare function fetchUser(): User;
-function getUser(): User {
-  if (Math.random() > 0.5) {
-    return fetchUser() as User;
-  }
-}
-        `,
-        errors: [{ messageId: 'redundantAnnotationAndAssertion' }],
-        output: `
-type User = { id: string };
-declare function fetchUser(): User;
-function getUser() {
-  if (Math.random() > 0.5) {
-    return fetchUser() as User;
-  }
-}
         `,
       },
     ],

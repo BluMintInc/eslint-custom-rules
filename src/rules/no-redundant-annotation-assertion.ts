@@ -233,8 +233,6 @@ type TypeRepresentations = {
   assertionText: string;
   annotationCanonical: string;
   assertionCanonical: string;
-  annotationExpanded: string;
-  assertionExpanded: string;
   annotationStructural: string;
   assertionStructural: string;
 };
@@ -244,7 +242,6 @@ type TypeRepresentations = {
  * Multiple strategies are needed because TypeScript types can be semantically
  * identical yet have different string representations depending on:
  * - Type aliases (MyType vs the underlying type) via canonical/NoTypeReduction
- * - Literal types vs their base types ("foo" vs string) via expanded
  * - Type formatting options (fully qualified vs relative) via default text
  * - Structural equivalence (different names, same shape) via structural key
  */
@@ -265,14 +262,6 @@ function getTypeRepresentations(
       normalizeType(assertionType),
       undefined,
       TYPE_FORMAT_FLAGS | ts.TypeFormatFlags.NoTypeReduction,
-    ),
-    annotationExpanded: typeText(
-      checker.getBaseTypeOfLiteralType(annotationType),
-      checker,
-    ),
-    assertionExpanded: typeText(
-      checker.getBaseTypeOfLiteralType(assertionType),
-      checker,
     ),
     annotationStructural: structuralKey(annotationType, checker),
     assertionStructural: structuralKey(assertionType, checker),
@@ -322,8 +311,6 @@ function doTypeTextsMatch(representations: TypeRepresentations): boolean {
   const {
     annotationText,
     assertionText,
-    annotationExpanded,
-    assertionExpanded,
     annotationCanonical,
     assertionCanonical,
     annotationStructural,
@@ -332,9 +319,6 @@ function doTypeTextsMatch(representations: TypeRepresentations): boolean {
 
   return (
     annotationText === assertionText ||
-    annotationExpanded === assertionExpanded ||
-    annotationText === assertionExpanded ||
-    assertionText === annotationExpanded ||
     annotationCanonical === assertionCanonical ||
     annotationStructural === assertionStructural
   );
@@ -343,12 +327,7 @@ function doTypeTextsMatch(representations: TypeRepresentations): boolean {
 function selectMatchingTypeRepresentation(
   representations: TypeRepresentations,
 ): string {
-  const { annotationText, assertionText, annotationExpanded, assertionExpanded } =
-    representations;
-
-  if (annotationText === assertionText) return annotationText;
-  if (annotationExpanded === assertionExpanded) return annotationExpanded;
-  return annotationText;
+  return representations.annotationText;
 }
 
 // Compare annotation and assertion types across identity, assignability, and
@@ -406,6 +385,13 @@ function getReturnAssertion(
 
     // Skip functions with multiple returns because different branches can assert different types.
     if (returnCount !== 1) return null;
+
+    // Ensure the single return is the last statement in the function body
+    // to avoid cases where an implicit undefined return exists.
+    const lastStatement = body.body[body.body.length - 1];
+    if (lastStatement?.type !== AST_NODE_TYPES.ReturnStatement) {
+      return null;
+    }
 
     return assertions[0] ?? null;
   }
@@ -478,7 +464,8 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
       VariableDeclarator(node) {
         if (
           node.id.type !== AST_NODE_TYPES.Identifier ||
-          !node.id.typeAnnotation
+          !node.id.typeAnnotation ||
+          node.id.optional
         ) {
           return;
         }
@@ -494,7 +481,7 @@ export const noRedundantAnnotationAssertion = createRule<[], MessageIds>({
         );
       },
       PropertyDefinition(node) {
-        if (!node.typeAnnotation || !node.value) return;
+        if (!node.typeAnnotation || !node.value || node.optional) return;
 
         const assertionType = getAssertionTypeNode(node.value);
         if (!assertionType) return;
