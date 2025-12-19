@@ -85,7 +85,7 @@ const getUser = () => fetchUser() as User;
       `
 type User = { id: string };
 declare function fetchUser(): Promise<User>;
-const getUser = async (): Promise<User> => (await fetchUser()) as User;
+  const getUser = async (): Promise<User> => (await fetchUser()) as User;
       `,
       `
 type User = { id: string };
@@ -103,6 +103,9 @@ function getUser(): User {
   return fallback() as User;
 }
       `,
+      `let x: string = "hello" as "hello";`,
+      `let x: number = 1 as 1;`,
+      `let x: boolean = true as true;`,
     ],
     invalid: [
       {

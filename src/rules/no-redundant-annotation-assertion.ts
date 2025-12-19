@@ -55,6 +55,9 @@ function collectReturnInfo(
     }
 
     if (
+      // Stop traversal at function/class boundaries; nested functions/classes have
+      // their own scope and their return statements shouldn't affect the outer
+      // function's return type check.
       current.type === AST_NODE_TYPES.FunctionDeclaration ||
       current.type === AST_NODE_TYPES.FunctionExpression ||
       current.type === AST_NODE_TYPES.ArrowFunctionExpression ||
@@ -127,8 +130,8 @@ function removeTypeAnnotation(
   return fixer.removeRange([removalStart, end]);
 }
 
-function normalizeType(type: ts.Type, checker: ts.TypeChecker): ts.Type {
-  return checker.getApparentType(checker.getBaseTypeOfLiteralType(type));
+function normalizeType(type: ts.Type): ts.Type {
+  return type;
 }
 
 function typeText(type: ts.Type, checker: ts.TypeChecker): string {
@@ -200,9 +203,9 @@ function getFormattedCallSignatures(
 }
 
 function structuralKey(type: ts.Type, checker: ts.TypeChecker): string {
-  const normalized = normalizeType(type, checker);
-  const properties = getFormattedTypeProperties(normalized, checker);
-  const signatures = getFormattedCallSignatures(normalized, checker);
+  const apparent = checker.getApparentType(type);
+  const properties = getFormattedTypeProperties(apparent, checker);
+  const signatures = getFormattedCallSignatures(apparent, checker);
 
   return `${properties.join('|')}::${signatures.join('|')}`;
 }
@@ -222,7 +225,7 @@ function getComparableType(
   const type = checker.getTypeFromTypeNode(tsNode);
   const unwrapped = unwrapAlias(type, checker);
 
-  return normalizeType(unwrapped, checker);
+  return normalizeType(unwrapped);
 }
 
 type TypeRepresentations = {
@@ -236,6 +239,15 @@ type TypeRepresentations = {
   assertionStructural: string;
 };
 
+/**
+ * Generate multiple string representations of both types for comparison.
+ * Multiple strategies are needed because TypeScript types can be semantically
+ * identical yet have different string representations depending on:
+ * - Type aliases (MyType vs the underlying type) via canonical/NoTypeReduction
+ * - Literal types vs their base types ("foo" vs string) via expanded
+ * - Type formatting options (fully qualified vs relative) via default text
+ * - Structural equivalence (different names, same shape) via structural key
+ */
 function getTypeRepresentations(
   annotationType: ts.Type,
   assertionType: ts.Type,
@@ -245,12 +257,12 @@ function getTypeRepresentations(
     annotationText: typeText(annotationType, checker),
     assertionText: typeText(assertionType, checker),
     annotationCanonical: checker.typeToString(
-      normalizeType(annotationType, checker),
+      normalizeType(annotationType),
       undefined,
       TYPE_FORMAT_FLAGS | ts.TypeFormatFlags.NoTypeReduction,
     ),
     assertionCanonical: checker.typeToString(
-      normalizeType(assertionType, checker),
+      normalizeType(assertionType),
       undefined,
       TYPE_FORMAT_FLAGS | ts.TypeFormatFlags.NoTypeReduction,
     ),
@@ -295,7 +307,7 @@ function areTypesAssignableBothWays(
     isTypeAssignableTo?: (a: ts.Type, b: ts.Type) => boolean;
   }).isTypeAssignableTo;
 
-  // TypeScript exposes isTypeAssignableTo on the checker, but some versions omit it from the d.ts surface; guard to stay compatible.
+  // Guard for checker.isTypeAssignableTo which may be absent from some d.ts versions.
   if (typeof isTypeAssignableTo !== 'function') {
     return false;
   }

@@ -1,8 +1,10 @@
-# Disallow redundant type annotations alongside identical type assertions (`@blumintinc/blumint/no-redundant-annotation-assertion`)
+# Disallow combining a type annotation with an identical type assertion on the same value. Keep a single source of truth to avoid redundant type declarations that can drift apart (`@blumintinc/blumint/no-redundant-annotation-assertion`)
 
-💼 This rule is enabled in the ✅ `recommended` config.\
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).\
-💭 This rule requires type information to compare annotation and assertion types.
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+💭 This rule requires [type information](https://typescript-eslint.io/linting/typed-linting).
 
 <!-- end auto-generated rule header -->
 
