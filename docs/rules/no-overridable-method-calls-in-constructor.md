@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 This rule helps you avoid a common pitfall in object-oriented programming where an overridable method (a method in a base class that is intended to be implemented or overridden by derived classes) is called from the constructor of the base class.
 
 ## Rule Details

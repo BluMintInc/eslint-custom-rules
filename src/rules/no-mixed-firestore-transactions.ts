@@ -1,7 +1,7 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
-type MessageIds = 'noMixedTransactions';
+type MessageIds = 'noMixedTransactions' | 'noMixedTransactionsFetcher';
 
 const NON_TRANSACTIONAL_CLASSES = new Set([
   'DocSetter',
@@ -32,6 +32,8 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
     messages: {
       noMixedTransactions:
         'Do not use non-transactional Firestore operations ({{ className }}) inside a transaction. Use {{ transactionalClass }} instead.',
+      noMixedTransactionsFetcher:
+        'Do not use non-transactional Firestore operations ({{ className }}) inside a transaction. Pass the transaction object to its fetch method instead.',
     },
   },
   defaultOptions: [],
@@ -53,10 +55,6 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
 
     function getTransactionalClassName(className: string): string {
       if (className === 'DocSetter') return 'DocSetterTransaction';
-      if (className === 'FirestoreDocFetcher')
-        return 'FirestoreDocFetcherTransaction';
-      if (className === 'FirestoreFetcher')
-        return 'FirestoreFetcherTransaction';
       return className;
     }
 
@@ -346,10 +344,9 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       const className = (object.callee as TSESTree.Identifier).name;
       context.report({
         node: object,
-        messageId: 'noMixedTransactions',
+        messageId: 'noMixedTransactionsFetcher',
         data: {
           className,
-          transactionalClass: getTransactionalClassName(className),
         },
       });
     }
@@ -390,7 +387,8 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
         node.parent?.type === AST_NODE_TYPES.MemberExpression &&
         node.parent.object === node &&
         isFetchCall(node.parent) &&
-        node.parent.parent?.type === AST_NODE_TYPES.CallExpression
+        node.parent.parent?.type === AST_NODE_TYPES.CallExpression &&
+        node.parent.parent.callee === node.parent
       );
     }
 
@@ -402,7 +400,13 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       if (constructorHasTransaction) return;
       if (isNewExpressionUsedForFetchCall(node)) return;
 
-      reportNonFetcherInTransaction(node, className);
+      context.report({
+        node,
+        messageId: 'noMixedTransactionsFetcher',
+        data: {
+          className,
+        },
+      });
     }
 
     function handleFetcherWithVariable(
@@ -464,10 +468,9 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
 
       context.report({
         node: instance.node,
-        messageId: 'noMixedTransactions',
+        messageId: 'noMixedTransactionsFetcher',
         data: {
           className: instance.className,
-          transactionalClass: getTransactionalClassName(instance.className),
         },
       });
     }

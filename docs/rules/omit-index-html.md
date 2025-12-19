@@ -6,6 +6,12 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 ## Rule Details
 
 The string `"index.html"` in URLs is usually unnecessary and can be omitted for cleaner, more user-friendly links. Many web servers automatically resolve a directory request to `index.html`, making the explicit inclusion redundant. This rule ensures URLs are optimally structured for improved readability and accessibility.

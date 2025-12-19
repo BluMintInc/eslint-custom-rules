@@ -6,6 +6,12 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 This rule enforces that React hooks with a single parameter where all properties are optional should default to an empty object. This prevents potential runtime errors from accessing properties of undefined and makes the hook's API more predictable.
 
 ## Examples

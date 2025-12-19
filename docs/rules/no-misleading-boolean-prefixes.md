@@ -1,4 +1,8 @@
-# Reserve boolean-style prefixes (is/has/should) for functions that actually return boolean values (`@blumintinc/blumint/no-misleading-boolean-prefixes`)
+# Reserve boolean-style prefixes (is/has/should) for functions that actually return boolean values to avoid misleading call sites (`@blumintinc/blumint/no-misleading-boolean-prefixes`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

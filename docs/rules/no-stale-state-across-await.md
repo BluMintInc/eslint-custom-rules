@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 Calling a `useState` setter on both sides of an async boundary leaves the component vulnerable to stale writes. A placeholder or reset that happens before `await`, `.then()`, or `yield` can resolve after later updates and overwrite fresher data, causing flicker or outdated UI. This rule flags those cross-boundary setters to keep state updates atomic and predictable.
 
 ## Rule Details

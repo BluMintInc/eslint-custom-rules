@@ -1,4 +1,8 @@
-# Disallow use of conditional literals in JSX code (`@blumintinc/blumint/no-conditional-literals-in-jsx`)
+# Disallow conditional string literals beside other JSX text to avoid fragmented text nodes, translation issues, and hydration mismatches (`@blumintinc/blumint/no-conditional-literals-in-jsx`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

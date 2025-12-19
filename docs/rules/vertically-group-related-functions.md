@@ -1,4 +1,10 @@
-# Vertically group related functions (`@blumintinc/blumint/vertically-group-related-functions`)
+# Keep top-level functions grouped vertically so callers, exports, and helpers read top-down (`@blumintinc/blumint/vertically-group-related-functions`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
 
 💼 This rule is enabled in the ✅ `recommended` config.\
 🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix) when the function block contains only top-level function statements.

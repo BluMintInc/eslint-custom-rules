@@ -1,4 +1,8 @@
-# memoize-root-level-hocs
+# Prevent creating Higher-Order Components at the root level of React components/hooks without wrapping them in useMemo to keep wrapped component identities stable across renders (`@blumintinc/blumint/memoize-root-level-hocs`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

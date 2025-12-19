@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 Unreachable branches and dead code often come from conditions that can never change (e.g., `if (true)`, `while (0)`, `'foo' === 'foo'`). This rule flags conditions that the rule can prove are always truthy or always falsy so you can simplify control flow or fix likely bugs.
 
 ## Rule Details

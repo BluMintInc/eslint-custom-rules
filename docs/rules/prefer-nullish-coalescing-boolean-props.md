@@ -6,6 +6,12 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 This rule prevents the `@typescript-eslint/prefer-nullish-coalescing` rule from incorrectly flagging logical OR (`||`) operators inside boolean props of React components or other boolean contexts.
 
 ## Rule Details

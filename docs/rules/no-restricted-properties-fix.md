@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 > Disallow certain properties on certain objects, with special handling for Object.keys() and Object.values()
 
 This rule is a wrapper around the core ESLint [no-restricted-properties](https://eslint.org/docs/latest/rules/no-restricted-properties) rule that adds special handling for `Object.keys()` and `Object.values()` results.

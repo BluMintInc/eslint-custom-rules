@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 ## Rule Details
 
 This rule detects when Firestore transaction read operations are performed after write operations within the same transaction. In Firestore transactions, all read operations should be performed before any write operations to ensure transaction integrity and prevent potential errors.

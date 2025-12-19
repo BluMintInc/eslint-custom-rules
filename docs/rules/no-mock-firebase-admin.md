@@ -1,4 +1,8 @@
-# Prevent mocking of functions/src/config/firebaseAdmin (`@blumintinc/blumint/no-mock-firebase-admin`)
+# Prevent direct mocking of firebaseAdmin; use shared test helpers instead (`@blumintinc/blumint/no-mock-firebase-admin`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

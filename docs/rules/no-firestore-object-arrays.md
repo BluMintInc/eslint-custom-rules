@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 ## What this rule enforces
 
 - Disallows arrays whose element type is an object (including type literals, interfaces, unions/intersections of objects, mapped types, and indexed access types) in Firestore model definitions located under any `types/firestore/` directory.

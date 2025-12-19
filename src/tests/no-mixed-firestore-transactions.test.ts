@@ -254,10 +254,9 @@ ruleTesterTs.run(
       `,
         errors: [
           {
-            messageId: 'noMixedTransactions',
+            messageId: 'noMixedTransactionsFetcher',
             data: {
               className: 'FirestoreDocFetcher',
-              transactionalClass: 'FirestoreDocFetcherTransaction',
             },
           },
         ],
@@ -272,10 +271,9 @@ ruleTesterTs.run(
       `,
         errors: [
           {
-            messageId: 'noMixedTransactions',
+            messageId: 'noMixedTransactionsFetcher',
             data: {
               className: 'FirestoreFetcher',
-              transactionalClass: 'FirestoreFetcherTransaction',
             },
           },
         ],
@@ -323,17 +321,15 @@ ruleTesterTs.run(
             },
           },
           {
-            messageId: 'noMixedTransactions',
+            messageId: 'noMixedTransactionsFetcher',
             data: {
               className: 'FirestoreDocFetcher',
-              transactionalClass: 'FirestoreDocFetcherTransaction',
             },
           },
           {
-            messageId: 'noMixedTransactions',
+            messageId: 'noMixedTransactionsFetcher',
             data: {
               className: 'FirestoreFetcher',
-              transactionalClass: 'FirestoreFetcherTransaction',
             },
           },
         ],
@@ -381,10 +377,9 @@ ruleTesterTs.run(
             },
           },
           {
-            messageId: 'noMixedTransactions',
+            messageId: 'noMixedTransactionsFetcher',
             data: {
               className: 'FirestoreDocFetcher',
-              transactionalClass: 'FirestoreDocFetcherTransaction',
             },
           },
         ],
@@ -481,10 +476,9 @@ ruleTesterTs.run(
       `,
         errors: [
           {
-            messageId: 'noMixedTransactions',
+            messageId: 'noMixedTransactionsFetcher',
             data: {
               className: 'FirestoreDocFetcher',
-              transactionalClass: 'FirestoreDocFetcherTransaction',
             },
           },
         ],
@@ -500,10 +494,9 @@ ruleTesterTs.run(
       `,
         errors: [
           {
-            messageId: 'noMixedTransactions',
+            messageId: 'noMixedTransactionsFetcher',
             data: {
               className: 'FirestoreFetcher',
-              transactionalClass: 'FirestoreFetcherTransaction',
             },
           },
         ],
@@ -517,10 +510,9 @@ ruleTesterTs.run(
       `,
         errors: [
           {
-            messageId: 'noMixedTransactions',
+            messageId: 'noMixedTransactionsFetcher',
             data: {
               className: 'FirestoreDocFetcher',
-              transactionalClass: 'FirestoreDocFetcherTransaction',
             },
           },
         ],
@@ -539,10 +531,9 @@ ruleTesterTs.run(
       `,
         errors: [
           {
-            messageId: 'noMixedTransactions',
+            messageId: 'noMixedTransactionsFetcher',
             data: {
               className: 'FirestoreFetcher',
-              transactionalClass: 'FirestoreFetcherTransaction',
             },
           },
         ],
@@ -559,10 +550,9 @@ ruleTesterTs.run(
       `,
         errors: [
           {
-            messageId: 'noMixedTransactions',
+            messageId: 'noMixedTransactionsFetcher',
             data: {
               className: 'FirestoreFetcher',
-              transactionalClass: 'FirestoreFetcherTransaction',
             },
           },
         ],
@@ -576,10 +566,9 @@ ruleTesterTs.run(
       `,
         errors: [
           {
-            messageId: 'noMixedTransactions',
+            messageId: 'noMixedTransactionsFetcher',
             data: {
               className: 'FirestoreFetcher',
-              transactionalClass: 'FirestoreFetcherTransaction',
             },
           },
         ],
@@ -595,10 +584,25 @@ ruleTesterTs.run(
       `,
         errors: [
           {
-            messageId: 'noMixedTransactions',
+            messageId: 'noMixedTransactionsFetcher',
             data: {
               className: 'FirestoreDocFetcher',
-              transactionalClass: 'FirestoreDocFetcherTransaction',
+            },
+          },
+        ],
+      },
+      // Invalid: Inline fetcher method passed as argument but not called (Graphite case)
+      {
+        code: `
+        await db.runTransaction(async (tx) => {
+          someFunc(new FirestoreDocFetcher(ref).fetch);
+        });
+      `,
+        errors: [
+          {
+            messageId: 'noMixedTransactionsFetcher',
+            data: {
+              className: 'FirestoreDocFetcher',
             },
           },
         ],

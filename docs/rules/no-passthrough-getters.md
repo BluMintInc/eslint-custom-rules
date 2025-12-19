@@ -1,4 +1,8 @@
-# Avoid unnecessary getter methods that simply return properties from constructor parameters (`@blumintinc/blumint/no-passthrough-getters`)
+# Avoid getter methods that only re-expose nested properties on constructor-injected objects without adding behavior (`@blumintinc/blumint/no-passthrough-getters`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

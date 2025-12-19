@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 ## Why this rule matters
 
 - When a pure computation runs in `useEffect` and writes into `useState`, React performs the initial render, runs the effect, then re-renders after the setter fires. That extra render is avoidable work.

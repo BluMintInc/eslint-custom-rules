@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 This rule disallows the use of Hungarian notation in variable names, which is the practice of adding a prefix or suffix that indicates the type of the variable.
 
 ## Rule Details

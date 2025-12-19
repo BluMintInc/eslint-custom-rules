@@ -6,6 +6,12 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 Enforce using `useDeepCompareMemo` instead of React's `useMemo` when the dependency array contains pass-by-reference values (objects, arrays, functions) that aren't already memoized. This prevents unnecessary re-renders caused by reference-equality checks failing for structurally identical but newly created references.
 
 ## Rule Details

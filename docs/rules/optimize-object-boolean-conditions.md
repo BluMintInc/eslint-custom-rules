@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 ## Rule Details
 
 This rule targets hooks that take dependency arrays—`useMemo`, `useCallback`, `useEffect`, and custom hooks that mirror their behavior. It flags boolean conditions formed over objects (for example `!!obj`, `Object.keys(obj).length === 0`, `obj === other`) when those conditions are placed directly in dependency arrays. Extract these expressions into stable boolean variables or memoized helpers so dependency arrays track primitives instead of churny object references.

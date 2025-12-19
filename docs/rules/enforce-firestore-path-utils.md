@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 Manually concatenating Firestore collection or document paths leads to brittle strings and easy mistakes when schemas change. This rule requires using path helper functions (named `to*Path`) instead of string literals or template literals when calling `firestore.doc()` or `firestore.collection()`.
 
 ## Rule Details
