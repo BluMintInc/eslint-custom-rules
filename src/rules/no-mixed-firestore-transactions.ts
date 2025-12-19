@@ -108,7 +108,9 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       );
     }
 
-    function identifyTransactionScope(node: TSESTree.Node): TSESTree.Node | null {
+    function identifyTransactionScope(
+      node: TSESTree.Node,
+    ): TSESTree.Node | null {
       if (transactionScopes.has(node)) {
         return node;
       }
@@ -320,7 +322,10 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       transactionScopesForCall: TSESTree.Node[],
       callHasTransaction: boolean,
     ): void {
-      const instance = findFetcherInstance(transactionScopesForCall, identifier.name);
+      const instance = findFetcherInstance(
+        transactionScopesForCall,
+        identifier.name,
+      );
       if (!instance) return;
 
       updateInstanceTransactionState(instance, callHasTransaction);
@@ -367,7 +372,11 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       const object = callee.object;
 
       if (object.type === AST_NODE_TYPES.Identifier) {
-        handleIdentifierFetchCall(object, transactionScopesForCall, callHasTransaction);
+        handleIdentifierFetchCall(
+          object,
+          transactionScopesForCall,
+          callHasTransaction,
+        );
       } else if (isInlineFetcherNew(object)) {
         handleInlineNewFetchCall(object, callHasTransaction);
       }
@@ -387,7 +396,9 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       });
     }
 
-    function isNewExpressionUsedForFetchCall(node: TSESTree.NewExpression): boolean {
+    function isNewExpressionUsedForFetchCall(
+      node: TSESTree.NewExpression,
+    ): boolean {
       return (
         node.parent?.type === AST_NODE_TYPES.MemberExpression &&
         node.parent.object === node &&
@@ -439,7 +450,11 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       const variableName = getVariableName(node);
 
       if (!variableName) {
-        handleFetcherWithoutVariable(node, className, constructorHasTransaction);
+        handleFetcherWithoutVariable(
+          node,
+          className,
+          constructorHasTransaction,
+        );
         return;
       }
 
@@ -486,9 +501,7 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       }
     }
 
-    function reportFetcherScope(
-      scope: Map<string, FetcherInstance[]>,
-    ): void {
+    function reportFetcherScope(scope: Map<string, FetcherInstance[]>): void {
       for (const instances of scope.values()) {
         reportFetcherInstances(instances);
       }

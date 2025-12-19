@@ -71,7 +71,10 @@ export = createRule({
           if (httpsErrorSpecifier && 'local' in httpsErrorSpecifier) {
             const localName = httpsErrorSpecifier.local.name;
             httpsErrorIdentifiers.set(localName, sourceModule);
-            reportProprietary(node, { reference: localName, source: sourceModule });
+            reportProprietary(node, {
+              reference: localName,
+              source: sourceModule,
+            });
           }
 
           if (httpsSpecifier && 'local' in httpsSpecifier) {
@@ -125,7 +128,10 @@ export = createRule({
             return;
           }
 
-          reportProprietary(node, { reference: `${objectName}.HttpsError`, source });
+          reportProprietary(node, {
+            reference: `${objectName}.HttpsError`,
+            source,
+          });
           return;
         }
 

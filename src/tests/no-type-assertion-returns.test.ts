@@ -736,10 +736,7 @@ ruleTesterTs.run('no-type-assertion-returns', noTypeAssertionReturns, {
         }
       }
       `,
-      errors: [
-        typeAssertionError('User'),
-        typeAssertionError('User'),
-      ],
+      errors: [typeAssertionError('User'), typeAssertionError('User')],
     },
 
     // Bad: Type assertion with nullish coalescing

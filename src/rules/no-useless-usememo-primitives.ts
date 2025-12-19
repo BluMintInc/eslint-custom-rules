@@ -435,7 +435,8 @@ export const noUselessUsememoPrimitives = createRule<Options, MessageIds>({
           return;
         }
 
-        const typeEvaluation = classifyExpressionTypeInternal(returnedExpression);
+        const typeEvaluation =
+          classifyExpressionTypeInternal(returnedExpression);
         let isPrimitive = false;
         let valueKind = typeEvaluation.kind;
 

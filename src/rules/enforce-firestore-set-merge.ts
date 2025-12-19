@@ -116,9 +116,9 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
 
             // Check if it's a Firestore document reference by looking at imports
             const program = ASTHelpers.getAncestors(context, node).find(
-                (node): node is TSESTree.Program =>
-                  node.type === AST_NODE_TYPES.Program,
-              );
+              (node): node is TSESTree.Program =>
+                node.type === AST_NODE_TYPES.Program,
+            );
             if (program) {
               for (const node of program.body) {
                 if (node.type === AST_NODE_TYPES.VariableDeclaration) {
@@ -259,10 +259,7 @@ export const enforceFirestoreSetMerge = createRule<[], MessageIds>({
             node,
             messageId: 'preferSetMerge',
             fix(fixer) {
-              const newText = convertUpdateToSetMerge(
-                node,
-                context.sourceCode,
-              );
+              const newText = convertUpdateToSetMerge(node, context.sourceCode);
               return fixer.replaceText(node, newText);
             },
           });

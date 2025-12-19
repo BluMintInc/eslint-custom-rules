@@ -226,7 +226,12 @@ ruleTesterTs.run(
           }
         }
       `,
-        errors: [buildError('extractUniqueIdentifiers', 'TemporaryChannelGroupCategorizer')],
+        errors: [
+          buildError(
+            'extractUniqueIdentifiers',
+            'TemporaryChannelGroupCategorizer',
+          ),
+        ],
       },
       // Private static method with complex logic
       {
