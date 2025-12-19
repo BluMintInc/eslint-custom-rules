@@ -445,10 +445,9 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
           mode: string;
           preferences: Record<string, any>;
         } & FormControlLabelProps;
-        const GroupModeToggles = ({ mode, preferences, label }: GroupModeTogglesProps) => (
+        const GroupModeToggles = ({ mode, preferences }: GroupModeTogglesProps) => (
           <FormControlLabel
             control={<div />}
-            label={label}
           />
         );
       `,

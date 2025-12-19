@@ -71,6 +71,20 @@ export const noUnusedProps = createRule({
       'ThisType',
     ]);
 
+    // Marks spread types whose members cannot be enumerated so unknown used props
+    // can still count as "using something" from the imported/spread type.
+    const UNKNOWN_SPREAD_PROP = '__unknown_spread_prop__';
+
+    const markUnknownSpreadType = (
+      spreadTypeProps: Record<string, string[]>,
+      spreadTypeName: string,
+    ) => {
+      spreadTypeProps[spreadTypeName] ??= [];
+      if (!spreadTypeProps[spreadTypeName].includes(UNKNOWN_SPREAD_PROP)) {
+        spreadTypeProps[spreadTypeName].push(UNKNOWN_SPREAD_PROP);
+      }
+    };
+
     const isTypeAliasDeclaration = (
       node: TSESTree.Node | undefined,
     ): node is TSESTree.TSTypeAliasDeclaration =>
@@ -173,13 +187,29 @@ export const noUnusedProps = createRule({
     const isAnyPropFromSpreadTypeUsed = (
       spreadTypeName: string,
       used: Set<string>,
+      knownProps: Set<string>,
     ) => {
       const spreadTypeProps = spreadTypeToPropNames.get(spreadTypeName);
       if (!spreadTypeProps || spreadTypeProps.size === 0) {
         return false;
       }
 
+      if (spreadTypeProps.has(UNKNOWN_SPREAD_PROP)) {
+        for (const usedProp of used) {
+          if (usedProp.startsWith('...')) {
+            continue;
+          }
+
+          if (!knownProps.has(usedProp)) {
+            return true;
+          }
+        }
+      }
+
       for (const spreadProp of spreadTypeProps) {
+        if (spreadProp === UNKNOWN_SPREAD_PROP) {
+          continue;
+        }
         if (used.has(spreadProp)) {
           return true;
         }
@@ -192,6 +222,7 @@ export const noUnusedProps = createRule({
       prop: string,
       hasRestSpread: boolean,
       used: Set<string>,
+      knownProps: Set<string>,
     ) => {
       if (hasRestSpread) {
         return true;
@@ -203,7 +234,7 @@ export const noUnusedProps = createRule({
         return true;
       }
 
-      return isAnyPropFromSpreadTypeUsed(spreadTypeName, used);
+      return isAnyPropFromSpreadTypeUsed(spreadTypeName, used, knownProps);
     };
 
     const shouldSkipPropFromSpreadType = (
@@ -243,6 +274,7 @@ export const noUnusedProps = createRule({
       }
 
       const hasRestSpread = hasRestSpreadUsage(used, restUsed);
+      const knownProps = new Set(Object.keys(propsType));
 
       Object.keys(propsType).forEach((prop) => {
         if (!used.has(prop)) {
@@ -259,7 +291,12 @@ export const noUnusedProps = createRule({
           if (isGenericTypeSpread(prop)) {
             shouldReport = false;
           } else if (prop.startsWith('...')) {
-            shouldReport = !shouldSkipSpreadType(prop, hasRestSpread, used);
+            shouldReport = !shouldSkipSpreadType(
+              prop,
+              hasRestSpread,
+              used,
+              knownProps,
+            );
           } else {
             shouldReport = !shouldSkipPropFromSpreadType(prop, typeName, used);
           }
@@ -398,7 +435,7 @@ export const noUnusedProps = createRule({
                 baseType.type === AST_NODE_TYPES.TSTypeReference
                   ? baseType.typeName
                   : baseType;
-              spreadTypeProps[markerKey] ??= [];
+              markUnknownSpreadType(spreadTypeProps, markerKey);
             };
             const omittedPropNames = new Set<string>();
 
@@ -544,9 +581,7 @@ export const noUnusedProps = createRule({
 
                         // For imported types, we need to track individual properties that might be used
                         // from this spread type, even if we don't know what they are yet
-                        if (!spreadTypeProps[spreadTypeName]) {
-                          spreadTypeProps[spreadTypeName] = [];
-                        }
+                        markUnknownSpreadType(spreadTypeProps, spreadTypeName);
                       }
                     }
                   }
@@ -642,14 +677,12 @@ export const noUnusedProps = createRule({
                       );
                       if (!added) {
                         props[`...${baseTypeName}`] = baseType.typeName;
-                        spreadTypeProps[baseTypeName] ??= [];
+                        markUnknownSpreadType(spreadTypeProps, baseTypeName);
                       }
                     } else {
                       // If we can't find the base type definition, treat it as a spread type
                       props[`...${baseTypeName}`] = baseType.typeName;
-                      if (!spreadTypeProps[baseTypeName]) {
-                        spreadTypeProps[baseTypeName] = [];
-                      }
+                      markUnknownSpreadType(spreadTypeProps, baseTypeName);
                     }
                   }
                 } else {
@@ -659,9 +692,7 @@ export const noUnusedProps = createRule({
 
                   // For imported types, we need to track individual properties that might be used
                   // from this spread type, even if we don't know what they are yet
-                  if (!spreadTypeProps[spreadTypeName]) {
-                    spreadTypeProps[spreadTypeName] = [];
-                  }
+                  markUnknownSpreadType(spreadTypeProps, spreadTypeName);
                 }
               }
             }
