@@ -33,7 +33,7 @@ export const noMixedFirestoreTransactions = createRule<[], MessageIds>({
       noMixedTransactions:
         'Non-transactional Firestore helper "{{ className }}" is instantiated inside a transaction callback, so its reads and writes bypass the transaction context. That breaks Firestore\'s atomicity guarantees and can commit partial updates. Use the transaction-safe "{{ transactionalClass }}" and pass the provided transaction so every operation participates in the same commit.',
       noMixedTransactionsFetcher:
-        'Non-transactional Firestore helper "{{ className }}" is instantiated inside a transaction callback, so its reads and writes bypass the transaction context. That breaks Firestore\'s atomicity guarantees and can commit partial updates. Pass the provided transaction to the fetch() method (e.g., fetch({ transaction: tx })) so the operation participates in the transaction.',
+        'Non-transactional Firestore helper "{{ className }}" is instantiated inside a transaction callback, so its reads and writes bypass the transaction context. That breaks Firestore\'s atomicity guarantees and can commit partial updates. Pass the provided transaction to the constructor (e.g., new {{ className }}(ref, { transaction: tx })) or to fetch() (e.g., fetch({ transaction: tx })) so the operation participates in the transaction.',
     },
   },
   defaultOptions: [],

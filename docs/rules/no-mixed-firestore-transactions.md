@@ -11,7 +11,7 @@ This rule identifies usage of non-transactional Firestore operations within a tr
 Within a `db.runTransaction()` callback or functions that receive a `FirebaseFirestore.Transaction` as a parameter, you must ensure that all Firestore operations are aware of the transaction.
 
 - For **writes** using `DocSetter`, you should use `DocSetterTransaction` and pass the transaction object in the options.
-- For **reads** using `FirestoreDocFetcher` or `FirestoreFetcher`, you should pass `{ transaction: tx }` to the `fetch()` method.
+- For **reads** using `FirestoreDocFetcher` or `FirestoreFetcher`, you should pass `{ transaction: tx }` to the constructor or the `fetch()` method.
 
 ### Why It Matters
 
@@ -23,13 +23,17 @@ Within a `db.runTransaction()` callback or functions that receive a `FirebaseFir
 
 ### For Reads (FirestoreDocFetcher / FirestoreFetcher)
 
-Pass the transaction object to the `fetch` method:
+Pass the transaction object to the constructor or the `fetch` method:
 
 ```typescript
 await db.runTransaction(async (tx) => {
-  const fetcher = new FirestoreDocFetcher(ref);
-  // INCORRECT: fetcher.fetch()
-  const data = await fetcher.fetch({ transaction: tx }); // CORRECT
+  // Option 1: Pass to constructor
+  const fetcher = new FirestoreDocFetcher(ref, { transaction: tx });
+  const data = await fetcher.fetch();
+
+  // Option 2: Pass to fetch method
+  const fetcher2 = new FirestoreDocFetcher(ref);
+  const data2 = await fetcher2.fetch({ transaction: tx });
 });
 ```
 
