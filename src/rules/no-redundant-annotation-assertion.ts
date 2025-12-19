@@ -1,10 +1,18 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { visitorKeys } from '@typescript-eslint/visitor-keys';
 import * as ts from 'typescript';
+import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'redundantAnnotationAndAssertion';
 
+/**
+ * Type string formatting flags chosen to keep comparisons stable and predictable.
+ * - NoTruncation avoids `...` elisions that can hide important differences.
+ * - WriteArrayAsGenericType normalizes arrays to `Array<T>` for consistent output.
+ * - UseFullyQualifiedType reduces ambiguity from locally-imported type names.
+ * - UseStructuralFallback keeps output meaningful when a nominal name is unavailable.
+ */
 const TYPE_FORMAT_FLAGS =
   ts.TypeFormatFlags.NoTruncation |
   ts.TypeFormatFlags.WriteArrayAsGenericType |
@@ -31,8 +39,52 @@ function getAssertionTypeNode(
   return null;
 }
 
-function isNode(value: unknown): value is TSESTree.Node {
-  return Boolean(value) && typeof value === 'object' && 'type' in (value as object);
+function isTraversalBoundary(node: TSESTree.Node): boolean {
+  // Nested functions/classes have their own return semantics; inner returns should not
+  // influence the outer function's return-type check.
+  return (
+    node.type === AST_NODE_TYPES.FunctionDeclaration ||
+    node.type === AST_NODE_TYPES.FunctionExpression ||
+    node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+    node.type === AST_NODE_TYPES.MethodDefinition ||
+    node.type === AST_NODE_TYPES.ClassDeclaration ||
+    node.type === AST_NODE_TYPES.ClassExpression
+  );
+}
+
+function recordReturnStatement(
+  node: TSESTree.ReturnStatement,
+  assertions: TSESTree.TypeNode[],
+): void {
+  if (!node.argument) return;
+
+  const assertion = getAssertionTypeNode(node.argument);
+  if (assertion) assertions.push(assertion);
+}
+
+function addChildNodesToStack(
+  node: TSESTree.Node,
+  stack: TSESTree.Node[],
+): void {
+  const keys = visitorKeys[node.type];
+  if (!keys) return;
+
+  for (const key of keys) {
+    const value = (node as unknown as Record<string, unknown>)[key];
+
+    if (Array.isArray(value)) {
+      for (const element of value) {
+        if (ASTHelpers.isNode(element)) {
+          stack.push(element);
+        }
+      }
+      continue;
+    }
+
+    if (ASTHelpers.isNode(value)) {
+      stack.push(value);
+    }
+  }
 }
 
 function collectReturnInfo(
@@ -47,46 +99,13 @@ function collectReturnInfo(
 
     if (current.type === AST_NODE_TYPES.ReturnStatement) {
       returnCount += 1;
-      if (current.argument) {
-        const assertion = getAssertionTypeNode(current.argument);
-        if (assertion) assertions.push(assertion);
-      }
+      recordReturnStatement(current, assertions);
       continue;
     }
 
-    if (
-      // Stop traversal at function/class boundaries; nested functions/classes have
-      // their own scope and their return statements shouldn't affect the outer
-      // function's return type check.
-      current.type === AST_NODE_TYPES.FunctionDeclaration ||
-      current.type === AST_NODE_TYPES.FunctionExpression ||
-      current.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-      current.type === AST_NODE_TYPES.MethodDefinition ||
-      current.type === AST_NODE_TYPES.ClassDeclaration ||
-      current.type === AST_NODE_TYPES.ClassExpression
-    ) {
-      continue;
-    }
+    if (isTraversalBoundary(current)) continue;
 
-    const keys = visitorKeys[current.type];
-    if (!keys) continue;
-
-    for (const key of keys) {
-      const value = (current as unknown as Record<string, unknown>)[key];
-
-      if (Array.isArray(value)) {
-        for (const element of value) {
-          if (isNode(element)) {
-            stack.push(element);
-          }
-        }
-        continue;
-      }
-
-      if (isNode(value)) {
-        stack.push(value);
-      }
-    }
+    addChildNodesToStack(current, stack);
   }
 
   return { assertions, returnCount };
@@ -101,6 +120,9 @@ function findTypeAnnotationStart(
 
   let removalStart = start;
 
+  // Scan backward to remove any whitespace before `: Type`, but avoid consuming tokens
+  // that belong to the declared name (e.g. `!` definite assignment assertions or `?`
+  // optional markers).
   for (let i = start - 1; i >= 0; i -= 1) {
     const char = text.charAt(i);
 
@@ -128,10 +150,6 @@ function removeTypeAnnotation(
   const removalStart = findTypeAnnotationStart(typeAnnotation, sourceCode);
 
   return fixer.removeRange([removalStart, end]);
-}
-
-function normalizeType(type: ts.Type): ts.Type {
-  return type;
 }
 
 function typeText(type: ts.Type, checker: ts.TypeChecker): string {
@@ -225,7 +243,7 @@ function getComparableType(
   const type = checker.getTypeFromTypeNode(tsNode);
   const unwrapped = unwrapAlias(type, checker);
 
-  return normalizeType(unwrapped);
+  return unwrapped;
 }
 
 type TypeRepresentations = {
@@ -254,12 +272,12 @@ function getTypeRepresentations(
     annotationText: typeText(annotationType, checker),
     assertionText: typeText(assertionType, checker),
     annotationCanonical: checker.typeToString(
-      normalizeType(annotationType),
+      annotationType,
       undefined,
       TYPE_FORMAT_FLAGS | ts.TypeFormatFlags.NoTypeReduction,
     ),
     assertionCanonical: checker.typeToString(
-      normalizeType(assertionType),
+      assertionType,
       undefined,
       TYPE_FORMAT_FLAGS | ts.TypeFormatFlags.NoTypeReduction,
     ),
