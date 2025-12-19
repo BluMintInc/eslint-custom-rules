@@ -6,12 +6,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
-
-<!-- end auto-generated rule header -->
-
 This rule ensures consistency in user-facing text by enforcing the use of "ID" instead of "id" when referring to identifiers in UI labels, instructions, error messages, and other visible strings.
 
 Using "ID" (uppercase) improves readability and maintains a professional standard across all user interactions.

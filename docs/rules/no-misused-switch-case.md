@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 Using `case a || b` looks like it matches two values, but `||` collapses to a single operand. That makes one value unreachable and hides the intent of the switch. This rule flags logical OR inside a `case` label so each value stays explicit and readable.
 
 ## Rule Details

@@ -6,12 +6,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
-
-<!-- end auto-generated rule header -->
-
 This rule enforces the use of `useCallback` instead of `useMemo` when memoizing functions with dependency arrays. While both hooks can technically memoize functions, `useCallback` is semantically designed for this purpose, making code more readable and intention-clear.
 
 ## Rule Details

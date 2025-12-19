@@ -6,12 +6,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
-
-<!-- end auto-generated rule header -->
-
 `useMemo` adds dependency noise and mental overhead when the memoized callback produces a pass-by-value type (string, number, boolean, null/undefined, bigint, and optionally symbol). Primitive values already compare by value, so memoizing them does not improve referential stability and only obscures intent.
 
 ## Rule Details

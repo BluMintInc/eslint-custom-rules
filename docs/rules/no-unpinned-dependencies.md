@@ -6,12 +6,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
-
-<!-- end auto-generated rule header -->
-
 Pinned versions keep dependency installs reproducible and auditable. Caret (`^`) and tilde (`~`) ranges let package managers upgrade without code review, which introduces unexpected breaking changes and makes build failures hard to diagnose. This rule flags range-based versions in `dependencies` and `devDependencies` and recommends pinning to exact versions.
 
 ## Rule Details

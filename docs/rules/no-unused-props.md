@@ -6,12 +6,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
-
-<!-- end auto-generated rule header -->
-
 This rule ensures every prop declared in a component's Props type is either read inside the component or intentionally forwarded. Unused props make the component API misleading: call sites keep passing values that are ignored, reviewers assume behavior that does not exist, and spread props from UI libraries get silently dropped.
 
 ## Rule Details

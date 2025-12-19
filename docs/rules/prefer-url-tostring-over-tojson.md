@@ -6,12 +6,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
-
-<!-- end auto-generated rule header -->
-
 Enforce the use of `toString()` over `toJSON()` when working with `URL` objects in JavaScript, unless explicitly serializing as part of a JSON object. Both methods return the fully qualified URL as a string, but `toJSON()` simply calls `toString()` internally. This rule promotes clarity and consistency by ensuring developers default to `toString()` unless a JSON-specific context is required, avoiding unnecessary indirection and making intent clearer in Node.js and browser codebases.
 
 - **Configuration**: ✅ Recommended

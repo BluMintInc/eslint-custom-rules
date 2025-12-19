@@ -6,12 +6,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
-
-<!-- end auto-generated rule header -->
-
 Discourages verb-preposition suffixes in function and method names when the suffix does not add meaning beyond the parameters. These endings make the action harder to spot and bloat call sites with redundant phrasing.
 
 ## Rule Details

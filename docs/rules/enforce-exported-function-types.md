@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 Exported functions and React components must rely on exported types so consumers can import the same contract instead of guessing shapes. This rule requires type aliases or interfaces used by exported APIs to be exported from the module.
 
 ## Rule Details

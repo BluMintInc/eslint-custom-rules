@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 This rule ensures array callbacks keep the class instance available. Passing a method reference such as `this.processItem` to `map` or `filter` strips the lexical `this`, which leads to runtime errors once the callback runs without a bound context. Using `.bind(this)` hides the dependency on the class and allocates a new function instead of using the natural lexical binding an arrow callback provides. Prefer arrow callbacks that call the method, so `this` stays stable and the code reads as instance-aware work.
 
 ## Rule Details

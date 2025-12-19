@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 Functions and methods are actions, so their names should start with an action verb followed by the thing they act on. Verb-first naming keeps callable APIs predictable, separates behaviors from data holders, and prevents teams from shipping symbols whose purpose is unclear at the call site.
 
 ## Why this rule?

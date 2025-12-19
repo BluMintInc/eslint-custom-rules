@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 You should avoid whitespace-only JSX expressions like `{" "}` because React renders them as separate text children that make spacing fragile.
 
 ## Rule Details

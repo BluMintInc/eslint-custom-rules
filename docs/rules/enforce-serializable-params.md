@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 Firebase Callable/HTTPS functions send and receive data over JSON. Some values (for example, `DocumentReference`, `Timestamp`, `Map`, `Set`, `Symbol`, `Function`, or `undefined`) are not JSON-safe and may be coerced, dropped, or fail serialization at runtime. This rule prevents those types from appearing in request parameter types so your request contracts stay JSON-safe.
 
 ## Rule Details

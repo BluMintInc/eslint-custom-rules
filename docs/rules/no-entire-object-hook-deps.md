@@ -8,14 +8,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
-
-💭 This rule requires [type information](https://typescript-eslint.io/linting/typed-linting).
-
-<!-- end auto-generated rule header -->
-
 ## Why this rule matters
 
 - Your hooks rerun when any dependency identity changes. Listing an entire object means unrelated property updates (or shallow re-creations) rerun your hook even when you only read a few fields.

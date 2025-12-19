@@ -6,12 +6,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
-
-<!-- end auto-generated rule header -->
-
 Returning a type assertion or relying on an explicit return type for an untyped expression hides whether the value you return actually matches the declared shape. This rule makes you assign the value to a typed variable (or narrow it) before returning so TypeScript validates the structure instead of trusting a cast.
 
 ## Rule Details

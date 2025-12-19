@@ -6,12 +6,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
-
-<!-- end auto-generated rule header -->
-
 This rule enforces `type` aliases instead of `interface` declarations so object shapes stay closed and predictable.
 
 Interfaces can merge across files and dependencies, which means a shape may change without edits to the file that declared it. Extends chains can spread properties across multiple declarations, making the resulting surface harder to trace. Using `type` aliases keeps the contract sealed and uses intersections explicitly when you need to compose shapes, so readers see exactly what is included.

@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 ## What this rule enforces
 
 - Flags any Firestore model field under `functions/src/types/firestore` whose type is an array of objects (type literals, interfaces, unions/intersections of objects, mapped types, or indexed access types).

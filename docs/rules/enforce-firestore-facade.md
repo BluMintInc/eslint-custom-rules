@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 Direct Firestore reads and writes must go through the facade layer so we keep type safety, retries, validation, and metrics in one place. Calling `get`, `set`, `update`, or `delete` on `DocumentReference`, transactions, or batches bypasses those safeguards and makes data access harder to audit or evolve.
 
 ## Rule Details

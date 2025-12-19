@@ -6,12 +6,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
-
-<!-- end auto-generated rule header -->
-
 The custom `useRouter` hook in `src/hooks/routing/useRouter` wraps Next.js routing with application-level behavior such as authentication guards, analytics instrumentation, and redirect helpers. Importing `useRouter` directly from `next/router` bypasses those shared safeguards and leads to inconsistent navigation semantics across the app.
 
 ## Rule Details

@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 Avoid using `uuidv4Base62()` as React list keys because each call returns a new value, breaking React's ability to track list items.
 
 ## Rule Details

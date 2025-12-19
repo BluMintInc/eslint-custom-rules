@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 Cloud function parameters must be JSON-serializable. Class instances, functions, RegExp/BigInt values, typed arrays, or objects with symbol keys are not portable and lead to dropped values or runtime errors when Firebase transports the payload.
 
 ## Why this rule exists

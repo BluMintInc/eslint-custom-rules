@@ -6,12 +6,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
-
-<!-- end auto-generated rule header -->
-
 ## Rule Details
 
 When you pass nested objects in a `DocSetter` payload, Firestore treats each nested map as a whole sub-document write. If you pass `{ roles: { contributor: ... } }` to `set()` or `updateIfExists()`, Firestore replaces the entire `roles` map and can silently drop sibling fields you leave out. FieldValue helpers (`arrayUnion`, `increment`, etc.) expect dotted field paths for nested updates. This rule requires FieldPath (dot) notation so your DocSetter calls touch only the intended leaf fields and you avoid data loss during partial updates.
