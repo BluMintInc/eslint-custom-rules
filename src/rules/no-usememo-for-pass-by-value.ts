@@ -339,7 +339,7 @@ function hasDeclaredVariables(source: unknown): source is {
   );
 }
 
-function buildCompleteImportRemoval(
+function removeCompleteImport(
   importDeclaration: TSESTree.ImportDeclaration,
   sourceCode: Readonly<TSESLint.SourceCode>,
   fixer: TSESLint.RuleFixer,
@@ -396,7 +396,7 @@ function buildCompleteImportRemoval(
   return fixer.removeRange([start, removalEnd]);
 }
 
-function buildPartialImportRemoval(
+function removePartialImport(
   importDeclaration: TSESTree.ImportDeclaration,
   remainingSpecifiers: TSESTree.ImportClause[],
   sourceCode: Readonly<TSESLint.SourceCode>,
@@ -436,7 +436,7 @@ function buildPartialImportRemoval(
   return fixer.replaceText(importDeclaration, newImport);
 }
 
-function buildImportRemovalFix(
+function getImportRemovalFix(
   specifier: TSESTree.ImportSpecifier,
   sourceCode: Readonly<TSESLint.SourceCode>,
   fixer: TSESLint.RuleFixer,
@@ -454,10 +454,10 @@ function buildImportRemovalFix(
   );
 
   if (remainingSpecifiers.length === 0) {
-    return buildCompleteImportRemoval(importDeclaration, sourceCode, fixer);
+    return removeCompleteImport(importDeclaration, sourceCode, fixer);
   }
 
-  return buildPartialImportRemoval(
+  return removePartialImport(
     importDeclaration,
     remainingSpecifiers,
     sourceCode,
@@ -794,7 +794,7 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
       return classification;
     }
 
-    function buildUseMemoFix(
+    function getUseMemoFix(
       node: TSESTree.CallExpression,
       callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
       returnedExpression: TSESTree.Expression,
@@ -818,7 +818,7 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
       const fixes: TSESLint.RuleFix[] = [fixer.replaceText(node, replacement)];
 
       if (specifier) {
-        const removal = buildImportRemovalFix(specifier, sourceCode, fixer);
+        const removal = getImportRemovalFix(specifier, sourceCode, fixer);
         if (removal) {
           fixes.push(removal);
         }
@@ -867,7 +867,7 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
           valueType: classification.description,
         },
         fix: (fixer) =>
-          buildUseMemoFix(node, callback, returnedExpression, fixer),
+          getUseMemoFix(node, callback, returnedExpression, fixer),
       });
     }
 
