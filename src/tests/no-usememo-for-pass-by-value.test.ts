@@ -192,8 +192,8 @@ ${typedPrelude}
 ${typedPrelude}
       import { useMemo } from 'react';
 
-      export function useTuple(slug: string) {
-        return useMemo(() => [slug, slug.toUpperCase()], [slug]);
+      export function useMixedTuple(id: string) {
+        return useMemo(() => [id, { id }] as [string, { id: string }], [id]);
       }
       `,
     },
@@ -203,8 +203,8 @@ ${typedPrelude}
 ${typedPrelude}
       import { useMemo } from 'react';
 
-      export function useTupleLiteral() {
-        return useMemo(() => [1, 2, 3] as const, []);
+      export function useObjectArray() {
+        return useMemo(() => [{ id: 1 }, { id: 2 }], []);
       }
       `,
     },
@@ -227,15 +227,71 @@ ${typedPrelude}
 ${typedPrelude}
       import { useMemo } from 'react';
 
-      export function useUpper(value: string) {
-        return useMemo(() => value.toUpperCase(), [value]);
+      export function useTuple(slug: string) {
+        return useMemo(() => [slug, slug.toUpperCase()], [slug]);
       }
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
 ${typedPrelude}
-      export function useUpper(value: string) {
-        return value.toUpperCase();
+      export function useTuple(slug: string) {
+        return [slug, slug.toUpperCase()];
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useTupleLiteral() {
+        return useMemo(() => [1, 2, 3] as const, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useTupleLiteral() {
+        return [1, 2, 3] as const;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function usePrimitiveArray() {
+        const values: number[] = [1, 2, 3];
+        return useMemo(() => values, []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function usePrimitiveArray() {
+        const values: number[] = [1, 2, 3];
+        return values;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useEmptyArray() {
+        return useMemo(() => [], []);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useEmptyArray() {
+        return [];
       }
       `,
     },

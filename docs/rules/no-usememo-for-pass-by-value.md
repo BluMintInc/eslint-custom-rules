@@ -1,14 +1,14 @@
-# Disallow useMemo for pass-by-value returns in custom hooks (`@blumintinc/blumint/no-usememo-for-pass-by-value`)
+# Disallow returning useMemo results from custom hooks when the memoized value is pass-by-value: primitives with value equality (string, number, boolean, null, undefined, bigint) or arrays/tuples composed exclusively of these primitives. Requires type information (`@blumintinc/blumint/no-usememo-for-pass-by-value`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
 🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
 
-💭 This rule requires type information.
+💭 This rule requires [type information](https://typescript-eslint.io/linting/typed-linting).
 
 <!-- end auto-generated rule header -->
 
-This rule flags custom React hooks that return a `useMemo` result when the memoized value is pass-by-value: primitives with value equality (`string`, `number`, `boolean`, `null`, `undefined`, `bigint`). Memoizing these primitives does not provide referential stability, so the hook only adds noise and suggests a stability guarantee that does not exist. Arrays/tuples and `symbol` values are excluded because their identity changes on each creation and memoization can legitimately stabilize them.
+This rule flags custom React hooks that return a `useMemo` result when the memoized value is pass-by-value: primitives with value equality (`string`, `number`, `boolean`, `null`, `undefined`, `bigint`) or arrays/tuples composed exclusively of these primitives. Memoizing these values does not provide beneficial referential stability (as primitives have value equality and recreating primitive-only containers is inexpensive), so the hook only adds noise and suggests a stability guarantee that is not necessary. `symbol` values and objects (or arrays/tuples containing objects) are excluded because their identity changes on each creation and memoization can legitimately stabilize them.
 
 The fixer replaces `useMemo(() => expr, deps)` with `expr` (when the callback is a single-expression return) and removes the unused `useMemo` import when possible.
 
@@ -31,21 +31,29 @@ export function useIsReady(values: string[]) {
 export function useUnion(flag: boolean) {
   return useMemo(() => (flag ? 'ready' : false), [flag]); // union of primitives
 }
+
+export function useTuple(slug: string) {
+  return useMemo(() => [slug, slug.toUpperCase()], [slug]); // tuple of primitives
+}
 ```
 
 Examples of **correct** code for this rule:
 
 ```ts
-// Return primitives directly
+// Return primitives or primitive containers directly
 export function useLabelAndHref(slug: string) {
   const label = slug.toUpperCase();
   const href = `/t/${slug}`;
   return [label, href];
 }
 
-// Tuple/array identity can matter, so memoization is allowed
-export function useLabelTuple(slug: string) {
-  return useMemo(() => [slug, slug.toUpperCase()], [slug]);
+// Objects (or containers with objects) identity can matter, so memoization is allowed
+export function useLabelObject(slug: string) {
+  return useMemo(() => ({ label: slug, upper: slug.toUpperCase() }), [slug]);
+}
+
+export function useMixedTuple(fn: () => void) {
+  return useMemo(() => [fn, { call: fn }], [fn]); // contains function and object
 }
 
 // Symbols have unique identity per creation, so memoization can be useful

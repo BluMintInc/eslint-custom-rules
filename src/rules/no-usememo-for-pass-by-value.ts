@@ -30,8 +30,7 @@ const PASS_BY_VALUE_FLAGS =
   ts.TypeFlags.BigIntLike |
   ts.TypeFlags.BooleanLike |
   ts.TypeFlags.Undefined |
-  ts.TypeFlags.Null |
-  ts.TypeFlags.Void;
+  ts.TypeFlags.Null;
 
 type FunctionContext = {
   isHook: boolean;
@@ -166,11 +165,36 @@ function classifyPassByValue(
   }
 
   if (checker.isTupleType(type)) {
-    return { passByValue: false, indeterminate: false, description };
+    const typeArguments = checker.getTypeArguments(type as ts.TypeReference);
+    let allPrimitive = true;
+    let sawIndeterminate = false;
+
+    for (const elementType of typeArguments) {
+      const result = classifyPassByValue(elementType, checker);
+      if (result.indeterminate) {
+        sawIndeterminate = true;
+        break;
+      }
+      if (!result.passByValue) {
+        allPrimitive = false;
+        break;
+      }
+    }
+
+    if (sawIndeterminate) {
+      return { passByValue: false, indeterminate: true, description };
+    }
+    return { passByValue: allPrimitive, indeterminate: false, description };
   }
 
   if (checker.isArrayType(type) || checker.isArrayLikeType(type)) {
-    return { passByValue: false, indeterminate: false, description };
+    const typeArguments = checker.getTypeArguments(type as ts.TypeReference);
+    const elementType = typeArguments[0];
+    if (elementType) {
+      return classifyPassByValue(elementType, checker);
+    }
+    // Empty array type is considered pass-by-value because it's effectively a constant literal []
+    return { passByValue: true, indeterminate: false, description };
   }
 
   if (type.flags & PASS_BY_VALUE_FLAGS) {
@@ -285,66 +309,62 @@ function hasDeclaredVariables(
   );
 }
 
-function buildImportRemovalFix(
-  specifier: TSESTree.ImportSpecifier,
+function buildCompleteImportRemoval(
+  importDeclaration: TSESTree.ImportDeclaration,
   sourceCode: Readonly<TSESLint.SourceCode>,
   fixer: TSESLint.RuleFixer,
-): TSESLint.RuleFix | null {
-  const importDeclaration = specifier.parent;
-  if (!importDeclaration || importDeclaration.type !== AST_NODE_TYPES.ImportDeclaration) {
-    return null;
+): TSESLint.RuleFix {
+  const text = sourceCode.getText();
+  let [start, end] = importDeclaration.range;
+
+  const beforeImport = scanBackwardOverWhitespace(text, start);
+  const lineBreakIndex = beforeImport - 1;
+  if (lineBreakIndex >= 0 && (text[lineBreakIndex] === '\n' || text[lineBreakIndex] === '\r')) {
+    const lineBreakStart =
+      text[lineBreakIndex] === '\n' &&
+      lineBreakIndex > 0 &&
+      text[lineBreakIndex - 1] === '\r'
+        ? lineBreakIndex - 1
+        : lineBreakIndex;
+
+    const whitespaceBeforeLineBreak = scanBackwardOverWhitespace(text, lineBreakStart);
+    const precedingCharIndex = whitespaceBeforeLineBreak - 1;
+    const lineIsWhitespaceOnly =
+      whitespaceBeforeLineBreak === 0 ||
+      (precedingCharIndex >= 0 &&
+        (text[precedingCharIndex] === '\n' || text[precedingCharIndex] === '\r'));
+
+    start = lineIsWhitespaceOnly ? whitespaceBeforeLineBreak : beforeImport;
+  } else {
+    start = beforeImport;
   }
 
-  const remainingSpecifiers = importDeclaration.specifiers.filter(
-    (candidate) => candidate !== specifier,
-  );
+  const afterImportWhitespace = scanForwardOverWhitespace(text, end);
+  const firstLineBreak = consumeLineBreak(text, afterImportWhitespace);
+  let removalEnd = afterImportWhitespace;
 
-  if (remainingSpecifiers.length === 0) {
-    const text = sourceCode.getText();
-    let [start, end] = importDeclaration.range;
-
-    const beforeImport = scanBackwardOverWhitespace(text, start);
-    const lineBreakIndex = beforeImport - 1;
-    if (lineBreakIndex >= 0 && (text[lineBreakIndex] === '\n' || text[lineBreakIndex] === '\r')) {
-      const lineBreakStart =
-        text[lineBreakIndex] === '\n' &&
-        lineBreakIndex > 0 &&
-        text[lineBreakIndex - 1] === '\r'
-          ? lineBreakIndex - 1
-          : lineBreakIndex;
-
-      const whitespaceBeforeLineBreak = scanBackwardOverWhitespace(text, lineBreakStart);
-      const precedingCharIndex = whitespaceBeforeLineBreak - 1;
-      const lineIsWhitespaceOnly =
-        whitespaceBeforeLineBreak === 0 ||
-        (precedingCharIndex >= 0 &&
-          (text[precedingCharIndex] === '\n' || text[precedingCharIndex] === '\r'));
-
-      start = lineIsWhitespaceOnly ? whitespaceBeforeLineBreak : beforeImport;
+  if (firstLineBreak.consumed) {
+    const afterFirstBreak = firstLineBreak.newPosition;
+    const spacesAfterFirst = scanForwardOverWhitespace(text, afterFirstBreak);
+    const secondLineBreak = consumeLineBreak(text, spacesAfterFirst);
+    if (secondLineBreak.consumed) {
+      // Remove a trailing blank line but stop before consuming indentation of the next statement.
+      removalEnd = secondLineBreak.newPosition;
     } else {
-      start = beforeImport;
+      // Keep indentation that belongs to the following statement.
+      removalEnd = afterFirstBreak;
     }
-
-    const afterImportWhitespace = scanForwardOverWhitespace(text, end);
-    const firstLineBreak = consumeLineBreak(text, afterImportWhitespace);
-    let removalEnd = afterImportWhitespace;
-
-    if (firstLineBreak.consumed) {
-      const afterFirstBreak = firstLineBreak.newPosition;
-      const spacesAfterFirst = scanForwardOverWhitespace(text, afterFirstBreak);
-      const secondLineBreak = consumeLineBreak(text, spacesAfterFirst);
-      if (secondLineBreak.consumed) {
-        // Remove a trailing blank line but stop before consuming indentation of the next statement.
-        removalEnd = secondLineBreak.newPosition;
-      } else {
-        // Keep indentation that belongs to the following statement.
-        removalEnd = afterFirstBreak;
-      }
-    }
-
-    return fixer.removeRange([start, removalEnd]);
   }
 
+  return fixer.removeRange([start, removalEnd]);
+}
+
+function buildPartialImportRemoval(
+  importDeclaration: TSESTree.ImportDeclaration,
+  remainingSpecifiers: TSESTree.ImportClause[],
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  fixer: TSESLint.RuleFixer,
+): TSESLint.RuleFix {
   const defaultSpecifier = remainingSpecifiers.find(
     (candidate) => candidate.type === AST_NODE_TYPES.ImportDefaultSpecifier,
   );
@@ -372,6 +392,27 @@ function buildImportRemovalFix(
   const newImport = `${importPrefix}${pieces.join(', ')} from ${sourceCode.getText(importDeclaration.source)};`;
 
   return fixer.replaceText(importDeclaration, newImport);
+}
+
+function buildImportRemovalFix(
+  specifier: TSESTree.ImportSpecifier,
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  fixer: TSESLint.RuleFixer,
+): TSESLint.RuleFix | null {
+  const importDeclaration = specifier.parent;
+  if (!importDeclaration || importDeclaration.type !== AST_NODE_TYPES.ImportDeclaration) {
+    return null;
+  }
+
+  const remainingSpecifiers = importDeclaration.specifiers.filter(
+    (candidate) => candidate !== specifier,
+  );
+
+  if (remainingSpecifiers.length === 0) {
+    return buildCompleteImportRemoval(importDeclaration, sourceCode, fixer);
+  }
+
+  return buildPartialImportRemoval(importDeclaration, remainingSpecifiers, sourceCode, fixer);
 }
 
 function getReplacementText(
@@ -523,7 +564,7 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Disallow returning useMemo results from custom hooks when the memoized value is pass-by-value (primitives with value equality such as string, number, boolean, null, undefined, or bigint). Memoizing pass-by-value primitives adds noise without referential benefits. Requires type information.',
+        'Disallow returning useMemo results from custom hooks when the memoized value is pass-by-value: primitives with value equality (string, number, boolean, null, undefined, bigint) or arrays/tuples composed exclusively of these primitives. Requires type information.',
       recommended: 'error',
       requiresTypeChecking: true,
     },
