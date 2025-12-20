@@ -456,6 +456,28 @@ ${typedPrelude}
 ${typedPrelude}
       import { useMemo } from 'react';
 
+      export function useCompoundAssigned(flag: boolean) {
+        let result = 1;
+        result += useMemo(() => (flag ? 1 : 2), [flag]);
+        return result;
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useCompoundAssigned(flag: boolean) {
+        let result = 1;
+        result += flag ? 1 : 2;
+        return result;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
       export function useConditional(flag: boolean, fallback: string) {
         return flag
           ? useMemo(() => 'on', [flag])

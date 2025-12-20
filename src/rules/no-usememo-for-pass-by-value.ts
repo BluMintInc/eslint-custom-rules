@@ -521,6 +521,8 @@ function shouldParenthesizeReplacement(
         alreadyParenthesized ||
         !isSafeAtomicExpression(replacementExpression)
       );
+    case AST_NODE_TYPES.AssignmentExpression:
+      return false;
     default:
       return false;
   }
@@ -529,7 +531,7 @@ function shouldParenthesizeReplacement(
 function getRemovableImportSpecifier(
   callExpression: TSESTree.CallExpression,
   imports: UseMemoImports,
-  context: TSESLint.RuleContext<MessageIds, Options>,
+  sourceCode: Readonly<TSESLint.SourceCode>,
 ): TSESTree.ImportSpecifier | null {
   if (callExpression.callee.type !== AST_NODE_TYPES.Identifier) {
     return null;
@@ -540,10 +542,9 @@ function getRemovableImportSpecifier(
     return null;
   }
 
-  const sourceCode = context.getSourceCode();
   const declaredVariables = hasDeclaredVariables(sourceCode)
     ? sourceCode.getDeclaredVariables(specifier)
-    : context.getDeclaredVariables(specifier);
+    : (sourceCode as any).getDeclaredVariables?.(specifier) ?? [];
   const [variable] = declaredVariables;
   if (!variable) {
     // Defer removal when scope analysis cannot resolve the import.
@@ -792,7 +793,7 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
       );
       const replacement = needsParentheses ? `(${replacementText})` : replacementText;
 
-      const specifier = getRemovableImportSpecifier(node, imports, context);
+      const specifier = getRemovableImportSpecifier(node, imports, sourceCode);
       const fixes: TSESLint.RuleFix[] = [fixer.replaceText(node, replacement)];
 
       if (specifier) {
@@ -1012,7 +1013,7 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
       },
       AssignmentExpression(node: TSESTree.AssignmentExpression) {
         const currentContext = functionStack[functionStack.length - 1];
-        if (!currentContext?.isHook || node.operator !== '=') {
+        if (!currentContext?.isHook) {
           return;
         }
 
@@ -1029,7 +1030,9 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
           return;
         }
 
-        untrackPatternVariables(node.left, currentContext, resolveVariable);
+        if (node.operator === '=') {
+          untrackPatternVariables(node.left, currentContext, resolveVariable);
+        }
       },
       ReturnStatement(node: TSESTree.ReturnStatement) {
         const currentContext = functionStack[functionStack.length - 1];
