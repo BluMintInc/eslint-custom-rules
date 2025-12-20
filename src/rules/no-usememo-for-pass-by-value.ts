@@ -47,7 +47,7 @@ type UseMemoImports = {
 
 function isCustomHookName(name: string | undefined): boolean {
   if (!name) return false;
-  return name.startsWith('use') && name.length > 3;
+  return /^use[A-Z]/.test(name);
 }
 
 function getFunctionName(
@@ -192,7 +192,8 @@ function classifyPassByValue(
     const typeArguments = checker.getTypeArguments(type as ts.TypeReference);
     const elementType = typeArguments[0];
     if (elementType) {
-      return classifyPassByValue(elementType, checker);
+      const result = classifyPassByValue(elementType, checker);
+      return { ...result, description };
     }
     // Empty array type is considered pass-by-value because it's effectively a constant literal []
     return { passByValue: true, indeterminate: false, description };
@@ -619,110 +620,110 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
       ASTUtils.findVariable(context.getScope(), identifier) ?? null;
 
     function trackPatternVariables(
-  pattern: TSESTree.Node,
-  memoCall: TSESTree.CallExpression,
-  currentContext: FunctionContext,
-  resolveVariable: (id: TSESTree.Identifier) => TSESLint.Scope.Variable | null,
-) {
-  if (pattern.type === AST_NODE_TYPES.Identifier) {
-    const variable = resolveVariable(pattern);
-    if (variable) {
-      currentContext.memoVariables.set(variable, memoCall);
-    }
-  } else if (pattern.type === AST_NODE_TYPES.ArrayPattern) {
-    for (const element of pattern.elements) {
-      if (element) {
-        if (element.type === AST_NODE_TYPES.RestElement) {
-          trackPatternVariables(
-            element.argument,
-            memoCall,
-            currentContext,
-            resolveVariable,
-          );
-        } else {
-          trackPatternVariables(
-            element,
-            memoCall,
-            currentContext,
-            resolveVariable,
-          );
+      pattern: TSESTree.Node,
+      memoCall: TSESTree.CallExpression,
+      currentContext: FunctionContext,
+      resolveVariable: (id: TSESTree.Identifier) => TSESLint.Scope.Variable | null,
+    ) {
+      if (pattern.type === AST_NODE_TYPES.Identifier) {
+        const variable = resolveVariable(pattern);
+        if (variable) {
+          currentContext.memoVariables.set(variable, memoCall);
         }
-      }
-    }
-  } else if (pattern.type === AST_NODE_TYPES.ObjectPattern) {
-    for (const property of pattern.properties) {
-      if (property.type === AST_NODE_TYPES.Property) {
+      } else if (pattern.type === AST_NODE_TYPES.ArrayPattern) {
+        for (const element of pattern.elements) {
+          if (element) {
+            if (element.type === AST_NODE_TYPES.RestElement) {
+              trackPatternVariables(
+                element.argument,
+                memoCall,
+                currentContext,
+                resolveVariable,
+              );
+            } else {
+              trackPatternVariables(
+                element,
+                memoCall,
+                currentContext,
+                resolveVariable,
+              );
+            }
+          }
+        }
+      } else if (pattern.type === AST_NODE_TYPES.ObjectPattern) {
+        for (const property of pattern.properties) {
+          if (property.type === AST_NODE_TYPES.Property) {
+            trackPatternVariables(
+              property.value,
+              memoCall,
+              currentContext,
+              resolveVariable,
+            );
+          } else if (property.type === AST_NODE_TYPES.RestElement) {
+            trackPatternVariables(
+              property.argument,
+              memoCall,
+              currentContext,
+              resolveVariable,
+            );
+          }
+        }
+      } else if (pattern.type === AST_NODE_TYPES.AssignmentPattern) {
         trackPatternVariables(
-          property.value,
+          pattern.left,
           memoCall,
           currentContext,
           resolveVariable,
         );
-      } else if (property.type === AST_NODE_TYPES.RestElement) {
-        trackPatternVariables(
-          property.argument,
-          memoCall,
-          currentContext,
-          resolveVariable,
-        );
       }
     }
-  } else if (pattern.type === AST_NODE_TYPES.AssignmentPattern) {
-    trackPatternVariables(
-      pattern.left,
-      memoCall,
-      currentContext,
-      resolveVariable,
-    );
-  }
-}
 
-function untrackPatternVariables(
-  pattern: TSESTree.Node,
-  currentContext: FunctionContext,
-  resolveVariable: (id: TSESTree.Identifier) => TSESLint.Scope.Variable | null,
-) {
-  if (pattern.type === AST_NODE_TYPES.Identifier) {
-    const variable = resolveVariable(pattern);
-    if (variable) {
-      currentContext.memoVariables.delete(variable);
-    }
-  } else if (pattern.type === AST_NODE_TYPES.ArrayPattern) {
-    for (const element of pattern.elements) {
-      if (element) {
-        if (element.type === AST_NODE_TYPES.RestElement) {
-          untrackPatternVariables(
-            element.argument,
-            currentContext,
-            resolveVariable,
-          );
-        } else {
-          untrackPatternVariables(element, currentContext, resolveVariable);
+    function untrackPatternVariables(
+      pattern: TSESTree.Node,
+      currentContext: FunctionContext,
+      resolveVariable: (id: TSESTree.Identifier) => TSESLint.Scope.Variable | null,
+    ) {
+      if (pattern.type === AST_NODE_TYPES.Identifier) {
+        const variable = resolveVariable(pattern);
+        if (variable) {
+          currentContext.memoVariables.delete(variable);
         }
+      } else if (pattern.type === AST_NODE_TYPES.ArrayPattern) {
+        for (const element of pattern.elements) {
+          if (element) {
+            if (element.type === AST_NODE_TYPES.RestElement) {
+              untrackPatternVariables(
+                element.argument,
+                currentContext,
+                resolveVariable,
+              );
+            } else {
+              untrackPatternVariables(element, currentContext, resolveVariable);
+            }
+          }
+        }
+      } else if (pattern.type === AST_NODE_TYPES.ObjectPattern) {
+        for (const property of pattern.properties) {
+          if (property.type === AST_NODE_TYPES.Property) {
+            untrackPatternVariables(
+              property.value,
+              currentContext,
+              resolveVariable,
+            );
+          } else if (property.type === AST_NODE_TYPES.RestElement) {
+            untrackPatternVariables(
+              property.argument,
+              currentContext,
+              resolveVariable,
+            );
+          }
+        }
+      } else if (pattern.type === AST_NODE_TYPES.AssignmentPattern) {
+        untrackPatternVariables(pattern.left, currentContext, resolveVariable);
       }
     }
-  } else if (pattern.type === AST_NODE_TYPES.ObjectPattern) {
-    for (const property of pattern.properties) {
-      if (property.type === AST_NODE_TYPES.Property) {
-        untrackPatternVariables(
-          property.value,
-          currentContext,
-          resolveVariable,
-        );
-      } else if (property.type === AST_NODE_TYPES.RestElement) {
-        untrackPatternVariables(
-          property.argument,
-          currentContext,
-          resolveVariable,
-        );
-      }
-    }
-  } else if (pattern.type === AST_NODE_TYPES.AssignmentPattern) {
-    untrackPatternVariables(pattern.left, currentContext, resolveVariable);
-  }
-}
 
-function validateUseMemoArgument(
+    function validateUseMemoArgument(
       node: TSESTree.CallExpression,
     ):
       | {
@@ -804,7 +805,7 @@ function validateUseMemoArgument(
       return fixes;
     }
 
-    function handleUseMemoCall(
+    function checkUseMemoForPassByValue(
       node: TSESTree.CallExpression,
       currentContext: FunctionContext | undefined,
     ) {
@@ -823,7 +824,11 @@ function validateUseMemoArgument(
       }
 
       const classification = classifyUseMemoReturnType(node, returnedExpression);
-      if (!classification || classification.indeterminate || !classification.passByValue) {
+      if (
+        !classification ||
+        classification.indeterminate ||
+        !classification.passByValue
+      ) {
         return;
       }
 
@@ -872,7 +877,7 @@ function validateUseMemoArgument(
       switch (expression.type) {
         case AST_NODE_TYPES.CallExpression:
           if (isUseMemoCall(expression, imports)) {
-            handleUseMemoCall(expression, currentContext);
+            checkUseMemoForPassByValue(expression, currentContext);
             return;
           }
           analyzeExpressionList(expression.arguments, currentContext);
@@ -886,61 +891,58 @@ function validateUseMemoArgument(
             ? currentContext.memoVariables.get(variable)
             : undefined;
           if (memoCall) {
-            handleUseMemoCall(memoCall, currentContext);
+            checkUseMemoForPassByValue(memoCall, currentContext);
           }
           return;
         }
-      case AST_NODE_TYPES.ConditionalExpression:
-        analyzeReturnedValue(expression.test, currentContext);
-        analyzeReturnedValue(expression.consequent, currentContext);
-        analyzeReturnedValue(expression.alternate, currentContext);
-        return;
-      case AST_NODE_TYPES.LogicalExpression:
-        analyzeReturnedValue(expression.left, currentContext);
-        analyzeReturnedValue(expression.right, currentContext);
-        return;
-      case AST_NODE_TYPES.BinaryExpression:
-        if (expression.left.type !== AST_NODE_TYPES.PrivateIdentifier) {
+        case AST_NODE_TYPES.ConditionalExpression:
+          analyzeReturnedValue(expression.test, currentContext);
+          analyzeReturnedValue(expression.consequent, currentContext);
+          analyzeReturnedValue(expression.alternate, currentContext);
+          return;
+        case AST_NODE_TYPES.LogicalExpression:
           analyzeReturnedValue(expression.left, currentContext);
+          analyzeReturnedValue(expression.right, currentContext);
+          return;
+        case AST_NODE_TYPES.BinaryExpression:
+          if (expression.left.type !== AST_NODE_TYPES.PrivateIdentifier) {
+            analyzeReturnedValue(expression.left, currentContext);
+          }
+          analyzeReturnedValue(expression.right, currentContext);
+          return;
+        case AST_NODE_TYPES.SequenceExpression: {
+          const lastExpression =
+            expression.expressions[expression.expressions.length - 1];
+          analyzeReturnedValue(lastExpression, currentContext);
+          return;
         }
-        analyzeReturnedValue(expression.right, currentContext);
-        return;
-      case AST_NODE_TYPES.SequenceExpression: {
-        const lastExpression =
-          expression.expressions[expression.expressions.length - 1];
-        analyzeReturnedValue(lastExpression, currentContext);
-        return;
+        case AST_NODE_TYPES.ArrayExpression:
+          analyzeExpressionList(expression.elements, currentContext);
+          return;
+        case AST_NODE_TYPES.ObjectExpression: {
+          const propertyExpressions = expression.properties.map((property) => {
+            if (property.type === AST_NODE_TYPES.SpreadElement) {
+              return property.argument;
+            }
+            if (property.type === AST_NODE_TYPES.Property && property.value) {
+              return property.value as TSESTree.Expression;
+            }
+            return null;
+          });
+          analyzeExpressionList(propertyExpressions, currentContext);
+          return;
+        }
+        case AST_NODE_TYPES.TSAsExpression:
+        case AST_NODE_TYPES.TSTypeAssertion:
+        case AST_NODE_TYPES.TSNonNullExpression:
+        case AST_NODE_TYPES.TSSatisfiesExpression:
+        case AST_NODE_TYPES.ChainExpression:
+          analyzeReturnedValue(expression.expression, currentContext);
+          return;
+        case AST_NODE_TYPES.AwaitExpression:
+          analyzeReturnedValue(expression.argument, currentContext);
+          return;
       }
-      case AST_NODE_TYPES.ArrayExpression:
-        analyzeExpressionList(expression.elements, currentContext);
-        return;
-      case AST_NODE_TYPES.ObjectExpression: {
-        const propertyExpressions = expression.properties.map((property) => {
-          if (property.type === AST_NODE_TYPES.SpreadElement) {
-            return property.argument;
-          }
-          if (
-            property.type === AST_NODE_TYPES.Property &&
-            property.value
-          ) {
-            return property.value as TSESTree.Expression;
-          }
-          return null;
-        });
-        analyzeExpressionList(propertyExpressions, currentContext);
-        return;
-      }
-      case AST_NODE_TYPES.TSAsExpression:
-      case AST_NODE_TYPES.TSTypeAssertion:
-      case AST_NODE_TYPES.TSNonNullExpression:
-      case AST_NODE_TYPES.TSSatisfiesExpression:
-      case AST_NODE_TYPES.ChainExpression:
-        analyzeReturnedValue(expression.expression, currentContext);
-        return;
-      case AST_NODE_TYPES.AwaitExpression:
-        analyzeReturnedValue(expression.argument, currentContext);
-        return;
-    }
     }
 
     return {

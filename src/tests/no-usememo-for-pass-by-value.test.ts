@@ -669,14 +669,14 @@ ${typedPrelude}
 ${typedPrelude}
       import { useMemo } from 'react';
 
-      export function usevalue(slug: string) {
+      export function useValue(slug: string) {
         return useMemo(() => slug, [slug]);
       }
       `,
       errors: [{ messageId: 'primitiveMemo' }],
       output: `
 ${typedPrelude}
-      export function usevalue(slug: string) {
+      export function useValue(slug: string) {
         return slug;
       }
       `,
