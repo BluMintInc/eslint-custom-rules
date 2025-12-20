@@ -147,6 +147,52 @@ ${typedPrelude}
       ...baseOptions,
       code: `
 ${typedPrelude}
+      export function useLocalReactObject(value: number) {
+        const React = {
+          useMemo<T>(factory: () => T, deps: unknown[]) {
+            void deps;
+            return factory();
+          },
+        };
+
+        return React.useMemo(() => value, [value]);
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+      void useMemo;
+
+      export function useShadowedUseMemo(
+        useMemo: <T>(factory: () => T, deps: unknown[]) => T,
+        value: number,
+      ) {
+        return useMemo(() => value, [value]);
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import React from 'react';
+      void React;
+
+      export function useShadowedReact(
+        React: { useMemo<T>(factory: () => T, deps: unknown[]): T },
+        value: number,
+      ) {
+        return React.useMemo(() => value, [value]);
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
       import { useMemo } from 'react';
 
       export function useReassigned(flag: boolean) {
