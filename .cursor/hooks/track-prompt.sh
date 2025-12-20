@@ -8,4 +8,3 @@ source "$COMMON_SCRIPT"
 
 TS_SCRIPT="scripts/cursor-hooks/track-prompt.ts"
 echo "$JSON_INPUT" | npx tsx "$TS_SCRIPT"
-d
