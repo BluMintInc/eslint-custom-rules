@@ -325,7 +325,10 @@ ${typedPrelude}
       }
       `,
       options: [{ allowExpensiveCalleePatterns: ['('] }],
-      errors: [{ messageId: 'primitiveMemo' }],
+      errors: [
+        { messageId: 'invalidRegex', data: { pattern: '(' } },
+        { messageId: 'primitiveMemo' },
+      ],
       output: `
 ${typedPrelude}
       export function useInvalidPattern(value: string) {
@@ -765,6 +768,68 @@ ${typedPrelude}
 ${typedPrelude}
       export function useSatisfiesLogical(flag: boolean, fallback: boolean) {
         return (flag || fallback) satisfies boolean;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useDestructured() {
+        const [value] = useMemo(() => [1], []);
+        return value;
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useDestructured() {
+        const [value] = [1];
+        return value;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useTupleDestructured() {
+        const [a] = useMemo(() => [1] as [number], []);
+        return a;
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useTupleDestructured() {
+        const [a] = [1] as [number];
+        return a;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useInvalidConfig() {
+        return useMemo(() => 1, []);
+      }
+      `,
+      options: [{ allowExpensiveCalleePatterns: ['['] }],
+      errors: [
+        { messageId: 'invalidRegex', data: { pattern: '[' } },
+        { messageId: 'primitiveMemo' },
+      ],
+      output: `
+${typedPrelude}
+      export function useInvalidConfig() {
+        return 1;
       }
       `,
     },

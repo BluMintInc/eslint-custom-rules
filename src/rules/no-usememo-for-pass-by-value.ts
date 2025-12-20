@@ -12,7 +12,7 @@ type Options = [
   },
 ];
 
-type MessageIds = 'primitiveMemo';
+type MessageIds = 'primitiveMemo' | 'invalidRegex';
 
 const DEFAULT_EXPENSIVE_PATTERNS = [
   'compute',
@@ -30,7 +30,8 @@ const PASS_BY_VALUE_FLAGS =
   ts.TypeFlags.BigIntLike |
   ts.TypeFlags.BooleanLike |
   ts.TypeFlags.Undefined |
-  ts.TypeFlags.Null;
+  ts.TypeFlags.Null |
+  ts.TypeFlags.Never;
 
 type FunctionContext = {
   isHook: boolean;
@@ -585,6 +586,8 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
     messages: {
       primitiveMemo:
         'What’s wrong: custom hook "{{hookName}}" returns useMemo wrapping a pass-by-value value ({{valueType}}) → Why it matters: memoizing pass-by-value results cannot change identity and implies stability that is not real, which misleads callers and adds noise → How to fix: inline the returned expression and remove the useMemo import if it becomes unused.',
+      invalidRegex:
+        'What’s wrong: invalid regex pattern "{{pattern}}" in allowExpensiveCalleePatterns → Why it matters: invalid patterns prevent the rule from correctly identifying expensive computations, potentially causing false positives → How to fix: correct the regex pattern in your ESLint configuration.',
     },
   },
   defaultOptions: [{}],
@@ -599,15 +602,14 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
     const { program, esTreeNodeToTSNodeMap } = parserServices;
     const checker = program.getTypeChecker();
     const imports = collectUseMemoImports(sourceCode.ast);
-    const expensiveMatchers = (
-      context.options[0]?.allowExpensiveCalleePatterns ??
-      DEFAULT_EXPENSIVE_PATTERNS
-      // Skip invalid patterns instead of throwing during lint execution.
-    ).flatMap((pattern) => {
+    const expensiveMatchers: RegExp[] = [];
+    const invalidPatterns: string[] = [];
+
+    (context.options[0]?.allowExpensiveCalleePatterns ?? DEFAULT_EXPENSIVE_PATTERNS).forEach((pattern) => {
       try {
-        return [new RegExp(pattern)];
+        expensiveMatchers.push(new RegExp(pattern));
       } catch {
-        return [];
+        invalidPatterns.push(pattern);
       }
     });
 
@@ -616,7 +618,111 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
     const resolveVariable = (identifier: TSESTree.Identifier) =>
       ASTUtils.findVariable(context.getScope(), identifier) ?? null;
 
-    function validateUseMemoArgument(
+    function trackPatternVariables(
+  pattern: TSESTree.Node,
+  memoCall: TSESTree.CallExpression,
+  currentContext: FunctionContext,
+  resolveVariable: (id: TSESTree.Identifier) => TSESLint.Scope.Variable | null,
+) {
+  if (pattern.type === AST_NODE_TYPES.Identifier) {
+    const variable = resolveVariable(pattern);
+    if (variable) {
+      currentContext.memoVariables.set(variable, memoCall);
+    }
+  } else if (pattern.type === AST_NODE_TYPES.ArrayPattern) {
+    for (const element of pattern.elements) {
+      if (element) {
+        if (element.type === AST_NODE_TYPES.RestElement) {
+          trackPatternVariables(
+            element.argument,
+            memoCall,
+            currentContext,
+            resolveVariable,
+          );
+        } else {
+          trackPatternVariables(
+            element,
+            memoCall,
+            currentContext,
+            resolveVariable,
+          );
+        }
+      }
+    }
+  } else if (pattern.type === AST_NODE_TYPES.ObjectPattern) {
+    for (const property of pattern.properties) {
+      if (property.type === AST_NODE_TYPES.Property) {
+        trackPatternVariables(
+          property.value,
+          memoCall,
+          currentContext,
+          resolveVariable,
+        );
+      } else if (property.type === AST_NODE_TYPES.RestElement) {
+        trackPatternVariables(
+          property.argument,
+          memoCall,
+          currentContext,
+          resolveVariable,
+        );
+      }
+    }
+  } else if (pattern.type === AST_NODE_TYPES.AssignmentPattern) {
+    trackPatternVariables(
+      pattern.left,
+      memoCall,
+      currentContext,
+      resolveVariable,
+    );
+  }
+}
+
+function untrackPatternVariables(
+  pattern: TSESTree.Node,
+  currentContext: FunctionContext,
+  resolveVariable: (id: TSESTree.Identifier) => TSESLint.Scope.Variable | null,
+) {
+  if (pattern.type === AST_NODE_TYPES.Identifier) {
+    const variable = resolveVariable(pattern);
+    if (variable) {
+      currentContext.memoVariables.delete(variable);
+    }
+  } else if (pattern.type === AST_NODE_TYPES.ArrayPattern) {
+    for (const element of pattern.elements) {
+      if (element) {
+        if (element.type === AST_NODE_TYPES.RestElement) {
+          untrackPatternVariables(
+            element.argument,
+            currentContext,
+            resolveVariable,
+          );
+        } else {
+          untrackPatternVariables(element, currentContext, resolveVariable);
+        }
+      }
+    }
+  } else if (pattern.type === AST_NODE_TYPES.ObjectPattern) {
+    for (const property of pattern.properties) {
+      if (property.type === AST_NODE_TYPES.Property) {
+        untrackPatternVariables(
+          property.value,
+          currentContext,
+          resolveVariable,
+        );
+      } else if (property.type === AST_NODE_TYPES.RestElement) {
+        untrackPatternVariables(
+          property.argument,
+          currentContext,
+          resolveVariable,
+        );
+      }
+    }
+  } else if (pattern.type === AST_NODE_TYPES.AssignmentPattern) {
+    untrackPatternVariables(pattern.left, currentContext, resolveVariable);
+  }
+}
+
+function validateUseMemoArgument(
       node: TSESTree.CallExpression,
     ):
       | {
@@ -838,6 +944,15 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
     }
 
     return {
+      Program() {
+        invalidPatterns.forEach((pattern) => {
+          context.report({
+            node: sourceCode.ast,
+            messageId: 'invalidRegex',
+            data: { pattern },
+          });
+        });
+      },
       FunctionDeclaration(node: TSESTree.FunctionDeclaration) {
         const name = getFunctionName(node);
         functionStack.push({
@@ -879,7 +994,6 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
         const currentContext = functionStack[functionStack.length - 1];
         if (
           !currentContext?.isHook ||
-          node.id.type !== AST_NODE_TYPES.Identifier ||
           !node.init ||
           node.init.type !== AST_NODE_TYPES.CallExpression ||
           !isUseMemoCall(node.init, imports)
@@ -887,23 +1001,16 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
           return;
         }
 
-        const variable = resolveVariable(node.id);
-        if (variable) {
-          currentContext.memoVariables.set(variable, node.init);
-        }
+        trackPatternVariables(
+          node.id,
+          node.init,
+          currentContext,
+          resolveVariable,
+        );
       },
       AssignmentExpression(node: TSESTree.AssignmentExpression) {
         const currentContext = functionStack[functionStack.length - 1];
-        if (
-          !currentContext?.isHook ||
-          node.operator !== '=' ||
-          node.left.type !== AST_NODE_TYPES.Identifier
-        ) {
-          return;
-        }
-
-        const variable = resolveVariable(node.left);
-        if (!variable) {
+        if (!currentContext?.isHook || node.operator !== '=') {
           return;
         }
 
@@ -911,11 +1018,16 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
           node.right.type === AST_NODE_TYPES.CallExpression &&
           isUseMemoCall(node.right, imports)
         ) {
-          currentContext.memoVariables.set(variable, node.right);
+          trackPatternVariables(
+            node.left,
+            node.right,
+            currentContext,
+            resolveVariable,
+          );
           return;
         }
 
-        currentContext.memoVariables.delete(variable);
+        untrackPatternVariables(node.left, currentContext, resolveVariable);
       },
       ReturnStatement(node: TSESTree.ReturnStatement) {
         const currentContext = functionStack[functionStack.length - 1];
