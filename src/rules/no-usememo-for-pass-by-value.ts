@@ -241,7 +241,7 @@ function getCalleeName(node: TSESTree.CallExpression): string | null {
   return null;
 }
 
-function isExpensiveComputation(
+function matchesExpensiveCalleePattern(
   callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
   expensiveMatchers: RegExp[],
 ): boolean {
@@ -857,7 +857,7 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
       }
 
       const { callback, returnedExpression } = validated;
-      if (isExpensiveComputation(callback, expensiveMatchers)) {
+      if (matchesExpensiveCalleePattern(callback, expensiveMatchers)) {
         return;
       }
 
@@ -951,6 +951,9 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
             analyzeReturnedValue(expression.left, currentContext);
           }
           analyzeReturnedValue(expression.right, currentContext);
+          return;
+        case AST_NODE_TYPES.UnaryExpression:
+          analyzeReturnedValue(expression.argument, currentContext);
           return;
         case AST_NODE_TYPES.SequenceExpression: {
           const lastExpression =

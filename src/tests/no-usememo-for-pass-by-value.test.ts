@@ -401,6 +401,42 @@ ${typedPrelude}
 ${typedPrelude}
       import { useMemo } from 'react';
 
+      export function useNegated(flag: boolean) {
+        return !useMemo(() => flag, [flag]);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useNegated(flag: boolean) {
+        return !(flag);
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useNegative(value: number) {
+        return -useMemo(() => value, [value]);
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useNegative(value: number) {
+        return -(value);
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
       export function useInvalidPattern(value: string) {
         return useMemo(() => value, [value]);
       }
