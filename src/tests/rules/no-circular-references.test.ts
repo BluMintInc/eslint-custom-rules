@@ -1,5 +1,19 @@
+import { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterTs } from '../../utils/ruleTester';
 import { noCircularReferences } from '../../rules/no-circular-references';
+
+const buildMessage = (referenceText: string) =>
+  noCircularReferences.meta.messages.circularReference.replace(
+    '{{referenceText}}',
+    () => referenceText,
+  );
+
+const error = (
+  referenceText: string,
+): TSESLint.TestCaseError<'circularReference'> =>
+  ({
+    message: buildMessage(referenceText),
+  } as unknown as TSESLint.TestCaseError<'circularReference'>);
 
 ruleTesterTs.run('no-circular-references', noCircularReferences, {
   valid: [
@@ -349,7 +363,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         function fn() { return obj; }
         obj.func = fn;
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('fn')],
     },
     // Object with null/undefined properties
     {
@@ -358,7 +372,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         obj.c = obj.a;
         obj.d = obj.b;
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('undefined')],
     },
     // Object with Symbol reference
     {
@@ -367,7 +381,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const sym = Symbol('test');
         obj.sym = sym;
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('sym')],
     },
     // Object with function that returns a new object each time
     {
@@ -377,7 +391,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const result = obj.getNewObj();
         result.source = obj;
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('obj')],
     },
     // Object with property that shadows a global
     {
@@ -386,7 +400,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         obj.Object = { custom: true };
         obj.Object.parent = obj;
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('obj')],
     },
     // Object with property that is a getter returning a new object
     {
@@ -399,7 +413,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const result = obj.dynamic;
         result.source = obj;
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('obj')],
     },
     // Object with property that is a function returning a copy
     {
@@ -413,7 +427,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const copy = obj.getCopy();
         copy.source = obj;
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('obj')],
     },
     // Object with property that is a function returning a deep copy
     {
@@ -427,7 +441,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const deepCopy = obj.getDeepCopy();
         deepCopy.source = obj;
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('obj')],
     },
     // Object with property that is a function returning a new object with a reference
     {
@@ -439,7 +453,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         };
         const wrapper = obj.getWrapper();
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('obj')],
     },
     // Direct self-reference
     {
@@ -447,7 +461,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const obj = {};
         obj.self = obj;
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('obj')],
     },
     // Indirect circular reference between two objects
     {
@@ -456,7 +470,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const obj2 = { ref: obj1 };
         obj1.ref = obj2;
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('obj2')],
     },
     // Deeply nested circular reference
     {
@@ -468,7 +482,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         };
         obj.level1.level2.circular = obj;
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('obj')],
     },
     // Multiple circular references in the same object
     {
@@ -477,10 +491,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         obj.ref1 = obj;
         obj.ref2 = obj;
       `,
-      errors: [
-        { messageId: 'circularReference' },
-        { messageId: 'circularReference' },
-      ],
+      errors: [error('obj'), error('obj')],
     },
     // Circular reference through array index
     {
@@ -488,7 +499,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const obj = { arr: [] };
         obj.arr[0] = obj;
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('obj')],
     },
     // Circular reference through computed property
     {
@@ -497,7 +508,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const obj = {};
         obj[key] = obj;
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('obj')],
     },
     // Circular reference through object spread
     {
@@ -507,7 +518,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         obj1.ref = obj2;
         obj2.ref = obj1;
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('obj1')],
     },
     // Circular reference through function return
     {
@@ -517,7 +528,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         obj.getRef = fn;
         obj.self = fn();
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('fn')],
     },
     // Circular reference with Object.create
     {
@@ -527,7 +538,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         base.child = obj;
         obj.parent = base;
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('base')],
     },
     // Circular reference with Promise
     {
@@ -537,7 +548,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         obj.promise = promise;
         promise.then(result => obj.self = result);
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('result')],
     },
     // Circular reference with Symbol
     {
@@ -547,7 +558,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         obj.sym = sym;
         obj[sym] = obj;
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('obj')],
     },
     // Circular reference with property that is a function returning the same object
     {
@@ -557,7 +568,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const result = obj.getSelf();
         result.source = result;
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('result')],
     },
     // Circular reference with property that shadows a global
     {
@@ -565,7 +576,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const obj = {};
         obj.Object = obj;
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('obj')],
     },
     // Circular reference with property that is a function returning this
     {
@@ -578,7 +589,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const result = obj.getSelf();
         result.source = result;
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('result')],
     },
     // Circular reference with property that is a function returning a reference
     {
@@ -591,7 +602,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const ref = obj.getRef();
         ref.source = ref;
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('ref')],
     },
     // Circular reference with property that is a function returning a wrapper
     {
@@ -604,10 +615,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const wrapper = obj.getWrapper();
         wrapper.wrapped.source = wrapper;
       `,
-      errors: [
-        { messageId: 'circularReference' },
-        { messageId: 'circularReference' },
-      ],
+      errors: [error('obj'), error('wrapper')],
     },
     // Circular reference with property that is a function returning a method object
     {
@@ -624,7 +632,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const methodObj = obj.getMethodObj();
         methodObj.self = methodObj;
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('methodObj')],
     },
     // Circular reference with property that is a function returning a getter object
     {
@@ -641,7 +649,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const getterObj = obj.getGetterObj();
         getterObj.self = getterObj;
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('getterObj')],
     },
     // Circular reference with property that is a function returning a setter object
     {
@@ -662,7 +670,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const setterObj = obj.getSetterObj();
         setterObj.value = setterObj;
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('setterObj')],
     },
     // Circular reference with property that is a function returning a computed object
     {
@@ -678,10 +686,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const computedObj = obj.getComputedObj();
         computedObj.self = computedObj;
       `,
-      errors: [
-        { messageId: 'circularReference' },
-        { messageId: 'circularReference' },
-      ],
+      errors: [error('obj'), error('computedObj')],
     },
     // Circular reference with property that is a function returning a spread object
     {
@@ -698,10 +703,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const spreadObj = obj.getSpreadObj();
         spreadObj.self = spreadObj;
       `,
-      errors: [
-        { messageId: 'circularReference' },
-        { messageId: 'circularReference' },
-      ],
+      errors: [error('obj'), error('spreadObj')],
     },
     // Circular reference with property that is a function returning a destructured object
     {
@@ -716,10 +718,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const destructuredObj = obj.getDestructuredObj();
         destructuredObj.self = destructuredObj;
       `,
-      errors: [
-        { messageId: 'circularReference' },
-        { messageId: 'circularReference' },
-      ],
+      errors: [error('a'), error('destructuredObj')],
     },
     // Circular reference with property that is a function returning a rest object
     {
@@ -734,10 +733,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const restObj = obj.getRestObj();
         restObj.self = restObj;
       `,
-      errors: [
-        { messageId: 'circularReference' },
-        { messageId: 'circularReference' },
-      ],
+      errors: [error('a'), error('restObj')],
     },
     // Circular reference with property that is a function returning a rest object with circular reference
     {
@@ -753,10 +749,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         };
         const restObj = obj.getRestObj();
       `,
-      errors: [
-        { messageId: 'circularReference' },
-        { messageId: 'circularReference' },
-      ],
+      errors: [error('a'), error('result')],
     },
     // Circular reference with property that is a function returning a rest object with circular reference to parent
     {
@@ -773,7 +766,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         };
         const restObj = obj.getRestObj();
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('a')],
     },
     // Circular reference with property that is a function returning a rest object with circular reference to parent through array
     {
@@ -791,7 +784,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         };
         const restObj = obj.getRestObj();
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('a')],
     },
     // Circular reference with property that is a function returning a rest object with circular reference to parent through object
     {
@@ -809,7 +802,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         };
         const restObj = obj.getRestObj();
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('a')],
     },
     // Circular reference with property that is a function returning a rest object with circular reference to parent through map
     {
@@ -827,7 +820,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         };
         const restObj = obj.getRestObj();
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('a')],
     },
     // Circular reference with property that is a function returning a rest object with circular reference to parent through set
     {
@@ -845,7 +838,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         };
         const restObj = obj.getRestObj();
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('a')],
     },
     // Circular reference with property that is a function returning a rest object with circular reference to parent through weakmap
     {
@@ -863,7 +856,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         };
         const restObj = obj.getRestObj();
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('a')],
     },
     // Circular reference with property that is a function returning a rest object with circular reference to parent through weakset
     {
@@ -881,7 +874,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         };
         const restObj = obj.getRestObj();
       `,
-      errors: [{ messageId: 'circularReference' }],
+      errors: [error('a')],
     },
   ],
 });

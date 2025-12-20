@@ -55,11 +55,13 @@ const DEFAULT_OPTIONS_ARRAY: Options = [DEFAULT_OPTIONS];
 
 const PATTERN_LENGTH_LIMIT = 200;
 const NESTED_QUANTIFIER_PATTERN = /\([^)]*[+*][^)]*\)\s*[\+\*{]/;
-const BROAD_QUANTIFIER_WITH_BACKREFERENCE_PATTERN =
-  /(?:\.\*|\.\+)[^)]*\\\d/;
+const BROAD_QUANTIFIER_WITH_BACKREFERENCE_PATTERN = /(?:\.\*|\.\+)[^)]*\\\d/;
 const REPEATED_BROAD_QUANTIFIER_PATTERN = /(?:\.\*|\.\+).*(?:\.\*|\.\+)/;
 
-function isPatternLikelySafe(pattern: string): { safe: boolean; reason?: string } {
+function isPatternLikelySafe(pattern: string): {
+  safe: boolean;
+  reason?: string;
+} {
   if (pattern.length > PATTERN_LENGTH_LIMIT) {
     return {
       safe: false,
@@ -76,7 +78,8 @@ function isPatternLikelySafe(pattern: string): { safe: boolean; reason?: string 
   if (REPEATED_BROAD_QUANTIFIER_PATTERN.test(pattern)) {
     return {
       safe: false,
-      reason: 'multiple greedy wildcards in one pattern create heavy backtracking',
+      reason:
+        'multiple greedy wildcards in one pattern create heavy backtracking',
     };
   }
   if (BROAD_QUANTIFIER_WITH_BACKREFERENCE_PATTERN.test(pattern)) {
@@ -252,9 +255,8 @@ function collectFunctions(
       isFunctionExpressionLike(statement.declaration) &&
       (statement.declaration as TSESTree.FunctionDeclaration).id
     ) {
-      const name = (
-        statement.declaration as TSESTree.FunctionDeclaration
-      ).id!.name;
+      const name = (statement.declaration as TSESTree.FunctionDeclaration).id!
+        .name;
       functions.push({
         name,
         fnNode: statement.declaration,
@@ -373,9 +375,14 @@ function dependencyOrder(
     }
     visited.add(name);
     const deps =
-      dependencyMap.get(name)?.slice().sort((a, b) => {
-        return (originalIndexMap.get(a) || 0) - (originalIndexMap.get(b) || 0);
-      }) || [];
+      dependencyMap
+        .get(name)
+        ?.slice()
+        .sort((a, b) => {
+          return (
+            (originalIndexMap.get(a) || 0) - (originalIndexMap.get(b) || 0)
+          );
+        }) || [];
     if (direction === 'callees-first') {
       deps.forEach(visit);
       order.push(name);
@@ -442,9 +449,7 @@ function getStatementRangeWithComments(
     sourceCode.getCommentsBefore(statement) || [],
   );
   const nextLeadingComments = nextStatement
-    ? new Set(
-        filterComments(sourceCode.getCommentsBefore(nextStatement) || []),
-      )
+    ? new Set(filterComments(sourceCode.getCommentsBefore(nextStatement) || []))
     : new Set<TSESTree.Comment>();
   const trailingCandidates = filterComments(
     sourceCode.getCommentsAfter(statement) || [],
@@ -537,7 +542,8 @@ export const verticallyGroupRelatedFunctions: TSESLint.RuleModule<
       options?.eventHandlerPattern,
       DEFAULT_OPTIONS.eventHandlerPattern,
       options?.eventHandlerPattern
-        ? (value, reason) => warnUnsafePattern('eventHandlerPattern', value, reason)
+        ? (value, reason) =>
+            warnUnsafePattern('eventHandlerPattern', value, reason)
         : undefined,
     );
     const utilityRegex = createRegexWithFallback(
@@ -611,14 +617,17 @@ export const verticallyGroupRelatedFunctions: TSESLint.RuleModule<
           normalizedOptions.exportPlacement === 'ignore'
             ? ''
             : normalizedOptions.exportPlacement === 'top'
-              ? 'exports stay at the top of the file'
-              : 'exports stay at the bottom of the file';
+            ? 'exports stay at the top of the file'
+            : 'exports stay at the bottom of the file';
 
         const group = classifyGroup(misplacedInfo);
         const groupOrder = normalizeGroupOrder(normalizedOptions.groupOrder);
         const groupReason =
           groupOrder.indexOf(group) > 0
-            ? `${group.replace('-', ' ')} should follow the configured group order`
+            ? `${group.replace(
+                '-',
+                ' ',
+              )} should follow the configured group order`
             : '';
 
         const reasons = [dependencyReason, exportReason, groupReason]
@@ -719,7 +728,6 @@ export const verticallyGroupRelatedFunctions: TSESLint.RuleModule<
             return fixer.replaceTextRange([start, end], textParts.join('\n\n'));
           },
         });
-
       },
     };
   },

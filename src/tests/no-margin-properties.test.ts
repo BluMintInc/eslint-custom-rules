@@ -1,5 +1,14 @@
+import type { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noMarginProperties } from '../rules/no-margin-properties';
+
+const marginMessage = (property: string) =>
+  `Margin property "${property}" in MUI styling fights container-controlled spacing (Stack/Grid spacing, gap, responsive gutters) and produces double gutters, misalignment, and overflow as layouts shift. Keep spacing inside the component with padding or let the parent handle separation via gap/spacing so layout remains predictable.`;
+
+const marginError = (property: string) =>
+  ({
+    message: marginMessage(property),
+  } as unknown as TSESLint.TestCaseError<'noMarginProperties'>);
 
 ruleTesterTs.run('no-margin-properties', noMarginProperties, {
   valid: [
@@ -459,7 +468,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [{ messageId: 'noMarginProperties' }],
+      errors: [marginError('marginLeft')],
     },
     // Invalid MUI Stack with mx
     {
@@ -475,7 +484,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [{ messageId: 'noMarginProperties' }],
+      errors: [marginError('mx')],
     },
     // Invalid MUI Container with mt and mb
     {
@@ -491,10 +500,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-      ],
+      errors: [marginError('mt'), marginError('mb')],
     },
     // Invalid MUI Box with margin string value
     {
@@ -510,7 +516,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [{ messageId: 'noMarginProperties' }],
+      errors: [marginError('margin')],
     },
     // Invalid MUI Box with margin percentage value
     {
@@ -526,7 +532,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [{ messageId: 'noMarginProperties' }],
+      errors: [marginError('margin')],
     },
     // Invalid custom component with sx prop
     {
@@ -538,7 +544,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [{ messageId: 'noMarginProperties' }],
+      errors: [marginError('margin')],
     },
     // Invalid conditional styling with margins
     {
@@ -550,7 +556,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [{ messageId: 'noMarginProperties' }],
+      errors: [marginError('margin')],
     },
     // Invalid margins in dynamic style objects
     {
@@ -566,7 +572,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [{ messageId: 'noMarginProperties' }],
+      errors: [marginError('margin')],
     },
     // Invalid function-based sx props with margin
     {
@@ -578,7 +584,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [{ messageId: 'noMarginProperties' }],
+      errors: [marginError('margin')],
     },
     // Invalid margins in theme overrides
     {
@@ -602,7 +608,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [{ messageId: 'noMarginProperties' }],
+      errors: [marginError('margin')],
     },
     // Invalid margins in MUI's css function
     {
@@ -613,7 +619,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           margin: 2,
         });
       `,
-      errors: [{ messageId: 'noMarginProperties' }],
+      errors: [marginError('margin')],
     },
     // Invalid margins with direct props
     {
@@ -625,7 +631,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [{ messageId: 'noMarginProperties' }],
+      errors: [marginError('margin')],
     },
     // Invalid margins with multiple direct props
     {
@@ -638,10 +644,10 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         },
       },
       errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
+        marginError('mt'),
+        marginError('mb'),
+        marginError('ml'),
+        marginError('mr'),
       ],
     },
     // Invalid margins with spread operator - simplified test case
@@ -658,7 +664,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [{ messageId: 'noMarginProperties' }],
+      errors: [marginError('margin')],
     },
     // Invalid margins in nested objects
     {
@@ -675,7 +681,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [{ messageId: 'noMarginProperties' }],
+      errors: [marginError('margin')],
     },
     // Invalid margins in both branches of conditional
     {
@@ -687,10 +693,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-      ],
+      errors: [marginError('marginTop'), marginError('marginBottom')],
     },
     // Invalid margins in arrow function with block body
     {
@@ -707,7 +710,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [{ messageId: 'noMarginProperties' }],
+      errors: [marginError('marginTop')],
     },
     // Invalid margins with Object.assign
     {
@@ -723,7 +726,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [{ messageId: 'noMarginProperties' }],
+      errors: [marginError('margin')],
     },
     // Invalid margins in complex nested theme structure
     {
@@ -761,9 +764,9 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         },
       },
       errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
+        marginError('marginTop'),
+        marginError('marginRight'),
+        marginError('marginBottom'),
       ],
     },
     // Invalid margins with string literals
@@ -776,7 +779,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [{ messageId: 'noMarginProperties' }],
+      errors: [marginError('marginTop')],
     },
     // Invalid margins with multiple components in the same file
     {
@@ -805,9 +808,9 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         },
       },
       errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
+        marginError('marginBottom'),
+        marginError('marginTop'),
+        marginError('margin'),
       ],
     },
     // Test with autofix option set to false (should behave the same)
@@ -821,7 +824,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [{ messageId: 'noMarginProperties' }],
+      errors: [marginError('margin')],
     },
     // Test with autofix option set to true (should behave the same since no autofix is implemented)
     {
@@ -834,7 +837,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [{ messageId: 'noMarginProperties' }],
+      errors: [marginError('margin')],
     },
     // Invalid margins with kebab-case properties
     {
@@ -846,10 +849,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-      ],
+      errors: [marginError('margin-left'), marginError('margin-right')],
     },
     // Invalid margins with mixed case variations
     {
@@ -862,9 +862,9 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         },
       },
       errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
+        marginError('marginleft'),
+        marginError('margintop'),
+        marginError('marginbottom'),
       ],
     },
     // Invalid margins with numeric string values
@@ -877,10 +877,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-      ],
+      errors: [marginError('margin'), marginError('marginTop')],
     },
     // Invalid margins with CSS calc() values
     {
@@ -892,10 +889,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-      ],
+      errors: [marginError('margin'), marginError('marginLeft')],
     },
     // Invalid margins with CSS variables
     {
@@ -907,10 +901,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-      ],
+      errors: [marginError('margin'), marginError('marginTop')],
     },
     // Invalid margins in deeply nested pseudo-selectors
     {
@@ -931,10 +922,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-      ],
+      errors: [marginError('margin'), marginError('marginTop')],
     },
     // Invalid margins in media queries
     {
@@ -953,10 +941,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-      ],
+      errors: [marginError('margin'), marginError('marginTop')],
     },
     // Invalid margins with simple template literal property names
     {
@@ -968,7 +953,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [{ messageId: 'noMarginProperties' }],
+      errors: [marginError('marginTop')],
     },
     // Invalid margins in function with multiple return statements
     {
@@ -985,10 +970,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-      ],
+      errors: [marginError('margin'), marginError('marginTop')],
     },
     // Invalid margins with ternary operator in values
     {
@@ -1000,10 +982,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-      ],
+      errors: [marginError('margin'), marginError('marginLeft')],
     },
     // Invalid margins with logical operators in values
     {
@@ -1015,10 +994,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-      ],
+      errors: [marginError('margin'), marginError('marginTop')],
     },
     // Invalid margins in array-style sx prop
     {
@@ -1030,10 +1006,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-      ],
+      errors: [marginError('margin'), marginError('marginTop')],
     },
     // Invalid margins with zero values
     {
@@ -1046,9 +1019,9 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         },
       },
       errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
+        marginError('margin'),
+        marginError('marginTop'),
+        marginError('marginLeft'),
       ],
     },
     // Invalid margins with negative values
@@ -1062,9 +1035,9 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         },
       },
       errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
+        marginError('margin'),
+        marginError('marginTop'),
+        marginError('marginLeft'),
       ],
     },
     // Invalid margins in complex spread scenarios (only detects variables used in sx)
@@ -1081,7 +1054,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [{ messageId: 'noMarginProperties' }],
+      errors: [marginError('margin')],
     },
     // Invalid margins with MUI theme function calls
     {
@@ -1098,9 +1071,9 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         },
       },
       errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
+        marginError('margin'),
+        marginError('marginTop'),
+        marginError('marginLeft'),
       ],
     },
     // Invalid margins in createTheme with multiple components
@@ -1130,9 +1103,9 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         },
       },
       errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
+        marginError('margin'),
+        marginError('marginTop'),
+        marginError('marginBottom'),
       ],
     },
     // Invalid margins with shorthand properties mixed with longhand
@@ -1146,10 +1119,10 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         },
       },
       errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
+        marginError('m'),
+        marginError('marginTop'),
+        marginError('mx'),
+        marginError('marginLeft'),
       ],
     },
     // Invalid margins in component with multiple sx props (edge case)
@@ -1164,7 +1137,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [{ messageId: 'noMarginProperties' }],
+      errors: [marginError('margin')],
     },
     // Invalid margins with function composition (current implementation limitation)
     // Note: The rule doesn't analyze function return values that aren't directly assigned to variables
@@ -1181,7 +1154,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [{ messageId: 'noMarginProperties' }],
+      errors: [marginError('margin')],
     },
     // Invalid margins in conditional with complex expressions
     {
@@ -1197,9 +1170,9 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         },
       },
       errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
+        marginError('margin'),
+        marginError('marginTop'),
+        marginError('marginBottom'),
       ],
     },
     // Invalid margins with CSS units variations
@@ -1218,10 +1191,10 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         },
       },
       errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
+        marginError('margin'),
+        marginError('marginTop'),
+        marginError('marginLeft'),
+        marginError('marginRight'),
       ],
     },
     // Invalid margins with auto values
@@ -1235,9 +1208,9 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         },
       },
       errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
+        marginError('margin'),
+        marginError('marginLeft'),
+        marginError('marginRight'),
       ],
     },
     // Invalid margins with inherit/initial/unset values
@@ -1251,9 +1224,9 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         },
       },
       errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
+        marginError('margin'),
+        marginError('marginTop'),
+        marginError('marginLeft'),
       ],
     },
     // Invalid margins in responsive breakpoints
@@ -1269,10 +1242,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           jsx: true,
         },
       },
-      errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-      ],
+      errors: [marginError('margin'), marginError('marginTop')],
     },
     // Invalid margins with multiple MUI components in one file
     {
@@ -1295,10 +1265,10 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         },
       },
       errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
+        marginError('marginBottom'),
+        marginError('marginTop'),
+        marginError('marginBottom'),
+        marginError('marginRight'),
       ],
     },
     // Invalid margins with complex selector nesting
@@ -1322,9 +1292,9 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         },
       },
       errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
+        marginError('margin'),
+        marginError('marginTop'),
+        marginError('marginLeft'),
       ],
     },
     // Invalid margins with CSS-in-JS styled function (current implementation limitation)
@@ -1339,10 +1309,7 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
           marginTop: 1
         });
       `,
-      errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-      ],
+      errors: [marginError('margin'), marginError('marginTop')],
     },
     // Invalid margins with mixed shorthand and longhand in same object
     {
@@ -1362,12 +1329,12 @@ ruleTesterTs.run('no-margin-properties', noMarginProperties, {
         },
       },
       errors: [
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
-        { messageId: 'noMarginProperties' },
+        marginError('m'),
+        marginError('marginTop'),
+        marginError('mx'),
+        marginError('marginLeft'),
+        marginError('my'),
+        marginError('marginBottom'),
       ],
     },
   ],
