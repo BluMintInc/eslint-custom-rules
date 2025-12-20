@@ -104,6 +104,19 @@ ${typedPrelude}
       ...baseOptions,
       code: `
 ${typedPrelude}
+      declare function fail(message: string): never;
+
+      import { useMemo } from 'react';
+
+      export function useNever(message: string) {
+        return useMemo(() => fail(message), [message]);
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
       import { useMemo } from 'react';
 
       export function useUnknown(value: unknown) {

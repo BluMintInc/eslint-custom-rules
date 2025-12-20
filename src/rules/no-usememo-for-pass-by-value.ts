@@ -35,8 +35,7 @@ const PASS_BY_VALUE_FLAGS =
   ts.TypeFlags.BigIntLike |
   ts.TypeFlags.BooleanLike |
   ts.TypeFlags.Undefined |
-  ts.TypeFlags.Null |
-  ts.TypeFlags.Never;
+  ts.TypeFlags.Null;
 
 type FunctionContext = {
   isHook: boolean;
@@ -148,6 +147,10 @@ function classifyPassByValue(
     return { passByValue: false, indeterminate: true, description };
   }
 
+  if (type.flags & ts.TypeFlags.Never) {
+    return { passByValue: false, indeterminate: false, description };
+  }
+
   if (type.flags & ts.TypeFlags.Union) {
     const unionType = type as ts.UnionType;
     let sawIndeterminate = false;
@@ -197,10 +200,15 @@ function classifyPassByValue(
     const typeArguments = checker.getTypeArguments(type as ts.TypeReference);
     const elementType = typeArguments[0];
     if (elementType) {
+      if (elementType.flags & ts.TypeFlags.Never) {
+        // TypeScript infers [] as never[]. The array still has reference identity, but this rule
+        // treats it as a primitive-only array by definition (vacuously) to avoid special-casing.
+        return { passByValue: true, indeterminate: false, description };
+      }
       const result = classifyPassByValue(elementType, checker);
       return { ...result, description };
     }
-    // Empty array type is considered pass-by-value because it's effectively a constant literal []
+    // Treat arrays with no visible element type as pass-by-value to keep classification consistent.
     return { passByValue: true, indeterminate: false, description };
   }
 
