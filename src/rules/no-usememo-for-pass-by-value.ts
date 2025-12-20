@@ -137,7 +137,7 @@ function getReturnedExpression(
   return callback.body;
 }
 
-function classifyPassByValue(
+function isPassByValueType(
   type: ts.Type,
   checker: ts.TypeChecker,
 ): { passByValue: boolean; indeterminate: boolean; description: string } {
@@ -156,7 +156,7 @@ function classifyPassByValue(
     let sawIndeterminate = false;
 
     for (const part of unionType.types) {
-      const result = classifyPassByValue(part, checker);
+      const result = isPassByValueType(part, checker);
       if (result.indeterminate) {
         sawIndeterminate = true;
         break;
@@ -179,7 +179,7 @@ function classifyPassByValue(
     let sawIndeterminate = false;
 
     for (const elementType of typeArguments) {
-      const result = classifyPassByValue(elementType, checker);
+      const result = isPassByValueType(elementType, checker);
       if (result.indeterminate) {
         sawIndeterminate = true;
         break;
@@ -205,11 +205,11 @@ function classifyPassByValue(
         // treats it as a primitive-only array by definition (vacuously) to avoid special-casing.
         return { passByValue: true, indeterminate: false, description };
       }
-      const result = classifyPassByValue(elementType, checker);
+      const result = isPassByValueType(elementType, checker);
       return { ...result, description };
     }
-    // Treat arrays with no visible element type as pass-by-value to keep classification consistent.
-    return { passByValue: true, indeterminate: false, description };
+    // Conservative: arrays with unresolvable element types are indeterminate.
+    return { passByValue: false, indeterminate: true, description };
   }
 
   if (type.flags & PASS_BY_VALUE_FLAGS) {
@@ -675,18 +675,12 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
     const resolveVariable = (identifier: TSESTree.Identifier) =>
       ASTUtils.findVariable(context.getScope(), identifier) ?? null;
 
-    function traversePattern(
+    function visitPatternNode(
       pattern: TSESTree.Node,
-      resolveVariable: (
-        id: TSESTree.Identifier,
-      ) => TSESLint.Scope.Variable | null,
-      visitVariable: (variable: TSESLint.Scope.Variable) => void,
-    ) {
+      visitIdentifier: (identifier: TSESTree.Identifier) => void,
+    ): void {
       if (pattern.type === AST_NODE_TYPES.Identifier) {
-        const variable = resolveVariable(pattern);
-        if (variable) {
-          visitVariable(variable);
-        }
+        visitIdentifier(pattern);
         return;
       }
 
@@ -695,12 +689,11 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
           if (!element) {
             continue;
           }
-          traversePattern(
+          visitPatternNode(
             element.type === AST_NODE_TYPES.RestElement
               ? element.argument
               : element,
-            resolveVariable,
-            visitVariable,
+            visitIdentifier,
           );
         }
         return;
@@ -709,19 +702,34 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
       if (pattern.type === AST_NODE_TYPES.ObjectPattern) {
         for (const property of pattern.properties) {
           if (property.type === AST_NODE_TYPES.Property) {
-            traversePattern(property.value, resolveVariable, visitVariable);
+            visitPatternNode(property.value, visitIdentifier);
             continue;
           }
           if (property.type === AST_NODE_TYPES.RestElement) {
-            traversePattern(property.argument, resolveVariable, visitVariable);
+            visitPatternNode(property.argument, visitIdentifier);
           }
         }
         return;
       }
 
       if (pattern.type === AST_NODE_TYPES.AssignmentPattern) {
-        traversePattern(pattern.left, resolveVariable, visitVariable);
+        visitPatternNode(pattern.left, visitIdentifier);
       }
+    }
+
+    function traversePattern(
+      pattern: TSESTree.Node,
+      resolveVariable: (
+        id: TSESTree.Identifier,
+      ) => TSESLint.Scope.Variable | null,
+      visitVariable: (variable: TSESLint.Scope.Variable) => void,
+    ) {
+      visitPatternNode(pattern, (identifier) => {
+        const variable = resolveVariable(identifier);
+        if (variable) {
+          visitVariable(variable);
+        }
+      });
     }
 
     function trackPatternVariables(
@@ -782,14 +790,14 @@ export const noUsememoForPassByValue = createRule<Options, MessageIds>({
       }
 
       const type = checker.getTypeAtLocation(tsNode);
-      let classification = classifyPassByValue(type, checker);
+      let classification = isPassByValueType(type, checker);
       if (classification.indeterminate) {
         // When useMemo's type is indeterminate (any/unknown), the callback can still return a
         // concrete pass-by-value type. Inspect the returned expression to reduce false negatives.
         const returnedTsNode = esTreeNodeToTSNodeMap.get(returnedExpression);
         if (returnedTsNode) {
           const returnedType = checker.getTypeAtLocation(returnedTsNode);
-          const fallbackClassification = classifyPassByValue(
+          const fallbackClassification = isPassByValueType(
             returnedType,
             checker,
           );

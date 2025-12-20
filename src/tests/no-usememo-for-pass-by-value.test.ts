@@ -278,6 +278,28 @@ ${typedPrelude}
       }
       `,
     },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useIndeterminateUnion(flag: boolean, value: any) {
+        return useMemo(() => (flag ? 1 : value), [flag, value]);
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useIndeterminateTuple(value: any) {
+        return useMemo(() => [1, value] as [number, any], [value]);
+      }
+      `,
+    },
   ],
   invalid: [
     {
@@ -889,6 +911,134 @@ ${typedPrelude}
       export function useTupleDestructured() {
         const [a] = [1] as [number];
         return a;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useComplexDestructuring() {
+        const [a, [b, c]] = useMemo(() => [1, [2, 3]] as const, []);
+        return { a, b, c };
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useComplexDestructuring() {
+        const [a, [b, c]] = [1, [2, 3]] as const;
+        return { a, b, c };
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useRestDestructuring() {
+        const [first, ...rest] = useMemo(() => [1, 2, 3], []);
+        return { first, rest };
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useRestDestructuring() {
+        const [first, ...rest] = [1, 2, 3];
+        return { first, rest };
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useObjectDestructuring() {
+        const { 0: a, ...rest } = useMemo(() => [1, 2, 3] as const, []);
+        return { a, rest };
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useObjectDestructuring() {
+        const { 0: a, ...rest } = [1, 2, 3] as const;
+        return { a, rest };
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo } from 'react';
+
+      export function useAssignmentPattern() {
+        const [a = 1] = useMemo(() => [2] as const, []);
+        return a;
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      export function useAssignmentPattern() {
+        const [a = 1] = [2] as const;
+        return a;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import { useMemo, useState } from 'react';
+      declare function useState<T>(initial: T): [T, (val: T) => void];
+
+      export function usePartialImport(slug: string) {
+        const [state] = useState(slug);
+        const memoized = useMemo(() => state, [state]);
+        return memoized;
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      import { useState } from 'react';
+      declare function useState<T>(initial: T): [T, (val: T) => void];
+
+      export function usePartialImport(slug: string) {
+        const [state] = useState(slug);
+        const memoized = state;
+        return memoized;
+      }
+      `,
+    },
+    {
+      ...baseOptions,
+      code: `
+${typedPrelude}
+      import React, { useMemo } from 'react';
+
+      export function useMixedImport(slug: string) {
+        const memoized = useMemo(() => slug, [slug]);
+        return memoized;
+      }
+      `,
+      errors: [{ messageId: 'primitiveMemo' }],
+      output: `
+${typedPrelude}
+      import React from 'react';
+
+      export function useMixedImport(slug: string) {
+        const memoized = slug;
+        return memoized;
       }
       `,
     },
