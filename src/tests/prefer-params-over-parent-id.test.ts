@@ -5,7 +5,13 @@ import { preferParamsOverParentId } from '../rules/prefer-params-over-parent-id'
 type PreferParamsError = TSESLint.TestCaseError<'preferParams'>;
 
 const preferParamsMessage = (paramName = 'userId') =>
-  `Accessing parent IDs through \`ref.parent.id\` bypasses the handler params and breaks when collection nesting changes. Use the params object for stable, typed IDs instead (destructure \`const { params: { ${paramName} } } = event\` or read \`params.${paramName}\`).`;
+  [
+    "What's wrong: This code reads an ID via `ref.parent...id` instead of using the trigger's params.",
+    '',
+    'Why it matters: Walking `ref.parent` ties the handler to the current path depth; when collections change, it can yield the wrong ID (or a collection name) and bypasses the typed params the trigger provides.',
+    '',
+    `How to fix: Read the ID from \`params.${paramName}\` (or destructure \`const { params } = event\` and then access \`params.${paramName}\`).`,
+  ].join('\n');
 
 const paramError = (paramName = 'userId'): PreferParamsError =>
   ({ message: preferParamsMessage(paramName) } as unknown as PreferParamsError);
@@ -813,6 +819,27 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           const { data: change, params } = event;
 
           const userId = params.userId;
+        };
+      `,
+    },
+
+    // Auto-fix should use aliased params identifier in parameter destructuring
+    {
+      code: `
+        export const withAliasedParams: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async ({ data: change, params: paramsAlias }) => {
+          const userId = change.after.ref.parent.id;
+        };
+      `,
+      errors: [userIdError()],
+      output: `
+        export const withAliasedParams: DocumentChangeHandler<
+          UserData,
+          UserPath
+        > = async ({ data: change, params: paramsAlias }) => {
+          const userId = paramsAlias.userId;
         };
       `,
     },
@@ -1972,8 +1999,8 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
           UserPath
         > = async ({ data: { after, before }, params: existingParams, ...rest }) => {
           // Should still error even with params destructured
-          const afterParentId = params.userId;
-          const beforeParentId = params?.userId;
+          const afterParentId = existingParams.userId;
+          const beforeParentId = existingParams?.userId;
         };
       `,
     },

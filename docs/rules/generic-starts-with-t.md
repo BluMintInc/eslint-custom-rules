@@ -1,4 +1,4 @@
-# Enforce TypeScript generic types to start with T (`@blumintinc/blumint/generic-starts-with-t`)
+# Enforce TypeScript generic type parameters to start with T so they stand out from runtime values (`@blumintinc/blumint/generic-starts-with-t`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

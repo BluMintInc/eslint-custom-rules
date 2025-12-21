@@ -352,22 +352,42 @@ ruleTesterTs.run(
       // ===== BASIC CASES WHERE NULLISH COALESCING SHOULD BE PREFERRED =====
       {
         code: `const value = data || defaultValue;`,
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'data', right: 'defaultValue' },
+          },
+        ],
         output: `const value = data ?? defaultValue;`,
       },
       {
         code: `const config = options || {};`,
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'options', right: '{}' },
+          },
+        ],
         output: `const config = options ?? {};`,
       },
       {
         code: `const name = user.name || 'Anonymous';`,
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'user.name', right: "'Anonymous'" },
+          },
+        ],
         output: `const name = user.name ?? 'Anonymous';`,
       },
       {
         code: `function getValue() { return param || fallback; }`,
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'param', right: 'fallback' },
+          },
+        ],
         output: `function getValue() { return param ?? fallback; }`,
       },
 
@@ -375,161 +395,291 @@ ruleTesterTs.run(
       {
         code: `function Component() { return <Form autoComplete={value || 'off'} />; }`,
         parserOptions: { ecmaFeatures: { jsx: true } },
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'value', right: "'off'" },
+          },
+        ],
         output: `function Component() { return <Form autoComplete={value ?? 'off'} />; }`,
       },
       {
         code: `function Component() { return <Input placeholder={text || 'Enter text'} />; }`,
         parserOptions: { ecmaFeatures: { jsx: true } },
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'text', right: "'Enter text'" },
+          },
+        ],
         output: `function Component() { return <Input placeholder={text ?? 'Enter text'} />; }`,
       },
       {
         code: `function Component() { return <Button type={buttonType || 'button'} />; }`,
         parserOptions: { ecmaFeatures: { jsx: true } },
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'buttonType', right: "'button'" },
+          },
+        ],
         output: `function Component() { return <Button type={buttonType ?? 'button'} />; }`,
       },
       {
         code: `function Component() { return <Input value={inputValue || ''} />; }`,
         parserOptions: { ecmaFeatures: { jsx: true } },
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'inputValue', right: "''" },
+          },
+        ],
         output: `function Component() { return <Input value={inputValue ?? ''} />; }`,
       },
       {
         code: `function Component() { return <Img src={imageSrc || defaultImage} />; }`,
         parserOptions: { ecmaFeatures: { jsx: true } },
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'imageSrc', right: 'defaultImage' },
+          },
+        ],
         output: `function Component() { return <Img src={imageSrc ?? defaultImage} />; }`,
       },
       {
         code: `function Component() { return <Link href={url || '#'} />; }`,
         parserOptions: { ecmaFeatures: { jsx: true } },
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'url', right: "'#'" },
+          },
+        ],
         output: `function Component() { return <Link href={url ?? '#'} />; }`,
       },
       {
         code: `function Component() { return <Div className={cssClass || 'default'} />; }`,
         parserOptions: { ecmaFeatures: { jsx: true } },
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'cssClass', right: "'default'" },
+          },
+        ],
         output: `function Component() { return <Div className={cssClass ?? 'default'} />; }`,
       },
       {
         code: `function Component() { return <Input id={elementId || 'input'} />; }`,
         parserOptions: { ecmaFeatures: { jsx: true } },
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'elementId', right: "'input'" },
+          },
+        ],
         output: `function Component() { return <Input id={elementId ?? 'input'} />; }`,
       },
       {
         code: `function Component() { return <Button title={tooltip || 'Click me'} />; }`,
         parserOptions: { ecmaFeatures: { jsx: true } },
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'tooltip', right: "'Click me'" },
+          },
+        ],
         output: `function Component() { return <Button title={tooltip ?? 'Click me'} />; }`,
       },
       {
         code: `function Component() { return <Input name={fieldName || 'field'} />; }`,
         parserOptions: { ecmaFeatures: { jsx: true } },
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'fieldName', right: "'field'" },
+          },
+        ],
         output: `function Component() { return <Input name={fieldName ?? 'field'} />; }`,
       },
 
       // ===== ASSIGNMENT EXPRESSIONS =====
       {
         code: `let result; result = data || fallback;`,
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'data', right: 'fallback' },
+          },
+        ],
         output: `let result; result = data ?? fallback;`,
       },
       {
         code: `obj.prop = value || defaultValue;`,
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'value', right: 'defaultValue' },
+          },
+        ],
         output: `obj.prop = value ?? defaultValue;`,
       },
 
       // ===== FUNCTION ARGUMENTS =====
       {
         code: `function call() { return someFunction(param || defaultParam); }`,
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'param', right: 'defaultParam' },
+          },
+        ],
         output: `function call() { return someFunction(param ?? defaultParam); }`,
       },
       {
         code: `const result = Math.max(value || 0, otherValue);`,
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'value', right: '0' },
+          },
+        ],
         output: `const result = Math.max(value ?? 0, otherValue);`,
       },
 
       // ===== ARRAY AND OBJECT CONTEXTS =====
       {
         code: `const arr = [item || defaultItem];`,
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'item', right: 'defaultItem' },
+          },
+        ],
         output: `const arr = [item ?? defaultItem];`,
       },
       {
         code: `const obj = { key: value || defaultValue };`,
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'value', right: 'defaultValue' },
+          },
+        ],
         output: `const obj = { key: value ?? defaultValue };`,
       },
 
       // ===== TEMPLATE LITERALS =====
       {
         code: `const str = \`Hello \${name || 'World'}\`;`,
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'name', right: "'World'" },
+          },
+        ],
         output: `const str = \`Hello \${name ?? 'World'}\`;`,
       },
 
       // ===== COMPLEX EXPRESSIONS =====
       {
         code: `const result = (data.field || defaultField).toString();`,
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'data.field', right: 'defaultField' },
+          },
+        ],
         output: `const result = (data.field ?? defaultField).toString();`,
       },
       {
         code: `const value = obj[key || 'defaultKey'];`,
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'key', right: "'defaultKey'" },
+          },
+        ],
         output: `const value = obj[key ?? 'defaultKey'];`,
       },
 
       // ===== NESTED FUNCTION CALLS =====
       {
         code: `const result = processData(transform(input || defaultInput));`,
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'input', right: 'defaultInput' },
+          },
+        ],
         output: `const result = processData(transform(input ?? defaultInput));`,
       },
 
       // ===== CLASS PROPERTY ASSIGNMENTS =====
       {
         code: `class MyClass { constructor() { this.prop = value || defaultValue; } }`,
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'value', right: 'defaultValue' },
+          },
+        ],
         output: `class MyClass { constructor() { this.prop = value ?? defaultValue; } }`,
       },
 
       // ===== ARROW FUNCTION RETURNS (NON-BOOLEAN) =====
       {
         code: `const getName = () => user.name || 'Anonymous';`,
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'user.name', right: "'Anonymous'" },
+          },
+        ],
         output: `const getName = () => user.name ?? 'Anonymous';`,
       },
       {
         code: `const getConfig = (options) => options.config || defaultConfig;`,
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'options.config', right: 'defaultConfig' },
+          },
+        ],
         output: `const getConfig = (options) => options.config ?? defaultConfig;`,
       },
 
       // ===== DESTRUCTURING DEFAULTS (NON-BOOLEAN) =====
       {
         code: `const { title = data.title || 'Untitled' } = props;`,
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'data.title', right: "'Untitled'" },
+          },
+        ],
         output: `const { title = data.title ?? 'Untitled' } = props;`,
       },
 
       // ===== EXPORT STATEMENTS =====
       {
         code: `export const config = userConfig || defaultConfig;`,
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'userConfig', right: 'defaultConfig' },
+          },
+        ],
         output: `export const config = userConfig ?? defaultConfig;`,
       },
       {
         code: `export default options || {};`,
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'options', right: '{}' },
+          },
+        ],
         output: `export default options ?? {};`,
       },
 
@@ -537,12 +687,22 @@ ruleTesterTs.run(
       // When left operand is literally null or undefined, should use nullish coalescing
       {
         code: `const result = null || 'fallback';`,
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'null', right: "'fallback'" },
+          },
+        ],
         output: `const result = null ?? 'fallback';`,
       },
       {
         code: `const result = undefined || 'fallback';`,
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'undefined', right: "'fallback'" },
+          },
+        ],
         output: `const result = undefined ?? 'fallback';`,
       },
 
@@ -552,7 +712,12 @@ ruleTesterTs.run(
       {
         code: `function Component() { return (loading || error) && <Spinner />; }`,
         parserOptions: { ecmaFeatures: { jsx: true } },
-        errors: [{ messageId: 'preferNullishCoalescing' }],
+        errors: [
+          {
+            messageId: 'preferNullishCoalescing',
+            data: { left: 'loading', right: 'error' },
+          },
+        ],
         output: `function Component() { return (loading ?? error) && <Spinner />; }`,
       },
     ],
