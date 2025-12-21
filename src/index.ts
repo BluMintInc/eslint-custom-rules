@@ -342,19 +342,7 @@ module.exports = {
       },
       overrides: [
         {
-          files: ['functions/src/**/*.f.ts'],
-          rules: {
-            'no-restricted-imports': [
-              'error',
-              {
-                patterns: NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_PATTERNS,
-              },
-            ],
-          },
-        },
-        {
           files: ['functions/**/*.f.ts'],
-          excludedFiles: ['functions/src/**/*.f.ts'],
           rules: {
             'no-restricted-imports': [
               'error',
