@@ -35,8 +35,19 @@ async function lint(code: string, filePath: string) {
 }
 
 describe('recommended no-restricted-imports override for frontend/backend boundaries', () => {
-  it('includes overrides for both functions/src and functions/*.f.ts files', () => {
-    expect(restrictedImportsOverrides).toHaveLength(2);
+  it('includes depth-specific overrides for Cloud Function entrypoints', () => {
+    expect(restrictedImportsOverrides).toHaveLength(6);
+
+    expect(restrictedImportsOverrides).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ files: ['functions/*.f.ts'] }),
+        expect.objectContaining({ files: ['functions/*/*.f.ts'] }),
+        expect.objectContaining({ files: ['functions/*/*/*.f.ts'] }),
+        expect.objectContaining({ files: ['functions/*/*/*/*.f.ts'] }),
+        expect.objectContaining({ files: ['functions/*/*/*/*/*.f.ts'] }),
+        expect.objectContaining({ files: ['functions/*/*/*/*/*/*.f.ts'] }),
+      ]),
+    );
   });
 
   it('allows frontend files importing from functions/src (backend)', async () => {
@@ -115,5 +126,14 @@ describe('recommended no-restricted-imports override for frontend/backend bounda
         message: expect.stringContaining('Cloud Functions'),
       }),
     ]);
+  });
+
+  it('allows deeply nested Cloud Function entrypoints importing backend helpers from functions/src', async () => {
+    const messages = await lint(
+      "import { register } from '../../../../../src/deploy';",
+      'functions/a/b/c/d/e/handle.f.ts',
+    );
+
+    expect(messages).toHaveLength(0);
   });
 });
