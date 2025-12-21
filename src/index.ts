@@ -147,6 +147,32 @@ import { verticallyGroupRelatedFunctions } from './rules/vertically-group-relate
 import { default as noStaticConstantsInDynamicFiles } from './rules/no-static-constants-in-dynamic-files';
 import { testFileLocationEnforcement } from './rules/test-file-location-enforcement';
 
+const NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_MESSAGE =
+  'Backend Cloud Functions (.f.ts under functions/) must not import frontend modules from the repo root src/**. Frontend code can depend on browser-only APIs and bundling it into Cloud Functions breaks server execution; move shared logic into functions/src or a shared package.';
+
+function noFrontendImportsFromFunctionsPatterns(pattern: string) {
+  return [
+    {
+      /**
+       * no-restricted-imports matches import strings literally (it does not
+       * resolve them to the filesystem). This monorepo layout contains both a
+       * frontend `src/` and a backend `functions/src/`, so broad `../src/**`
+       * patterns applied indiscriminately can also block legitimate
+       * backend-to-backend imports within `functions/src/**`.
+       *
+       * Each override targets one `functions/**` + `/*.f.ts` nesting depth and
+       * restricts only the exact traversal depth that reaches the repo root
+       * `src/`, so relative imports that stay inside `functions/src/**` do not
+       * match.
+       * Projects using path aliases should add matching restrictions in their
+       * own configs.
+       */
+      group: [pattern],
+      message: NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_MESSAGE,
+    },
+  ];
+}
+
 module.exports = {
   meta: {
     name: '@blumintinc/eslint-plugin-blumint',
@@ -311,6 +337,86 @@ module.exports = {
         '@blumintinc/blumint/no-static-constants-in-dynamic-files': 'error',
         '@blumintinc/blumint/test-file-location-enforcement': 'error',
       },
+      /**
+       * Depth-specific overrides block only import strings that traverse to the
+       * repo root `src/`. The list covers nesting depths 1–6; deeper nesting
+       * requires an additional override.
+       */
+      overrides: [
+        {
+          files: ['functions/*.f.ts'],
+          rules: {
+            'no-restricted-imports': [
+              'error',
+              {
+                patterns: noFrontendImportsFromFunctionsPatterns('../src/**'),
+              },
+            ],
+          },
+        },
+        {
+          files: ['functions/*/*.f.ts'],
+          rules: {
+            'no-restricted-imports': [
+              'error',
+              {
+                patterns:
+                  noFrontendImportsFromFunctionsPatterns('../../src/**'),
+              },
+            ],
+          },
+        },
+        {
+          files: ['functions/*/*/*.f.ts'],
+          rules: {
+            'no-restricted-imports': [
+              'error',
+              {
+                patterns:
+                  noFrontendImportsFromFunctionsPatterns('../../../src/**'),
+              },
+            ],
+          },
+        },
+        {
+          files: ['functions/*/*/*/*.f.ts'],
+          rules: {
+            'no-restricted-imports': [
+              'error',
+              {
+                patterns:
+                  noFrontendImportsFromFunctionsPatterns('../../../../src/**'),
+              },
+            ],
+          },
+        },
+        {
+          files: ['functions/*/*/*/*/*.f.ts'],
+          rules: {
+            'no-restricted-imports': [
+              'error',
+              {
+                patterns: noFrontendImportsFromFunctionsPatterns(
+                  '../../../../../src/**',
+                ),
+              },
+            ],
+          },
+        },
+        {
+          files: ['functions/*/*/*/*/*/*.f.ts'],
+          rules: {
+            'no-restricted-imports': [
+              'error',
+              {
+                patterns: noFrontendImportsFromFunctionsPatterns(
+                  '../../../../../../src/**',
+                ),
+              },
+            ],
+          },
+        },
+      ],
     },
   },
 
