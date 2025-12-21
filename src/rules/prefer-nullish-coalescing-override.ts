@@ -205,8 +205,9 @@ export const preferNullishCoalescingOverride = createRule<[], MessageIds>({
      * Checks if this logical OR should be converted to nullish coalescing
      */
     function shouldConvertToNullishCoalescing(
-      _node: TSESTree.LogicalExpression,
+      node: TSESTree.LogicalExpression,
     ): boolean {
+      void node;
       return false;
     }
 

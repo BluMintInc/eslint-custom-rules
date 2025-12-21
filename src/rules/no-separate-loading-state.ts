@@ -122,7 +122,7 @@ export const noSeparateLoadingState = createRule<Options, MessageIds>({
         }
       },
 
-      CallExpression(_node) {
+      CallExpression() {
         // Setter usage is resolved via scope references in Program:exit
         return;
       },

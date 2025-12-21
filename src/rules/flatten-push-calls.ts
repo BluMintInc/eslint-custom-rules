@@ -199,7 +199,8 @@ function hasForbiddenSideEffects(
     case AST_NODE_TYPES.MemberExpression:
       return (
         hasForbiddenSideEffects(node.object as TSESTree.Node) ||
-        (node.computed && hasForbiddenSideEffects(node.property as TSESTree.Node))
+        (node.computed &&
+          hasForbiddenSideEffects(node.property as TSESTree.Node))
       );
     case AST_NODE_TYPES.ChainExpression:
       return hasForbiddenSideEffects(node.expression);
@@ -376,12 +377,11 @@ export const flattenPushCalls = createRule<[], MessageIds>({
     fixable: 'code',
     schema: [],
     messages: {
-      flattenPushCalls:
-        [
-          'What’s wrong: "{{target}}" is pushed to using multiple consecutive ".push(...)" calls.',
-          'Why it matters: repeated calls add property-access overhead and obscure that these values belong to one append operation.',
-          'How to fix: merge them into a single ".push(...)" call with multiple arguments (for example, "{{target}}.push(a, b, c)").',
-        ].join(' '),
+      flattenPushCalls: [
+        'What’s wrong: "{{target}}" is pushed to using multiple consecutive ".push(...)" calls.',
+        'Why it matters: repeated calls add property-access overhead and obscure that these values belong to one append operation.',
+        'How to fix: merge them into a single ".push(...)" call with multiple arguments (for example, "{{target}}.push(a, b, c)").',
+      ].join(' '),
     },
   },
   defaultOptions: [],

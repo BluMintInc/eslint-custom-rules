@@ -180,17 +180,15 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
           setMethod(methodName, {
             params: getMethodParams(member),
             isStatic: Boolean(member.static),
-            isAbstract: member.type === AST_NODE_TYPES.TSAbstractMethodDefinition,
+            isAbstract:
+              member.type === AST_NODE_TYPES.TSAbstractMethodDefinition,
           });
         } else if (member.type === AST_NODE_TYPES.PropertyDefinition) {
           const methodName = member.key
             ? getNameFromPropertyName(member.key)
             : null;
 
-          if (
-            !methodName ||
-            member.static
-          ) {
+          if (!methodName || member.static) {
             continue;
           }
 
@@ -231,10 +229,7 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
 
     function findEnclosingMember(
       node: TSESTree.Node,
-    ):
-      | TSESTree.MethodDefinition
-      | TSESTree.PropertyDefinition
-      | null {
+    ): TSESTree.MethodDefinition | TSESTree.PropertyDefinition | null {
       let current: TSESTree.Node | undefined | null = node.parent;
 
       while (current) {
@@ -381,9 +376,7 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
       }
     }
 
-    function collectThisAccesses(
-      expression: TSESTree.Node,
-    ): ThisAccess[] {
+    function collectThisAccesses(expression: TSESTree.Node): ThisAccess[] {
       const normalized = unwrapExpression(expression);
       const results: ThisAccess[] = [];
 
@@ -405,7 +398,8 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
           return;
         }
 
-        const nextNested = nested || (node !== normalized && !isMemberChainObject);
+        const nextNested =
+          nested || (node !== normalized && !isMemberChainObject);
         const nextTransformed = transformed || isTransformingNode(node);
 
         switch (node.type) {
@@ -524,7 +518,9 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
       return results;
     }
 
-    function getParameterName(param: TSESTree.Parameter | undefined): string | null {
+    function getParameterName(
+      param: TSESTree.Parameter | undefined,
+    ): string | null {
       if (!param) {
         return null;
       }
