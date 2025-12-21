@@ -117,7 +117,7 @@ function collectMemoizedIdentifiers(
   context: TSESLint.RuleContext<'preferUseDeepCompareMemo', []>,
 ): Set<string> {
   const memoized = new Set<string>();
-  const sourceCode = context.getSourceCode();
+  const sourceCode = context.sourceCode;
   const program = sourceCode.ast;
 
   function visit(node: TSESTree.Node): void {
@@ -171,7 +171,7 @@ function ensureDeepCompareImportFixes(
   fixer: TSESLint.RuleFixer,
 ): TSESLint.RuleFix[] {
   const fixes: TSESLint.RuleFix[] = [];
-  const sourceCode = context.getSourceCode();
+  const sourceCode = context.sourceCode;
   const program = sourceCode.ast;
 
   // If already imported anywhere, skip adding
@@ -252,13 +252,9 @@ function removeImportSpecifierFixes(
   const tokenBefore = sourceCode.getTokenBefore(specifier);
 
   if (tokenAfter && tokenAfter.value === ',') {
-    fixes.push(
-      fixer.removeRange([specifier.range[0], tokenAfter.range![1]]),
-    );
+    fixes.push(fixer.removeRange([specifier.range[0], tokenAfter.range![1]]));
   } else if (tokenBefore && tokenBefore.value === ',') {
-    fixes.push(
-      fixer.removeRange([tokenBefore.range![0], specifier.range[1]]),
-    );
+    fixes.push(fixer.removeRange([tokenBefore.range![0], specifier.range[1]]));
   } else {
     fixes.push(fixer.remove(specifier));
   }
@@ -270,7 +266,7 @@ function isImportedIdentifier(
   context: TSESLint.RuleContext<'preferUseDeepCompareMemo', []>,
   name: string,
 ): boolean {
-  const sourceCode = context.getSourceCode();
+  const sourceCode = context.sourceCode;
   const program = sourceCode.ast;
   for (const node of program.body) {
     if (node.type === AST_NODE_TYPES.ImportDeclaration) {
@@ -379,7 +375,7 @@ export const preferUseDeepCompareMemo = createRule<[], MessageIds>({
     schema: [],
     messages: {
       preferUseDeepCompareMemo:
-        'Use useDeepCompareMemo instead of useMemo because dependency array contains unmemoized non-primitive values.',
+        'Dependency array for "{{hook}}" includes objects/arrays/functions that change identity each render, so React treats them as changed and reruns the memoized computation, triggering avoidable renders. Use useDeepCompareMemo (or memoize those dependencies first) so comparisons use deep equality and the memo stays stable.',
     },
   },
   defaultOptions: [],
@@ -458,6 +454,9 @@ export const preferUseDeepCompareMemo = createRule<[], MessageIds>({
         context.report({
           node,
           messageId: 'preferUseDeepCompareMemo',
+          data: {
+            hook: 'useMemo',
+          },
           fix(fixer) {
             const fixes: TSESLint.RuleFix[] = [];
 
@@ -477,7 +476,7 @@ export const preferUseDeepCompareMemo = createRule<[], MessageIds>({
             fixes.push(...ensureDeepCompareImportFixes(context, fixer));
 
             // Clean up now-unused React/useMemo imports if safe
-            const sourceCode = context.getSourceCode();
+            const sourceCode = context.sourceCode;
             const program = sourceCode.ast;
             const reactImport = program.body.find(
               (n): n is TSESTree.ImportDeclaration =>

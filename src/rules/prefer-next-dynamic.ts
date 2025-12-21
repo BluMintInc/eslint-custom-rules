@@ -19,10 +19,58 @@ const DEFAULT_USE_DYNAMIC_SOURCES = [
   '../../hooks/useDynamic',
 ];
 
-function matchesAllowedSource(source: string, allowedSources: string[]): boolean {
+function matchesAllowedSource(
+  source: string,
+  allowedSources: string[],
+): boolean {
   return allowedSources.some(
     (pattern) => source === pattern || source.endsWith(`/${pattern}`),
   );
+}
+
+function hasNodeStructure(value: unknown): value is TSESTree.Node {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    'type' in value &&
+    typeof (value as { type?: unknown }).type === 'string'
+  );
+}
+
+/**
+ * Walks the AST and invokes the visitor on each node.
+ * Uses WeakSet to prevent infinite cycles.
+ *
+ * @param visitor - Callback invoked on each node. Return `false` to stop
+ * traversal; return `undefined` (or nothing) to continue walking.
+ * @returns `false` if traversal stopped early; `true` when traversal completes.
+ */
+function walkAst(
+  node: TSESTree.Node,
+  visitor: (n: TSESTree.Node) => boolean | void,
+  visited = new WeakSet<object>(),
+): boolean {
+  if (visited.has(node)) return true;
+  visited.add(node);
+
+  const shouldContinue = visitor(node);
+  if (shouldContinue === false) return false;
+
+  const anyNode = node as unknown as Record<string, unknown>;
+  for (const key of Object.keys(anyNode)) {
+    if (key === 'parent') continue;
+    const child = anyNode[key];
+    if (Array.isArray(child)) {
+      for (const c of child) {
+        if (hasNodeStructure(c)) {
+          if (!walkAst(c, visitor, visited)) return false;
+        }
+      }
+    } else if (hasNodeStructure(child)) {
+      if (!walkAst(child, visitor, visited)) return false;
+    }
+  }
+  return true;
 }
 
 function isUseDynamicCall(node: TSESTree.CallExpression): boolean {
@@ -200,7 +248,7 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
       description:
         'Prefer Next.js dynamic() over custom useDynamic() for component imports',
       recommended: 'error',
-      requiresTypeChecking: true,
+      requiresTypeChecking: false,
     },
     fixable: 'code',
     schema: [
@@ -218,10 +266,11 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
     ],
     messages: {
       preferNextDynamic:
-        'Use Next.js dynamic() instead of useDynamic(import(...)) for component imports',
+        'Component "{{componentName}}" is created with useDynamic(import(...)), which bypasses Next.js dynamic() handling for client-only components and leaves SSR control to a custom wrapper. Wrap the import in dynamic(() => import(...), { ssr: false }) so Next.js manages code-splitting and disables server rendering safely.',
       addNextDynamicImport:
-        "Add default import: import dynamic from 'next/dynamic'",
-      removeUseDynamicImport: 'Remove unused useDynamic import',
+        "The auto-fix will replace useDynamic(import(...)) with dynamic(() => import(...), { ssr: false }), which references Next.js's dynamic function. Without importing dynamic from 'next/dynamic', the fixed code will throw a ReferenceError at runtime when the module loads. Add `import dynamic from 'next/dynamic'` at the top of the file to make the dynamic identifier available.",
+      removeUseDynamicImport:
+        'Remove the unused useDynamic import after migrating to dynamic(); leaving the custom hook imported invites accidental reuse and keeps dead code in the bundle.',
     },
   },
   defaultOptions: [{}],
@@ -231,7 +280,7 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
       options.useDynamicSources && options.useDynamicSources.length > 0
         ? options.useDynamicSources
         : DEFAULT_USE_DYNAMIC_SOURCES;
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode;
 
     return {
       VariableDeclarator(node) {
@@ -250,46 +299,21 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
         if (!useDynamicImportInfo) return;
 
         const identifierName = info.idText;
-        let usedInJsx = false;
-        const scopeBody = program.body;
-        // Walk AST to find JSX usage; track visited nodes to avoid cycles
-        // Note: We intentionally avoid relying on tokens here.
-        // Fallback AST traversal for JSX usage
-        const visited = new WeakSet<object>();
-        const checkJsxUsage = (n: TSESTree.Node) => {
-          if (visited.has(n)) return;
-          visited.add(n);
-          if (usedInJsx) return;
-          if (n.type === AST_NODE_TYPES.JSXOpeningElement) {
-            const name = n.name;
-            if (name.type === AST_NODE_TYPES.JSXIdentifier) {
-              if (name.name === identifierName) usedInJsx = true;
-            } else if (name.type === AST_NODE_TYPES.JSXMemberExpression) {
-              // Not matching identifier simple usage
-            }
-          }
-          // recurse
-          const anyNode = n as unknown as Record<string, unknown>;
-          for (const key of Object.keys(anyNode)) {
-            if (key === 'parent') continue;
-            const child = anyNode[key];
-            if (Array.isArray(child)) {
-              for (const c of child) {
-                if (c && typeof (c as any).type === 'string') {
-                  checkJsxUsage(c as unknown as TSESTree.Node);
+        // walkAst returns false when visitor returns false (early exit on match)
+        const usedInJsx = program.body.some(
+          (b) =>
+            walkAst(b, (n) => {
+              if (n.type === AST_NODE_TYPES.JSXOpeningElement) {
+                const name = n.name;
+                if (name.type === AST_NODE_TYPES.JSXIdentifier) {
+                  if (name.name === identifierName) {
+                    return false;
+                  }
                 }
               }
-            } else if (child && typeof child === 'object') {
-              if (
-                (child as any).type &&
-                typeof (child as any).type === 'string'
-              ) {
-                checkJsxUsage(child as unknown as TSESTree.Node);
-              }
-            }
-          }
-        };
-        scopeBody.forEach((b) => checkJsxUsage(b as unknown as TSESTree.Node));
+              return undefined;
+            }) === false,
+        );
 
         if (!usedInJsx) {
           // Skip to avoid flagging non-component dynamic imports
@@ -303,11 +327,12 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
         context.report({
           node: init,
           messageId: 'preferNextDynamic',
+          data: { componentName: identifierName },
           fix(fixer) {
             const fixes: TSESLint.RuleFix[] = [];
 
             // ensure dynamic import is present
-            const programNode = findProgramNode(node)!;
+            const programNode = program;
             let dynamicLocal = getNextDynamicLocalName(programNode);
             const hasDynamic = !!dynamicLocal;
             if (!hasDynamic) {
@@ -375,34 +400,18 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
             );
             if (latestUseDynamicImport) {
               // Abort removal if there are other useDynamic(import(...)) calls in the file
-              let otherUseDynamicCalls = false;
-              const visit = (n: TSESTree.Node) => {
-                if (otherUseDynamicCalls) return;
-                if (
-                  n.type === AST_NODE_TYPES.CallExpression &&
-                  isUseDynamicCall(n)
-                ) {
-                  if (n !== init) otherUseDynamicCalls = true;
-                }
-                const anyNode = n as unknown as Record<string, unknown>;
-                for (const key of Object.keys(anyNode)) {
-                  if (key === 'parent') continue;
-                  const child = anyNode[key];
-                  if (Array.isArray(child)) {
-                    for (const c of child)
-                      if (c && typeof (c as any).type === 'string')
-                        visit(c as any);
-                  } else if (
-                    child &&
-                    typeof child === 'object' &&
-                    (child as any).type
-                  ) {
-                    visit(child as any);
-                  }
-                }
-              };
-              programNode.body.forEach((b) =>
-                visit(b as unknown as TSESTree.Node),
+              const otherUseDynamicCalls = programNode.body.some(
+                (b) =>
+                  walkAst(b, (n) => {
+                    if (
+                      n.type === AST_NODE_TYPES.CallExpression &&
+                      isUseDynamicCall(n) &&
+                      n !== init
+                    ) {
+                      return false;
+                    }
+                    return undefined;
+                  }) === false,
               );
               if (otherUseDynamicCalls) {
                 return fixes; // keep the import; other occurrences still rely on it
@@ -451,7 +460,10 @@ export const preferNextDynamic = createRule<Options, MessageIds>({
                       .join(', ');
                     const newText = `import { ${specText} } from '${latestUseDynamicImport.importNode.source.value}';`;
                     fixes.push(
-                      fixer.replaceText(latestUseDynamicImport.importNode, newText),
+                      fixer.replaceText(
+                        latestUseDynamicImport.importNode,
+                        newText,
+                      ),
                     );
                   } else {
                     // Otherwise, remove the specifier with proper comma handling

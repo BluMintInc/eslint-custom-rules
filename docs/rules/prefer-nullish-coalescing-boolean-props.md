@@ -6,18 +6,22 @@
 
 <!-- end auto-generated rule header -->
 
-This rule prevents the `@typescript-eslint/prefer-nullish-coalescing` rule from incorrectly flagging logical OR (`||`) operators inside boolean props of React components or other boolean contexts.
+This rule keeps logical OR (`||`) available inside boolean contexts (JSX boolean props, conditions, boolean-returning helpers) while requiring the nullish coalescing operator (`??`) for defaulting non-boolean values. Logical OR treats any falsy value (`false`, `0`, `''`, `NaN`) as missing and will override intentional states; `??` only falls back on `null` or `undefined`, preserving explicit falsy inputs.
 
 ## Rule Details
 
-In boolean contexts, using logical OR is semantically correct because `||` returns the first truthy operand and the consuming position coerces the result to a boolean. Replacing `||` with nullish coalescing (`??`) changes behavior for falsy-but-not-nullish values like `0`, `''`, or `false`, which `??` would pass through.
+**Why**: Defaulting with `||` hides legitimate falsy values—feature flags set to `false`, counts that are `0`, empty strings that are intentional—and replaces them with fallbacks. That makes components render with the wrong values and masks real bugs.
 
-This rule works alongside the `@typescript-eslint/prefer-nullish-coalescing` rule to prevent it from suggesting incorrect replacements in boolean contexts.
+**What the rule enforces**:
+- Use `??` instead of `||` when providing default values to non-boolean expressions (props, variables, arguments, array/object literals, template literals, etc.).
+- Keep `||` in boolean contexts where coercing any falsy value to `false` is intentional (boolean props, conditions, loop tests, boolean-returning helpers).
+
+**How to fix**: Replace `left || right` with `left ?? right` unless the expression is strictly boolean. The fixer applies this automatically.
 
 ### Examples of correct code
 
 ```tsx
-// Boolean props in JSX
+// Boolean props and conditions keep logical OR
 <LoadingButton
   disabled={
     !isValidated.phoneNumber ||
@@ -25,10 +29,6 @@ This rule works alongside the `@typescript-eslint/prefer-nullish-coalescing` rul
     isLoading ||
     !isPhoneInputLoaded
   }
-  id="phone-dialog-recaptcha"
-  size="large"
-  type="submit"
-  variant="contained"
 >
   Send Code
 </LoadingButton>
@@ -37,18 +37,31 @@ This rule works alongside the `@typescript-eslint/prefer-nullish-coalescing` rul
 <Input required={hasValue || isRequired} />
 <Checkbox checked={isSelected || defaultSelected} />
 
-// Boolean contexts in conditions
 if (isLoading || !isValid) {
   return null;
 }
 
-// Boolean variable assignments
-const isDisabled = !isValidated.phoneNumber || !hasUserTyped.phoneNumber || isLoading;
+// Nullish coalescing for defaulting values
+const value = data ?? defaultValue;
+const placeholder = text ?? 'Enter text';
+const { title = data.title ?? 'Untitled' } = props;
 ```
 
 ### Examples of incorrect code
 
-This rule doesn't report diagnostics on its own; it exists to prevent `@typescript-eslint/prefer-nullish-coalescing` from suggesting `??` in boolean contexts.
+```tsx
+// Non-boolean defaults overwrite intentional falsy values
+const value = data || defaultValue;
+function Component() {
+  return <Input placeholder={text || 'Enter text'} />;
+}
+
+// Template literals and nested expressions
+const str = `Hello ${name || 'World'}`;
+const result = (data.field || defaultField).toString();
+```
+
+These cases should use `??` so the fallback only applies when the left side is `null` or `undefined`.
 
 ## When Not To Use It
 
