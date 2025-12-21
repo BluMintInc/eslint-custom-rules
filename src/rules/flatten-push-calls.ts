@@ -395,11 +395,15 @@ export const flattenPushCalls = createRule<[], MessageIds>({
 
     function buildSegments(group: PushCallStatement[]): PushSegment[] {
       return group.map((entry, index) => {
-        const previous = index > 0 ? group[index - 1].statement : null;
+        const previousStatement = index > 0 ? group[index - 1].statement : null;
         const comments =
-          previous === null
+          previousStatement === null
             ? []
-            : getLeadingCommentsBetween(sourceCode, previous, entry.statement);
+            : getLeadingCommentsBetween(
+                sourceCode,
+                previousStatement,
+                entry.statement,
+              );
         return { comments, args: entry.call.arguments };
       });
     }
@@ -442,6 +446,13 @@ export const flattenPushCalls = createRule<[], MessageIds>({
         );
       }
 
+      return formatMultilineArguments(segments, argumentIndent);
+    }
+
+    function formatMultilineArguments(
+      segments: PushSegment[],
+      argumentIndent: string,
+    ): string[] {
       const argumentParts: string[] = [];
       let pendingComments: string[] = [];
 
@@ -466,6 +477,13 @@ export const flattenPushCalls = createRule<[], MessageIds>({
         });
       });
 
+      return attachTrailingComments(argumentParts, pendingComments);
+    }
+
+    function attachTrailingComments(
+      argumentParts: string[],
+      pendingComments: string[],
+    ): string[] {
       if (pendingComments.length > 0 && argumentParts.length > 0) {
         const lastIndex = argumentParts.length - 1;
         argumentParts[lastIndex] = `${

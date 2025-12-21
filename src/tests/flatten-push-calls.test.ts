@@ -357,5 +357,23 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
     },
+    {
+      code: `
+      const arr = [];
+      arr.push(a);
+      arr.push(b);
+      /* trailing */
+      arr.push();
+      `,
+      output: `
+      const arr = [];
+      arr.push(
+        a,
+        b
+        /* trailing */
+      );
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
   ],
 });
