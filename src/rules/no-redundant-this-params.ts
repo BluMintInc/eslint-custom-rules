@@ -144,6 +144,11 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
       const methods = new Map<string, MethodMeta>();
 
       function setMethod(methodName: string, meta: MethodMeta): void {
+        /**
+         * Prefer instance methods over static methods when names collide.
+         * Calls like `this.method()` always resolve to the instance member, so the rule tracks the
+         * instance signature even if a static overload exists in the AST.
+         */
         const existing = methods.get(methodName);
 
         if (!existing) {
