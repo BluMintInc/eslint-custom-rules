@@ -273,26 +273,9 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
       return null;
     }
 
-    function hasNestedFunctionBetweenMemberInitializer(
-      leaf: TSESTree.Node,
-      boundary: TSESTree.PropertyDefinition,
-    ): boolean {
-      let current: TSESTree.Node | null | undefined = leaf.parent;
-
-      while (current && current !== boundary) {
-        if (isFunctionLike(current)) {
-          return true;
-        }
-
-        current = current.parent;
-      }
-
-      return false;
-    }
-
     function hasNestedFunctionBetween(
       leaf: TSESTree.Node,
-      boundary: TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression,
+      boundary: TSESTree.Node,
     ): boolean {
       let current: TSESTree.Node | null | undefined = leaf.parent;
 
@@ -308,6 +291,8 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
     }
 
     function isTransparentExpressionWrapper(node: TSESTree.Node): boolean {
+      // Babel emits ParenthesizedExpression nodes that are not modeled in TSESTree; treating them
+      // as transparent prevents parentheses from changing nested/transformed classification.
       return (
         node.type === AST_NODE_TYPES.TSAsExpression ||
         node.type === AST_NODE_TYPES.TSTypeAssertion ||
@@ -326,10 +311,6 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
       }
 
       return current;
-    }
-
-    function unwrapExpression(node: TSESTree.Node): TSESTree.Node {
-      return unwrapTransparentExpression(node);
     }
 
     function isExpressionMemberChainObject(node: TSESTree.Node): boolean {
@@ -377,7 +358,7 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
     }
 
     function collectThisAccesses(expression: TSESTree.Node): ThisAccess[] {
-      const normalized = unwrapExpression(expression);
+      const normalized = unwrapTransparentExpression(expression);
       const results: ThisAccess[] = [];
 
       function visit(
@@ -505,7 +486,7 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
           case AST_NODE_TYPES.TSNonNullExpression:
           case AST_NODE_TYPES.TSSatisfiesExpression:
           case AST_NODE_TYPES.TSInstantiationExpression:
-            visit(node.expression, nextNested, transformed);
+            visit(node.expression, nextNested, nextTransformed);
             return;
           default:
             if (isFunctionLike(node)) {
@@ -627,7 +608,7 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
             return;
           }
 
-          if (hasNestedFunctionBetweenMemberInitializer(node, member)) {
+          if (hasNestedFunctionBetween(node, member)) {
             return;
           }
         }

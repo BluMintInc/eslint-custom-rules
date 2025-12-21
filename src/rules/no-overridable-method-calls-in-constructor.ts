@@ -50,8 +50,7 @@ export const noOverridableMethodCallsInConstructor = createRule<[], MessageIds>(
        * Checks if a method is abstract
        */
       function isAbstractMethod(node: TSESTree.MethodDefinition): boolean {
-        void node;
-        return false;
+        return (node as { abstract?: boolean }).abstract === true;
       }
 
       /**
