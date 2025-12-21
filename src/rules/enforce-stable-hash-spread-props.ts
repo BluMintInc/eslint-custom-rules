@@ -65,10 +65,7 @@ function getFunctionName(node: FunctionLike): string | null {
   return null;
 }
 
-function isProbablyComponent(
-  node: FunctionLike,
-  _sourceCode: TSESLint.SourceCode,
-): boolean {
+function isProbablyComponent(node: FunctionLike): boolean {
   const name = getFunctionName(node);
 
   if (name && /^[A-Z]/.test(name)) {
@@ -344,7 +341,7 @@ export const enforceStableHashSpreadProps = createRule<Options, MessageIds>({
 
         functionStack.push({
           node,
-          isComponent: isProbablyComponent(node, sourceCode),
+          isComponent: isProbablyComponent(node),
           restNames,
           propsIdentifiers,
         });
