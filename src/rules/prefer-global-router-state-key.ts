@@ -442,10 +442,18 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                                   ),
                                 );
                               } else {
-                                const firstImport = sourceCode.ast.body.find(
-                                  (n): n is TSESTree.ImportDeclaration =>
-                                    n.type === AST_NODE_TYPES.ImportDeclaration,
-                                );
+                                const firstImport =
+                                  sourceCode.ast.body.find(
+                                    (n): n is TSESTree.ImportDeclaration =>
+                                      n.type ===
+                                        AST_NODE_TYPES.ImportDeclaration &&
+                                      n.importKind !== 'type',
+                                  ) ||
+                                  sourceCode.ast.body.find(
+                                    (n): n is TSESTree.ImportDeclaration =>
+                                      n.type ===
+                                      AST_NODE_TYPES.ImportDeclaration,
+                                  );
 
                                 if (firstImport) {
                                   fixes.push(
