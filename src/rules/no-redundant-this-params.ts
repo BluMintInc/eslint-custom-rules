@@ -278,6 +278,23 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
       return null;
     }
 
+    function hasNestedFunctionBetweenMemberInitializer(
+      leaf: TSESTree.Node,
+      boundary: TSESTree.PropertyDefinition,
+    ): boolean {
+      let current: TSESTree.Node | null | undefined = leaf.parent;
+
+      while (current && current !== boundary) {
+        if (isFunctionLike(current)) {
+          return true;
+        }
+
+        current = current.parent;
+      }
+
+      return false;
+    }
+
     function hasNestedFunctionBetween(
       leaf: TSESTree.Node,
       boundary: TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression,
@@ -295,20 +312,48 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
       return false;
     }
 
-    function unwrapExpression(node: TSESTree.Node): TSESTree.Node {
+    function isTransparentExpressionWrapper(node: TSESTree.Node): boolean {
+      return (
+        node.type === AST_NODE_TYPES.TSAsExpression ||
+        node.type === AST_NODE_TYPES.TSTypeAssertion ||
+        node.type === AST_NODE_TYPES.TSNonNullExpression ||
+        node.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+        node.type === AST_NODE_TYPES.TSInstantiationExpression ||
+        (node as { type?: string }).type === 'ParenthesizedExpression'
+      );
+    }
+
+    function unwrapTransparentExpression(node: TSESTree.Node): TSESTree.Node {
       let current: TSESTree.Node = node;
 
-      while (
-        current.type === AST_NODE_TYPES.TSAsExpression ||
-        current.type === AST_NODE_TYPES.TSTypeAssertion ||
-        current.type === AST_NODE_TYPES.TSNonNullExpression ||
-        current.type === AST_NODE_TYPES.TSSatisfiesExpression ||
-        (current as { type?: string }).type === 'ParenthesizedExpression'
-      ) {
+      while (isTransparentExpressionWrapper(current)) {
         current = (current as any).expression;
       }
 
       return current;
+    }
+
+    function unwrapExpression(node: TSESTree.Node): TSESTree.Node {
+      return unwrapTransparentExpression(node);
+    }
+
+    function isExpressionMemberChainObject(node: TSESTree.Node): boolean {
+      let current: TSESTree.Node = node;
+      let parent: TSESTree.Node | null | undefined = current.parent;
+
+      while (
+        parent &&
+        isTransparentExpressionWrapper(parent) &&
+        (parent as any).expression === current
+      ) {
+        current = parent;
+        parent = current.parent;
+      }
+
+      return (
+        parent?.type === AST_NODE_TYPES.MemberExpression &&
+        (parent as TSESTree.MemberExpression).object === current
+      );
     }
 
     function getMemberText(propertyName: string): string {
@@ -349,9 +394,7 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
       ): void {
         const isParenthesized =
           (node as { type?: string }).type === 'ParenthesizedExpression';
-        const isMemberChainObject =
-          node.parent?.type === AST_NODE_TYPES.MemberExpression &&
-          (node.parent as TSESTree.MemberExpression).object === node;
+        const isMemberChainObject = isExpressionMemberChainObject(node);
 
         if (isParenthesized) {
           visit(
@@ -467,10 +510,8 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
           case AST_NODE_TYPES.TSTypeAssertion:
           case AST_NODE_TYPES.TSNonNullExpression:
           case AST_NODE_TYPES.TSSatisfiesExpression:
-            visit(node.expression, nextNested, transformed);
-            return;
           case AST_NODE_TYPES.TSInstantiationExpression:
-            visit(node.expression, true, nextTransformed);
+            visit(node.expression, nextNested, transformed);
             return;
           default:
             if (isFunctionLike(node)) {
@@ -581,12 +622,18 @@ export const noRedundantThisParams = createRule<[], MessageIds>({
         const member = findEnclosingMember(node);
         const memberFunction = getMemberFunction(member);
 
-        if (!memberFunction) {
-          return;
-        }
+        if (memberFunction) {
+          if (hasNestedFunctionBetween(node, memberFunction)) {
+            return;
+          }
+        } else {
+          if (!member || member.type !== AST_NODE_TYPES.PropertyDefinition) {
+            return;
+          }
 
-        if (hasNestedFunctionBetween(node, memberFunction)) {
-          return;
+          if (hasNestedFunctionBetweenMemberInitializer(node, member)) {
+            return;
+          }
         }
 
         node.arguments.forEach((arg, index) => {

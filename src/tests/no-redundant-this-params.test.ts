@@ -369,6 +369,72 @@ ruleTesterTs.run('no-redundant-this-params', noRedundantThisParams, {
     },
     {
       code: `
+      type Config = { value: number };
+
+      class AsExpressionMemberChain {
+        private config: Config = { value: 1 };
+
+        private consume(input: number) {
+          return input + 1;
+        }
+
+        run() {
+          return this.consume((this.config as Config).value);
+        }
+      }
+      `,
+      errors: [{ messageId: 'redundantInstanceArg' }],
+    },
+    {
+      code: `
+      class NonNullMemberChain {
+        private config?: { value: number } = { value: 1 };
+
+        private consume(input: number) {
+          return input + 1;
+        }
+
+        run() {
+          return this.consume(this.config!.value);
+        }
+      }
+      `,
+      errors: [{ messageId: 'redundantInstanceArg' }],
+    },
+    {
+      code: `
+      class InstantiationExpression {
+        private factory<T>(): T {
+          return null as any as T;
+        }
+
+        private useFactory(factory: unknown) {
+          return factory;
+        }
+
+        run() {
+          return this.useFactory(this.factory<string>);
+        }
+      }
+      `,
+      errors: [{ messageId: 'redundantInstanceArg' }],
+    },
+    {
+      code: `
+      class PropertyInitializerCall {
+        private value = 1;
+
+        private useValue(value: number) {
+          return value * 2;
+        }
+
+        private result = this.useValue(this.value);
+      }
+      `,
+      errors: [{ messageId: 'redundantInstanceArg' }],
+    },
+    {
+      code: `
       class Reporter {
         private ids: string[] = [];
 
