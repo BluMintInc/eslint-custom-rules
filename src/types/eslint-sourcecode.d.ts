@@ -1,5 +1,7 @@
 import type { TSESLint, TSESTree } from '@typescript-eslint/utils';
 
+/* eslint-disable @typescript-eslint/no-unused-vars -- RuleContext generic parameters match upstream @typescript-eslint/utils but are not referenced by this module augmentation. */
+
 declare module '@typescript-eslint/utils/ts-eslint' {
   interface SourceCode {
     getAncestors(node: TSESTree.Node): TSESTree.Node[];

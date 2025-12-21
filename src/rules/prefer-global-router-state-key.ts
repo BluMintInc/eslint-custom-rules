@@ -398,14 +398,16 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                               const queryKeysNamedImport =
                                 sourceCode.ast.body.find(
                                   (n): n is TSESTree.ImportDeclaration =>
-                                    n.type === AST_NODE_TYPES.ImportDeclaration &&
+                                    n.type ===
+                                      AST_NODE_TYPES.ImportDeclaration &&
                                     n.importKind !== 'type' &&
                                     n.source.type === AST_NODE_TYPES.Literal &&
                                     typeof n.source.value === 'string' &&
                                     isQueryKeysSource(n.source.value) &&
                                     n.specifiers.some(
                                       (s) =>
-                                        s.type === AST_NODE_TYPES.ImportSpecifier,
+                                        s.type ===
+                                        AST_NODE_TYPES.ImportSpecifier,
                                     ),
                                 );
                               const sideEffectImport = sourceCode.ast.body.find(
@@ -420,9 +422,7 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                               if (queryKeysNamedImport) {
                                 const importSpecifiers =
                                   queryKeysNamedImport.specifiers.filter(
-                                    (
-                                      spec,
-                                    ): spec is TSESTree.ImportSpecifier =>
+                                    (spec): spec is TSESTree.ImportSpecifier =>
                                       spec.type ===
                                       AST_NODE_TYPES.ImportSpecifier,
                                   );

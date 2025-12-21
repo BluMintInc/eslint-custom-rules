@@ -60,6 +60,7 @@ import { enforceExportedFunctionTypes } from './rules/enforce-exported-function-
 import { noRedundantAnnotationAssertion } from './rules/no-redundant-annotation-assertion';
 import { enforceMemoizeGetters } from './rules/enforce-memoize-getters';
 import { noRedundantParamTypes } from './rules/no-redundant-param-types';
+import { noRedundantThisParams } from './rules/no-redundant-this-params';
 import { noClassInstanceDestructuring } from './rules/no-class-instance-destructuring';
 import { noFirestoreObjectArrays } from './rules/no-firestore-object-arrays';
 import { noMemoizeOnStatic } from './rules/no-memoize-on-static';
@@ -326,6 +327,7 @@ module.exports = {
         '@blumintinc/blumint/prefer-next-dynamic': 'error',
         '@blumintinc/blumint/jsdoc-above-field': 'error',
         '@blumintinc/blumint/no-redundant-usecallback-wrapper': 'error',
+        '@blumintinc/blumint/no-redundant-this-params': 'error',
         '@blumintinc/blumint/no-array-length-in-deps': 'error',
         '@blumintinc/blumint/enforce-stable-hash-spread-props': 'error',
         '@blumintinc/blumint/prefer-use-deep-compare-memo': 'error',
@@ -494,6 +496,7 @@ module.exports = {
     'enforce-exported-function-types': enforceExportedFunctionTypes,
     'no-redundant-annotation-assertion': noRedundantAnnotationAssertion,
     'no-redundant-param-types': noRedundantParamTypes,
+    'no-redundant-this-params': noRedundantThisParams,
     'enforce-memoize-getters': enforceMemoizeGetters,
     'no-class-instance-destructuring': noClassInstanceDestructuring,
     'no-firestore-object-arrays': noFirestoreObjectArrays,
