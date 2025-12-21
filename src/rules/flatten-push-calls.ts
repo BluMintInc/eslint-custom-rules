@@ -355,10 +355,10 @@ function formatComments(
 
 function getLeadingCommentsBetween(
   sourceCode: TSESLint.SourceCode,
-  previous: TSESTree.Statement,
+  previousStatement: TSESTree.Statement,
   current: TSESTree.Statement,
 ): TSESTree.Comment[] {
-  const previousEnd = getRangeEnd(previous, sourceCode);
+  const previousEnd = getRangeEnd(previousStatement, sourceCode);
   return sourceCode
     .getCommentsBefore(current)
     .filter((comment) => comment.range[0] >= previousEnd);

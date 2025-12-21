@@ -266,6 +266,8 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
     return {
       // Track imports from queryKeys.ts
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
+        if (node.importKind === 'type') return;
+
         if (
           node.source.type === AST_NODE_TYPES.Literal &&
           typeof node.source.value === 'string'
@@ -274,6 +276,8 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
           if (isQueryKeysSource(source)) {
             node.specifiers.forEach((spec) => {
               if (spec.type === AST_NODE_TYPES.ImportSpecifier) {
+                if (spec.importKind === 'type') return;
+
                 const imported = spec.imported.name;
                 const local = spec.local.name;
                 queryKeyImports.set(local, { source, imported });
@@ -395,6 +399,7 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                                 sourceCode.ast.body.find(
                                   (n): n is TSESTree.ImportDeclaration =>
                                     n.type === AST_NODE_TYPES.ImportDeclaration &&
+                                    n.importKind !== 'type' &&
                                     n.source.type === AST_NODE_TYPES.Literal &&
                                     typeof n.source.value === 'string' &&
                                     isQueryKeysSource(n.source.value) &&

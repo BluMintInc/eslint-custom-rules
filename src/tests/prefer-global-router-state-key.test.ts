@@ -767,6 +767,12 @@ ruleTesterJsx.run(
         `,
         errors: [stringLiteralError("'user-profile'")],
       },
+      // 22. Should NOT merge with type-only import
+      {
+        code: "import type { SomeType } from '@/util/routing/queryKeys';\n\nfunction Component() {\n  const [value] = useRouterState({ key: 'user-profile' });\n  return <div>{value}</div>;\n}",
+        output: "import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';\nimport type { SomeType } from '@/util/routing/queryKeys';\n\nfunction Component() {\n  const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });\n  return <div>{value}</div>;\n}",
+        errors: [stringLiteralError("'user-profile'")],
+      },
     ],
   },
 );
