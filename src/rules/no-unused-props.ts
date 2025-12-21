@@ -409,7 +409,6 @@ export const noUnusedProps = createRule({
 
             return visit(typeNode);
           };
-
           const handleOmitType = (
             baseType: TSESTree.TypeNode,
             omittedProps: TSESTree.TypeNode,

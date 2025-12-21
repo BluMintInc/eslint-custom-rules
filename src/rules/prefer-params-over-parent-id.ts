@@ -294,7 +294,6 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    // Track functions that are Firebase change handlers
     const handlerNodes = new Set<TSESTree.Node>();
 
     return {

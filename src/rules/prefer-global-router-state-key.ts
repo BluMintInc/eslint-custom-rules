@@ -266,6 +266,8 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
     return {
       // Track imports from queryKeys.ts
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
+        if (node.importKind === 'type') return;
+
         if (
           node.source.type === AST_NODE_TYPES.Literal &&
           typeof node.source.value === 'string'
@@ -274,6 +276,8 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
           if (isQueryKeysSource(source)) {
             node.specifiers.forEach((spec) => {
               if (spec.type === AST_NODE_TYPES.ImportSpecifier) {
+                if (spec.importKind === 'type') return;
+
                 const imported = spec.imported.name;
                 const local = spec.local.name;
                 queryKeyImports.set(local, { source, imported });
@@ -391,19 +395,76 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                               !hasNamespaceOrDefault
                             ) {
                               const importText = `import { ${suggestedConstant} } from '@/util/routing/queryKeys';\n`;
-                              const firstImport = sourceCode.ast.body.find(
+                              const queryKeysNamedImport =
+                                sourceCode.ast.body.find(
+                                  (n): n is TSESTree.ImportDeclaration =>
+                                    n.type === AST_NODE_TYPES.ImportDeclaration &&
+                                    n.importKind !== 'type' &&
+                                    n.source.type === AST_NODE_TYPES.Literal &&
+                                    typeof n.source.value === 'string' &&
+                                    isQueryKeysSource(n.source.value) &&
+                                    n.specifiers.some(
+                                      (s) =>
+                                        s.type === AST_NODE_TYPES.ImportSpecifier,
+                                    ),
+                                );
+                              const sideEffectImport = sourceCode.ast.body.find(
                                 (n): n is TSESTree.ImportDeclaration =>
-                                  n.type === AST_NODE_TYPES.ImportDeclaration,
+                                  n.type === AST_NODE_TYPES.ImportDeclaration &&
+                                  n.source.type === AST_NODE_TYPES.Literal &&
+                                  typeof n.source.value === 'string' &&
+                                  isQueryKeysSource(n.source.value) &&
+                                  n.specifiers.length === 0,
                               );
 
-                              if (firstImport) {
+                              if (queryKeysNamedImport) {
+                                const importSpecifiers =
+                                  queryKeysNamedImport.specifiers.filter(
+                                    (
+                                      spec,
+                                    ): spec is TSESTree.ImportSpecifier =>
+                                      spec.type ===
+                                      AST_NODE_TYPES.ImportSpecifier,
+                                  );
+                                const lastSpecifier =
+                                  importSpecifiers[importSpecifiers.length - 1];
                                 fixes.push(
-                                  fixer.insertTextBefore(
-                                    firstImport,
-                                    importText,
+                                  fixer.insertTextAfter(
+                                    lastSpecifier,
+                                    `, ${suggestedConstant}`,
+                                  ),
+                                );
+                              } else if (sideEffectImport) {
+                                fixes.push(
+                                  fixer.replaceText(
+                                    sideEffectImport,
+                                    importText.trimEnd(),
                                   ),
                                 );
                               } else {
+                                const firstImport =
+                                  sourceCode.ast.body.find(
+                                    (n): n is TSESTree.ImportDeclaration =>
+                                      n.type ===
+                                        AST_NODE_TYPES.ImportDeclaration &&
+                                      n.importKind !== 'type',
+                                  ) ||
+                                  sourceCode.ast.body.find(
+                                    (n): n is TSESTree.ImportDeclaration =>
+                                      n.type ===
+                                      AST_NODE_TYPES.ImportDeclaration,
+                                  );
+
+                                if (firstImport) {
+                                  fixes.push(
+                                    fixer.insertTextBefore(
+                                      firstImport,
+                                      importText,
+                                    ),
+                                  );
+                                  return fixes;
+                                }
+
                                 const lastDirective = findLastDirective(
                                   sourceCode.ast.body,
                                 );

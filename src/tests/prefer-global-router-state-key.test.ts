@@ -368,6 +368,67 @@ ruleTesterJsx.run(
         `,
       },
 
+      // 2a. Merge with existing queryKeys import
+      {
+        code: `
+        import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: 'user-settings' });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [stringLiteralError("'user-settings'")],
+        output: `
+        import { QUERY_KEY_USER_PROFILE, QUERY_KEY_USER_SETTINGS } from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: QUERY_KEY_USER_SETTINGS });
+          return <div>{value}</div>;
+        }
+        `,
+      },
+      // 2b. Namespace import should qualify constant
+      {
+        code: `
+        import * as QueryKeys from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: 'user-profile' });
+          return <div>{value}</div>;
+        }
+        `,
+        output: `
+        import * as QueryKeys from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: QueryKeys.QUERY_KEY_USER_PROFILE });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+      // 2c. Default import should qualify constant
+      {
+        code: `
+        import queryKeys from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: 'user-settings' });
+          return <div>{value}</div>;
+        }
+        `,
+        output: `
+        import queryKeys from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: queryKeys.QUERY_KEY_USER_SETTINGS });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [stringLiteralError("'user-settings'")],
+      },
+
       // 2. String literals in template expressions
       {
         code: `
@@ -685,6 +746,32 @@ ruleTesterJsx.run(
         }
         `,
         errors: [invalidSourceError('key')],
+      },
+      // 21. Side-effect queryKeys import should still add named import
+      {
+        code: `
+        import '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: 'user-profile' });
+          return <div>{value}</div>;
+        }
+        `,
+        output: `
+        import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';
+
+        function Component() {
+          const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });
+          return <div>{value}</div>;
+        }
+        `,
+        errors: [stringLiteralError("'user-profile'")],
+      },
+      // 22. Should NOT merge with type-only import
+      {
+        code: "import type { SomeType } from '@/util/routing/queryKeys';\n\nfunction Component() {\n  const [value] = useRouterState({ key: 'user-profile' });\n  return <div>{value}</div>;\n}",
+        output: "import { QUERY_KEY_USER_PROFILE } from '@/util/routing/queryKeys';\nimport type { SomeType } from '@/util/routing/queryKeys';\n\nfunction Component() {\n  const [value] = useRouterState({ key: QUERY_KEY_USER_PROFILE });\n  return <div>{value}</div>;\n}",
+        errors: [stringLiteralError("'user-profile'")],
       },
     ],
   },
