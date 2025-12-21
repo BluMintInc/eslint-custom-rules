@@ -1,4 +1,4 @@
-# Consolidate consecutive Array.push calls (`@blumintinc/blumint/flatten-push-calls`)
+# Consolidate consecutive push calls on the same array into a single push with multiple arguments (`@blumintinc/blumint/flatten-push-calls`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

@@ -12,13 +12,29 @@ type PushCallStatement = {
 
 const PUSH_METHOD_NAME = 'push';
 
+function getRangeStart(
+  node: TSESTree.Node,
+  sourceCode: TSESLint.SourceCode,
+): number {
+  return node.range?.[0] ?? sourceCode.getIndexFromLoc(node.loc.start);
+}
+
+function getRangeEnd(
+  node: TSESTree.Node,
+  sourceCode: TSESLint.SourceCode,
+): number {
+  return node.range?.[1] ?? sourceCode.getIndexFromLoc(node.loc.end);
+}
+
 function unwrapExpression(
   expression: TSESTree.Expression,
 ): TSESTree.Expression {
   let current: TSESTree.Expression = expression;
 
-  // Peel off harmless wrappers to compare the underlying array identity
-  // (e.g., arr!.push(), arr as Foo, (arr).push()).
+  /**
+   * Peel off harmless wrappers to compare the underlying array identity
+   * (e.g., arr!.push(), arr as Foo, (arr).push()).
+   */
   while (true) {
     if (current.type === AST_NODE_TYPES.TSNonNullExpression) {
       current = current.expression;
@@ -28,7 +44,8 @@ function unwrapExpression(
     if (
       current.type === AST_NODE_TYPES.TSAsExpression ||
       current.type === AST_NODE_TYPES.TSTypeAssertion ||
-      current.type === AST_NODE_TYPES.TSInstantiationExpression
+      current.type === AST_NODE_TYPES.TSInstantiationExpression ||
+      current.type === AST_NODE_TYPES.TSSatisfiesExpression
     ) {
       current = current.expression as TSESTree.Expression;
       continue;
@@ -69,12 +86,10 @@ function getCalleeWithTypeParams(
   call: TSESTree.CallExpression,
   sourceCode: TSESLint.SourceCode,
 ): string {
-  const calleeStart =
-    call.callee.range?.[0] ?? sourceCode.getIndexFromLoc(call.callee.loc.start);
+  const calleeStart = getRangeStart(call.callee, sourceCode);
   const calleeEnd = call.typeParameters
-    ? call.typeParameters.range?.[1] ??
-      sourceCode.getIndexFromLoc(call.typeParameters.loc.end)
-    : call.callee.range?.[1] ?? sourceCode.getIndexFromLoc(call.callee.loc.end);
+    ? getRangeEnd(call.typeParameters, sourceCode)
+    : getRangeEnd(call.callee, sourceCode);
 
   return sourceCode.text.slice(calleeStart, calleeEnd);
 }
@@ -295,9 +310,7 @@ function getLineIndent(
   targetNode: TSESTree.Node,
   sourceCode: TSESLint.SourceCode,
 ): string {
-  const start =
-    targetNode.range?.[0] ??
-    sourceCode.getIndexFromLoc(targetNode.loc.start);
+  const start = getRangeStart(targetNode, sourceCode);
   const text = sourceCode.text;
   const lineStart = text.lastIndexOf('\n', start - 1) + 1;
   const indentMatch = text.slice(lineStart, start).match(/^[\t ]*/u);
@@ -345,8 +358,7 @@ function getLeadingCommentsBetween(
   previous: TSESTree.Statement,
   current: TSESTree.Statement,
 ): TSESTree.Comment[] {
-  const previousEnd =
-    previous.range?.[1] ?? sourceCode.getIndexFromLoc(previous.loc.end);
+  const previousEnd = getRangeEnd(previous, sourceCode);
   return sourceCode
     .getCommentsBefore(current)
     .filter((comment) => comment.range[0] >= previousEnd);
@@ -517,58 +529,75 @@ export const flattenPushCalls = createRule<[], MessageIds>({
       return currentText === replacement ? null : replacement;
     }
 
+    function findConsecutivePushGroup(
+      statements: TSESTree.Statement[],
+      startIndex: number,
+      firstInfo: PushCallStatement,
+    ): { group: PushCallStatement[]; nextIndex: number } {
+      const group: PushCallStatement[] = [firstInfo];
+      let cursor = startIndex + 1;
+
+      while (cursor < statements.length) {
+        const next = isPushCallStatement(statements[cursor], sourceCode);
+        if (!next || next.targetKey !== firstInfo.targetKey) break;
+        group.push(next);
+        cursor += 1;
+      }
+
+      return { group, nextIndex: cursor };
+    }
+
+    function shouldReportViolation(group: PushCallStatement[]): boolean {
+      if (group.length <= 1) return false;
+
+      const totalArgs = group.reduce(
+        (count, entry) => count + entry.call.arguments.length,
+        0,
+      );
+
+      const firstArgs = group[0].call.arguments.length;
+      return totalArgs > firstArgs && canSafelyFix(group);
+    }
+
+    function reportViolation(group: PushCallStatement[]): void {
+      context.report({
+        node: group[0].call.callee,
+        messageId: 'flattenPushCalls',
+        data: {
+          target: sourceCode.getText(
+            (group[0].call.callee as TSESTree.MemberExpression).object,
+          ),
+        },
+        fix(fixer) {
+          const replacement = buildReplacement(group);
+          if (!replacement) return null;
+          return fixer.replaceTextRange(
+            [
+              group[0].statement.range[0],
+              group[group.length - 1].statement.range[1],
+            ],
+            replacement,
+          );
+        },
+      });
+    }
+
     function checkStatements(statements: TSESTree.Statement[]): void {
       for (let i = 0; i < statements.length; i++) {
         const info = isPushCallStatement(statements[i], sourceCode);
         if (!info) continue;
 
-        const group: PushCallStatement[] = [info];
-        let cursor = i + 1;
+        const { group, nextIndex } = findConsecutivePushGroup(
+          statements,
+          i,
+          info,
+        );
 
-        while (cursor < statements.length) {
-          const next = isPushCallStatement(statements[cursor], sourceCode);
-          if (!next || next.targetKey !== info.targetKey) break;
-          group.push(next);
-          cursor += 1;
+        if (shouldReportViolation(group)) {
+          reportViolation(group);
         }
 
-        if (group.length > 1) {
-          const totalArgs = group.reduce(
-            (count, entry) => count + entry.call.arguments.length,
-            0,
-          );
-
-          const firstArgs = group[0].call.arguments.length;
-          if (totalArgs > firstArgs) {
-            if (!canSafelyFix(group)) {
-              i = cursor - 1;
-              continue;
-            }
-
-            context.report({
-              node: group[0].call.callee,
-              messageId: 'flattenPushCalls',
-              data: {
-                target: sourceCode.getText(
-                  (group[0].call.callee as TSESTree.MemberExpression).object,
-                ),
-              },
-              fix(fixer) {
-                const replacement = buildReplacement(group);
-                if (!replacement) return null;
-                return fixer.replaceTextRange(
-                  [
-                    group[0].statement.range[0],
-                    group[group.length - 1].statement.range[1],
-                  ],
-                  replacement,
-                );
-              },
-            });
-          }
-        }
-
-        i = cursor - 1;
+        i = nextIndex - 1;
       }
     }
 

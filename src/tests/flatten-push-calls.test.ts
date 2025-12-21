@@ -345,5 +345,17 @@ ruleTesterTs.run('flatten-push-calls', flattenPushCalls, {
       `,
       errors: [{ messageId: 'flattenPushCalls' }],
     },
+    {
+      code: `
+      const arr = [];
+      (arr satisfies string[]).push(a);
+      (arr satisfies string[]).push(b);
+      `,
+      output: `
+      const arr = [];
+      (arr satisfies string[]).push(a, b);
+      `,
+      errors: [{ messageId: 'flattenPushCalls' }],
+    },
   ],
 });
