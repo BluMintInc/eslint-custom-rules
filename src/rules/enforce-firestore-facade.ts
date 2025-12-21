@@ -136,7 +136,7 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
     const firestoreTransactionVariables = new Set<string>();
     const docSetterVariables = new Set<string>();
     const batchManagerVariables = new Set<string>();
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode;
 
     const clearFirestoreTrackingFor = (name: string): void => {
       firestoreDocRefVariables.delete(name);
@@ -220,7 +220,9 @@ export const enforceFirestoreFacade = createRule<[], MessageIds>({
 
       if (
         target.type === AST_NODE_TYPES.Identifier &&
-        (target.name === 'transaction' || target.name === 'tx' || target.name === 't')
+        (target.name === 'transaction' ||
+          target.name === 'tx' ||
+          target.name === 't')
       ) {
         firestoreTransactionVariables.add(varName);
         return true;
