@@ -144,8 +144,8 @@ function hasForbiddenSideEffects(
 ): boolean {
   if (!node) return false;
 
-  const nodeType = (node as { type: string }).type;
-  if (nodeType === 'ParenthesizedExpression') {
+  const astNodeType = (node as { type: string }).type;
+  if (astNodeType === 'ParenthesizedExpression') {
     return hasForbiddenSideEffects(
       (node as { expression: TSESTree.Expression }).expression,
     );
