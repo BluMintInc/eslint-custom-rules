@@ -157,10 +157,13 @@ function noFrontendImportsFromFunctionsPatterns(pattern: string) {
        * no-restricted-imports matches import strings literally (it does not
        * resolve them to the filesystem). This monorepo layout contains both a
        * frontend `src/` and a backend `functions/src/`, so broad `../src/**`
-       * patterns can also block legitimate backend-to-backend imports.
+       * patterns applied indiscriminately can also block legitimate
+       * backend-to-backend imports within `functions/src/**`.
        *
        * Each override targets one `functions/**` + `/*.f.ts` nesting depth and
-       * restricts only the traversal depth that reaches the repo root `src/`.
+       * restricts only the exact traversal depth that reaches the repo root
+       * `src/`, so relative imports that stay inside `functions/src/**` do not
+       * match.
        * Projects using path aliases should add matching restrictions in their
        * own configs.
        */
@@ -334,6 +337,11 @@ module.exports = {
         '@blumintinc/blumint/no-static-constants-in-dynamic-files': 'error',
         '@blumintinc/blumint/test-file-location-enforcement': 'error',
       },
+      /**
+       * Depth-specific overrides block only import strings that traverse to the
+       * repo root `src/`. The list covers nesting depths 1–6; deeper nesting
+       * requires an additional override.
+       */
       overrides: [
         {
           files: ['functions/*.f.ts'],
