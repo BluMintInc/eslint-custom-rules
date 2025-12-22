@@ -1,5 +1,27 @@
+import { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterTs } from '../utils/ruleTester';
 import { preferBatchOperations } from '../rules/prefer-batch-operations';
+
+const buildMessage = (
+  setterMethod: 'set()' | 'overwrite()',
+  contextDescription: string,
+) =>
+  `DocSetter.${setterMethod} is invoked repeatedly inside ${contextDescription}, which issues separate Firestore writes per document and can leave partial updates when later calls fail. Batch the documents with DocSetter.${
+    setterMethod === 'set()' ? 'setAll()' : 'overwriteAll()'
+  } so the writes stay grouped and latency stays predictable.`;
+
+type MessageIds = 'preferBatch';
+type ErrorExpectation = TSESLint.TestCaseError<MessageIds>;
+
+const expectSetAll = (contextDescription: string): ErrorExpectation =>
+  ({
+    message: buildMessage('set()', contextDescription),
+  } as unknown as ErrorExpectation);
+
+const expectOverwriteAll = (contextDescription: string): ErrorExpectation =>
+  ({
+    message: buildMessage('overwrite()', contextDescription),
+  } as unknown as ErrorExpectation);
 
 ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
   valid: [
@@ -334,7 +356,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
           setter.set(doc3),
         ]);
       `,
-      errors: [{ messageId: 'preferSetAll' }],
+      errors: [expectSetAll('Promise.all()')],
     },
     // Multiple conditional setter calls of the same type should be flagged
     {
@@ -346,7 +368,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
           condition3 && setter.set(doc3),
         ]);
       `,
-      errors: [{ messageId: 'preferSetAll' }],
+      errors: [expectSetAll('Promise.all()')],
     },
     // Multiple overwrite calls should be flagged
     {
@@ -357,7 +379,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
           setter.overwrite(doc2),
         ]);
       `,
-      errors: [{ messageId: 'preferOverwriteAll' }],
+      errors: [expectOverwriteAll('Promise.all()')],
     },
     // Multiple setter calls with ternary operators should be flagged
     {
@@ -368,7 +390,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
           condition2 ? setter.set(doc2) : null,
         ]);
       `,
-      errors: [{ messageId: 'preferSetAll' }],
+      errors: [expectSetAll('Promise.all()')],
     },
     // Multiple setter calls with complex conditionals should be flagged
     {
@@ -379,7 +401,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
           (condition3 && condition4) && setter.set(doc2),
         ]);
       `,
-      errors: [{ messageId: 'preferSetAll' }],
+      errors: [expectSetAll('Promise.all()')],
     },
     // Multiple setter calls with OR conditionals should be flagged
     {
@@ -390,7 +412,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
           condition2 || setter.set(doc2),
         ]);
       `,
-      errors: [{ messageId: 'preferSetAll' }],
+      errors: [expectSetAll('Promise.all()')],
     },
     // Multiple setter calls with nested ternary should be flagged
     {
@@ -401,7 +423,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
           condition3 ? setter.set(doc2) : null,
         ]);
       `,
-      errors: [{ messageId: 'preferSetAll' }],
+      errors: [expectSetAll('Promise.all()')],
     },
     // Different setter instances in loop are not allowed
     {
@@ -413,7 +435,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
           await orderSetter.set(doc.order);
         }
       `,
-      errors: [{ messageId: 'preferSetAll' }],
+      errors: [expectSetAll('for...of loop')],
     },
     // For...of loop with set()
     {
@@ -423,7 +445,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
           await setter.set(doc);
         }
       `,
-      errors: [{ messageId: 'preferSetAll' }],
+      errors: [expectSetAll('for...of loop')],
     },
     // For...of loop with overwrite()
     {
@@ -433,7 +455,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
           await setter.overwrite(doc);
         }
       `,
-      errors: [{ messageId: 'preferOverwriteAll' }],
+      errors: [expectOverwriteAll('for...of loop')],
     },
     // For await...of loop with set()
     {
@@ -443,7 +465,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
           await setter.set(doc);
         }
       `,
-      errors: [{ messageId: 'preferSetAll' }],
+      errors: [expectSetAll('for...of loop')],
     },
     // Array.forEach with set()
     {
@@ -453,7 +475,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
           await setter.set(doc);
         });
       `,
-      errors: [{ messageId: 'preferSetAll' }],
+      errors: [expectSetAll('forEach() callback')],
     },
     // Promise.all with map and set()
     {
@@ -461,7 +483,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
         const setter = new DocSetter(collectionRef);
         await Promise.all(documents.map(doc => setter.set(doc)));
       `,
-      errors: [{ messageId: 'preferSetAll' }],
+      errors: [expectSetAll('map() callback')],
     },
     // Nested loops with set()
     {
@@ -473,7 +495,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
           }
         }
       `,
-      errors: [{ messageId: 'preferSetAll' }],
+      errors: [expectSetAll('for...of loop')],
     },
     // Conditional set() in loop
     {
@@ -485,7 +507,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
           }
         }
       `,
-      errors: [{ messageId: 'preferSetAll' }],
+      errors: [expectSetAll('for...of loop')],
     },
     // For...in loop with set()
     {
@@ -495,7 +517,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
           await setter.set(documents[key]);
         }
       `,
-      errors: [{ messageId: 'preferSetAll' }],
+      errors: [expectSetAll('for...in loop')],
     },
     // While loop with set()
     {
@@ -507,7 +529,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
           i++;
         }
       `,
-      errors: [{ messageId: 'preferSetAll' }],
+      errors: [expectSetAll('while loop')],
     },
     // Do...while loop with set()
     {
@@ -519,7 +541,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
           i++;
         } while (i < documents.length);
       `,
-      errors: [{ messageId: 'preferSetAll' }],
+      errors: [expectSetAll('do...while loop')],
     },
     // Array.map with overwrite()
     {
@@ -527,7 +549,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
         const setter = new DocSetter(collectionRef);
         await Promise.all(documents.map(doc => setter.overwrite(doc)));
       `,
-      errors: [{ messageId: 'preferOverwriteAll' }],
+      errors: [expectOverwriteAll('map() callback')],
     },
     // Array.filter and forEach with set()
     {
@@ -537,7 +559,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
           await setter.set(doc);
         });
       `,
-      errors: [{ messageId: 'preferSetAll' }],
+      errors: [expectSetAll('forEach() callback')],
     },
     // Nested Promise.all with set()
     {
@@ -547,7 +569,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
           Promise.all(batch.map(doc => setter.set(doc)))
         ));
       `,
-      errors: [{ messageId: 'preferSetAll' }],
+      errors: [expectSetAll('map() callback')],
     },
     // For loop with set() and try-catch
     {
@@ -561,7 +583,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
           }
         }
       `,
-      errors: [{ messageId: 'preferSetAll' }],
+      errors: [expectSetAll('for...of loop')],
     },
     // For loop with overwrite() and async IIFE
     {
@@ -573,7 +595,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
           }
         })();
       `,
-      errors: [{ messageId: 'preferOverwriteAll' }],
+      errors: [expectOverwriteAll('for...of loop')],
     },
     // Array.reduce with set()
     {
@@ -584,7 +606,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
           await setter.set(doc);
         }, Promise.resolve());
       `,
-      errors: [{ messageId: 'preferSetAll' }],
+      errors: [expectSetAll('reduce() callback')],
     },
     // For loop with set() and multiple statements
     {
@@ -597,7 +619,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
           console.log('Done');
         }
       `,
-      errors: [{ messageId: 'preferSetAll' }],
+      errors: [expectSetAll('for...of loop')],
     },
     // For loop with overwrite() and function call
     {
@@ -608,7 +630,7 @@ ruleTesterTs.run('prefer-batch-operations', preferBatchOperations, {
           await setter.overwrite(doc);
         }
       `,
-      errors: [{ messageId: 'preferOverwriteAll' }],
+      errors: [expectOverwriteAll('for...of loop')],
     },
   ],
 });

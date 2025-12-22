@@ -1,4 +1,4 @@
-# Prevent using array.length in React hook dependency arrays. Instead, memoize stableHash(array) with useMemo and depend on the hash (`@blumintinc/blumint/no-array-length-in-deps`)
+# Detects array.length entries in React hook dependency arrays because length ignores content changes; auto-fixes by memoizing stableHash(array) with useMemo and depending on the hash instead (`@blumintinc/blumint/no-array-length-in-deps`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

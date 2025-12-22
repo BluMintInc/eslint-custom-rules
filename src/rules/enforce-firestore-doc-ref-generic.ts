@@ -35,7 +35,7 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
         'How to fix: Add the document interface/type as the generic (e.g., const ref: {{ type }}<UserDoc> = ... or doc<UserDoc>(collection)).',
       ].join('\n'),
       invalidGeneric: [
-        "What's wrong: {{ type }} uses \"any\" or an empty object ({}) in its schema generic.",
+        'What\'s wrong: {{ type }} uses "any" or an empty object ({}) in its schema generic.',
         '',
         'Why it matters: This erases the document schema and disables TypeScript checks on Firestore reads and writes, so malformed payloads and missing fields can pass silently.',
         '',
@@ -79,7 +79,7 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
             }
             // Prevent infinite recursion
             typeCache.set(typeName, false);
-            const program = context.getSourceCode().ast;
+            const program = context.sourceCode.ast;
             const interfaceDecl = program.body.find(
               (n): n is TSESTree.TSInterfaceDeclaration =>
                 n.type === AST_NODE_TYPES.TSInterfaceDeclaration &&

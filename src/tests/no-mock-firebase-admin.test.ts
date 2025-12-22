@@ -1,6 +1,11 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noMockFirebaseAdmin } from '../rules/no-mock-firebase-admin';
 
+const errorFor = (modulePath: string) => ({
+  messageId: 'noMockFirebaseAdmin' as const,
+  data: { modulePath },
+});
+
 ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
   valid: [
     // Valid usage of mockFirestore
@@ -72,13 +77,13 @@ ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
         db: mockFirestore()
       }));`,
       filename: 'src/test.test.ts',
-      errors: [{ messageId: 'noMockFirebaseAdmin' }],
+      errors: [errorFor('../../config/firebaseAdmin')],
     },
     // Simple mock without factory
     {
       code: `jest.mock('../config/firebaseAdmin');`,
       filename: 'src/test.test.ts',
-      errors: [{ messageId: 'noMockFirebaseAdmin' }],
+      errors: [errorFor('../config/firebaseAdmin')],
     },
     // Mock with additional properties
     {
@@ -88,7 +93,7 @@ ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
         storage: jest.fn()
       }));`,
       filename: 'src/test.test.ts',
-      errors: [{ messageId: 'noMockFirebaseAdmin' }],
+      errors: [errorFor('functions/src/config/firebaseAdmin')],
     },
     // Mock with requireActual
     {
@@ -96,14 +101,14 @@ ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
         db: jest.requireActual('../../config/firebaseAdmin').db,
       }));`,
       filename: 'src/test.test.ts',
-      errors: [{ messageId: 'noMockFirebaseAdmin' }],
+      errors: [errorFor('../../config/firebaseAdmin')],
     },
     // Mock with resetModules
     {
       code: `jest.resetModules();
       jest.mock('../../config/firebaseAdmin');`,
       filename: 'src/test.test.ts',
-      errors: [{ messageId: 'noMockFirebaseAdmin' }],
+      errors: [errorFor('../../config/firebaseAdmin')],
     },
     // Multi-line variations
     {
@@ -113,7 +118,7 @@ ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
             '../../config/firebaseAdmin'
           );`,
       filename: 'src/test.test.ts',
-      errors: [{ messageId: 'noMockFirebaseAdmin' }],
+      errors: [errorFor('../../config/firebaseAdmin')],
     },
     // With comments
     {
@@ -124,24 +129,24 @@ ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
         // Factory function
       );`,
       filename: 'src/test.test.ts',
-      errors: [{ messageId: 'noMockFirebaseAdmin' }],
+      errors: [errorFor('../../config/firebaseAdmin')],
     },
     // Different path variations
     {
       code: `jest.mock('./config/firebaseAdmin');`,
       filename: 'src/test.test.ts',
-      errors: [{ messageId: 'noMockFirebaseAdmin' }],
+      errors: [errorFor('./config/firebaseAdmin')],
     },
     {
       code: `jest.mock('@project/functions/src/config/firebaseAdmin');`,
       filename: 'src/test.test.ts',
-      errors: [{ messageId: 'noMockFirebaseAdmin' }],
+      errors: [errorFor('@project/functions/src/config/firebaseAdmin')],
     },
     // Template literal path
     {
       code: 'jest.mock(`../../config/firebaseAdmin`);',
       filename: 'src/test.test.ts',
-      errors: [{ messageId: 'noMockFirebaseAdmin' }],
+      errors: [errorFor('../../config/firebaseAdmin')],
     },
     // Multiple mocks in one file
     {
@@ -151,8 +156,8 @@ ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
         jest.mock('./config/firebaseAdmin', () => ({}));`,
       filename: 'src/test.test.ts',
       errors: [
-        { messageId: 'noMockFirebaseAdmin' },
-        { messageId: 'noMockFirebaseAdmin' },
+        errorFor('../../config/firebaseAdmin'),
+        errorFor('./config/firebaseAdmin'),
       ],
     },
     // Mock with complex factory
@@ -170,7 +175,7 @@ ruleTesterTs.run('no-mock-firebase-admin', noMockFirebaseAdmin, {
           };
         });`,
       filename: 'src/test.test.ts',
-      errors: [{ messageId: 'noMockFirebaseAdmin' }],
+      errors: [errorFor('../../config/firebaseAdmin')],
     },
   ],
 });
