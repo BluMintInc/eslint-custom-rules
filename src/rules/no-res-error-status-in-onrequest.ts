@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 const ON_REQUEST_MODULE = 'functions/src/v2/https/onRequest';
 const HTTPS_ERROR_IMPORT_PATH = 'functions/src/util/errors/HttpsError';
@@ -421,19 +422,6 @@ export const requireHttpsErrorInOnRequestHandlers: TSESLint.RuleModule<
         );
       });
 
-    const getAncestors = (node: TSESTree.Node): TSESTree.Node[] => {
-      const ancestors: TSESTree.Node[] = [];
-      let current: TSESTree.Node | undefined | null = node.parent as
-        | TSESTree.Node
-        | undefined
-        | null;
-      while (current) {
-        ancestors.unshift(current);
-        current = current.parent as TSESTree.Node | undefined | null;
-      }
-      return ancestors;
-    };
-
     return {
       ImportDeclaration(node) {
         if (node.source.value !== ON_REQUEST_MODULE) {
@@ -525,7 +513,9 @@ export const requireHttpsErrorInOnRequestHandlers: TSESLint.RuleModule<
             return;
           }
 
-          const functionNode = findNearestFunction(getAncestors(node));
+          const functionNode = findNearestFunction(
+            ASTHelpers.getAncestors(context, node),
+          );
           if (!functionNode) {
             return;
           }
@@ -547,7 +537,9 @@ export const requireHttpsErrorInOnRequestHandlers: TSESLint.RuleModule<
           return;
         }
 
-        const functionNode = findNearestFunction(getAncestors(node));
+        const functionNode = findNearestFunction(
+          ASTHelpers.getAncestors(context, node),
+        );
         if (!functionNode) {
           return;
         }
