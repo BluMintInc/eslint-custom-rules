@@ -301,6 +301,19 @@ ruleTesterTs.run(
       {
         code: `
           import onRequest from 'functions/src/v2/https/onRequest';
+
+          function handler<T>(req, res) {
+            res.status(500).send('boom');
+          }
+
+          export default onRequest(handler<string>);
+        `,
+        parserOptions,
+        errors: [{ messageId: 'useHttpsErrorForStatus' }],
+      },
+      {
+        code: `
+          import onRequest from 'functions/src/v2/https/onRequest';
           function handler(req, res) {
             res.status(500).send('boom');
           }

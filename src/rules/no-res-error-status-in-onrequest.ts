@@ -49,7 +49,8 @@ const unwrapTypedExpression = (
     current.type === AST_NODE_TYPES.TSAsExpression ||
     current.type === AST_NODE_TYPES.TSSatisfiesExpression ||
     current.type === AST_NODE_TYPES.TSTypeAssertion ||
-    current.type === AST_NODE_TYPES.TSNonNullExpression
+    current.type === AST_NODE_TYPES.TSNonNullExpression ||
+    current.type === AST_NODE_TYPES.TSInstantiationExpression
   ) {
     current = current.expression;
   }
@@ -572,14 +573,16 @@ export const requireHttpsErrorInOnRequestHandlers: TSESLint.RuleModule<
                 | TSESTree.TSAsExpression
                 | TSESTree.TSSatisfiesExpression
                 | TSESTree.TSTypeAssertion
-                | TSESTree.TSNonNullExpression =>
+                | TSESTree.TSNonNullExpression
+                | TSESTree.TSInstantiationExpression =>
                 arg.type === AST_NODE_TYPES.ArrowFunctionExpression ||
                 arg.type === AST_NODE_TYPES.FunctionExpression ||
                 arg.type === AST_NODE_TYPES.Identifier ||
                 arg.type === AST_NODE_TYPES.TSAsExpression ||
                 arg.type === AST_NODE_TYPES.TSSatisfiesExpression ||
                 arg.type === AST_NODE_TYPES.TSTypeAssertion ||
-                arg.type === AST_NODE_TYPES.TSNonNullExpression,
+                arg.type === AST_NODE_TYPES.TSNonNullExpression ||
+                arg.type === AST_NODE_TYPES.TSInstantiationExpression,
             );
 
           if (handlerArg) {
@@ -635,6 +638,11 @@ export const requireHttpsErrorInOnRequestHandlers: TSESLint.RuleModule<
 
         const responseName = findResponseIdentifierInArgs(functionNode, node);
 
+        /**
+         * Skip direct method calls on the response object (e.g., res.send(res)) so the
+         * wrapper detection only reports helpers that receive the response object as
+         * an argument.
+         */
         const calleeUsesResponseDirectly =
           node.callee.type === AST_NODE_TYPES.MemberExpression &&
           node.callee.object.type === AST_NODE_TYPES.Identifier &&
