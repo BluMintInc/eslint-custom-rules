@@ -47,7 +47,8 @@ const unwrapTypedExpression = (
   while (
     current.type === AST_NODE_TYPES.TSAsExpression ||
     current.type === AST_NODE_TYPES.TSSatisfiesExpression ||
-    current.type === AST_NODE_TYPES.TSTypeAssertion
+    current.type === AST_NODE_TYPES.TSTypeAssertion ||
+    current.type === AST_NODE_TYPES.TSNonNullExpression
   ) {
     current = current.expression;
   }
@@ -169,11 +170,11 @@ const getCalleeDisplayName = (
       callee.object.type === AST_NODE_TYPES.Identifier
         ? callee.object.name
         : callee.object.type === AST_NODE_TYPES.MemberExpression &&
-            !callee.object.computed &&
-            callee.object.property.type === AST_NODE_TYPES.Identifier &&
-            callee.object.object.type === AST_NODE_TYPES.Identifier
-          ? `${callee.object.object.name}.${callee.object.property.name}`
-          : null;
+          !callee.object.computed &&
+          callee.object.property.type === AST_NODE_TYPES.Identifier &&
+          callee.object.object.type === AST_NODE_TYPES.Identifier
+        ? `${callee.object.object.name}.${callee.object.property.name}`
+        : null;
 
     if (objectName) {
       return `${objectName}.${callee.property.name}`;
@@ -218,7 +219,9 @@ const getStatusInfoFromStatusCall = (
   return null;
 };
 
-const findStatusCall = (node: TSESTree.CallExpression): StatusCallInfo | null => {
+const findStatusCall = (
+  node: TSESTree.CallExpression,
+): StatusCallInfo | null => {
   if (
     node.callee.type === AST_NODE_TYPES.MemberExpression &&
     isStatusMember(node.callee, 'sendStatus')
@@ -293,11 +296,11 @@ export const requireHttpsErrorInOnRequestHandlers: TSESLint.RuleModule<
     schema: [],
     messages: {
       useHttpsErrorForStatus:
-        'HTTP status {{statusCode}} sent via `{{responseName}}.{{method}}` inside an onRequest handler bypasses the centralized HttpsError pipeline. Throw new HttpsError(\'{{httpsCode}}\', \'{{messageExample}}\', details) instead and import HttpsError from {{httpsErrorImport}} so the wrapper formats and logs the error consistently.',
+        "HTTP status {{statusCode}} sent via `{{responseName}}.{{method}}` inside an onRequest handler bypasses the centralized HttpsError pipeline. Throw new HttpsError('{{httpsCode}}', '{{messageExample}}', details) instead and import HttpsError from {{httpsErrorImport}} so the wrapper formats and logs the error consistently.",
       useHttpsErrorForComputedStatus:
-        'Computed HTTP status sent via `{{responseName}}.{{method}}` inside an onRequest handler cannot be mapped to the expected HttpsError codes. Choose an explicit HttpsError code (e.g., invalid-argument, permission-denied) and throw new HttpsError(\'{{httpsCode}}\', \'{{messageExample}}\', details) after importing from {{httpsErrorImport}} so the wrapper can standardize logging and response shape.',
+        "Computed HTTP status sent via `{{responseName}}.{{method}}` inside an onRequest handler cannot be mapped to the expected HttpsError codes. Choose an explicit HttpsError code (e.g., invalid-argument, permission-denied) and throw new HttpsError('{{httpsCode}}', '{{messageExample}}', details) after importing from {{httpsErrorImport}} so the wrapper can standardize logging and response shape.",
       useHttpsErrorForWrapper:
-        '`{{calleeName}}` receives the Express response object `{{responseName}}` inside an onRequest handler, which writes HTTP errors directly and skips the HttpsError wrapper. Refactor this helper to throw new HttpsError(\'{{httpsCode}}\', \'{{messageExample}}\', details) (import from {{httpsErrorImport}}) so onRequest can handle formatting, status mapping, and logging.',
+        "`{{calleeName}}` receives the Express response object `{{responseName}}` inside an onRequest handler, which writes HTTP errors directly and skips the HttpsError wrapper. Refactor this helper to throw new HttpsError('{{httpsCode}}', '{{messageExample}}', details) (import from {{httpsErrorImport}}) so onRequest can handle formatting, status mapping, and logging.",
     },
   },
   defaultOptions: [],
@@ -321,10 +324,7 @@ export const requireHttpsErrorInOnRequestHandlers: TSESLint.RuleModule<
         return defNode;
       }
 
-      if (
-        defNode.type === AST_NODE_TYPES.VariableDeclarator &&
-        defNode.init
-      ) {
+      if (defNode.type === AST_NODE_TYPES.VariableDeclarator && defNode.init) {
         const initializer = unwrapTypedExpression(defNode.init);
         if (isFunctionLike(initializer)) {
           return initializer;
@@ -342,7 +342,9 @@ export const requireHttpsErrorInOnRequestHandlers: TSESLint.RuleModule<
       while (scope) {
         const variable =
           scope.set.get(identifier.name) ??
-          scope.variables.find((candidate) => candidate.name === identifier.name);
+          scope.variables.find(
+            (candidate) => candidate.name === identifier.name,
+          );
 
         if (variable) {
           for (const def of variable.defs) {
@@ -441,7 +443,9 @@ export const requireHttpsErrorInOnRequestHandlers: TSESLint.RuleModule<
             specifier.imported.name === 'onRequest'
           ) {
             onRequestIdentifiers.add(specifier.local.name);
-          } else if (specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier) {
+          } else if (
+            specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier
+          ) {
             onRequestNamespaces.add(specifier.local.name);
           }
         });
@@ -484,13 +488,15 @@ export const requireHttpsErrorInOnRequestHandlers: TSESLint.RuleModule<
                 | TSESTree.Identifier
                 | TSESTree.TSAsExpression
                 | TSESTree.TSSatisfiesExpression
-                | TSESTree.TSTypeAssertion =>
+                | TSESTree.TSTypeAssertion
+                | TSESTree.TSNonNullExpression =>
                 arg.type === AST_NODE_TYPES.ArrowFunctionExpression ||
                 arg.type === AST_NODE_TYPES.FunctionExpression ||
                 arg.type === AST_NODE_TYPES.Identifier ||
                 arg.type === AST_NODE_TYPES.TSAsExpression ||
                 arg.type === AST_NODE_TYPES.TSSatisfiesExpression ||
-                arg.type === AST_NODE_TYPES.TSTypeAssertion,
+                arg.type === AST_NODE_TYPES.TSTypeAssertion ||
+                arg.type === AST_NODE_TYPES.TSNonNullExpression,
             );
 
           if (handlerArg) {

@@ -6,7 +6,7 @@
 
 Cloud Functions `onRequest` handlers must throw structured `HttpsError` instances so the shared wrapper can normalize HTTP status codes, response bodies, and logging. Writing error responses directly with `res.status(4xx|5xx)` or `res.sendStatus(4xx|5xx)` bypasses that pipeline and produces inconsistent error shapes and monitoring gaps.
 
-### Mapped status → HttpsError code
+## Mapped status → HttpsError code
 
 - 400 → `invalid-argument`
 - 401 → `unauthenticated`
