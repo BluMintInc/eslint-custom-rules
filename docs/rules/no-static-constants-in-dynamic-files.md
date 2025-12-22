@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 `.dynamic.ts` and `.dynamic.tsx` files are reserved for runtime-only logic. Exporting static constants from these files couples fixed configuration to code paths meant to stay dynamic. Move exported `const` values with SCREAMING_SNAKE_CASE names into non-dynamic modules (for example, `config.ts`) and import them where needed.
 
 ## Rule Details

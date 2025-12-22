@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 Using the proprietary `HttpsError` keeps Cloud Functions responses consistent: clients receive the intended status code, logs capture the canonical error shape, and messages are sanitized before leaving the service. Throwing a generic `Error` or the `firebase-admin` `HttpsError` bypasses that wrapper, which leads to generic 500s, uneven logging, and payloads that are harder to trace.
 
 ## Rule Details

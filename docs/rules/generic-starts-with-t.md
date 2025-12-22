@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 This rule enforces that all TypeScript generic type parameters start with the letter `T`.
 
 ## Rule Details
@@ -39,4 +35,3 @@ type GenericType<T> = T[];
 
 ## When Not To Use It
 If you have a different convention for naming generic types in your codebase, you may want to disable this rule.
-

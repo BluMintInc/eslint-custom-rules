@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 ## Rule Details
 
 `DocSetter` and `DocSetterTransaction` expose `setAll` so multiple document updates can be batched. Calling `set` inside loops or array callbacks issues one Firestore write per iteration, which slows down hot paths and makes it easy to miss type narrowing (e.g., `as const` payloads). This rule reports `set` calls for these setters when they appear in loops or array callbacks and guides you to collect updates and call `setAll` once.

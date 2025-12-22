@@ -1,4 +1,4 @@
-# Ensure HttpsError calls inside catch blocks pass the caught error as the cause (`@blumintinc/blumint/require-https-error-cause`)
+# Ensure HttpsError calls inside catch blocks pass the caught error as the fourth "cause" argument to preserve stack traces for monitoring (`@blumintinc/blumint/require-https-error-cause`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
@@ -64,10 +64,6 @@ try {
   throw new HttpsError('internal', 'Operation failed', { context: 123 }, error, 'custom stack');
 }
 ```
-
-## Options
-
-This rule does not have any options.
 
 ## When Not To Use It
 

@@ -85,7 +85,7 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
     };
 
     const reportMissingCause = (
-      node: TSESTree.NewExpression,
+      node: TSESTree.NewExpression | TSESTree.CallExpression,
       catchName: string,
     ) => {
       context.report({
@@ -133,7 +133,9 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
       );
     };
 
-    const validateHttpsError = (node: TSESTree.NewExpression) => {
+    const validateHttpsError = (
+      node: TSESTree.NewExpression | TSESTree.CallExpression,
+    ) => {
       if (!catchStack.length) {
         return;
       }
@@ -171,11 +173,7 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
       }
 
       if (!isCatchBindingReference(causeArg, activeCatch)) {
-        reportWrongCause(
-          causeArg,
-          catchName,
-          sourceCode.getText(causeArg),
-        );
+        reportWrongCause(causeArg, catchName, sourceCode.getText(causeArg));
       }
     };
 
@@ -195,6 +193,9 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
         catchStack.pop();
       },
       NewExpression(node: TSESTree.NewExpression) {
+        validateHttpsError(node);
+      },
+      CallExpression(node: TSESTree.CallExpression) {
         validateHttpsError(node);
       },
     };

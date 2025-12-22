@@ -6,12 +6,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
-
-<!-- end auto-generated rule header -->
-
 **Prevent using `array.length` in React hook dependency arrays. Track the array contents via a memoized `stableHash(array)` and depend on the hash instead so hooks rerun when values change, not just when the array size changes.**
 
 ## Why this rule matters

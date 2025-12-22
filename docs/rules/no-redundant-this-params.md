@@ -4,12 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.  
-🔧 Not fixable with `--fix`.  
-💭 No type information required.
-
-<!-- end auto-generated rule header -->
-
 ## Rule Details
 
 Passing `this.foo` into a class method duplicates instance state that the method already owns. It turns a shared class contract into parameter plumbing, inflates signatures, and makes refactors brittle. This rule reports any call to a method defined on the same class where an argument (directly or inside an object/array) is an instance member accessed via `this`.

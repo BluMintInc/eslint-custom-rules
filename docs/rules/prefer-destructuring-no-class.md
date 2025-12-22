@@ -6,12 +6,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
-
-<!-- end auto-generated rule header -->
-
 ## Why this rule?
 
 - For plain objects, dot assignments scatter property reads and hide the dependency between a variable and its source object. Destructuring declares the dependency once and keeps aliases aligned when object shapes change.

@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 Use named type aliases instead of `typeof` on same-file top-level constants, and declare the alias before any constant that relies on it.
 
 - Why: `typeof CONST` couples types to runtime values and spreads literal unions around. Define a named alias (e.g., `type StatusExceeding = 'exceeding'`) and reuse it to keep types stable and readable.

@@ -6,12 +6,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
-
-<!-- end auto-generated rule header -->
-
 **Wrap spread props rest objects in React hook dependency arrays with `stableHash()` (or another stable hash) so hooks do not re-run on every render due to new object identities.**
 
 - Why: Rest props such as `...typographyProps` are new objects each render. When they appear in dependency arrays, React sees a new reference on every render and re-runs effects or memo callbacks even when the values did not change.

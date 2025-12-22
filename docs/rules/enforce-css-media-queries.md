@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 You keep responsive breakpoints in CSS instead of runtime JavaScript hooks. When you rely on JavaScript media detection (for example, `useMediaQuery` or `useMobile`), it attaches resize listeners inside React renders, which forces avoidable re-renders and introduces a second, drifting source of truth for breakpoints. CSS is already optimized for media evaluation, so letting styles own breakpoints keeps layout logic declarative and consistent.
 
 ## Rule Details

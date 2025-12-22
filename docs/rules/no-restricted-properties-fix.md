@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
-
-<!-- end auto-generated rule header -->
-
 > Disallow certain properties on certain objects, with special handling for Object.keys() and Object.values()
 
 This rule wraps ESLint core [no-restricted-properties](https://eslint.org/docs/latest/rules/no-restricted-properties) and adds guardrails so standard array methods on `Object.keys()` and `Object.values()` results are not flagged. Use it to enforce project-specific property restrictions without blocking safe iteration helpers.

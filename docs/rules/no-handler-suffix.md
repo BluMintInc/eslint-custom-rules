@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 Rejects callback names that end with the generic `handler` suffix (e.g., `countCheckedInHandler`, `processPaymentHandler`). The suffix hides what the function actually does, making call sites harder to scan and encouraging copy‑pasted naming across unrelated callbacks.
 
 ## Rule Details

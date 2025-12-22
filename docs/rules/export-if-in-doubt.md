@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 You must export every top-level variable (const/let/var), function, and type alias. These declarations define your module's public surface; leaving them unexported usually signals dead code or a hidden utility. Export the symbol or move it into a narrower scope when it should stay private.
 
 ## Rule Details
@@ -45,4 +41,3 @@ function buildCache() {
 ```
 
 In this example, the declaration is intentionally private, so it is moved into a narrower scope instead of being exported.
-

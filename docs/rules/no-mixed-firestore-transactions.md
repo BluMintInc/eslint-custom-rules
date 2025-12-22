@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 This rule identifies usage of non-transactional Firestore operations within a transaction scope. Mixing these can lead to race conditions and inconsistent data, as transactional reads must occur before any writes, and all operations within a transaction should use the transaction object.
 
 ## Rule Details

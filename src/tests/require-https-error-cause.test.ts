@@ -81,8 +81,35 @@ ruleTesterTs.run('require-https-error-cause', requireHttpsErrorCause, {
         throw new HttpsError('internal', 'Operation failed', void 0, error);
       }
     `,
+    `
+      try {
+        await doWork();
+      } catch (error) {
+        throw HttpsError('internal', 'Operation failed', undefined, error);
+      }
+    `,
   ],
   invalid: [
+    {
+      code: `
+        try {
+          await doWork();
+        } catch (error) {
+          throw HttpsError('internal', 'Operation failed');
+        }
+      `,
+      errors: [{ messageId: 'missingCause' }],
+    },
+    {
+      code: `
+        try {
+          await doWork();
+        } catch (error) {
+          throw HttpsError('internal', 'Operation failed', undefined, new Error('other'));
+        }
+      `,
+      errors: [{ messageId: 'causeNotCatchBinding' }],
+    },
     {
       code: `
         try {

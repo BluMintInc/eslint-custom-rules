@@ -4,10 +4,6 @@
 
 <!-- end auto-generated rule header -->
 
-💼 This rule is enabled in the ✅ `recommended` config.
-
-<!-- end auto-generated rule header -->
-
 Conditional string literals must not sit next to other JSX text or expressions. When JSX mixes `"text"`, `{condition && 'more text'}`, and other siblings in the same element, React splits the sentence across multiple text nodes. Those fragmented nodes confuse browser auto-translation, i18n tooling, and React hydration because different environments may assemble the text differently. Wrap the conditional expression in its own element or move the entire sentence inside the conditional so it renders as one text node.
 
 ## Rule Details
