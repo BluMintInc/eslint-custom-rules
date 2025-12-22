@@ -84,6 +84,9 @@ const getResponseParamNames = (node: FunctionNode): string[] => {
     const likelyResponse =
       lowered === 'res' || lowered === 'response' || lowered === 'resp';
 
+    // In typical Express handlers, the response param is the second argument (req, res),
+    // so we treat the second parameter as a likely response name even if it doesn't match
+    // 'res', 'response', or 'resp'.
     if (likelyResponse || index === 1) {
       acc.push(name);
     }
