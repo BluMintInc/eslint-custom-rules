@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { getMethodName } from '../utils/getMethodName';
 
 type MessageIds = 'noMemoizeOnStatic';
 
@@ -19,33 +20,9 @@ export const noMemoizeOnStatic = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
+    const sourceCode = context.getSourceCode();
     // Track renamed imports of Memoize
     const memoizeAliases = new Set(['Memoize']);
-
-    const getMethodName = (methodNode: TSESTree.MethodDefinition): string => {
-      const key = methodNode.key;
-      if (key) {
-        if (key.type === AST_NODE_TYPES.Identifier) {
-          return key.name;
-        }
-
-        if (key.type === AST_NODE_TYPES.PrivateIdentifier) {
-          return `#${key.name}`;
-        }
-
-        if (key.type === AST_NODE_TYPES.Literal) {
-          if (typeof key.value === 'string') {
-            return key.value;
-          }
-
-          if (typeof key.value === 'number') {
-            return String(key.value);
-          }
-        }
-      }
-
-      return '<unknown>';
-    };
 
     return {
       ImportSpecifier(node: TSESTree.ImportSpecifier) {
@@ -74,7 +51,11 @@ export const noMemoizeOnStatic = createRule<[], MessageIds>({
                 node: decorator,
                 messageId: 'noMemoizeOnStatic',
                 data: {
-                  methodName: getMethodName(node),
+                  methodName:
+                    getMethodName(node, sourceCode, {
+                      privateIdentifierPrefix: '#',
+                      computedFallbackToText: false,
+                    }) || '<unknown>',
                 },
               });
             }

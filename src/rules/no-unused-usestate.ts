@@ -20,7 +20,7 @@ export const noUnusedUseState = createRule({
     fixable: 'code',
     messages: {
       unusedUseState:
-        'The state variable is ignored. Remove the unused useState hook.',
+        'State value "{{stateName}}" from useState is discarded. React still allocates state and re-renders for a value you never read, which misleads readers into thinking the component depends on that state. Remove the useState pair or switch to a ref/derived value when you only need the setter-style side effect.',
     },
     schema: [],
   },
@@ -52,12 +52,17 @@ export const noUnusedUseState = createRule({
               (arrayPattern.elements[0].name === '_' ||
                 arrayPattern.elements[0].name.startsWith('_'))
             ) {
+              const stateIdentifier = arrayPattern.elements[0];
+
               context.report({
                 node,
                 messageId: 'unusedUseState',
+                data: {
+                  stateName: stateIdentifier.name,
+                },
                 fix: (fixer) => {
                   // Remove the entire useState declaration
-                  const sourceCode = context.getSourceCode();
+                  const sourceCode = context.sourceCode;
                   const parentStatement = node.parent;
 
                   if (

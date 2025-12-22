@@ -24,7 +24,7 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode;
 
     function isHookName(name: string): boolean {
       return /^use[A-Z]/.test(name);

@@ -16,7 +16,7 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
     schema: [],
     messages: {
       requireDefaultParams:
-        'React hooks with all optional parameters should default to an empty object',
+        'Hook "{{hookName}}" accepts an options object where every property is optional, but the parameter is not defaulted. When callers omit the argument the hook receives undefined, so destructuring or property access throws even though the fields are optional. Default the parameter to an empty object (e.g., "({ option } = {})") so the hook stays safe to call with no arguments.',
     },
   },
   defaultOptions: [],
@@ -98,8 +98,10 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
       ): void {
         // Check if it's a hook function
         let isHook = false;
+        let hookName: string | undefined;
         if (node.type === AST_NODE_TYPES.FunctionDeclaration) {
-          isHook = node.id ? isHookName(node.id.name) : false;
+          hookName = node.id?.name;
+          isHook = hookName ? isHookName(hookName) : false;
         } else {
           const parent = node.parent;
           if (
@@ -108,6 +110,7 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
             parent.id &&
             parent.id.type === AST_NODE_TYPES.Identifier
           ) {
+            hookName = parent.id.name;
             isHook = isHookName(parent.id.name);
           }
         }
@@ -115,6 +118,8 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
         if (!isHook) {
           return;
         }
+
+        const messageData = { hookName: hookName ?? 'this hook' };
 
         // Check if it has exactly one parameter
         if (node.params.length !== 1) {
@@ -147,10 +152,9 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
                     context.report({
                       node: param,
                       messageId: 'requireDefaultParams',
+                      data: messageData,
                       fix(fixer) {
-                        const paramText = context
-                          .getSourceCode()
-                          .getText(param);
+                        const paramText = context.sourceCode.getText(param);
                         return fixer.replaceText(param, `${paramText} = {}`);
                       },
                     });
@@ -167,10 +171,9 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
                     context.report({
                       node: param,
                       messageId: 'requireDefaultParams',
+                      data: messageData,
                       fix(fixer) {
-                        const paramText = context
-                          .getSourceCode()
-                          .getText(param);
+                        const paramText = context.sourceCode.getText(param);
                         return fixer.replaceText(param, `${paramText} = {}`);
                       },
                     });
@@ -178,7 +181,7 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
                 }
               } else {
                 // If we can't find the type definition, check if it's defined in the same file
-                const program = context.getSourceCode().ast;
+                const program = context.sourceCode.ast;
                 const typeDefinitions = program.body.filter((node) => {
                   if (
                     node.type === AST_NODE_TYPES.TSTypeAliasDeclaration ||
@@ -200,10 +203,9 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
                       context.report({
                         node: param,
                         messageId: 'requireDefaultParams',
+                        data: messageData,
                         fix(fixer) {
-                          const paramText = context
-                            .getSourceCode()
-                            .getText(param);
+                          const paramText = context.sourceCode.getText(param);
                           return fixer.replaceText(param, `${paramText} = {}`);
                         },
                       });
@@ -224,10 +226,9 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
                       context.report({
                         node: param,
                         messageId: 'requireDefaultParams',
+                        data: messageData,
                         fix(fixer) {
-                          const paramText = context
-                            .getSourceCode()
-                            .getText(param);
+                          const paramText = context.sourceCode.getText(param);
                           return fixer.replaceText(param, `${paramText} = {}`);
                         },
                       });
@@ -248,8 +249,9 @@ export const requireHooksDefaultParams = createRule<[], MessageIds>({
               context.report({
                 node: param,
                 messageId: 'requireDefaultParams',
+                data: messageData,
                 fix(fixer) {
-                  const paramText = context.getSourceCode().getText(param);
+                  const paramText = context.sourceCode.getText(param);
                   return fixer.replaceText(param, `${paramText} = {}`);
                 },
               });

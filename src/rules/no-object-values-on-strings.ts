@@ -8,7 +8,7 @@ export const noObjectValuesOnStrings: TSESLint.RuleModule<
   never[]
 > = createRule({
   create(context) {
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode;
     const parserServices = sourceCode.parserServices;
 
     // If TypeScript parser services are not available, return an empty object
@@ -212,12 +212,14 @@ export const noObjectValuesOnStrings: TSESLint.RuleModule<
         // Check if the call is Object.values()
         if (isObjectValuesCall(node)) {
           const argument = node.arguments[0];
+          const argumentText = sourceCode.getText(argument);
 
           // Quick check for string literals and template literals
           if (isStringLiteral(argument)) {
             context.report({
               node,
               messageId: 'unexpected',
+              data: { argument: argumentText },
             });
             return;
           }
@@ -227,6 +229,7 @@ export const noObjectValuesOnStrings: TSESLint.RuleModule<
             context.report({
               node,
               messageId: 'unexpected',
+              data: { argument: argumentText },
             });
             return;
           }
@@ -247,6 +250,7 @@ export const noObjectValuesOnStrings: TSESLint.RuleModule<
                   context.report({
                     node,
                     messageId: 'unexpected',
+                    data: { argument: argumentText },
                   });
                   return;
                 }
@@ -269,6 +273,7 @@ export const noObjectValuesOnStrings: TSESLint.RuleModule<
                 context.report({
                   node,
                   messageId: 'unexpected',
+                  data: { argument: argumentText },
                 });
                 return;
               }
@@ -279,6 +284,7 @@ export const noObjectValuesOnStrings: TSESLint.RuleModule<
               context.report({
                 node,
                 messageId: 'unexpected',
+                data: { argument: argumentText },
               });
               return;
             }
@@ -334,9 +340,11 @@ export const noObjectValuesOnStrings: TSESLint.RuleModule<
                 .map((p) => (p as TSESTree.Identifier).name);
 
               if (paramNames.includes(argument.name)) {
+                const argumentText = sourceCode.getText(argument);
                 context.report({
                   node: call,
                   messageId: 'unexpected',
+                  data: { argument: argumentText },
                 });
               }
             }
@@ -357,7 +365,7 @@ export const noObjectValuesOnStrings: TSESLint.RuleModule<
     schema: [],
     messages: {
       unexpected:
-        'Object.values() should not be used on strings. It treats strings as arrays of characters, which is likely unintended. Use Object.values() only on objects.',
+        'Object.values() receives string-like argument {{argument}}. Strings are iterable, so Object.values returns one entry per character instead of object properties, which signals the argument is not an object. Pass an object (for example, a Record or Object.fromEntries(map)) to Object.values or use string helpers (split, spread, Array.from) to work with text.',
     },
   },
   defaultOptions: [],

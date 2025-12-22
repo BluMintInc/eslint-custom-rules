@@ -13,7 +13,10 @@ const buildMissingConsoleBothMessage = (
 ) =>
   `useAlertDialog call uses dynamic severity, so runtime may render an error or a warning dialog. It is missing ${missingMethods} in this function scope, leaving one or more runtime severity branches (error or warning) without observability breadcrumbs: ${missingPaths}. Branch on the severity value and add the matching console method before or after the open() call (console.error for error branches, console.warn for warning branches), as in the conditional pattern shown in the rule docs, so each branch leaves a single appropriate log trail instead of double-logging both methods.`;
 
-type MessageIds = 'missingConsoleError' | 'missingConsoleWarn' | 'missingConsoleBoth';
+type MessageIds =
+  | 'missingConsoleError'
+  | 'missingConsoleWarn'
+  | 'missingConsoleBoth';
 
 const missingConsoleError = {
   message: missingConsoleErrorMessage,
@@ -23,10 +26,7 @@ const missingConsoleWarn = {
   message: missingConsoleWarnMessage,
 } as unknown as TSESLint.TestCaseError<MessageIds>;
 
-const missingConsoleBoth = (
-  missingMethods: string,
-  missingPaths: string,
-) =>
+const missingConsoleBoth = (missingMethods: string, missingPaths: string) =>
   ({
     message: buildMissingConsoleBothMessage(missingMethods, missingPaths),
   } as unknown as TSESLint.TestCaseError<MessageIds>);
@@ -1084,10 +1084,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { openFirstError, openSecondError };
         };
       `,
-      errors: [
-        missingConsoleError,
-        missingConsoleError,
-      ],
+      errors: [missingConsoleError, missingConsoleError],
     },
 
     // Invalid: Mixed severities, missing console.error
@@ -1119,10 +1116,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { openErrorDialog, openWarningDialog };
         };
       `,
-      errors: [
-        missingConsoleError,
-        missingConsoleWarn,
-      ],
+      errors: [missingConsoleError, missingConsoleWarn],
     },
 
     // Invalid: Mixed severities, missing console.warn
@@ -1838,10 +1832,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showError, showWarning };
         };
       `,
-      errors: [
-        missingConsoleError,
-        missingConsoleWarn,
-      ],
+      errors: [missingConsoleError, missingConsoleWarn],
     },
 
     // Invalid: Switch statement without console.error
@@ -1875,10 +1866,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showDialog };
         };
       `,
-      errors: [
-        missingConsoleError,
-        missingConsoleWarn,
-      ],
+      errors: [missingConsoleError, missingConsoleWarn],
     },
 
     // Invalid: Ternary operator without console.error
@@ -2321,10 +2309,7 @@ ruleTesterTs.run('enforce-console-error', enforceConsoleError, {
           return { showDialog };
         };
       `,
-      errors: [
-        missingConsoleError,
-        missingConsoleWarn,
-      ],
+      errors: [missingConsoleError, missingConsoleWarn],
     },
 
     // Invalid: Conditional console but missing required type
