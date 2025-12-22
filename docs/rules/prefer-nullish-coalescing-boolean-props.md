@@ -6,6 +6,12 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 This rule keeps logical OR (`||`) available inside boolean contexts (JSX boolean props, conditions, boolean-returning helpers) while requiring the nullish coalescing operator (`??`) for defaulting non-boolean values. Logical OR treats any falsy value (`false`, `0`, `''`, `NaN`) as missing and will override intentional states; `??` only falls back on `null` or `undefined`, preserving explicit falsy inputs.
 
 ## Rule Details

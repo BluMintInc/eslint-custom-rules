@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 This rule flags two patterns you will see in reviews or CI:
 
 - Constants or helper functions declared inside another function/block that never read from that scope.

@@ -6,6 +6,12 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 ## Rule Details
 
 Explicitly naming `index.html` in URLs is redundant because web servers already serve the directory index by default. Keeping the file name produces multiple URLs for the same page (`/index.html` vs `/`), which fragments caching, canonical links, and analytics. This rule enforces the canonical, trailing-slash form so links stay stable for browsers, CDNs, and search engines.

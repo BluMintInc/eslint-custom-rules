@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 Conditions that the linter can prove are always true or always false create unreachable branches and redundant guards. The rule reports the specific constant expression in each lint message so you can see which part of the condition is ineffective and simplify the control flow.
 
 ## Rule Details

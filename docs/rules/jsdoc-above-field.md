@@ -6,6 +6,12 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 Ensures JSDoc-style comments live directly above the fields they describe (interfaces, type literals, class fields, and optionally object literals) instead of trailing on the same line. Inline JSDoc after a field is ignored by IDE hovers and autocompletion, so the documentation becomes invisible to callers. Moving the block above the declaration keeps the docs attached and also preserves decorator ordering on class fields.
 
 ## Rule Details

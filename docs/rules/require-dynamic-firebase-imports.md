@@ -6,6 +6,12 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 Static Firebase imports keep the SDK in every bundle, even on routes that never touch Firebase. This rule enforces dynamic imports so Firebase loads lazily, keeping initial bundles smaller and avoiding runtime issues when the SDK initializes in environments without `window`.
 
 ## Rule Details

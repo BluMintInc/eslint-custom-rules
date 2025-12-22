@@ -6,6 +6,12 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 ## Rule details
 
 Positional argument lists stop conveying meaning once they grow or repeat types. Swapping two values of the same type compiles but produces subtle bugs, and long lists force callers to remember the exact order instead of naming what each value represents. Passing a single settings object keeps call sites self-documenting, allows optional fields, and makes it safer to evolve a function signature without breaking every usage.

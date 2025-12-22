@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 Async predicates in `Array.filter()` always return a `Promise`, and `Array.filter()` never waits for that `Promise`. Every `Promise` is truthy, so nothing gets filtered out. This silently ships unfiltered data and hides failing async checks (e.g., permission checks or existence checks) that developers assume are enforced.
 
 ## Rule Details

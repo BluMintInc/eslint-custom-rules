@@ -8,6 +8,14 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+💭 This rule requires [type information](https://typescript-eslint.io/linting/typed-linting).
+
+<!-- end auto-generated rule header -->
+
 ## Rule Details
 
 Developers occasionally combine a type annotation with a matching `as`/angle-bracket assertion on the same value. Doubling the same type leaves two sources of truth that can drift apart and obscures why a cast was needed in the first place. This rule flags that redundancy and removes the annotation so the cast remains the single, deliberate type declaration.

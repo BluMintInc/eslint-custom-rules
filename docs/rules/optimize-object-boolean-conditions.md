@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 ## Rule Details
 
 This rule flags boolean expressions that are derived from objects when they appear directly inside React hook dependency arrays. Object references change any time a property changes, so a dependency like `!data` will retrigger the hook even if the boolean outcome did not change. Depending on the derived boolean instead keeps hooks focused on meaningful changes and reduces wasted renders.

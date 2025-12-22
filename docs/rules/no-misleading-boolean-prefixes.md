@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 Reserve boolean-style prefixes like is, has, or should for functions that actually return boolean values. Boolean prefixes promise a yes/no answer; returning strings, objects, or void misleads callers about the contract and hides incorrect branching.
 
 - **Type**: problem

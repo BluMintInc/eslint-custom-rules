@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 This rule keeps Firebase `HttpsError` messages stable for monitoring while preserving rich debugging details. It enforces two constraints:
 
 1. **Static messages in the second argument**: The message (second argument) is hashed to produce an error identifier. Dynamic content here fractures monitoring because every interpolation produces a different hash.

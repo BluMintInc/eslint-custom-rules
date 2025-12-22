@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 Circular object graphs throw during `JSON.stringify()`, keep objects reachable longer (leading to leaks), and make mutation paths harder to reason about. This rule reports any assignment or property wiring that makes an object point back to itself, directly or through another object, method, or promise callback.
 
 ## Rule Details

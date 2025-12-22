@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 ## Rule Details
 
 This rule flags getters that only forward a constructor-injected object property (for example `this.settings.uid`) without adding logic. These passthrough getters expand the public API without adding behavior, hide where state actually lives, and create extra names developers must keep in sync. Prefer direct property access or add meaningful logic (validation, memoization, fallbacks, transformation) that justifies the getter.

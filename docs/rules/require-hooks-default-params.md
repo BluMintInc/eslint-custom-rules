@@ -6,6 +6,12 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 This rule enforces that React hooks with a single parameter where all properties are optional should default to an empty object. This prevents potential runtime errors from accessing properties of undefined and makes the hook's API more predictable.
 
 React hooks often receive a single "options" object. When every property on that object is optional, callers naturally expect to omit the argument. If the hook does not default the parameter, the parameter is `undefined`, so destructuring or property access throws even though each field is optional. Defaulting to `{}` keeps the hook safe to call with no arguments and makes the contract explicit.

@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 Prevent creating Higher-Order Components (HOCs) at the root of a React component or hook during render. HOCs created inline produce a brand-new component identity on every render, which forces child components to re-render and can reset internal state. Wrap HOC creation in `useMemo` (or hoist it) so the wrapped component reference stays stable between renders.
 
 ## Why

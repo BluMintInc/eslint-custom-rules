@@ -6,6 +6,12 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 This rule identifies instances where `useMemo` hooks are used with empty dependency arrays to return object literals (`Record<string, unknown>`). Such usage is unnecessary and less performant than using global static constants.
 
 ## Rule Details

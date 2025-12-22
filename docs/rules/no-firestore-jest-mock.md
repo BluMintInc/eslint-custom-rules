@@ -6,6 +6,12 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
+
 Direct imports from `firestore-jest-mock` bypass the shared `mockFirestore` helper that mirrors our production Firestore schema and centralizes test seeding/cleanup. The shared helper keeps mocks aligned with real collections, applies the same reset logic across suites, and prevents drift that leads to flaky or misleading tests.
 
 ## Rule Details

@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 ## Rule Details
 
 Firestore transactions must complete every read before performing any writes so the callback runs against a consistent snapshot. If a read happens after a write, the Firestore SDK can throw (`All reads must be before any writes`) or retry the transaction with stale data, reapplying writes that were computed from outdated snapshots. This rule reports reads that occur after writes inside the same transaction callback.

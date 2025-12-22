@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 `Object.values()` expects an object and returns its enumerable property values. When the argument is string-like, JavaScript treats the string as an array of characters and returns each character. That usually means the data shape is wrong—callers think they are iterating object values but instead get individual characters—so downstream logic silently processes text one character at a time.
 
 ## Rule Details

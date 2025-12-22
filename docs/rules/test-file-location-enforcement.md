@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 ## Why this rule exists
 
 Scattering tests into separate `tests/` directories hides which code they protect and makes refactors brittle. When a test file is not colocated with its subject, engineers and AI tools miss it during moves or renames, leaving features untested. Keeping `.test.ts(x)` files beside the implementation ensures refactors move code and coverage together and makes it obvious which behaviors are exercised.

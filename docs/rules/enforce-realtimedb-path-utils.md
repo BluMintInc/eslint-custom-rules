@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 Inline Realtime Database paths scatter string literals throughout the codebase and make schema changes risky. This rule requires using helper functions (named `to*Path`) when building paths for `ref()` or `child()` so that path construction stays centralized and type-safe.
 
 ## Rule Details

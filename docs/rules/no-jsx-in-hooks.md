@@ -4,6 +4,10 @@
 
 <!-- end auto-generated rule header -->
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
+<!-- end auto-generated rule header -->
+
 Hooks should expose data, effects, and callbacks so components decide how to render. Returning JSX turns a hook into a hidden component, forces callers to run hook logic just to get markup, and makes reuse harder because the hook now owns UI lifecycle decisions. Keep JSX in components and return the values the UI needs instead.
 
 ## Rule Details
