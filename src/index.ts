@@ -141,6 +141,7 @@ import { noArrayLengthInDeps } from './rules/no-array-length-in-deps';
 import { preferUseDeepCompareMemo } from './rules/prefer-use-deep-compare-memo';
 import { noCircularReferences } from './rules/no-circular-references';
 import { noPassthroughGetters } from './rules/no-passthrough-getters';
+import { requireHttpsErrorInOnRequestHandlers } from './rules/no-res-error-status-in-onrequest';
 import { noTryCatchAlreadyExistsInTransaction } from './rules/no-try-catch-already-exists-in-transaction';
 import { noUselessUsememoPrimitives } from './rules/no-useless-usememo-primitives';
 import { jsdocAboveField } from './rules/jsdoc-above-field';
@@ -330,6 +331,7 @@ module.exports = {
         '@blumintinc/blumint/jsdoc-above-field': 'error',
         '@blumintinc/blumint/no-redundant-usecallback-wrapper': 'error',
         '@blumintinc/blumint/no-redundant-this-params': 'error',
+        '@blumintinc/blumint/no-res-error-status-in-onrequest': 'error',
         '@blumintinc/blumint/no-array-length-in-deps': 'error',
         '@blumintinc/blumint/enforce-stable-hash-spread-props': 'error',
         '@blumintinc/blumint/prefer-use-deep-compare-memo': 'error',
@@ -576,6 +578,7 @@ module.exports = {
     'prefer-next-dynamic': preferNextDynamic,
     'jsdoc-above-field': jsdocAboveField,
     'no-redundant-usecallback-wrapper': noRedundantUseCallbackWrapper,
+    'no-res-error-status-in-onrequest': requireHttpsErrorInOnRequestHandlers,
     'no-array-length-in-deps': noArrayLengthInDeps,
     'prefer-use-deep-compare-memo': preferUseDeepCompareMemo,
     'no-circular-references': noCircularReferences,

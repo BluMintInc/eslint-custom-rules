@@ -1,7 +1,10 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
-type MessageIds = 'missingCause' | 'causeNotCatchBinding' | 'missingCatchBinding';
+type MessageIds =
+  | 'missingCause'
+  | 'causeNotCatchBinding'
+  | 'missingCatchBinding';
 type Options = [];
 
 type CatchFrame = {
@@ -64,7 +67,7 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
     },
   },
   defaultOptions: [],
-  create(context, _options) {
+  create(context) {
     const sourceCode = context.getSourceCode();
     const catchStack: CatchFrame[] = [];
 
@@ -72,9 +75,7 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
     // This shim keeps the rule compatible until the codebase drops ESLint 8 support.
     const getScopeForNode = (node: TSESTree.Node) => {
       const sourceCodeWithScope = sourceCode as unknown as {
-        getScope?: (
-          currentNode?: TSESTree.Node,
-        ) => TSESLint.Scope.Scope | null;
+        getScope?: (currentNode?: TSESTree.Node) => TSESLint.Scope.Scope | null;
       };
 
       if (typeof sourceCodeWithScope.getScope === 'function') {
@@ -167,7 +168,9 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
         reportWrongCause(
           causeArg ?? node,
           catchName,
-          causeArg ? sourceCode.getText(causeArg) : 'the missing cause argument',
+          causeArg
+            ? sourceCode.getText(causeArg)
+            : 'the missing cause argument',
         );
         return;
       }
