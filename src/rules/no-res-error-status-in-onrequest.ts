@@ -58,32 +58,98 @@ const unwrapTypedExpression = (
 };
 
 const getResponseParamNames = (node: FunctionNode): string[] => {
-  const extractName = (param: TSESTree.Parameter): string | null => {
+  const RESPONSE_PARAM_KEYS = new Set(['res', 'response', 'resp']);
+
+  const extractName = (
+    param: TSESTree.Parameter,
+  ): { name: string; isExplicitResponseBinding: boolean } | null => {
     if (param.type === AST_NODE_TYPES.Identifier) {
-      return param.name;
+      return { name: param.name, isExplicitResponseBinding: false };
     }
     if (
       param.type === AST_NODE_TYPES.AssignmentPattern &&
       param.left.type === AST_NODE_TYPES.Identifier
     ) {
-      return param.left.name;
+      return { name: param.left.name, isExplicitResponseBinding: false };
     }
     if (
       param.type === AST_NODE_TYPES.RestElement &&
       param.argument.type === AST_NODE_TYPES.Identifier
     ) {
-      return param.argument.name;
+      return { name: param.argument.name, isExplicitResponseBinding: false };
     }
+
+    if (param.type === AST_NODE_TYPES.ObjectPattern) {
+      for (const property of param.properties) {
+        if (property.type !== AST_NODE_TYPES.Property || property.computed) {
+          continue;
+        }
+
+        const keyName =
+          property.key.type === AST_NODE_TYPES.Identifier
+            ? property.key.name
+            : property.key.type === AST_NODE_TYPES.Literal &&
+              typeof property.key.value === 'string'
+            ? property.key.value
+            : null;
+
+        if (!keyName || !RESPONSE_PARAM_KEYS.has(keyName.toLowerCase())) {
+          continue;
+        }
+
+        if (property.value.type === AST_NODE_TYPES.Identifier) {
+          return { name: property.value.name, isExplicitResponseBinding: true };
+        }
+
+        if (
+          property.value.type === AST_NODE_TYPES.AssignmentPattern &&
+          property.value.left.type === AST_NODE_TYPES.Identifier
+        ) {
+          return {
+            name: property.value.left.name,
+            isExplicitResponseBinding: true,
+          };
+        }
+      }
+
+      return null;
+    }
+
+    if (param.type === AST_NODE_TYPES.ArrayPattern) {
+      for (const element of param.elements) {
+        if (!element) {
+          continue;
+        }
+
+        const name =
+          element.type === AST_NODE_TYPES.Identifier
+            ? element.name
+            : element.type === AST_NODE_TYPES.AssignmentPattern &&
+              element.left.type === AST_NODE_TYPES.Identifier
+            ? element.left.name
+            : element.type === AST_NODE_TYPES.RestElement &&
+              element.argument.type === AST_NODE_TYPES.Identifier
+            ? element.argument.name
+            : null;
+
+        if (name && RESPONSE_PARAM_KEYS.has(name.toLowerCase())) {
+          return { name, isExplicitResponseBinding: false };
+        }
+      }
+
+      return null;
+    }
+
     return null;
   };
 
   return node.params.reduce<string[]>((acc, param, index) => {
-    const name = extractName(param);
-    if (!name) return acc;
+    const extracted = extractName(param);
+    if (!extracted) return acc;
 
-    const lowered = name.toLowerCase();
+    const lowered = extracted.name.toLowerCase();
     const likelyResponse =
-      lowered === 'res' || lowered === 'response' || lowered === 'resp';
+      extracted.isExplicitResponseBinding || RESPONSE_PARAM_KEYS.has(lowered);
 
     /**
      * In typical Express handlers, the response param is the second argument (req, res),
@@ -91,7 +157,7 @@ const getResponseParamNames = (node: FunctionNode): string[] => {
      * 'res', 'response', or 'resp'.
      */
     if (likelyResponse || index === 1) {
-      acc.push(name);
+      acc.push(extracted.name);
     }
 
     return acc;

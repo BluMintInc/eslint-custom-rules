@@ -261,6 +261,26 @@ ruleTesterTs.run(
       {
         code: `
           import onRequest from 'functions/src/v2/https/onRequest';
+          export default onRequest(({ req, res }) => {
+            res.status(500).send('boom');
+          });
+        `,
+        parserOptions,
+        errors: [{ messageId: 'useHttpsErrorForStatus' }],
+      },
+      {
+        code: `
+          import onRequest from 'functions/src/v2/https/onRequest';
+          export default onRequest(({ res: response }) => {
+            response.status(500).send('boom');
+          });
+        `,
+        parserOptions,
+        errors: [{ messageId: 'useHttpsErrorForStatus' }],
+      },
+      {
+        code: `
+          import onRequest from 'functions/src/v2/https/onRequest';
           function handler(req, res) {
             res.status(500).send('boom');
           }
