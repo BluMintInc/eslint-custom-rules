@@ -75,4 +75,3 @@ console.log(maybeUrl?.toString());
   - General case: `foo.toJSON()` → `foo.toString()`
   - Inside `JSON.stringify(...)`: `foo.toJSON()` → `foo` (drop the method call)
   - Optional chaining calls like `foo?.toJSON()` are fixed to `foo?.toString()` (the call is not dropped to preserve semantics).
-

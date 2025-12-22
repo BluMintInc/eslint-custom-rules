@@ -35,6 +35,7 @@ import { requireMemo } from './rules/require-memo';
 import { noJsxWhitespaceLiteral } from './rules/no-jsx-whitespace-literal';
 import { default as requireDynamicFirebaseImports } from './rules/require-dynamic-firebase-imports';
 import { default as requireHttpsError } from './rules/require-https-error';
+import { requireHttpsErrorCause } from './rules/require-https-error-cause';
 import { useCustomRouter } from './rules/use-custom-router';
 import { default as requireImageOptimized } from './rules/require-image-optimized';
 import { requireUseMemoObjectLiterals } from './rules/require-usememo-object-literals';
@@ -234,6 +235,7 @@ module.exports = {
         '@blumintinc/blumint/no-unmemoized-memo-without-props': 'error',
         '@blumintinc/blumint/require-dynamic-firebase-imports': 'error',
         '@blumintinc/blumint/require-https-error': 'error',
+        '@blumintinc/blumint/require-https-error-cause': 'error',
         '@blumintinc/blumint/use-custom-router': 'error',
         '@blumintinc/blumint/require-image-optimized': 'error',
         '@blumintinc/blumint/require-usememo-object-literals': 'error',
@@ -472,6 +474,7 @@ module.exports = {
     'no-jsx-whitespace-literal': noJsxWhitespaceLiteral,
     'require-dynamic-firebase-imports': requireDynamicFirebaseImports,
     'require-https-error': requireHttpsError,
+    'require-https-error-cause': requireHttpsErrorCause,
     'use-custom-router': useCustomRouter,
     'require-image-optimized': requireImageOptimized,
     'require-usememo-object-literals': requireUseMemoObjectLiterals,

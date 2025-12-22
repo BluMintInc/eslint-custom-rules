@@ -1,8 +1,6 @@
-# Disallow redundant `this` arguments in class methods (`@blumintinc/blumint/no-redundant-this-params`)
+# Disallow passing class instance members (this.foo) into class instance methods; access the member from this inside the method instead (`@blumintinc/blumint/no-redundant-this-params`)
 
-💼 This rule is enabled in the ✅ `recommended` config.  
-🔧 Not fixable with `--fix`.  
-💭 No type information required.
+💼 This rule is enabled in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
 

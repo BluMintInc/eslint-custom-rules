@@ -1,5 +1,6 @@
 # no-inline-component-prop
 
+<!-- begin auto-generated rule header -->
 <!-- end auto-generated rule header -->
 
 Disallow inline function components created inside a render scope from being passed to component-type props (e.g., `CatalogWrapper`, `*Wrapper`, `*Component`). Inline wrapper components capture changing closures and get recreated on every render, forcing React to remount entire subtrees and causing UI flashes and lost state.

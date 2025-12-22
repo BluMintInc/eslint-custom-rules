@@ -29,4 +29,3 @@ Examples of **correct** code for this rule:
 <><ChildComponent />Some Text<AnotherChild /></>
 <ChildComponent />
 ```
-

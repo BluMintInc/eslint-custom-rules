@@ -35,4 +35,3 @@ type GenericType<T> = T[];
 
 ## When Not To Use It
 If you have a different convention for naming generic types in your codebase, you may want to disable this rule.
-
