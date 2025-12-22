@@ -274,27 +274,48 @@ type StatusCallInfo = {
   method: string;
 };
 
+const getIdentifierNameFromExpression = (
+  expression: TSESTree.Expression | TSESTree.PrivateIdentifier,
+): string | null => {
+  if (expression.type === AST_NODE_TYPES.Identifier) {
+    return expression.name;
+  }
+
+  if (expression.type === AST_NODE_TYPES.PrivateIdentifier) {
+    return null;
+  }
+
+  const unwrapped = unwrapTypedExpression(expression);
+  return unwrapped.type === AST_NODE_TYPES.Identifier ? unwrapped.name : null;
+};
+
 const isStatusMember = (
   member: TSESTree.MemberExpression,
   propertyName: string,
-): member is TSESTree.MemberExpression & {
-  object: TSESTree.Identifier;
-  property: TSESTree.Identifier;
-} =>
-  !member.computed &&
-  member.property.type === AST_NODE_TYPES.Identifier &&
-  member.property.name === propertyName &&
-  member.object.type === AST_NODE_TYPES.Identifier;
+): { responseName: string } | null => {
+  if (
+    member.computed ||
+    member.property.type !== AST_NODE_TYPES.Identifier ||
+    member.property.name !== propertyName
+  ) {
+    return null;
+  }
+
+  const responseName = getIdentifierNameFromExpression(member.object);
+  return responseName ? { responseName } : null;
+};
 
 const getStatusInfoFromStatusCall = (
   call: TSESTree.CallExpression,
 ): { responseName: string; statusCode: number | null } | null => {
-  if (
-    call.callee.type === AST_NODE_TYPES.MemberExpression &&
-    isStatusMember(call.callee, 'status')
-  ) {
+  if (call.callee.type === AST_NODE_TYPES.MemberExpression) {
+    const statusMember = isStatusMember(call.callee, 'status');
+    if (!statusMember) {
+      return null;
+    }
+
     return {
-      responseName: call.callee.object.name,
+      responseName: statusMember.responseName,
       statusCode: getStatusCodeFromArg(call.arguments[0]),
     };
   }
@@ -305,37 +326,37 @@ const getStatusInfoFromStatusCall = (
 const findStatusCall = (
   node: TSESTree.CallExpression,
 ): StatusCallInfo | null => {
-  if (
-    node.callee.type === AST_NODE_TYPES.MemberExpression &&
-    isStatusMember(node.callee, 'sendStatus')
-  ) {
-    return {
-      responseName: node.callee.object.name,
-      statusCode: getStatusCodeFromArg(node.arguments[0]),
-      method: 'sendStatus',
-    };
+  if (node.callee.type === AST_NODE_TYPES.MemberExpression) {
+    const sendStatusMember = isStatusMember(node.callee, 'sendStatus');
+    if (sendStatusMember) {
+      return {
+        responseName: sendStatusMember.responseName,
+        statusCode: getStatusCodeFromArg(node.arguments[0]),
+        method: 'sendStatus',
+      };
+    }
   }
 
-  if (
-    node.callee.type === AST_NODE_TYPES.MemberExpression &&
-    isStatusMember(node.callee, 'status')
-  ) {
-    const parent = node.parent;
-    if (
-      parent &&
-      parent.type === AST_NODE_TYPES.MemberExpression &&
-      parent.object === node &&
-      parent.parent &&
-      parent.parent.type === AST_NODE_TYPES.CallExpression
-    ) {
-      return null;
-    }
+  if (node.callee.type === AST_NODE_TYPES.MemberExpression) {
+    const statusMember = isStatusMember(node.callee, 'status');
+    if (statusMember) {
+      const parent = node.parent;
+      if (
+        parent &&
+        parent.type === AST_NODE_TYPES.MemberExpression &&
+        parent.object === node &&
+        parent.parent &&
+        parent.parent.type === AST_NODE_TYPES.CallExpression
+      ) {
+        return null;
+      }
 
-    return {
-      responseName: node.callee.object.name,
-      statusCode: getStatusCodeFromArg(node.arguments[0]),
-      method: 'status',
-    };
+      return {
+        responseName: statusMember.responseName,
+        statusCode: getStatusCodeFromArg(node.arguments[0]),
+        method: 'status',
+      };
+    }
   }
 
   if (
