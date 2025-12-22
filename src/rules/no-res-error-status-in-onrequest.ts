@@ -401,11 +401,11 @@ export const requireHttpsErrorInOnRequestHandlers: TSESLint.RuleModule<
     schema: [],
     messages: {
       useHttpsErrorForStatus:
-        "HTTP status {{statusCode}} sent via `{{responseName}}.{{method}}` inside an onRequest handler bypasses the centralized HttpsError pipeline. Throw new HttpsError('{{httpsCode}}', '{{messageExample}}', details) instead and import HttpsError from {{httpsErrorImport}} so the wrapper formats and logs the error consistently.",
+        "HTTP status {{statusCode}} sent via `{{responseName}}.{{method}}` inside an onRequest handler bypasses the centralized HttpsError pipeline → This creates observability gaps (errors won't appear in structured logs), inconsistent client error shapes (breaking API contracts), and missing error context (details object unavailable for debugging). → Throw new HttpsError('{{httpsCode}}', '{{messageExample}}', details) instead and import HttpsError from {{httpsErrorImport}} so the wrapper captures context, logs structured data, and returns consistent error responses.",
       useHttpsErrorForComputedStatus:
-        "Computed HTTP status sent via `{{responseName}}.{{method}}` inside an onRequest handler cannot be mapped to the expected HttpsError codes. Choose an explicit HttpsError code (e.g., invalid-argument, permission-denied) and throw new HttpsError('{{httpsCode}}', '{{messageExample}}', details) after importing from {{httpsErrorImport}} so the wrapper can standardize logging and response shape.",
+        "Computed HTTP status sent via `{{responseName}}.{{method}}` inside an onRequest handler cannot be mapped to the expected HttpsError codes → This bypasses the HttpsError pipeline, leading to inconsistent error logging and unstandardized response shapes. → Choose an explicit HttpsError code (e.g., 'invalid-argument', 'permission-denied') and throw new HttpsError('{{httpsCode}}', '{{messageExample}}', details) after importing from {{httpsErrorImport}} so the wrapper can standardize logging, capture error context, and maintain a consistent API contract.",
       useHttpsErrorForWrapper:
-        "`{{calleeName}}` receives the Express response object `{{responseName}}` inside an onRequest handler, which writes HTTP errors directly and skips the HttpsError wrapper. Refactor this helper to throw new HttpsError('{{httpsCode}}', '{{messageExample}}', details) (import from {{httpsErrorImport}}) so onRequest can handle formatting, status mapping, and logging.",
+        "`{{calleeName}}` receives the Express response object `{{responseName}}` inside an onRequest handler, which writes HTTP errors directly and skips the HttpsError wrapper → This results in missing structured logs, inconsistent error responses for clients, and makes debugging difficult due to lost error context. → Refactor this helper to throw new HttpsError('{{httpsCode}}', '{{messageExample}}', details) (import from {{httpsErrorImport}}) so the onRequest wrapper can handle formatting, status mapping, and centralized logging.",
     },
   },
   defaultOptions: [],
@@ -506,11 +506,143 @@ export const requireHttpsErrorInOnRequestHandlers: TSESLint.RuleModule<
       findInFunctionChain(fn, (current) => {
         const params = responseNamesByFunction.get(current) ?? [];
         return params.find((name) =>
-          call.arguments.some((arg) =>
-            isIdentifierWithName(arg as TSESTree.Node, name),
-          ),
+          call.arguments.some((arg) => {
+            const unwrapped = unwrapTypedExpression(arg as TSESTree.Expression);
+            return isIdentifierWithName(unwrapped, name);
+          }),
         );
       });
+
+    const handleOnRequestTracking = (node: TSESTree.CallExpression) => {
+      const isOnRequestCallee = (
+        callee: TSESTree.LeftHandSideExpression,
+      ): boolean => {
+        if (callee.type === AST_NODE_TYPES.Identifier) {
+          return onRequestIdentifiers.has(callee.name);
+        }
+
+        if (
+          callee.type === AST_NODE_TYPES.MemberExpression &&
+          !callee.computed &&
+          callee.property.type === AST_NODE_TYPES.Identifier &&
+          callee.property.name === 'onRequest' &&
+          callee.object.type === AST_NODE_TYPES.Identifier
+        ) {
+          return onRequestNamespaces.has(callee.object.name);
+        }
+
+        return false;
+      };
+
+      if (isOnRequestCallee(node.callee)) {
+        const handlerArg = [...node.arguments]
+          .reverse()
+          .find(
+            (
+              arg,
+            ): arg is
+              | TSESTree.ArrowFunctionExpression
+              | TSESTree.FunctionExpression
+              | TSESTree.Identifier
+              | TSESTree.TSAsExpression
+              | TSESTree.TSSatisfiesExpression
+              | TSESTree.TSTypeAssertion
+              | TSESTree.TSNonNullExpression
+              | TSESTree.TSInstantiationExpression =>
+              arg.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+              arg.type === AST_NODE_TYPES.FunctionExpression ||
+              arg.type === AST_NODE_TYPES.Identifier ||
+              arg.type === AST_NODE_TYPES.TSAsExpression ||
+              arg.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+              arg.type === AST_NODE_TYPES.TSTypeAssertion ||
+              arg.type === AST_NODE_TYPES.TSNonNullExpression ||
+              arg.type === AST_NODE_TYPES.TSInstantiationExpression,
+          );
+
+        if (handlerArg) {
+          const expression = unwrapTypedExpression(handlerArg);
+          if (isFunctionLike(expression)) {
+            handlerFunctions.add(expression);
+          } else if (expression.type === AST_NODE_TYPES.Identifier) {
+            const resolvedHandler = resolveFunctionFromIdentifier(expression);
+            if (resolvedHandler) {
+              handlerFunctions.add(resolvedHandler);
+            }
+          }
+        }
+      }
+    };
+
+    const handleStatusViolation = (node: TSESTree.CallExpression): boolean => {
+      const statusInfo = findStatusCall(node);
+      if (!statusInfo) {
+        return false;
+      }
+
+      const { responseName, statusCode, method } = statusInfo;
+      if (!isErrorStatus(statusCode)) {
+        return true;
+      }
+
+      const functionNode = findNearestFunction(
+        ASTHelpers.getAncestors(context, node),
+      );
+      if (!functionNode) {
+        return true;
+      }
+
+      if (!hasResponseBinding(functionNode, responseName)) {
+        return true;
+      }
+
+      pendingViolations.push({
+        node,
+        functionNode,
+        responseName,
+        kind: statusCode === null ? 'computedStatus' : 'status',
+        statusCode,
+        method,
+        messageExample: getMessageExample(node),
+      });
+
+      return true;
+    };
+
+    const handleWrapperViolation = (node: TSESTree.CallExpression) => {
+      const functionNode = findNearestFunction(
+        ASTHelpers.getAncestors(context, node),
+      );
+      if (!functionNode) {
+        return;
+      }
+
+      const responseName = findResponseIdentifierInArgs(functionNode, node);
+
+      /**
+       * Skip direct method calls on the response object (e.g., res.send(res)) so the
+       * wrapper detection only reports helpers that receive the response object as
+       * an argument.
+       */
+      const calleeUsesResponseDirectly =
+        node.callee.type === AST_NODE_TYPES.MemberExpression &&
+        node.callee.object.type === AST_NODE_TYPES.Identifier &&
+        responseName === node.callee.object.name;
+
+      if (!responseName || calleeUsesResponseDirectly) {
+        return;
+      }
+
+      pendingViolations.push({
+        node,
+        functionNode,
+        responseName,
+        kind: 'wrapper',
+        statusCode: null,
+        method: 'wrapper',
+        messageExample: getMessageExample(node),
+        calleeName: getCalleeDisplayName(node.callee),
+      });
+    };
 
     return {
       ImportDeclaration(node) {
@@ -540,128 +672,11 @@ export const requireHttpsErrorInOnRequestHandlers: TSESLint.RuleModule<
       ArrowFunctionExpression: recordFunction,
 
       CallExpression(node) {
-        const isOnRequestCallee = (
-          callee: TSESTree.LeftHandSideExpression,
-        ): boolean => {
-          if (callee.type === AST_NODE_TYPES.Identifier) {
-            return onRequestIdentifiers.has(callee.name);
-          }
-
-          if (
-            callee.type === AST_NODE_TYPES.MemberExpression &&
-            !callee.computed &&
-            callee.property.type === AST_NODE_TYPES.Identifier &&
-            callee.property.name === 'onRequest' &&
-            callee.object.type === AST_NODE_TYPES.Identifier
-          ) {
-            return onRequestNamespaces.has(callee.object.name);
-          }
-
-          return false;
-        };
-
-        if (isOnRequestCallee(node.callee)) {
-          const handlerArg = [...node.arguments]
-            .reverse()
-            .find(
-              (
-                arg,
-              ): arg is
-                | TSESTree.ArrowFunctionExpression
-                | TSESTree.FunctionExpression
-                | TSESTree.Identifier
-                | TSESTree.TSAsExpression
-                | TSESTree.TSSatisfiesExpression
-                | TSESTree.TSTypeAssertion
-                | TSESTree.TSNonNullExpression
-                | TSESTree.TSInstantiationExpression =>
-                arg.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-                arg.type === AST_NODE_TYPES.FunctionExpression ||
-                arg.type === AST_NODE_TYPES.Identifier ||
-                arg.type === AST_NODE_TYPES.TSAsExpression ||
-                arg.type === AST_NODE_TYPES.TSSatisfiesExpression ||
-                arg.type === AST_NODE_TYPES.TSTypeAssertion ||
-                arg.type === AST_NODE_TYPES.TSNonNullExpression ||
-                arg.type === AST_NODE_TYPES.TSInstantiationExpression,
-            );
-
-          if (handlerArg) {
-            const expression = unwrapTypedExpression(handlerArg);
-            if (isFunctionLike(expression)) {
-              handlerFunctions.add(expression);
-            } else if (expression.type === AST_NODE_TYPES.Identifier) {
-              const resolvedHandler = resolveFunctionFromIdentifier(expression);
-              if (resolvedHandler) {
-                handlerFunctions.add(resolvedHandler);
-              }
-            }
-          }
-        }
-
-        const statusInfo = findStatusCall(node);
-        if (statusInfo) {
-          const { responseName, statusCode, method } = statusInfo;
-          if (!isErrorStatus(statusCode)) {
-            return;
-          }
-
-          const functionNode = findNearestFunction(
-            ASTHelpers.getAncestors(context, node),
-          );
-          if (!functionNode) {
-            return;
-          }
-
-          if (!hasResponseBinding(functionNode, responseName)) {
-            return;
-          }
-
-          pendingViolations.push({
-            node,
-            functionNode,
-            responseName,
-            kind: statusCode === null ? 'computedStatus' : 'status',
-            statusCode,
-            method,
-            messageExample: getMessageExample(node),
-          });
-
+        handleOnRequestTracking(node);
+        if (handleStatusViolation(node)) {
           return;
         }
-
-        const functionNode = findNearestFunction(
-          ASTHelpers.getAncestors(context, node),
-        );
-        if (!functionNode) {
-          return;
-        }
-
-        const responseName = findResponseIdentifierInArgs(functionNode, node);
-
-        /**
-         * Skip direct method calls on the response object (e.g., res.send(res)) so the
-         * wrapper detection only reports helpers that receive the response object as
-         * an argument.
-         */
-        const calleeUsesResponseDirectly =
-          node.callee.type === AST_NODE_TYPES.MemberExpression &&
-          node.callee.object.type === AST_NODE_TYPES.Identifier &&
-          responseName === node.callee.object.name;
-
-        if (!responseName || calleeUsesResponseDirectly) {
-          return;
-        }
-
-        pendingViolations.push({
-          node,
-          functionNode,
-          responseName,
-          kind: 'wrapper',
-          statusCode: null,
-          method: 'wrapper',
-          messageExample: getMessageExample(node),
-          calleeName: getCalleeDisplayName(node.callee),
-        });
+        handleWrapperViolation(node);
       },
 
       'Program:exit'() {

@@ -1,4 +1,4 @@
-# Forbid sending Express error responses inside onRequest; throw HttpsError instead (`@blumintinc/blumint/no-res-error-status-in-onrequest`)
+# Forbid sending 4xx/5xx Express responses inside onRequest handlers; throw structured HttpsError instances instead so the wrapper can format, log, and map errors consistently (`@blumintinc/blumint/no-res-error-status-in-onrequest`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
