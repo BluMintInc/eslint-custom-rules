@@ -157,6 +157,25 @@ const getMessageExample = (call: TSESTree.CallExpression): string => {
   return 'provide a descriptive message';
 };
 
+const getObjectNameFromExpression = (
+  node: TSESTree.Expression | TSESTree.PrivateIdentifier,
+): string | null => {
+  if (node.type === AST_NODE_TYPES.Identifier) {
+    return node.name;
+  }
+
+  if (
+    node.type === AST_NODE_TYPES.MemberExpression &&
+    !node.computed &&
+    node.property.type === AST_NODE_TYPES.Identifier &&
+    node.object.type === AST_NODE_TYPES.Identifier
+  ) {
+    return `${node.object.name}.${node.property.name}`;
+  }
+
+  return null;
+};
+
 const getCalleeDisplayName = (
   callee: TSESTree.LeftHandSideExpression,
 ): string => {
@@ -169,15 +188,7 @@ const getCalleeDisplayName = (
     !callee.computed &&
     callee.property.type === AST_NODE_TYPES.Identifier
   ) {
-    const objectName =
-      callee.object.type === AST_NODE_TYPES.Identifier
-        ? callee.object.name
-        : callee.object.type === AST_NODE_TYPES.MemberExpression &&
-          !callee.object.computed &&
-          callee.object.property.type === AST_NODE_TYPES.Identifier &&
-          callee.object.object.type === AST_NODE_TYPES.Identifier
-        ? `${callee.object.object.name}.${callee.object.property.name}`
-        : null;
+    const objectName = getObjectNameFromExpression(callee.object);
 
     if (objectName) {
       return `${objectName}.${callee.property.name}`;
@@ -368,55 +379,47 @@ export const requireHttpsErrorInOnRequestHandlers: TSESLint.RuleModule<
       return handlerFunctions.has(fn);
     };
 
-    const isWithinOnRequest = (fn: FunctionNode): boolean => {
-      let current: TSESTree.Node | undefined = fn;
+    function findInFunctionChain<T>(
+      startNode: FunctionNode,
+      callback: (fn: FunctionNode) => T | null | undefined | false,
+    ): T | null {
+      let current: TSESTree.Node | undefined = startNode;
       while (current) {
-        if (isFunctionLike(current) && isDirectOnRequestHandler(current)) {
-          return true;
+        if (isFunctionLike(current)) {
+          const result = callback(current);
+          if (result) {
+            return result;
+          }
         }
-        current = current.parent ?? undefined;
+        current = current.parent;
       }
-      return false;
-    };
+      return null;
+    }
+
+    const isWithinOnRequest = (fn: FunctionNode): boolean =>
+      !!findInFunctionChain(fn, (current) => isDirectOnRequestHandler(current));
 
     const hasResponseBinding = (
       fn: FunctionNode,
       responseName: string,
-    ): boolean => {
-      let current: TSESTree.Node | undefined = fn;
-      while (current) {
-        if (isFunctionLike(current)) {
-          const params = responseNamesByFunction.get(current) ?? [];
-          if (params.includes(responseName)) {
-            return true;
-          }
-        }
-        current = current.parent ?? undefined;
-      }
-      return false;
-    };
+    ): boolean =>
+      !!findInFunctionChain(fn, (current) => {
+        const params = responseNamesByFunction.get(current) ?? [];
+        return params.includes(responseName);
+      });
 
     const findResponseIdentifierInArgs = (
       fn: FunctionNode,
       call: TSESTree.CallExpression,
-    ): string | null => {
-      let current: TSESTree.Node | undefined = fn;
-      while (current) {
-        if (isFunctionLike(current)) {
-          const params = responseNamesByFunction.get(current) ?? [];
-          const match = params.find((name) =>
-            call.arguments.some((arg) =>
-              isIdentifierWithName(arg as TSESTree.Node, name),
-            ),
-          );
-          if (match) {
-            return match;
-          }
-        }
-        current = current.parent ?? undefined;
-      }
-      return null;
-    };
+    ): string | null =>
+      findInFunctionChain(fn, (current) => {
+        const params = responseNamesByFunction.get(current) ?? [];
+        return params.find((name) =>
+          call.arguments.some((arg) =>
+            isIdentifierWithName(arg as TSESTree.Node, name),
+          ),
+        );
+      });
 
     const getAncestors = (node: TSESTree.Node): TSESTree.Node[] => {
       const ancestors: TSESTree.Node[] = [];
