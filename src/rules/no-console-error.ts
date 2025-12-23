@@ -491,8 +491,6 @@ export const noConsoleError = createRule<Options, MessageIds>({
 
       if (!isAlertDialogImport) return;
 
-      hasUseAlertDialog = true;
-
       for (const specifier of node.specifiers) {
         if (
           specifier.type === AST_NODE_TYPES.ImportSpecifier &&
@@ -548,7 +546,7 @@ export const noConsoleError = createRule<Options, MessageIds>({
           callee.property.type === AST_NODE_TYPES.Identifier &&
           callee.property.name === 'open') ||
           (callee.type === AST_NODE_TYPES.Identifier &&
-            (callee.name === 'open' || openFunctionNames.has(callee.name)))) &&
+            openFunctionNames.has(callee.name))) &&
         node.arguments.length > 0
       );
     };

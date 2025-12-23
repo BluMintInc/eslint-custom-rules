@@ -105,6 +105,22 @@ ruleTesterTs.run('no-console-error', noConsoleError, {
     },
     {
       code: `
+        import { useAlertDialog } from '../useAlertDialog';
+
+        const open = (options) => {
+          return options;
+        };
+
+        export const run = () => {
+          console.error('boom');
+          open({ severity: 'error' });
+        };
+      `,
+      options: [{ allowWithUseAlertDialog: true }],
+      errors: [{ messageId: 'noConsoleError' }],
+    },
+    {
+      code: `
         console.error('boom')();
       `,
       errors: [{ messageId: 'noConsoleError' }],
