@@ -15,6 +15,11 @@ type Options = [
 
 type MessageIds = 'noConsoleError';
 
+type FunctionNode =
+  | TSESTree.FunctionDeclaration
+  | TSESTree.FunctionExpression
+  | TSESTree.ArrowFunctionExpression;
+
 const defaultIgnorePatterns = [
   '**/__tests__/**',
   '**/__mocks__/**',
@@ -223,6 +228,25 @@ class AliasTracker {
     return false;
   }
 
+  isDirectGlobalConsoleErrorCall(node: TSESTree.CallExpression, scope: TSESLint.Scope.Scope) {
+    const callee = unwrapChainExpression(node.callee);
+    if (!callee || callee.type !== AST_NODE_TYPES.MemberExpression) {
+      return false;
+    }
+    if (
+      callee.computed ||
+      callee.property.type !== AST_NODE_TYPES.Identifier ||
+      callee.property.name !== 'error'
+    ) {
+      return false;
+    }
+    const obj = unwrapChainExpression(callee.object as TSESTree.Expression);
+    if (!obj || obj.type !== AST_NODE_TYPES.Identifier || obj.name !== 'console') {
+      return false;
+    }
+    return findVariable(scope, 'console') === null;
+  }
+
   handleVariableDeclarator(node: TSESTree.VariableDeclarator) {
     if (!node.init) return;
 
@@ -329,6 +353,34 @@ class UseAlertDialogTracker {
     return this.context.getScope();
   }
 
+  static hasErrorSeverity(node: TSESTree.ObjectExpression): boolean {
+    for (const prop of node.properties) {
+      if (prop.type !== AST_NODE_TYPES.Property) continue;
+
+      const isSeverityProperty =
+        (!prop.computed &&
+          prop.key.type === AST_NODE_TYPES.Identifier &&
+          prop.key.name === 'severity') ||
+        (prop.computed &&
+          prop.key.type === AST_NODE_TYPES.Literal &&
+          prop.key.value === 'severity');
+
+      if (!isSeverityProperty) continue;
+
+      if (
+        prop.value.type === AST_NODE_TYPES.Literal &&
+        typeof prop.value.value === 'string'
+      ) {
+        return prop.value.value === 'error';
+      }
+
+      // Non-literal severities cannot be verified at lint time, so treat them
+      // conservatively as non-error to prevent false negatives.
+      return false;
+    }
+    return false;
+  }
+
   trackImport(node: TSESTree.ImportDeclaration) {
     const importPath = String(node.source.value);
     if (!isUseAlertDialogImportPath(importPath)) return;
@@ -357,7 +409,7 @@ class UseAlertDialogTracker {
         );
         if (v) this.instanceVariables.add(v);
       } else if (node.id.type === AST_NODE_TYPES.ObjectPattern) {
-        this.trackDestructuredOpen(node.id, scope);
+        this.trackDestructuredOpen(node.id, node);
       }
       return;
     }
@@ -369,15 +421,16 @@ class UseAlertDialogTracker {
     ) {
       const initVar = findVariable(scope, node.init.name);
       if (initVar && this.instanceVariables.has(initVar)) {
-        this.trackDestructuredOpen(node.id, scope);
+        this.trackDestructuredOpen(node.id, node);
       }
     }
   }
 
   private trackDestructuredOpen(
     pattern: TSESTree.ObjectPattern,
-    scope: TSESLint.Scope.Scope,
+    node: TSESTree.VariableDeclarator,
   ) {
+    const declaredVariables = this.context.getDeclaredVariables(node);
     for (const prop of pattern.properties) {
       if (
         prop.type === AST_NODE_TYPES.Property &&
@@ -387,7 +440,7 @@ class UseAlertDialogTracker {
       ) {
         const localName = getLocalNameFromPattern(prop.value);
         if (localName) {
-          const v = findVariable(scope, localName);
+          const v = findDeclaredVariableByName(localName, declaredVariables);
           if (v) this.openVariables.add(v);
         }
       }
@@ -432,6 +485,61 @@ class UseAlertDialogTracker {
   }
 }
 
+/**
+ * Manages function scopes and pending `console.error` calls that may be
+ * allowed if a `useAlertDialog` call with error severity follows.
+ */
+class PendingCallTracker {
+  private functionScopeStack: FunctionNode[] = [];
+  private functionsWithErrorDialogOpen = new WeakSet<FunctionNode>();
+  private pendingConsoleErrorCalls = new Map<FunctionNode | null, TSESTree.CallExpression[]>();
+
+  pushScope(node: FunctionNode) {
+    this.functionScopeStack.push(node);
+  }
+
+  popScope() {
+    return this.functionScopeStack.pop() ?? null;
+  }
+
+  getCurrentScope() {
+    return this.functionScopeStack[this.functionScopeStack.length - 1] ?? null;
+  }
+
+  markFunctionWithErrorDialog(node: FunctionNode) {
+    this.functionsWithErrorDialogOpen.add(node);
+  }
+
+  queueCall(scope: FunctionNode | null, node: TSESTree.CallExpression) {
+    const pending = this.pendingConsoleErrorCalls.get(scope) ?? [];
+    pending.push(node);
+    this.pendingConsoleErrorCalls.set(scope, pending);
+  }
+
+  flushForScope(
+    scope: FunctionNode | null,
+    reportFn: (node: TSESTree.CallExpression) => void,
+    allowWithUseAlertDialog: boolean,
+    hasUseAlertDialogCall: boolean,
+  ) {
+    const pending = this.pendingConsoleErrorCalls.get(scope);
+    if (!pending) return;
+
+    const shouldAllow =
+      allowWithUseAlertDialog &&
+      hasUseAlertDialogCall &&
+      scope !== null &&
+      this.functionsWithErrorDialogOpen.has(scope);
+
+    if (!shouldAllow) {
+      for (const node of pending) {
+        reportFn(node);
+      }
+    }
+    this.pendingConsoleErrorCalls.delete(scope);
+  }
+}
+
 export const noConsoleError = createRule<Options, MessageIds>({
   name: 'no-console-error',
   meta: {
@@ -461,91 +569,16 @@ export const noConsoleError = createRule<Options, MessageIds>({
   },
   defaultOptions: [{}],
   create(context, [options]) {
-    type FunctionNode =
-      | TSESTree.FunctionDeclaration
-      | TSESTree.FunctionExpression
-      | TSESTree.ArrowFunctionExpression;
-
     const shouldIgnoreFile = createFileIgnorePredicate(options);
     if (shouldIgnoreFile(context.getFilename())) return {};
 
     const allowWithUseAlertDialog = options.allowWithUseAlertDialog === true;
     const aliasTracker = new AliasTracker(context);
     const dialogTracker = new UseAlertDialogTracker(context);
+    const pendingTracker = new PendingCallTracker();
 
-    const functionScopeStack: FunctionNode[] = [];
-    const functionsWithErrorDialogOpen = new WeakSet<FunctionNode>();
-    const pendingConsoleErrorCalls = new Map<
-      FunctionNode | null,
-      TSESTree.CallExpression[]
-    >();
-
-    const getCurrentFunction = () =>
-      functionScopeStack[functionScopeStack.length - 1] ?? null;
-
-    const flushPending = (scope: FunctionNode | null) => {
-      const pending = pendingConsoleErrorCalls.get(scope);
-      if (!pending) return;
-
-      const shouldAllow =
-        allowWithUseAlertDialog &&
-        dialogTracker.hasUseAlertDialogCall &&
-        scope !== null &&
-        functionsWithErrorDialogOpen.has(scope);
-
-      if (!shouldAllow) {
-        for (const node of pending) {
-          context.report({ node, messageId: 'noConsoleError' });
-        }
-      }
-      pendingConsoleErrorCalls.delete(scope);
-    };
-
-    const hasErrorSeverity = (node: TSESTree.ObjectExpression): boolean => {
-      for (const prop of node.properties) {
-        if (prop.type !== AST_NODE_TYPES.Property) continue;
-
-        const isSeverityProperty =
-          (!prop.computed &&
-            prop.key.type === AST_NODE_TYPES.Identifier &&
-            prop.key.name === 'severity') ||
-          (prop.computed &&
-            prop.key.type === AST_NODE_TYPES.Literal &&
-            prop.key.value === 'severity');
-
-        if (!isSeverityProperty) continue;
-
-        if (
-          prop.value.type === AST_NODE_TYPES.Literal &&
-          typeof prop.value.value === 'string'
-        ) {
-          return prop.value.value === 'error';
-        }
-
-        // Non-literal severities cannot be verified at lint time, so treat them
-        // conservatively as non-error to prevent false negatives.
-        return false;
-      }
-      return false;
-    };
-
-    const isDirectGlobalConsoleErrorCall = (node: TSESTree.CallExpression) => {
-      const callee = unwrapChainExpression(node.callee);
-      if (!callee || callee.type !== AST_NODE_TYPES.MemberExpression) {
-        return false;
-      }
-      if (
-        callee.computed ||
-        callee.property.type !== AST_NODE_TYPES.Identifier ||
-        callee.property.name !== 'error'
-      ) {
-        return false;
-      }
-      const obj = unwrapChainExpression(callee.object as TSESTree.Expression);
-      if (!obj || obj.type !== AST_NODE_TYPES.Identifier || obj.name !== 'console') {
-        return false;
-      }
-      return findVariable(context.getScope(), 'console') === null;
+    const report = (node: TSESTree.CallExpression) => {
+      context.report({ node, messageId: 'noConsoleError' });
     };
 
     return {
@@ -553,28 +586,48 @@ export const noConsoleError = createRule<Options, MessageIds>({
         dialogTracker.trackImport(node);
       },
       FunctionDeclaration: (node: FunctionNode) => {
-        functionScopeStack.push(node);
+        pendingTracker.pushScope(node);
       },
       FunctionExpression: (node: FunctionNode) => {
-        functionScopeStack.push(node);
+        pendingTracker.pushScope(node);
       },
       ArrowFunctionExpression: (node: FunctionNode) => {
-        functionScopeStack.push(node);
+        pendingTracker.pushScope(node);
       },
-      'FunctionDeclaration:exit': () => {
-        flushPending(getCurrentFunction());
-        functionScopeStack.pop();
+      'FunctionDeclaration:exit': (node: FunctionNode) => {
+        pendingTracker.flushForScope(
+          node,
+          report,
+          allowWithUseAlertDialog,
+          dialogTracker.hasUseAlertDialogCall,
+        );
+        pendingTracker.popScope();
       },
-      'FunctionExpression:exit': () => {
-        flushPending(getCurrentFunction());
-        functionScopeStack.pop();
+      'FunctionExpression:exit': (node: FunctionNode) => {
+        pendingTracker.flushForScope(
+          node,
+          report,
+          allowWithUseAlertDialog,
+          dialogTracker.hasUseAlertDialogCall,
+        );
+        pendingTracker.popScope();
       },
-      'ArrowFunctionExpression:exit': () => {
-        flushPending(getCurrentFunction());
-        functionScopeStack.pop();
+      'ArrowFunctionExpression:exit': (node: FunctionNode) => {
+        pendingTracker.flushForScope(
+          node,
+          report,
+          allowWithUseAlertDialog,
+          dialogTracker.hasUseAlertDialogCall,
+        );
+        pendingTracker.popScope();
       },
       'Program:exit'() {
-        flushPending(null);
+        pendingTracker.flushForScope(
+          null,
+          report,
+          allowWithUseAlertDialog,
+          dialogTracker.hasUseAlertDialogCall,
+        );
       },
       VariableDeclarator(node) {
         dialogTracker.trackVariableDeclarator(node);
@@ -587,23 +640,24 @@ export const noConsoleError = createRule<Options, MessageIds>({
         if (
           dialogTracker.isOpenCall(node) &&
           node.arguments[0]?.type === AST_NODE_TYPES.ObjectExpression &&
-          hasErrorSeverity(node.arguments[0])
+          UseAlertDialogTracker.hasErrorSeverity(node.arguments[0])
         ) {
-          const scope = getCurrentFunction();
-          if (scope) functionsWithErrorDialogOpen.add(scope);
+          const scope = pendingTracker.getCurrentScope();
+          if (scope) pendingTracker.markFunctionWithErrorDialog(scope);
         }
 
-        if (!aliasTracker.isConsoleErrorCall(node, context.getScope())) return;
+        const scope = context.getScope();
+        if (!aliasTracker.isConsoleErrorCall(node, scope)) return;
 
-        if (allowWithUseAlertDialog && isDirectGlobalConsoleErrorCall(node)) {
-          const scope = getCurrentFunction();
-          const pending = pendingConsoleErrorCalls.get(scope) ?? [];
-          pending.push(node);
-          pendingConsoleErrorCalls.set(scope, pending);
+        if (
+          allowWithUseAlertDialog &&
+          aliasTracker.isDirectGlobalConsoleErrorCall(node, scope)
+        ) {
+          pendingTracker.queueCall(pendingTracker.getCurrentScope(), node);
           return;
         }
 
-        context.report({ node, messageId: 'noConsoleError' });
+        report(node);
       },
     };
   },
