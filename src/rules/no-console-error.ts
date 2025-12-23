@@ -689,6 +689,9 @@ export const noConsoleError = createRule<Options, MessageIds>({
         const scope = getScopeForNode(context, node);
         if (!aliasTracker.isConsoleErrorCall(node, scope)) return;
 
+        // Queueing is limited to direct global `console.error(...)` calls because deferral relies on
+        // linear control flow. Aliased or destructured references can escape the current scope
+        // (stored, passed, invoked later), so they are reported immediately to avoid missing non-local calls.
         if (
           allowWithUseAlertDialog &&
           aliasTracker.isDirectGlobalConsoleErrorCall(node, scope)
