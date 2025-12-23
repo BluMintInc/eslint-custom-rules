@@ -43,6 +43,28 @@ ruleTesterTs.run('enforce-memoize-getters', enforceMemoizeGetters, {
         }
       `,
     },
+    // Namespaced decorator form without parentheses recognized as valid
+    {
+      code: `
+        import * as M from '@blumintinc/typescript-memoize';
+        class Example {
+          @M.Memoize
+          private get fetcher() { return {}; }
+        }
+      `,
+    },
+    // Different decorator present alongside Memoize
+    {
+      code: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        function Other(): any {}
+        class Example {
+          @Other
+          @Memoize()
+          private get fetcher() { return {}; }
+        }
+      `,
+    },
     // Static getter should be ignored
     {
       code: `
@@ -267,12 +289,38 @@ ruleTesterTs.run('enforce-memoize-getters', enforceMemoizeGetters, {
           private get ['fetcher']() { return {}; }
         }
       `,
-      errors: [{ messageId: 'requireMemoizeGetter' }],
+      errors: [
+        {
+          messageId: 'requireMemoizeGetter',
+          data: { name: '[computed]' },
+        },
+      ],
       output: `
         import { Memoize } from '@blumintinc/typescript-memoize';
         class Example {
           @Memoize()
           private get ['fetcher']() { return {}; }
+        }
+      `,
+    },
+    // Real computed property name
+    {
+      code: `
+        class Example {
+          private get [Symbol.iterator]() { return {}; }
+        }
+      `,
+      errors: [
+        {
+          messageId: 'requireMemoizeGetter',
+          data: { name: '[computed]' },
+        },
+      ],
+      output: `
+        import { Memoize } from '@blumintinc/typescript-memoize';
+        class Example {
+          @Memoize()
+          private get [Symbol.iterator]() { return {}; }
         }
       `,
     },
@@ -286,8 +334,14 @@ ruleTesterTs.run('enforce-memoize-getters', enforceMemoizeGetters, {
         }
       `,
       errors: [
-        { messageId: 'requireMemoizeGetter' },
-        { messageId: 'requireMemoizeGetter' },
+        {
+          messageId: 'requireMemoizeGetter',
+          data: { name: 'a' },
+        },
+        {
+          messageId: 'requireMemoizeGetter',
+          data: { name: 'b' },
+        },
       ],
       output: `
         import { Memoize } from '@blumintinc/typescript-memoize';
@@ -332,23 +386,6 @@ ruleTesterTs.run('enforce-memoize-getters', enforceMemoizeGetters, {
         export class Example {
           @Memoize()
           private get node() { return <span/>; }
-        }
-      `,
-    },
-    // Default import should be reused as the decorator identifier
-    {
-      code: `
-        import Memoize from 'typescript-memoize';
-        class Example {
-          private get fetcher() { return {}; }
-        }
-      `,
-      errors: [{ messageId: 'requireMemoizeGetter' }],
-      output: `
-        import Memoize from 'typescript-memoize';
-        class Example {
-          @Memoize.Memoize()
-          private get fetcher() { return {}; }
         }
       `,
     },

@@ -69,7 +69,6 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
     let hasMemoizeImport = false;
     let memoizeAlias = 'Memoize';
     let memoizeNamespace: string | null = null;
-    let memoizeDefaultImport: string | null = null;
     let hasNamedImport = false;
     let scheduledImportFix = false;
 
@@ -88,11 +87,6 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
               hasMemoizeImport = true;
               if (!hasNamedImport) {
                 memoizeNamespace = spec.local.name;
-              }
-            } else if (spec.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
-              hasMemoizeImport = true;
-              if (!hasNamedImport) {
-                memoizeDefaultImport = spec.local.name;
               }
             }
           }
@@ -116,7 +110,9 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
         );
         if (hasDecorator) return;
 
-        const propertyName = sourceCode.getText(node.key);
+        const propertyName = node.computed
+          ? '[computed]'
+          : sourceCode.getText(node.key);
 
         context.report({
           node,
@@ -128,8 +124,6 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
               ? memoizeAlias
               : memoizeNamespace
               ? `${memoizeNamespace}.Memoize`
-              : memoizeDefaultImport
-              ? `${memoizeDefaultImport}.Memoize`
               : memoizeAlias;
 
             // Insert import if needed, at the top alongside other imports
