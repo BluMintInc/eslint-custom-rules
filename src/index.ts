@@ -32,6 +32,7 @@ import { preferFragmentShorthand } from './rules/prefer-fragment-shorthand';
 import { preferGetterOverParameterlessMethod } from './rules/prefer-getter-over-parameterless-method';
 import { preferTypeOverInterface } from './rules/prefer-type-over-interface';
 import { preferTypeAliasOverTypeofConstant } from './rules/prefer-type-alias-over-typeof-constant';
+import { preferMemoizedProps } from './rules/prefer-memoized-props';
 import { requireMemo } from './rules/require-memo';
 import { noJsxWhitespaceLiteral } from './rules/no-jsx-whitespace-literal';
 import { default as requireDynamicFirebaseImports } from './rules/require-dynamic-firebase-imports';
@@ -304,6 +305,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-props-naming-consistency': 'error',
         '@blumintinc/blumint/prefer-global-router-state-key': 'error',
         '@blumintinc/blumint/prefer-usememo-over-useeffect-usestate': 'error',
+        '@blumintinc/blumint/prefer-memoized-props': 'error',
         '@blumintinc/blumint/enforce-dynamic-imports': 'error',
         '@blumintinc/blumint/ensure-pointer-events-none': 'error',
         '@blumintinc/blumint/no-object-values-on-strings': 'error',
@@ -585,6 +587,7 @@ module.exports = {
     'no-redundant-usecallback-wrapper': noRedundantUseCallbackWrapper,
     'no-res-error-status-in-onrequest': requireHttpsErrorInOnRequestHandlers,
     'no-array-length-in-deps': noArrayLengthInDeps,
+    'prefer-memoized-props': preferMemoizedProps,
     'prefer-use-deep-compare-memo': preferUseDeepCompareMemo,
     'no-circular-references': noCircularReferences,
     'no-console-error': noConsoleError,
