@@ -126,6 +126,21 @@ ruleTesterTs.run('no-console-error', noConsoleError, {
     },
     {
       code: `
+        console.error('boom');
+      `,
+      env: { node: true },
+      errors: [{ messageId: 'noConsoleError' }],
+    },
+    {
+      code: `
+        const c = console;
+        c.error('boom');
+      `,
+      env: { node: true },
+      errors: [{ messageId: 'noConsoleError' }],
+    },
+    {
+      code: `
         import { useAlertDialog } from '../useAlertDialog';
 
         useAlertDialog('DIALOG');

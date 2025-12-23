@@ -229,6 +229,13 @@ class AliasTracker {
     }
     const variable = getResolvedVariable(scope, unwrapped);
     if (variable) {
+      if (
+        unwrapped.name === 'console' &&
+        variable.scope.type === 'global' &&
+        variable.defs.length === 0
+      ) {
+        return true;
+      }
       return this.consoleAliases.has(variable);
     }
     return unwrapped.name === 'console';
