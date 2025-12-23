@@ -100,6 +100,18 @@ const findVariable = (
   return null;
 };
 
+const getResolvedVariable = (
+  scope: TSESLint.Scope.Scope,
+  identifier: TSESTree.Identifier,
+): TSESLint.Scope.Variable | null => {
+  const ref = scope.references.find((r) => r.identifier === identifier);
+  if (ref?.resolved) {
+    return ref.resolved;
+  }
+  // Fallback for cases where scope analysis might not have linked it yet or for shadowed built-ins
+  return findVariable(scope, identifier.name);
+};
+
 const isErrorKey = (
   key: TSESTree.Expression | TSESTree.PrivateIdentifier,
   computed: boolean,
@@ -179,13 +191,13 @@ class AliasTracker {
 
   isConsoleObject(
     expression: TSESTree.Expression,
-    scope: TSESLint.Scope.Scope | null,
+    scope: TSESLint.Scope.Scope,
   ) {
     const unwrapped = unwrapChainExpression(expression);
     if (!unwrapped || unwrapped.type !== AST_NODE_TYPES.Identifier) {
       return false;
     }
-    const variable = findVariable(scope, unwrapped.name);
+    const variable = getResolvedVariable(scope, unwrapped);
     if (variable) {
       return this.consoleAliases.has(variable);
     }
@@ -194,7 +206,7 @@ class AliasTracker {
 
   isConsoleErrorMemberExpression(
     member: TSESTree.MemberExpression,
-    scope: TSESLint.Scope.Scope | null,
+    scope: TSESLint.Scope.Scope,
   ) {
     return (
       this.isConsoleObject(member.object as TSESTree.Expression, scope) &&
@@ -204,15 +216,15 @@ class AliasTracker {
 
   isErrorAlias(
     identifier: TSESTree.Identifier,
-    scope: TSESLint.Scope.Scope | null,
+    scope: TSESLint.Scope.Scope,
   ) {
-    const variable = findVariable(scope, identifier.name);
+    const variable = getResolvedVariable(scope, identifier);
     return Boolean(variable && this.errorAliases.has(variable));
   }
 
   isConsoleErrorCall(
     node: TSESTree.CallExpression,
-    scope: TSESLint.Scope.Scope | null,
+    scope: TSESLint.Scope.Scope,
   ): boolean {
     const callee = unwrapChainExpression(node.callee);
     if (!callee) return false;
@@ -244,7 +256,8 @@ class AliasTracker {
     if (!obj || obj.type !== AST_NODE_TYPES.Identifier || obj.name !== 'console') {
       return false;
     }
-    return findVariable(scope, 'console') === null;
+    const variable = getResolvedVariable(scope, obj);
+    return !variable || variable.scope.type === 'global';
   }
 
   handleVariableDeclarator(node: TSESTree.VariableDeclarator) {
@@ -299,7 +312,7 @@ class AliasTracker {
     if (!right) return;
 
     if (node.left.type === AST_NODE_TYPES.Identifier) {
-      const variable = findVariable(scope, node.left.name);
+      const variable = getResolvedVariable(scope, node.left);
       if (this.isConsoleObject(right as TSESTree.Expression, scope)) {
         this.markConsole(variable);
       } else if (
@@ -419,7 +432,7 @@ class UseAlertDialogTracker {
       node.init.type === AST_NODE_TYPES.Identifier &&
       node.id.type === AST_NODE_TYPES.ObjectPattern
     ) {
-      const initVar = findVariable(scope, node.init.name);
+      const initVar = getResolvedVariable(scope, node.init);
       if (initVar && this.instanceVariables.has(initVar)) {
         this.trackDestructuredOpen(node.id, node);
       }
@@ -451,9 +464,9 @@ class UseAlertDialogTracker {
     const callee = unwrapChainExpression(node.callee);
     if (!callee || callee.type !== AST_NODE_TYPES.Identifier) return false;
 
-    const v = findVariable(this.getScope(), callee.name);
+    const v = getResolvedVariable(this.getScope(), callee);
     if (v && this.hookVariables.has(v)) return true;
-    return v === null && callee.name === 'useAlertDialog';
+    return (v === null || v.scope.type === 'global') && callee.name === 'useAlertDialog';
   }
 
   isOpenCall(node: TSESTree.CallExpression): boolean {
@@ -462,7 +475,7 @@ class UseAlertDialogTracker {
     const scope = this.getScope();
 
     if (callee.type === AST_NODE_TYPES.Identifier) {
-      const v = findVariable(scope, callee.name);
+      const v = getResolvedVariable(scope, callee);
       return v !== null && this.openVariables.has(v);
     }
 
@@ -476,7 +489,7 @@ class UseAlertDialogTracker {
       }
       const obj = unwrapChainExpression(callee.object as TSESTree.Expression);
       if (obj && obj.type === AST_NODE_TYPES.Identifier) {
-        const v = findVariable(scope, obj.name);
+        const v = getResolvedVariable(scope, obj);
         return v !== null && this.instanceVariables.has(v);
       }
     }
@@ -581,46 +594,30 @@ export const noConsoleError = createRule<Options, MessageIds>({
       context.report({ node, messageId: 'noConsoleError' });
     };
 
+    const onFunctionEnter = (node: FunctionNode) => {
+      pendingTracker.pushScope(node);
+    };
+
+    const onFunctionExit = (node: FunctionNode) => {
+      pendingTracker.flushForScope(
+        node,
+        report,
+        allowWithUseAlertDialog,
+        dialogTracker.hasUseAlertDialogCall,
+      );
+      pendingTracker.popScope();
+    };
+
     return {
       ImportDeclaration(node) {
         dialogTracker.trackImport(node);
       },
-      FunctionDeclaration: (node: FunctionNode) => {
-        pendingTracker.pushScope(node);
-      },
-      FunctionExpression: (node: FunctionNode) => {
-        pendingTracker.pushScope(node);
-      },
-      ArrowFunctionExpression: (node: FunctionNode) => {
-        pendingTracker.pushScope(node);
-      },
-      'FunctionDeclaration:exit': (node: FunctionNode) => {
-        pendingTracker.flushForScope(
-          node,
-          report,
-          allowWithUseAlertDialog,
-          dialogTracker.hasUseAlertDialogCall,
-        );
-        pendingTracker.popScope();
-      },
-      'FunctionExpression:exit': (node: FunctionNode) => {
-        pendingTracker.flushForScope(
-          node,
-          report,
-          allowWithUseAlertDialog,
-          dialogTracker.hasUseAlertDialogCall,
-        );
-        pendingTracker.popScope();
-      },
-      'ArrowFunctionExpression:exit': (node: FunctionNode) => {
-        pendingTracker.flushForScope(
-          node,
-          report,
-          allowWithUseAlertDialog,
-          dialogTracker.hasUseAlertDialogCall,
-        );
-        pendingTracker.popScope();
-      },
+      FunctionDeclaration: onFunctionEnter,
+      FunctionExpression: onFunctionEnter,
+      ArrowFunctionExpression: onFunctionEnter,
+      'FunctionDeclaration:exit': onFunctionExit,
+      'FunctionExpression:exit': onFunctionExit,
+      'ArrowFunctionExpression:exit': onFunctionExit,
       'Program:exit'() {
         pendingTracker.flushForScope(
           null,
