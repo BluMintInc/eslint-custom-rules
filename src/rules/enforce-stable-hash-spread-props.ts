@@ -65,10 +65,7 @@ function getFunctionName(node: FunctionLike): string | null {
   return null;
 }
 
-function isProbablyComponent(
-  node: FunctionLike,
-  _sourceCode: TSESLint.SourceCode,
-): boolean {
+function isProbablyComponent(node: FunctionLike): boolean {
   const name = getFunctionName(node);
 
   if (name && /^[A-Z]/.test(name)) {
@@ -304,27 +301,26 @@ export const enforceStableHashSpreadProps = createRule<Options, MessageIds>({
     const [options = {}] = context.options;
     const hashImport = {
       source: options.hashImport?.source ?? DEFAULT_HASH_IMPORT.source,
-      importName: options.hashImport?.importName ?? DEFAULT_HASH_IMPORT.importName,
+      importName:
+        options.hashImport?.importName ?? DEFAULT_HASH_IMPORT.importName,
     };
-    const existingHashLocalNames = getStableHashLocalNames(sourceCode, hashImport);
+    const existingHashLocalNames = getStableHashLocalNames(
+      sourceCode,
+      hashImport,
+    );
     const userHookNames = new Set<string>(options.hookNames ?? []);
     const allowedHashes = new Set<string>([
       ...existingHashLocalNames,
       hashImport.importName,
       ...(options.allowedHashFunctions ?? []),
     ]);
-    const hookNames = new Set<string>([
-      ...DEFAULT_HOOKS,
-      ...userHookNames,
-    ]);
+    const hookNames = new Set<string>([...DEFAULT_HOOKS, ...userHookNames]);
 
     let importPlanned = false;
     const hashIdentifier = existingHashLocalNames[0] ?? hashImport.importName;
     const functionStack: FunctionContext[] = [];
 
-    function getCurrentComponentContext():
-      | FunctionContext
-      | undefined {
+    function getCurrentComponentContext(): FunctionContext | undefined {
       for (let i = functionStack.length - 1; i >= 0; i -= 1) {
         if (functionStack[i].isComponent) {
           return functionStack[i];
@@ -345,7 +341,7 @@ export const enforceStableHashSpreadProps = createRule<Options, MessageIds>({
 
         functionStack.push({
           node,
-          isComponent: isProbablyComponent(node, sourceCode),
+          isComponent: isProbablyComponent(node),
           restNames,
           propsIdentifiers,
         });
@@ -426,10 +422,7 @@ export const enforceStableHashSpreadProps = createRule<Options, MessageIds>({
               seen.add(targetNode.range[0]);
               const original = sourceCode.getText(targetNode);
               fixes.push(
-                fixer.replaceText(
-                  targetNode,
-                  `${hashIdentifier}(${original})`,
-                ),
+                fixer.replaceText(targetNode, `${hashIdentifier}(${original})`),
               );
             }
 

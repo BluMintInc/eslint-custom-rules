@@ -41,4 +41,3 @@ function buildCache() {
 ```
 
 In this example, the declaration is intentionally private, so it is moved into a narrower scope instead of being exported.
-

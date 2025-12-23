@@ -89,6 +89,24 @@ ruleTesterTs.run('no-unused-props with imported types', noUnusedProps, {
         sourceType: 'module',
       },
     },
+    {
+      // Omit on an imported type should still treat used props as coming from the spread type
+      code: `
+        import { RemoteProps } from './remote-types';
+
+        type Props = Omit<RemoteProps, 'userId'>;
+
+        const RemoteComponent = ({ name }: Props) => {
+          return <span>{name}</span>;
+        };
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
   ],
   invalid: [],
 });

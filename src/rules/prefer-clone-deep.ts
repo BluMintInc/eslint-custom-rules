@@ -15,7 +15,7 @@ export const preferCloneDeep = createRule<[], MessageIds>({
     schema: [],
     messages: {
       preferCloneDeep:
-        'Use cloneDeep from functions/src/util/cloneDeep.ts instead of nested spread operators for deep object copying',
+        'Nested spread copies only clone one level, so inner objects still point at the original and later mutations leak back. Use cloneDeep from functions/src/util/cloneDeep.ts and pass overrides as the second argument so the base object is deeply cloned before applying updates.',
     },
   },
   defaultOptions: [],
@@ -81,7 +81,7 @@ export const preferCloneDeep = createRule<[], MessageIds>({
     }
 
     function generateCloneDeepFix(node: TSESTree.ObjectExpression): string {
-      const sourceCode = context.getSourceCode();
+      const sourceCode = context.sourceCode;
 
       // Find the base object (first spread element)
       let baseObj: string | null = null;
@@ -284,7 +284,7 @@ export const preferCloneDeep = createRule<[], MessageIds>({
 
     // Helper function to extract nested overrides without spread elements
     function extractNestedOverrides(node: TSESTree.ObjectExpression): string {
-      const sourceCode = context.getSourceCode();
+      const sourceCode = context.sourceCode;
       const overrides: string[] = [];
 
       for (const prop of node.properties) {

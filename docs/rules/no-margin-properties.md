@@ -1,4 +1,4 @@
-# Discourage using margin properties (margin, marginLeft, marginRight, marginTop, marginBottom, mx, my, etc.) for spacing in MUI components. Instead, prefer defining spacing with padding, gap, or the spacing prop for more predictable layouts (`@blumintinc/blumint/no-margin-properties`)
+# Prevent margin properties (margin, marginLeft, marginRight, marginTop, marginBottom, mx, my, etc.) in MUI styling because margins fight container-controlled spacing, double gutters, and misaligned breakpoints; keep spacing centralized with padding, gap, or spacing props instead (`@blumintinc/blumint/no-margin-properties`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
@@ -6,7 +6,21 @@
 
 ## Rule Details
 
-This rule discourages the use of margin-related props in MUI components to promote more predictable layouts. Prefer padding, `gap`, or explicit spacing APIs (Stack’s `spacing` or `theme.spacing()`/`sx` spacing helpers) instead.
+Margin props push spacing outside a component and bypass MUI's container-controlled spacing model (Stack/Grid spacing, gaps, responsive gutters). When a child sets margins, it can double-count gutters, misalign at breakpoints, and overflow when nested components also add margins. Centralizing spacing in the container keeps layouts predictable and aligned with the design system spacing scale.
+
+
+### What this rule checks
+
+- Any margin property (`margin`, `marginLeft`, `marginRight`, `marginTop`, `marginBottom`, `mx`, `my`, `mt`, `mb`, `ml`, `mr`, `m`, kebab-case equivalents) used in MUI styling surfaces (`sx`, theme `styleOverrides`, MUI `css`, or direct JSX props like `margin`/`mt`).
+- Margin properties found inside objects, conditionals, arrays, spreads, and nested selectors within those MUI styling contexts.
+- Non-MUI contexts (plain CSS-in-JS objects, styled-components strings, type declarations) are ignored.
+
+
+### How to fix
+
+- Move spacing inside the component with padding (`padding`, `pt`, `px`, etc.) so the element owns its internal spacing.
+- Let the parent own separation between children by using `gap` or MUI's `spacing` prop on layout primitives (`Stack`, `Grid`, etc.).
+- Use `theme.spacing()` or spacing tokens so values stay on the shared spacing scale.
 
 ## Options
 
@@ -35,13 +49,13 @@ This rule accepts an options object with the following properties:
 ### ❌ Incorrect
 
 ```jsx
-// Using margin properties in sx prop
+// Margin props push spacing outside the component
 <Box sx={{ margin: 2, marginTop: 3 }} />
 
-// Using margin shorthand properties
+// Margin shorthands fight Stack spacing/gaps
 <Stack sx={{ mx: 2, my: 1 }} />
 
-// Using margin as direct props
+// Direct margin props behave the same
 <Box margin={2} marginTop={3} />
 ```
 
@@ -58,14 +72,28 @@ In such cases, prefer adding an `eslint-disable` comment with a brief explanatio
 ### ✅ Correct
 
 ```jsx
-// Using padding instead
+// Keep spacing inside the component
 <Box sx={{ padding: 2, paddingTop: 3 }} />
 
-// Using spacing prop for Stack
+// Let the parent own separation between children
 <Stack spacing={2} />
 
-// Using gap for layout
+// Use gap for flex/grid gutters instead of margins
 <Box sx={{ display: 'flex', gap: 2 }} />
+
+// In theme overrides, keep spacing on the padding/gap axis
+const theme = createTheme({
+  components: {
+    MuiButton: {
+      styleOverrides: {
+        root: {
+          padding: 2,
+          gap: 1,
+        },
+      },
+    },
+  },
+});
 ```
 
 ## Further Reading

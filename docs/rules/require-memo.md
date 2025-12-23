@@ -48,4 +48,3 @@ const ProfileCardUnmemoized = ({ user }) => {
   return <UserAvatar {...user} />;
 };
 ```
-
