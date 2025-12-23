@@ -85,6 +85,27 @@ ruleTesterTs.run('no-console-error', noConsoleError, {
       `,
       options: [{ allowWithUseAlertDialog: true }],
     },
+    {
+      code: `
+        import { useAlertDialog } from '../useAlertDialog';
+
+        export const useDialog = () => {
+          const dialog = useAlertDialog('DIALOG');
+
+          const showError = () => {
+            console.error('Error dialog shown to user');
+            dialog.open({
+              title: 'Error',
+              description: 'Something went wrong',
+              severity: 'error',
+            });
+          };
+
+          return { showError };
+        };
+      `,
+      options: [{ allowWithUseAlertDialog: true }],
+    },
     `
       const structuredLogger = { error: () => {} };
       let err = console.error;
@@ -107,6 +128,8 @@ ruleTesterTs.run('no-console-error', noConsoleError, {
       code: `
         import { useAlertDialog } from '../useAlertDialog';
 
+        useAlertDialog('DIALOG');
+
         const open = (options) => {
           return options;
         };
@@ -114,6 +137,23 @@ ruleTesterTs.run('no-console-error', noConsoleError, {
         export const run = () => {
           console.error('boom');
           open({ severity: 'error' });
+        };
+      `,
+      options: [{ allowWithUseAlertDialog: true }],
+      errors: [{ messageId: 'noConsoleError' }],
+    },
+    {
+      code: `
+        import { useAlertDialog } from '../useAlertDialog';
+
+        useAlertDialog('DIALOG');
+
+        export const run = () => {
+          const modal = {
+            open: (options) => options,
+          };
+          console.error('boom');
+          modal.open({ severity: 'error' });
         };
       `,
       options: [{ allowWithUseAlertDialog: true }],

@@ -26,6 +26,25 @@ const defaultIgnorePatterns = [
 
 const normalizeFilename = (filename: string) => filename.replace(/\\/g, '/');
 
+const isUseAlertDialogImportPath = (importPath: string): boolean => {
+  const normalizedImportPath = normalizeFilename(importPath);
+
+  if (
+    normalizedImportPath === '../useAlertDialog' ||
+    normalizedImportPath === './useAlertDialog' ||
+    normalizedImportPath === 'useAlertDialog' ||
+    normalizedImportPath === '@/hooks/useAlertDialog' ||
+    normalizedImportPath === 'src/hooks/useAlertDialog'
+  ) {
+    return true;
+  }
+
+  return (
+    normalizedImportPath.endsWith('/useAlertDialog') ||
+    normalizedImportPath.endsWith('/useAlertDialog/index')
+  );
+};
+
 const createFileIgnorePredicate = (options: Options[0]) => {
   const ignorePatterns = [
     ...defaultIgnorePatterns,
@@ -427,6 +446,7 @@ export const noConsoleError = createRule<Options, MessageIds>({
     const aliasTracker = new AliasTracker();
     const useAlertDialogNames = new Set<string>(['useAlertDialog']);
     const openFunctionNames = new Set<string>();
+    const useAlertDialogInstanceNames = new Set<string>();
     let hasUseAlertDialog = false;
 
     const functionScopeStack: FunctionNode[] = [];
@@ -480,16 +500,7 @@ export const noConsoleError = createRule<Options, MessageIds>({
 
     const trackUseAlertDialogImports = (node: TSESTree.ImportDeclaration) => {
       const importPath = String(node.source.value);
-      const isAlertDialogImport =
-        importPath === '../useAlertDialog' ||
-        importPath === './useAlertDialog' ||
-        importPath === 'useAlertDialog' ||
-        importPath.endsWith('/useAlertDialog') ||
-        importPath.endsWith('/useAlertDialog/index') ||
-        importPath === '@/hooks/useAlertDialog' ||
-        importPath === 'src/hooks/useAlertDialog';
-
-      if (!isAlertDialogImport) return;
+      if (!isUseAlertDialogImportPath(importPath)) return;
 
       for (const specifier of node.specifiers) {
         if (
@@ -516,39 +527,91 @@ export const noConsoleError = createRule<Options, MessageIds>({
       node: TSESTree.VariableDeclarator,
     ) => {
       if (
-        !node.init ||
-        node.init.type !== AST_NODE_TYPES.CallExpression ||
-        !isUseAlertDialogCall(node.init) ||
-        node.id.type !== AST_NODE_TYPES.ObjectPattern
+        node.init &&
+        node.init.type === AST_NODE_TYPES.CallExpression &&
+        isUseAlertDialogCall(node.init) &&
+        node.id.type === AST_NODE_TYPES.Identifier
       ) {
+        useAlertDialogInstanceNames.add(node.id.name);
         return;
       }
 
-      for (const prop of node.id.properties) {
-        if (
-          prop.type === AST_NODE_TYPES.Property &&
-          prop.key.type === AST_NODE_TYPES.Identifier &&
-          prop.key.name === 'open' &&
-          prop.value.type === AST_NODE_TYPES.Identifier
-        ) {
-          openFunctionNames.add(prop.value.name);
+      if (!node.init || node.id.type !== AST_NODE_TYPES.ObjectPattern) {
+        return;
+      }
+
+      if (
+        node.init.type === AST_NODE_TYPES.CallExpression &&
+        isUseAlertDialogCall(node.init)
+      ) {
+        for (const prop of node.id.properties) {
+          if (
+            prop.type === AST_NODE_TYPES.Property &&
+            prop.key.type === AST_NODE_TYPES.Identifier &&
+            prop.key.name === 'open' &&
+            prop.value.type === AST_NODE_TYPES.Identifier
+          ) {
+            openFunctionNames.add(prop.value.name);
+          }
+        }
+        return;
+      }
+
+      if (
+        node.init.type === AST_NODE_TYPES.Identifier &&
+        useAlertDialogInstanceNames.has(node.init.name)
+      ) {
+        for (const prop of node.id.properties) {
+          if (
+            prop.type === AST_NODE_TYPES.Property &&
+            prop.key.type === AST_NODE_TYPES.Identifier &&
+            prop.key.name === 'open' &&
+            prop.value.type === AST_NODE_TYPES.Identifier
+          ) {
+            openFunctionNames.add(prop.value.name);
+          }
         }
       }
     };
 
-    const isOpenCall = (node: TSESTree.CallExpression) => {
+    const isUseAlertDialogInstanceOpenCall = (
+      member: TSESTree.MemberExpression,
+    ): boolean => {
+      if (member.computed) return false;
+      if (
+        member.property.type !== AST_NODE_TYPES.Identifier ||
+        member.property.name !== 'open'
+      ) {
+        return false;
+      }
+
+      const object = unwrapChainExpression(
+        member.object as TSESTree.Expression,
+      );
+      if (!object || object.type !== AST_NODE_TYPES.Identifier) {
+        return false;
+      }
+
+      return useAlertDialogInstanceNames.has(object.name);
+    };
+
+    const isUseAlertDialogOpenFunctionCall = (
+      callee: TSESTree.Node,
+    ): boolean => {
+      if (callee.type !== AST_NODE_TYPES.Identifier) return false;
+      return openFunctionNames.has(callee.name);
+    };
+
+    const isOpenCall = (node: TSESTree.CallExpression): boolean => {
       const callee = unwrapChainExpression(node.callee);
       if (!callee) return false;
 
-      return (
-        ((callee.type === AST_NODE_TYPES.MemberExpression &&
-          !callee.computed &&
-          callee.property.type === AST_NODE_TYPES.Identifier &&
-          callee.property.name === 'open') ||
-          (callee.type === AST_NODE_TYPES.Identifier &&
-            openFunctionNames.has(callee.name))) &&
-        node.arguments.length > 0
-      );
+      const isUseAlertDialogOpenCall =
+        (callee.type === AST_NODE_TYPES.MemberExpression &&
+          isUseAlertDialogInstanceOpenCall(callee)) ||
+        isUseAlertDialogOpenFunctionCall(callee);
+
+      return isUseAlertDialogOpenCall && node.arguments.length > 0;
     };
 
     const hasErrorSeverity = (node: TSESTree.ObjectExpression): boolean => {
@@ -572,6 +635,9 @@ export const noConsoleError = createRule<Options, MessageIds>({
           return prop.value.value === 'error';
         }
 
+        // Treat non-literal severities as potentially error so allowWithUseAlertDialog
+        // does not conflict with enforce-console-error, which requires console.error
+        // when severity is dynamic.
         return true;
       }
 
