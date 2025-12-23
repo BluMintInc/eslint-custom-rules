@@ -1,4 +1,4 @@
-# Warn on console.error usage to enforce structured error handling (`@blumintinc/blumint/no-console-error`)
+# Disallow console.error so errors flow through structured handling (HttpsError/useErrorAlert on frontend, structured loggers on backend) (`@blumintinc/blumint/no-console-error`)
 
 ⚠️ This rule _warns_ in the ✅ `recommended` config.
 

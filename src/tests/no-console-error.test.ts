@@ -245,5 +245,47 @@ ruleTesterTs.run('no-console-error', noConsoleError, {
       `,
       errors: [{ messageId: 'noConsoleError' }],
     },
+    {
+      code: `
+        import { useAlertDialog } from '../useAlertDialog';
+
+        export const useDialog = () => {
+          const { open } = useAlertDialog('DIALOG');
+          const severity = 'error';
+
+          const showError = () => {
+            console.error('Error dialog shown to user');
+            open({
+              title: 'Error',
+              description: 'Something went wrong',
+              severity, // Dynamic severity should be invalid
+            });
+          };
+
+          return { showError };
+        };
+      `,
+      options: [{ allowWithUseAlertDialog: true }],
+      errors: [{ messageId: 'noConsoleError' }],
+    },
+    {
+      code: `
+        import { useAlertDialog } from '../useAlertDialog';
+
+        function outer() {
+          const { open } = useAlertDialog('DIALOG');
+          console.error('allowed here');
+          open({ severity: 'error' });
+        }
+
+        function unrelated() {
+          const open = () => {}; // unrelated open
+          console.error('should be invalid here');
+          open({ severity: 'error' });
+        }
+      `,
+      options: [{ allowWithUseAlertDialog: true }],
+      errors: [{ messageId: 'noConsoleError' }],
+    },
   ],
 });
