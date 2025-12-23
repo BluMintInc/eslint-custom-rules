@@ -102,11 +102,11 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
         if (node.accessibility !== 'private') return;
 
         const decoratorAliases =
-          memoizeAlias === 'Memoize'
-            ? ['Memoize']
-            : ['Memoize', memoizeAlias];
+          memoizeAlias === 'Memoize' ? ['Memoize'] : ['Memoize', memoizeAlias];
         const hasDecorator = node.decorators?.some((decorator) =>
-          decoratorAliases.some((alias) => isMemoizeDecorator(decorator, alias)),
+          decoratorAliases.some((alias) =>
+            isMemoizeDecorator(decorator, alias),
+          ),
         );
         if (hasDecorator) return;
 
@@ -143,7 +143,7 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
 
               if (anchorNode) {
                 const text = sourceCode.text;
-                const anchorStart = anchorNode.range![0];
+                const anchorStart = anchorNode.range[0];
                 const lineStart = text.lastIndexOf('\n', anchorStart - 1) + 1;
                 const leadingWhitespace =
                   text.slice(lineStart, anchorStart).match(/^[ \t]*/)?.[0] ??
@@ -168,14 +168,11 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
 
             // Insert decorator above the getter (or before the first decorator), preserving indentation
             const insertionTarget = node.decorators?.[0] ?? node;
-            const insertionStart = insertionTarget.range
-              ? insertionTarget.range[0]
-              : node.range?.[0] ?? 0;
+            const insertionStart = insertionTarget.range[0];
             const text = sourceCode.text;
             const lineStart = text.lastIndexOf('\n', insertionStart - 1) + 1;
             const leadingWhitespace =
-              text.slice(lineStart, insertionStart).match(/^[ \t]*/)?.[0] ??
-              '';
+              text.slice(lineStart, insertionStart).match(/^[ \t]*/)?.[0] ?? '';
             fixes.push(
               fixer.insertTextBeforeRange(
                 [lineStart, lineStart],
