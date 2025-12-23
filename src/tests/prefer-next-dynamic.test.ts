@@ -38,7 +38,12 @@ const App = () => <EmojiPicker/>;`,
       code: `import { useDynamic } from '../../hooks/useDynamic';
 const EmojiPicker = useDynamic(import('@emoji-mart/react'));
 const App = () => <EmojiPicker/>;`,
-      errors: [{ messageId: 'preferNextDynamic' }],
+      errors: [
+        {
+          messageId: 'preferNextDynamic',
+          data: { componentName: 'EmojiPicker' },
+        },
+      ],
       output: `import dynamic from 'next/dynamic';
 
 const EmojiPicker = dynamic(
@@ -55,7 +60,12 @@ const App = () => <EmojiPicker/>;`,
       code: `import { useDynamic } from '../../hooks/useDynamic';
 const { Picker } = useDynamic(import('@emoji-mart/react'));
 const App = () => <Picker/>;`,
-      errors: [{ messageId: 'preferNextDynamic' }],
+      errors: [
+        {
+          messageId: 'preferNextDynamic',
+          data: { componentName: 'Picker' },
+        },
+      ],
       output: `import dynamic from 'next/dynamic';
 
 const Picker = dynamic(
@@ -72,7 +82,12 @@ const App = () => <Picker/>;`,
       code: `import { useDynamic, somethingElse } from '../../hooks/useDynamic';
 const EmojiPicker = useDynamic(import('@emoji-mart/react'));
 const App = () => <EmojiPicker/>;`,
-      errors: [{ messageId: 'preferNextDynamic' }],
+      errors: [
+        {
+          messageId: 'preferNextDynamic',
+          data: { componentName: 'EmojiPicker' },
+        },
+      ],
       output: `import dynamic from 'next/dynamic';
 import { somethingElse } from '../../hooks/useDynamic';
 const EmojiPicker = dynamic(
@@ -89,7 +104,12 @@ const App = () => <EmojiPicker/>;`,
       code: `import { useDynamic } from '../../hooks/useDynamic';
 const A = 1, EmojiPicker = useDynamic(import('@emoji-mart/react'));
 const App = () => <EmojiPicker/>;`,
-      errors: [{ messageId: 'preferNextDynamic' }],
+      errors: [
+        {
+          messageId: 'preferNextDynamic',
+          data: { componentName: 'EmojiPicker' },
+        },
+      ],
       output: `import dynamic from 'next/dynamic';
 
 const A = 1, EmojiPicker = dynamic(
@@ -106,7 +126,12 @@ const App = () => <EmojiPicker/>;`,
       code: `import useDynamic from '../../hooks/useDynamic';
 const EmojiPicker = useDynamic(import('@emoji-mart/react'));
 const App = () => <EmojiPicker/>;`,
-      errors: [{ messageId: 'preferNextDynamic' }],
+      errors: [
+        {
+          messageId: 'preferNextDynamic',
+          data: { componentName: 'EmojiPicker' },
+        },
+      ],
       output: `import dynamic from 'next/dynamic';
 
 const EmojiPicker = dynamic(
@@ -123,7 +148,12 @@ const App = () => <EmojiPicker/>;`,
       code: `import { useDynamic } from '../../hooks/useDynamic';
 const { Picker } = useDynamic(import('@emoji-mart/react'));
 const App = () => <Picker/>;`,
-      errors: [{ messageId: 'preferNextDynamic' }],
+      errors: [
+        {
+          messageId: 'preferNextDynamic',
+          data: { componentName: 'Picker' },
+        },
+      ],
       output: `import dynamic from 'next/dynamic';
 
 const Picker = dynamic(
@@ -141,7 +171,12 @@ const App = () => <Picker/>;`,
 import { useDynamic } from '../../hooks/useDynamic';
 const EmojiPicker = useDynamic(import('@emoji-mart/react'));
 const App = () => <EmojiPicker/>;`,
-      errors: [{ messageId: 'preferNextDynamic' }],
+      errors: [
+        {
+          messageId: 'preferNextDynamic',
+          data: { componentName: 'EmojiPicker' },
+        },
+      ],
       output: `import dynamic from 'next/dynamic';
 const EmojiPicker = dynamic(
   async () => {
@@ -174,7 +209,12 @@ const App = () => <EmojiPicker/>;`,
       code: `import { useDynamic } from '../../hooks/useDynamic';
 let EmojiPicker = useDynamic(import('@emoji-mart/react'));
 const App = () => <EmojiPicker/>;`,
-      errors: [{ messageId: 'preferNextDynamic' }],
+      errors: [
+        {
+          messageId: 'preferNextDynamic',
+          data: { componentName: 'EmojiPicker' },
+        },
+      ],
       output: `import dynamic from 'next/dynamic';
 
 let EmojiPicker = dynamic(

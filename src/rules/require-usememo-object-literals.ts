@@ -1,5 +1,6 @@
 import { TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 export const requireUseMemoObjectLiterals = createRule({
   name: 'require-usememo-object-literals',
@@ -41,14 +42,12 @@ export const requireUseMemoObjectLiterals = createRule({
           (expression.type === 'ObjectExpression' ||
             expression.type === 'ArrayExpression') &&
           // Ensure we're in a function component context
-          context
-            .getAncestors()
-            .some(
-              (ancestor) =>
-                ancestor.type === 'FunctionDeclaration' ||
-                ancestor.type === 'ArrowFunctionExpression' ||
-                ancestor.type === 'FunctionExpression',
-            )
+          ASTHelpers.getAncestors(context, node).some(
+            (ancestor) =>
+              ancestor.type === 'FunctionDeclaration' ||
+              ancestor.type === 'ArrowFunctionExpression' ||
+              ancestor.type === 'FunctionExpression',
+          )
         ) {
           // Check if the parent component name starts with an uppercase letter
           // to ensure it's a React component

@@ -52,12 +52,12 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     ],
     messages: {
       parallelizeAsyncOperations:
-        'Multiple sequential awaits detected. Consider using Promise.all() to parallelize independent async operations for better performance.',
+        'Awaiting {{awaitCount}} independent async operations sequentially makes their network and I/O latency add up, which slows responses and wastes compute. These awaits have no data dependency or per-call error handling, so run them together with Promise.all([...]) and destructure the results when you need individual values.',
     },
   },
   defaultOptions,
   create(context, [options]) {
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode;
     const sideEffectMatchers = (options?.sideEffectPatterns ?? []).map(
       (pattern) =>
         typeof pattern === 'string' ? new RegExp(pattern, 'i') : pattern,
@@ -208,7 +208,9 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
             callee.property.type === AST_NODE_TYPES.Identifier
           ) {
             const methodName = callee.property.name;
-            if (sideEffectPatterns.some((pattern) => pattern.test(methodName))) {
+            if (
+              sideEffectPatterns.some((pattern) => pattern.test(methodName))
+            ) {
               return true;
             }
           }
@@ -344,11 +346,23 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
 
     /**
      * Generates a fix for sequential awaits
+     *
+     * @precondition All nodes in awaitNodes must have valid range metadata.
+     * Callers must verify ranges exist before invoking this function.
      */
     function generateFix(
       fixer: TSESLint.RuleFixer,
       awaitNodes: TSESTree.Node[],
     ): TSESLint.RuleFix | null {
+      // Precondition: ranges must exist (verified by callers)
+      if (
+        awaitNodes.length < 2 ||
+        !awaitNodes[0].range ||
+        !awaitNodes[awaitNodes.length - 1].range
+      ) {
+        return null;
+      }
+
       // Extract the await expressions
       const awaitExpressions = awaitNodes
         .map((node) => getAwaitExpression(node))
@@ -403,12 +417,27 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
       }
 
       // Find the start position, accounting for leading comments
-      let startPos = awaitNodes[0].range[0];
+      const startPos = awaitNodes[0].range[0];
 
       // Replace the range from the start of the first await to the end of the last await
       const endPos = awaitNodes[awaitNodes.length - 1].range[1];
 
       return fixer.replaceTextRange([startPos, endPos], promiseAllText);
+    }
+
+    /**
+     * Generates a deduplication key from await nodes' range metadata.
+     * Returns null if range metadata is missing.
+     */
+    function getDeduplicationKey(awaitNodes: TSESTree.Node[]): string | null {
+      const rangeStart = awaitNodes[0].range?.[0];
+      const rangeEnd = awaitNodes[awaitNodes.length - 1].range?.[1];
+
+      if (rangeStart == null || rangeEnd == null) {
+        return null;
+      }
+
+      return `${rangeStart}-${rangeEnd}`;
     }
 
     const processStatementList = (statements: TSESTree.Statement[]): void => {
@@ -428,12 +457,21 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
             !areInTryCatchBlocks(awaitNodes) &&
             !areInLoop(awaitNodes)
           ) {
-            const key = `${awaitNodes[0].range?.[0]}-${awaitNodes[awaitNodes.length - 1].range?.[1]}`;
+            const key = getDeduplicationKey(awaitNodes);
+            // Skip reporting since generateFix requires valid ranges and we'd
+            // form a malformed deduplication key
+            if (key == null) {
+              awaitNodes.length = 0;
+              continue;
+            }
             if (!reportedRanges.has(key)) {
               reportedRanges.add(key);
               context.report({
                 node: awaitNodes[0],
                 messageId: 'parallelizeAsyncOperations',
+                data: {
+                  awaitCount: awaitNodes.length.toString(),
+                },
                 fix: (fixer) => generateFix(fixer, awaitNodes),
               });
             }
@@ -453,12 +491,20 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
           !areInTryCatchBlocks(awaitNodes) &&
           !areInLoop(awaitNodes)
         ) {
-          const key = `${awaitNodes[0].range?.[0]}-${awaitNodes[awaitNodes.length - 1].range?.[1]}`;
+          const key = getDeduplicationKey(awaitNodes);
+          // Skip reporting since generateFix requires valid ranges and we'd
+          // form a malformed deduplication key
+          if (key == null) {
+            return;
+          }
           if (!reportedRanges.has(key)) {
             reportedRanges.add(key);
             context.report({
               node: awaitNodes[0],
               messageId: 'parallelizeAsyncOperations',
+              data: {
+                awaitCount: awaitNodes.length.toString(),
+              },
               fix: (fixer) => generateFix(fixer, awaitNodes),
             });
           }
