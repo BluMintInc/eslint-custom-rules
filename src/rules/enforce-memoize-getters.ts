@@ -120,11 +120,16 @@ export const enforceMemoizeGetters = createRule<Options, MessageIds>({
           data: { name: propertyName },
           fix(fixer) {
             const fixes: TSESLint.RuleFix[] = [];
-            const decoratorIdent = hasNamedImport
-              ? memoizeAlias
-              : memoizeNamespace
-              ? `${memoizeNamespace}.Memoize`
-              : memoizeAlias;
+            const getDecoratorIdent = (): string => {
+              if (hasNamedImport) {
+                return memoizeAlias;
+              }
+              if (memoizeNamespace) {
+                return `${memoizeNamespace}.Memoize`;
+              }
+              return memoizeAlias;
+            };
+            const decoratorIdent = getDecoratorIdent();
 
             // Insert import if needed, at the top alongside other imports
             if (!hasMemoizeImport && !scheduledImportFix) {
