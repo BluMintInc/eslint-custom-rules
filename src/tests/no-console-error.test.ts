@@ -84,6 +84,12 @@ ruleTesterTs.run('no-console-error', noConsoleError, {
     },
     {
       code: `
+        console.error('boom')();
+      `,
+      errors: [{ messageId: 'noConsoleError' }],
+    },
+    {
+      code: `
         console?.error('boom');
       `,
       errors: [{ messageId: 'noConsoleError' }],

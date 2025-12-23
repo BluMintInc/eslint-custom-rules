@@ -25,7 +25,7 @@ const defaultIgnorePatterns = [
 
 const normalizeFilename = (filename: string) => filename.replace(/\\/g, '/');
 
-const buildShouldIgnoreFile = (options: Options[0]) => {
+const createFileIgnorePredicate = (options: Options[0]) => {
   const ignorePatterns = [
     ...defaultIgnorePatterns,
     ...(options?.ignorePatterns ?? []),
@@ -203,7 +203,10 @@ class AliasTracker {
     }
 
     if (callee.type === AST_NODE_TYPES.CallExpression) {
-      return this.isConsoleErrorCall(callee, scope);
+      // When the callee is the result of another call (e.g., getError()('boom')),
+      // determining whether the inner call returns console.error requires return-value
+      // analysis that ESLint rules cannot reliably perform.
+      return false;
     }
 
     return false;
@@ -377,7 +380,7 @@ export const noConsoleError = createRule<Options, MessageIds>({
   },
   defaultOptions: [{}],
   create(context, [options]) {
-    const shouldIgnoreFile = buildShouldIgnoreFile(options);
+    const shouldIgnoreFile = createFileIgnorePredicate(options);
 
     if (shouldIgnoreFile(context.getFilename())) {
       return {};
