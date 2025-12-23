@@ -1,6 +1,20 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { firestoreTransactionReadsBeforeWrites } from '../rules/firestore-transaction-reads-before-writes';
 
+const readsAfterWritesError = (
+  readMethod: string,
+  writeMethods: string,
+): {
+  messageId: 'readsAfterWrites';
+  data: { readMethod: string; writeMethods: string };
+} => ({
+  messageId: 'readsAfterWrites',
+  data: {
+    readMethod,
+    writeMethods,
+  },
+});
+
 ruleTesterTs.run(
   'firestore-transaction-reads-before-writes',
   firestoreTransactionReadsBeforeWrites,
@@ -466,7 +480,7 @@ ruleTesterTs.run(
           return docSnapshot.data();
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Multiple reads after writes
       {
@@ -481,8 +495,8 @@ ruleTesterTs.run(
         });
         `,
         errors: [
-          { messageId: 'readsAfterWrites' },
-          { messageId: 'readsAfterWrites' },
+          readsAfterWritesError('transaction.get', 'transaction.set'),
+          readsAfterWritesError('transaction.get', 'transaction.set'),
         ],
       },
       // Invalid: Read after write in conditional branch
@@ -502,8 +516,8 @@ ruleTesterTs.run(
         });
         `,
         errors: [
-          { messageId: 'readsAfterWrites' },
-          { messageId: 'readsAfterWrites' },
+          readsAfterWritesError('transaction.get', 'transaction.set'),
+          readsAfterWritesError('transaction.get', 'transaction.set'),
         ],
       },
       // Invalid: Read after write in helper function
@@ -520,7 +534,7 @@ ruleTesterTs.run(
           return snapshot.data();
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [readsAfterWritesError('tx.get', 'tx.set')],
       },
       // Invalid: Read after write in loop
       {
@@ -537,7 +551,7 @@ ruleTesterTs.run(
           return snapshots;
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write with promise.all
       {
@@ -552,7 +566,7 @@ ruleTesterTs.run(
           return snapshots;
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write with different transaction parameter name
       {
@@ -565,7 +579,7 @@ ruleTesterTs.run(
           return docSnapshot.data();
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [readsAfterWritesError('tx.get', 'tx.set')],
       },
       // Invalid: Read after write with type annotation
       {
@@ -580,7 +594,7 @@ ruleTesterTs.run(
           }
         );
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write in Admin SDK transaction
       {
@@ -593,7 +607,7 @@ ruleTesterTs.run(
           return docSnapshot.data();
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write in v9 SDK transaction
       {
@@ -608,7 +622,7 @@ ruleTesterTs.run(
           return docSnapshot.data();
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after multiple writes
       {
@@ -623,7 +637,12 @@ ruleTesterTs.run(
           return docSnapshot.data();
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [
+          readsAfterWritesError(
+            'transaction.get',
+            'transaction.set, transaction.update and transaction.delete',
+          ),
+        ],
       },
       // Invalid: Interleaved reads and writes
       {
@@ -637,7 +656,7 @@ ruleTesterTs.run(
           return { data1: snapshot1.data(), data2: snapshot2.data() };
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write in try/catch block
       {
@@ -653,7 +672,7 @@ ruleTesterTs.run(
           }
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write in catch block
       {
@@ -668,7 +687,7 @@ ruleTesterTs.run(
           }
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write in switch statement
       {
@@ -689,8 +708,8 @@ ruleTesterTs.run(
         });
         `,
         errors: [
-          { messageId: 'readsAfterWrites' },
-          { messageId: 'readsAfterWrites' },
+          readsAfterWritesError('transaction.get', 'transaction.set'),
+          readsAfterWritesError('transaction.get', 'transaction.set'),
         ],
       },
       // Invalid: Read after write in nested loops
@@ -710,7 +729,9 @@ ruleTesterTs.run(
           return categories;
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [
+          readsAfterWritesError('transaction.get', 'transaction.update'),
+        ],
       },
       // Invalid: Read after write with Promise.all containing reads
       {
@@ -727,8 +748,8 @@ ruleTesterTs.run(
         });
         `,
         errors: [
-          { messageId: 'readsAfterWrites' },
-          { messageId: 'readsAfterWrites' },
+          readsAfterWritesError('transaction.get', 'transaction.set'),
+          readsAfterWritesError('transaction.get', 'transaction.set'),
         ],
       },
       // Invalid: Read after write in closure
@@ -745,7 +766,7 @@ ruleTesterTs.run(
           return readData;
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write with different transaction variable name
       {
@@ -758,7 +779,7 @@ ruleTesterTs.run(
           return snapshot.data();
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [readsAfterWritesError('t.get', 't.update')],
       },
       // Invalid: Read after write through variable reference
       {
@@ -772,7 +793,7 @@ ruleTesterTs.run(
           return snapshot.data();
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [readsAfterWritesError('tx.get', 'tx.set')],
       },
       // Invalid: Read after write in helper function with complex flow
       {
@@ -792,7 +813,7 @@ ruleTesterTs.run(
           return await complexOperation(transaction, true);
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [readsAfterWritesError('tx.get', 'tx.set')],
       },
       // Invalid: Read after write in async generator pattern
       {
@@ -809,7 +830,7 @@ ruleTesterTs.run(
           return results;
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write in ternary operation
       {
@@ -825,8 +846,8 @@ ruleTesterTs.run(
         });
         `,
         errors: [
-          { messageId: 'readsAfterWrites' },
-          { messageId: 'readsAfterWrites' },
+          readsAfterWritesError('transaction.get', 'transaction.set'),
+          readsAfterWritesError('transaction.get', 'transaction.set'),
         ],
       },
       // Invalid: Read after write with logical operators
@@ -841,8 +862,8 @@ ruleTesterTs.run(
         });
         `,
         errors: [
-          { messageId: 'readsAfterWrites' },
-          { messageId: 'readsAfterWrites' },
+          readsAfterWritesError('transaction.get', 'transaction.set'),
+          readsAfterWritesError('transaction.get', 'transaction.set'),
         ],
       },
       // Invalid: Read after write in finally block
@@ -858,7 +879,7 @@ ruleTesterTs.run(
           }
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write with array destructuring
       {
@@ -875,8 +896,8 @@ ruleTesterTs.run(
         });
         `,
         errors: [
-          { messageId: 'readsAfterWrites' },
-          { messageId: 'readsAfterWrites' },
+          readsAfterWritesError('transaction.get', 'transaction.set'),
+          readsAfterWritesError('transaction.get', 'transaction.set'),
         ],
       },
       // Invalid: Read after write in object destructuring
@@ -894,8 +915,8 @@ ruleTesterTs.run(
         });
         `,
         errors: [
-          { messageId: 'readsAfterWrites' },
-          { messageId: 'readsAfterWrites' },
+          readsAfterWritesError('transaction.get', 'transaction.set'),
+          readsAfterWritesError('transaction.get', 'transaction.set'),
         ],
       },
       // Invalid: Read after write with method chaining
@@ -911,7 +932,7 @@ ruleTesterTs.run(
           return data;
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write in nested function expression
       {
@@ -926,7 +947,7 @@ ruleTesterTs.run(
           return result.data();
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write with setTimeout (async timing)
       {
@@ -941,7 +962,7 @@ ruleTesterTs.run(
           return snapshot.data();
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write in while loop
       {
@@ -960,7 +981,7 @@ ruleTesterTs.run(
           return snapshots.map(s => s.data());
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write in do-while loop
       {
@@ -979,7 +1000,7 @@ ruleTesterTs.run(
           return snapshots.map(s => s.data());
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write with complex conditional logic
       {
@@ -1002,9 +1023,9 @@ ruleTesterTs.run(
         });
         `,
         errors: [
-          { messageId: 'readsAfterWrites' },
-          { messageId: 'readsAfterWrites' },
-          { messageId: 'readsAfterWrites' },
+          readsAfterWritesError('transaction.get', 'transaction.set'),
+          readsAfterWritesError('transaction.get', 'transaction.set'),
+          readsAfterWritesError('transaction.get', 'transaction.set'),
         ],
       },
       // Invalid: Read after write with async/await in map
@@ -1022,7 +1043,7 @@ ruleTesterTs.run(
           return snapshots.map(s => s.data());
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write in reduce operation
       {
@@ -1040,7 +1061,7 @@ ruleTesterTs.run(
           return result;
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [readsAfterWritesError('transaction.get', 'transaction.set')],
       },
       // Invalid: Read after write with computed property access
       {
@@ -1054,7 +1075,9 @@ ruleTesterTs.run(
           return snapshot.data();
         });
         `,
-        errors: [{ messageId: 'readsAfterWrites' }],
+        errors: [
+          readsAfterWritesError('transaction[methodName]', 'transaction.set'),
+        ],
       },
     ],
   },

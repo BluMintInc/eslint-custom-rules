@@ -851,6 +851,10 @@ const DIS_EXCEPTIONS = [
   'dismissal',
   'disk',
   'disks',
+  'dispute',
+  'disputed',
+  'disputes',
+  'disputing',
 ];
 
 // Words that contain negative prefixes but should be treated as valid

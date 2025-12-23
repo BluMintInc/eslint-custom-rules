@@ -225,7 +225,7 @@ function getMemoizedFunctionDescription(node) {
 }
 
 function reportAndFix(node, context) {
-  const sourceCode = context.getSourceCode();
+  const sourceCode = context.sourceCode;
   const useMemoCallback = node.arguments[0];
   const dependencyArray = node.arguments[1]
     ? sourceCode.getText(node.arguments[1])

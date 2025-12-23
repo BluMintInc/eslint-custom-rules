@@ -1,6 +1,17 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { noMixedFirestoreTransactions } from '../rules/no-mixed-firestore-transactions';
 
+const messageTemplate =
+  'Non-transactional Firestore helper "{{ className }}" is instantiated inside a transaction callback, so its reads and writes bypass the transaction context. That breaks Firestore\'s atomicity guarantees and can commit partial updates. Use the transaction-safe "{{ transactionalClass }}" and pass the provided transaction so every operation participates in the same commit.';
+
+describe('no-mixed-firestore-transactions messages', () => {
+  it('explains why transaction-safe helpers are required', () => {
+    expect(noMixedFirestoreTransactions.meta.messages.noMixedTransactions).toBe(
+      messageTemplate,
+    );
+  });
+});
+
 ruleTesterTs.run(
   'no-mixed-firestore-transactions',
   noMixedFirestoreTransactions,
@@ -156,6 +167,87 @@ ruleTesterTs.run(
         });
       `,
       },
+      // Valid: FirestoreDocFetcher fetch uses transaction options inside transaction
+      {
+        code: `
+        await db.runTransaction(async (tx) => {
+          const fetcher = new FirestoreDocFetcher<UserDocument>(userRef);
+          const user = await fetcher.fetch({ transaction: tx });
+          return user;
+        });
+      `,
+      },
+      // Valid: Inline fetcher creation with transaction option
+      {
+        code: `
+        await db.runTransaction(async (tx) => {
+          await new FirestoreFetcher(ref).fetch({ transaction: tx });
+        });
+      `,
+      },
+      // Valid: Fetcher constructed with transaction option
+      {
+        code: `
+        await db.runTransaction(async (tx) => {
+          const fetcher = new FirestoreDocFetcher(userRef, { transaction: tx });
+          await fetcher.fetch();
+        });
+      `,
+      },
+      // Valid: Fetcher reused across nested transactions with options
+      {
+        code: `
+        await db.runTransaction(async (outerTx) => {
+          const fetcher = new FirestoreDocFetcher(ref);
+          await fetcher.fetch({ transaction: outerTx });
+
+          await db.runTransaction(async (innerTx) => {
+            await fetcher.fetch({ transaction: innerTx });
+          });
+        });
+      `,
+      },
+      // Valid: Fetcher assigned via reassignment with transaction option
+      {
+        code: `
+        let fetcher: FirestoreFetcher;
+        await db.runTransaction(async (tx) => {
+          fetcher = new FirestoreFetcher(ref);
+          await fetcher.fetch({ transaction: tx });
+        });
+      `,
+      },
+      // Valid: Transaction option via computed literal key
+      {
+        code: `
+        await db.runTransaction(async (tx) => {
+          const fetcher = new FirestoreDocFetcher(ref);
+          await fetcher.fetch({ ['transaction']: tx });
+        });
+      `,
+      },
+      // Valid: Transaction option via computed template literal key
+      {
+        code: `
+        await db.runTransaction(async (tx) => {
+          const fetcher = new FirestoreDocFetcher(ref);
+          await fetcher.fetch({ [\`transaction\`]: tx });
+        });
+      `,
+      },
+      // Valid: Concise arrow function with transaction parameter
+      {
+        code: `
+        const myHelper = (tx: FirebaseFirestore.Transaction) => new DocSetterTransaction(ref, { transaction: tx }).set(doc);
+        await db.runTransaction(async (tx) => myHelper(tx));
+      `,
+      },
+      // Valid: Concise arrow function in runTransaction
+      {
+        code: `
+        await db.runTransaction(async (tx) => new FirestoreDocFetcher(ref).fetch({ transaction: tx }));
+      `,
+      },
     ],
     invalid: [
       // Invalid: Using DocSetter inside transaction
@@ -176,6 +268,35 @@ ruleTesterTs.run(
           },
         ],
       },
+      // Invalid: Concise arrow function with non-transactional class
+      {
+        code: `
+        const myHelper = (tx: FirebaseFirestore.Transaction) => new DocSetter(ref).set(doc);
+      `,
+        errors: [
+          {
+            messageId: 'noMixedTransactions',
+            data: {
+              className: 'DocSetter',
+              transactionalClass: 'DocSetterTransaction',
+            },
+          },
+        ],
+      },
+      // Invalid: Concise arrow function in runTransaction with non-transactional class
+      {
+        code: `
+        await db.runTransaction(async (tx) => new FirestoreDocFetcher(ref).fetch());
+      `,
+        errors: [
+          {
+            messageId: 'noMixedTransactionsFetcher',
+            data: {
+              className: 'FirestoreDocFetcher',
+            },
+          },
+        ],
+      },
       // Invalid: Using FirestoreDocFetcher inside transaction
       {
         code: `
@@ -186,10 +307,9 @@ ruleTesterTs.run(
       `,
         errors: [
           {
-            messageId: 'noMixedTransactions',
+            messageId: 'noMixedTransactionsFetcher',
             data: {
               className: 'FirestoreDocFetcher',
-              transactionalClass: 'FirestoreDocFetcherTransaction',
             },
           },
         ],
@@ -204,10 +324,9 @@ ruleTesterTs.run(
       `,
         errors: [
           {
-            messageId: 'noMixedTransactions',
+            messageId: 'noMixedTransactionsFetcher',
             data: {
               className: 'FirestoreFetcher',
-              transactionalClass: 'FirestoreFetcherTransaction',
             },
           },
         ],
@@ -255,17 +374,15 @@ ruleTesterTs.run(
             },
           },
           {
-            messageId: 'noMixedTransactions',
+            messageId: 'noMixedTransactionsFetcher',
             data: {
               className: 'FirestoreDocFetcher',
-              transactionalClass: 'FirestoreDocFetcherTransaction',
             },
           },
           {
-            messageId: 'noMixedTransactions',
+            messageId: 'noMixedTransactionsFetcher',
             data: {
               className: 'FirestoreFetcher',
-              transactionalClass: 'FirestoreFetcherTransaction',
             },
           },
         ],
@@ -313,10 +430,9 @@ ruleTesterTs.run(
             },
           },
           {
-            messageId: 'noMixedTransactions',
+            messageId: 'noMixedTransactionsFetcher',
             data: {
               className: 'FirestoreDocFetcher',
-              transactionalClass: 'FirestoreDocFetcherTransaction',
             },
           },
         ],
@@ -400,6 +516,146 @@ ruleTesterTs.run(
             data: {
               className: 'DocSetter',
               transactionalClass: 'DocSetterTransaction',
+            },
+          },
+        ],
+      },
+      // Invalid: Inline fetcher without transaction option
+      {
+        code: `
+        await db.runTransaction(async (tx) => {
+          await new FirestoreDocFetcher(ref).fetch();
+        });
+      `,
+        errors: [
+          {
+            messageId: 'noMixedTransactionsFetcher',
+            data: {
+              className: 'FirestoreDocFetcher',
+            },
+          },
+        ],
+      },
+      // Invalid: Fetcher called with and without transaction options
+      {
+        code: `
+        await db.runTransaction(async (tx) => {
+          const fetcher = new FirestoreFetcher(ref);
+          await fetcher.fetch({ transaction: tx });
+          await fetcher.fetch();
+        });
+      `,
+        errors: [
+          {
+            messageId: 'noMixedTransactionsFetcher',
+            data: {
+              className: 'FirestoreFetcher',
+            },
+          },
+        ],
+      },
+      // Invalid: Inline fetcher instantiated without usage
+      {
+        code: `
+        await db.runTransaction(async (tx) => {
+          new FirestoreDocFetcher(ref);
+        });
+      `,
+        errors: [
+          {
+            messageId: 'noMixedTransactionsFetcher',
+            data: {
+              className: 'FirestoreDocFetcher',
+            },
+          },
+        ],
+      },
+      // Invalid: Fetcher reused across nested transactions without inner transaction
+      {
+        code: `
+        await db.runTransaction(async (outerTx) => {
+          const fetcher = new FirestoreFetcher(ref);
+          await fetcher.fetch({ transaction: outerTx });
+
+          await db.runTransaction(async () => {
+            await fetcher.fetch();
+          });
+        });
+      `,
+        errors: [
+          {
+            messageId: 'noMixedTransactionsFetcher',
+            data: {
+              className: 'FirestoreFetcher',
+            },
+          },
+        ],
+      },
+      // Invalid: Reassignment should retain earlier violation
+      {
+        code: `
+        await db.runTransaction(async (tx) => {
+          let fetcher = new FirestoreFetcher(ref);
+          await fetcher.fetch();
+          fetcher = new FirestoreFetcher(ref);
+          await fetcher.fetch({ transaction: tx });
+        });
+      `,
+        errors: [
+          {
+            messageId: 'noMixedTransactionsFetcher',
+            data: {
+              className: 'FirestoreFetcher',
+            },
+          },
+        ],
+      },
+      // Invalid: Fetcher created but never used
+      {
+        code: `
+        await db.runTransaction(async (tx) => {
+          const fetcher = new FirestoreFetcher(ref);
+        });
+      `,
+        errors: [
+          {
+            messageId: 'noMixedTransactionsFetcher',
+            data: {
+              className: 'FirestoreFetcher',
+            },
+          },
+        ],
+      },
+      // Invalid: Transaction option provided via computed key
+      {
+        code: `
+        await db.runTransaction(async (tx) => {
+          const key = 'transaction';
+          const fetcher = new FirestoreDocFetcher(ref);
+          await fetcher.fetch({ [key]: tx });
+        });
+      `,
+        errors: [
+          {
+            messageId: 'noMixedTransactionsFetcher',
+            data: {
+              className: 'FirestoreDocFetcher',
+            },
+          },
+        ],
+      },
+      // Invalid: Inline fetcher method passed as argument but not called (Graphite case)
+      {
+        code: `
+        await db.runTransaction(async (tx) => {
+          someFunc(new FirestoreDocFetcher(ref).fetch);
+        });
+      `,
+        errors: [
+          {
+            messageId: 'noMixedTransactionsFetcher',
+            data: {
+              className: 'FirestoreDocFetcher',
             },
           },
         ],
