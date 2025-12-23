@@ -1,9 +1,5 @@
 import { minimatch } from 'minimatch';
-import {
-  AST_NODE_TYPES,
-  TSESLint,
-  TSESTree,
-} from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type Options = [
@@ -73,14 +69,12 @@ const createFileIgnorePredicate = (options: Options[0]) => {
   };
 };
 
-const unwrapChainExpression = <T extends TSESTree.Node>(
-  node: T | TSESTree.ChainExpression | null | undefined,
-): T | null => {
-  if (!node) {
-    return null;
-  }
+const unwrapChainExpression = (
+  node: TSESTree.Node | null | undefined,
+): TSESTree.Node | null => {
+  if (!node) return null;
   if (node.type === AST_NODE_TYPES.ChainExpression) {
-    return node.expression as T;
+    return node.expression;
   }
   return node;
 };
@@ -110,6 +104,42 @@ const getResolvedVariable = (
   }
   // Fallback for cases where scope analysis might not have linked it yet or for shadowed built-ins
   return findVariable(scope, identifier.name);
+};
+
+const getScopeForNode = (
+  context: TSESLint.RuleContext<MessageIds, Options>,
+  node: TSESTree.Node,
+): TSESLint.Scope.Scope => {
+  const sourceCode = context.getSourceCode();
+  const sourceCodeWithScope = sourceCode as unknown as {
+    getScope?: (currentNode?: TSESTree.Node) => TSESLint.Scope.Scope | null;
+  };
+
+  if (typeof sourceCodeWithScope.getScope === 'function') {
+    return sourceCodeWithScope.getScope(node) ?? context.getScope();
+  }
+
+  return context.getScope();
+};
+
+const getDeclaredVariablesForNode = (
+  context: TSESLint.RuleContext<MessageIds, Options>,
+  node: TSESTree.Node,
+) => {
+  const sourceCodeWithDeclaredVariables =
+    context.getSourceCode() as unknown as {
+      getDeclaredVariables?: (
+        targetNode: TSESTree.Node,
+      ) => readonly TSESLint.Scope.Variable[];
+    };
+
+  if (
+    typeof sourceCodeWithDeclaredVariables.getDeclaredVariables === 'function'
+  ) {
+    return sourceCodeWithDeclaredVariables.getDeclaredVariables(node);
+  }
+
+  return context.getDeclaredVariables(node);
 };
 
 const isErrorKey = (
@@ -167,8 +197,8 @@ class AliasTracker {
 
   constructor(private context: TSESLint.RuleContext<MessageIds, Options>) {}
 
-  private getScope() {
-    return this.context.getScope();
+  private getScope(node: TSESTree.Node) {
+    return getScopeForNode(this.context, node);
   }
 
   markConsole(variable: TSESLint.Scope.Variable | null | undefined) {
@@ -214,10 +244,7 @@ class AliasTracker {
     );
   }
 
-  isErrorAlias(
-    identifier: TSESTree.Identifier,
-    scope: TSESLint.Scope.Scope,
-  ) {
+  isErrorAlias(identifier: TSESTree.Identifier, scope: TSESLint.Scope.Scope) {
     const variable = getResolvedVariable(scope, identifier);
     return Boolean(variable && this.errorAliases.has(variable));
   }
@@ -240,7 +267,10 @@ class AliasTracker {
     return false;
   }
 
-  isDirectGlobalConsoleErrorCall(node: TSESTree.CallExpression, scope: TSESLint.Scope.Scope) {
+  isDirectGlobalConsoleErrorCall(
+    node: TSESTree.CallExpression,
+    scope: TSESLint.Scope.Scope,
+  ) {
     const callee = unwrapChainExpression(node.callee);
     if (!callee || callee.type !== AST_NODE_TYPES.MemberExpression) {
       return false;
@@ -253,7 +283,11 @@ class AliasTracker {
       return false;
     }
     const obj = unwrapChainExpression(callee.object as TSESTree.Expression);
-    if (!obj || obj.type !== AST_NODE_TYPES.Identifier || obj.name !== 'console') {
+    if (
+      !obj ||
+      obj.type !== AST_NODE_TYPES.Identifier ||
+      obj.name !== 'console'
+    ) {
       return false;
     }
     const variable = getResolvedVariable(scope, obj);
@@ -263,9 +297,9 @@ class AliasTracker {
   handleVariableDeclarator(node: TSESTree.VariableDeclarator) {
     if (!node.init) return;
 
-    const scope = this.getScope();
+    const scope = this.getScope(node);
     const init = unwrapChainExpression(node.init);
-    const declaredVariables = this.context.getDeclaredVariables(node);
+    const declaredVariables = getDeclaredVariablesForNode(this.context, node);
 
     const getDeclaredVar = (name: string) =>
       findDeclaredVariableByName(name, declaredVariables) ?? null;
@@ -307,7 +341,7 @@ class AliasTracker {
   }
 
   handleAssignmentExpression(node: TSESTree.AssignmentExpression) {
-    const scope = this.getScope();
+    const scope = this.getScope(node);
     const right = unwrapChainExpression(node.right);
     if (!right) return;
 
@@ -362,8 +396,8 @@ class UseAlertDialogTracker {
 
   constructor(private context: TSESLint.RuleContext<MessageIds, Options>) {}
 
-  private getScope() {
-    return this.context.getScope();
+  private getScope(node: TSESTree.Node) {
+    return getScopeForNode(this.context, node);
   }
 
   static hasErrorSeverity(node: TSESTree.ObjectExpression): boolean {
@@ -399,7 +433,7 @@ class UseAlertDialogTracker {
     if (!isUseAlertDialogImportPath(importPath)) return;
 
     for (const specifier of node.specifiers) {
-      for (const v of this.context.getDeclaredVariables(specifier)) {
+      for (const v of getDeclaredVariablesForNode(this.context, specifier)) {
         this.hookVariables.add(v);
       }
     }
@@ -407,7 +441,7 @@ class UseAlertDialogTracker {
 
   trackVariableDeclarator(node: TSESTree.VariableDeclarator) {
     if (!node.init) return;
-    const scope = this.getScope();
+    const scope = this.getScope(node);
 
     // const dialog = useAlertDialog(...) OR const { open } = useAlertDialog(...)
     if (
@@ -418,7 +452,7 @@ class UseAlertDialogTracker {
       if (node.id.type === AST_NODE_TYPES.Identifier) {
         const v = findDeclaredVariableByName(
           node.id.name,
-          this.context.getDeclaredVariables(node),
+          getDeclaredVariablesForNode(this.context, node),
         );
         if (v) this.instanceVariables.add(v);
       } else if (node.id.type === AST_NODE_TYPES.ObjectPattern) {
@@ -443,7 +477,7 @@ class UseAlertDialogTracker {
     pattern: TSESTree.ObjectPattern,
     node: TSESTree.VariableDeclarator,
   ) {
-    const declaredVariables = this.context.getDeclaredVariables(node);
+    const declaredVariables = getDeclaredVariablesForNode(this.context, node);
     for (const prop of pattern.properties) {
       if (
         prop.type === AST_NODE_TYPES.Property &&
@@ -464,15 +498,18 @@ class UseAlertDialogTracker {
     const callee = unwrapChainExpression(node.callee);
     if (!callee || callee.type !== AST_NODE_TYPES.Identifier) return false;
 
-    const v = getResolvedVariable(this.getScope(), callee);
+    const v = getResolvedVariable(this.getScope(callee), callee);
     if (v && this.hookVariables.has(v)) return true;
-    return (v === null || v.scope.type === 'global') && callee.name === 'useAlertDialog';
+    return (
+      (v === null || v.scope.type === 'global') &&
+      callee.name === 'useAlertDialog'
+    );
   }
 
   isOpenCall(node: TSESTree.CallExpression): boolean {
     const callee = unwrapChainExpression(node.callee);
     if (!callee) return false;
-    const scope = this.getScope();
+    const scope = this.getScope(node);
 
     if (callee.type === AST_NODE_TYPES.Identifier) {
       const v = getResolvedVariable(scope, callee);
@@ -505,7 +542,10 @@ class UseAlertDialogTracker {
 class PendingCallTracker {
   private functionScopeStack: FunctionNode[] = [];
   private functionsWithErrorDialogOpen = new WeakSet<FunctionNode>();
-  private pendingConsoleErrorCalls = new Map<FunctionNode | null, TSESTree.CallExpression[]>();
+  private pendingConsoleErrorCalls = new Map<
+    FunctionNode | null,
+    TSESTree.CallExpression[]
+  >();
 
   pushScope(node: FunctionNode) {
     this.functionScopeStack.push(node);
@@ -583,7 +623,10 @@ export const noConsoleError = createRule<Options, MessageIds>({
   defaultOptions: [{}],
   create(context, [options]) {
     const shouldIgnoreFile = createFileIgnorePredicate(options);
-    if (shouldIgnoreFile(context.getFilename())) return {};
+    const filename =
+      (context as { filename?: string; getFilename?: () => string }).filename ??
+      context.getFilename();
+    if (shouldIgnoreFile(filename)) return {};
 
     const allowWithUseAlertDialog = options.allowWithUseAlertDialog === true;
     const aliasTracker = new AliasTracker(context);
@@ -643,7 +686,7 @@ export const noConsoleError = createRule<Options, MessageIds>({
           if (scope) pendingTracker.markFunctionWithErrorDialog(scope);
         }
 
-        const scope = context.getScope();
+        const scope = getScopeForNode(context, node);
         if (!aliasTracker.isConsoleErrorCall(node, scope)) return;
 
         if (
