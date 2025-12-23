@@ -64,6 +64,27 @@ ruleTesterTs.run('no-console-error', noConsoleError, {
       filename: 'tools/temp.ts',
       options: [{ ignorePatterns: ['**/tools/**'] }],
     },
+    {
+      code: `
+        import { useAlertDialog } from '../useAlertDialog';
+
+        export const useDialog = () => {
+          const { open } = useAlertDialog('DIALOG');
+
+          const showError = () => {
+            console.error('Error dialog shown to user');
+            open({
+              title: 'Error',
+              description: 'Something went wrong',
+              severity: 'error',
+            });
+          };
+
+          return { showError };
+        };
+      `,
+      options: [{ allowWithUseAlertDialog: true }],
+    },
     `
       const structuredLogger = { error: () => {} };
       let err = console.error;

@@ -17,6 +17,7 @@
 - Stops tracking aliases after they are reassigned to non-console targets to avoid false positives.
 - Allows locally shadowed `console` objects so intentional logger shims are not reported.
 - Skips files matched by default ignores: `**/__tests__/**`, `**/__mocks__/**`, `**/__playwright__/**`, `**/scripts/**`, `**/electron/**`, `**/node_modules/**`, `**/dist/**`, `**/build/**`, `**/.next/**`, `**/coverage/**`.
+- When `allowWithUseAlertDialog` is enabled, direct `console.error(...)` calls inside functions that open an error dialog via `useAlertDialog` are allowed, so the rule does not conflict with `@blumintinc/blumint/enforce-console-error`.
 - Does not auto-fix; remediation depends on context (throw vs. structured logger).
 
 ## Examples
@@ -67,13 +68,15 @@ try {
   "@blumintinc/blumint/no-console-error": [
     "warn",
     {
-      "ignorePatterns": ["**/tools/**"]
+      "ignorePatterns": ["**/tools/**"],
+      "allowWithUseAlertDialog": true
     }
   ]
 }
 ```
 
 - `ignorePatterns`: additional glob patterns to skip. These are appended to the defaults listed above.
+- `allowWithUseAlertDialog`: when true, allows `console.error` for `useAlertDialog` error dialog flows that are required by `@blumintinc/blumint/enforce-console-error`.
 
 ## When not to use it
 

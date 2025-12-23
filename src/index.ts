@@ -219,7 +219,10 @@ module.exports = {
         '@blumintinc/blumint/global-const-style': 'error',
         '@blumintinc/blumint/no-async-array-filter': 'error',
         '@blumintinc/blumint/no-async-foreach': 'error',
-        '@blumintinc/blumint/no-console-error': 'warn',
+        '@blumintinc/blumint/no-console-error': [
+          'warn',
+          { allowWithUseAlertDialog: true },
+        ],
         '@blumintinc/blumint/no-conditional-literals-in-jsx': 'error',
         '@blumintinc/blumint/no-filter-without-return': 'error',
         '@blumintinc/blumint/no-hungarian': 'error',
