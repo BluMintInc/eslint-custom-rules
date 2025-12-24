@@ -37,7 +37,7 @@ export const noSeparateLoadingState = createRule<Options, MessageIds>({
     ],
     messages: {
       separateLoadingState:
-        'Avoid separate loading state. Encode loading status directly in the primary state using a sentinel value like "loading".',
+        'Loading flag "{{stateName}}" splits the source of truth for data fetching. Boolean toggles drift from the actual data and add extra renders. Encode the loading phase inside the primary state instead (use a "loading" sentinel or discriminated union) so components read a single authoritative value.',
     },
   },
   defaultOptions: [{}],
@@ -49,6 +49,7 @@ export const noSeparateLoadingState = createRule<Options, MessageIds>({
       declarator: TSESTree.VariableDeclarator;
       setterVar: TSESLint.Scope.Variable;
       usage: { truthy: boolean; falsy: boolean };
+      stateName: string;
     }> = [];
 
     function isLoadingPattern(name: string): boolean {
@@ -86,21 +87,6 @@ export const noSeparateLoadingState = createRule<Options, MessageIds>({
       return false;
     }
 
-    function getSetterName(
-      declarator: TSESTree.VariableDeclarator,
-    ): string | null {
-      if (
-        declarator.id.type === AST_NODE_TYPES.ArrayPattern &&
-        declarator.id.elements.length >= 2
-      ) {
-        const setterElement = declarator.id.elements[1];
-        if (setterElement?.type === AST_NODE_TYPES.Identifier) {
-          return setterElement.name;
-        }
-      }
-      return null;
-    }
-
     return {
       VariableDeclarator(node) {
         // Check for useState destructuring patterns
@@ -129,13 +115,14 @@ export const noSeparateLoadingState = createRule<Options, MessageIds>({
                 declarator: node,
                 setterVar,
                 usage: { truthy: false, falsy: false },
+                stateName: stateElement.name,
               });
             }
           }
         }
       },
 
-      CallExpression(_node) {
+      CallExpression() {
         // Setter usage is resolved via scope references in Program:exit
         return;
       },
@@ -161,15 +148,16 @@ export const noSeparateLoadingState = createRule<Options, MessageIds>({
             }
           }
 
-          const { declarator, usage } = tracker;
-          const setterName = getSetterName(declarator);
-          if (!setterName) continue;
+          const { declarator, usage, stateName } = tracker;
 
           // If we have both truthy and falsy setter calls, it's likely a loading state pattern
           if (usage.truthy && usage.falsy) {
             context.report({
               node: declarator,
               messageId: 'separateLoadingState',
+              data: {
+                stateName,
+              },
             });
           }
         }

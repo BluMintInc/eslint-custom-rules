@@ -1,6 +1,11 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { preferUtilityFunctionOverPrivateStatic } from '../rules/prefer-utility-function-over-private-static';
 
+const buildError = (methodName: string, className: string) => ({
+  messageId: 'preferUtilityFunctionOverPrivateStatic' as const,
+  data: { methodName, className },
+});
+
 ruleTesterTs.run(
   'prefer-utility-function-over-private-static',
   preferUtilityFunctionOverPrivateStatic,
@@ -221,7 +226,12 @@ ruleTesterTs.run(
           }
         }
       `,
-        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+        errors: [
+          buildError(
+            'extractUniqueIdentifiers',
+            'TemporaryChannelGroupCategorizer',
+          ),
+        ],
       },
       // Private static method with complex logic
       {
@@ -239,7 +249,7 @@ ruleTesterTs.run(
           }
         }
       `,
-        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+        errors: [buildError('processData', 'DataProcessor')],
       },
       // Private static method with multiple parameters
       {
@@ -253,7 +263,7 @@ ruleTesterTs.run(
           }
         }
       `,
-        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+        errors: [buildError('calculateTotal', 'Calculator')],
       },
       // Private static method with async/await
       {
@@ -270,7 +280,7 @@ ruleTesterTs.run(
           }
         }
       `,
-        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+        errors: [buildError('fetchAndTransform', 'ApiClient')],
       },
       // Private static method with generic types
       {
@@ -286,7 +296,7 @@ ruleTesterTs.run(
           }
         }
       `,
-        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+        errors: [buildError('transform', 'Transformer')],
       },
       // Private static method with destructuring parameters
       {
@@ -306,7 +316,7 @@ ruleTesterTs.run(
           }
         }
       `,
-        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+        errors: [buildError('parseConfig', 'ConfigParser')],
       },
       // Private static method with complex return type
       {
@@ -328,7 +338,7 @@ ruleTesterTs.run(
           }
         }
       `,
-        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+        errors: [buildError('formatResponse', 'ResponseFormatter')],
       },
       // Private static method with complex control flow
       {
@@ -365,7 +375,7 @@ ruleTesterTs.run(
           }
         }
       `,
-        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+        errors: [buildError('resolvePath', 'PathResolver')],
       },
       // Private static method with try/catch
       {
@@ -387,7 +397,7 @@ ruleTesterTs.run(
           }
         }
       `,
-        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+        errors: [buildError('safeParseJson', 'JsonParser')],
       },
       // Private static method with complex regex
       {
@@ -412,7 +422,7 @@ ruleTesterTs.run(
           }
         }
       `,
-        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+        errors: [buildError('extractQueryParams', 'UrlParser')],
       },
       // Private static method with nested functions
       {
@@ -440,7 +450,7 @@ ruleTesterTs.run(
           }
         }
       `,
-        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+        errors: [buildError('formatCamelCaseToTitleCase', 'StringFormatter')],
       },
       // Private static method with complex array operations
       {
@@ -475,7 +485,7 @@ ruleTesterTs.run(
           }
         }
       `,
-        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+        errors: [buildError('groupByProperty', 'ArrayProcessor')],
       },
       // Private static method with template literals and string manipulation
       {
@@ -506,7 +516,33 @@ ruleTesterTs.run(
           }
         }
       `,
-        errors: [{ messageId: 'preferUtilityFunctionOverPrivateStatic' }],
+        errors: [buildError('renderTemplate', 'TemplateEngine')],
+      },
+      // Class expression with named identifier
+      {
+        code: `
+        const ClassExpression = class NamedExpression {
+          private static compute(value: number) {
+            const doubled = value * 2;
+            const squared = value * value;
+            return { doubled, squared };
+          }
+        };
+      `,
+        errors: [buildError('compute', 'NamedExpression')],
+      },
+      // Class expression relying on variable declarator name
+      {
+        code: `
+        const AssignedExpression = class {
+          private static format(value: string) {
+            const trimmed = value.trim();
+            const upper = trimmed.toUpperCase();
+            return upper;
+          }
+        };
+      `,
+        errors: [buildError('format', 'AssignedExpression')],
       },
     ],
   },

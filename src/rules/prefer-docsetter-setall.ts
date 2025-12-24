@@ -165,10 +165,7 @@ function resolveDocSetterFromClassProperty(
   return null;
 }
 
-function isAncestor(
-  ancestor: TSESTree.Node,
-  node: TSESTree.Node,
-): boolean {
+function isAncestor(ancestor: TSESTree.Node, node: TSESTree.Node): boolean {
   let current: TSESTree.Node | undefined = node;
   while (current) {
     if (current === ancestor) return true;
@@ -177,9 +174,7 @@ function isAncestor(
   return false;
 }
 
-function findIterationContext(
-  node: TSESTree.Node,
-): IterationContext | null {
+function findIterationContext(node: TSESTree.Node): IterationContext | null {
   let current: TSESTree.Node | undefined = node.parent as TSESTree.Node;
 
   while (current) {

@@ -1,6 +1,7 @@
 import { arrayMethodsThisContext } from './rules/array-methods-this-context';
 import { classMethodsReadTopToBottom } from './rules/class-methods-read-top-to-bottom';
 import { default as consistentCallbackNaming } from './rules/consistent-callback-naming';
+import { noHandlerSuffix } from './rules/no-handler-suffix';
 import { parallelizeAsyncOperations } from './rules/parallelize-async-operations';
 import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
 import { enforceIdentifiableFirestoreType } from './rules/enforce-identifiable-firestore-type';
@@ -19,6 +20,7 @@ import { genericStartsWithT } from './rules/generic-starts-with-t';
 import { default as globalConstStyle } from './rules/global-const-style';
 import { noAsyncArrayFilter } from './rules/no-async-array-filter';
 import { noAsyncForEach } from './rules/no-async-foreach';
+import { noConsoleError } from './rules/no-console-error';
 import { noConditionalLiteralsInJsx } from './rules/no-conditional-literals-in-jsx';
 import { noFilterWithoutReturn } from './rules/no-filter-without-return';
 import { noHungarian } from './rules/no-hungarian';
@@ -27,12 +29,15 @@ import { noUnpinnedDependencies } from './rules/no-unpinned-dependencies';
 import { noUnusedProps } from './rules/no-unused-props';
 import { noUselessFragment } from './rules/no-useless-fragment';
 import { preferFragmentShorthand } from './rules/prefer-fragment-shorthand';
+import { preferGetterOverParameterlessMethod } from './rules/prefer-getter-over-parameterless-method';
 import { preferTypeOverInterface } from './rules/prefer-type-over-interface';
 import { preferTypeAliasOverTypeofConstant } from './rules/prefer-type-alias-over-typeof-constant';
+import { preferMemoizedProps } from './rules/prefer-memoized-props';
 import { requireMemo } from './rules/require-memo';
 import { noJsxWhitespaceLiteral } from './rules/no-jsx-whitespace-literal';
 import { default as requireDynamicFirebaseImports } from './rules/require-dynamic-firebase-imports';
 import { default as requireHttpsError } from './rules/require-https-error';
+import { requireHttpsErrorCause } from './rules/require-https-error-cause';
 import { useCustomRouter } from './rules/use-custom-router';
 import { default as requireImageOptimized } from './rules/require-image-optimized';
 import { requireUseMemoObjectLiterals } from './rules/require-usememo-object-literals';
@@ -55,8 +60,10 @@ import { default as enforceSerializableParams } from './rules/enforce-serializab
 import { enforceRealtimedbPathUtils } from './rules/enforce-realtimedb-path-utils';
 import { enforceMemoizeAsync } from './rules/enforce-memoize-async';
 import { enforceExportedFunctionTypes } from './rules/enforce-exported-function-types';
+import { noRedundantAnnotationAssertion } from './rules/no-redundant-annotation-assertion';
 import { enforceMemoizeGetters } from './rules/enforce-memoize-getters';
 import { noRedundantParamTypes } from './rules/no-redundant-param-types';
+import { noRedundantThisParams } from './rules/no-redundant-this-params';
 import { noClassInstanceDestructuring } from './rules/no-class-instance-destructuring';
 import { noFirestoreObjectArrays } from './rules/no-firestore-object-arrays';
 import { noMemoizeOnStatic } from './rules/no-memoize-on-static';
@@ -88,6 +95,7 @@ import { noTypeAssertionReturns } from './rules/no-type-assertion-returns';
 import { preferUtilityFunctionOverPrivateStatic } from './rules/prefer-utility-function-over-private-static';
 import { enforceMicrodiff } from './rules/enforce-microdiff';
 import { fastDeepEqualOverMicrodiff } from './rules/fast-deep-equal-over-microdiff';
+import { flattenPushCalls } from './rules/flatten-push-calls';
 import { enforceTimestampNow } from './rules/enforce-timestamp-now';
 import { enforceUniqueCursorHeaders } from './rules/enforce-unique-cursor-headers';
 import { noAlwaysTrueFalseConditions } from './rules/no-always-true-false-conditions';
@@ -108,6 +116,7 @@ import { noUnusedUseState } from './rules/no-unused-usestate';
 import { noUuidv4Base62AsKey } from './rules/no-uuidv4-base62-as-key';
 import enforceDynamicFileNaming from './rules/enforce-dynamic-file-naming';
 import { default as preferUseCallbackOverUseMemoForFunctions } from './rules/prefer-usecallback-over-usememo-for-functions';
+import { noUsememoForPassByValue } from './rules/no-usememo-for-pass-by-value';
 import { noMarginProperties } from './rules/no-margin-properties';
 import { enforceBooleanNamingPrefixes } from './rules/enforce-boolean-naming-prefixes';
 import { enforceFieldPathSyntaxInDocSetter } from './rules/enforce-fieldpath-syntax-in-docsetter';
@@ -135,11 +144,40 @@ import { noArrayLengthInDeps } from './rules/no-array-length-in-deps';
 import { preferUseDeepCompareMemo } from './rules/prefer-use-deep-compare-memo';
 import { noCircularReferences } from './rules/no-circular-references';
 import { noPassthroughGetters } from './rules/no-passthrough-getters';
+import { requireHttpsErrorInOnRequestHandlers } from './rules/no-res-error-status-in-onrequest';
 import { noTryCatchAlreadyExistsInTransaction } from './rules/no-try-catch-already-exists-in-transaction';
+import { noUselessUsememoPrimitives } from './rules/no-useless-usememo-primitives';
+import { jsdocAboveField } from './rules/jsdoc-above-field';
 import { enforceTransformMemoization } from './rules/enforce-transform-memoization';
 import { verticallyGroupRelatedFunctions } from './rules/vertically-group-related-functions';
 import { default as noStaticConstantsInDynamicFiles } from './rules/no-static-constants-in-dynamic-files';
 import { testFileLocationEnforcement } from './rules/test-file-location-enforcement';
+
+const NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_MESSAGE =
+  'Backend Cloud Functions (.f.ts under functions/) must not import frontend modules from the repo root src/**. Frontend code can depend on browser-only APIs and bundling it into Cloud Functions breaks server execution; move shared logic into functions/src or a shared package.';
+
+function noFrontendImportsFromFunctionsPatterns(pattern: string) {
+  return [
+    {
+      /**
+       * no-restricted-imports matches import strings literally (it does not
+       * resolve them to the filesystem). This monorepo layout contains both a
+       * frontend `src/` and a backend `functions/src/`, so broad `../src/**`
+       * patterns applied indiscriminately can also block legitimate
+       * backend-to-backend imports within `functions/src/**`.
+       *
+       * Each override targets one `functions/**` + `/*.f.ts` nesting depth and
+       * restricts only the exact traversal depth that reaches the repo root
+       * `src/`, so relative imports that stay inside `functions/src/**` do not
+       * match.
+       * Projects using path aliases should add matching restrictions in their
+       * own configs.
+       */
+      group: [pattern],
+      message: NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_MESSAGE,
+    },
+  ];
+}
 
 module.exports = {
   meta: {
@@ -183,21 +221,29 @@ module.exports = {
         '@blumintinc/blumint/global-const-style': 'error',
         '@blumintinc/blumint/no-async-array-filter': 'error',
         '@blumintinc/blumint/no-async-foreach': 'error',
+        '@blumintinc/blumint/no-console-error': [
+          'warn',
+          { allowWithUseAlertDialog: true },
+        ],
         '@blumintinc/blumint/no-conditional-literals-in-jsx': 'error',
         '@blumintinc/blumint/no-filter-without-return': 'error',
         '@blumintinc/blumint/no-hungarian': 'error',
+        '@blumintinc/blumint/no-handler-suffix': 'error',
         '@blumintinc/blumint/no-misused-switch-case': 'error',
         '@blumintinc/blumint/no-unpinned-dependencies': 'error',
         '@blumintinc/blumint/no-unused-props': 'error',
         '@blumintinc/blumint/no-uuidv4-base62-as-key': 'error',
         '@blumintinc/blumint/no-useless-fragment': 'error',
+        '@blumintinc/blumint/no-useless-usememo-primitives': 'error',
         '@blumintinc/blumint/prefer-fragment-shorthand': 'error',
+        '@blumintinc/blumint/prefer-getter-over-parameterless-method': 'error',
         '@blumintinc/blumint/prefer-type-over-interface': 'error',
         '@blumintinc/blumint/prefer-type-alias-over-typeof-constant': 'error',
         '@blumintinc/blumint/require-memo': 'error',
         '@blumintinc/blumint/no-unmemoized-memo-without-props': 'error',
         '@blumintinc/blumint/require-dynamic-firebase-imports': 'error',
         '@blumintinc/blumint/require-https-error': 'error',
+        '@blumintinc/blumint/require-https-error-cause': 'error',
         '@blumintinc/blumint/use-custom-router': 'error',
         '@blumintinc/blumint/require-image-optimized': 'error',
         '@blumintinc/blumint/require-usememo-object-literals': 'error',
@@ -218,6 +264,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-realtimedb-path-utils': 'error',
         '@blumintinc/blumint/enforce-memoize-async': 'error',
         '@blumintinc/blumint/enforce-exported-function-types': 'error',
+        '@blumintinc/blumint/no-redundant-annotation-assertion': 'error',
         '@blumintinc/blumint/no-redundant-param-types': 'error',
         '@blumintinc/blumint/enforce-memoize-getters': 'error',
         '@blumintinc/blumint/no-class-instance-destructuring': 'error',
@@ -251,6 +298,7 @@ module.exports = {
           'error',
         '@blumintinc/blumint/enforce-microdiff': 'error',
         '@blumintinc/blumint/fast-deep-equal-over-microdiff': 'error',
+        '@blumintinc/blumint/flatten-push-calls': 'error',
         '@blumintinc/blumint/enforce-timestamp-now': 'error',
         '@blumintinc/blumint/enforce-unique-cursor-headers': 'error',
         '@blumintinc/blumint/enforce-typescript-markdown-code-blocks': 'error',
@@ -259,6 +307,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-props-naming-consistency': 'error',
         '@blumintinc/blumint/prefer-global-router-state-key': 'error',
         '@blumintinc/blumint/prefer-usememo-over-useeffect-usestate': 'error',
+        '@blumintinc/blumint/prefer-memoized-props': 'error',
         '@blumintinc/blumint/enforce-dynamic-imports': 'error',
         '@blumintinc/blumint/ensure-pointer-events-none': 'error',
         '@blumintinc/blumint/no-object-values-on-strings': 'error',
@@ -270,6 +319,7 @@ module.exports = {
         '@blumintinc/blumint/no-unused-usestate': 'error',
         '@blumintinc/blumint/prefer-usecallback-over-usememo-for-functions':
           'error',
+        '@blumintinc/blumint/no-usememo-for-pass-by-value': 'error',
         '@blumintinc/blumint/no-margin-properties': 'error',
         '@blumintinc/blumint/enforce-boolean-naming-prefixes': 'error',
         '@blumintinc/blumint/enforce-fieldpath-syntax-in-docsetter': 'error',
@@ -287,7 +337,10 @@ module.exports = {
         '@blumintinc/blumint/no-misleading-boolean-prefixes': 'error',
         '@blumintinc/blumint/prefer-url-tostring-over-tojson': 'error',
         '@blumintinc/blumint/prefer-next-dynamic': 'error',
+        '@blumintinc/blumint/jsdoc-above-field': 'error',
         '@blumintinc/blumint/no-redundant-usecallback-wrapper': 'error',
+        '@blumintinc/blumint/no-redundant-this-params': 'error',
+        '@blumintinc/blumint/no-res-error-status-in-onrequest': 'error',
         '@blumintinc/blumint/no-array-length-in-deps': 'error',
         '@blumintinc/blumint/enforce-stable-hash-spread-props': 'error',
         '@blumintinc/blumint/prefer-use-deep-compare-memo': 'error',
@@ -299,6 +352,86 @@ module.exports = {
         '@blumintinc/blumint/no-static-constants-in-dynamic-files': 'error',
         '@blumintinc/blumint/test-file-location-enforcement': 'error',
       },
+      /**
+       * Depth-specific overrides block only import strings that traverse to the
+       * repo root `src/`. The list covers nesting depths 1–6; deeper nesting
+       * requires an additional override.
+       */
+      overrides: [
+        {
+          files: ['functions/*.f.ts'],
+          rules: {
+            'no-restricted-imports': [
+              'error',
+              {
+                patterns: noFrontendImportsFromFunctionsPatterns('../src/**'),
+              },
+            ],
+          },
+        },
+        {
+          files: ['functions/*/*.f.ts'],
+          rules: {
+            'no-restricted-imports': [
+              'error',
+              {
+                patterns:
+                  noFrontendImportsFromFunctionsPatterns('../../src/**'),
+              },
+            ],
+          },
+        },
+        {
+          files: ['functions/*/*/*.f.ts'],
+          rules: {
+            'no-restricted-imports': [
+              'error',
+              {
+                patterns:
+                  noFrontendImportsFromFunctionsPatterns('../../../src/**'),
+              },
+            ],
+          },
+        },
+        {
+          files: ['functions/*/*/*/*.f.ts'],
+          rules: {
+            'no-restricted-imports': [
+              'error',
+              {
+                patterns:
+                  noFrontendImportsFromFunctionsPatterns('../../../../src/**'),
+              },
+            ],
+          },
+        },
+        {
+          files: ['functions/*/*/*/*/*.f.ts'],
+          rules: {
+            'no-restricted-imports': [
+              'error',
+              {
+                patterns: noFrontendImportsFromFunctionsPatterns(
+                  '../../../../../src/**',
+                ),
+              },
+            ],
+          },
+        },
+        {
+          files: ['functions/*/*/*/*/*/*.f.ts'],
+          rules: {
+            'no-restricted-imports': [
+              'error',
+              {
+                patterns: noFrontendImportsFromFunctionsPatterns(
+                  '../../../../../../src/**',
+                ),
+              },
+            ],
+          },
+        },
+      ],
     },
   },
 
@@ -335,6 +468,7 @@ module.exports = {
     'no-conditional-literals-in-jsx': noConditionalLiteralsInJsx,
     'no-filter-without-return': noFilterWithoutReturn,
     'no-hungarian': noHungarian,
+    'no-handler-suffix': noHandlerSuffix,
     'no-misused-switch-case': noMisusedSwitchCase,
     'no-unpinned-dependencies': noUnpinnedDependencies,
     'no-unused-props': noUnusedProps,
@@ -342,6 +476,8 @@ module.exports = {
     'no-uuidv4-base62-as-key': noUuidv4Base62AsKey,
     'enforce-dynamic-file-naming': enforceDynamicFileNaming,
     'prefer-fragment-shorthand': preferFragmentShorthand,
+    'prefer-getter-over-parameterless-method':
+      preferGetterOverParameterlessMethod,
     'prefer-type-over-interface': preferTypeOverInterface,
     'prefer-type-alias-over-typeof-constant': preferTypeAliasOverTypeofConstant,
     'require-memo': requireMemo,
@@ -349,6 +485,7 @@ module.exports = {
     'no-jsx-whitespace-literal': noJsxWhitespaceLiteral,
     'require-dynamic-firebase-imports': requireDynamicFirebaseImports,
     'require-https-error': requireHttpsError,
+    'require-https-error-cause': requireHttpsErrorCause,
     'use-custom-router': useCustomRouter,
     'require-image-optimized': requireImageOptimized,
     'require-usememo-object-literals': requireUseMemoObjectLiterals,
@@ -371,7 +508,9 @@ module.exports = {
     'enforce-realtimedb-path-utils': enforceRealtimedbPathUtils,
     'enforce-memoize-async': enforceMemoizeAsync,
     'enforce-exported-function-types': enforceExportedFunctionTypes,
+    'no-redundant-annotation-assertion': noRedundantAnnotationAssertion,
     'no-redundant-param-types': noRedundantParamTypes,
+    'no-redundant-this-params': noRedundantThisParams,
     'enforce-memoize-getters': enforceMemoizeGetters,
     'no-class-instance-destructuring': noClassInstanceDestructuring,
     'no-firestore-object-arrays': noFirestoreObjectArrays,
@@ -405,6 +544,7 @@ module.exports = {
       preferUtilityFunctionOverPrivateStatic,
     'enforce-microdiff': enforceMicrodiff,
     'fast-deep-equal-over-microdiff': fastDeepEqualOverMicrodiff,
+    'flatten-push-calls': flattenPushCalls,
     'enforce-timestamp-now': enforceTimestampNow,
     'enforce-unique-cursor-headers': enforceUniqueCursorHeaders,
     'enforce-typescript-markdown-code-blocks':
@@ -424,8 +564,10 @@ module.exports = {
     'omit-index-html': omitIndexHtml,
     'enforce-id-capitalization': enforceIdCapitalization,
     'no-unused-usestate': noUnusedUseState,
+    'no-useless-usememo-primitives': noUselessUsememoPrimitives,
     'prefer-usecallback-over-usememo-for-functions':
       preferUseCallbackOverUseMemoForFunctions,
+    'no-usememo-for-pass-by-value': noUsememoForPassByValue,
     'no-margin-properties': noMarginProperties,
     'enforce-boolean-naming-prefixes': enforceBooleanNamingPrefixes,
     'enforce-fieldpath-syntax-in-docsetter': enforceFieldPathSyntaxInDocSetter,
@@ -444,10 +586,14 @@ module.exports = {
     'no-misleading-boolean-prefixes': noMisleadingBooleanPrefixes,
     'prefer-url-tostring-over-tojson': preferUrlToStringOverToJson,
     'prefer-next-dynamic': preferNextDynamic,
+    'jsdoc-above-field': jsdocAboveField,
     'no-redundant-usecallback-wrapper': noRedundantUseCallbackWrapper,
+    'no-res-error-status-in-onrequest': requireHttpsErrorInOnRequestHandlers,
     'no-array-length-in-deps': noArrayLengthInDeps,
+    'prefer-memoized-props': preferMemoizedProps,
     'prefer-use-deep-compare-memo': preferUseDeepCompareMemo,
     'no-circular-references': noCircularReferences,
+    'no-console-error': noConsoleError,
     'no-try-catch-already-exists-in-transaction':
       noTryCatchAlreadyExistsInTransaction,
     'no-passthrough-getters': noPassthroughGetters,
