@@ -52,6 +52,11 @@ const DEFAULT_OPTIONS: NormalizedOptions = {
   ],
 };
 
+/**
+ * Maximum number of characters to scan at the beginning of a file to detect generated markers.
+ */
+const GENERATED_MARKER_SCAN_LENGTH = 500;
+
 const normalizeArrayOption = <T>(values: T[] | undefined, fallback: T[]): T[] =>
   values && values.length > 0 ? values : fallback;
 
@@ -124,6 +129,71 @@ const isHeaderCandidate = (
   excludedAtDirectives: Set<string>,
 ): boolean => hasRequiredTags(text, requiredTagsLower) || hasHeaderMarker(text, excludedAtDirectives);
 
+/**
+ * Merges adjacent header candidate comments into a single group if they are not already complete headers.
+ * This handles "split headers" where metadata is spread across multiple comment blocks.
+ */
+const mergeAdjacentHeaderCandidates = (
+  comments: TSESTree.Comment[],
+  startIndex: number,
+  initialComment: TSESTree.Comment,
+  initialText: string,
+  requiredTagsLower: string[],
+  excludedAtDirectives: Set<string>,
+): {
+  mergedComments: TSESTree.Comment[];
+  mergedText: string;
+  lastIndex: number;
+} => {
+  const mergedComments = [initialComment];
+  let mergedText = initialText;
+  let groupedHasAllTags = requiredTagsLower.every((tag) =>
+    mergedText.toLowerCase().includes(tag),
+  );
+
+  let nextIndex = startIndex + 1;
+  while (nextIndex < comments.length) {
+    const nextComment = comments[nextIndex];
+    const lastComment = mergedComments[mergedComments.length - 1];
+
+    // Check if the next comment is on the line immediately following the last one.
+    const isAdjacent = nextComment.loc.start.line <= lastComment.loc.end.line + 1;
+
+    if (!isAdjacent) {
+      break;
+    }
+
+    const nextNormalized = normalizeCommentValue(nextComment);
+
+    if (!isHeaderCandidate(nextNormalized, requiredTagsLower, excludedAtDirectives)) {
+      break;
+    }
+
+    const nextHasAllTags = requiredTagsLower.every((tag) =>
+      nextNormalized.toLowerCase().includes(tag),
+    );
+
+    // Stop merging if both the current group and the next candidate are already complete headers.
+    if (groupedHasAllTags && nextHasAllTags) {
+      break;
+    }
+
+    mergedText = `${mergedText}\n${nextNormalized}`.trim();
+    groupedHasAllTags = requiredTagsLower.every((tag) =>
+      mergedText.toLowerCase().includes(tag),
+    );
+
+    mergedComments.push(nextComment);
+    nextIndex += 1;
+  }
+
+  return {
+    mergedComments,
+    mergedText,
+    lastIndex: nextIndex - 1,
+  };
+};
+
 const collectHeaderGroups = (
   comments: TSESTree.Comment[],
   options: NormalizedOptions,
@@ -140,49 +210,21 @@ const collectHeaderGroups = (
       continue;
     }
 
-    const groupedComments = [comment];
+    let groupedComments = [comment];
     let groupedText = normalized;
-    let groupedHasAllTags = requiredTagsLower.every((tag) =>
-      groupedText.toLowerCase().includes(tag),
-    );
 
     if (options.allowSplitHeaders) {
-      let nextIndex = index + 1;
-
-      while (nextIndex < comments.length) {
-        const nextComment = comments[nextIndex];
-        const isAdjacent =
-          nextComment.loc.start.line <=
-          groupedComments[groupedComments.length - 1].loc.end.line + 1;
-
-        if (!isAdjacent) {
-          break;
-        }
-
-        const nextNormalized = normalizeCommentValue(nextComment);
-
-        if (!isHeaderCandidate(nextNormalized, requiredTagsLower, excludedAtDirectives)) {
-          break;
-        }
-
-        const nextHasAllTags = requiredTagsLower.every((tag) =>
-          nextNormalized.toLowerCase().includes(tag),
-        );
-
-        if (groupedHasAllTags && nextHasAllTags) {
-          break;
-        }
-
-        groupedText = `${groupedText}\n${nextNormalized}`.trim();
-        groupedHasAllTags = requiredTagsLower.every((tag) =>
-          groupedText.toLowerCase().includes(tag),
-        );
-
-        groupedComments.push(nextComment);
-        nextIndex += 1;
-      }
-
-      index = groupedComments.length + index - 1;
+      const merged = mergeAdjacentHeaderCandidates(
+        comments,
+        index,
+        comment,
+        normalized,
+        requiredTagsLower,
+        excludedAtDirectives,
+      );
+      groupedComments = merged.mergedComments;
+      groupedText = merged.mergedText;
+      index = merged.lastIndex;
     }
 
     groups.push({ comments: groupedComments, text: groupedText });
@@ -316,7 +358,7 @@ export const enforceUniqueCursorHeaders = createRule<Options, MessageIds>({
         const sourceText = sourceCode.getText();
 
         if (options.ignoreGeneratedFiles) {
-          const prefix = sourceText.slice(0, 500).toLowerCase();
+          const prefix = sourceText.slice(0, GENERATED_MARKER_SCAN_LENGTH).toLowerCase();
 
           if (
             options.generatedMarkers.some((marker) =>
@@ -388,6 +430,11 @@ export const enforceUniqueCursorHeaders = createRule<Options, MessageIds>({
               const groupEnd = group.comments[group.comments.length - 1].loc.end.line;
               const primaryStart = primaryHeader.comments[0].loc.start.line;
               const primaryEnd = primaryHeader.comments[primaryHeader.comments.length - 1].loc.end.line;
+
+              /**
+               * Check if group is adjacent to primary (before or after).
+               * The +1 allows for touching lines (no blank line in between).
+               */
               const isAdjacentToPrimary =
                 groupStart <= primaryEnd + 1 && groupEnd + 1 >= primaryStart;
               const hasAllTags = requiredTagsLower.every((tag) =>
