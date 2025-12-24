@@ -1,4 +1,10 @@
-# Enforce unique cursor headers (`@blumintinc/blumint/enforce-unique-cursor-headers`)
+# Ensure files have exactly one cursor header containing required tags (e.g., @fileoverview) before any code (`@blumintinc/blumint/enforce-unique-cursor-headers`)
+
+💼 This rule is enabled in the ✅ `recommended` config.
+
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
+
+<!-- end auto-generated rule header -->
 
 Ensure each checked file has exactly one cursor header before any code so ownership metadata stays discoverable. You can require additional tags, control which files need headers, and optionally insert a default header template when one is missing.
 

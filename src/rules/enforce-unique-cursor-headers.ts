@@ -1,6 +1,6 @@
 import path from 'path';
 import { minimatch } from 'minimatch';
-import { TSESTree } from '@typescript-eslint/utils';
+import { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type NormalizedOptions = {
@@ -110,6 +110,12 @@ const hasRequiredTags = (text: string, requiredTagsLower: string[]): boolean => 
   return requiredTagsLower.some((tag) => lowerText.includes(tag));
 };
 
+const hasAllRequiredTags = (text: string, requiredTagsLower: string[]): boolean => {
+  const lowerText = text.toLowerCase();
+
+  return requiredTagsLower.every((tag) => lowerText.includes(tag));
+};
+
 const hasHeaderMarker = (text: string, excludedAtDirectives: Set<string>): boolean =>
   text.split('\n').some((line) => {
     const trimmed = line.trimStart();
@@ -129,6 +135,38 @@ const isHeaderCandidate = (
   excludedAtDirectives: Set<string>,
 ): boolean => hasRequiredTags(text, requiredTagsLower) || hasHeaderMarker(text, excludedAtDirectives);
 
+const isCommentAdjacent = (
+  nextComment: TSESTree.Comment,
+  lastComment: TSESTree.Comment,
+): boolean => nextComment.loc.start.line <= lastComment.loc.end.line + 1;
+
+const shouldStopMerging = (
+  groupedHasAllTags: boolean,
+  nextHasAllTags: boolean,
+): boolean => groupedHasAllTags && nextHasAllTags;
+
+const updateMergedState = (
+  mergedComments: TSESTree.Comment[],
+  mergedText: string,
+  nextComment: TSESTree.Comment,
+  nextNormalized: string,
+  requiredTagsLower: string[],
+): {
+  mergedComments: TSESTree.Comment[];
+  mergedText: string;
+  groupedHasAllTags: boolean;
+} => {
+  const updatedText = `${mergedText}\n${nextNormalized}`.trim();
+  const updatedComments = [...mergedComments, nextComment];
+  const updatedHasAllTags = hasAllRequiredTags(updatedText, requiredTagsLower);
+
+  return {
+    mergedComments: updatedComments,
+    mergedText: updatedText,
+    groupedHasAllTags: updatedHasAllTags,
+  };
+};
+
 /**
  * Merges adjacent header candidate comments into a single group if they are not already complete headers.
  * This handles "split headers" where metadata is spread across multiple comment blocks.
@@ -145,21 +183,16 @@ const mergeAdjacentHeaderCandidates = (
   mergedText: string;
   lastIndex: number;
 } => {
-  const mergedComments = [initialComment];
+  let mergedComments = [initialComment];
   let mergedText = initialText;
-  let groupedHasAllTags = requiredTagsLower.every((tag) =>
-    mergedText.toLowerCase().includes(tag),
-  );
+  let groupedHasAllTags = hasAllRequiredTags(mergedText, requiredTagsLower);
 
   let nextIndex = startIndex + 1;
   while (nextIndex < comments.length) {
     const nextComment = comments[nextIndex];
     const lastComment = mergedComments[mergedComments.length - 1];
 
-    // Check if the next comment is on the line immediately following the last one.
-    const isAdjacent = nextComment.loc.start.line <= lastComment.loc.end.line + 1;
-
-    if (!isAdjacent) {
+    if (!isCommentAdjacent(nextComment, lastComment)) {
       break;
     }
 
@@ -169,21 +202,24 @@ const mergeAdjacentHeaderCandidates = (
       break;
     }
 
-    const nextHasAllTags = requiredTagsLower.every((tag) =>
-      nextNormalized.toLowerCase().includes(tag),
-    );
+    const nextHasAllTags = hasAllRequiredTags(nextNormalized, requiredTagsLower);
 
-    // Stop merging if both the current group and the next candidate are already complete headers.
-    if (groupedHasAllTags && nextHasAllTags) {
+    if (shouldStopMerging(groupedHasAllTags, nextHasAllTags)) {
       break;
     }
 
-    mergedText = `${mergedText}\n${nextNormalized}`.trim();
-    groupedHasAllTags = requiredTagsLower.every((tag) =>
-      mergedText.toLowerCase().includes(tag),
+    const updatedState = updateMergedState(
+      mergedComments,
+      mergedText,
+      nextComment,
+      nextNormalized,
+      requiredTagsLower,
     );
 
-    mergedComments.push(nextComment);
+    mergedComments = updatedState.mergedComments;
+    mergedText = updatedState.mergedText;
+    groupedHasAllTags = updatedState.groupedHasAllTags;
+
     nextIndex += 1;
   }
 
@@ -263,6 +299,162 @@ const buildHeaderInsertionText = (template: string): string => {
   const requiredNewlines = trailingNewlines >= 2 ? 0 : 2 - trailingNewlines;
 
   return `${normalizedWhitespace}${'\n'.repeat(requiredNewlines)}`;
+};
+
+const shouldSkipGeneratedFile = (
+  sourceText: string,
+  options: NormalizedOptions,
+): boolean => {
+  if (!options.ignoreGeneratedFiles) {
+    return false;
+  }
+
+  const prefix = sourceText.slice(0, GENERATED_MARKER_SCAN_LENGTH).toLowerCase();
+
+  return options.generatedMarkers.some((marker) =>
+    prefix.includes(marker.toLowerCase()),
+  );
+};
+
+const getTopComments = (
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.Program,
+): TSESTree.Comment[] => {
+  const allComments = sourceCode.getAllComments();
+  const firstToken = sourceCode.getFirstToken(node);
+  const firstTokenLine = firstToken?.loc.start.line ?? Infinity;
+
+  return allComments.filter((comment) => comment.loc.start.line < firstTokenLine);
+};
+
+const analyzeHeaderGroups = (
+  candidateGroups: HeaderGroup[],
+  options: NormalizedOptions,
+): {
+  primaryHeader: HeaderGroup | undefined;
+  duplicateGroups: HeaderGroup[];
+  splitHeaderGroups: HeaderGroup[];
+} => {
+  const requiredTagsLower = options.requiredTags.map((tag) => tag.toLowerCase());
+  const headerGroups = candidateGroups.filter((group) =>
+    hasAllRequiredTags(group.text, requiredTagsLower),
+  );
+  const primaryHeader = headerGroups[0];
+  const duplicateGroups = headerGroups.slice(1);
+
+  const splitHeaderGroups = options.allowSplitHeaders
+    ? []
+    : candidateGroups.filter((group) => {
+        if (group === primaryHeader) {
+          return false;
+        }
+
+        const groupStart = group.comments[0].loc.start.line;
+        const groupEnd = group.comments[group.comments.length - 1].loc.end.line;
+        const primaryStart = primaryHeader.comments[0].loc.start.line;
+        const primaryEnd =
+          primaryHeader.comments[primaryHeader.comments.length - 1].loc.end.line;
+
+        /**
+         * Check if group is adjacent to primary (before or after).
+         * The +1 allows for touching lines (no blank line in between).
+         */
+        const isAdjacentToPrimary =
+          groupStart <= primaryEnd + 1 && groupEnd + 1 >= primaryStart;
+        const hasAllTags = hasAllRequiredTags(group.text, requiredTagsLower);
+
+        return isAdjacentToPrimary && !hasAllTags;
+      });
+
+  return { primaryHeader, duplicateGroups, splitHeaderGroups };
+};
+
+const computeHeaderInsertion = (
+  sourceText: string,
+  headerTemplate: string,
+): { index: number; text: string } => {
+  const headerText = buildHeaderInsertionText(headerTemplate);
+
+  if (!sourceText.startsWith('#!')) {
+    return { index: 0, text: headerText };
+  }
+
+  const shebangNewlineIndex = sourceText.indexOf('\n');
+
+  if (shebangNewlineIndex === -1) {
+    /** Shebang exists but file has no newline - append after shebang */
+    return { index: sourceText.length, text: `\n${headerText}` };
+  }
+
+  /** Insert after shebang line */
+  return { index: shebangNewlineIndex + 1, text: headerText };
+};
+
+const reportMissingHeader = (
+  context: TSESLint.RuleContext<MessageIds, Options>,
+  fileName: string,
+  sourceText: string,
+  options: NormalizedOptions,
+): void => {
+  const template = options.headerTemplate;
+
+  context.report({
+    loc: { line: 1, column: 0 },
+    messageId: 'missingHeader',
+    data: {
+      fileName: path.basename(fileName),
+      tags: options.requiredTags.join(', '),
+    },
+    fix: template !== null
+      ? (fixer) => {
+          const { index, text } = computeHeaderInsertion(sourceText, template);
+
+          return fixer.insertTextBeforeRange([index, index], text);
+        }
+      : null,
+  });
+};
+
+const reportDuplicates = (
+  context: TSESLint.RuleContext<MessageIds, Options>,
+  duplicateGroups: HeaderGroup[],
+  sourceText: string,
+): void => {
+  duplicateGroups.forEach((group) => {
+    const firstComment = group.comments[0];
+    const removalRange = expandRangeToFullLines(
+      [firstComment.range[0], group.comments[group.comments.length - 1].range[1]],
+      sourceText,
+    );
+
+    context.report({
+      loc: firstComment.loc,
+      messageId: 'duplicateHeader',
+      data: {
+        line: firstComment.loc.start.line.toString(),
+      },
+      fix: (fixer) => fixer.removeRange(removalRange),
+    });
+  });
+};
+
+const reportSplitFragments = (
+  context: TSESLint.RuleContext<MessageIds, Options>,
+  splitHeaderGroups: HeaderGroup[],
+  options: NormalizedOptions,
+): void => {
+  splitHeaderGroups.forEach((group) => {
+    const firstComment = group.comments[0];
+
+    context.report({
+      loc: firstComment.loc,
+      messageId: 'splitHeaderFragment',
+      data: {
+        tags: options.requiredTags.join(', '),
+      },
+      fix: null,
+    });
+  });
 };
 
 export const RULE_NAME = 'enforce-unique-cursor-headers';
@@ -357,122 +549,24 @@ export const enforceUniqueCursorHeaders = createRule<Options, MessageIds>({
         const sourceCode = context.getSourceCode();
         const sourceText = sourceCode.getText();
 
-        if (options.ignoreGeneratedFiles) {
-          const prefix = sourceText.slice(0, GENERATED_MARKER_SCAN_LENGTH).toLowerCase();
-
-          if (
-            options.generatedMarkers.some((marker) =>
-              prefix.includes(marker.toLowerCase()),
-            )
-          ) {
-            return;
-          }
+        if (shouldSkipGeneratedFile(sourceText, options)) {
+          return;
         }
 
-        const allComments = sourceCode.getAllComments();
-        const firstToken = sourceCode.getFirstToken(node);
-        const firstTokenLine = firstToken?.loc.start.line ?? Infinity;
-        const topComments = allComments.filter(
-          (comment) => comment.loc.start.line < firstTokenLine,
-        );
-
+        const topComments = getTopComments(sourceCode, node);
         const candidateGroups = collectHeaderGroups(topComments, options, excludedAtDirectives);
-        const requiredTagsLower = options.requiredTags.map((tag) => tag.toLowerCase());
-        const headerGroups = candidateGroups.filter((group) =>
-          requiredTagsLower.every((tag) => group.text.toLowerCase().includes(tag)),
-        );
-        const primaryHeader = headerGroups[0];
+
+        const { primaryHeader, duplicateGroups, splitHeaderGroups } =
+          analyzeHeaderGroups(candidateGroups, options);
 
         if (!primaryHeader) {
-          context.report({
-            loc: { line: 1, column: 0 },
-            messageId: 'missingHeader',
-            data: {
-              fileName: path.basename(fileName),
-              tags: options.requiredTags.join(', '),
-            },
-            fix: options.headerTemplate !== null
-              ? (fixer) => {
-                  const hasShebang = sourceText.startsWith('#!');
-                  const shebangNewlineIndex = hasShebang ? sourceText.indexOf('\n') : -1;
-                  const insertionIndex =
-                    hasShebang && shebangNewlineIndex !== -1
-                      ? shebangNewlineIndex + 1
-                      : hasShebang
-                        ? sourceText.length
-                        : 0;
-                  const headerText = buildHeaderInsertionText(
-                    options.headerTemplate as string,
-                  );
-                  const textToInsert =
-                    hasShebang && shebangNewlineIndex === -1
-                      ? `\n${headerText}`
-                      : headerText;
-
-                  return fixer.insertTextBeforeRange([insertionIndex, insertionIndex], textToInsert);
-                }
-              : null,
-          });
+          reportMissingHeader(context, fileName, sourceText, options);
 
           return;
         }
 
-        const duplicateGroups = headerGroups.slice(1);
-
-        const splitHeaderGroups = options.allowSplitHeaders
-          ? []
-          : candidateGroups.filter((group) => {
-              if (group === primaryHeader) {
-                return false;
-              }
-
-              const groupStart = group.comments[0].loc.start.line;
-              const groupEnd = group.comments[group.comments.length - 1].loc.end.line;
-              const primaryStart = primaryHeader.comments[0].loc.start.line;
-              const primaryEnd = primaryHeader.comments[primaryHeader.comments.length - 1].loc.end.line;
-
-              /**
-               * Check if group is adjacent to primary (before or after).
-               * The +1 allows for touching lines (no blank line in between).
-               */
-              const isAdjacentToPrimary =
-                groupStart <= primaryEnd + 1 && groupEnd + 1 >= primaryStart;
-              const hasAllTags = requiredTagsLower.every((tag) =>
-                group.text.toLowerCase().includes(tag),
-              );
-
-              return isAdjacentToPrimary && !hasAllTags;
-            });
-
-        duplicateGroups.forEach((group) => {
-          const firstComment = group.comments[0];
-          const removalRange = expandRangeToFullLines(
-            [firstComment.range[0], group.comments[group.comments.length - 1].range[1]],
-            sourceText,
-          );
-
-          context.report({
-            loc: firstComment.loc,
-            messageId: 'duplicateHeader',
-            data: {
-              line: firstComment.loc.start.line.toString(),
-            },
-            fix: (fixer) => fixer.removeRange(removalRange),
-          });
-        });
-
-        splitHeaderGroups.forEach((group) => {
-          const firstComment = group.comments[0];
-
-          context.report({
-            loc: firstComment.loc,
-            messageId: 'splitHeaderFragment',
-            data: {
-              tags: options.requiredTags.join(', '),
-            },
-            fix: null,
-          });
-        });
+        reportDuplicates(context, duplicateGroups, sourceText);
+        reportSplitFragments(context, splitHeaderGroups, options);
       },
     };
   },
