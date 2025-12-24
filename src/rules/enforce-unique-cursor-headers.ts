@@ -55,16 +55,16 @@ const DEFAULT_OPTIONS: NormalizedOptions = {
 const normalizeArrayOption = <T>(values: T[] | undefined, fallback: T[]): T[] =>
   values && values.length > 0 ? values : fallback;
 
-const normalizeArrayOptionAllowEmpty = <T>(provided: T[] | undefined, fallback: T[]): T[] =>
-  provided === undefined ? fallback : provided;
+const normalizeArrayOptionAllowEmpty = <T>(values: T[] | undefined, fallback: T[]): T[] =>
+  values === undefined ? fallback : values;
 
-const normalizeBooleanOption = (provided: boolean | undefined, fallback: boolean): boolean =>
-  provided ?? fallback;
+const normalizeBooleanOption = (value: boolean | undefined, fallback: boolean): boolean =>
+  value ?? fallback;
 
 const normalizeNullableOption = <T>(
-  provided: T | null | undefined,
+  value: T | null | undefined,
   fallback: T | null,
-): T | null => (provided === undefined ? fallback : provided);
+): T | null => (value === undefined ? fallback : value);
 
 const normalizeOptions = (options?: Partial<NormalizedOptions>): NormalizedOptions => ({
   requiredPatterns: normalizeArrayOption(options?.requiredPatterns, DEFAULT_OPTIONS.requiredPatterns),
