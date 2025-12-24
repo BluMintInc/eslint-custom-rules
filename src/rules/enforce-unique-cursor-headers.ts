@@ -345,7 +345,7 @@ const analyzeHeaderGroups = (
   const splitHeaderGroups = options.allowSplitHeaders
     ? []
     : candidateGroups.filter((group) => {
-        if (group === primaryHeader) {
+        if (group === primaryHeader || !primaryHeader) {
           return false;
         }
 

@@ -479,5 +479,21 @@ export const multipleDuplicates = () => null;
 export const multipleDuplicates = () => null;
       `,
     },
+    {
+      code: `
+/**
+ * @fileoverview has fileoverview but missing since
+ */
+export const x = 1;
+      `,
+      filename: '/workspace/src/missing-tag-no-split.ts',
+      options: [
+        {
+          allowSplitHeaders: false,
+          requiredTags: ['@fileoverview', '@since'],
+        },
+      ],
+      errors: [{ messageId: 'missingHeader' }],
+    },
   ],
 });
