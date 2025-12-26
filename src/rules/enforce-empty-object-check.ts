@@ -101,7 +101,7 @@ function isInsideLoop(node: TSESTree.Node | undefined): boolean {
   return false;
 }
 
-function nameLooksObjectLike(name: string, patterns: Set<string>): boolean {
+function isObjectLikeName(name: string, patterns: Set<string>): boolean {
   const lower = name.toLowerCase();
 
   if (hasBooleanPrefixBoundary(name)) {
@@ -571,7 +571,7 @@ export const enforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Options> =
             // Fall back to naming heuristic when type lookup fails
           }
         }
-        return nameLooksObjectLike(identifier.name, patternSet);
+        return isObjectLikeName(identifier.name, patternSet);
       }
 
       function reportNegation(
