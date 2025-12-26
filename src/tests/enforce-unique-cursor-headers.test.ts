@@ -448,7 +448,18 @@ export const withTemplateNewline = () => null;
         },
       ],
       errors: [{ messageId: 'missingHeader' }],
-      output: '\n\nexport const emptyTemplate = () => null;',
+      output: null,
+    },
+    {
+      code: 'export const invalidTemplate = () => null;',
+      filename: '/workspace/src/template-invalid.ts',
+      options: [
+        {
+          headerTemplate: '/** no tags here */',
+        },
+      ],
+      errors: [{ messageId: 'missingHeader' }],
+      output: null,
     },
     {
       code: '#!/usr/bin/env node',

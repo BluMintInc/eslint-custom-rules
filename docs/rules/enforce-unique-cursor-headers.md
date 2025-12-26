@@ -13,7 +13,7 @@ Ensure each checked file has exactly one cursor header before any code so owners
 - Add a cursor header containing all `requiredTags` to any file that matches `requiredPatterns` before the first import or statement.
 - Keep exactly one cursor header before code; when `allowSplitHeaders` is true you can keep adjacent fragments that together contain the required tags, otherwise keep the metadata in a single block.
 - Use `excludedPatterns` to skip files and rely on `ignoreGeneratedFiles` plus `generatedMarkers` to avoid touching generated sources.
-- Autofix removes duplicate headers that already include all required tags and inserts `headerTemplate` when provided. With `allowSplitHeaders: false`, adjacent fragments are reported without auto-fix so you can merge them without losing optional metadata; skip `--fix` if you intentionally keep split blocks or non-required tags.
+- Autofix removes duplicate headers that already include all required tags and inserts `headerTemplate` when provided. The `headerTemplate` MUST contain all `requiredTags` to be inserted; if it is empty or missing tags, the rule will report the error but will not suggest an auto-fix to avoid infinite fix loops. With `allowSplitHeaders: false`, adjacent fragments are reported without auto-fix so you can merge them without losing optional metadata; skip `--fix` if you intentionally keep split blocks or non-required tags.
 
 ### Options
 
@@ -35,7 +35,7 @@ Ensure each checked file has exactly one cursor header before any code so owners
 - `requiredTags`: List the tags that must appear in the header text.
 - Header detection relies on `requiredTags` and `@`-prefixed comment lines that are not listed in `excludedAtDirectives` (for example `@ts-nocheck`, `@format`, or `@jest-environment`), so your top-of-file pragmas are not merged into the cursor header.
 - `allowSplitHeaders`: When false, metadata spread across multiple adjacent comment blocks is reported as a duplicate header, but the fixer does not delete those fragments. You must manually merge them into a single block; use caution with `--fix` if you intentionally keep separate metadata sections.
-- `headerTemplate`: Provide a comment block to insert when a required header is missing.
+- `headerTemplate`: Provide a comment block to insert when a required header is missing. The template MUST contain all `requiredTags` to be applied via auto-fix.
 - When `headerTemplate` already ends with newline characters, the fixer preserves them and only adds the minimum extra whitespace to leave a clear blank line before code.
 - `ignoreGeneratedFiles`: When true, generated files identified by `generatedMarkers` are skipped.
 - `generatedMarkers`: Identify strings that signal the file is generated.

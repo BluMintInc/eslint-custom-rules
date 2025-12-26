@@ -405,13 +405,18 @@ const reportMissingHeader = (
       fileName: path.basename(fileName),
       tags: options.requiredTags.join(', '),
     },
-    fix: template !== null
-      ? (fixer) => {
-          const { index, text } = computeHeaderInsertion(sourceText, template);
+    fix:
+      template !== null &&
+      hasAllRequiredTags(
+        template,
+        options.requiredTags.map((t) => t.toLowerCase()),
+      )
+        ? (fixer) => {
+            const { index, text } = computeHeaderInsertion(sourceText, template);
 
-          return fixer.insertTextBeforeRange([index, index], text);
-        }
-      : null,
+            return fixer.insertTextBeforeRange([index, index], text);
+          }
+        : null,
   });
 };
 
