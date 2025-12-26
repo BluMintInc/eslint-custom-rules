@@ -29,7 +29,8 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     const sourceCode = context.sourceCode;
-    const scheduledNamedImports = new Set<string>();
+    // Prevent duplicate import insertions when multiple fixes target the same query key constant.
+    const scheduledQueryKeyNamedImports = new Set<string>();
     // Track imports from queryKeys.ts
     const queryKeyImports = new Map<
       string,
@@ -396,7 +397,9 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                               !hasNamespaceOrDefault
                             ) {
                               if (
-                                scheduledNamedImports.has(suggestedConstant)
+                                scheduledQueryKeyNamedImports.has(
+                                  suggestedConstant,
+                                )
                               ) {
                                 return fixes;
                               }
@@ -490,7 +493,9 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                                   }
                                 }
                               }
-                              scheduledNamedImports.add(suggestedConstant);
+                              scheduledQueryKeyNamedImports.add(
+                                suggestedConstant,
+                              );
                             }
 
                             return fixes;

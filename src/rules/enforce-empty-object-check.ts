@@ -568,7 +568,7 @@ export const enforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Options> =
               return false;
             }
           } catch {
-            // Fall back to naming heuristic when type lookup fails
+            // TypeScript parser services can throw when AST-to-TS node mapping fails; fall back to naming heuristic so linting does not crash.
           }
         }
         return isObjectLikeName(identifier.name, patternSet);
