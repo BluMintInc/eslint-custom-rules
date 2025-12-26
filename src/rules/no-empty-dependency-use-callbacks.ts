@@ -177,7 +177,9 @@ function usesLocalTypeBindings(
       ) {
         return true;
       }
-      stack.push(current.right);
+      // Qualified names (e.g. External.LocalType) are scoped by their leftmost
+      // namespace. Traversing into the right side can falsely match an
+      // unrelated local type with the same name.
       continue;
     }
     const keys = visitorKeys[current.type];

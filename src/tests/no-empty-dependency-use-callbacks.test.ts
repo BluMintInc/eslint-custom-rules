@@ -564,6 +564,31 @@ function Component() {
 }
     `,
   },
+  {
+    code: `
+import { useCallback } from 'react';
+namespace External {
+  export type LocalType = { id: string };
+}
+function Component() {
+  type LocalType = { value: number };
+  const handler = useCallback((value: External.LocalType) => value.id, []);
+  return <div>{handler({ id: 'a' })}</div>;
+}
+    `,
+    errors: [{ messageId: 'preferUtilityFunction' as const }],
+    output: `
+import { useCallback } from 'react';
+namespace External {
+  export type LocalType = { id: string };
+}
+const handler = (value: External.LocalType) => value.id;
+function Component() {
+  type LocalType = { value: number };
+  return <div>{handler({ id: 'a' })}</div>;
+}
+    `,
+  },
 ];
 
 ruleTesterJsx.run(
