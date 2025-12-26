@@ -1,12 +1,12 @@
 import path from 'path';
 import { ruleTesterTs } from '../utils/ruleTester';
-import { eslintEnforceEmptyObjectCheck } from '../rules/eslint-enforce-empty-object-check';
+import { enforceEmptyObjectCheck } from '../rules/enforce-empty-object-check';
 
 const tsconfigRootDir = path.join(__dirname, '..', '..');
 
 ruleTesterTs.run(
-  'eslint-enforce-empty-object-check',
-  eslintEnforceEmptyObjectCheck,
+  'enforce-empty-object-check',
+  enforceEmptyObjectCheck,
   {
     valid: [
       `

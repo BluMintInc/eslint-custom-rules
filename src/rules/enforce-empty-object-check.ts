@@ -496,11 +496,11 @@ function getRootCondition(node: TSESTree.Node): TSESTree.Expression | null {
   return null;
 }
 
-export const eslintEnforceEmptyObjectCheck: TSESLint.RuleModule<
+export const enforceEmptyObjectCheck: TSESLint.RuleModule<
   MessageIds,
   Options
 > = createRule({
-  name: 'eslint-enforce-empty-object-check',
+  name: 'enforce-empty-object-check',
   meta: {
     type: 'problem',
     docs: {

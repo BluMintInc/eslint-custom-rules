@@ -1,4 +1,4 @@
-# no-empty-dependency-use-callbacks
+# Discourage useCallback([]) or useLatestCallback around static functions. Static callbacks do not need hook machinery—extract them to module-level utilities for clarity and to avoid unnecessary hook overhead (`@blumintinc/blumint/no-empty-dependency-use-callbacks`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
