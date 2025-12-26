@@ -485,7 +485,10 @@ export const withTemplateNewline = () => null;
 export const multipleDuplicates = () => null;
       `,
       filename: '/workspace/src/multiple-duplicates.ts',
-      errors: [{ messageId: 'duplicateHeader' }, { messageId: 'duplicateHeader' }],
+      errors: [
+        { messageId: 'duplicateHeader' },
+        { messageId: 'duplicateHeader' },
+      ],
       output: `
 /**
  * @fileoverview First header

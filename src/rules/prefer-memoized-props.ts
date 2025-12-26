@@ -125,10 +125,7 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
     function isReactMemoCallee(
       callee: TSESTree.LeftHandSideExpression,
     ): boolean {
-      if (
-        callee.type === AST_NODE_TYPES.Identifier &&
-        callee.name === 'memo'
-      ) {
+      if (callee.type === AST_NODE_TYPES.Identifier && callee.name === 'memo') {
         return true;
       }
 
@@ -180,10 +177,7 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
         }
 
         let pushedScope = false;
-        if (
-          current.type === AST_NODE_TYPES.BlockStatement ||
-          isFunctionLike
-        ) {
+        if (current.type === AST_NODE_TYPES.BlockStatement || isFunctionLike) {
           pushMemoScope();
           pushedScope = true;
 
@@ -325,7 +319,9 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
       return current;
     }
 
-    function getBindingKind(init: TSESTree.Expression | null): BindingKind | null {
+    function getBindingKind(
+      init: TSESTree.Expression | null,
+    ): BindingKind | null {
       if (!init) {
         return null;
       }
@@ -445,9 +441,7 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
     }
 
     function extractReturnExpression(
-      callback:
-        | TSESTree.ArrowFunctionExpression
-        | TSESTree.FunctionExpression,
+      callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
     ): TSESTree.Expression | null {
       if (callback.body.type !== AST_NODE_TYPES.BlockStatement) {
         return callback.body;
