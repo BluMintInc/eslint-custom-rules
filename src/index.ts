@@ -4,6 +4,7 @@ import { default as consistentCallbackNaming } from './rules/consistent-callback
 import { noHandlerSuffix } from './rules/no-handler-suffix';
 import { parallelizeAsyncOperations } from './rules/parallelize-async-operations';
 import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
+import { enforceEmptyObjectCheck } from './rules/enforce-empty-object-check';
 import { enforceIdentifiableFirestoreType } from './rules/enforce-identifiable-firestore-type';
 import { default as enforceCallbackMemo } from './rules/enforce-callback-memo';
 import { enforceCallableTypes } from './rules/enforce-callable-types';
@@ -208,6 +209,7 @@ module.exports = {
         '@blumintinc/blumint/class-methods-read-top-to-bottom': 'error',
         '@blumintinc/blumint/consistent-callback-naming': 'error',
         '@blumintinc/blumint/dynamic-https-errors': 'error',
+        '@blumintinc/blumint/enforce-empty-object-check': 'error',
         '@blumintinc/blumint/enforce-mui-rounded-icons': 'error',
         '@blumintinc/blumint/enforce-identifiable-firestore-type': 'error',
         '@blumintinc/blumint/enforce-callback-memo': 'error',
@@ -452,6 +454,7 @@ module.exports = {
     'consistent-callback-naming': consistentCallbackNaming,
     'parallelize-async-operations': parallelizeAsyncOperations,
     'dynamic-https-errors': dynamicHttpsErrors,
+    'enforce-empty-object-check': enforceEmptyObjectCheck,
     'enforce-identifiable-firestore-type': enforceIdentifiableFirestoreType,
     'enforce-callback-memo': enforceCallbackMemo,
     'enforce-react-type-naming': enforceReactTypeNaming,

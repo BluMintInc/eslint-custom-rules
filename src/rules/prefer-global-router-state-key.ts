@@ -29,6 +29,8 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
   defaultOptions: [],
   create(context) {
     const sourceCode = context.sourceCode;
+    // Prevent duplicate import insertions when multiple fixes target the same query key constant.
+    const scheduledQueryKeyNamedImports = new Set<string>();
     // Track imports from queryKeys.ts
     const queryKeyImports = new Map<
       string,
@@ -394,6 +396,13 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                               !existingNamedImport &&
                               !hasNamespaceOrDefault
                             ) {
+                              if (
+                                scheduledQueryKeyNamedImports.has(
+                                  suggestedConstant,
+                                )
+                              ) {
+                                return fixes;
+                              }
                               const importText = `import { ${suggestedConstant} } from '@/util/routing/queryKeys';\n`;
                               const queryKeysNamedImport =
                                 sourceCode.ast.body.find(
@@ -462,29 +471,31 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                                       importText,
                                     ),
                                   );
-                                  return fixes;
-                                }
-
-                                const lastDirective = findLastDirective(
-                                  sourceCode.ast.body,
-                                );
-
-                                if (lastDirective) {
-                                  fixes.push(
-                                    fixer.insertTextAfter(
-                                      lastDirective,
-                                      `\n${importText}`,
-                                    ),
-                                  );
                                 } else {
-                                  fixes.push(
-                                    fixer.insertTextBeforeRange(
-                                      [0, 0],
-                                      importText,
-                                    ),
+                                  const lastDirective = findLastDirective(
+                                    sourceCode.ast.body,
                                   );
+
+                                  if (lastDirective) {
+                                    fixes.push(
+                                      fixer.insertTextAfter(
+                                        lastDirective,
+                                        `\n${importText}`,
+                                      ),
+                                    );
+                                  } else {
+                                    fixes.push(
+                                      fixer.insertTextBeforeRange(
+                                        [0, 0],
+                                        importText,
+                                      ),
+                                    );
+                                  }
                                 }
                               }
+                              scheduledQueryKeyNamedImports.add(
+                                suggestedConstant,
+                              );
                             }
 
                             return fixes;
