@@ -429,13 +429,9 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
      * Generates a deduplication key from await nodes' range metadata.
      * Returns null if range metadata is missing.
      */
-    function getDeduplicationKey(awaitNodes: TSESTree.Node[]): string | null {
-      const rangeStart = awaitNodes[0].range?.[0];
-      const rangeEnd = awaitNodes[awaitNodes.length - 1].range?.[1];
-
-      if (rangeStart == null || rangeEnd == null) {
-        return null;
-      }
+    function getDeduplicationKey(awaitNodes: TSESTree.Node[]): string {
+      const rangeStart = awaitNodes[0].range[0];
+      const rangeEnd = awaitNodes[awaitNodes.length - 1].range[1];
 
       return `${rangeStart}-${rangeEnd}`;
     }
@@ -458,12 +454,6 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
             !areInLoop(awaitNodes)
           ) {
             const key = getDeduplicationKey(awaitNodes);
-            // Skip reporting since generateFix requires valid ranges and we'd
-            // form a malformed deduplication key
-            if (key == null) {
-              awaitNodes.length = 0;
-              continue;
-            }
             if (!reportedRanges.has(key)) {
               reportedRanges.add(key);
               context.report({
@@ -491,23 +481,18 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
           !areInTryCatchBlocks(awaitNodes) &&
           !areInLoop(awaitNodes)
         ) {
-          const key = getDeduplicationKey(awaitNodes);
-          // Skip reporting since generateFix requires valid ranges and we'd
-          // form a malformed deduplication key
-          if (key == null) {
-            return;
-          }
-          if (!reportedRanges.has(key)) {
-            reportedRanges.add(key);
-            context.report({
-              node: awaitNodes[0],
-              messageId: 'parallelizeAsyncOperations',
-              data: {
-                awaitCount: awaitNodes.length.toString(),
-              },
-              fix: (fixer) => generateFix(fixer, awaitNodes),
-            });
-          }
+        const key = getDeduplicationKey(awaitNodes);
+        if (!reportedRanges.has(key)) {
+          reportedRanges.add(key);
+          context.report({
+            node: awaitNodes[0],
+            messageId: 'parallelizeAsyncOperations',
+            data: {
+              awaitCount: awaitNodes.length.toString(),
+            },
+            fix: (fixer) => generateFix(fixer, awaitNodes),
+          });
+        }
         }
       }
     };

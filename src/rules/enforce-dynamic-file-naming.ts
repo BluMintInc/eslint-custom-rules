@@ -5,9 +5,9 @@ export const RULE_NAME = 'enforce-dynamic-file-naming';
 
 const ENFORCE_DYNAMIC_IMPORTS_RULE =
   '@blumintinc/blumint/enforce-dynamic-imports';
-const REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE =
+export const REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE =
   '@blumintinc/blumint/require-dynamic-firebase-imports';
-const DYNAMIC_RULES_LABEL = `${ENFORCE_DYNAMIC_IMPORTS_RULE} or ${REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE}`;
+export const DYNAMIC_RULES_LABEL = `${ENFORCE_DYNAMIC_IMPORTS_RULE} or ${REQUIRE_DYNAMIC_FIREBASE_IMPORTS_RULE}`;
 const SHORTHAND_DISABLE_NEXT_LINE = /\bednl\b/;
 const SHORTHAND_DISABLE_LINE = /\bedl\b/;
 const DISABLE_NEXT_LINE_TOKEN = 'eslint-disable-next-line';
