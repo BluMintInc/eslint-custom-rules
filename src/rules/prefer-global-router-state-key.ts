@@ -395,7 +395,9 @@ export const preferGlobalRouterStateKey = createRule<[], MessageIds>({
                               !existingNamedImport &&
                               !hasNamespaceOrDefault
                             ) {
-                              if (scheduledNamedImports.has(suggestedConstant)) {
+                              if (
+                                scheduledNamedImports.has(suggestedConstant)
+                              ) {
                                 return fixes;
                               }
                               const importText = `import { ${suggestedConstant} } from '@/util/routing/queryKeys';\n`;

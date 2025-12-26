@@ -1,6 +1,9 @@
 import { ESLintUtils } from '@typescript-eslint/utils';
 import { Linter } from 'eslint';
-import rule, { RULE_NAME, DYNAMIC_RULES_LABEL } from '../rules/enforce-dynamic-file-naming';
+import rule, {
+  RULE_NAME,
+  DYNAMIC_RULES_LABEL,
+} from '../rules/enforce-dynamic-file-naming';
 
 // Create a custom rule tester that doesn't require the actual enforce-dynamic-imports rule
 const ruleTester = new ESLintUtils.RuleTester({
@@ -260,7 +263,7 @@ import SomeModule from 'firebase/auth';`,
           data: {
             fileName: 'example.dynamic.ts',
             standardName: 'example.ts',
-            rulesLabel: DYNAMIC_RULES_LABEL,
+            dynamicRulesLabel: DYNAMIC_RULES_LABEL,
           },
         },
       ],
@@ -275,7 +278,7 @@ import SomeModule from 'firebase/auth';`,
           data: {
             fileName: 'example.dynamic.tsx',
             standardName: 'example.tsx',
-            rulesLabel: DYNAMIC_RULES_LABEL,
+            dynamicRulesLabel: DYNAMIC_RULES_LABEL,
           },
         },
       ],
@@ -291,7 +294,7 @@ console.log('Debugging');`,
           data: {
             fileName: 'example.dynamic.tsx',
             standardName: 'example.tsx',
-            rulesLabel: DYNAMIC_RULES_LABEL,
+            dynamicRulesLabel: DYNAMIC_RULES_LABEL,
           },
         },
       ],
@@ -307,7 +310,7 @@ import SomeModule from './SomeModule';`,
           data: {
             fileName: 'uppercase.dynamic.ts',
             standardName: 'uppercase.ts',
-            rulesLabel: DYNAMIC_RULES_LABEL,
+            dynamicRulesLabel: DYNAMIC_RULES_LABEL,
           },
         },
       ],

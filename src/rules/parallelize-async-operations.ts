@@ -347,19 +347,13 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     /**
      * Generates a fix for sequential awaits
      *
-     * @precondition All nodes in awaitNodes must have valid range metadata.
-     * Callers must verify ranges exist before invoking this function.
+     * Returns null when the sequential awaits cannot be safely rewritten as a Promise.all.
      */
     function generateFix(
       fixer: TSESLint.RuleFixer,
       awaitNodes: TSESTree.Node[],
     ): TSESLint.RuleFix | null {
-      // Precondition: ranges must exist (verified by callers)
-      if (
-        awaitNodes.length < 2 ||
-        !awaitNodes[0].range ||
-        !awaitNodes[awaitNodes.length - 1].range
-      ) {
+      if (awaitNodes.length < 2) {
         return null;
       }
 
@@ -427,7 +421,6 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
 
     /**
      * Generates a deduplication key from await nodes' range metadata.
-     * Returns null if range metadata is missing.
      */
     function getDeduplicationKey(awaitNodes: TSESTree.Node[]): string {
       const rangeStart = awaitNodes[0].range[0];
@@ -481,18 +474,18 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
           !areInTryCatchBlocks(awaitNodes) &&
           !areInLoop(awaitNodes)
         ) {
-        const key = getDeduplicationKey(awaitNodes);
-        if (!reportedRanges.has(key)) {
-          reportedRanges.add(key);
-          context.report({
-            node: awaitNodes[0],
-            messageId: 'parallelizeAsyncOperations',
-            data: {
-              awaitCount: awaitNodes.length.toString(),
-            },
-            fix: (fixer) => generateFix(fixer, awaitNodes),
-          });
-        }
+          const key = getDeduplicationKey(awaitNodes);
+          if (!reportedRanges.has(key)) {
+            reportedRanges.add(key);
+            context.report({
+              node: awaitNodes[0],
+              messageId: 'parallelizeAsyncOperations',
+              data: {
+                awaitCount: awaitNodes.length.toString(),
+              },
+              fix: (fixer) => generateFix(fixer, awaitNodes),
+            });
+          }
         }
       }
     };

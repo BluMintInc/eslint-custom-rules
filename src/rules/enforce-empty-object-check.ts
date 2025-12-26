@@ -496,172 +496,170 @@ function getRootCondition(node: TSESTree.Node): TSESTree.Expression | null {
   return null;
 }
 
-export const enforceEmptyObjectCheck: TSESLint.RuleModule<
-  MessageIds,
-  Options
-> = createRule({
-  name: 'enforce-empty-object-check',
-  meta: {
-    type: 'problem',
-    docs: {
-      description:
-        'Ensure object existence checks also guard against empty objects so that empty payloads are treated like missing data.',
-      recommended: 'error',
-    },
-    fixable: 'code',
-    schema: [
-      {
-        type: 'object',
-        properties: {
-          objectNamePattern: {
-            type: 'array',
-            items: { type: 'string' },
-          },
-          ignoreInLoops: {
-            type: 'boolean',
-          },
-          emptyCheckFunctions: {
-            type: 'array',
-            items: { type: 'string' },
-          },
-        },
-        additionalProperties: false,
+export const enforceEmptyObjectCheck: TSESLint.RuleModule<MessageIds, Options> =
+  createRule({
+    name: 'enforce-empty-object-check',
+    meta: {
+      type: 'problem',
+      docs: {
+        description:
+          'Ensure object existence checks also guard against empty objects so that empty payloads are treated like missing data.',
+        recommended: 'error',
       },
-    ],
-    messages: {
-      missingEmptyObjectCheck:
-        'What\'s wrong: "{{name}}" is only checked for falsiness, so `{}` passes the guard. Why it matters: empty payloads or configs behave like missing data and can execute "has data" logic incorrectly. How to fix: also check emptiness (for example, Object.keys({{name}}).length === 0 or a configured empty-check helper).',
+      fixable: 'code',
+      schema: [
+        {
+          type: 'object',
+          properties: {
+            objectNamePattern: {
+              type: 'array',
+              items: { type: 'string' },
+            },
+            ignoreInLoops: {
+              type: 'boolean',
+            },
+            emptyCheckFunctions: {
+              type: 'array',
+              items: { type: 'string' },
+            },
+          },
+          additionalProperties: false,
+        },
+      ],
+      messages: {
+        missingEmptyObjectCheck:
+          'What\'s wrong: "{{name}}" is only checked for falsiness, so `{}` passes the guard. Why it matters: empty payloads or configs behave like missing data and can execute "has data" logic incorrectly. How to fix: also check emptiness (for example, Object.keys({{name}}).length === 0 or a configured empty-check helper).',
+      },
     },
-  },
-  defaultOptions: [{}] as Options,
-  create(context) {
-    const sourceCode = context.getSourceCode();
-    const parserServices = sourceCode.parserServices;
-    const checker = parserServices?.program?.getTypeChecker();
+    defaultOptions: [{}] as Options,
+    create(context) {
+      const sourceCode = context.getSourceCode();
+      const parserServices = sourceCode.parserServices;
+      const checker = parserServices?.program?.getTypeChecker();
 
-    const options: Options[0] = context.options[0] ?? {};
-    const {
-      objectNamePattern = [],
-      ignoreInLoops = false,
-      emptyCheckFunctions = [],
-    } = options;
+      const options: Options[0] = context.options[0] ?? {};
+      const {
+        objectNamePattern = [],
+        ignoreInLoops = false,
+        emptyCheckFunctions = [],
+      } = options;
 
-    const patternSet: Set<string> = new Set([
-      ...DEFAULT_OBJECT_SUFFIXES,
-      ...objectNamePattern,
-    ]);
-    const emptyCheckFunctionsSet: Set<string> = new Set([
-      ...DEFAULT_EMPTY_CHECK_FUNCTIONS,
-      ...emptyCheckFunctions,
-    ]);
-    const processedExpressions = new WeakSet<TSESTree.Expression>();
-    const processedNegations = new WeakSet<TSESTree.UnaryExpression>();
+      const patternSet: Set<string> = new Set([
+        ...DEFAULT_OBJECT_SUFFIXES,
+        ...objectNamePattern,
+      ]);
+      const emptyCheckFunctionsSet: Set<string> = new Set([
+        ...DEFAULT_EMPTY_CHECK_FUNCTIONS,
+        ...emptyCheckFunctions,
+      ]);
+      const processedExpressions = new WeakSet<TSESTree.Expression>();
+      const processedNegations = new WeakSet<TSESTree.UnaryExpression>();
 
-    function isLikelyObject(identifier: TSESTree.Identifier): boolean {
-      if (checker && parserServices?.esTreeNodeToTSNodeMap) {
-        try {
-          const tsNode = parserServices.esTreeNodeToTSNodeMap.get(identifier);
-          const type = checker.getTypeAtLocation(tsNode);
-          const analysis = isObjectLikeType(type, checker);
-          if (analysis === 'object') {
-            return true;
+      function isLikelyObject(identifier: TSESTree.Identifier): boolean {
+        if (checker && parserServices?.esTreeNodeToTSNodeMap) {
+          try {
+            const tsNode = parserServices.esTreeNodeToTSNodeMap.get(identifier);
+            const type = checker.getTypeAtLocation(tsNode);
+            const analysis = isObjectLikeType(type, checker);
+            if (analysis === 'object') {
+              return true;
+            }
+            if (analysis === 'non-object') {
+              return false;
+            }
+          } catch {
+            // Fall back to naming heuristic when type lookup fails
           }
-          if (analysis === 'non-object') {
-            return false;
-          }
-        } catch {
-          // Fall back to naming heuristic when type lookup fails
         }
-      }
-      return nameLooksObjectLike(identifier.name, patternSet);
-    }
-
-    function reportNegation(
-      node: TSESTree.UnaryExpression,
-      identifier: TSESTree.Identifier,
-    ) {
-      if (processedNegations.has(node)) {
-        return;
-      }
-      processedNegations.add(node);
-
-      if (ignoreInLoops && isInsideLoop(node)) {
-        return;
+        return nameLooksObjectLike(identifier.name, patternSet);
       }
 
-      const conditionRoot = getRootCondition(node);
-      if (
-        conditionRoot &&
-        conditionHasEmptyCheck(
-          conditionRoot,
-          identifier.name,
-          emptyCheckFunctionsSet,
-        )
+      function reportNegation(
+        node: TSESTree.UnaryExpression,
+        identifier: TSESTree.Identifier,
       ) {
-        return;
-      }
+        if (processedNegations.has(node)) {
+          return;
+        }
+        processedNegations.add(node);
 
-      if (!isLikelyObject(identifier)) {
-        return;
-      }
+        if (ignoreInLoops && isInsideLoop(node)) {
+          return;
+        }
 
-      context.report({
-        node,
-        messageId: 'missingEmptyObjectCheck',
-        data: {
-          name: identifier.name,
-        },
-        fix(fixer) {
-          const identifierText = sourceCode.getText(identifier);
-          const replacement = `(${node.operator}${identifierText} || Object.keys(${identifierText}).length === 0)`;
-          return fixer.replaceText(node, replacement);
-        },
-      });
-    }
-
-    function handleTestExpression(expression: TSESTree.Expression) {
-      if (processedExpressions.has(expression)) {
-        return;
-      }
-      processedExpressions.add(expression);
-
-      const negations: TSESTree.UnaryExpression[] = [];
-      collectNegations(expression, negations);
-
-      for (const negation of negations) {
+        const conditionRoot = getRootCondition(node);
         if (
-          negation.argument.type === AST_NODE_TYPES.Identifier &&
-          negation.operator === '!'
+          conditionRoot &&
+          conditionHasEmptyCheck(
+            conditionRoot,
+            identifier.name,
+            emptyCheckFunctionsSet,
+          )
         ) {
-          reportNegation(negation, negation.argument);
+          return;
+        }
+
+        if (!isLikelyObject(identifier)) {
+          return;
+        }
+
+        context.report({
+          node,
+          messageId: 'missingEmptyObjectCheck',
+          data: {
+            name: identifier.name,
+          },
+          fix(fixer) {
+            const identifierText = sourceCode.getText(identifier);
+            const replacement = `(${node.operator}${identifierText} || Object.keys(${identifierText}).length === 0)`;
+            return fixer.replaceText(node, replacement);
+          },
+        });
+      }
+
+      function handleTestExpression(expression: TSESTree.Expression) {
+        if (processedExpressions.has(expression)) {
+          return;
+        }
+        processedExpressions.add(expression);
+
+        const negations: TSESTree.UnaryExpression[] = [];
+        collectNegations(expression, negations);
+
+        for (const negation of negations) {
+          if (
+            negation.argument.type === AST_NODE_TYPES.Identifier &&
+            negation.operator === '!'
+          ) {
+            reportNegation(negation, negation.argument);
+          }
         }
       }
-    }
 
-    return {
-      IfStatement(node) {
-        if (node.test) {
+      return {
+        IfStatement(node) {
+          if (node.test) {
+            handleTestExpression(node.test);
+          }
+        },
+        WhileStatement(node) {
+          if (node.test) {
+            handleTestExpression(node.test);
+          }
+        },
+        DoWhileStatement(node) {
+          if (node.test) {
+            handleTestExpression(node.test);
+          }
+        },
+        ForStatement(node) {
+          if (node.test) {
+            handleTestExpression(node.test as TSESTree.Expression);
+          }
+        },
+        ConditionalExpression(node) {
           handleTestExpression(node.test);
-        }
-      },
-      WhileStatement(node) {
-        if (node.test) {
-          handleTestExpression(node.test);
-        }
-      },
-      DoWhileStatement(node) {
-        if (node.test) {
-          handleTestExpression(node.test);
-        }
-      },
-      ForStatement(node) {
-        if (node.test) {
-          handleTestExpression(node.test as TSESTree.Expression);
-        }
-      },
-      ConditionalExpression(node) {
-        handleTestExpression(node.test);
-      },
-    };
-  },
-});
+        },
+      };
+    },
+  });
