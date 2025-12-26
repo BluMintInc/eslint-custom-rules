@@ -92,9 +92,9 @@ const normalizeOptions = (options?: Partial<NormalizedOptions>): NormalizedOptio
     DEFAULT_OPTIONS.generatedMarkers,
   ),
   excludedAtDirectives: normalizeArrayOptionAllowEmpty(
-    options?.excludedAtDirectives?.map((directive) => directive.toLowerCase()),
+    options?.excludedAtDirectives,
     DEFAULT_OPTIONS.excludedAtDirectives,
-  ),
+  ).map((directive) => directive.toLowerCase()),
 });
 
 const normalizeCommentValue = (comment: TSESTree.Comment): string =>
@@ -520,9 +520,7 @@ export const enforceUniqueCursorHeaders = createRule<Options, MessageIds>({
     const options = normalizeOptions(userOptions);
     const fileName = context.getFilename();
     const matchPath = fileName.split(path.sep).join('/');
-    const excludedAtDirectives = new Set(
-      options.excludedAtDirectives.map((directive) => directive.toLowerCase()),
-    );
+    const excludedAtDirectives = new Set(options.excludedAtDirectives);
 
     if (fileName === '<input>') {
       return {};

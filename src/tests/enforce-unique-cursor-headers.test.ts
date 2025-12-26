@@ -110,6 +110,22 @@ export const withPragmas = () => true;
     {
       code: `
 /**
+ * @jsxRuntime automatic
+ */
+/**
+ * @jsxImportSource react
+ */
+/**
+ * @fileoverview Header should ignore JSX pragmas
+ * @author BluMint
+ */
+export const withJsxPragmas = () => true;
+      `,
+      filename: '/workspace/src/with-jsx-pragmas.ts',
+    },
+    {
+      code: `
+/**
  * @fileoverview Header fragment
  */
 /**
