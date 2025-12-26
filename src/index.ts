@@ -97,6 +97,7 @@ import { enforceMicrodiff } from './rules/enforce-microdiff';
 import { fastDeepEqualOverMicrodiff } from './rules/fast-deep-equal-over-microdiff';
 import { flattenPushCalls } from './rules/flatten-push-calls';
 import { enforceTimestampNow } from './rules/enforce-timestamp-now';
+import { enforceUniqueCursorHeaders } from './rules/enforce-unique-cursor-headers';
 import { noAlwaysTrueFalseConditions } from './rules/no-always-true-false-conditions';
 import { enforcePropsArgumentName } from './rules/enforce-props-argument-name';
 import { enforcePropsNamingConsistency } from './rules/enforce-props-naming-consistency';
@@ -299,6 +300,7 @@ module.exports = {
         '@blumintinc/blumint/fast-deep-equal-over-microdiff': 'error',
         '@blumintinc/blumint/flatten-push-calls': 'error',
         '@blumintinc/blumint/enforce-timestamp-now': 'error',
+        '@blumintinc/blumint/enforce-unique-cursor-headers': 'error',
         '@blumintinc/blumint/enforce-typescript-markdown-code-blocks': 'error',
         '@blumintinc/blumint/no-always-true-false-conditions': 'error',
         '@blumintinc/blumint/enforce-props-argument-name': 'error',
@@ -544,6 +546,7 @@ module.exports = {
     'fast-deep-equal-over-microdiff': fastDeepEqualOverMicrodiff,
     'flatten-push-calls': flattenPushCalls,
     'enforce-timestamp-now': enforceTimestampNow,
+    'enforce-unique-cursor-headers': enforceUniqueCursorHeaders,
     'enforce-typescript-markdown-code-blocks':
       enforceTypescriptMarkdownCodeBlocks,
     'no-always-true-false-conditions': noAlwaysTrueFalseConditions,

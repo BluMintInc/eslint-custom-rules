@@ -1,4 +1,4 @@
-# Prefer memoized reference props inside React.memo components and avoid memoizing primitives (`@blumintinc/blumint/prefer-memoized-props`)
+# Require memoizing reference props (objects, arrays, functions) inside React.memo components while avoiding unnecessary useMemo for pass-through values (`@blumintinc/blumint/prefer-memoized-props`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
