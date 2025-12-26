@@ -13,11 +13,7 @@ type Options = [
 
 type MessageIds = 'preferUtilityFunction' | 'preferUtilityLatest';
 
-const DEFAULT_TEST_PATTERNS = [
-  '**/__tests__/**',
-  '**/*.test.*',
-  '**/*.spec.*',
-];
+const DEFAULT_TEST_PATTERNS = ['**/__tests__/**', '**/*.test.*', '**/*.spec.*'];
 
 const PREFER_UTILITY_FUNCTION_MESSAGE = [
   'What\'s wrong: "{{name}}" uses useCallback([]) but never reads component/hook state',
@@ -47,9 +43,7 @@ function isHookCallee(
   );
 }
 
-function isUseCallbackCallee(
-  callee: TSESTree.LeftHandSideExpression,
-): boolean {
+function isUseCallbackCallee(callee: TSESTree.LeftHandSideExpression): boolean {
   return isHookCallee(callee, 'useCallback');
 }
 
@@ -61,9 +55,7 @@ function isUseLatestCallbackCallee(
 
 function isFunctionExpression(
   node: TSESTree.Node | undefined,
-): node is
-  | TSESTree.ArrowFunctionExpression
-  | TSESTree.FunctionExpression {
+): node is TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression {
   return (
     !!node &&
     (node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
@@ -94,15 +86,11 @@ function isPropertyKey(
   return false;
 }
 
-function collectNearestBlockTypeBindings(
-  node: TSESTree.Node,
-): Set<string> {
+function collectNearestBlockTypeBindings(node: TSESTree.Node): Set<string> {
   const localTypes = new Set<string>();
   let current: TSESTree.Node | undefined = node.parent ?? undefined;
 
-  const addTypeParameters = (
-    maybeNode: TSESTree.Node | undefined,
-  ): void => {
+  const addTypeParameters = (maybeNode: TSESTree.Node | undefined): void => {
     if (!maybeNode) return;
     const typeParameters = (
       maybeNode as {
@@ -172,7 +160,10 @@ function usesLocalTypeBindings(
 
   while (stack.length) {
     const current = stack.pop() as TSESTree.Node;
-    if (current.type === AST_NODE_TYPES.Identifier && localTypes.has(current.name)) {
+    if (
+      current.type === AST_NODE_TYPES.Identifier &&
+      localTypes.has(current.name)
+    ) {
       return true;
     }
     if (current.type === AST_NODE_TYPES.TSQualifiedName) {
@@ -180,7 +171,10 @@ function usesLocalTypeBindings(
       while (left.type === AST_NODE_TYPES.TSQualifiedName) {
         left = left.left;
       }
-      if (left.type === AST_NODE_TYPES.Identifier && localTypes.has(left.name)) {
+      if (
+        left.type === AST_NODE_TYPES.Identifier &&
+        localTypes.has(left.name)
+      ) {
         return true;
       }
       stack.push(current.right);
@@ -225,7 +219,8 @@ function collectBodyTypeAnnotations(
       typeNodes.push(current.typeAnnotation);
     }
 
-    const typeAnnotation = (current as { typeAnnotation?: TSESTree.Node }).typeAnnotation;
+    const typeAnnotation = (current as { typeAnnotation?: TSESTree.Node })
+      .typeAnnotation;
     if (typeAnnotation) {
       if (typeAnnotation.type === AST_NODE_TYPES.TSTypeAnnotation) {
         typeNodes.push(typeAnnotation.typeAnnotation);
@@ -234,9 +229,13 @@ function collectBodyTypeAnnotations(
       }
     }
 
-    const typeParameters = (current as {
-      typeParameters?: TSESTree.TSTypeParameterDeclaration | TSESTree.TSTypeParameterInstantiation;
-    }).typeParameters;
+    const typeParameters = (
+      current as {
+        typeParameters?:
+          | TSESTree.TSTypeParameterDeclaration
+          | TSESTree.TSTypeParameterInstantiation;
+      }
+    ).typeParameters;
     if (typeParameters) {
       typeNodes.push(typeParameters);
     }
@@ -297,7 +296,9 @@ function getCallbackArg(
 function hasEmptyDependencyArray(node: TSESTree.CallExpression): boolean {
   if (node.arguments.length < 2) return false;
   const deps = node.arguments[1];
-  return deps.type === AST_NODE_TYPES.ArrayExpression && deps.elements.length === 0;
+  return (
+    deps.type === AST_NODE_TYPES.ArrayExpression && deps.elements.length === 0
+  );
 }
 
 function filenameMatchesPatterns(
@@ -307,8 +308,7 @@ function filenameMatchesPatterns(
   const normalized = filename.replace(/\\/g, '/');
   const basename = normalized.split('/').pop() ?? normalized;
   return patterns.some(
-    (pattern) =>
-      minimatch(normalized, pattern) || minimatch(basename, pattern),
+    (pattern) => minimatch(normalized, pattern) || minimatch(basename, pattern),
   );
 }
 
@@ -379,8 +379,7 @@ function analyzeExternalReferences(
       const def = resolved.defs[0];
       const scopeType = resolved.scope.type;
       const isImport = def?.type === 'ImportBinding';
-      const isModuleOrGlobal =
-        scopeType === 'module' || scopeType === 'global';
+      const isModuleOrGlobal = scopeType === 'module' || scopeType === 'global';
 
       if (!isImport && !isModuleOrGlobal) {
         hasComponentScopeRef = true;
@@ -560,7 +559,10 @@ function buildHoistFixes(
     return null;
   }
 
-  if (!varDecl.parent || varDecl.parent.type !== AST_NODE_TYPES.BlockStatement) {
+  if (
+    !varDecl.parent ||
+    varDecl.parent.type !== AST_NODE_TYPES.BlockStatement
+  ) {
     return null;
   }
 
@@ -595,7 +597,9 @@ function buildHoistFixes(
       ? declarator.id.typeAnnotation.range[1]
       : declarator.id.range[1];
 
-  const identifierText = sourceCode.getText().slice(declarator.id.range[0], idRangeEnd);
+  const identifierText = sourceCode
+    .getText()
+    .slice(declarator.id.range[0], idRangeEnd);
   const functionText = sourceCode.getText(callback);
   const hoisted = `const ${identifierText} = ${functionText};\n`;
   const fileText = sourceCode.getText();

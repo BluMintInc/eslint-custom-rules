@@ -25,7 +25,12 @@ type HeaderGroup = {
 
 const DEFAULT_OPTIONS: NormalizedOptions = {
   requiredPatterns: ['**/*.{ts,tsx,js,jsx}'],
-  excludedPatterns: ['**/*.d.ts', '**/dist/**', '**/build/**', '**/coverage/**'],
+  excludedPatterns: [
+    '**/*.d.ts',
+    '**/dist/**',
+    '**/build/**',
+    '**/coverage/**',
+  ],
   requiredTags: ['@fileoverview'],
   allowSplitHeaders: true,
   headerTemplate: null,
@@ -60,29 +65,44 @@ const GENERATED_MARKER_SCAN_LENGTH = 500;
 const normalizeArrayOption = <T>(values: T[] | undefined, fallback: T[]): T[] =>
   values && values.length > 0 ? values : fallback;
 
-const normalizeArrayOptionAllowEmpty = <T>(values: T[] | undefined, fallback: T[]): T[] =>
-  values === undefined ? fallback : values;
+const normalizeArrayOptionAllowEmpty = <T>(
+  values: T[] | undefined,
+  fallback: T[],
+): T[] => (values === undefined ? fallback : values);
 
-const normalizeBooleanOption = (value: boolean | undefined, fallback: boolean): boolean =>
-  value ?? fallback;
+const normalizeBooleanOption = (
+  value: boolean | undefined,
+  fallback: boolean,
+): boolean => value ?? fallback;
 
 const normalizeNullableOption = <T>(
   value: T | null | undefined,
   fallback: T | null,
 ): T | null => (value === undefined ? fallback : value);
 
-const normalizeOptions = (options?: Partial<NormalizedOptions>): NormalizedOptions => ({
-  requiredPatterns: normalizeArrayOption(options?.requiredPatterns, DEFAULT_OPTIONS.requiredPatterns),
+const normalizeOptions = (
+  options?: Partial<NormalizedOptions>,
+): NormalizedOptions => ({
+  requiredPatterns: normalizeArrayOption(
+    options?.requiredPatterns,
+    DEFAULT_OPTIONS.requiredPatterns,
+  ),
   excludedPatterns: normalizeArrayOptionAllowEmpty(
     options?.excludedPatterns,
     DEFAULT_OPTIONS.excludedPatterns,
   ),
-  requiredTags: normalizeArrayOption(options?.requiredTags, DEFAULT_OPTIONS.requiredTags),
+  requiredTags: normalizeArrayOption(
+    options?.requiredTags,
+    DEFAULT_OPTIONS.requiredTags,
+  ),
   allowSplitHeaders: normalizeBooleanOption(
     options?.allowSplitHeaders,
     DEFAULT_OPTIONS.allowSplitHeaders,
   ),
-  headerTemplate: normalizeNullableOption(options?.headerTemplate, DEFAULT_OPTIONS.headerTemplate),
+  headerTemplate: normalizeNullableOption(
+    options?.headerTemplate,
+    DEFAULT_OPTIONS.headerTemplate,
+  ),
   ignoreGeneratedFiles: normalizeBooleanOption(
     options?.ignoreGeneratedFiles,
     DEFAULT_OPTIONS.ignoreGeneratedFiles,
@@ -104,19 +124,28 @@ const normalizeCommentValue = (comment: TSESTree.Comment): string =>
     .join('\n')
     .trim();
 
-const hasRequiredTags = (text: string, requiredTagsLower: string[]): boolean => {
+const hasRequiredTags = (
+  text: string,
+  requiredTagsLower: string[],
+): boolean => {
   const lowerText = text.toLowerCase();
 
   return requiredTagsLower.some((tag) => lowerText.includes(tag));
 };
 
-const hasAllRequiredTags = (text: string, requiredTagsLower: string[]): boolean => {
+const hasAllRequiredTags = (
+  text: string,
+  requiredTagsLower: string[],
+): boolean => {
   const lowerText = text.toLowerCase();
 
   return requiredTagsLower.every((tag) => lowerText.includes(tag));
 };
 
-const hasHeaderMarker = (text: string, excludedAtDirectives: Set<string>): boolean =>
+const hasHeaderMarker = (
+  text: string,
+  excludedAtDirectives: Set<string>,
+): boolean =>
   text.split('\n').some((line) => {
     const trimmed = line.trimStart();
 
@@ -133,7 +162,9 @@ const isHeaderCandidate = (
   text: string,
   requiredTagsLower: string[],
   excludedAtDirectives: Set<string>,
-): boolean => hasRequiredTags(text, requiredTagsLower) || hasHeaderMarker(text, excludedAtDirectives);
+): boolean =>
+  hasRequiredTags(text, requiredTagsLower) ||
+  hasHeaderMarker(text, excludedAtDirectives);
 
 const isCommentAdjacent = (
   nextComment: TSESTree.Comment,
@@ -198,11 +229,20 @@ const mergeAdjacentHeaderCandidates = (
 
     const nextNormalized = normalizeCommentValue(nextComment);
 
-    if (!isHeaderCandidate(nextNormalized, requiredTagsLower, excludedAtDirectives)) {
+    if (
+      !isHeaderCandidate(
+        nextNormalized,
+        requiredTagsLower,
+        excludedAtDirectives,
+      )
+    ) {
       break;
     }
 
-    const nextHasAllTags = hasAllRequiredTags(nextNormalized, requiredTagsLower);
+    const nextHasAllTags = hasAllRequiredTags(
+      nextNormalized,
+      requiredTagsLower,
+    );
 
     if (shouldStopMerging(groupedHasAllTags, nextHasAllTags)) {
       break;
@@ -235,14 +275,18 @@ const collectHeaderGroups = (
   options: NormalizedOptions,
   excludedAtDirectives: Set<string>,
 ): HeaderGroup[] => {
-  const requiredTagsLower = options.requiredTags.map((tag) => tag.toLowerCase());
+  const requiredTagsLower = options.requiredTags.map((tag) =>
+    tag.toLowerCase(),
+  );
   const groups: HeaderGroup[] = [];
 
   for (let index = 0; index < comments.length; index += 1) {
     const comment = comments[index];
     const normalized = normalizeCommentValue(comment);
 
-    if (!isHeaderCandidate(normalized, requiredTagsLower, excludedAtDirectives)) {
+    if (
+      !isHeaderCandidate(normalized, requiredTagsLower, excludedAtDirectives)
+    ) {
       continue;
     }
 
@@ -309,7 +353,9 @@ const shouldSkipGeneratedFile = (
     return false;
   }
 
-  const prefix = sourceText.slice(0, GENERATED_MARKER_SCAN_LENGTH).toLowerCase();
+  const prefix = sourceText
+    .slice(0, GENERATED_MARKER_SCAN_LENGTH)
+    .toLowerCase();
 
   return options.generatedMarkers.some((marker) =>
     prefix.includes(marker.toLowerCase()),
@@ -324,7 +370,9 @@ const getTopComments = (
   const firstToken = sourceCode.getFirstToken(node);
   const firstTokenLine = firstToken?.loc.start.line ?? Infinity;
 
-  return allComments.filter((comment) => comment.loc.start.line < firstTokenLine);
+  return allComments.filter(
+    (comment) => comment.loc.start.line < firstTokenLine,
+  );
 };
 
 const analyzeHeaderGroups = (
@@ -335,7 +383,9 @@ const analyzeHeaderGroups = (
   duplicateGroups: HeaderGroup[];
   splitHeaderGroups: HeaderGroup[];
 } => {
-  const requiredTagsLower = options.requiredTags.map((tag) => tag.toLowerCase());
+  const requiredTagsLower = options.requiredTags.map((tag) =>
+    tag.toLowerCase(),
+  );
   const headerGroups = candidateGroups.filter((group) =>
     hasAllRequiredTags(group.text, requiredTagsLower),
   );
@@ -353,7 +403,8 @@ const analyzeHeaderGroups = (
         const groupEnd = group.comments[group.comments.length - 1].loc.end.line;
         const primaryStart = primaryHeader.comments[0].loc.start.line;
         const primaryEnd =
-          primaryHeader.comments[primaryHeader.comments.length - 1].loc.end.line;
+          primaryHeader.comments[primaryHeader.comments.length - 1].loc.end
+            .line;
 
         /**
          * Check if group is adjacent to primary (before or after).
@@ -405,13 +456,17 @@ const reportMissingHeader = (
       fileName: path.basename(fileName),
       tags: options.requiredTags.join(', '),
     },
-    fix: template !== null
-      ? (fixer) => {
-          const { index, text } = computeHeaderInsertion(sourceText, template);
+    fix:
+      template !== null
+        ? (fixer) => {
+            const { index, text } = computeHeaderInsertion(
+              sourceText,
+              template,
+            );
 
-          return fixer.insertTextBeforeRange([index, index], text);
-        }
-      : null,
+            return fixer.insertTextBeforeRange([index, index], text);
+          }
+        : null,
   });
 };
 
@@ -423,7 +478,10 @@ const reportDuplicates = (
   duplicateGroups.forEach((group) => {
     const firstComment = group.comments[0];
     const removalRange = expandRangeToFullLines(
-      [firstComment.range[0], group.comments[group.comments.length - 1].range[1]],
+      [
+        firstComment.range[0],
+        group.comments[group.comments.length - 1].range[1],
+      ],
       sourceText,
     );
 
@@ -552,7 +610,11 @@ export const enforceUniqueCursorHeaders = createRule<Options, MessageIds>({
         }
 
         const topComments = getTopComments(sourceCode, node);
-        const candidateGroups = collectHeaderGroups(topComments, options, excludedAtDirectives);
+        const candidateGroups = collectHeaderGroups(
+          topComments,
+          options,
+          excludedAtDirectives,
+        );
 
         const { primaryHeader, duplicateGroups, splitHeaderGroups } =
           analyzeHeaderGroups(candidateGroups, options);

@@ -2,7 +2,7 @@ import { noEmptyDependencyUseCallbacks } from '../rules/no-empty-dependency-use-
 import { ruleTesterJsx } from '../utils/ruleTester';
 
 const valid = [
-`
+  `
 import { useCallback } from 'react';
 function getValue<T>() {
   return {} as T;
@@ -13,7 +13,7 @@ function Component() {
   return handler();
 }
 `,
-`
+  `
 import { useCallback } from 'react';
 function Component() {
   type LocalType = { id: string };
@@ -24,7 +24,7 @@ function Component() {
   return handler();
 }
 `,
-`
+  `
 import { useCallback } from 'react';
 function Component() {
   type LocalType = { id: number };
@@ -133,7 +133,7 @@ function Outer() {
   return <Inner />;
 }
 `,
-`
+  `
 import { useCallback } from 'react';
 function Component() {
   type LocalType = { value: string };
@@ -164,9 +164,9 @@ function Component<T extends { id: string }>() {
   return handler({ id: 'a' });
 }
 `,
-{
-  filename: 'component.ts',
-  code: `
+  {
+    filename: 'component.ts',
+    code: `
 import { useCallback } from 'react';
 function buildHandler() {
   type LocalType = { id: number };
@@ -177,7 +177,7 @@ function buildHandler() {
   return handler(1);
 }
   `,
-},
+  },
   `
 import { useCallback } from 'react';
 function Component({ formatter }) {
