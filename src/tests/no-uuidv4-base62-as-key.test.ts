@@ -1,6 +1,11 @@
 import { noUuidv4Base62AsKey } from '../rules/no-uuidv4-base62-as-key';
 import { ruleTesterJsx } from '../utils/ruleTester';
 
+const error = (keyExpression: string) => ({
+  messageId: 'noUuidv4Base62AsKey' as const,
+  data: { keyExpression },
+});
+
 ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
   valid: [
     // Using item.id as key (good practice)
@@ -264,7 +269,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
         <div key={uuidv4Base62()}>{item.name}</div>
       ))}
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error('uuidv4Base62()')],
     },
     {
       // Using a pre-generated UUID outside the map function
@@ -276,7 +281,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
           <div key={item.key}>{item.name}</div>
         ))}
         `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error('item.key')],
     },
 
     // Using uuidv4Base62 with React.Fragment
@@ -292,7 +297,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
         </React.Fragment>
       ))}
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error('uuidv4Base62()')],
     },
 
     // Using uuidv4Base62 in a nested map
@@ -312,7 +317,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
         </div>
       ))}
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error('uuidv4Base62()')],
     },
 
     // Using uuidv4Base62 in a conditional rendering
@@ -330,7 +335,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
           ))
       }
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error('uuidv4Base62()')],
     },
 
     // Using uuidv4Base62 in a logical expression
@@ -345,7 +350,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
         </div>
       ))}
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error('uuidv4Base62()')],
     },
 
     // Using uuidv4Base62 with a custom component
@@ -360,7 +365,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
         </CustomComponent>
       ))}
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error('uuidv4Base62()')],
     },
 
     // Using uuidv4Base62 in a complex structure
@@ -380,7 +385,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
         </section>
       ))}
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error('uuidv4Base62()')],
     },
 
     // Using uuidv4Base62 with dynamic component rendering
@@ -394,7 +399,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
         return <Component key={uuidv4Base62()} data={item} />;
       })}
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error('uuidv4Base62()')],
     },
 
     // ADDITIONAL INVALID TESTS
@@ -409,7 +414,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
         <div key={\`prefix-\${uuidv4Base62()}\`}>{item.name}</div>
       ))}
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error('`prefix-${uuidv4Base62()}`')],
     },
 
     // Using uuidv4Base62 with string concatenation
@@ -422,7 +427,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
         <div key={'prefix-' + uuidv4Base62()}>{item.name}</div>
       ))}
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error("'prefix-' + uuidv4Base62()")],
     },
 
     // Using uuidv4Base62 with a ternary operator
@@ -435,7 +440,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
         <div key={item.id ? item.id : uuidv4Base62()}>{item.name}</div>
       ))}
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error('item.id ? item.id : uuidv4Base62()')],
     },
 
     // Using uuidv4Base62 with logical OR for fallback
@@ -448,7 +453,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
         <div key={item.id || uuidv4Base62()}>{item.name}</div>
       ))}
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error('item.id || uuidv4Base62()')],
     },
 
     // Using uuidv4Base62 with nullish coalescing
@@ -461,7 +466,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
         <div key={item.id ?? uuidv4Base62()}>{item.name}</div>
       ))}
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error('item.id ?? uuidv4Base62()')],
     },
     {
       // Using a key with a renamed imported function
@@ -473,7 +478,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
           <div key={generateStableId(item)}>{item.name}</div>
         ))}
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error('generateStableId(item)')],
     },
 
     // Using uuidv4Base62 in a complex expression
@@ -486,7 +491,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
         <div key={prefix + '-' + uuidv4Base62() + '-' + suffix}>{item.name}</div>
       ))}
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error("prefix + '-' + uuidv4Base62() + '-' + suffix")],
     },
 
     // Using uuidv4Base62 with arguments
@@ -499,7 +504,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
         <div key={uuidv4Base62(item.name)}>{item.name}</div>
       ))}
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error('uuidv4Base62(item.name)')],
     },
 
     // Using uuidv4Base62 in a function call
@@ -512,7 +517,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
         <div key={formatKey(uuidv4Base62())}>{item.name}</div>
       ))}
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error('formatKey(uuidv4Base62())')],
     },
 
     // Using uuidv4Base62 in a deeply nested map
@@ -533,7 +538,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
         </div>
       ))}
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error('uuidv4Base62()')],
     },
 
     // Using uuidv4Base62 in multiple places in the same map
@@ -548,10 +553,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
         </div>
       ))}
       `,
-      errors: [
-        { messageId: 'noUuidv4Base62AsKey' },
-        { messageId: 'noUuidv4Base62AsKey' },
-      ],
+      errors: [error('uuidv4Base62()'), error('uuidv4Base62()')],
     },
 
     // Using uuidv4Base62 in a map with destructuring
@@ -567,7 +569,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
         </div>
       ))}
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error('uuidv4Base62()')],
     },
 
     // Using uuidv4Base62 in a map with a complex callback
@@ -587,7 +589,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
         );
       })}
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error('uuidv4Base62()')],
     },
 
     // Using uuidv4Base62 in a map with early returns
@@ -605,7 +607,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
         );
       })}
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error('uuidv4Base62()')],
     },
 
     // Using uuidv4Base62 in a map with filter
@@ -623,7 +625,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
         ))
       }
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error('uuidv4Base62()')],
     },
 
     // Using uuidv4Base62 in a map with sort
@@ -641,7 +643,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
         ))
       }
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error('uuidv4Base62()')],
     },
 
     // Using uuidv4Base62 in a Fragment shorthand syntax
@@ -658,7 +660,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
         </>
       ))}
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error('uuidv4Base62()')],
     },
 
     // Using uuidv4Base62 in a map with a switch statement
@@ -682,7 +684,7 @@ ruleTesterJsx.run('no-uuidv4-base62-as-key', noUuidv4Base62AsKey, {
         return <div key={uuidv4Base62()}>{content}</div>;
       })}
       `,
-      errors: [{ messageId: 'noUuidv4Base62AsKey' }],
+      errors: [error('uuidv4Base62()')],
     },
   ],
 });

@@ -11,13 +11,16 @@ export const noConditionalLiteralsInJsx: TSESLint.RuleModule<
   meta: {
     type: 'problem',
     docs: {
-      description: 'Disallow use of conditional literals in JSX code',
+      description:
+        'Disallow conditional string literals beside other JSX text to avoid fragmented text nodes, translation issues, and hydration mismatches.',
       recommended: 'error',
     },
     schema: [],
     messages: {
       unexpected:
-        'Conditional text literals must be wrapped in a container element when next to other text. Instead of `<div>text {condition && "more text"}</div>`, use `<div>text <span>{condition && "more text"}</span></div>` to prevent React hydration issues.',
+        'Conditional text literal {{literal}} is rendered next to other JSX text or expressions under condition {{condition}}. ' +
+        'This fragments text nodes, confusing translation/i18n tools and potentially causing React hydration mismatches when server and client group the text differently. ' +
+        'Wrap the conditional expression in its own element (for example, <span>{ {{expression}} }</span>) or move the entire sentence inside the conditional so it renders as a single text node.',
     },
   },
   defaultOptions: [],
@@ -55,19 +58,47 @@ export const noConditionalLiteralsInJsx: TSESLint.RuleModule<
               n.expression.type === 'MemberExpression'),
         );
 
-        // Operands of {conditional && 'string'} -- the conditional and the
-        // literal. We want to make sure we have a text literal, otherwise we'd
-        // trigger this rule on the (safe) {conditional && <div>string</div>}.
-        const expressionOperandTypes = [
-          (node.expression as TSESTree.LogicalExpression).left.type,
-          (node.expression as TSESTree.LogicalExpression).right.type,
-        ];
-        if (
-          siblingTextNodes.concat(siblingExpressionNodes).length > 0 &&
-          expressionOperandTypes.includes(TSESTree.AST_NODE_TYPES.Literal)
-        ) {
-          context.report({ node, messageId: 'unexpected' });
+        const hasSiblingContent =
+          siblingTextNodes.concat(siblingExpressionNodes).length > 0;
+        if (!hasSiblingContent) {
+          return;
         }
+
+        const logicalExpression = node.expression as TSESTree.LogicalExpression;
+        const literalNode = logicalExpression.right;
+        const conditionalNode = logicalExpression.left;
+
+        // Only enforce when the literal is the expression's return value.
+        if (literalNode.type !== TSESTree.AST_NODE_TYPES.Literal) {
+          return;
+        }
+
+        // Only enforce for string literals to avoid misleading messages for
+        // numeric or boolean literals rendered conditionally.
+        if (typeof literalNode.value !== 'string') {
+          return;
+        }
+
+        /**
+         * Ignore logical expressions that do not actually render the literal
+         * conditionally (e.g., literal && condition or literal || condition)
+         * and expressions with two literals.
+         */
+        if (conditionalNode.type === TSESTree.AST_NODE_TYPES.Literal) {
+          return;
+        }
+
+        const sourceCode = context.getSourceCode();
+
+        context.report({
+          node,
+          messageId: 'unexpected',
+          data: {
+            literal: sourceCode.getText(literalNode),
+            condition: sourceCode.getText(conditionalNode),
+            expression: sourceCode.getText(logicalExpression),
+          },
+        });
       },
     };
   },

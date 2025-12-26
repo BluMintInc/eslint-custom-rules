@@ -45,7 +45,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
     const addAssertSafeImport = (
       fixer: TSESLint.RuleFixer,
     ): TSESLint.RuleFix => {
-      const program = context.getSourceCode().ast;
+      const program = context.sourceCode.ast;
       const firstImport = program.body.find(
         (node) => node.type === AST_NODE_TYPES.ImportDeclaration,
       );
@@ -115,7 +115,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             key.callee.name === 'String'
           ) {
             const arg = key.arguments[0];
-            const argText = context.getSourceCode().getText(arg);
+            const argText = context.sourceCode.getText(arg);
             reportUseAssertSafe(key, argText);
           }
 
@@ -128,7 +128,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             key.quasis[1].value.raw === ''
           ) {
             const expr = key.expressions[0];
-            const exprText = context.getSourceCode().getText(expr);
+            const exprText = context.sourceCode.getText(expr);
             reportUseAssertSafe(key, exprText);
           }
         }
@@ -145,7 +145,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             left.callee.name === 'String'
           ) {
             const arg = left.arguments[0];
-            const argText = context.getSourceCode().getText(arg);
+            const argText = context.sourceCode.getText(arg);
             reportUseAssertSafe(left, argText);
           }
 
@@ -158,7 +158,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             left.quasis[1].value.raw === ''
           ) {
             const expr = left.expressions[0];
-            const exprText = context.getSourceCode().getText(expr);
+            const exprText = context.sourceCode.getText(expr);
             reportUseAssertSafe(left, exprText);
           }
         }
@@ -215,7 +215,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             property.callee.name === 'String'
           ) {
             const arg = property.arguments[0];
-            const argText = context.getSourceCode().getText(arg);
+            const argText = context.sourceCode.getText(arg);
             reportUseAssertSafe(property, argText);
             return;
           }
@@ -241,7 +241,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
             }
 
             const expr = property.expressions[0];
-            const exprText = context.getSourceCode().getText(expr);
+            const exprText = context.sourceCode.getText(expr);
             reportUseAssertSafe(property, exprText);
             return;
           }
@@ -258,7 +258,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
               return;
             }
 
-            const propText = context.getSourceCode().getText(property);
+            const propText = context.sourceCode.getText(property);
             reportUseAssertSafe(property, propText);
             return;
           }
@@ -270,7 +270,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
               return;
             }
 
-            const propText = context.getSourceCode().getText(property);
+            const propText = context.sourceCode.getText(property);
             reportUseAssertSafe(property, propText);
             return;
           }
@@ -286,7 +286,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
               return;
             }
 
-            const propText = context.getSourceCode().getText(property);
+            const propText = context.sourceCode.getText(property);
             reportUseAssertSafe(property, propText);
             return;
           }
@@ -305,7 +305,7 @@ export const enforceAssertSafeObjectKey = createRule<Options, MessageIds>({
               return;
             }
 
-            const propText = context.getSourceCode().getText(property);
+            const propText = context.sourceCode.getText(property);
             reportUseAssertSafe(property, propText);
             return;
           }
