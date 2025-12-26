@@ -533,7 +533,7 @@ function buildHoistFixes(
   context: Readonly<TSESLint.RuleContext<MessageIds, Options>>,
   callExpression: TSESTree.CallExpression,
   callback: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
-  moduleBindingsCache: WeakMap<TSESTree.Program, Set<string>>,
+  hoistedIdentifierCache: WeakMap<TSESTree.Program, Set<string>>,
 ): ((fixer: TSESLint.RuleFixer) => TSESLint.RuleFix[]) | null {
   if (
     !callExpression.parent ||
@@ -572,10 +572,10 @@ function buildHoistFixes(
   const programNode = getProgramNode(hoistTarget);
   let moduleBindings: Set<string> | null = null;
   if (programNode) {
-    const cachedBindings = moduleBindingsCache.get(programNode);
+    const cachedBindings = hoistedIdentifierCache.get(programNode);
     moduleBindings = cachedBindings ?? getModuleScopeValueBindings(programNode);
     if (!cachedBindings) {
-      moduleBindingsCache.set(programNode, moduleBindings);
+      hoistedIdentifierCache.set(programNode, moduleBindings);
     }
     if (moduleBindings.has(declarator.id.name)) {
       return null;
@@ -586,7 +586,16 @@ function buildHoistFixes(
   }
 
   const sourceCode = context.getSourceCode();
-  const identifierText = sourceCode.getText(declarator.id);
+  // We use the full range of the id to ensure we capture any type annotations.
+  // In @typescript-eslint/parser, the Identifier range already includes the
+  // type annotation, but we explicitly calculate the end range for robustness.
+  const idRangeEnd =
+    declarator.id.typeAnnotation &&
+    declarator.id.typeAnnotation.range[1] > declarator.id.range[1]
+      ? declarator.id.typeAnnotation.range[1]
+      : declarator.id.range[1];
+
+  const identifierText = sourceCode.getText().slice(declarator.id.range[0], idRangeEnd);
   const functionText = sourceCode.getText(callback);
   const hoisted = `const ${identifierText} = ${functionText};\n`;
   const fileText = sourceCode.getText();
@@ -653,7 +662,7 @@ export const noEmptyDependencyUseCallbacks = createRule<Options, MessageIds>({
     const ignoreTestFiles = options?.ignoreTestFiles !== false;
     const testPatterns = options?.testFilePatterns ?? DEFAULT_TEST_PATTERNS;
     const ignoreUseLatestCallback = options?.ignoreUseLatestCallback === true;
-    const moduleBindingsCache = new WeakMap<TSESTree.Program, Set<string>>();
+    const hoistedIdentifierCache = new WeakMap<TSESTree.Program, Set<string>>();
 
     const filename = context.getFilename();
     const isTest =
@@ -711,7 +720,7 @@ export const noEmptyDependencyUseCallbacks = createRule<Options, MessageIds>({
         context,
         callExpression,
         callback,
-        moduleBindingsCache,
+        hoistedIdentifierCache,
       );
 
       context.report({
