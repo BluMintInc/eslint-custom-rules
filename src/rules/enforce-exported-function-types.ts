@@ -441,7 +441,7 @@ export const enforceExportedFunctionTypes = createRule<[], MessageIds>({
         return true;
       }
 
-      const sourceCode = context.getSourceCode();
+      const sourceCode = context.sourceCode;
       const program = sourceCode.ast;
 
       // Check for imported types first - if found, return true immediately

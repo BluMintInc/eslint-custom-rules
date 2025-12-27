@@ -13,9 +13,9 @@ export = createRule({
     schema: [],
     messages: {
       useHttpsError:
-        'Use HttpsError instead of throw new Error in functions/src directory',
+        'Throwing "{{constructorName}}" in Cloud Functions returns a generic 500 and drops the structured status code clients rely on. Throw the proprietary HttpsError instead so responses include the correct status, sanitized message, and logging context.',
       useProprietaryHttpsError:
-        'Use our proprietary HttpsError instead of firebase-admin HttpsError',
+        '{{reference}} comes from {{source}} and bypasses our proprietary HttpsError wrapper, so responses skip standardized status codes, logging, and client-safe payloads. Import and throw HttpsError from @our-company/errors to keep errors consistent.',
     },
   },
   defaultOptions: [],
@@ -27,8 +27,22 @@ export = createRule({
       return {};
     }
 
-    let httpsIdentifier: string | null = null;
-    let httpsErrorIdentifier: string | null = null;
+    type ProprietaryErrorData = {
+      reference: string;
+      source: string;
+    };
+
+    const httpsIdentifiers = new Map<string, string>();
+    const httpsErrorIdentifiers = new Map<string, string>();
+    const reportProprietary = (
+      node: TSESTree.Node,
+      data: ProprietaryErrorData,
+    ) =>
+      context.report({
+        node,
+        messageId: 'useProprietaryHttpsError',
+        data,
+      });
 
     return {
       ImportDeclaration(node: TSESTree.ImportDeclaration) {
@@ -36,6 +50,10 @@ export = createRule({
           node.source.value === 'firebase-admin' ||
           node.source.value === 'firebase-admin/lib/https-error'
         ) {
+          const sourceModule = String(node.source.value);
+
+          // Report imports immediately so the forbidden dependency is blocked even
+          // when unused; throw sites below also report to cover runtime usage.
           // Check for direct HttpsError import
           const httpsErrorSpecifier = node.specifiers.find(
             (spec) =>
@@ -51,18 +69,20 @@ export = createRule({
           );
 
           if (httpsErrorSpecifier && 'local' in httpsErrorSpecifier) {
-            httpsErrorIdentifier = httpsErrorSpecifier.local.name;
-            context.report({
-              node,
-              messageId: 'useProprietaryHttpsError',
+            const localName = httpsErrorSpecifier.local.name;
+            httpsErrorIdentifiers.set(localName, sourceModule);
+            reportProprietary(node, {
+              reference: localName,
+              source: sourceModule,
             });
           }
 
           if (httpsSpecifier && 'local' in httpsSpecifier) {
-            httpsIdentifier = httpsSpecifier.local.name;
-            context.report({
-              node,
-              messageId: 'useProprietaryHttpsError',
+            const localName = httpsSpecifier.local.name;
+            httpsIdentifiers.set(localName, sourceModule);
+            reportProprietary(node, {
+              reference: `${localName}.HttpsError`,
+              source: sourceModule,
             });
           }
         }
@@ -87,27 +107,42 @@ export = createRule({
           context.report({
             node,
             messageId: 'useHttpsError',
+            data: {
+              constructorName: callee.name,
+            },
           });
           return;
         }
 
         // Check for firebase-admin HttpsError usage
-        const isFirebaseHttpsError =
+        if (
           callee.type === AST_NODE_TYPES.MemberExpression &&
           callee.object.type === AST_NODE_TYPES.Identifier &&
-          callee.object.name === httpsIdentifier &&
           callee.property.type === AST_NODE_TYPES.Identifier &&
-          callee.property.name === 'HttpsError';
+          callee.property.name === 'HttpsError'
+        ) {
+          const objectName = callee.object.name;
+          const source = httpsIdentifiers.get(objectName);
 
-        const isDirectHttpsError =
-          callee.type === AST_NODE_TYPES.Identifier &&
-          callee.name === httpsErrorIdentifier;
+          if (!source) {
+            return;
+          }
 
-        if (isFirebaseHttpsError || isDirectHttpsError) {
-          context.report({
-            node,
-            messageId: 'useProprietaryHttpsError',
+          reportProprietary(node, {
+            reference: `${objectName}.HttpsError`,
+            source,
           });
+          return;
+        }
+
+        if (callee.type === AST_NODE_TYPES.Identifier) {
+          const source = httpsErrorIdentifiers.get(callee.name);
+
+          if (!source) {
+            return;
+          }
+
+          reportProprietary(node, { reference: callee.name, source });
         }
       },
     };
