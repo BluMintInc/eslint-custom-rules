@@ -175,19 +175,6 @@ function trimEmptyLines(lines: string[]): string[] {
   return result;
 }
 
-function determineBaseIndent(
-  indentFromLine: string,
-  baseIndentOverride?: string | null,
-): string {
-  if (baseIndentOverride === null || baseIndentOverride === undefined) {
-    return indentFromLine;
-  }
-
-  return baseIndentOverride.length <= indentFromLine.length
-    ? baseIndentOverride
-    : indentFromLine;
-}
-
 function calculateMinAdditionalIndent(lines: string[]): number {
   const indents = lines
     .filter((line) => line.trim() !== '')
@@ -214,7 +201,7 @@ function normalizeLineIndentation(
 function computeReplacement(
   sourceCode: Readonly<TSESLint.SourceCode>,
   node: TSESTree.BlockStatement,
-  baseIndentOverride?: string | null,
+  targetIndent: string,
 ): string | null {
   const content = extractContentBetweenBraces(sourceCode, node);
 
@@ -229,11 +216,6 @@ function computeReplacement(
   if (!trimmedLines.length) {
     return null;
   }
-
-  const indentFromLine =
-    sourceCode.lines[node.loc.start.line - 1]?.match(/^\s*/)?.[0] ?? '';
-
-  const targetIndent = determineBaseIndent(indentFromLine, baseIndentOverride);
 
   const minAdditionalIndent = calculateMinAdditionalIndent(trimmedLines);
 
@@ -267,6 +249,64 @@ function getReportableBlockContext(
     parent,
     ancestors: ASTHelpers.getAncestors(context, node),
     siblingIndent: getSiblingIndent(sourceCode, parent, node),
+  };
+}
+
+/**
+ * Creates a fixer function that removes unnecessary curly brackets around
+ * commented properties by computing the appropriate replacement text and
+ * handling indentation and edge cases with trailing code.
+ */
+function createBlockRemovalFix(
+  sourceCode: Readonly<TSESLint.SourceCode>,
+  node: TSESTree.BlockStatement,
+  reportableContext: ReportableBlockContext,
+): TSESLint.ReportFixFunction {
+  return (fixer) => {
+    const startLine = node.loc.start.line;
+    const lineText = sourceCode.lines[startLine - 1];
+    const leadingWhitespace = lineText.match(/^\s*/)?.[0] ?? '';
+    const targetIndent = reportableContext.siblingIndent ?? leadingWhitespace;
+
+    const replacement = computeReplacement(sourceCode, node, targetIndent);
+
+    /* istanbul ignore next -- replacement only null when tokens are missing */
+    if (replacement === null) {
+      return null;
+    }
+
+    let fixRange: [number, number] = [node.range[0], node.range[1]];
+    let finalText = replacement;
+
+    /**
+     * If the node is at the start of the line (only whitespace before it),
+     * we replace from the very beginning of the line to handle both
+     * de-indentation and increasing indentation correctly.
+     */
+    if (node.loc.start.column === leadingWhitespace.length) {
+      const lineStart = sourceCode.getIndexFromLoc({
+        line: startLine,
+        column: 0,
+      });
+      fixRange[0] = lineStart;
+      finalText = targetIndent + replacement;
+    }
+
+    /**
+     * If the replacement ends with a line comment and there's code on the
+     * same line after the block, we must add a newline and proper
+     * indentation to prevent commenting out the subsequent code.
+     */
+    const lastLine = replacement.split('\n').pop() ?? '';
+    if (lastLine.trim().startsWith('//')) {
+      const nextToken = sourceCode.getTokenAfter(node);
+      if (nextToken && nextToken.loc.start.line === node.loc.end.line) {
+        fixRange[1] = nextToken.range[0];
+        finalText += '\n' + targetIndent;
+      }
+    }
+
+    return fixer.replaceTextRange(fixRange, finalText);
   };
 }
 
@@ -314,53 +354,7 @@ export const noCurlyBracketsAroundCommentedProperties = createRule<
               reportableContext.parent,
             ),
           },
-          fix: (fixer) => {
-            const replacement = computeReplacement(
-              sourceCode,
-              node,
-              reportableContext.siblingIndent,
-            );
-
-            /* istanbul ignore next -- replacement only null when tokens are missing */
-            if (replacement === null) {
-              return null;
-            }
-
-            const startLine = node.loc.start.line;
-            const lineText = sourceCode.lines[startLine - 1];
-            const leadingWhitespace = lineText.match(/^\s*/)?.[0] ?? '';
-            const targetIndent =
-              reportableContext.siblingIndent ?? leadingWhitespace;
-
-            let fixRange: [number, number] = [node.range[0], node.range[1]];
-            let finalText = replacement;
-
-            // If the node is at the start of the line (only whitespace before it),
-            // we replace from the very beginning of the line to handle both
-            // de-indentation and increasing indentation correctly.
-            if (node.loc.start.column === leadingWhitespace.length) {
-              const lineStart = sourceCode.getIndexFromLoc({
-                line: startLine,
-                column: 0,
-              });
-              fixRange[0] = lineStart;
-              finalText = targetIndent + replacement;
-            }
-
-            // If the replacement ends with a line comment and there's code on the
-            // same line after the block, we must add a newline and proper
-            // indentation to prevent commenting out the subsequent code.
-            const lastLine = replacement.split('\n').pop() ?? '';
-            if (lastLine.trim().startsWith('//')) {
-              const nextToken = sourceCode.getTokenAfter(node);
-              if (nextToken && nextToken.loc.start.line === node.loc.end.line) {
-                fixRange[1] = nextToken.range[0];
-                finalText += '\n' + targetIndent;
-              }
-            }
-
-            return fixer.replaceTextRange(fixRange, finalText);
-          },
+          fix: createBlockRemovalFix(sourceCode, node, reportableContext),
         });
       },
     };
