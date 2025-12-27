@@ -86,6 +86,16 @@ namespace Nested {
   //   
 }
       `,
+      `
+{
+  // @ts-ignore
+}
+      `,
+      `
+{
+  // @ts-expect-error
+}
+      `,
     ],
     invalid: [
       {

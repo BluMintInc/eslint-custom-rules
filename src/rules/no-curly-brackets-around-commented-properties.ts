@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 
+import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'removeCommentWrappedBlock';
@@ -14,7 +15,32 @@ function looksLikeTypeMemberComment(rawComment: string): boolean {
     return false;
   }
 
-  if (normalized.startsWith('@')) {
+  const JSDOC_MEMBER_TAGS = [
+    '@remarks',
+    '@deprecated',
+    '@see',
+    '@example',
+    '@param',
+    '@returns',
+    '@type',
+    '@property',
+    '@method',
+    '@default',
+    '@readonly',
+    '@private',
+    '@public',
+    '@protected',
+    '@internal',
+    '@beta',
+    '@alpha',
+    '@experimental',
+    '@override',
+    '@throws',
+    '@todo',
+    '@future',
+  ];
+
+  if (JSDOC_MEMBER_TAGS.some((tag) => normalized.startsWith(tag))) {
     return true;
   }
 
@@ -34,6 +60,30 @@ function getBlockComments(
       (comment) =>
         comment.range[0] >= node.range[0] && comment.range[1] <= node.range[1],
     );
+}
+
+type TopLevelParent = TSESTree.Program | TSESTree.TSModuleBlock;
+
+type ReportableBlockContext = {
+  parent: TopLevelParent;
+  ancestors: TSESTree.Node[];
+  siblingIndent: string | null;
+};
+
+function isEmptyTopLevelBlock(
+  node: TSESTree.BlockStatement,
+  parent: TSESTree.Node | null | undefined,
+): parent is TopLevelParent {
+  return (
+    node.body.length === 0 &&
+    !!parent &&
+    (parent.type === AST_NODE_TYPES.Program ||
+      parent.type === AST_NODE_TYPES.TSModuleBlock)
+  );
+}
+
+function hasTypeMemberComments(comments: TSESTree.Comment[]): boolean {
+  return comments.some((comment) => looksLikeTypeMemberComment(comment.value));
 }
 
 function describeContext(
@@ -72,6 +122,7 @@ function describeContext(
   }
 
   if (parent?.type === AST_NODE_TYPES.TSModuleBlock) {
+    /* istanbul ignore next -- TSModuleBlock always has TSModuleDeclaration ancestor in valid parsing */
     return 'this namespace or module block';
   }
 
@@ -191,6 +242,7 @@ function computeReplacement(
 ): string | null {
   const content = extractContentBetweenBraces(sourceCode, node);
 
+  /* istanbul ignore next -- extractContentBetweenBraces only null when tokens are missing */
   if (content === null) {
     return null;
   }
@@ -221,47 +273,6 @@ function computeReplacement(
   return normalizedLines.join('\n');
 }
 
-function getAncestors(
-  context: Readonly<TSESLint.RuleContext<MessageIds, []>>,
-  sourceCode: Readonly<TSESLint.SourceCode>,
-  node: TSESTree.Node,
-): TSESTree.Node[] {
-  const candidate = (sourceCode as unknown as {
-    getAncestors?: (current: TSESTree.Node) => TSESTree.Node[];
-  }).getAncestors;
-
-  if (typeof candidate === 'function') {
-    return candidate.call(sourceCode, node);
-  }
-
-  /* istanbul ignore next -- fallback for older ESLint versions */
-  return context.getAncestors();
-}
-
-type TopLevelParent = TSESTree.Program | TSESTree.TSModuleBlock;
-
-type ReportableBlockContext = {
-  parent: TopLevelParent;
-  ancestors: TSESTree.Node[];
-  siblingIndent: string | null;
-};
-
-function isEmptyTopLevelBlock(
-  node: TSESTree.BlockStatement,
-  parent: TSESTree.Node | null | undefined,
-): parent is TopLevelParent {
-  return (
-    node.body.length === 0 &&
-    !!parent &&
-    (parent.type === AST_NODE_TYPES.Program ||
-      parent.type === AST_NODE_TYPES.TSModuleBlock)
-  );
-}
-
-function hasTypeMemberComments(comments: TSESTree.Comment[]): boolean {
-  return comments.some((comment) => looksLikeTypeMemberComment(comment.value));
-}
-
 function getReportableBlockContext(
   context: Readonly<TSESLint.RuleContext<MessageIds, []>>,
   sourceCode: Readonly<TSESLint.SourceCode>,
@@ -281,7 +292,7 @@ function getReportableBlockContext(
 
   return {
     parent,
-    ancestors: getAncestors(context, sourceCode, node),
+    ancestors: ASTHelpers.getAncestors(context, node),
     siblingIndent: getSiblingIndent(sourceCode, parent, node),
   };
 }
@@ -307,7 +318,7 @@ export const noCurlyBracketsAroundCommentedProperties = createRule<
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode;
 
     return {
       BlockStatement(node) {

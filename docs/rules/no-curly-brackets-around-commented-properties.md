@@ -1,8 +1,8 @@
-# Disallow curly braces wrapping commented-out members in type declarations
+# Disallow curly-brace blocks that only wrap commented-out members inside type declarations (`@blumintinc/blumint/no-curly-brackets-around-commented-properties`)
 
-Rule ID: `@blumintinc/blumint/no-curly-brackets-around-commented-properties`
+💼 This rule is enabled in the ✅ `recommended` config.
 
-💼 Enabled in ✅ `recommended` config • 🔧 Fixable • 💭 No type info required
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
 
 <!-- end auto-generated rule header -->
 
