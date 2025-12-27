@@ -186,22 +186,38 @@ function calculateMinAdditionalIndent(lines: string[]): number {
 function normalizeLineIndentation(
   lines: string[],
   targetIndent: string,
+  indentDelta: number,
   minAdditionalIndent: number,
 ): string[] {
+  const firstLinePrefix = indentDelta > 0 ? ' '.repeat(indentDelta) : '';
+
   return lines.map((line, index) => {
     const currentIndent = line.match(/^\s*/)?.[0].length ?? 0;
     const removeLength = Math.min(currentIndent, minAdditionalIndent);
     const withoutIndent =
       removeLength > 0 ? line.slice(Math.min(removeLength, line.length)) : line;
-    const baseIndent = index === 0 ? '' : targetIndent;
+    const baseIndent = index === 0 ? firstLinePrefix : targetIndent;
     return `${baseIndent}${withoutIndent.trimEnd()}`;
   });
+}
+
+function determineBaseIndent(
+  indentFromLine: string,
+  baseIndentOverride?: string | null,
+): string {
+  if (baseIndentOverride === null || baseIndentOverride === undefined) {
+    return indentFromLine;
+  }
+
+  return baseIndentOverride.length <= indentFromLine.length
+    ? baseIndentOverride
+    : indentFromLine;
 }
 
 function computeReplacement(
   sourceCode: Readonly<TSESLint.SourceCode>,
   node: TSESTree.BlockStatement,
-  targetIndent: string,
+  baseIndentOverride?: string | null,
 ): string | null {
   const content = extractContentBetweenBraces(sourceCode, node);
 
@@ -217,11 +233,19 @@ function computeReplacement(
     return null;
   }
 
+  const indentFromLine =
+    sourceCode.lines[node.loc.start.line - 1]?.match(/^\s*/)?.[0] ?? '';
+
+  const targetIndent = determineBaseIndent(indentFromLine, baseIndentOverride);
+
+  const indentDelta = Math.max(targetIndent.length - indentFromLine.length, 0);
+
   const minAdditionalIndent = calculateMinAdditionalIndent(trimmedLines);
 
   const normalizedLines = normalizeLineIndentation(
     trimmedLines,
     targetIndent,
+    indentDelta,
     minAdditionalIndent,
   );
 
@@ -268,7 +292,11 @@ function createBlockRemovalFix(
     const leadingWhitespace = lineText.match(/^\s*/)?.[0] ?? '';
     const targetIndent = reportableContext.siblingIndent ?? leadingWhitespace;
 
-    const replacement = computeReplacement(sourceCode, node, targetIndent);
+    const replacement = computeReplacement(
+      sourceCode,
+      node,
+      reportableContext.siblingIndent,
+    );
 
     /* istanbul ignore next -- replacement only null when tokens are missing */
     if (replacement === null) {
@@ -297,10 +325,10 @@ function createBlockRemovalFix(
      * same line after the block, we must add a newline and proper
      * indentation to prevent commenting out the subsequent code.
      */
-    const lastLine = replacement.split('\n').pop() ?? '';
-    if (lastLine.trim().startsWith('//')) {
-      const nextToken = sourceCode.getTokenAfter(node);
-      if (nextToken && nextToken.loc.start.line === node.loc.end.line) {
+    const nextToken = sourceCode.getTokenAfter(node);
+    if (nextToken?.loc.start.line === node.loc.end.line) {
+      const lastLine = replacement.split('\n').pop() ?? '';
+      if (lastLine.trim().startsWith('//')) {
         fixRange[1] = nextToken.range[0];
         finalText += '\n' + targetIndent;
       }
