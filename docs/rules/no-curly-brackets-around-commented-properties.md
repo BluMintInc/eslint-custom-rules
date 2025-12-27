@@ -54,6 +54,25 @@ interface TournamentSettings {
 }
 ```
 
+### ❌ Incorrect (namespace / ambient declarations)
+
+```typescript
+namespace TournamentSettings {
+  export interface Settings {
+    maxParticipants: number;
+  }
+
+  {
+    // maxTeamsPerMatch: number;
+    // deprecatedField: string;
+  }
+
+  export interface NextGen {
+    isPublic: boolean;
+  }
+}
+```
+
 ### ✅ Correct (namespace / ambient declarations)
 
 ```typescript
@@ -70,10 +89,6 @@ namespace TournamentSettings {
   }
 }
 ```
-
-## Options
-
-This rule has no options.
 
 ## When Not To Use It
 

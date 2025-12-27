@@ -8,37 +8,37 @@ type MessageIds = 'removeCommentWrappedBlock';
 const MEMBER_SIGNATURE_PATTERN = /\b[A-Za-z_$][\w$]*\s*\??\s*:\s*[^;]+;?/;
 const METHOD_SIGNATURE_PATTERN = /\b[A-Za-z_$][\w$]*\s*\([^)]*\)\s*:?[^;]*;?/;
 
-function looksLikeTypeMemberComment(rawComment: string): boolean {
+const JSDOC_MEMBER_TAGS = [
+  '@remarks',
+  '@deprecated',
+  '@see',
+  '@example',
+  '@param',
+  '@returns',
+  '@type',
+  '@property',
+  '@method',
+  '@default',
+  '@readonly',
+  '@private',
+  '@public',
+  '@protected',
+  '@internal',
+  '@beta',
+  '@alpha',
+  '@experimental',
+  '@override',
+  '@throws',
+  '@todo',
+  '@future',
+];
+
+function isTypeMemberComment(rawComment: string): boolean {
   const normalized = rawComment.replace(/^\s*\*/gm, '').trim();
 
   if (!normalized) {
     return false;
   }
-
-  const JSDOC_MEMBER_TAGS = [
-    '@remarks',
-    '@deprecated',
-    '@see',
-    '@example',
-    '@param',
-    '@returns',
-    '@type',
-    '@property',
-    '@method',
-    '@default',
-    '@readonly',
-    '@private',
-    '@public',
-    '@protected',
-    '@internal',
-    '@beta',
-    '@alpha',
-    '@experimental',
-    '@override',
-    '@throws',
-    '@todo',
-    '@future',
-  ];
 
   if (JSDOC_MEMBER_TAGS.some((tag) => normalized.startsWith(tag))) {
     return true;
@@ -83,7 +83,7 @@ function isEmptyTopLevelBlock(
 }
 
 function hasTypeMemberComments(comments: TSESTree.Comment[]): boolean {
-  return comments.some((comment) => looksLikeTypeMemberComment(comment.value));
+  return comments.some((comment) => isTypeMemberComment(comment.value));
 }
 
 function describeContext(
@@ -92,27 +92,6 @@ function describeContext(
 ): string {
   for (let index = ancestors.length - 1; index >= 0; index -= 1) {
     const ancestor = ancestors[index];
-
-    /* istanbul ignore next -- interface/type/enum ancestors are unreachable with valid parsing */
-    if (ancestor.type === AST_NODE_TYPES.TSInterfaceDeclaration) {
-      return ancestor.id?.name
-        ? `interface "${ancestor.id.name}"`
-        : 'this interface';
-    }
-
-    /* istanbul ignore next -- interface/type/enum ancestors are unreachable with valid parsing */
-    if (ancestor.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
-      return ancestor.id?.name
-        ? `type "${ancestor.id.name}"`
-        : 'this type alias';
-    }
-
-    /* istanbul ignore next -- interface/type/enum ancestors are unreachable with valid parsing */
-    if (ancestor.type === AST_NODE_TYPES.TSEnumDeclaration) {
-      return ancestor.id?.name
-        ? `enum "${ancestor.id.name}"`
-        : 'this enum';
-    }
 
     if (ancestor.type === AST_NODE_TYPES.TSModuleDeclaration) {
       return ancestor.id.type === AST_NODE_TYPES.Identifier
@@ -270,7 +249,20 @@ function computeReplacement(
     minAdditionalIndent,
   );
 
-  return normalizedLines.join('\n');
+  let replacement = normalizedLines.join('\n');
+
+  // Fix: If the replacement ends with a line comment and there is something
+  // on the same line after the block, we must add a newline to prevent
+  // commenting out the subsequent code.
+  const lastLine = normalizedLines[normalizedLines.length - 1];
+  if (lastLine.trim().startsWith('//')) {
+    const nextToken = sourceCode.getTokenAfter(node);
+    if (nextToken && nextToken.loc.start.line === node.loc.end.line) {
+      replacement += '\n';
+    }
+  }
+
+  return replacement;
 }
 
 function getReportableBlockContext(

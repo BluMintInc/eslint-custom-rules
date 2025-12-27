@@ -307,6 +307,37 @@ namespace Legacy {
           { messageId: 'removeCommentWrappedBlock' },
         ],
       },
+      {
+        code: `
+namespace N {
+  {
+    // field: string;
+  } export const x = 1;
+}
+        `,
+        output: `
+namespace N {
+  // field: string;
+ export const x = 1;
+}
+        `,
+        errors: [{ messageId: 'removeCommentWrappedBlock' }],
+      },
+      {
+        code: `
+declare module "foo" {
+  {
+    // field: string;
+  }
+}
+        `,
+        output: `
+declare module "foo" {
+  // field: string;
+}
+        `,
+        errors: [{ messageId: 'removeCommentWrappedBlock' }],
+      },
     ],
   },
 );
