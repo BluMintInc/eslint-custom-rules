@@ -199,17 +199,14 @@ function calculateMinAdditionalIndent(lines: string[]): number {
 function normalizeLineIndentation(
   lines: string[],
   targetIndent: string,
-  indentDelta: number,
   minAdditionalIndent: number,
 ): string[] {
-  const firstLinePrefix = indentDelta > 0 ? ' '.repeat(indentDelta) : '';
-
   return lines.map((line, index) => {
     const currentIndent = line.match(/^\s*/)?.[0].length ?? 0;
     const removeLength = Math.min(currentIndent, minAdditionalIndent);
     const withoutIndent =
       removeLength > 0 ? line.slice(Math.min(removeLength, line.length)) : line;
-    const baseIndent = index === 0 ? firstLinePrefix : targetIndent;
+    const baseIndent = index === 0 ? '' : targetIndent;
     return `${baseIndent}${withoutIndent.trimEnd()}`;
   });
 }
@@ -238,31 +235,15 @@ function computeReplacement(
 
   const targetIndent = determineBaseIndent(indentFromLine, baseIndentOverride);
 
-  const indentDelta = Math.max(targetIndent.length - indentFromLine.length, 0);
-
   const minAdditionalIndent = calculateMinAdditionalIndent(trimmedLines);
 
   const normalizedLines = normalizeLineIndentation(
     trimmedLines,
     targetIndent,
-    indentDelta,
     minAdditionalIndent,
   );
 
-  let replacement = normalizedLines.join('\n');
-
-  // Fix: If the replacement ends with a line comment and there is something
-  // on the same line after the block, we must add a newline to prevent
-  // commenting out the subsequent code.
-  const lastLine = normalizedLines[normalizedLines.length - 1];
-  if (lastLine.trim().startsWith('//')) {
-    const nextToken = sourceCode.getTokenAfter(node);
-    if (nextToken && nextToken.loc.start.line === node.loc.end.line) {
-      replacement += '\n';
-    }
-  }
-
-  return replacement;
+  return normalizedLines.join('\n');
 }
 
 function getReportableBlockContext(
@@ -345,7 +326,40 @@ export const noCurlyBracketsAroundCommentedProperties = createRule<
               return null;
             }
 
-            return fixer.replaceText(node, replacement);
+            const startLine = node.loc.start.line;
+            const lineText = sourceCode.lines[startLine - 1];
+            const leadingWhitespace = lineText.match(/^\s*/)?.[0] ?? '';
+            const targetIndent =
+              reportableContext.siblingIndent ?? leadingWhitespace;
+
+            let fixRange: [number, number] = [node.range[0], node.range[1]];
+            let finalText = replacement;
+
+            // If the node is at the start of the line (only whitespace before it),
+            // we replace from the very beginning of the line to handle both
+            // de-indentation and increasing indentation correctly.
+            if (node.loc.start.column === leadingWhitespace.length) {
+              const lineStart = sourceCode.getIndexFromLoc({
+                line: startLine,
+                column: 0,
+              });
+              fixRange[0] = lineStart;
+              finalText = targetIndent + replacement;
+            }
+
+            // If the replacement ends with a line comment and there's code on the
+            // same line after the block, we must add a newline and proper
+            // indentation to prevent commenting out the subsequent code.
+            const lastLine = replacement.split('\n').pop() ?? '';
+            if (lastLine.trim().startsWith('//')) {
+              const nextToken = sourceCode.getTokenAfter(node);
+              if (nextToken && nextToken.loc.start.line === node.loc.end.line) {
+                fixRange[1] = nextToken.range[0];
+                finalText += '\n' + targetIndent;
+              }
+            }
+
+            return fixer.replaceTextRange(fixRange, finalText);
           },
         });
       },

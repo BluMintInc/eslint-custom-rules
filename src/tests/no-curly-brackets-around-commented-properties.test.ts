@@ -318,7 +318,24 @@ namespace N {
         output: `
 namespace N {
   // field: string;
- export const x = 1;
+  export const x = 1;
+}
+        `,
+        errors: [{ messageId: 'removeCommentWrappedBlock' }],
+      },
+      {
+        code: `
+namespace OverIndented {
+  export interface S {}
+    {
+      // field: string;
+    }
+}
+        `,
+        output: `
+namespace OverIndented {
+  export interface S {}
+  // field: string;
 }
         `,
         errors: [{ messageId: 'removeCommentWrappedBlock' }],
