@@ -146,6 +146,7 @@ import { noArrayLengthInDeps } from './rules/no-array-length-in-deps';
 import { preferUseDeepCompareMemo } from './rules/prefer-use-deep-compare-memo';
 import { noCircularReferences } from './rules/no-circular-references';
 import { noPassthroughGetters } from './rules/no-passthrough-getters';
+import { noCurlyBracketsAroundCommentedProperties } from './rules/no-curly-brackets-around-commented-properties';
 import { requireHttpsErrorInOnRequestHandlers } from './rules/no-res-error-status-in-onrequest';
 import { noTryCatchAlreadyExistsInTransaction } from './rules/no-try-catch-already-exists-in-transaction';
 import { noUselessUsememoPrimitives } from './rules/no-useless-usememo-primitives';
@@ -350,6 +351,8 @@ module.exports = {
         '@blumintinc/blumint/prefer-use-deep-compare-memo': 'error',
         '@blumintinc/blumint/no-circular-references': 'error',
         '@blumintinc/blumint/no-try-catch-already-exists-in-transaction':
+          'error',
+        '@blumintinc/blumint/no-curly-brackets-around-commented-properties':
           'error',
         '@blumintinc/blumint/no-passthrough-getters': 'error',
         '@blumintinc/blumint/vertically-group-related-functions': 'error',
@@ -602,6 +605,8 @@ module.exports = {
     'no-console-error': noConsoleError,
     'no-try-catch-already-exists-in-transaction':
       noTryCatchAlreadyExistsInTransaction,
+    'no-curly-brackets-around-commented-properties':
+      noCurlyBracketsAroundCommentedProperties,
     'no-passthrough-getters': noPassthroughGetters,
     'vertically-group-related-functions': verticallyGroupRelatedFunctions,
     'no-static-constants-in-dynamic-files': noStaticConstantsInDynamicFiles,
