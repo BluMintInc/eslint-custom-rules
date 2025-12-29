@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type ParenthesizedTypeNode = TSESTree.TypeNode & {
   typeAnnotation: TSESTree.TypeNode;
@@ -262,23 +263,6 @@ export const noUnusedProps = createRule({
       return false;
     };
 
-    const findVariableInScopeChain = (
-      scope: TSESLint.Scope.Scope,
-      name: string,
-    ) => {
-      let current: TSESLint.Scope.Scope | null = scope;
-      while (current) {
-        const variable =
-          current.set?.get(name) ??
-          current.variables.find((variable) => variable.name === name);
-        if (variable) {
-          return variable;
-        }
-        current = current.upper;
-      }
-      return null;
-    };
-
     const reportUnusedProps = (
       typeName: string,
       used: Set<string>,
@@ -503,7 +487,7 @@ export const noUnusedProps = createRule({
             let added = false;
 
             if (currentScope && baseTypeName) {
-              const variable = findVariableInScopeChain(
+              const variable = ASTHelpers.findVariableInScope(
                 currentScope,
                 baseTypeName,
               );
@@ -575,7 +559,7 @@ export const noUnusedProps = createRule({
                 extension.expression.type === AST_NODE_TYPES.Identifier &&
                 extension.expression.name
               ) {
-                const parentVariable = findVariableInScopeChain(
+                const parentVariable = ASTHelpers.findVariableInScope(
                   currentScope,
                   extension.expression.name,
                 );

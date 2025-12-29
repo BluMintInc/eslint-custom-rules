@@ -1,6 +1,7 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { minimatch } from 'minimatch';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type Options = [
   {
@@ -376,16 +377,7 @@ const hasIdentifierInScope = (
   identifierName: string,
   scope: TSESLint.Scope.Scope,
 ) => {
-  let current: TSESLint.Scope.Scope | null = scope;
-
-  while (current) {
-    if (current.variables.some((variable) => variable.name === identifierName)) {
-      return true;
-    }
-    current = current.upper;
-  }
-
-  return false;
+  return !!ASTHelpers.findVariableInScope(scope, identifierName);
 };
 
 export const memoNestedReactComponents = createRule<Options, MessageIds>({
@@ -493,7 +485,8 @@ How to fix: Create the component via {{replacementHook}} and wrap it in memo() s
                   );
 
             if (!replacementIdentifierAvailable) {
-              // Avoid producing an invalid fix when the replacement hook is not imported.
+              // When the standalone replacement hook (useMemo/useDeepCompareMemo) is not imported,
+              // we can only fix member expressions that use the React namespace.
               if (
                 node.callee.type !== AST_NODE_TYPES.MemberExpression ||
                 node.callee.object.type !== AST_NODE_TYPES.Identifier
@@ -501,6 +494,7 @@ How to fix: Create the component via {{replacementHook}} and wrap it in memo() s
                 return null;
               }
 
+              // Ensure memo's namespace matches the hook's namespace (e.g., React.useCallback → React.useMemo + React.memo).
               if (
                 memoReference &&
                 memoReference.includes('.') &&
@@ -510,14 +504,17 @@ How to fix: Create the component via {{replacementHook}} and wrap it in memo() s
               }
             }
 
+            // Component factories (functions returning functions that return JSX) require manual refactoring.
             if (!componentMatch.componentIsCallback) {
               return null;
             }
 
+            // Ensure callback is a function expression before attempting to wrap it.
             if (!isFunctionExpression(callback)) {
               return null;
             }
 
+            // Prevent mixing namespaces: don't apply fix when hook and memo use different React imports.
             if (
               memoNamespace &&
               node.callee.type === AST_NODE_TYPES.MemberExpression &&
