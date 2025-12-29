@@ -250,6 +250,24 @@ ruleTesterTs.run('no-undefined-null-passthrough', noUndefinedNullPassthrough, {
       if (!data) return {};
       return { ...data, processed: true };
     }`,
+
+    // Functions with unknown parameters are exempt from this rule
+    `export function extractUserFriendlyMessage(error: unknown) {
+      if (typeof error !== 'object' || error === null) {
+        return;
+      }
+      return (error as any).message;
+    }`,
+
+    `export const processUnknown = (input: unknown) => {
+      if (!input) return undefined;
+      return String(input);
+    };`,
+
+    `function multiParamUnknown(a: string, b: unknown) {
+      if (!b) return;
+      return a + String(b);
+    }`,
   ],
   invalid: [
     // Function declaration with early return for null/undefined

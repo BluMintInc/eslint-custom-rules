@@ -1,5 +1,5 @@
 import { createRule } from '../utils/createRule';
-import { TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 
 export const noUndefinedNullPassthrough: TSESLint.RuleModule<
   'unexpected',
@@ -10,6 +10,11 @@ export const noUndefinedNullPassthrough: TSESLint.RuleModule<
       FunctionDeclaration(node) {
         // Skip functions with no parameters
         if (node.params.length === 0) {
+          return;
+        }
+
+        // Skip functions with any parameter typed as 'unknown'
+        if (node.params.some(isUnknownParameter)) {
           return;
         }
 
@@ -33,6 +38,11 @@ export const noUndefinedNullPassthrough: TSESLint.RuleModule<
       ArrowFunctionExpression(node) {
         // Skip functions with no parameters
         if (node.params.length === 0) {
+          return;
+        }
+
+        // Skip functions with any parameter typed as 'unknown'
+        if (node.params.some(isUnknownParameter)) {
           return;
         }
 
@@ -63,6 +73,11 @@ export const noUndefinedNullPassthrough: TSESLint.RuleModule<
       FunctionExpression(node) {
         // Skip functions with no parameters
         if (node.params.length === 0) {
+          return;
+        }
+
+        // Skip functions with any parameter typed as 'unknown'
+        if (node.params.some(isUnknownParameter)) {
           return;
         }
 
@@ -514,4 +529,26 @@ function checkFunctionBodyForEarlyReturns(
       }
     }
   }
+}
+
+/**
+ * Check if a parameter is explicitly typed as unknown
+ */
+function isUnknownParameter(param: TSESTree.Parameter): boolean {
+  if (param.type === AST_NODE_TYPES.Identifier) {
+    return (
+      param.typeAnnotation?.typeAnnotation.type ===
+      AST_NODE_TYPES.TSUnknownKeyword
+    );
+  }
+  if (
+    param.type === AST_NODE_TYPES.AssignmentPattern &&
+    param.left.type === AST_NODE_TYPES.Identifier
+  ) {
+    return (
+      param.left.typeAnnotation?.typeAnnotation.type ===
+      AST_NODE_TYPES.TSUnknownKeyword
+    );
+  }
+  return false;
 }
