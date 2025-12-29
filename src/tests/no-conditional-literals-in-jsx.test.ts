@@ -5,6 +5,44 @@ ruleTesterJsx.run(
   'no-conditional-literals-in-jsx',
   noConditionalLiteralsInJsx,
   {
+    // Message is shared across invalid cases with interpolated values
+    // to ensure the rule surfaces actionable context in errors.
+    invalid: [
+      {
+        code: `<div> This is a test {conditional && 'additional text'} </div>`,
+        condition: 'conditional',
+        literal: `'additional text'`,
+        expression: `conditional && 'additional text'`,
+      },
+      {
+        code: `<div> This is a {isReady && 'also text'} test </div>`,
+        condition: 'isReady',
+        literal: `'also text'`,
+        expression: `isReady && 'also text'`,
+      },
+      {
+        code: `<div> <span> This is a {show && 'extra'} test </span> </div>`,
+        condition: 'show',
+        literal: `'extra'`,
+        expression: `show && 'extra'`,
+      },
+      {
+        code: `<div> Label: {value || 'missing'} </div>`,
+        condition: 'value',
+        literal: `'missing'`,
+        expression: `value || 'missing'`,
+      },
+    ].map(({ code, condition, literal, expression }) => {
+      return {
+        code,
+        errors: [
+          {
+            messageId: 'unexpected',
+            data: { literal, condition, expression },
+          },
+        ],
+      };
+    }),
     valid: [
       // JSX with no conditional text literals
       `(
@@ -24,21 +62,31 @@ ruleTesterJsx.run(
         {conditional && variable}
       </div>
     )`,
+      // Conditional rendering of non-string literal should be ignored
+      `(
+      <div>
+        {conditional && 0}
+      </div>
+    )`,
+      // Logical expression with two literals should be ignored
+      `(
+      <div>
+        prefix {'foo' && 'bar'} suffix
+      </div>
+    )`,
+      // Literal on the left-hand side should not report because the literal is
+      // not the rendered value
+      `(
+      <div>
+        start {'always' && condition} end
+      </div>
+    )`,
+      // Literal short-circuit on the left is unconditional and should be ignored
+      `(
+      <div>
+        start {'always' || condition} end
+      </div>
+    )`,
     ],
-    invalid: [
-      // JSX with conditional text literals
-      `<div> This is a test {conditional && 'additional text'} </div>`,
-
-      // JSX with conditional text literals with JSX siblings
-      `<div> This is a {conditional && 'additional text'} test </div>`,
-
-      // JSX with conditional text literals within other JSX elements
-      `<div> <span> This is a {conditional && 'additional text'} test </span> </div>`,
-    ].map((testCase) => {
-      return {
-        code: testCase,
-        errors: [{ messageId: 'unexpected' }],
-      };
-    }),
   },
 );

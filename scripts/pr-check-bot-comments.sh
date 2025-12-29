@@ -20,4 +20,3 @@ if [ "$LIMIT_PASSED" = false ]; then
 fi
 
 "$SCRIPT_DIR/pr-check-comments.sh" "${PARGS[@]}" "$@"
-
