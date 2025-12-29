@@ -169,24 +169,42 @@ const isMemoCall = (
   return calleeMatchesReactMember(node.callee, reactImports, 'memo');
 };
 
-const mergeComponentResults = (
-  ...results: Array<ComponentDetectionResult | null>
-): ComponentDetectionResult | null => {
-  const present = results.filter(
+const filterPresentResults = (
+  results: Array<ComponentDetectionResult | null>,
+): ComponentDetectionResult[] => {
+  return results.filter(
     (result): result is ComponentDetectionResult => Boolean(result),
   );
+};
 
-  if (!present.length) {
-    return null;
-  }
+const areAllComponentsCallbacks = (
+  components: ComponentDetectionResult[],
+): boolean => {
+  return components.every((result) => result.componentIsCallback);
+};
 
+const createMergedResult = (
+  components: ComponentDetectionResult[],
+): ComponentDetectionResult => {
   return {
     found: true,
     // Auto-fix wraps the callback in memo() and swaps the hook. That is only valid when
     // every branch is itself a component callback (returns JSX/createElement directly).
     // If any branch yields a component factory, the transformation changes behavior.
-    componentIsCallback: present.every((result) => result.componentIsCallback),
+    componentIsCallback: areAllComponentsCallbacks(components),
   };
+};
+
+const mergeComponentResults = (
+  ...results: Array<ComponentDetectionResult | null>
+): ComponentDetectionResult | null => {
+  const present = filterPresentResults(results);
+
+  if (!present.length) {
+    return null;
+  }
+
+  return createMergedResult(present);
 };
 
 const expressionCreatesComponent = (

@@ -94,18 +94,24 @@ export const noUnusedProps = createRule({
     const findTypeAliasDeclaration = (
       typeName: string,
     ): TSESTree.TSTypeAliasDeclaration | null => {
-      const variable = ASTHelpers.findVariableInScope(
-        context.getScope(),
-        typeName,
-      );
-      if (variable) {
-        const typeAliasDef = variable.defs.find(
-          (def) => def.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration,
-        );
-        const typeAliasNode = typeAliasDef?.node;
-        if (isTypeAliasDeclaration(typeAliasNode)) {
-          return typeAliasNode;
+      let scope: TSESLint.Scope.Scope | null = context.getScope();
+
+      while (scope) {
+        const variable =
+          scope.set?.get(typeName) ??
+          scope.variables.find((v) => v.name === typeName);
+
+        if (variable) {
+          const typeAliasDef = variable.defs.find(
+            (def) => def.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration,
+          );
+          const typeAliasNode = typeAliasDef?.node;
+          if (isTypeAliasDeclaration(typeAliasNode)) {
+            return typeAliasNode;
+          }
         }
+
+        scope = scope.upper;
       }
 
       return null;
@@ -548,34 +554,54 @@ export const noUnusedProps = createRule({
             declaration: TSESTree.TSInterfaceDeclaration,
             currentScope: TSESLint.Scope.Scope,
             shouldInclude: (name: string) => boolean = () => true,
+            visitingInterfaces: Set<string> = new Set(),
           ): boolean => {
-            let added = addPropsFromMembers(declaration.body.body, shouldInclude);
+            return (
+              withTypeVisitation(
+                visitingInterfaces,
+                declaration.id.name,
+                () => {
+                  let added = addPropsFromMembers(
+                    declaration.body.body,
+                    shouldInclude,
+                  );
 
-            declaration.extends?.forEach((extension) => {
-              if (
-                extension.expression.type === AST_NODE_TYPES.Identifier &&
-                extension.expression.name
-              ) {
-                const parentVariable = ASTHelpers.findVariableInScope(
-                  currentScope,
-                  extension.expression.name,
-                );
-                const parentDef = parentVariable?.defs[0]?.node;
-                if (parentDef?.type === AST_NODE_TYPES.TSInterfaceDeclaration) {
-                  added =
-                    addInterfaceProps(parentDef, currentScope, shouldInclude) ||
-                    added;
-                } else if (
-                  parentDef?.type === AST_NODE_TYPES.TSTypeAliasDeclaration
-                ) {
-                  added =
-                    addBaseTypeProps(parentDef.typeAnnotation, shouldInclude) ||
-                    added;
-                }
-              }
-            });
+                  declaration.extends?.forEach((extension) => {
+                    if (
+                      extension.expression.type === AST_NODE_TYPES.Identifier &&
+                      extension.expression.name
+                    ) {
+                      const parentVariable = ASTHelpers.findVariableInScope(
+                        currentScope,
+                        extension.expression.name,
+                      );
+                      const parentDef = parentVariable?.defs[0]?.node;
+                      if (
+                        parentDef?.type === AST_NODE_TYPES.TSInterfaceDeclaration
+                      ) {
+                        added =
+                          addInterfaceProps(
+                            parentDef,
+                            currentScope,
+                            shouldInclude,
+                            visitingInterfaces,
+                          ) || added;
+                      } else if (
+                        parentDef?.type === AST_NODE_TYPES.TSTypeAliasDeclaration
+                      ) {
+                        added =
+                          addBaseTypeProps(
+                            parentDef.typeAnnotation,
+                            shouldInclude,
+                          ) || added;
+                      }
+                    }
+                  });
 
-            return added;
+                  return added;
+                },
+              ) ?? false
+            );
           };
 
           function extractProps(
