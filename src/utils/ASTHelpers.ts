@@ -1,6 +1,26 @@
-import { TSESTree } from '@typescript-eslint/utils';
+import { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { Graph } from './graph/ClassGraphBuilder';
 export class ASTHelpers {
+  /**
+   * Finds a variable by name in the scope chain starting from the given scope.
+   */
+  public static findVariableInScope(
+    scope: TSESLint.Scope.Scope,
+    name: string,
+  ): TSESLint.Scope.Variable | null {
+    let current: TSESLint.Scope.Scope | null = scope;
+    while (current) {
+      const variable =
+        current.set?.get(name) ??
+        current.variables.find((v) => v.name === name);
+      if (variable) {
+        return variable;
+      }
+      current = current.upper;
+    }
+    return null;
+  }
+
   public static blockIncludesIdentifier(
     block: TSESTree.BlockStatement,
   ): boolean {

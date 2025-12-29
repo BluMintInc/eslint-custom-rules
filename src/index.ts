@@ -152,6 +152,7 @@ import { noPassthroughGetters } from './rules/no-passthrough-getters';
 import { noCurlyBracketsAroundCommentedProperties } from './rules/no-curly-brackets-around-commented-properties';
 import { requireHttpsErrorInOnRequestHandlers } from './rules/no-res-error-status-in-onrequest';
 import { noTryCatchAlreadyExistsInTransaction } from './rules/no-try-catch-already-exists-in-transaction';
+import { memoNestedReactComponents } from './rules/memo-nested-react-components';
 import { noUselessUsememoPrimitives } from './rules/no-useless-usememo-primitives';
 import { jsdocAboveField } from './rules/jsdoc-above-field';
 import { enforceTransformMemoization } from './rules/enforce-transform-memoization';
@@ -354,6 +355,7 @@ module.exports = {
         '@blumintinc/blumint/no-array-length-in-deps': 'error',
         '@blumintinc/blumint/enforce-stable-hash-spread-props': 'error',
         '@blumintinc/blumint/prefer-use-deep-compare-memo': 'error',
+        '@blumintinc/blumint/memo-nested-react-components': 'error',
         '@blumintinc/blumint/memo-compare-deeply-complex-props': 'error',
         '@blumintinc/blumint/no-circular-references': 'error',
         '@blumintinc/blumint/no-try-catch-already-exists-in-transaction':
@@ -609,6 +611,7 @@ module.exports = {
     'no-array-length-in-deps': noArrayLengthInDeps,
     'prefer-memoized-props': preferMemoizedProps,
     'prefer-use-deep-compare-memo': preferUseDeepCompareMemo,
+    'memo-nested-react-components': memoNestedReactComponents,
     'memo-compare-deeply-complex-props': memoCompareDeeplyComplexProps,
     'no-circular-references': noCircularReferences,
     'no-console-error': noConsoleError,
