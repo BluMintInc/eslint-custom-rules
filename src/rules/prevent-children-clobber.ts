@@ -14,7 +14,7 @@ type FunctionLike =
 type BindingInfo = {
   identifier: TSESTree.Identifier;
   childrenExcluded: boolean;
-  typeAnnotationExcludesChildren: boolean;
+  typeAnnotationExcludesProperty: boolean;
 };
 
 type MinimalParserServices = {
@@ -78,26 +78,32 @@ function patternHasChildrenProperty(pattern: TSESTree.ObjectPattern): boolean {
   });
 }
 
-function typeNodeContainsChildrenLiteral(node: TSESTree.TypeNode): boolean {
+function typeNodeContainsLiteral(
+  node: TSESTree.TypeNode,
+  literalValue: string,
+): boolean {
   if (node.type === AST_NODE_TYPES.TSLiteralType) {
     return node.literal.type === AST_NODE_TYPES.Literal
-      ? node.literal.value === 'children'
+      ? node.literal.value === literalValue
       : false;
   }
   if (node.type === AST_NODE_TYPES.TSUnionType) {
-    return node.types.some(typeNodeContainsChildrenLiteral);
+    return node.types.some((t) => typeNodeContainsLiteral(t, literalValue));
   }
   if (node.type === AST_NODE_TYPES.TSTupleType) {
-    return node.elementTypes.some(typeNodeContainsChildrenLiteral);
+    return node.elementTypes.some((t) =>
+      typeNodeContainsLiteral(t, literalValue),
+    );
   }
   if (node.type === AST_NODE_TYPES.TSArrayType) {
-    return typeNodeContainsChildrenLiteral(node.elementType);
+    return typeNodeContainsLiteral(node.elementType, literalValue);
   }
   return false;
 }
 
-function typeNodeExcludesChildren(
+function typeNodeExcludesProperty(
   node: TSESTree.TypeNode,
+  propertyName: string,
   aliasMap?: Map<string, TSESTree.TypeNode>,
   seen: Set<string> = new Set(),
 ): boolean {
@@ -110,8 +116,8 @@ function typeNodeExcludesChildren(
     if (typeName === 'Omit' && node.typeParameters?.params?.[1]) {
       const excluded = node.typeParameters.params[1];
       if (
-        typeNodeContainsChildrenLiteral(excluded) ||
-        typeNodeExcludesChildren(excluded, aliasMap, seen)
+        typeNodeContainsLiteral(excluded, propertyName) ||
+        typeNodeExcludesProperty(excluded, propertyName, aliasMap, seen)
       ) {
         return true;
       }
@@ -119,44 +125,48 @@ function typeNodeExcludesChildren(
 
     if (node.typeParameters?.params) {
       return node.typeParameters.params.some((param) =>
-        typeNodeExcludesChildren(param, aliasMap, seen),
+        typeNodeExcludesProperty(param, propertyName, aliasMap, seen),
       );
     }
 
-    if (
-      typeName &&
-      aliasMap?.has(typeName) &&
-      !seen.has(typeName)
-    ) {
+    if (typeName && aliasMap?.has(typeName) && !seen.has(typeName)) {
       seen.add(typeName);
       const alias = aliasMap.get(typeName);
-      if (alias && typeNodeExcludesChildren(alias, aliasMap, seen)) {
+      if (
+        alias &&
+        typeNodeExcludesProperty(alias, propertyName, aliasMap, seen)
+      ) {
         return true;
       }
     }
   }
 
   if (node.type === AST_NODE_TYPES.TSUnionType) {
-    return node.types.some((typeNode) =>
-      typeNodeExcludesChildren(typeNode, aliasMap, seen),
+    return node.types.every((typeNode) =>
+      typeNodeExcludesProperty(typeNode, propertyName, aliasMap, seen),
     );
   }
 
   if (node.type === AST_NODE_TYPES.TSIntersectionType) {
-    return node.types.some((typeNode) =>
-      typeNodeExcludesChildren(typeNode, aliasMap, seen),
+    return node.types.every((typeNode) =>
+      typeNodeExcludesProperty(typeNode, propertyName, aliasMap, seen),
     );
   }
 
   return false;
 }
 
-function typeAnnotationExcludesChildren(
+function typeAnnotationExcludesProperty(
   annotation: TSESTree.TSTypeAnnotation | null | undefined,
+  propertyName: string,
   aliasMap?: Map<string, TSESTree.TypeNode>,
 ): boolean {
   if (!annotation) return false;
-  return typeNodeExcludesChildren(annotation.typeAnnotation, aliasMap);
+  return typeNodeExcludesProperty(
+    annotation.typeAnnotation,
+    propertyName,
+    aliasMap,
+  );
 }
 
 function collectRestBindingsFromPattern(
@@ -175,8 +185,9 @@ function collectRestBindingsFromPattern(
       ctx.bindings.set(prop.argument.name, {
         identifier: prop.argument,
         childrenExcluded: childrenPresent,
-        typeAnnotationExcludesChildren: typeAnnotationExcludesChildren(
+        typeAnnotationExcludesProperty: typeAnnotationExcludesProperty(
           annotation,
+          'children',
           aliasMap,
         ),
       });
@@ -199,8 +210,9 @@ function recordParamBindings(
     ctx.bindings.set(param.name, {
       identifier: param,
       childrenExcluded: false,
-      typeAnnotationExcludesChildren: typeAnnotationExcludesChildren(
+      typeAnnotationExcludesProperty: typeAnnotationExcludesProperty(
         param.typeAnnotation,
+        'children',
         aliasMap,
       ),
     });
@@ -215,8 +227,9 @@ function recordParamBindings(
     ctx.bindings.set(param.left.name, {
       identifier: param.left,
       childrenExcluded: false,
-      typeAnnotationExcludesChildren: typeAnnotationExcludesChildren(
+      typeAnnotationExcludesProperty: typeAnnotationExcludesProperty(
         param.typeAnnotation,
+        'children',
         aliasMap,
       ),
     });
@@ -314,7 +327,7 @@ function bindingMayContainChildren(
   context: TSESLint.RuleContext<MessageIds, Options>,
 ): boolean {
   if (binding.childrenExcluded) return false;
-  if (binding.typeAnnotationExcludesChildren) return false;
+  if (binding.typeAnnotationExcludesProperty) return false;
 
   const services =
     (
@@ -438,7 +451,9 @@ export const preventChildrenClobber = createRule<Options, MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.getSourceCode();
+    const sourceCode =
+      (context as unknown as { sourceCode: TSESLint.SourceCode }).sourceCode ??
+      context.getSourceCode();
     const aliasMap = new Map<string, TSESTree.TypeNode>();
     for (const node of sourceCode.ast.body) {
       if (node.type === AST_NODE_TYPES.TSTypeAliasDeclaration) {
@@ -464,13 +479,7 @@ export const preventChildrenClobber = createRule<Options, MessageIds>({
 
         functionStack.push(ctx);
       },
-      'FunctionDeclaration:exit'() {
-        functionStack.pop();
-      },
-      'FunctionExpression:exit'() {
-        functionStack.pop();
-      },
-      'ArrowFunctionExpression:exit'() {
+      ':function:exit'() {
         functionStack.pop();
       },
       VariableDeclarator(node) {
@@ -485,22 +494,23 @@ export const preventChildrenClobber = createRule<Options, MessageIds>({
           init?.type === AST_NODE_TYPES.Identifier
         ) {
           const sourceBinding = findBinding(init.name, functionStack);
-          const typeExcludes = typeAnnotationExcludesChildren(
+          const typeExcludes = typeAnnotationExcludesProperty(
             id.typeAnnotation,
+            'children',
             aliasMap,
           );
           if (sourceBinding) {
             componentCtx.bindings.set(id.name, {
               identifier: id,
               childrenExcluded: sourceBinding.childrenExcluded,
-              typeAnnotationExcludesChildren:
-                sourceBinding.typeAnnotationExcludesChildren || typeExcludes,
+              typeAnnotationExcludesProperty:
+                sourceBinding.typeAnnotationExcludesProperty || typeExcludes,
             });
           } else if (isPropsLike(init.name, functionStack)) {
             componentCtx.bindings.set(id.name, {
               identifier: id,
               childrenExcluded: false,
-              typeAnnotationExcludesChildren: typeExcludes,
+              typeAnnotationExcludesProperty: typeExcludes,
             });
           }
 

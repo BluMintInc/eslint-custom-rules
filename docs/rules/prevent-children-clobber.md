@@ -1,10 +1,6 @@
-# prevent-children-clobber
-
-Rule ID: `@blumintinc/blumint/prevent-children-clobber`
+# Prevent JSX spreads from silently discarding incoming props.children when explicit children are also provided in the element's body (`@blumintinc/blumint/prevent-children-clobber`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
-
-Type Information: 💭 Not required (AST-only).
 
 <!-- end auto-generated rule header -->
 

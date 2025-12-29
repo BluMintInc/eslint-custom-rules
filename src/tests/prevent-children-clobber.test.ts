@@ -106,6 +106,28 @@ ruleTesterJsx.run('prevent-children-clobber', preventChildrenClobber, {
       `,
       filename: 'component.tsx',
     },
+    {
+      code: `
+        type Props = Omit<DialogProps, 'children'> | Omit<OtherProps, 'children'>;
+        const ValidUnion = (props: Props) => (
+          <Dialog {...props}>
+            <AlertStandard />
+          </Dialog>
+        );
+      `,
+      filename: 'component.tsx',
+    },
+    {
+      code: `
+        type Props = Omit<DialogProps, 'children'> & Omit<OtherProps, 'children'>;
+        const ValidIntersection = (props: Props) => (
+          <Dialog {...props}>
+            <AlertStandard />
+          </Dialog>
+        );
+      `,
+      filename: 'component.tsx',
+    },
   ],
   invalid: [
     {
@@ -240,6 +262,30 @@ ruleTesterJsx.run('prevent-children-clobber', preventChildrenClobber, {
           <dialog {...props}>
             <Content />
           </dialog>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      code: `
+        type Props = Omit<DialogProps, 'children'> | DialogProps;
+        const InvalidUnion = (props: Props) => (
+          <Dialog {...props}>
+            <Content />
+          </Dialog>
+        );
+      `,
+      filename: 'component.tsx',
+      errors: [{ messageId: 'childrenClobbered' }],
+    },
+    {
+      code: `
+        type Props = Omit<DialogProps, 'children'> & DialogProps;
+        const InvalidIntersection = (props: Props) => (
+          <Dialog {...props}>
+            <Content />
+          </Dialog>
         );
       `,
       filename: 'component.tsx',
