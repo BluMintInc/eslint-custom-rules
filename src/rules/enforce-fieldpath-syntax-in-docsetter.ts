@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESTree, TSESLint } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { getMemberExpressionName } from '../utils/getMethodName';
 
 type MessageIds = 'enforceFieldPathSyntax';
 
@@ -23,6 +24,7 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
   },
   defaultOptions: [],
   create(context) {
+    const sourceCode = context.getSourceCode();
     // Track DocSetter variables
     const docSetterVariables = new Set<string>();
 
@@ -196,16 +198,6 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       return result;
     }
 
-    function getMethodName(node: TSESTree.CallExpression): string {
-      if (
-        node.callee.type === AST_NODE_TYPES.MemberExpression &&
-        node.callee.property.type === AST_NODE_TYPES.Identifier
-      ) {
-        return `${node.callee.property.name}()`;
-      }
-      return 'set()';
-    }
-
     function getPropertyKeyText(
       property: TSESTree.Property,
     ): string | undefined {
@@ -225,9 +217,7 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
     function getFirstNestedObjectProperty(
       node: TSESTree.ObjectExpression,
       keyPredicate?: (keyText: string) => boolean,
-    ):
-      | (TSESTree.Property & { value: TSESTree.ObjectExpression })
-      | undefined {
+    ): (TSESTree.Property & { value: TSESTree.ObjectExpression }) | undefined {
       for (const property of node.properties) {
         if (isSpreadOrComputed(property)) {
           continue;
@@ -301,11 +291,7 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
       const propertyKeyText = getPropertyKeyText(firstNestedProperty);
       const exampleFieldPathFromProperty =
         propertyKeyText &&
-        flattenObject(
-          firstNestedProperty.value,
-          sourceCode,
-          propertyKeyText,
-        );
+        flattenObject(firstNestedProperty.value, sourceCode, propertyKeyText);
 
       const flattenedProperties = flattenObject(firstArg, sourceCode);
 
@@ -349,17 +335,13 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
 
         // Check if the first argument is an object literal
         const firstArg = node.arguments[0];
-        if (
-          firstArg?.type !== AST_NODE_TYPES.ObjectExpression
-        ) {
+        if (firstArg?.type !== AST_NODE_TYPES.ObjectExpression) {
           return;
         }
 
         if (hasRootNumericKey(firstArg)) {
           return;
         }
-
-        const sourceCode = context.getSourceCode();
 
         const violationDetails = extractViolationDetails(firstArg, sourceCode);
 
@@ -368,11 +350,16 @@ export const enforceFieldPathSyntaxInDocSetter = createRule<[], MessageIds>({
         }
 
         // Report and fix the issue
+        const callee = node.callee as TSESTree.MemberExpression;
         context.report({
           node: firstArg,
           messageId: 'enforceFieldPathSyntax',
           data: {
-            methodName: getMethodName(node),
+            methodName: `${
+              getMemberExpressionName(callee, sourceCode, {
+                computedFallbackToText: false,
+              }) || 'set'
+            }()`,
             topLevelKey: violationDetails.topLevelKey,
             exampleFieldPath: violationDetails.exampleFieldPath,
           },
