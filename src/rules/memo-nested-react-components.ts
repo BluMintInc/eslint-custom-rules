@@ -181,6 +181,9 @@ const mergeComponentResults = (
 
   return {
     found: true,
+    // Auto-fix wraps the callback in memo() and swaps the hook. That is only valid when
+    // every branch is itself a component callback (returns JSX/createElement directly).
+    // If any branch yields a component factory, the transformation changes behavior.
     componentIsCallback: present.every((result) => result.componentIsCallback),
   };
 };
@@ -322,11 +325,13 @@ const blockCreatesComponent = (
   block: TSESTree.BlockStatement,
   reactImports: ReactImports,
 ): ComponentDetectionResult | null => {
+  const matches: Array<ComponentDetectionResult | null> = [];
+
   for (const statement of block.body) {
-    const match = statementCreatesComponent(statement, reactImports);
-    if (match) return match;
+    matches.push(statementCreatesComponent(statement, reactImports));
   }
-  return null;
+
+  return mergeComponentResults(...matches);
 };
 
 const functionCreatesComponent = (
@@ -471,9 +476,14 @@ How to fix: Create the component via {{replacementHook}} and wrap it in memo() s
               ? memoReference.slice(0, -'.memo'.length)
               : null;
 
-            const scope = (sourceCode as any).getScope
-              ? (sourceCode as any).getScope(node)
-              : context.getScope();
+            // Prefer SourceCode#getScope when available; fall back to RuleContext#getScope for ESLint compatibility.
+            const sourceCodeWithScope = sourceCode as unknown as {
+              getScope?: (node: TSESTree.Node) => TSESLint.Scope.Scope;
+            };
+            const scope =
+              typeof sourceCodeWithScope.getScope === 'function'
+                ? sourceCodeWithScope.getScope(node)
+                : context.getScope();
             const replacementIdentifierAvailable =
               hook.name === 'useCallback'
                 ? hasIdentifierInScope(HOOK_REPLACEMENT.useCallback, scope)
