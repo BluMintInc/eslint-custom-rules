@@ -273,25 +273,22 @@ const statementCreatesComponent = (
           ? blockCreatesComponent(node.consequent, reactImports)
           : statementCreatesComponent(node.consequent, reactImports);
 
-      if (cons) return cons;
+      const alt = node.alternate
+        ? node.alternate.type === AST_NODE_TYPES.BlockStatement
+          ? blockCreatesComponent(node.alternate, reactImports)
+          : statementCreatesComponent(node.alternate, reactImports)
+        : null;
 
-      if (node.alternate) {
-        if (node.alternate.type === AST_NODE_TYPES.BlockStatement) {
-          return blockCreatesComponent(node.alternate, reactImports);
-        }
-        return statementCreatesComponent(node.alternate, reactImports);
-      }
-
-      return null;
+      return mergeComponentResults(cons, alt);
     }
     case AST_NODE_TYPES.SwitchStatement: {
+      const matches: Array<ComponentDetectionResult | null> = [];
       for (const switchCase of node.cases) {
         for (const consequent of switchCase.consequent) {
-          const match = statementCreatesComponent(consequent, reactImports);
-          if (match) return match;
+          matches.push(statementCreatesComponent(consequent, reactImports));
         }
       }
-      return null;
+      return mergeComponentResults(...matches);
     }
     case AST_NODE_TYPES.BlockStatement:
       return blockCreatesComponent(node, reactImports);
@@ -307,18 +304,14 @@ const statementCreatesComponent = (
     }
     case AST_NODE_TYPES.TryStatement: {
       const blockMatch = blockCreatesComponent(node.block, reactImports);
-      if (blockMatch) return blockMatch;
+      const handlerMatch = node.handler?.body
+        ? blockCreatesComponent(node.handler.body, reactImports)
+        : null;
+      const finalizerMatch = node.finalizer
+        ? blockCreatesComponent(node.finalizer, reactImports)
+        : null;
 
-      if (node.handler?.body) {
-        const handlerMatch = blockCreatesComponent(node.handler.body, reactImports);
-        if (handlerMatch) return handlerMatch;
-      }
-
-      if (node.finalizer) {
-        return blockCreatesComponent(node.finalizer, reactImports);
-      }
-
-      return null;
+      return mergeComponentResults(blockMatch, handlerMatch, finalizerMatch);
     }
     default:
       return null;
@@ -424,16 +417,13 @@ How to fix: Create the component via {{replacementHook}} and wrap it in memo() s
   create(context, [options]) {
     const ignorePatterns = options?.ignorePatterns ?? [];
     const filename =
-      (Reflect.get(context, 'filename') as string | undefined) ??
-      context.getFilename();
+      (context as { filename?: string }).filename ?? context.getFilename();
 
     if (ignorePatterns.length && shouldIgnoreFile(filename, ignorePatterns)) {
       return {};
     }
 
-    const sourceCode =
-      (Reflect.get(context, 'sourceCode') as Readonly<TSESLint.SourceCode> | null | undefined) ??
-      context.getSourceCode();
+    const sourceCode = context.sourceCode ?? context.getSourceCode();
     const reactImports = collectReactImports(sourceCode);
     const memoReference = findMemoReference(reactImports);
 
@@ -481,7 +471,9 @@ How to fix: Create the component via {{replacementHook}} and wrap it in memo() s
               ? memoReference.slice(0, -'.memo'.length)
               : null;
 
-            const scope = context.getScope();
+            const scope = (sourceCode as any).getScope
+              ? (sourceCode as any).getScope(node)
+              : context.getScope();
             const replacementIdentifierAvailable =
               hook.name === 'useCallback'
                 ? hasIdentifierInScope(HOOK_REPLACEMENT.useCallback, scope)
