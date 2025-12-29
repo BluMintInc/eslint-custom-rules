@@ -591,5 +591,45 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
         },
       ],
     },
+    {
+      code: `
+        import { useMemo, memo } from 'react';
+        import Hooks from '@other/hooks';
+
+        const NamespacedHookWithoutReactNamespace = Hooks.useCallback(
+          () => <div>other</div>,
+          [],
+        );
+      `,
+      output: null,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'NamespacedHookWithoutReactNamespace',
+            hookName: 'useCallback()',
+            replacementHook: 'useMemo()',
+          },
+        },
+      ],
+    },
+    {
+      code: `
+        import { useCallback } from 'react';
+
+        const AsyncCallbackComponent = useCallback(async () => <div>async</div>, []);
+      `,
+      output: null,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'AsyncCallbackComponent',
+            hookName: 'useCallback()',
+            replacementHook: 'useMemo()',
+          },
+        },
+      ],
+    },
   ],
 });

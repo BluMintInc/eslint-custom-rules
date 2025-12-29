@@ -514,6 +514,28 @@ How to fix: Create the component via {{replacementHook}} and wrap it in memo() s
               return null;
             }
 
+            // React.memo() expects a synchronous component function. Wrapping async functions or
+            // generators would produce a Promise/yielding component, which is not renderable.
+            if (
+              callback.async ||
+              (callback.type === AST_NODE_TYPES.FunctionExpression &&
+                callback.generator)
+            ) {
+              return null;
+            }
+
+            // Avoid rewriting non-React namespaces (e.g., Hooks.useCallback → Hooks.useMemo),
+            // even when useMemo/memo are available as named imports.
+            if (node.callee.type === AST_NODE_TYPES.MemberExpression) {
+              if (
+                node.callee.object.type !== AST_NODE_TYPES.Identifier ||
+                !reactImports.namespace ||
+                node.callee.object.name !== reactImports.namespace
+              ) {
+                return null;
+              }
+            }
+
             // Prevent mixing namespaces: don't apply fix when hook and memo use different React imports.
             if (
               memoNamespace &&
