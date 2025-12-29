@@ -181,9 +181,9 @@ function getObjectUsagesInHook(
         } else {
           // For other computed properties, use the exact expression
           try {
-            const propertyText = context
-              .getSourceCode()
-              .getText(memberExpr.property);
+            const propertyText = context.sourceCode.getText(
+              memberExpr.property,
+            );
             parts.unshift(`[${propertyText}]`);
           } catch (e) {
             // Fallback to wildcard if we can't get the source text
@@ -528,7 +528,7 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Avoid using entire objects in React hook dependency arrays when only specific fields are used, as this can cause unnecessary re-renders. When a hook only uses obj.name but obj is in the deps array, any change to obj.age will trigger the hook. Use individual fields (obj.name) instead of the entire object. Requires TypeScript and `parserOptions.project` to be configured.',
+        'Avoid using entire objects in React hook dependency arrays.',
       recommended: 'error',
       requiresTypeChecking: true,
     },
@@ -536,9 +536,9 @@ export const noEntireObjectHookDeps = createRule<[], MessageIds>({
     schema: [],
     messages: {
       avoidEntireObject:
-        'Avoid using entire object "{{objectName}}" in dependency array. Use specific fields: {{fields}}',
+        'What\'s wrong: Dependency array includes entire object "{{objectName}}". Why it matters: Any change to its other properties reruns the hook even though the hook reads only {{fields}}, creating extra renders and stale memoized values. How to fix: Depend on those fields instead.',
       removeUnusedDependency:
-        'Remove unused dependency "{{objectName}}" from dependency array (not used in effect)',
+        'What\'s wrong: Dependency "{{objectName}}" is listed in the array but never read inside the hook body. Why it matters: The hook reruns when "{{objectName}}" changes without affecting the result and can hide the real missing dependency. How to fix: Remove it or add the specific value that actually drives the hook.',
     },
   },
   defaultOptions: [],

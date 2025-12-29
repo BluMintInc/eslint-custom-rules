@@ -94,18 +94,74 @@ const isAsyncFunctionExpression = (
   );
 };
 
-const getSourceCode = (
-  context: TSESLint.RuleContext<'noAsyncForEach', []>,
-): TSESLint.SourceCode => {
-  const typedContext = context as TSESLint.RuleContext<'noAsyncForEach', []> & {
-    sourceCode?: TSESLint.SourceCode;
-  };
+/**
+ * ESLint context with direct sourceCode property (newer versions)
+ */
+interface SourceCodeContext {
+  sourceCode: TSESLint.SourceCode;
+}
 
-  return typedContext.sourceCode ?? context.getSourceCode();
+/**
+ * ESLint context with getSourceCode method (older versions)
+ */
+interface GetSourceCodeContext {
+  getSourceCode: () => TSESLint.SourceCode;
+}
+
+/**
+ * Union type representing ESLint contexts from different versions
+ */
+type ESLintRuleContext = (SourceCodeContext | GetSourceCodeContext) & {
+  getScope?: () => TSESLint.Scope.Scope | null;
+};
+
+/**
+ * Checks if context has direct sourceCode property
+ */
+const hasSourceCodeProperty = (
+  context: ESLintRuleContext,
+): context is SourceCodeContext => {
+  return 'sourceCode' in context && !!context.sourceCode;
+};
+
+/**
+ * Checks if context has getSourceCode method
+ */
+const hasGetSourceCodeMethod = (
+  context: ESLintRuleContext,
+): context is GetSourceCodeContext => {
+  return (
+    'getSourceCode' in context && typeof context.getSourceCode === 'function'
+  );
+};
+
+/**
+ * Retrieves source code from an ESLint rule context
+ */
+const getSourceCode = (context: ESLintRuleContext): TSESLint.SourceCode => {
+  if (hasSourceCodeProperty(context)) {
+    return context.sourceCode;
+  }
+
+  if (hasGetSourceCodeMethod(context)) {
+    return context.getSourceCode();
+  }
+
+  throw new Error(
+    `Unable to retrieve source code from context in rule "no-async-foreach". ` +
+      `File: ${
+        (context as any).filename ??
+        (context as any).getFilename?.() ??
+        'unknown'
+      }. ` +
+      `Available properties: sourceCode=${typeof (context as any)
+        .sourceCode}, ` +
+      `getSourceCode=${typeof (context as any).getSourceCode}.`,
+  );
 };
 
 const getScope = (
-  context: TSESLint.RuleContext<'noAsyncForEach', []>,
+  context: ESLintRuleContext,
   sourceCode: TSESLint.SourceCode,
   node: TSESTree.Node,
 ): TSESLint.Scope.Scope | null => {
@@ -113,7 +169,7 @@ const getScope = (
     getScope?: (scopedNode: TSESTree.Node) => TSESLint.Scope.Scope | null;
   };
 
-  return typedSourceCode.getScope?.(node) ?? context.getScope();
+  return typedSourceCode.getScope?.(node) ?? context.getScope?.() ?? null;
 };
 
 const analyzeInlineCallback = (

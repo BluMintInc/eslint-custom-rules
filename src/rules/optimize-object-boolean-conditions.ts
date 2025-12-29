@@ -152,12 +152,12 @@ function extractObjectName(node: TSESTree.Node): string | null {
 function analyzeBooleanCondition(
   node: TSESTree.Node,
   context: {
-    getSourceCode(): {
+    sourceCode: {
       getText(node: TSESTree.Node): string;
     };
   },
 ): BooleanConditionPattern | null {
-  const sourceCode = context.getSourceCode();
+  const sourceCode = context.sourceCode;
   const expression = sourceCode.getText(node);
 
   if (isObjectExistenceCheck(node)) {
@@ -224,7 +224,7 @@ function analyzeBooleanCondition(
 function findBooleanConditionsInDependencies(
   depsArray: TSESTree.ArrayExpression,
   context: {
-    getSourceCode(): {
+    sourceCode: {
       getText(node: TSESTree.Node): string;
     };
   },
@@ -276,7 +276,7 @@ export const optimizeObjectBooleanConditions = createRule<[], MessageIds>({
     schema: [],
     messages: {
       extractBooleanCondition:
-        'Extract boolean condition "{{expression}}" into a separate variable "{{suggestedName}}" to optimize hook re-runs. The condition depends on object "{{objectName}}" which may change frequently, but the boolean result changes less often.',
+        'Dependency array includes boolean condition "{{expression}}" derived from object "{{objectName}}". Hook re-runs every time the object reference changes even when the boolean outcome stays the same, leading to wasted renders and unstable memoization. Extract the condition into a stable boolean like "{{suggestedName}}" and depend on that variable instead.',
     },
   },
   defaultOptions: [],

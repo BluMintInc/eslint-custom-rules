@@ -40,6 +40,10 @@ const DEFAULT_OPTIONS: Required<Options[0]> = {
   ignoreOverriddenGetters: false,
 };
 
+const BOOLEANISH_BINARY_OPERATORS = new Set<
+  TSESTree.BinaryExpression['operator']
+>(['===', '!==', '==', '!=', '>', '<', '>=', '<=', 'in', 'instanceof']);
+
 export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
   name: 'enforce-boolean-naming-prefixes',
   meta: {
@@ -249,18 +253,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         // Check for logical expressions that typically return boolean
         if (
           node.init.type === AST_NODE_TYPES.BinaryExpression &&
-          [
-            '===',
-            '!==',
-            '==',
-            '!=',
-            '>',
-            '<',
-            '>=',
-            '<=',
-            'in',
-            'instanceof',
-          ].includes(node.init.operator)
+          BOOLEANISH_BINARY_OPERATORS.has(node.init.operator)
         ) {
           return true;
         }
@@ -519,18 +512,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         }
         if (
           node.body.type === AST_NODE_TYPES.BinaryExpression &&
-          [
-            '===',
-            '!==',
-            '==',
-            '!=',
-            '>',
-            '<',
-            '>=',
-            '<=',
-            'in',
-            'instanceof',
-          ].includes(node.body.operator)
+          BOOLEANISH_BINARY_OPERATORS.has(node.body.operator)
         ) {
           return true;
         }
@@ -742,20 +724,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       }
 
       if (currentExpression.type === AST_NODE_TYPES.BinaryExpression) {
-        if (
-          [
-            '===',
-            '!==',
-            '==',
-            '!=',
-            '>',
-            '<',
-            '>=',
-            '<=',
-            'in',
-            'instanceof',
-          ].includes(currentExpression.operator)
-        ) {
+        if (BOOLEANISH_BINARY_OPERATORS.has(currentExpression.operator)) {
           return 'boolean';
         }
       }

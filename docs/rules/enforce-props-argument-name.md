@@ -35,4 +35,3 @@ const Modal: React.FC<ModalProps> = (props) => {
   return <div>{props.title}</div>;
 };
 ```
-
