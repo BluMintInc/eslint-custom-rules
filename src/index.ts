@@ -36,6 +36,7 @@ import { preferTypeOverInterface } from './rules/prefer-type-over-interface';
 import { preferTypeAliasOverTypeofConstant } from './rules/prefer-type-alias-over-typeof-constant';
 import { preferMemoizedProps } from './rules/prefer-memoized-props';
 import { requireMemo } from './rules/require-memo';
+import { requireMemoizeJsxReturners } from './rules/require-memoize-jsx-returners';
 import { noJsxWhitespaceLiteral } from './rules/no-jsx-whitespace-literal';
 import { default as requireDynamicFirebaseImports } from './rules/require-dynamic-firebase-imports';
 import { default as requireHttpsError } from './rules/require-https-error';
@@ -250,6 +251,7 @@ module.exports = {
         '@blumintinc/blumint/prefer-type-over-interface': 'error',
         '@blumintinc/blumint/prefer-type-alias-over-typeof-constant': 'error',
         '@blumintinc/blumint/require-memo': 'error',
+        '@blumintinc/blumint/require-memoize-jsx-returners': 'error',
         '@blumintinc/blumint/no-unmemoized-memo-without-props': 'error',
         '@blumintinc/blumint/require-dynamic-firebase-imports': 'error',
         '@blumintinc/blumint/require-https-error': 'error',
@@ -500,6 +502,7 @@ module.exports = {
     'prefer-type-over-interface': preferTypeOverInterface,
     'prefer-type-alias-over-typeof-constant': preferTypeAliasOverTypeofConstant,
     'require-memo': requireMemo,
+    'require-memoize-jsx-returners': requireMemoizeJsxReturners,
     'no-unmemoized-memo-without-props': noUnmemoizedMemoWithoutProps,
     'no-jsx-whitespace-literal': noJsxWhitespaceLiteral,
     'require-dynamic-firebase-imports': requireDynamicFirebaseImports,

@@ -255,7 +255,8 @@ function getHookNameFromCallee(
   if (
     resolvedCallee.type === AST_NODE_TYPES.MemberExpression &&
     !resolvedCallee.computed &&
-    (resolvedCallee.property as TSESTree.Node).type === AST_NODE_TYPES.Identifier
+    (resolvedCallee.property as TSESTree.Node).type ===
+      AST_NODE_TYPES.Identifier
   ) {
     const property = resolvedCallee.property as TSESTree.Identifier;
     return property.name;
@@ -310,8 +311,8 @@ function isInsideAllowedHookCallback(node: TSESTree.Node): boolean {
   let current: TSESTree.Node | null = node;
   while (current) {
     if (
-      (current.type === AST_NODE_TYPES.FunctionExpression ||
-        current.type === AST_NODE_TYPES.ArrowFunctionExpression)
+      current.type === AST_NODE_TYPES.FunctionExpression ||
+      current.type === AST_NODE_TYPES.ArrowFunctionExpression
     ) {
       let parent: TSESTree.Node | null = current.parent as TSESTree.Node | null;
 
@@ -474,7 +475,8 @@ function isReturnValueFromHook(
     }
 
     if (
-      unwrapNestedExpressions(returnStatement.argument) !== unwrapNestedExpressions(node)
+      unwrapNestedExpressions(returnStatement.argument) !==
+      unwrapNestedExpressions(node)
     ) {
       return false;
     }
@@ -655,4 +657,3 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
     };
   },
 });
-

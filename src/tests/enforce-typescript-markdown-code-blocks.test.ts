@@ -189,4 +189,3 @@ ruleTesterMarkdown.run('enforce-typescript-markdown-code-blocks', rule, {
     ),
   ],
 });
-

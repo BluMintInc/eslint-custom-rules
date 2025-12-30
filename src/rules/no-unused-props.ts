@@ -577,7 +577,8 @@ export const noUnusedProps = createRule({
                       );
                       const parentDef = parentVariable?.defs[0]?.node;
                       if (
-                        parentDef?.type === AST_NODE_TYPES.TSInterfaceDeclaration
+                        parentDef?.type ===
+                        AST_NODE_TYPES.TSInterfaceDeclaration
                       ) {
                         added =
                           addInterfaceProps(
@@ -587,7 +588,8 @@ export const noUnusedProps = createRule({
                             visitingInterfaces,
                           ) || added;
                       } else if (
-                        parentDef?.type === AST_NODE_TYPES.TSTypeAliasDeclaration
+                        parentDef?.type ===
+                        AST_NODE_TYPES.TSTypeAliasDeclaration
                       ) {
                         added =
                           addBaseTypeProps(
@@ -684,7 +686,10 @@ export const noUnusedProps = createRule({
                           visitingTypeReferences,
                           typeName.name,
                           () => {
-                            extractProps(typeAliasNode.typeAnnotation, currentScope);
+                            extractProps(
+                              typeAliasNode.typeAnnotation,
+                              currentScope,
+                            );
                           },
                         );
                       } else {
