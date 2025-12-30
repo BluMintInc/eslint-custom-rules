@@ -7,6 +7,7 @@ type DestructuringProperty = {
   key: string;
   text: string;
   order: number;
+  bindingNames: Set<string>;
 };
 
 type DestructuringGroup = {
@@ -44,18 +45,20 @@ function unwrapTsExpression(
   // Loop to peel off TS/paren wrappers that do not change the underlying value.
   // The explicit loop keeps TypeScript aware that `current` always has an
   // `.expression` property inside the branch.
-  // eslint-disable-next-line no-constant-condition
+  // eslint-disable-next-line no-constant-condition -- Loop intentionally runs until wrapper nodes are fully unwrapped.
   while (true) {
     if (
       current.type === AST_NODE_TYPES.TSNonNullExpression ||
       current.type === AST_NODE_TYPES.TSAsExpression ||
       current.type === AST_NODE_TYPES.TSTypeAssertion ||
+      current.type === AST_NODE_TYPES.TSSatisfiesExpression ||
       isParenthesizedExpression(current)
     ) {
       const nodeWithExpression = current as
         | TSESTree.TSNonNullExpression
         | TSESTree.TSAsExpression
         | TSESTree.TSTypeAssertion
+        | TSESTree.TSSatisfiesExpression
         | ParenthesizedExpressionLike;
       current = nodeWithExpression.expression as TSESTree.Expression;
       continue;
@@ -355,6 +358,25 @@ function findInsertionStatement(
   return null;
 }
 
+function bindingNamesOfDestructuringProperty(
+  property: TSESTree.Property | TSESTree.RestElement,
+): Set<string> {
+  const names = new Set<string>();
+  if (property.type === AST_NODE_TYPES.Property) {
+    collectBindingNamesFromParamLike(
+      property.value as
+        | TSESTree.BindingName
+        | TSESTree.AssignmentPattern
+        | TSESTree.RestElement,
+      names,
+    );
+    return names;
+  }
+
+  collectBindingNamesFromParamLike(property, names);
+  return names;
+}
+
 function collectProperties(
   pattern: TSESTree.ObjectPattern,
   sourceCode: TSESLint.SourceCode,
@@ -377,6 +399,7 @@ function collectProperties(
       key: keyText,
       text,
       order: property.range ? property.range[0] : acc.size,
+      bindingNames: bindingNamesOfDestructuringProperty(property),
     });
   }
 }
@@ -1027,6 +1050,20 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
               const sortedProps = Array.from(group.properties.values()).sort(
                 (a, b) => a.order - b.order,
               );
+              const bindingNamesInHoistedPattern = new Set<string>();
+              for (const property of sortedProps) {
+                for (const name of property.bindingNames) {
+                  if (bindingNamesInHoistedPattern.has(name)) {
+                    return null;
+                  }
+                  bindingNamesInHoistedPattern.add(name);
+                }
+              }
+              for (const name of group.names) {
+                if (!bindingNamesInHoistedPattern.has(name)) {
+                  return null;
+                }
+              }
               const pattern = `{ ${sortedProps
                 .map((p) => p.text)
                 .join(', ')} }`;

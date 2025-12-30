@@ -559,5 +559,44 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
         `,
       errors: [{ messageId: 'hoistDestructuring' }],
     },
+    {
+      code: `
+          type ApiResponse = { data: string };
+
+          const MyComponent = ({ response }) => {
+            useMemo(() => {
+              const { data } = response satisfies ApiResponse;
+              return data;
+            }, [response]);
+          };
+        `,
+      output: `
+          type ApiResponse = { data: string };
+
+          const MyComponent = ({ response }) => {
+            const { data } = (response satisfies ApiResponse) ?? {};
+            useMemo(() => {
+              return data;
+            }, [data]);
+          };
+        `,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
+          const MyComponent = ({ user }) => {
+            useEffect(() => {
+              const { name } = user;
+              if (condition) {
+                const { age: name } = user;
+                log(name);
+              }
+              log(name);
+            }, [user]);
+          };
+        `,
+      output: null,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
   ],
 });
