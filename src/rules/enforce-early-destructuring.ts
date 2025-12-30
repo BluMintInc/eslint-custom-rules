@@ -582,6 +582,9 @@ function collectProperties(
 ): void {
   for (const property of pattern.properties) {
     const text = getSafePropertyText(property, sourceCode);
+
+    if (acc.has(text)) continue;
+
     const keyText =
       property.type === AST_NODE_TYPES.Property
         ? property.key.type === AST_NODE_TYPES.Literal
@@ -591,9 +594,7 @@ function collectProperties(
           : sourceCode.getText(property.key)
         : `...${sourceCode.getText(property.argument)}`;
 
-    if (acc.has(keyText)) continue;
-
-    acc.set(keyText, {
+    acc.set(text, {
       key: keyText,
       text,
       order: property.range ? property.range[0] : acc.size,
@@ -1035,6 +1036,284 @@ function isIdentifierReference(node: TSESTree.Identifier): boolean {
   return true;
 }
 
+function buildDestructuringGroups(
+  callback: (TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression) & {
+    body: TSESTree.BlockStatement;
+  },
+  depTextSet: Set<string>,
+  visitorKeys: Record<string, string[]>,
+  sourceCode: TSESLint.SourceCode,
+): Map<string, DestructuringGroup> {
+  const groups = new Map<string, DestructuringGroup>();
+  const stack: TSESTree.Node[] = [...callback.body.body].reverse();
+
+  while (stack.length) {
+    const current = stack.pop();
+    if (!current) continue;
+
+    if (shouldSkipNestedFunction(current, callback)) {
+      continue;
+    }
+
+    if (current.type === AST_NODE_TYPES.VariableDeclaration) {
+      for (const declarator of current.declarations) {
+        if (
+          declarator.id.type === AST_NODE_TYPES.ObjectPattern &&
+          declarator.init &&
+          isAllowedInit(declarator.init) &&
+          current.declarations.length === 1 &&
+          !declarator.id.properties.some(
+            (prop) => prop.type === AST_NODE_TYPES.RestElement,
+          )
+        ) {
+          const initText = sourceCode.getText(declarator.init);
+          const normalizedInit = unwrapTsExpression(declarator.init);
+          const normalizedText = sourceCode.getText(normalizedInit);
+          const depKey = depTextSet.has(initText)
+            ? initText
+            : depTextSet.has(normalizedText)
+            ? normalizedText
+            : null;
+          if (!depKey) continue;
+
+          const baseName = getBaseIdentifier(declarator.init);
+          if (
+            hasPriorConditionalGuard(current, baseName, visitorKeys) ||
+            isTypeNarrowingContext(current, baseName, visitorKeys)
+          ) {
+            continue;
+          }
+
+          const existingGroup = groups.get(depKey);
+          const properties = existingGroup?.properties ?? new Map();
+          collectProperties(declarator.id, sourceCode, visitorKeys, properties);
+
+          const names = existingGroup?.names ?? new Set<string>();
+          const orderedNames = existingGroup?.orderedNames ?? [];
+          collectNamesFromPattern(declarator.id, names, orderedNames);
+
+          const declarations = existingGroup?.declarations ?? [];
+          declarations.push(current);
+
+          const inits = existingGroup?.inits ?? [];
+          inits.push(declarator.init);
+
+          groups.set(depKey, {
+            objectText: initText,
+            properties,
+            names,
+            orderedNames,
+            declarations,
+            inits,
+            baseName: existingGroup?.baseName ?? baseName ?? null,
+          });
+        }
+      }
+    }
+
+    const keys = visitorKeys[current.type] ?? [];
+    for (const key of keys) {
+      const value = (current as unknown as Record<string, unknown>)[key];
+      if (Array.isArray(value)) {
+        for (const child of value) {
+          if (child && typeof child === 'object') {
+            stack.push(child as TSESTree.Node);
+          }
+        }
+      } else if (value && typeof value === 'object') {
+        stack.push(value as TSESTree.Node);
+      }
+    }
+  }
+
+  return groups;
+}
+
+type ValidationResult = {
+  declarationsToRemove: Set<TSESTree.Node>;
+  initsToIgnore: Set<TSESTree.Node>;
+  existingBindings: Set<string>;
+  scopeNameCollisions: Set<string>;
+  callbackLocalBindings: Set<string>;
+  reservedNames: Set<string>;
+};
+
+function validateGroupsForHoisting(
+  groups: Map<string, DestructuringGroup>,
+  callback: (TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression) & {
+    body: TSESTree.BlockStatement;
+  },
+  scope: TSESLint.Scope.Scope,
+  visitorKeys: Record<string, string[]>,
+  reservedNamesByScope: WeakMap<TSESLint.Scope.Scope, Set<string>>,
+): ValidationResult | null {
+  if (hasCrossGroupNameCollision(groups)) {
+    return null;
+  }
+
+  const declarationsToRemove = new Set<TSESTree.Node>();
+  const initsToIgnore = new Set<TSESTree.Node>();
+
+  for (const group of groups.values()) {
+    group.declarations.forEach((decl) => declarationsToRemove.add(decl));
+    group.inits.forEach((init) => initsToIgnore.add(init));
+  }
+
+  const existingBindings = collectExistingBindings(
+    callback,
+    declarationsToRemove,
+  );
+  const scopeDeclaredNames = collectBindingsInScope(scope);
+  const reservedNames = reservedNamesByScope.get(scope) ?? new Set<string>();
+  const scopeNameCollisions = new Set<string>([
+    ...scopeDeclaredNames,
+    ...reservedNames,
+  ]);
+
+  const callbackLocalBindings = collectCallbackLocalBindings(
+    callback,
+    declarationsToRemove,
+    visitorKeys,
+  );
+
+  for (const group of groups.values()) {
+    for (const property of group.properties.values()) {
+      for (const name of property.referenceNames) {
+        if (callbackLocalBindings.has(name)) {
+          return null;
+        }
+      }
+    }
+  }
+
+  for (const group of groups.values()) {
+    for (const name of group.names) {
+      if (existingBindings.has(name)) {
+        return null;
+      }
+      if (scopeNameCollisions.has(name)) {
+        return null;
+      }
+    }
+  }
+
+  for (const group of groups.values()) {
+    const sortedProps = Array.from(group.properties.values()).sort(
+      (a, b) => a.order - b.order,
+    );
+    const bindingNamesInHoistedPattern = new Set<string>();
+    for (const property of sortedProps) {
+      for (const name of property.bindingNames) {
+        if (bindingNamesInHoistedPattern.has(name)) {
+          return null;
+        }
+        bindingNamesInHoistedPattern.add(name);
+      }
+    }
+    for (const name of group.names) {
+      if (!bindingNamesInHoistedPattern.has(name)) {
+        return null;
+      }
+    }
+  }
+
+  return {
+    declarationsToRemove,
+    initsToIgnore,
+    existingBindings,
+    scopeNameCollisions,
+    callbackLocalBindings,
+    reservedNames,
+  };
+}
+
+function generateHoistingFixes(
+  groups: Map<string, DestructuringGroup>,
+  callback: (TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression) & {
+    body: TSESTree.BlockStatement;
+  },
+  depsArray: TSESTree.ArrayExpression,
+  depTexts: string[],
+  insertionStatement: TSESTree.Statement,
+  sourceCode: TSESLint.SourceCode,
+  fixer: TSESLint.RuleFixer,
+  visitorKeys: Record<string, string[]>,
+  validation: ValidationResult,
+  orderedDependencies: string[],
+  reservedNamesByScope: WeakMap<TSESLint.Scope.Scope, Set<string>>,
+  scope: TSESLint.Scope.Scope,
+): TSESLint.RuleFix[] {
+  const { declarationsToRemove, initsToIgnore, reservedNames } = validation;
+  const indent = getIndentation(insertionStatement, sourceCode);
+  const hoistedLines: string[] = [];
+  const baseUsageByObject = new Map<string, boolean>();
+
+  for (const [depKey, group] of groups.entries()) {
+    if (!group.baseName) {
+      baseUsageByObject.set(depKey, true);
+      continue;
+    }
+
+    const usesBase = callbackUsesBaseIdentifier(
+      callback,
+      group.baseName,
+      declarationsToRemove,
+      initsToIgnore,
+      visitorKeys,
+    );
+    baseUsageByObject.set(depKey, usesBase);
+  }
+
+  const newDepTexts = depTexts.filter((text) => {
+    const group = groups.get(text);
+    if (!group) return true;
+    return baseUsageByObject.get(text) ?? true;
+  });
+
+  const updatedReservedNames = new Set(reservedNames);
+  for (const group of groups.values()) {
+    for (const name of group.names) {
+      updatedReservedNames.add(name);
+    }
+  }
+
+  for (const group of groups.values()) {
+    const sortedProps = Array.from(group.properties.values()).sort(
+      (a, b) => a.order - b.order,
+    );
+    const pattern = `{ ${sortedProps.map((p) => p.text).join(', ')} }`;
+    hoistedLines.push(
+      `${indent}const ${pattern} = (${group.objectText}) ?? {};`,
+    );
+  }
+
+  reservedNamesByScope.set(scope, updatedReservedNames);
+
+  const newDepSet = new Set(newDepTexts);
+  for (const name of orderedDependencies) {
+    if (!newDepSet.has(name)) {
+      newDepTexts.push(name);
+      newDepSet.add(name);
+    }
+  }
+
+  const insertAt =
+    sourceCode.getText().lastIndexOf('\n', insertionStatement.range![0]) + 1;
+  const fixes = [
+    fixer.insertTextBeforeRange(
+      [insertAt, insertAt],
+      `${hoistedLines.join('\n')}\n`,
+    ),
+    fixer.replaceText(depsArray, `[${newDepTexts.join(', ')}]`),
+  ];
+
+  for (const decl of declarationsToRemove) {
+    fixes.push(fixer.removeRange(removalRange(decl, sourceCode)));
+  }
+
+  return fixes;
+}
+
 function validateHookForTransform(
   node: TSESTree.CallExpression,
   context: TSESLint.RuleContext<MessageIds, []>,
@@ -1133,92 +1412,12 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
         const { hookName, callback, depsArray, depTextSet, depTexts, scope } =
           validation;
 
-        const groups = new Map<string, DestructuringGroup>();
-
-        const stack: TSESTree.Node[] = [...callback.body.body].reverse();
-        while (stack.length) {
-          const current = stack.pop();
-          if (!current) continue;
-
-          if (shouldSkipNestedFunction(current, callback)) {
-            continue;
-          }
-
-          if (current.type === AST_NODE_TYPES.VariableDeclaration) {
-            for (const declarator of current.declarations) {
-              if (
-                declarator.id.type === AST_NODE_TYPES.ObjectPattern &&
-                declarator.init &&
-                isAllowedInit(declarator.init) &&
-                current.declarations.length === 1 &&
-                !declarator.id.properties.some(
-                  (prop) => prop.type === AST_NODE_TYPES.RestElement,
-                )
-              ) {
-                const initText = sourceCode.getText(declarator.init);
-                const normalizedInit = unwrapTsExpression(declarator.init);
-                const normalizedText = sourceCode.getText(normalizedInit);
-                const depKey = depTextSet.has(initText)
-                  ? initText
-                  : depTextSet.has(normalizedText)
-                  ? normalizedText
-                  : null;
-                if (!depKey) continue;
-
-                const baseName = getBaseIdentifier(declarator.init);
-                if (
-                  hasPriorConditionalGuard(current, baseName, visitorKeys) ||
-                  isTypeNarrowingContext(current, baseName, visitorKeys)
-                ) {
-                  continue;
-                }
-
-                const existingGroup = groups.get(depKey);
-                const properties = existingGroup?.properties ?? new Map();
-                collectProperties(
-                  declarator.id,
-                  sourceCode,
-                  visitorKeys,
-                  properties,
-                );
-
-                const names = existingGroup?.names ?? new Set<string>();
-                const orderedNames = existingGroup?.orderedNames ?? [];
-                collectNamesFromPattern(declarator.id, names, orderedNames);
-
-                const declarations = existingGroup?.declarations ?? [];
-                declarations.push(current);
-
-                const inits = existingGroup?.inits ?? [];
-                inits.push(declarator.init);
-
-                groups.set(depKey, {
-                  objectText: initText,
-                  properties,
-                  names,
-                  orderedNames,
-                  declarations,
-                  inits,
-                  baseName: existingGroup?.baseName ?? baseName ?? null,
-                });
-              }
-            }
-          }
-
-          const keys = visitorKeys[current.type] ?? [];
-          for (const key of keys) {
-            const value = (current as unknown as Record<string, unknown>)[key];
-            if (Array.isArray(value)) {
-              for (const child of value) {
-                if (child && typeof child === 'object') {
-                  stack.push(child as TSESTree.Node);
-                }
-              }
-            } else if (value && typeof value === 'object') {
-              stack.push(value as TSESTree.Node);
-            }
-          }
-        }
+        const groups = buildDestructuringGroups(
+          callback,
+          depTextSet,
+          visitorKeys,
+          sourceCode,
+        );
 
         if (!groups.size) return;
 
@@ -1248,153 +1447,37 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
             dependencies: dependencyList,
           },
           fix(fixer) {
-            if (hasCrossGroupNameCollision(groups)) {
-              return null;
-            }
-
             const insertionStatement = findInsertionStatement(node);
             if (!insertionStatement) {
               return null;
             }
 
-            const indent = getIndentation(insertionStatement, sourceCode);
-
-            const hoistedLines: string[] = [];
-            const declarationsToRemove = new Set<TSESTree.Node>();
-            const initsToIgnore = new Set<TSESTree.Node>();
-            const baseUsageByObject = new Map<string, boolean>();
-
-            for (const group of groups.values()) {
-              group.declarations.forEach((decl) =>
-                declarationsToRemove.add(decl),
-              );
-              group.inits.forEach((init) => initsToIgnore.add(init));
-            }
-
-            const existingBindings = collectExistingBindings(
+            const validationResult = validateGroupsForHoisting(
+              groups,
               callback,
-              declarationsToRemove,
-            );
-            const scopeDeclaredNames = collectBindingsInScope(scope);
-            const reservedNames =
-              reservedNamesByScope.get(scope) ?? new Set<string>();
-            const scopeNameCollisions = new Set<string>([
-              ...scopeDeclaredNames,
-              ...reservedNames,
-            ]);
-
-            const callbackLocalBindings = collectCallbackLocalBindings(
-              callback,
-              declarationsToRemove,
+              scope,
               visitorKeys,
+              reservedNamesByScope,
             );
 
-            for (const group of groups.values()) {
-              for (const property of group.properties.values()) {
-                for (const name of property.referenceNames) {
-                  if (callbackLocalBindings.has(name)) {
-                    return null;
-                  }
-                }
-              }
+            if (!validationResult) {
+              return null;
             }
 
-            for (const group of groups.values()) {
-              for (const name of group.names) {
-                if (existingBindings.has(name)) {
-                  return null;
-                }
-                if (scopeNameCollisions.has(name)) {
-                  return null;
-                }
-              }
-            }
-
-            for (const [depKey, group] of groups.entries()) {
-              if (!group.baseName) {
-                baseUsageByObject.set(depKey, true);
-                continue;
-              }
-
-              const usesBase = callbackUsesBaseIdentifier(
-                callback,
-                group.baseName,
-                declarationsToRemove,
-                initsToIgnore,
-                visitorKeys,
-              );
-              baseUsageByObject.set(depKey, usesBase);
-            }
-
-            const newDepTexts = depTexts.filter((text) => {
-              const group = groups.get(text);
-              if (!group) return true;
-              return baseUsageByObject.get(text) ?? true;
-            });
-
-            const updatedReservedNames = new Set(reservedNames);
-            for (const group of groups.values()) {
-              for (const name of group.names) {
-                updatedReservedNames.add(name);
-              }
-            }
-
-            for (const group of groups.values()) {
-              const sortedProps = Array.from(group.properties.values()).sort(
-                (a, b) => a.order - b.order,
-              );
-              const bindingNamesInHoistedPattern = new Set<string>();
-              for (const property of sortedProps) {
-                for (const name of property.bindingNames) {
-                  if (bindingNamesInHoistedPattern.has(name)) {
-                    return null;
-                  }
-                  bindingNamesInHoistedPattern.add(name);
-                }
-              }
-              for (const name of group.names) {
-                if (!bindingNamesInHoistedPattern.has(name)) {
-                  return null;
-                }
-              }
-              const pattern = `{ ${sortedProps
-                .map((p) => p.text)
-                .join(', ')} }`;
-              hoistedLines.push(
-                `${indent}const ${pattern} = (${group.objectText}) ?? {};`,
-              );
-              group.declarations.forEach((decl) =>
-                declarationsToRemove.add(decl),
-              );
-            }
-
-            reservedNamesByScope.set(scope, updatedReservedNames);
-
-            const newDepSet = new Set(newDepTexts);
-            for (const name of orderedDependencies) {
-              if (!newDepSet.has(name)) {
-                newDepTexts.push(name);
-                newDepSet.add(name);
-              }
-            }
-
-            const insertAt =
-              sourceCode
-                .getText()
-                .lastIndexOf('\n', insertionStatement.range![0]) + 1;
-            const fixes = [
-              fixer.insertTextBeforeRange(
-                [insertAt, insertAt],
-                `${hoistedLines.join('\n')}\n`,
-              ),
-              fixer.replaceText(depsArray, `[${newDepTexts.join(', ')}]`),
-            ];
-
-            for (const decl of declarationsToRemove) {
-              fixes.push(fixer.removeRange(removalRange(decl, sourceCode)));
-            }
-
-            return fixes;
+            return generateHoistingFixes(
+              groups,
+              callback,
+              depsArray,
+              depTexts,
+              insertionStatement,
+              sourceCode,
+              fixer,
+              visitorKeys,
+              validationResult,
+              orderedDependencies,
+              reservedNamesByScope,
+              scope,
+            );
           },
         });
       },
