@@ -8,6 +8,7 @@ type DestructuringProperty = {
   text: string;
   order: number;
   bindingNames: Set<string>;
+  referenceNames: Set<string>;
 };
 
 type DestructuringGroup = {
@@ -325,6 +326,77 @@ function collectExistingBindings(
   return names;
 }
 
+function collectCallbackLocalBindings(
+  callback: (TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression) & {
+    body: TSESTree.BlockStatement;
+  },
+  declarationsToRemove: Set<TSESTree.Node>,
+  visitorKeys: Record<string, string[]>,
+): Set<string> {
+  const names = new Set<string>();
+  const stack: TSESTree.Node[] = [callback.body];
+
+  while (stack.length) {
+    const current = stack.pop();
+    if (!current) continue;
+
+    if (declarationsToRemove.has(current)) {
+      continue;
+    }
+
+    if (current.type === AST_NODE_TYPES.FunctionDeclaration) {
+      if (current.id) {
+        names.add(current.id.name);
+      }
+      continue;
+    }
+
+    if (current.type === AST_NODE_TYPES.ClassDeclaration) {
+      if (current.id) {
+        names.add(current.id.name);
+      }
+      continue;
+    }
+
+    if (
+      current.type === AST_NODE_TYPES.FunctionExpression ||
+      current.type === AST_NODE_TYPES.ArrowFunctionExpression
+    ) {
+      continue;
+    }
+
+    if (current.type === AST_NODE_TYPES.VariableDeclarator) {
+      collectBindingNamesFromBindingName(
+        current.id as TSESTree.BindingName,
+        names,
+      );
+    }
+
+    if (current.type === AST_NODE_TYPES.CatchClause && current.param) {
+      collectBindingNamesFromBindingName(
+        current.param as TSESTree.BindingName,
+        names,
+      );
+    }
+
+    const keys = visitorKeys[current.type] ?? [];
+    for (const key of keys) {
+      const value = (current as unknown as Record<string, unknown>)[key];
+      if (Array.isArray(value)) {
+        for (const child of value) {
+          if (child && typeof child === 'object') {
+            stack.push(child as TSESTree.Node);
+          }
+        }
+      } else if (value && typeof value === 'object') {
+        stack.push(value as TSESTree.Node);
+      }
+    }
+  }
+
+  return names;
+}
+
 function collectBindingsInScope(scope: TSESLint.Scope.Scope): Set<string> {
   const names = new Set<string>();
   let current: TSESLint.Scope.Scope | null = scope;
@@ -377,9 +449,135 @@ function bindingNamesOfDestructuringProperty(
   return names;
 }
 
+function collectRuntimeIdentifierReferences(
+  root: TSESTree.Node,
+  visitorKeys: Record<string, string[]>,
+  names: Set<string>,
+): void {
+  const stack: TSESTree.Node[] = [root];
+  while (stack.length) {
+    const current = stack.pop();
+    if (!current) continue;
+
+    if (
+      current.type === AST_NODE_TYPES.Identifier &&
+      isIdentifierReference(current)
+    ) {
+      names.add(current.name);
+    }
+
+    if (
+      current.type === AST_NODE_TYPES.TSNonNullExpression ||
+      current.type === AST_NODE_TYPES.TSAsExpression ||
+      current.type === AST_NODE_TYPES.TSTypeAssertion ||
+      current.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+      isParenthesizedExpression(current as unknown as TSESTree.Expression)
+    ) {
+      const nodeWithExpression = current as
+        | TSESTree.TSNonNullExpression
+        | TSESTree.TSAsExpression
+        | TSESTree.TSTypeAssertion
+        | TSESTree.TSSatisfiesExpression
+        | ParenthesizedExpressionLike;
+      stack.push(nodeWithExpression.expression as unknown as TSESTree.Node);
+      continue;
+    }
+
+    const keys = visitorKeys[current.type] ?? [];
+    for (const key of keys) {
+      const value = (current as unknown as Record<string, unknown>)[key];
+      if (Array.isArray(value)) {
+        for (const child of value) {
+          if (child && typeof child === 'object') {
+            stack.push(child as TSESTree.Node);
+          }
+        }
+      } else if (value && typeof value === 'object') {
+        stack.push(value as TSESTree.Node);
+      }
+    }
+  }
+}
+
+function collectPatternReferenceNames(
+  node: TSESTree.Node,
+  visitorKeys: Record<string, string[]>,
+  names: Set<string>,
+): void {
+  if (node.type === AST_NODE_TYPES.AssignmentPattern) {
+    collectRuntimeIdentifierReferences(
+      node.right as unknown as TSESTree.Node,
+      visitorKeys,
+      names,
+    );
+    collectPatternReferenceNames(node.left, visitorKeys, names);
+    return;
+  }
+
+  if (node.type === AST_NODE_TYPES.ObjectPattern) {
+    for (const property of node.properties) {
+      if (property.type === AST_NODE_TYPES.Property) {
+        if (property.computed) {
+          collectRuntimeIdentifierReferences(
+            property.key as unknown as TSESTree.Node,
+            visitorKeys,
+            names,
+          );
+        }
+        collectPatternReferenceNames(
+          property.value as unknown as TSESTree.Node,
+          visitorKeys,
+          names,
+        );
+      } else if (property.type === AST_NODE_TYPES.RestElement) {
+        collectPatternReferenceNames(property.argument, visitorKeys, names);
+      }
+    }
+    return;
+  }
+
+  if (node.type === AST_NODE_TYPES.ArrayPattern) {
+    for (const element of node.elements) {
+      if (!element) continue;
+      collectPatternReferenceNames(element, visitorKeys, names);
+    }
+    return;
+  }
+
+  if (node.type === AST_NODE_TYPES.RestElement) {
+    collectPatternReferenceNames(node.argument, visitorKeys, names);
+  }
+}
+
+function referenceNamesOfDestructuringProperty(
+  property: TSESTree.Property | TSESTree.RestElement,
+  visitorKeys: Record<string, string[]>,
+): Set<string> {
+  const names = new Set<string>();
+  if (property.type === AST_NODE_TYPES.Property) {
+    if (property.computed) {
+      collectRuntimeIdentifierReferences(
+        property.key as unknown as TSESTree.Node,
+        visitorKeys,
+        names,
+      );
+    }
+    collectPatternReferenceNames(
+      property.value as unknown as TSESTree.Node,
+      visitorKeys,
+      names,
+    );
+    return names;
+  }
+
+  collectPatternReferenceNames(property, visitorKeys, names);
+  return names;
+}
+
 function collectProperties(
   pattern: TSESTree.ObjectPattern,
   sourceCode: TSESLint.SourceCode,
+  visitorKeys: Record<string, string[]>,
   acc: Map<string, DestructuringProperty>,
 ): void {
   for (const property of pattern.properties) {
@@ -400,6 +598,10 @@ function collectProperties(
       text,
       order: property.range ? property.range[0] : acc.size,
       bindingNames: bindingNamesOfDestructuringProperty(property),
+      referenceNames: referenceNamesOfDestructuringProperty(
+        property,
+        visitorKeys,
+      ),
     });
   }
 }
@@ -973,7 +1175,12 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
 
                 const existingGroup = groups.get(depKey);
                 const properties = existingGroup?.properties ?? new Map();
-                collectProperties(declarator.id, sourceCode, properties);
+                collectProperties(
+                  declarator.id,
+                  sourceCode,
+                  visitorKeys,
+                  properties,
+                );
 
                 const names = existingGroup?.names ?? new Set<string>();
                 const orderedNames = existingGroup?.orderedNames ?? [];
@@ -1075,6 +1282,22 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
               ...scopeDeclaredNames,
               ...reservedNames,
             ]);
+
+            const callbackLocalBindings = collectCallbackLocalBindings(
+              callback,
+              declarationsToRemove,
+              visitorKeys,
+            );
+
+            for (const group of groups.values()) {
+              for (const property of group.properties.values()) {
+                for (const name of property.referenceNames) {
+                  if (callbackLocalBindings.has(name)) {
+                    return null;
+                  }
+                }
+              }
+            }
 
             for (const group of groups.values()) {
               for (const name of group.names) {
