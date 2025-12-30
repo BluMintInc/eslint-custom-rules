@@ -1998,9 +1998,18 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<
   },
   defaultOptions: [],
   create(context) {
+    // Prefer context.sourceCode when present to avoid deprecated getSourceCode() while remaining
+    // compatible with ESLint versions that omit the property.
+    const sourceCode =
+      (
+        context as TSESLint.RuleContext<MessageIds, Options> & {
+          sourceCode?: TSESLint.SourceCode;
+        }
+      ).sourceCode ?? context.getSourceCode();
+
     const ruleContext: RuleExecutionContext = {
       context,
-      sourceCode: context.getSourceCode(),
+      sourceCode,
       reportedStatements: new WeakSet<TSESTree.Statement>(),
     };
 
