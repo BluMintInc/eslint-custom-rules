@@ -100,5 +100,32 @@ ruleTesterTs.run('no-unused-props with Omit utility type', noUnusedProps, {
       },
     },
   ],
-  invalid: [],
+  invalid: [
+    {
+      code: `
+        import type { ExternalProps } from './external';
+
+        type Props = Omit<ExternalProps, 'disabled'> & {
+          disabled: boolean;
+          label: string;
+        };
+
+        const Component = ({ disabled, label }: Props) => {
+          return <div>{label}{disabled ? 'on' : 'off'}</div>;
+        };
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: '...ExternalProps' },
+        },
+      ],
+    },
+  ],
 });

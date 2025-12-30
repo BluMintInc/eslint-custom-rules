@@ -276,7 +276,7 @@ jobs:
             --arg target_branch "${{ needs.detect_merge_conflicts.outputs.head_ref }}" \
             --arg webhook_url "${CURSOR_WEBHOOK_URL}" \
             --arg webhook_secret "${CURSOR_WEBHOOK_SECRET}" \
-            --arg model "gpt-5.1-codex-max-high" \
+            --arg model "gemini-3-flash" \
             '{
               model: $model,
               prompt: { text: $prompt_text },

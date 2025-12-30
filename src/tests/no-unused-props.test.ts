@@ -2,6 +2,20 @@ import { AST_NODE_TYPES } from '@typescript-eslint/utils';
 import { noUnusedProps } from '../rules/no-unused-props';
 import { ruleTesterTs } from '../utils/ruleTester';
 
+const formatUnusedPropMessage = (propName: string) =>
+  `Prop "${propName}" is declared in the component Props type but never used inside the component body. Unused props make the component API misleading: callers keep passing values that are ignored and reviewers assume behavior that is not implemented. Remove "${propName}" from the Props type, consume it in the component, or forward it with a rest spread (e.g., \`const MyComponent = ({ usedProp, ...rest }: Props) => <Child {...rest} />\`).`;
+
+describe('no-unused-props messages', () => {
+  it('explains why unused props are flagged', () => {
+    const propName = 'subtitle';
+    const formatted = noUnusedProps.meta.messages.unusedProp.replace(
+      /{{propName}}/g,
+      propName,
+    );
+    expect(formatted).toBe(formatUnusedPropMessage(propName));
+  });
+});
+
 ruleTesterTs.run('no-unused-props', noUnusedProps, {
   valid: [
     {
@@ -70,19 +84,6 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
     },
     {
       code: `
-        type BaseProps = { keep: string } & { drop: number };
-        type Props = Omit<BaseProps, 'drop'>;
-        const Component = ({ keep }: Props) => <div>{keep}</div>;
-      `,
-      filename: 'test.tsx',
-      parserOptions: {
-        ecmaFeatures: { jsx: true },
-        ecmaVersion: 2018,
-        sourceType: 'module',
-      },
-    },
-    {
-      code: `
         type ImageOptimizedProps = { src: string; alt: string };
         const ImageOptimized = ({ src, alt }: ImageOptimizedProps) => <img src={src} alt={alt} />;
       `,
@@ -98,20 +99,6 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         type ButtonProps = { onClick: () => void; label: string };
         const Button = ({ onClick, label }: ButtonProps) => (
           <button onClick={() => onClick()}>{label}</button>
-        );
-      `,
-      filename: 'test.tsx',
-      parserOptions: {
-        ecmaFeatures: { jsx: true },
-        ecmaVersion: 2018,
-        sourceType: 'module',
-      },
-    },
-    {
-      code: `
-        type Props = { 'data-testid': string; label: string };
-        const Component = ({ 'data-testid': testId, label }: Props) => (
-          <div data-testid={testId}>{label}</div>
         );
       `,
       filename: 'test.tsx',
@@ -148,27 +135,6 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         const GroupModeToggles = ({ mode, preferences, label, ...rest }: GroupModeTogglesProps) => (
           <FormControlLabel
             {...rest}
-            control={<div />}
-            label={label}
-          />
-        );
-      `,
-      filename: 'test.tsx',
-      parserOptions: {
-        ecmaFeatures: { jsx: true },
-        ecmaVersion: 2018,
-        sourceType: 'module',
-      },
-    },
-    {
-      code: `
-        import { FormControlLabelProps } from '@mui/material';
-        type GroupModeTogglesProps = {
-          mode: string;
-          preferences: Record<string, any>;
-        } & FormControlLabelProps;
-        const GroupModeToggles = ({ mode, preferences, label }: GroupModeTogglesProps) => (
-          <FormControlLabel
             control={<div />}
             label={label}
           />
@@ -261,46 +227,59 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
     },
     {
       code: `
-        type BaseProps = { foo: string; bar: number; unused: boolean };
-        type Props = Pick<BaseProps, 'foo'>;
-        const Component = ({ foo }: Props) => <div>{foo}</div>;
-      `,
-      filename: 'test.tsx',
-      parserOptions: {
-        ecmaFeatures: { jsx: true },
-        ecmaVersion: 2018,
-        sourceType: 'module',
-      },
-    },
-    {
-      code: `
-        type Props = Pick<{ alpha: string; beta: number }, 'alpha' | 'beta'>;
-        const Component = ({ alpha, beta }: Props) => (
-          <div>
-            {alpha}
-            {beta}
-          </div>
-        );
-      `,
-      filename: 'test.tsx',
-      parserOptions: {
-        ecmaFeatures: { jsx: true },
-        ecmaVersion: 2018,
-        sourceType: 'module',
-      },
-    },
-    {
-      code: `
-        import { ExternalProps } from './external';
+        type Base = { kept: string; dropped: string };
+        type Keys = keyof Base;
+        type Props = Omit<Base, Keys>;
 
-        type Props = { label: string } & ExternalProps;
+        const Component = (_props: Props) => <div />;
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type RecursiveProps = { value: string } & RecursiveProps;
+        const Component = ({ value }: RecursiveProps) => <div>{value}</div>;
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type Props = { 'data-testid': string; label: string };
+        const Component = ({ label, 'data-testid': dataTestId }: Props) => (
+          <div data-testid={dataTestId}>{label}</div>
+        );
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type SharedProps = { title: string };
 
-        const Component = ({ label, externalOnly }: Props) => (
-          <div>
-            {label}
-            {externalOnly}
-          </div>
-        );
+        function makeComponent() {
+          type LocalProps = SharedProps & { subtitle: string };
+          const Component = ({ title, subtitle }: LocalProps) => (
+            <h1>
+              {title}
+              {subtitle}
+            </h1>
+          );
+          return Component;
+        }
       `,
       filename: 'test.tsx',
       parserOptions: {
@@ -311,14 +290,14 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
     },
     {
       code: `
-        type Parent = { child: { foo: string; bar: number } };
-        type Props = Parent['child'];
-        const Component = ({ foo, bar }: Props) => (
-          <div>
-            {foo}
-            {bar}
-          </div>
-        );
+        type BaseProps = {
+          used: string;
+          unused: string;
+        };
+
+        type Props = Omit<BaseProps, 'unused'>;
+
+        const Component = ({ used }: Props) => <span>{used}</span>;
       `,
       filename: 'test.tsx',
       parserOptions: {
@@ -329,13 +308,11 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
     },
     {
       code: `
-        type Props = Record<'foo' | 'bar', string>;
-        const Component = ({ foo, bar }: Props) => (
-          <div>
-            {foo}
-            {bar}
-          </div>
-        );
+        type External = { external: string };
+        type Base = External & { local: string };
+        type Props = Omit<Base, 'local'>;
+
+        const Component = ({ external }: Props) => <div>{external}</div>;
       `,
       filename: 'test.tsx',
       parserOptions: {
@@ -367,13 +344,13 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
     },
     {
       code: `
-        type Props = { 'aria-label': string; label: string };
+        type Props = { 'data-testid': string; label: string };
         const Component = ({ label }: Props) => <div>{label}</div>;
       `,
       errors: [
         {
           messageId: 'unusedProp',
-          data: { propName: 'aria-label' },
+          data: { propName: 'data-testid' },
           type: AST_NODE_TYPES.Literal,
         },
       ],
@@ -410,6 +387,92 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
     },
     {
       code: `
+        type Props = { used: string; unused: string };
+        const Component = ({ used }: Props) => <div>{used}</div>;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'unused' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'component.tsx',
+      settings: {
+        'no-unused-props': {
+          reactLikeExtensions: ['tsx'],
+        },
+      },
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type Props = Omit<{ a: string; b: string }, 'a'>;
+        const Component = ({}: Props) => <div />;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'b' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        type Props = Omit<{ a: string; b: string }, K>;
+        type K = 'c';
+        const Component = ({ a }: Props) => <div>{a}</div>;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: 'b' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        namespace Foo {
+          export type BarProps = { kept: string; unused: string };
+        }
+
+        type Props = Omit<Foo.BarProps, 'kept'>;
+        const Component = ({}: Props) => <div />;
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: '...Foo.BarProps' },
+          type: AST_NODE_TYPES.TSQualifiedName,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
         type ButtonProps = { onClick: () => void; label: string; disabled: boolean };
         const Button = ({ onClick: handleClick, label }: ButtonProps) => (
           <button onClick={handleClick}>{label}</button>
@@ -419,6 +482,33 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         {
           messageId: 'unusedProp',
           data: { propName: 'disabled' },
+          type: AST_NODE_TYPES.Identifier,
+        },
+      ],
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
+    {
+      code: `
+        import { FormControlLabelProps } from '@mui/material';
+        type GroupModeTogglesProps = {
+          mode: string;
+          preferences: Record<string, any>;
+        } & FormControlLabelProps;
+        const GroupModeToggles = ({ mode, preferences }: GroupModeTogglesProps) => (
+          <FormControlLabel
+            control={<div />}
+          />
+        );
+      `,
+      errors: [
+        {
+          messageId: 'unusedProp',
+          data: { propName: '...FormControlLabelProps' },
           type: AST_NODE_TYPES.Identifier,
         },
       ],
@@ -464,105 +554,6 @@ ruleTesterTs.run('no-unused-props', noUnusedProps, {
         ecmaVersion: 2018,
         sourceType: 'module',
         jsx: true,
-      },
-    },
-    {
-      code: `
-        type SharedProps = { used: string } & { missing: number };
-        type Props = Partial<SharedProps>;
-        const Component = ({ used }: Props) => <div>{used}</div>;
-      `,
-      errors: [
-        {
-          messageId: 'unusedProp',
-          data: { propName: 'missing' },
-          type: AST_NODE_TYPES.Identifier,
-        },
-      ],
-      filename: 'test.tsx',
-      parserOptions: {
-        ecmaFeatures: { jsx: true },
-        ecmaVersion: 2018,
-        sourceType: 'module',
-      },
-    },
-    {
-      code: `
-        type Props = Record<'foo' | 'bar', string>;
-        const Component = ({ foo }: Props) => <div>{foo}</div>;
-      `,
-      errors: [
-        {
-          messageId: 'unusedProp',
-          data: { propName: 'bar' },
-          type: AST_NODE_TYPES.Literal,
-        },
-      ],
-      filename: 'test.tsx',
-      parserOptions: {
-        ecmaFeatures: { jsx: true },
-        ecmaVersion: 2018,
-        sourceType: 'module',
-      },
-    },
-    {
-      code: `
-        type Base = { used: string; missing: string };
-        type Props = Pick<Base, ('used' | 'missing') & string>;
-        const Component = ({ used }: Props) => <div>{used}</div>;
-      `,
-      errors: [
-        {
-          messageId: 'unusedProp',
-          data: { propName: 'missing' },
-          type: AST_NODE_TYPES.Identifier,
-        },
-      ],
-      filename: 'test.tsx',
-      parserOptions: {
-        ecmaFeatures: { jsx: true },
-        ecmaVersion: 2018,
-        sourceType: 'module',
-      },
-    },
-    {
-      code: `
-        type Base = { consumed: string; skipped: string };
-        type Props = Pick<Base, (('consumed') | ('skipped'))>;
-        const Component = ({ consumed }: Props) => <div>{consumed}</div>;
-      `,
-      errors: [
-        {
-          messageId: 'unusedProp',
-          data: { propName: 'skipped' },
-          type: AST_NODE_TYPES.Identifier,
-        },
-      ],
-      filename: 'test.tsx',
-      parserOptions: {
-        ecmaFeatures: { jsx: true },
-        ecmaVersion: 2018,
-        sourceType: 'module',
-      },
-    },
-    {
-      code: `
-        type X = { unused: string };
-        type Props = X;
-        const Component = ({ }: Props) => <div />;
-      `,
-      errors: [
-        {
-          messageId: 'unusedProp',
-          data: { propName: 'unused' },
-          type: AST_NODE_TYPES.Identifier,
-        },
-      ],
-      filename: 'test.tsx',
-      parserOptions: {
-        ecmaFeatures: { jsx: true },
-        ecmaVersion: 2018,
-        sourceType: 'module',
       },
     },
   ],

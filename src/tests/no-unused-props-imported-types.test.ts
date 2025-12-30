@@ -90,13 +90,14 @@ ruleTesterTs.run('no-unused-props with imported types', noUnusedProps, {
       },
     },
     {
+      // Omit on an imported type should still treat used props as coming from the spread type
       code: `
-        import { ExternalProps } from './external';
+        import { RemoteProps } from './remote-types';
 
-        type Props = Partial<ExternalProps>;
+        type Props = Omit<RemoteProps, 'userId'>;
 
-        const Component = ({ ...rest }: Props) => {
-          return <Widget {...rest} />;
+        const RemoteComponent = ({ name }: Props) => {
+          return <span>{name}</span>;
         };
       `,
       filename: 'test.tsx',

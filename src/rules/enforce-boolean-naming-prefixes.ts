@@ -40,20 +40,9 @@ const DEFAULT_OPTIONS: Required<Options[0]> = {
   ignoreOverriddenGetters: false,
 };
 
-const BOOLEAN_PRODUCING_OPERATORS = new Set<
+const BOOLEANISH_BINARY_OPERATORS = new Set<
   TSESTree.BinaryExpression['operator']
->([
-  '===',
-  '!==',
-  '==',
-  '!=',
-  '>',
-  '<',
-  '>=',
-  '<=',
-  'in',
-  'instanceof',
-]);
+>(['===', '!==', '==', '!=', '>', '<', '>=', '<=', 'in', 'instanceof']);
 
 export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
   name: 'enforce-boolean-naming-prefixes',
@@ -264,7 +253,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         // Check for logical expressions that typically return boolean
         if (
           node.init.type === AST_NODE_TYPES.BinaryExpression &&
-          BOOLEAN_PRODUCING_OPERATORS.has(node.init.operator)
+          BOOLEANISH_BINARY_OPERATORS.has(node.init.operator)
         ) {
           return true;
         }
@@ -523,7 +512,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         }
         if (
           node.body.type === AST_NODE_TYPES.BinaryExpression &&
-          BOOLEAN_PRODUCING_OPERATORS.has(node.body.operator)
+          BOOLEANISH_BINARY_OPERATORS.has(node.body.operator)
         ) {
           return true;
         }
@@ -734,11 +723,10 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         return callExpressionLooksBoolean(currentExpression);
       }
 
-      if (
-        currentExpression.type === AST_NODE_TYPES.BinaryExpression &&
-        BOOLEAN_PRODUCING_OPERATORS.has(currentExpression.operator)
-      ) {
-        return 'boolean';
+      if (currentExpression.type === AST_NODE_TYPES.BinaryExpression) {
+        if (BOOLEANISH_BINARY_OPERATORS.has(currentExpression.operator)) {
+          return 'boolean';
+        }
       }
 
       if (
