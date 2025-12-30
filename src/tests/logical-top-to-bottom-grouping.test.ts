@@ -167,6 +167,16 @@ const value = readValue();
 outer();
     `,
     `
+function hoistedFunctionsUseLastDeclaration() {
+  function foo() {}
+  function foo() {
+    console.log(value);
+  }
+  const value = 1;
+  foo();
+}
+    `,
+    `
 const obj = makeObject();
 if (obj!.disabled) {
   return;
@@ -451,4 +461,3 @@ use(other);
     },
   ],
 });
-
