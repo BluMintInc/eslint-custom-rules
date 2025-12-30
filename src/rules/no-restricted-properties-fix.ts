@@ -49,7 +49,7 @@ export const noRestrictedPropertiesFix = createRule<
     ],
     messages: {
       restrictedProperty:
-        "Disallowed object property: '{{objectName}}.{{propertyName}}'{{message}}",
+        'Access to "{{objectName}}.{{propertyName}}" is restricted. {{restrictionReason}}Restricted properties often bypass safer APIs, hide side effects, or encourage patterns this codebase forbids. Use the allowed alternative from your rule configuration or remove this property access.',
     },
   },
   defaultOptions: [[]],
@@ -69,6 +69,14 @@ export const noRestrictedPropertiesFix = createRule<
       'slice',
       'concat',
     ]);
+
+    /**
+     * Keeps the templated message readable by only adding a trailing space
+     * when a restriction reason is provided.
+     */
+    function formatRestrictionReason(message: string | undefined): string {
+      return message ? `${message} ` : '';
+    }
 
     /**
      * Checks if the given node is a result of Object.keys() or Object.values()
@@ -143,9 +151,9 @@ export const noRestrictedPropertiesFix = createRule<
               data: {
                 objectName: restrictedProp.object,
                 propertyName: restrictedProp.property,
-                message: restrictedProp.message
-                  ? `: ${restrictedProp.message}`
-                  : '',
+                restrictionReason: formatRestrictionReason(
+                  restrictedProp.message,
+                ),
               },
               fix: () => null,
             });
@@ -176,9 +184,9 @@ export const noRestrictedPropertiesFix = createRule<
               data: {
                 objectName,
                 propertyName: restrictedProp.property,
-                message: restrictedProp.message
-                  ? `: ${restrictedProp.message}`
-                  : '',
+                restrictionReason: formatRestrictionReason(
+                  restrictedProp.message,
+                ),
               },
               fix: () => null,
             });
@@ -202,9 +210,9 @@ export const noRestrictedPropertiesFix = createRule<
               data: {
                 objectName: restrictedProp.object,
                 propertyName,
-                message: restrictedProp.message
-                  ? `: ${restrictedProp.message}`
-                  : '',
+                restrictionReason: formatRestrictionReason(
+                  restrictedProp.message,
+                ),
               },
               fix: () => null,
             });

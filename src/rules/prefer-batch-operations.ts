@@ -1,7 +1,7 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
-type MessageIds = 'preferSetAll' | 'preferOverwriteAll';
+type MessageIds = 'preferBatch';
 
 const SETTER_METHODS = new Set(['set', 'overwrite']);
 const ARRAY_METHODS = new Set([
@@ -150,7 +150,9 @@ function getAllCallsFromExpression(
 
 function findLoopNode(
   node: TSESTree.Node,
-): { node: TSESTree.Node; isArrayMethod?: string; isPromiseAll?: boolean } | undefined {
+):
+  | { node: TSESTree.Node; isArrayMethod?: string; isPromiseAll?: boolean }
+  | undefined {
   let current: TSESTree.Node | undefined = node;
   let loopNode: TSESTree.Node | null = null;
 
@@ -252,6 +254,33 @@ function findLoopNode(
     current = current.parent as TSESTree.Node;
   }
   return undefined;
+}
+
+function describeLoopContext(loopInfo: {
+  node: TSESTree.Node;
+  isArrayMethod?: string;
+  isPromiseAll?: boolean;
+}): string {
+  if (loopInfo.isPromiseAll) return 'Promise.all()';
+
+  if (loopInfo.isArrayMethod) {
+    return `${loopInfo.isArrayMethod}() callback`;
+  }
+
+  switch (loopInfo.node.type) {
+    case AST_NODE_TYPES.ForStatement:
+      return 'for loop';
+    case AST_NODE_TYPES.ForInStatement:
+      return 'for...in loop';
+    case AST_NODE_TYPES.ForOfStatement:
+      return 'for...of loop';
+    case AST_NODE_TYPES.WhileStatement:
+      return 'while loop';
+    case AST_NODE_TYPES.DoWhileStatement:
+      return 'do...while loop';
+    default:
+      return 'this control flow';
+  }
 }
 
 function isFirestoreSetterInstance(node: TSESTree.Node): boolean {
@@ -359,10 +388,8 @@ export const preferBatchOperations = createRule<[], MessageIds>({
     fixable: 'code',
     schema: [],
     messages: {
-      preferSetAll:
-        'Use setAll() instead of multiple set() calls for better performance',
-      preferOverwriteAll:
-        'Use overwriteAll() instead of multiple overwrite() calls for better performance',
+      preferBatch:
+        'DocSetter.{{setterMethod}} is invoked repeatedly inside {{contextDescription}}, which issues separate Firestore writes per document and can leave partial updates when later calls fail. Batch the documents with DocSetter.{{batchMethod}} so the writes stay grouped and latency stays predictable.',
     },
   },
   defaultOptions: [],
@@ -380,8 +407,17 @@ export const preferBatchOperations = createRule<[], MessageIds>({
         if (!isValid || !methodName || !setterInstance) return;
 
         // Check if we're in a loop or Promise.all
-          const loopInfo = findLoopNode(node);
+        const loopInfo = findLoopNode(node);
         if (!loopInfo) return;
+
+        const batchMethod =
+          methodName === 'set' ? 'setAll()' : 'overwriteAll()';
+        const messageData = {
+          setterMethod: `${methodName}()`,
+          batchMethod,
+          contextDescription: describeLoopContext(loopInfo),
+        };
+        const messageId: MessageIds = 'preferBatch';
 
         // Get or create the setter calls map for this loop
         let setterCalls = loopSetterCalls.get(loopInfo.node);
@@ -417,11 +453,10 @@ export const preferBatchOperations = createRule<[], MessageIds>({
           ) {
             reportedLoops.add(loopInfo.node);
 
-            const messageId =
-              methodName === 'set' ? 'preferSetAll' : 'preferOverwriteAll';
             context.report({
               node: existing.firstNode,
               messageId,
+              data: messageData,
               fix: () => null, // We can't provide a fix because we don't know the array structure
             });
           }
@@ -442,11 +477,10 @@ export const preferBatchOperations = createRule<[], MessageIds>({
             // For traditional loops, report on the first occurrence since we know it's in a loop
             if (!reportedLoops.has(loopInfo.node)) {
               reportedLoops.add(loopInfo.node);
-              const messageId =
-                methodName === 'set' ? 'preferSetAll' : 'preferOverwriteAll';
               context.report({
                 node,
                 messageId,
+                data: messageData,
                 fix: () => null, // We can't provide a fix because we don't know the array structure
               });
             }
@@ -456,11 +490,10 @@ export const preferBatchOperations = createRule<[], MessageIds>({
           else if (loopInfo.isArrayMethod) {
             if (!reportedLoops.has(loopInfo.node)) {
               reportedLoops.add(loopInfo.node);
-              const messageId =
-                methodName === 'set' ? 'preferSetAll' : 'preferOverwriteAll';
               context.report({
                 node,
                 messageId,
+                data: messageData,
                 fix: () => null, // We can't provide a fix because we don't know the array structure
               });
             }

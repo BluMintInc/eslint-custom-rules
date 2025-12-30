@@ -27,16 +27,15 @@ const getFunctionDescription = (
       : null;
 
   const isArrowFunction = node.type === AST_NODE_TYPES.ArrowFunctionExpression;
-  const functionName = declaredName ?? (isArrowFunction ? undefined : fallbackName);
+  const functionName =
+    declaredName ?? (isArrowFunction ? undefined : fallbackName);
 
   if (functionName) {
     return `function "${functionName}"`;
   }
 
   if (node.type === AST_NODE_TYPES.ArrowFunctionExpression) {
-    return fallbackName
-      ? `arrow function "${fallbackName}"`
-      : 'arrow function';
+    return fallbackName ? `arrow function "${fallbackName}"` : 'arrow function';
   }
 
   return 'function expression';
@@ -77,9 +76,7 @@ const isWriteReference = (reference: TSESLint.Scope.Reference): boolean =>
 
 const isAsyncFunctionExpression = (
   node: unknown,
-): node is
-  | TSESTree.ArrowFunctionExpression
-  | TSESTree.FunctionExpression => {
+): node is TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression => {
   if (!node || typeof node !== 'object') {
     return false;
   }
@@ -89,23 +86,82 @@ const isAsyncFunctionExpression = (
   return (
     (typedNode.type === AST_NODE_TYPES.ArrowFunctionExpression ||
       typedNode.type === AST_NODE_TYPES.FunctionExpression) &&
-    (typedNode as TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression)
-      .async === true
+    (
+      typedNode as
+        | TSESTree.ArrowFunctionExpression
+        | TSESTree.FunctionExpression
+    ).async === true
   );
 };
 
-const getSourceCode = (
-  context: TSESLint.RuleContext<'noAsyncForEach', []>,
-): TSESLint.SourceCode => {
-  const typedContext = context as TSESLint.RuleContext<'noAsyncForEach', []> & {
-    sourceCode?: TSESLint.SourceCode;
-  };
+/**
+ * ESLint context with direct sourceCode property (newer versions)
+ */
+interface SourceCodeContext {
+  sourceCode: TSESLint.SourceCode;
+}
 
-  return typedContext.sourceCode ?? context.getSourceCode();
+/**
+ * ESLint context with getSourceCode method (older versions)
+ */
+interface GetSourceCodeContext {
+  getSourceCode: () => TSESLint.SourceCode;
+}
+
+/**
+ * Union type representing ESLint contexts from different versions
+ */
+type ESLintRuleContext = (SourceCodeContext | GetSourceCodeContext) & {
+  getScope?: () => TSESLint.Scope.Scope | null;
+};
+
+/**
+ * Checks if context has direct sourceCode property
+ */
+const hasSourceCodeProperty = (
+  context: ESLintRuleContext,
+): context is SourceCodeContext => {
+  return 'sourceCode' in context && !!context.sourceCode;
+};
+
+/**
+ * Checks if context has getSourceCode method
+ */
+const hasGetSourceCodeMethod = (
+  context: ESLintRuleContext,
+): context is GetSourceCodeContext => {
+  return (
+    'getSourceCode' in context && typeof context.getSourceCode === 'function'
+  );
+};
+
+/**
+ * Retrieves source code from an ESLint rule context
+ */
+const getSourceCode = (context: ESLintRuleContext): TSESLint.SourceCode => {
+  if (hasSourceCodeProperty(context)) {
+    return context.sourceCode;
+  }
+
+  if (hasGetSourceCodeMethod(context)) {
+    return context.getSourceCode();
+  }
+
+  throw new Error(
+    `Unable to retrieve source code from context in rule "no-async-foreach". ` +
+      `File: ${
+        (context as any).filename ??
+        (context as any).getFilename?.() ??
+        'unknown'
+      }. ` +
+      `Available properties: sourceCode=${typeof (context as any)
+        .sourceCode}, ` +
+      `getSourceCode=${typeof (context as any).getSourceCode}.`,
+  );
 };
 
 const getScope = (
-  context: TSESLint.RuleContext<'noAsyncForEach', []>,
+  context: ESLintRuleContext,
   sourceCode: TSESLint.SourceCode,
   node: TSESTree.Node,
 ): TSESLint.Scope.Scope | null => {
@@ -113,7 +169,7 @@ const getScope = (
     getScope?: (scopedNode: TSESTree.Node) => TSESLint.Scope.Scope | null;
   };
 
-  return typedSourceCode.getScope?.(node) ?? context.getScope();
+  return typedSourceCode.getScope?.(node) ?? context.getScope?.() ?? null;
 };
 
 const analyzeInlineCallback = (
@@ -276,8 +332,8 @@ const analyzeCallbackAsyncStatus = (
     });
   }
 
-  const relevantWrites = writes.filter(({ start }) =>
-    typeof callbackStart === 'number' && start <= callbackStart,
+  const relevantWrites = writes.filter(
+    ({ start }) => typeof callbackStart === 'number' && start <= callbackStart,
   );
 
   if (!relevantWrites.length) {
@@ -285,7 +341,8 @@ const analyzeCallbackAsyncStatus = (
   }
 
   const lastWrite = relevantWrites.reduce<CallbackWrite | null>(
-    (latest, current) => (!latest || current.start > latest.start ? current : latest),
+    (latest, current) =>
+      !latest || current.start > latest.start ? current : latest,
     null,
   );
 
@@ -308,10 +365,7 @@ export const noAsyncForEach: TSESLint.RuleModule<'noAsyncForEach', []> = {
           callback
         ) {
           const scope = getScope(context, sourceCode, callback);
-          const asyncCallbackInfo = analyzeCallbackAsyncStatus(
-            callback,
-            scope,
-          );
+          const asyncCallbackInfo = analyzeCallbackAsyncStatus(callback, scope);
 
           if (asyncCallbackInfo) {
             context.report({

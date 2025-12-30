@@ -1,8 +1,10 @@
 import { ruleTesterTs } from '../utils/ruleTester';
 import { dynamicHttpsErrors } from '../rules/dynamic-https-errors';
 
-const { dynamicHttpsErrors: dynamicMessage, missingThirdArgument: missingThirdArgumentMessage } =
-  dynamicHttpsErrors.meta.messages;
+const {
+  dynamicHttpsErrors: dynamicMessage,
+  missingThirdArgument: missingThirdArgumentMessage,
+} = dynamicHttpsErrors.meta.messages;
 
 type MessageId = keyof typeof dynamicHttpsErrors.meta.messages;
 
@@ -102,7 +104,7 @@ const validCases = [
   "throw new HttpsError('foo', 'bar', [1, 2, 3].map(x => x * 2));",
   "throw new HttpsError('foo', 'bar', condition && { conditionalData: true });",
 
-// Other expressions in second argument (currently allowed - testing current behavior)
+  // Other expressions in second argument (currently allowed - testing current behavior)
   "throw new HttpsError('foo', getMessage(), 'context');",
   "throw new HttpsError('foo', obj.message, 'context');",
   "throw new HttpsError('foo', condition ? 'msg1' : 'msg2', 'context');",

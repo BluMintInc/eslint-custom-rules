@@ -40,6 +40,10 @@ const DEFAULT_OPTIONS: Required<Options[0]> = {
   ignoreOverriddenGetters: false,
 };
 
+const BOOLEANISH_BINARY_OPERATORS = new Set<
+  TSESTree.BinaryExpression['operator']
+>(['===', '!==', '==', '!=', '>', '<', '>=', '<=', 'in', 'instanceof']);
+
 export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
   name: 'enforce-boolean-naming-prefixes',
   meta: {
@@ -79,7 +83,8 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
   create(context, [options]) {
     const approvedPrefixes = options.prefixes || DEFAULT_OPTIONS.prefixes;
     const ignoreOverriddenGetters =
-      options.ignoreOverriddenGetters ?? DEFAULT_OPTIONS.ignoreOverriddenGetters;
+      options.ignoreOverriddenGetters ??
+      DEFAULT_OPTIONS.ignoreOverriddenGetters;
     const importStatusCache = new Map<string, boolean>();
     const externalApiUsageCache = new Map<string, boolean>();
 
@@ -150,8 +155,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       return (
         hasApprovedPrefix(normalizedName, {
           treatLeadingUnderscoreAsApproved: false,
-        }) ||
-        suffixKeywords.some((keyword) => lowerName.endsWith(keyword))
+        }) || suffixKeywords.some((keyword) => lowerName.endsWith(keyword))
       );
     }
 
@@ -249,9 +253,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         // Check for logical expressions that typically return boolean
         if (
           node.init.type === AST_NODE_TYPES.BinaryExpression &&
-          ['===', '!==', '==', '!=', '>', '<', '>=', '<=', 'in', 'instanceof'].includes(
-            node.init.operator,
-          )
+          BOOLEANISH_BINARY_OPERATORS.has(node.init.operator)
         ) {
           return true;
         }
@@ -510,9 +512,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         }
         if (
           node.body.type === AST_NODE_TYPES.BinaryExpression &&
-          ['===', '!==', '==', '!=', '>', '<', '>=', '<=', 'in', 'instanceof'].includes(
-            node.body.operator,
-          )
+          BOOLEANISH_BINARY_OPERATORS.has(node.body.operator)
         ) {
           return true;
         }
@@ -595,9 +595,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
         const lowerCallee = calleeName.toLowerCase();
 
         if (lowerCallee.startsWith('assert')) {
-          return identifierReturnsBoolean(calleeName)
-            ? 'boolean'
-            : 'unknown';
+          return identifierReturnsBoolean(calleeName) ? 'boolean' : 'unknown';
         }
 
         const matchesPrefix = approvedPrefixes.some(
@@ -726,20 +724,7 @@ export const enforceBooleanNamingPrefixes = createRule<Options, MessageIds>({
       }
 
       if (currentExpression.type === AST_NODE_TYPES.BinaryExpression) {
-        if (
-          [
-            '===',
-            '!==',
-            '==',
-            '!=',
-            '>',
-            '<',
-            '>=',
-            '<=',
-            'in',
-            'instanceof',
-          ].includes(currentExpression.operator)
-        ) {
+        if (BOOLEANISH_BINARY_OPERATORS.has(currentExpression.operator)) {
           return 'boolean';
         }
       }

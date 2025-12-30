@@ -4,23 +4,42 @@
 
 <!-- end auto-generated rule header -->
 
-This rule disallows the use of `Array.filter` callbacks that are part of a block statement but do not contain an explicit return statement. When using `Array.filter`, it's common to return a boolean value directly from a concise arrow function. However, if you're using a block statement (enclosed in `{}`), an explicit `return` statement is required.
+This rule disallows `Array.filter` callbacks that use braces but never return a value. A block-bodied arrow function defaults to returning `undefined`, which `filter` treats as falsy for every element. That silently drops all items and hides the actual intent of the predicate.
 
 ## Rule Details
 
-This rule is aimed at ensuring that there is an explicit return statement in `Array.filter` callbacks that are part of a block statement.
+`Array.filter` keeps an element only when the callback returns a truthy value. If the callback has a block body and does not return, the predicate always produces `undefined`, so the filtered array becomes empty even if the callback contains side effects like logging or metric collection. This rule ensures block-bodied callbacks return the boolean condition they mean to evaluate, or that you use a concise arrow for implicit returns.
+
+### Why this matters
+
+- A missing `return` in a block-bodied predicate causes `filter` to drop every item, which is easy to miss because the callback still runs without any obvious error.
+- Explicitly returning the condition documents the keep/remove rule and avoids subtle bugs when the code later adds logic branches.
+
+### How to fix
+
+- Add `return <condition>` inside the block.
+- Or switch to a concise arrow when the body is a single expression, e.g., `array.filter((item) => condition(item))`.
 
 Examples of **incorrect** code for this rule:
 
 ```typescript
-['a'].filter((x) => {console.log(x)})
-['a'].filter((x) => {if (x) {
+['a'].filter((x) => { console.log(x) })
+
+['a'].filter((x) => {
+  if (x) {
     return true
-}
-else {}
-}
-)
-['a'].filter((x) => { if (x !== 'a') { console.log(x) } else { return true } })
+  } else {
+    // forgot to return in the else branch
+  }
+})
+
+['a'].filter((x) => {
+  if (x !== 'a') {
+    console.log(x)
+  } else {
+    return true
+  }
+})
 ```
 
 Examples of **correct** code for this rule:
@@ -40,4 +59,5 @@ Examples of **correct** code for this rule:
   return true
 })
 ['a'].filter((x) => x === 'a' ? true : false)
+['a'].filter((x) => x !== 'a')
 ```

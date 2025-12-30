@@ -1,4 +1,4 @@
-# Ensures classes read linearly from top to bottom (`@blumintinc/blumint/class-methods-read-top-to-bottom`)
+# Enforces a top-to-bottom class layout so callers lead into the helpers they rely on (`@blumintinc/blumint/class-methods-read-top-to-bottom`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
