@@ -607,7 +607,8 @@ function callbackUsesBaseIdentifier(
 
     if (
       current.type === AST_NODE_TYPES.Identifier &&
-      current.name === baseName
+      current.name === baseName &&
+      isIdentifierReference(current)
     ) {
       return true;
     }
@@ -661,7 +662,8 @@ function testContainsObjectMember(
 
     if (
       current.type === AST_NODE_TYPES.Identifier &&
-      current.name === objectName
+      current.name === objectName &&
+      isIdentifierReference(current)
     ) {
       found = true;
       break;
@@ -796,6 +798,97 @@ function hasPriorConditionalGuard(
     );
 }
 
+function isIdentifierReference(node: TSESTree.Identifier): boolean {
+  const parent = node.parent;
+  if (!parent) return true;
+
+  if (
+    parent.type === AST_NODE_TYPES.Property &&
+    parent.key === node &&
+    !parent.computed
+  ) {
+    return false;
+  }
+  if (
+    parent.type === AST_NODE_TYPES.MemberExpression &&
+    parent.property === node &&
+    !parent.computed
+  ) {
+    return false;
+  }
+  if (
+    parent.type === AST_NODE_TYPES.MethodDefinition &&
+    parent.key === node &&
+    !parent.computed
+  ) {
+    return false;
+  }
+  if (
+    parent.type === AST_NODE_TYPES.TSPropertySignature &&
+    parent.key === node &&
+    !parent.computed
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function validateHookForTransform(
+  node: TSESTree.CallExpression,
+  context: TSESLint.RuleContext<MessageIds, []>,
+): {
+  hookName: string;
+  callback: (TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression) & {
+    body: TSESTree.BlockStatement;
+  };
+  depsArray: TSESTree.ArrayExpression;
+  depTextSet: Set<string>;
+  depTexts: string[];
+  scope: TSESLint.Scope.Scope;
+} | null {
+  const hookName = isHookCall(node);
+  if (!hookName) return null;
+
+  const callback = node.arguments[0];
+  if (
+    !callback ||
+    !isFunctionNode(callback) ||
+    callback.body.type !== AST_NODE_TYPES.BlockStatement
+  ) {
+    return null;
+  }
+
+  if (callback.async) return null;
+
+  const depsArray =
+    node.arguments.length > 1 &&
+    node.arguments[1] &&
+    node.arguments[1].type === AST_NODE_TYPES.ArrayExpression
+      ? (node.arguments[1] as TSESTree.ArrayExpression)
+      : null;
+
+  if (!depsArray) return null;
+
+  const sourceCode =
+    (context as unknown as { sourceCode?: TSESLint.SourceCode }).sourceCode ??
+    context.getSourceCode();
+  const depTexts = dependencyElements(depsArray, sourceCode);
+  const depTextSet = new Set(depTexts);
+  const scope = context.getScope();
+
+  return {
+    hookName,
+    callback: callback as (
+      | TSESTree.FunctionExpression
+      | TSESTree.ArrowFunctionExpression
+    ) & { body: TSESTree.BlockStatement },
+    depsArray,
+    depTextSet,
+    depTexts,
+    scope,
+  };
+}
+
 export const enforceEarlyDestructuring = createRule<[], MessageIds>({
   name: 'enforce-early-destructuring',
   meta: {
@@ -832,33 +925,11 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
 
     return {
       CallExpression(node) {
-        const hookName = isHookCall(node);
-        if (!hookName) return;
+        const validation = validateHookForTransform(node, context);
+        if (!validation) return;
 
-        const callback = node.arguments[0];
-        if (
-          !callback ||
-          !isFunctionNode(callback) ||
-          callback.body.type !== AST_NODE_TYPES.BlockStatement
-        ) {
-          return;
-        }
-
-        const scope = context.getScope();
-
-        if (callback.async) return;
-
-        const depsArray =
-          node.arguments.length > 1 &&
-          node.arguments[1] &&
-          node.arguments[1].type === AST_NODE_TYPES.ArrayExpression
-            ? (node.arguments[1] as TSESTree.ArrayExpression)
-            : null;
-
-        if (!depsArray) return;
-
-        const depTexts = dependencyElements(depsArray, sourceCode);
-        const depTextSet = new Set(depTexts);
+        const { hookName, callback, depsArray, depTextSet, depTexts, scope } =
+          validation;
 
         const groups = new Map<string, DestructuringGroup>();
 
