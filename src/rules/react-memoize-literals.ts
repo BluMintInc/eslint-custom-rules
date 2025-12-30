@@ -244,7 +244,7 @@ function isFunctionNode(
 function getHookNameFromCallee(
   callee: TSESTree.LeftHandSideExpression,
 ): string | null {
-  const resolvedCallee = unwrapExpression(
+  const resolvedCallee = unwrapNestedExpressions(
     callee as unknown as TSESTree.Node,
   ) as TSESTree.Node;
 
@@ -322,7 +322,7 @@ function isInsideAllowedHookCallback(node: TSESTree.Node): boolean {
       if (parent?.type === AST_NODE_TYPES.CallExpression) {
         const hookName = getHookNameFromCallee(parent.callee);
         const matchesCallback = parent.arguments.some(
-          (arg) => unwrapExpression(arg as TSESTree.Node) === current,
+          (arg) => unwrapNestedExpressions(arg as TSESTree.Node) === current,
         );
 
         if (hookName && SAFE_HOOK_ARGUMENTS.has(hookName) && matchesCallback) {
@@ -362,7 +362,7 @@ function isExpressionWrapper(
  * Unwraps TypeScript assertions, optional chaining, and parentheses to reach
  * the underlying expression node for stable identity comparisons.
  */
-function unwrapExpression(node: TSESTree.Node): TSESTree.Node {
+function unwrapNestedExpressions(node: TSESTree.Node): TSESTree.Node {
   let current: TSESTree.Node = node;
   while (isExpressionWrapper(current)) {
     current = current.expression;
@@ -377,14 +377,14 @@ function unwrapExpression(node: TSESTree.Node): TSESTree.Node {
 function findEnclosingHookCall(
   node: TSESTree.Node,
 ): { hookName: string; isDirectArgument: boolean } | null {
-  const unwrappedTarget = unwrapExpression(node);
+  const unwrappedTarget = unwrapNestedExpressions(node);
   let current: TSESTree.Node | null = node.parent as TSESTree.Node | null;
   while (current) {
     if (current.type === AST_NODE_TYPES.CallExpression) {
       const hookName = isHookCall(current);
       if (hookName) {
         const isDirectArgument = current.arguments.some((arg) => {
-          const unwrappedArg = unwrapExpression(arg as TSESTree.Node);
+          const unwrappedArg = unwrapNestedExpressions(arg as TSESTree.Node);
           return unwrappedArg === unwrappedTarget;
         });
         return { hookName, isDirectArgument };
@@ -459,7 +459,7 @@ function isReturnValueFromHook(
   if (
     owner.type === AST_NODE_TYPES.ArrowFunctionExpression &&
     owner.body.type !== AST_NODE_TYPES.BlockStatement &&
-    unwrapExpression(owner.body) === unwrapExpression(node)
+    unwrapNestedExpressions(owner.body) === unwrapNestedExpressions(node)
   ) {
     return true;
   }
@@ -474,7 +474,7 @@ function isReturnValueFromHook(
     }
 
     if (
-      unwrapExpression(returnStatement.argument) !== unwrapExpression(node)
+      unwrapNestedExpressions(returnStatement.argument) !== unwrapNestedExpressions(node)
     ) {
       return false;
     }
