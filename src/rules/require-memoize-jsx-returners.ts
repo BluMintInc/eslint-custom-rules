@@ -381,6 +381,100 @@ function callExpressionReturnsJSX(
   return false;
 }
 
+function isFunctionReturningJSX(
+  node: TSESTree.ArrowFunctionExpression | TSESTree.FunctionExpression,
+  knownFunctions: Map<string, FunctionLike>,
+  cache: WeakMap<FunctionLike, JsxReturnCacheState>,
+  factoryContext: JsxFactoryContext,
+): boolean {
+  return functionReturnsJSX(node, knownFunctions, cache, factoryContext);
+}
+
+function dispatchExpressionReturnsJSX(
+  expression: TSESTree.Expression,
+  knownFunctions: Map<string, FunctionLike>,
+  cache: WeakMap<FunctionLike, JsxReturnCacheState>,
+  factoryContext: JsxFactoryContext,
+): boolean {
+  const type = (expression as TSESTree.Node).type;
+  switch (type) {
+    case AST_NODE_TYPES.JSXElement:
+    case AST_NODE_TYPES.JSXFragment:
+      return true;
+
+    case AST_NODE_TYPES.ArrowFunctionExpression:
+    case AST_NODE_TYPES.FunctionExpression:
+      return isFunctionReturningJSX(
+        expression as
+          | TSESTree.ArrowFunctionExpression
+          | TSESTree.FunctionExpression,
+        knownFunctions,
+        cache,
+        factoryContext,
+      );
+
+    case AST_NODE_TYPES.Identifier:
+      return isIdentifierReturningJsx(
+        expression as TSESTree.Identifier,
+        knownFunctions,
+        cache,
+        factoryContext,
+      );
+
+    case AST_NODE_TYPES.CallExpression:
+      return callExpressionReturnsJSX(
+        expression as TSESTree.CallExpression,
+        knownFunctions,
+        cache,
+        factoryContext,
+      );
+
+    case AST_NODE_TYPES.ConditionalExpression:
+      return isConditionalReturningJsx(
+        expression as TSESTree.ConditionalExpression,
+        knownFunctions,
+        cache,
+        factoryContext,
+      );
+
+    case AST_NODE_TYPES.LogicalExpression:
+      return isLogicalReturningJsx(
+        expression as TSESTree.LogicalExpression,
+        knownFunctions,
+        cache,
+        factoryContext,
+      );
+
+    case AST_NODE_TYPES.SequenceExpression:
+      return isSequenceReturningJsx(
+        expression as TSESTree.SequenceExpression,
+        knownFunctions,
+        cache,
+        factoryContext,
+      );
+
+    case AST_NODE_TYPES.TSAsExpression:
+    case AST_NODE_TYPES.TSTypeAssertion:
+    case AST_NODE_TYPES.TSNonNullExpression:
+    case AST_NODE_TYPES.TSSatisfiesExpression:
+    case AST_NODE_TYPES.ChainExpression:
+      return isWrappedReturningJsx(
+        expression as
+          | TSESTree.TSAsExpression
+          | TSESTree.TSTypeAssertion
+          | TSESTree.TSNonNullExpression
+          | TSESTree.TSSatisfiesExpression
+          | TSESTree.ChainExpression,
+        knownFunctions,
+        cache,
+        factoryContext,
+      );
+
+    default:
+      return false;
+  }
+}
+
 function expressionReturnsJSX(
   expression: TSESTree.Expression | null | undefined,
   knownFunctions: Map<string, FunctionLike>,
@@ -398,76 +492,12 @@ function expressionReturnsJSX(
     );
   }
 
-  const type = (expression as TSESTree.Node).type;
-  switch (type) {
-    case AST_NODE_TYPES.JSXElement:
-    case AST_NODE_TYPES.JSXFragment:
-      return true;
-
-    case AST_NODE_TYPES.ArrowFunctionExpression:
-    case AST_NODE_TYPES.FunctionExpression:
-      return functionReturnsJSX(
-        expression as any,
-        knownFunctions,
-        cache,
-        factoryContext,
-      );
-
-    case AST_NODE_TYPES.Identifier:
-      return isIdentifierReturningJsx(
-        expression as any,
-        knownFunctions,
-        cache,
-        factoryContext,
-      );
-
-    case AST_NODE_TYPES.CallExpression:
-      return callExpressionReturnsJSX(
-        expression as any,
-        knownFunctions,
-        cache,
-        factoryContext,
-      );
-
-    case AST_NODE_TYPES.ConditionalExpression:
-      return isConditionalReturningJsx(
-        expression as any,
-        knownFunctions,
-        cache,
-        factoryContext,
-      );
-
-    case AST_NODE_TYPES.LogicalExpression:
-      return isLogicalReturningJsx(
-        expression as any,
-        knownFunctions,
-        cache,
-        factoryContext,
-      );
-
-    case AST_NODE_TYPES.SequenceExpression:
-      return isSequenceReturningJsx(
-        expression as any,
-        knownFunctions,
-        cache,
-        factoryContext,
-      );
-
-    case AST_NODE_TYPES.TSAsExpression:
-    case AST_NODE_TYPES.TSTypeAssertion:
-    case AST_NODE_TYPES.TSNonNullExpression:
-    case AST_NODE_TYPES.TSSatisfiesExpression:
-    case AST_NODE_TYPES.ChainExpression:
-      return isWrappedReturningJsx(
-        expression as any,
-        knownFunctions,
-        cache,
-        factoryContext,
-      );
-
-    default:
-      return false;
-  }
+  return dispatchExpressionReturnsJSX(
+    expression,
+    knownFunctions,
+    cache,
+    factoryContext,
+  );
 }
 
 function statementReturnsJSX(
@@ -628,6 +658,70 @@ function functionReturnsJSX(
   return returnsJSX;
 }
 
+function getImportFixes(
+  fixer: TSESLint.RuleFixer,
+  sourceCode: TSESLint.SourceCode,
+  hasMemoizeImport: boolean,
+  scheduledImportFix: boolean,
+): { fixes: TSESLint.RuleFix[]; scheduledImportFix: boolean } {
+  const fixes: TSESLint.RuleFix[] = [];
+  if (hasMemoizeImport || scheduledImportFix) {
+    return { fixes, scheduledImportFix };
+  }
+
+  const programBody = sourceCode.ast.body;
+
+  /** Look for an existing import from the memoize module. */
+  const existingMemoizeImport = programBody.find(
+    (statement): statement is TSESTree.ImportDeclaration =>
+      statement.type === AST_NODE_TYPES.ImportDeclaration &&
+      MEMOIZE_MODULES.has(String(statement.source.value)),
+  );
+
+  if (
+    existingMemoizeImport &&
+    existingMemoizeImport.specifiers.some(
+      (s) => s.type === AST_NODE_TYPES.ImportSpecifier,
+    )
+  ) {
+    /** Augment existing named import. */
+    const lastSpecifier = [...existingMemoizeImport.specifiers]
+      .reverse()
+      .find((s) => s.type === AST_NODE_TYPES.ImportSpecifier);
+
+    if (lastSpecifier) {
+      fixes.push(fixer.insertTextAfter(lastSpecifier, ', Memoize'));
+      return { fixes, scheduledImportFix: true };
+    }
+  }
+
+  const firstImport = programBody.find(
+    (statement) => statement.type === AST_NODE_TYPES.ImportDeclaration,
+  );
+  const anchorNode = (firstImport ?? programBody[0]) as
+    | TSESTree.Node
+    | undefined;
+
+  if (anchorNode) {
+    const text = sourceCode.text;
+    const anchorStart = anchorNode.range?.[0] ?? 0;
+    const lineStart = text.lastIndexOf('\n', anchorStart - 1) + 1;
+    const leadingWhitespace =
+      text.slice(lineStart, anchorStart).match(/^[ \t]*/)?.[0] ?? '';
+    const importLine = `${leadingWhitespace}import { Memoize } from '${MEMOIZE_PREFERRED_MODULE}';\n`;
+    fixes.push(fixer.insertTextBeforeRange([lineStart, lineStart], importLine));
+  } else {
+    fixes.push(
+      fixer.insertTextBeforeRange(
+        [0, 0],
+        `import { Memoize } from '${MEMOIZE_PREFERRED_MODULE}';\n`,
+      ),
+    );
+  }
+
+  return { fixes, scheduledImportFix: true };
+}
+
 export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
   name: 'require-memoize-jsx-returners',
   meta: {
@@ -762,70 +856,15 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
           messageId: 'requireMemoizeJsxReturner',
           data: { name: getMemberName(node) },
           fix(fixer) {
-            const fixes: TSESLint.RuleFix[] = [];
             const sourceCode = context.getSourceCode();
-
-            if (!hasMemoizeImport && !scheduledImportFix) {
-              const programBody = (sourceCode.ast as TSESTree.Program).body;
-
-              // Look for an existing import from the memoize module
-              const existingMemoizeImport = programBody.find(
-                (statement): statement is TSESTree.ImportDeclaration =>
-                  statement.type === AST_NODE_TYPES.ImportDeclaration &&
-                  MEMOIZE_MODULES.has(String(statement.source.value)),
+            const { fixes, scheduledImportFix: newScheduledImportFix } =
+              getImportFixes(
+                fixer,
+                sourceCode,
+                hasMemoizeImport,
+                scheduledImportFix,
               );
-
-              if (
-                existingMemoizeImport &&
-                existingMemoizeImport.specifiers.some(
-                  (s) => s.type === AST_NODE_TYPES.ImportSpecifier,
-                )
-              ) {
-                // Augment existing named import
-                const lastSpecifier = [
-                  ...existingMemoizeImport.specifiers,
-                ].reverse().find((s) => s.type === AST_NODE_TYPES.ImportSpecifier);
-
-                if (lastSpecifier) {
-                  fixes.push(fixer.insertTextAfter(lastSpecifier, ', Memoize'));
-                  scheduledImportFix = true;
-                }
-              }
-
-              if (!scheduledImportFix) {
-                const firstImport = programBody.find(
-                  (statement) =>
-                    statement.type === AST_NODE_TYPES.ImportDeclaration,
-                );
-                const anchorNode = (firstImport ?? programBody[0]) as
-                  | TSESTree.Node
-                  | undefined;
-
-                if (anchorNode) {
-                  const text = sourceCode.text;
-                  const anchorStart = anchorNode.range?.[0] ?? 0;
-                  const lineStart = text.lastIndexOf('\n', anchorStart - 1) + 1;
-                  const leadingWhitespace =
-                    text.slice(lineStart, anchorStart).match(/^[ \t]*/)?.[0] ??
-                    '';
-                  const importLine = `${leadingWhitespace}import { Memoize } from '${MEMOIZE_PREFERRED_MODULE}';\n`;
-                  fixes.push(
-                    fixer.insertTextBeforeRange(
-                      [lineStart, lineStart],
-                      importLine,
-                    ),
-                  );
-                } else {
-                  fixes.push(
-                    fixer.insertTextBeforeRange(
-                      [0, 0],
-                      `import { Memoize } from '${MEMOIZE_PREFERRED_MODULE}';\n`,
-                    ),
-                  );
-                }
-                scheduledImportFix = true;
-              }
-            }
+            scheduledImportFix = newScheduledImportFix;
 
             const insertionTarget =
               node.decorators && node.decorators.length > 0
