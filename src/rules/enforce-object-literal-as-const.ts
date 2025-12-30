@@ -1,5 +1,6 @@
 import { TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 export const enforceObjectLiteralAsConst = createRule({
   name: 'enforce-object-literal-as-const',
@@ -66,10 +67,9 @@ export const enforceObjectLiteralAsConst = createRule({
         }
 
         // Check if the return statement is inside a function
-        const sourceCode = context.getSourceCode();
-        // Use context.getAncestors() for now, but note it's deprecated
-        // We'll need to update this when upgrading to ESLint v9
-        const ancestors = context.getAncestors();
+        const sourceCode = context.sourceCode;
+        // Use ASTHelpers.getAncestors for ESLint v8/v9 compatibility
+        const ancestors = ASTHelpers.getAncestors(context, node);
         const isInFunction = ancestors.some(
           (ancestor) =>
             ancestor.type === 'FunctionDeclaration' ||
