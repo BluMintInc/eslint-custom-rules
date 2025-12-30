@@ -88,6 +88,109 @@ function getMemberName(node: TSESTree.MethodDefinition): string {
   return 'member';
 }
 
+function extractFunctionsFromVariableDeclaration(
+  declaration: TSESTree.VariableDeclaration,
+  functions: Map<string, FunctionLike>,
+): void {
+  for (const declarator of declaration.declarations) {
+    if (declarator.id.type !== AST_NODE_TYPES.Identifier) {
+      continue;
+    }
+
+    const init = declarator.init;
+    if (
+      !init ||
+      (init.type !== AST_NODE_TYPES.ArrowFunctionExpression &&
+        init.type !== AST_NODE_TYPES.FunctionExpression)
+    ) {
+      continue;
+    }
+
+    functions.set(declarator.id.name, init);
+  }
+}
+
+function traverseStatements(
+  statements: TSESTree.Statement[],
+  functions: Map<string, FunctionLike>,
+): void {
+  statements.forEach((statement) => visitStatement(statement, functions));
+}
+
+function visitStatementByType(
+  statement: TSESTree.Statement,
+  functions: Map<string, FunctionLike>,
+): void {
+  switch (statement.type) {
+    case AST_NODE_TYPES.BlockStatement:
+      traverseStatements(statement.body, functions);
+      break;
+    case AST_NODE_TYPES.IfStatement:
+      visitStatement(statement.consequent, functions);
+      if (statement.alternate) {
+        visitStatement(statement.alternate, functions);
+      }
+      break;
+    case AST_NODE_TYPES.SwitchStatement:
+      statement.cases.forEach((caseNode) =>
+        traverseStatements(caseNode.consequent, functions),
+      );
+      break;
+    case AST_NODE_TYPES.TryStatement:
+      visitStatement(statement.block, functions);
+      if (statement.handler) {
+        visitStatement(statement.handler.body, functions);
+      }
+      if (statement.finalizer) {
+        visitStatement(statement.finalizer, functions);
+      }
+      break;
+    case AST_NODE_TYPES.ForStatement:
+      if (
+        statement.init &&
+        statement.init.type === AST_NODE_TYPES.VariableDeclaration
+      ) {
+        extractFunctionsFromVariableDeclaration(statement.init, functions);
+      }
+      visitStatement(statement.body, functions);
+      break;
+    case AST_NODE_TYPES.ForInStatement:
+    case AST_NODE_TYPES.ForOfStatement:
+      if (statement.left.type === AST_NODE_TYPES.VariableDeclaration) {
+        extractFunctionsFromVariableDeclaration(statement.left, functions);
+      }
+      visitStatement(statement.body, functions);
+      break;
+    case AST_NODE_TYPES.WhileStatement:
+    case AST_NODE_TYPES.DoWhileStatement:
+    case AST_NODE_TYPES.LabeledStatement:
+    case AST_NODE_TYPES.WithStatement:
+      visitStatement(statement.body, functions);
+      break;
+    default:
+      break;
+  }
+}
+
+function visitStatement(
+  statement: TSESTree.Statement,
+  functions: Map<string, FunctionLike>,
+): void {
+  if (
+    statement.type === AST_NODE_TYPES.FunctionDeclaration &&
+    statement.id?.name
+  ) {
+    functions.set(statement.id.name, statement);
+    return;
+  }
+
+  if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
+    extractFunctionsFromVariableDeclaration(statement, functions);
+  }
+
+  visitStatementByType(statement, functions);
+}
+
 function collectLocalFunctions(
   body: TSESTree.BlockStatement | null | undefined,
 ): Map<string, FunctionLike> {
@@ -96,87 +199,7 @@ function collectLocalFunctions(
     return functions;
   }
 
-  const addVariableFunctions = (declaration: TSESTree.VariableDeclaration) => {
-    for (const declarator of declaration.declarations) {
-      if (
-        declarator.id.type === AST_NODE_TYPES.Identifier &&
-        declarator.init &&
-        (declarator.init.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-          declarator.init.type === AST_NODE_TYPES.FunctionExpression)
-      ) {
-        functions.set(declarator.id.name, declarator.init);
-      }
-    }
-  };
-
-  const visitStatement = (statement: TSESTree.Statement): void => {
-    if (
-      statement.type === AST_NODE_TYPES.FunctionDeclaration &&
-      statement.id?.name
-    ) {
-      functions.set(statement.id.name, statement);
-      return;
-    }
-
-    if (statement.type === AST_NODE_TYPES.VariableDeclaration) {
-      addVariableFunctions(statement);
-    }
-
-    switch (statement.type) {
-      case AST_NODE_TYPES.BlockStatement:
-        statement.body.forEach(visitStatement);
-        break;
-      case AST_NODE_TYPES.IfStatement:
-        visitStatement(statement.consequent);
-        if (statement.alternate) {
-          visitStatement(statement.alternate);
-        }
-        break;
-      case AST_NODE_TYPES.SwitchStatement:
-        statement.cases.forEach((caseNode) =>
-          caseNode.consequent.forEach(visitStatement),
-        );
-        break;
-      case AST_NODE_TYPES.TryStatement:
-        visitStatement(statement.block);
-        if (statement.handler) {
-          visitStatement(statement.handler.body);
-        }
-        if (statement.finalizer) {
-          visitStatement(statement.finalizer);
-        }
-        break;
-      case AST_NODE_TYPES.ForStatement:
-        if (
-          statement.init &&
-          statement.init.type === AST_NODE_TYPES.VariableDeclaration
-        ) {
-          addVariableFunctions(statement.init);
-        }
-        visitStatement(statement.body);
-        break;
-      case AST_NODE_TYPES.ForInStatement:
-      case AST_NODE_TYPES.ForOfStatement:
-        if (
-          statement.left.type === AST_NODE_TYPES.VariableDeclaration &&
-          statement.left.declarations.length
-        ) {
-          addVariableFunctions(statement.left);
-        }
-        visitStatement(statement.body);
-        break;
-      case AST_NODE_TYPES.WhileStatement:
-      case AST_NODE_TYPES.DoWhileStatement:
-      case AST_NODE_TYPES.LabeledStatement:
-      case AST_NODE_TYPES.WithStatement:
-        visitStatement(statement.body);
-        break;
-      default:
-        break;
-    }
-  };
-
-  body.body.forEach(visitStatement);
+  traverseStatements(body.body, functions);
 
   return functions;
 }
