@@ -522,5 +522,22 @@ class NestedFactory {
   }
 }`,
     },
+    {
+      filename: 'file.tsx',
+      code: `import { clear } from '@blumintinc/typescript-memoize';
+class Example {
+  get Component() {
+    return () => <div />;
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `import { clear, Memoize } from '@blumintinc/typescript-memoize';
+class Example {
+  @Memoize()
+  get Component() {
+    return () => <div />;
+  }
+}`,
+    },
   ],
 });

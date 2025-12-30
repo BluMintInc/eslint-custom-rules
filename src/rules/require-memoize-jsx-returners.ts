@@ -205,8 +205,93 @@ function collectLocalFunctions(
 }
 
 /** Type guard for ParenthesizedExpression (non-standard node type in some parsers). */
-function isParenthesizedExpression(node: TSESTree.Node): boolean {
-  return (node as any).type === 'ParenthesizedExpression';
+function isParenthesizedExpression(
+  node: TSESTree.Node | null | undefined,
+): node is TSESTree.Node & { expression: TSESTree.Expression } {
+  return (
+    !!node &&
+    (node.type as string) === 'ParenthesizedExpression' &&
+    'expression' in node &&
+    (node as any).expression != null
+  );
+}
+
+function isIdentifierReturningJsx(
+  node: TSESTree.Identifier,
+  knownFunctions: Map<string, FunctionLike>,
+  cache: WeakMap<FunctionLike, JsxReturnCacheState>,
+  factoryContext: JsxFactoryContext,
+): boolean {
+  const targetFn = knownFunctions.get(node.name);
+  return (
+    !!targetFn &&
+    functionReturnsJSX(targetFn, knownFunctions, cache, factoryContext)
+  );
+}
+
+function isWrappedReturningJsx(
+  node:
+    | TSESTree.TSAsExpression
+    | TSESTree.TSTypeAssertion
+    | TSESTree.TSNonNullExpression
+    | TSESTree.TSSatisfiesExpression
+    | TSESTree.ChainExpression,
+  knownFunctions: Map<string, FunctionLike>,
+  cache: WeakMap<FunctionLike, JsxReturnCacheState>,
+  factoryContext: JsxFactoryContext,
+): boolean {
+  return expressionReturnsJSX(
+    node.expression,
+    knownFunctions,
+    cache,
+    factoryContext,
+  );
+}
+
+function isSequenceReturningJsx(
+  node: TSESTree.SequenceExpression,
+  knownFunctions: Map<string, FunctionLike>,
+  cache: WeakMap<FunctionLike, JsxReturnCacheState>,
+  factoryContext: JsxFactoryContext,
+): boolean {
+  return (
+    node.expressions.length > 0 &&
+    expressionReturnsJSX(
+      node.expressions[node.expressions.length - 1],
+      knownFunctions,
+      cache,
+      factoryContext,
+    )
+  );
+}
+
+function isLogicalReturningJsx(
+  node: TSESTree.LogicalExpression,
+  knownFunctions: Map<string, FunctionLike>,
+  cache: WeakMap<FunctionLike, JsxReturnCacheState>,
+  factoryContext: JsxFactoryContext,
+): boolean {
+  return (
+    expressionReturnsJSX(node.left, knownFunctions, cache, factoryContext) ||
+    expressionReturnsJSX(node.right, knownFunctions, cache, factoryContext)
+  );
+}
+
+function isConditionalReturningJsx(
+  node: TSESTree.ConditionalExpression,
+  knownFunctions: Map<string, FunctionLike>,
+  cache: WeakMap<FunctionLike, JsxReturnCacheState>,
+  factoryContext: JsxFactoryContext,
+): boolean {
+  return (
+    expressionReturnsJSX(
+      node.consequent,
+      knownFunctions,
+      cache,
+      factoryContext,
+    ) ||
+    expressionReturnsJSX(node.alternate, knownFunctions, cache, factoryContext)
+  );
 }
 
 function callExpressionReturnsJSX(
@@ -225,10 +310,8 @@ function callExpressionReturnsJSX(
       return true;
     }
 
-    const targetFn = knownFunctions.get(callee.name);
     if (
-      targetFn &&
-      functionReturnsJSX(targetFn, knownFunctions, cache, factoryContext)
+      isIdentifierReturningJsx(callee, knownFunctions, cache, factoryContext)
     ) {
       return true;
     }
@@ -282,10 +365,13 @@ function callExpressionReturnsJSX(
       (propertyName === 'call' || propertyName === 'apply') &&
       callee.object.type === AST_NODE_TYPES.Identifier
     ) {
-      const targetFn = knownFunctions.get(callee.object.name);
       if (
-        targetFn &&
-        functionReturnsJSX(targetFn, knownFunctions, cache, factoryContext)
+        isIdentifierReturningJsx(
+          callee.object,
+          knownFunctions,
+          cache,
+          factoryContext,
+        )
       ) {
         return true;
       }
@@ -305,14 +391,15 @@ function expressionReturnsJSX(
 
   if (isParenthesizedExpression(expression)) {
     return expressionReturnsJSX(
-      (expression as any).expression,
+      expression.expression,
       knownFunctions,
       cache,
       factoryContext,
     );
   }
 
-  switch (expression.type) {
+  const type = (expression as TSESTree.Node).type;
+  switch (type) {
     case AST_NODE_TYPES.JSXElement:
     case AST_NODE_TYPES.JSXFragment:
       return true;
@@ -320,87 +407,59 @@ function expressionReturnsJSX(
     case AST_NODE_TYPES.ArrowFunctionExpression:
     case AST_NODE_TYPES.FunctionExpression:
       return functionReturnsJSX(
-        expression,
+        expression as any,
         knownFunctions,
         cache,
         factoryContext,
       );
 
-    case AST_NODE_TYPES.Identifier: {
-      const targetFn = knownFunctions.get(expression.name);
-      if (
-        targetFn &&
-        functionReturnsJSX(targetFn, knownFunctions, cache, factoryContext)
-      ) {
-        return true;
-      }
-      return false;
-    }
+    case AST_NODE_TYPES.Identifier:
+      return isIdentifierReturningJsx(
+        expression as any,
+        knownFunctions,
+        cache,
+        factoryContext,
+      );
 
     case AST_NODE_TYPES.CallExpression:
       return callExpressionReturnsJSX(
-        expression,
+        expression as any,
         knownFunctions,
         cache,
         factoryContext,
       );
 
     case AST_NODE_TYPES.ConditionalExpression:
-      return (
-        expressionReturnsJSX(
-          expression.consequent,
-          knownFunctions,
-          cache,
-          factoryContext,
-        ) ||
-        expressionReturnsJSX(
-          expression.alternate,
-          knownFunctions,
-          cache,
-          factoryContext,
-        )
-      );
-
-    case AST_NODE_TYPES.LogicalExpression:
-      return (
-        expressionReturnsJSX(
-          expression.left,
-          knownFunctions,
-          cache,
-          factoryContext,
-        ) ||
-        expressionReturnsJSX(
-          expression.right,
-          knownFunctions,
-          cache,
-          factoryContext,
-        )
-      );
-
-    case AST_NODE_TYPES.SequenceExpression:
-      return expression.expressions.length > 0
-        ? expressionReturnsJSX(
-            expression.expressions[expression.expressions.length - 1],
-            knownFunctions,
-            cache,
-            factoryContext,
-          )
-        : false;
-
-    case AST_NODE_TYPES.TSAsExpression:
-    case AST_NODE_TYPES.TSTypeAssertion:
-    case AST_NODE_TYPES.TSNonNullExpression:
-    case AST_NODE_TYPES.TSSatisfiesExpression:
-      return expressionReturnsJSX(
-        expression.expression,
+      return isConditionalReturningJsx(
+        expression as any,
         knownFunctions,
         cache,
         factoryContext,
       );
 
+    case AST_NODE_TYPES.LogicalExpression:
+      return isLogicalReturningJsx(
+        expression as any,
+        knownFunctions,
+        cache,
+        factoryContext,
+      );
+
+    case AST_NODE_TYPES.SequenceExpression:
+      return isSequenceReturningJsx(
+        expression as any,
+        knownFunctions,
+        cache,
+        factoryContext,
+      );
+
+    case AST_NODE_TYPES.TSAsExpression:
+    case AST_NODE_TYPES.TSTypeAssertion:
+    case AST_NODE_TYPES.TSNonNullExpression:
+    case AST_NODE_TYPES.TSSatisfiesExpression:
     case AST_NODE_TYPES.ChainExpression:
-      return expressionReturnsJSX(
-        expression.expression,
+      return isWrappedReturningJsx(
+        expression as any,
         knownFunctions,
         cache,
         factoryContext,
@@ -708,37 +767,64 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
 
             if (!hasMemoizeImport && !scheduledImportFix) {
               const programBody = (sourceCode.ast as TSESTree.Program).body;
-              const firstImport = programBody.find(
-                (statement) =>
-                  statement.type === AST_NODE_TYPES.ImportDeclaration,
-              );
-              const anchorNode = (firstImport ?? programBody[0]) as
-                | TSESTree.Node
-                | undefined;
 
-              if (anchorNode) {
-                const text = sourceCode.text;
-                const anchorStart = anchorNode.range?.[0] ?? 0;
-                const lineStart = text.lastIndexOf('\n', anchorStart - 1) + 1;
-                const leadingWhitespace =
-                  text.slice(lineStart, anchorStart).match(/^[ \t]*/)?.[0] ??
-                  '';
-                const importLine = `${leadingWhitespace}import { Memoize } from '${MEMOIZE_PREFERRED_MODULE}';\n`;
-                fixes.push(
-                  fixer.insertTextBeforeRange(
-                    [lineStart, lineStart],
-                    importLine,
-                  ),
-                );
-              } else {
-                fixes.push(
-                  fixer.insertTextBeforeRange(
-                    [0, 0],
-                    `import { Memoize } from '${MEMOIZE_PREFERRED_MODULE}';\n`,
-                  ),
-                );
+              // Look for an existing import from the memoize module
+              const existingMemoizeImport = programBody.find(
+                (statement): statement is TSESTree.ImportDeclaration =>
+                  statement.type === AST_NODE_TYPES.ImportDeclaration &&
+                  MEMOIZE_MODULES.has(String(statement.source.value)),
+              );
+
+              if (
+                existingMemoizeImport &&
+                existingMemoizeImport.specifiers.some(
+                  (s) => s.type === AST_NODE_TYPES.ImportSpecifier,
+                )
+              ) {
+                // Augment existing named import
+                const lastSpecifier = [
+                  ...existingMemoizeImport.specifiers,
+                ].reverse().find((s) => s.type === AST_NODE_TYPES.ImportSpecifier);
+
+                if (lastSpecifier) {
+                  fixes.push(fixer.insertTextAfter(lastSpecifier, ', Memoize'));
+                  scheduledImportFix = true;
+                }
               }
-              scheduledImportFix = true;
+
+              if (!scheduledImportFix) {
+                const firstImport = programBody.find(
+                  (statement) =>
+                    statement.type === AST_NODE_TYPES.ImportDeclaration,
+                );
+                const anchorNode = (firstImport ?? programBody[0]) as
+                  | TSESTree.Node
+                  | undefined;
+
+                if (anchorNode) {
+                  const text = sourceCode.text;
+                  const anchorStart = anchorNode.range?.[0] ?? 0;
+                  const lineStart = text.lastIndexOf('\n', anchorStart - 1) + 1;
+                  const leadingWhitespace =
+                    text.slice(lineStart, anchorStart).match(/^[ \t]*/)?.[0] ??
+                    '';
+                  const importLine = `${leadingWhitespace}import { Memoize } from '${MEMOIZE_PREFERRED_MODULE}';\n`;
+                  fixes.push(
+                    fixer.insertTextBeforeRange(
+                      [lineStart, lineStart],
+                      importLine,
+                    ),
+                  );
+                } else {
+                  fixes.push(
+                    fixer.insertTextBeforeRange(
+                      [0, 0],
+                      `import { Memoize } from '${MEMOIZE_PREFERRED_MODULE}';\n`,
+                    ),
+                  );
+                }
+                scheduledImportFix = true;
+              }
             }
 
             const insertionTarget =
