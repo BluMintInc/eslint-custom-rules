@@ -598,5 +598,45 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
       output: null,
       errors: [{ messageId: 'hoistDestructuring' }],
     },
+    {
+      code: `
+          const MyComponent = ({ user }) => {
+            useEffect(() => {
+              const { name } = user;
+              if (condition) {
+                const { age: name } = user;
+                log(name);
+              }
+              log(name);
+            }, [user]);
+
+            useEffect(() => {
+              const { name } = user;
+              audit(name);
+            }, [user]);
+          };
+        `,
+      output: `
+          const MyComponent = ({ user }) => {
+            useEffect(() => {
+              const { name } = user;
+              if (condition) {
+                const { age: name } = user;
+                log(name);
+              }
+              log(name);
+            }, [user]);
+
+            const { name } = (user) ?? {};
+            useEffect(() => {
+              audit(name);
+            }, [name]);
+          };
+        `,
+      errors: [
+        { messageId: 'hoistDestructuring' },
+        { messageId: 'hoistDestructuring' },
+      ],
+    },
   ],
 });

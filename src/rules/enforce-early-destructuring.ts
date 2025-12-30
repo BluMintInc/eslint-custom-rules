@@ -1044,7 +1044,6 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
                 updatedReservedNames.add(name);
               }
             }
-            reservedNamesByScope.set(scope, updatedReservedNames);
 
             for (const group of groups.values()) {
               const sortedProps = Array.from(group.properties.values()).sort(
@@ -1074,6 +1073,8 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
                 declarationsToRemove.add(decl),
               );
             }
+
+            reservedNamesByScope.set(scope, updatedReservedNames);
 
             const newDepSet = new Set(newDepTexts);
             for (const name of orderedDependencies) {
