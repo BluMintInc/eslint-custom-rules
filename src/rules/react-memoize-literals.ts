@@ -129,11 +129,7 @@ function isTransparentNode(node: TSESTree.Node): boolean {
   return (
     node.type === AST_NODE_TYPES.CallExpression ||
     node.type === AST_NODE_TYPES.MemberExpression ||
-    node.type === AST_NODE_TYPES.ChainExpression ||
-    node.type === AST_NODE_TYPES.TSAsExpression ||
-    node.type === AST_NODE_TYPES.TSTypeAssertion ||
-    node.type === AST_NODE_TYPES.TSSatisfiesExpression ||
-    node.type === AST_NODE_TYPES.TSNonNullExpression
+    isExpressionWrapper(node)
   );
 }
 
@@ -319,15 +315,7 @@ function isInsideAllowedHookCallback(node: TSESTree.Node): boolean {
     ) {
       let parent: TSESTree.Node | null = current.parent as TSESTree.Node | null;
 
-      while (
-        parent &&
-        (parent.type === AST_NODE_TYPES.TSAsExpression ||
-          parent.type === AST_NODE_TYPES.TSTypeAssertion ||
-          parent.type === AST_NODE_TYPES.TSSatisfiesExpression ||
-          parent.type === AST_NODE_TYPES.TSNonNullExpression ||
-          parent.type === AST_NODE_TYPES.ChainExpression ||
-          isParenthesizedExpression(parent))
-      ) {
+      while (parent && isExpressionWrapper(parent)) {
         parent = parent.parent as TSESTree.Node | null;
       }
 
@@ -348,35 +336,38 @@ function isInsideAllowedHookCallback(node: TSESTree.Node): boolean {
 }
 
 /**
+ * Type guard for nodes that wrap an underlying expression (e.g. assertions,
+ * parentheses, optional chaining wrappers).
+ */
+function isExpressionWrapper(
+  node: TSESTree.Node,
+): node is
+  | TSESTree.TSAsExpression
+  | TSESTree.TSTypeAssertion
+  | TSESTree.TSSatisfiesExpression
+  | TSESTree.TSNonNullExpression
+  | TSESTree.ChainExpression
+  | (TSESTree.Node & { expression: TSESTree.Node }) {
+  return (
+    node.type === AST_NODE_TYPES.TSAsExpression ||
+    node.type === AST_NODE_TYPES.TSTypeAssertion ||
+    node.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+    node.type === AST_NODE_TYPES.TSNonNullExpression ||
+    node.type === AST_NODE_TYPES.ChainExpression ||
+    isParenthesizedExpression(node)
+  );
+}
+
+/**
  * Unwraps TypeScript assertions, optional chaining, and parentheses to reach
  * the underlying expression node for stable identity comparisons.
  */
 function unwrapExpression(node: TSESTree.Node): TSESTree.Node {
   let current: TSESTree.Node = node;
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    if (
-      current.type === AST_NODE_TYPES.TSAsExpression ||
-      current.type === AST_NODE_TYPES.TSTypeAssertion ||
-      current.type === AST_NODE_TYPES.TSSatisfiesExpression ||
-      current.type === AST_NODE_TYPES.TSNonNullExpression
-    ) {
-      current = current.expression;
-      continue;
-    }
-
-    if (current.type === AST_NODE_TYPES.ChainExpression) {
-      current = current.expression;
-      continue;
-    }
-
-    if (isParenthesizedExpression(current)) {
-      current = current.expression;
-      continue;
-    }
-
-    return current;
+  while (isExpressionWrapper(current)) {
+    current = current.expression;
   }
+  return current;
 }
 
 /**
@@ -440,14 +431,7 @@ function findEnclosingReturnStatement(
       return current;
     }
 
-    if (
-      current.type === AST_NODE_TYPES.TSAsExpression ||
-      current.type === AST_NODE_TYPES.TSTypeAssertion ||
-      current.type === AST_NODE_TYPES.TSSatisfiesExpression ||
-      current.type === AST_NODE_TYPES.TSNonNullExpression ||
-      current.type === AST_NODE_TYPES.ChainExpression ||
-      isParenthesizedExpression(current)
-    ) {
+    if (isExpressionWrapper(current)) {
       current = current.parent as TSESTree.Node | null;
       continue;
     }
