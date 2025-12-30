@@ -663,6 +663,27 @@ ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
       code: `
           const MyComponent = ({ user }) => {
             useEffect(() => {
+              const { name } = user;
+              const obj = { user };
+              log(obj, name);
+            }, [user]);
+          };
+        `,
+      output: `
+          const MyComponent = ({ user }) => {
+            const { name } = (user) ?? {};
+            useEffect(() => {
+              const obj = { user };
+              log(obj, name);
+            }, [user, name]);
+          };
+        `,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
+          const MyComponent = ({ user }) => {
+            useEffect(() => {
               const fallback = 'Anonymous';
               const { name = fallback } = user;
               log(name);

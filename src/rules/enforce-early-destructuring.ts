@@ -1008,7 +1008,8 @@ function isIdentifierReference(node: TSESTree.Identifier): boolean {
   if (
     parent.type === AST_NODE_TYPES.Property &&
     parent.key === node &&
-    !parent.computed
+    !parent.computed &&
+    !parent.shorthand
   ) {
     return false;
   }
