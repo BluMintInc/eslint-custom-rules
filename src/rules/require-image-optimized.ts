@@ -35,7 +35,7 @@ export = createRule({
     const options = context.options[0] || {
       componentPath: 'src/components/image/ImageOptimized',
     };
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode;
 
     return {
       // Handle JSX img elements

@@ -1,8 +1,10 @@
-import { AST_NODE_TYPES } from '@typescript-eslint/utils';
-import { createRule } from '../utils/createRule';
+import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import path from 'path';
+import { createRule } from '../utils/createRule';
 
 type MessageIds = 'missingType' | 'notExtendingIdentifiable';
+
+const TRANSPARENT_TYPE_NAMES = new Set(['Readonly', 'Resolve']);
 
 export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
   name: 'enforce-identifiable-firestore-type',
@@ -67,89 +69,139 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
         if (node.id.name === folderName) {
           hasExpectedType = true;
 
-          // Find Identifiable in type's dependencies
+          const findTypeAliasAnnotation = (
+            typeName: string,
+          ): TSESTree.Node | null => {
+            type ScopeType = ReturnType<typeof context.getScope>;
+            let scope: ScopeType | null = context.getScope();
+
+            while (scope) {
+              const variable = scope.variables.find(
+                (variableNode) => variableNode.name === typeName,
+              );
+              if (variable) {
+                const definition = variable.defs.find(
+                  (definition) =>
+                    definition.node.type ===
+                    AST_NODE_TYPES.TSTypeAliasDeclaration,
+                );
+                if (
+                  definition &&
+                  definition.node.type ===
+                    AST_NODE_TYPES.TSTypeAliasDeclaration &&
+                  definition.node.typeAnnotation
+                ) {
+                  return definition.node.typeAnnotation as TSESTree.TypeNode;
+                }
+              }
+              scope = scope.upper as ScopeType | null;
+            }
+
+            return null;
+          };
+
+          type ParenthesizedTypeNode = {
+            type: 'TSParenthesizedType';
+            typeAnnotation?: TSESTree.Node | null;
+          };
+
+          const isParenthesizedType = (
+            node: TSESTree.Node | null | undefined,
+          ): boolean =>
+            (node as { type?: string })?.type === 'TSParenthesizedType';
+
+          const isReadonlyTypeOperator = (
+            node: TSESTree.Node | null | undefined,
+          ): node is TSESTree.TSTypeOperator & { operator: 'readonly' } =>
+            node?.type === AST_NODE_TYPES.TSTypeOperator &&
+            (node as TSESTree.TSTypeOperator).operator === 'readonly';
+
+          const unwrapTransparentType = (
+            typeNode: TSESTree.Node | null | undefined,
+          ): TSESTree.Node | null => {
+            let current = typeNode;
+
+            while (current) {
+              if (isParenthesizedType(current)) {
+                const parenthesized =
+                  current as unknown as ParenthesizedTypeNode;
+                current = parenthesized.typeAnnotation ?? null;
+                continue;
+              }
+
+              if (isReadonlyTypeOperator(current)) {
+                current = current.typeAnnotation ?? null;
+                continue;
+              }
+
+              break;
+            }
+
+            return current ?? null;
+          };
+
           const findIdentifiable = (
-            type: any,
+            type: TSESTree.Node | null | undefined,
             checkedTypes = new Set<string>(),
           ): boolean => {
-            if (!type) return false;
+            const resolvedType = unwrapTransparentType(type);
+
+            if (!resolvedType) {
+              return false;
+            }
 
             if (
-              type.type === AST_NODE_TYPES.TSTypeReference &&
-              type.typeName.type === AST_NODE_TYPES.Identifier
+              resolvedType.type === AST_NODE_TYPES.TSTypeReference &&
+              resolvedType.typeName.type === AST_NODE_TYPES.Identifier
             ) {
-              const typeName = type.typeName.name;
+              const typeName = resolvedType.typeName.name;
+
               if (typeName === 'Identifiable') {
                 return true;
               }
-              if (!checkedTypes.has(typeName)) {
-                checkedTypes.add(typeName);
-                // Look for the type in all scopes
-                const scope = context.getScope();
-                const variable = scope.variables.find(
-                  (v) => v.name === typeName,
-                );
-                if (variable) {
-                  const def = variable.defs.find(
-                    (d) =>
-                      d.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration,
-                  );
-                  if (
-                    def &&
-                    'typeAnnotation' in def.node &&
-                    def.node.typeAnnotation
-                  ) {
-                    return findIdentifiable(
-                      def.node.typeAnnotation,
-                      checkedTypes,
-                    );
-                  }
-                }
-                // Try looking in the parent scope
-                if (scope.upper) {
-                  const parentVariable = scope.upper.variables.find(
-                    (v) => v.name === typeName,
-                  );
-                  if (parentVariable) {
-                    const def = parentVariable.defs.find(
-                      (d) =>
-                        d.node.type === AST_NODE_TYPES.TSTypeAliasDeclaration,
-                    );
-                    if (
-                      def &&
-                      'typeAnnotation' in def.node &&
-                      def.node.typeAnnotation
-                    ) {
-                      return findIdentifiable(
-                        def.node.typeAnnotation,
-                        checkedTypes,
-                      );
-                    }
-                  }
-                }
+
+              if (
+                TRANSPARENT_TYPE_NAMES.has(typeName) &&
+                resolvedType.typeParameters?.params?.some((param) =>
+                  findIdentifiable(param, checkedTypes),
+                )
+              ) {
+                return true;
               }
-            } else if (type.type === AST_NODE_TYPES.TSIntersectionType) {
-              // For intersection types, check each part
-              return type.types.some((part) =>
-                findIdentifiable(part, checkedTypes),
+
+              if (checkedTypes.has(typeName)) {
+                return false;
+              }
+
+              checkedTypes.add(typeName);
+              const aliasAnnotation = findTypeAliasAnnotation(typeName);
+
+              return findIdentifiable(aliasAnnotation, checkedTypes);
+            }
+
+            if (resolvedType.type === AST_NODE_TYPES.TSIntersectionType) {
+              return resolvedType.types.some((part) =>
+                findIdentifiable(part, new Set(checkedTypes)),
               );
             }
 
             return false;
           };
 
-          // Check if type extends Identifiable
-          const checkIdentifiableExtension = (type: any): boolean => {
-            if (!type) return false;
-            return findIdentifiable(type);
-          };
-
           // Check if type has id: string field
-          const checkIdField = (type: any): boolean => {
-            // Check for id: string field in type literal
-            if (type.type === AST_NODE_TYPES.TSTypeLiteral) {
-              return type.members.some(
-                (member: any) =>
+          const checkIdField = (
+            type: TSESTree.Node | null | undefined,
+            visitedTypes = new Set<string>(),
+          ): boolean => {
+            const resolvedType = unwrapTransparentType(type);
+
+            if (!resolvedType) {
+              return false;
+            }
+
+            if (resolvedType.type === AST_NODE_TYPES.TSTypeLiteral) {
+              return resolvedType.members.some(
+                (member) =>
                   member.type === AST_NODE_TYPES.TSPropertySignature &&
                   member.key.type === AST_NODE_TYPES.Identifier &&
                   member.key.name === 'id' &&
@@ -158,16 +210,55 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
               );
             }
 
-            // Check intersection types
-            if (type.type === AST_NODE_TYPES.TSIntersectionType) {
-              return type.types.some(checkIdField);
+            if (resolvedType.type === AST_NODE_TYPES.TSIntersectionType) {
+              return resolvedType.types.some((part) =>
+                checkIdField(part, new Set(visitedTypes)),
+              );
+            }
+
+            if (resolvedType.type === AST_NODE_TYPES.TSTypeReference) {
+              if (resolvedType.typeName.type !== AST_NODE_TYPES.Identifier) {
+                return false;
+              }
+
+              const typeName = resolvedType.typeName.name;
+
+              if (typeName === 'Identifiable') {
+                return true;
+              }
+
+              if (
+                TRANSPARENT_TYPE_NAMES.has(typeName) &&
+                resolvedType.typeParameters?.params?.some((param) =>
+                  checkIdField(param, visitedTypes),
+                )
+              ) {
+                return true;
+              }
+
+              if (visitedTypes.has(typeName)) {
+                return false;
+              }
+
+              visitedTypes.add(typeName);
+              const referencedType = findTypeAliasAnnotation(typeName);
+
+              return checkIdField(referencedType, visitedTypes);
             }
 
             return false;
           };
 
           // Check if type is wrapped in a utility type
-          const isUtilityType = (type: any): boolean => {
+          const isUtilityType = (
+            type: TSESTree.Node | null | undefined,
+          ): type is TSESTree.TSTypeReference & {
+            typeName: TSESTree.Identifier;
+          } => {
+            if (!type) {
+              return false;
+            }
+
             return (
               type.type === AST_NODE_TYPES.TSTypeReference &&
               type.typeName.type === AST_NODE_TYPES.Identifier &&
@@ -176,29 +267,50 @@ export const enforceIdentifiableFirestoreType = createRule<[], MessageIds>({
           };
 
           // Recursively check the type and its parameters
-          const checkType = (type: any): boolean => {
-            // Check if type extends Identifiable
-            if (checkIdentifiableExtension(type)) {
+          const checkType = (
+            type: TSESTree.Node | null | undefined,
+            visitedTypes = new Set<string>(),
+          ): boolean => {
+            const resolvedType = unwrapTransparentType(type);
+
+            if (!resolvedType) {
+              return false;
+            }
+
+            if (findIdentifiable(resolvedType)) {
               return true;
             }
 
-            // Check if type has id: string field (only for utility types)
             if (
-              isUtilityType(type) &&
-              checkIdField(type.typeParameters.params[0])
+              isUtilityType(resolvedType) &&
+              resolvedType.typeParameters?.params?.[0] &&
+              checkIdField(resolvedType.typeParameters.params[0])
             ) {
               return true;
             }
 
-            // Check if type is wrapped in a utility type
             if (
-              type.type === AST_NODE_TYPES.TSTypeReference &&
-              type.typeParameters?.params?.[0]
+              resolvedType.type === AST_NODE_TYPES.TSTypeReference &&
+              resolvedType.typeName.type === AST_NODE_TYPES.Identifier
             ) {
-              return checkType(type.typeParameters.params[0]);
+              const typeName = resolvedType.typeName.name;
+
+              if (visitedTypes.has(typeName)) {
+                return false;
+              }
+
+              visitedTypes.add(typeName);
+              const aliasAnnotation = findTypeAliasAnnotation(typeName);
+
+              return checkType(aliasAnnotation, visitedTypes);
             }
 
-            // For direct type definitions, require extending Identifiable
+            if (resolvedType.type === AST_NODE_TYPES.TSIntersectionType) {
+              return resolvedType.types.some((part) =>
+                checkType(part, new Set(visitedTypes)),
+              );
+            }
+
             return false;
           };
 

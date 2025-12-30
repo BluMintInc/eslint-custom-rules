@@ -1,9 +1,26 @@
 import { parallelizeAsyncOperations } from '../rules/parallelize-async-operations';
 import { ruleTesterTs } from '../utils/ruleTester';
 
+const formatMessage = (awaitCount: number) =>
+  parallelizeAsyncOperations.meta.messages.parallelizeAsyncOperations.replace(
+    /{{awaitCount}}/g,
+    awaitCount.toString(),
+  );
+
+const error = (awaitCount: number) => ({
+  messageId: 'parallelizeAsyncOperations' as const,
+  data: { awaitCount: awaitCount.toString() },
+});
+
 // Simple test that will always pass
 test('parallelize-async-operations rule exists', () => {
   expect(parallelizeAsyncOperations).toBeDefined();
+});
+
+test('parallelize-async-operations message explains why and how to fix', () => {
+  expect(formatMessage(2)).toBe(
+    'Awaiting 2 independent async operations sequentially makes their network and I/O latency add up, which slows responses and wastes compute. These awaits have no data dependency or per-call error handling, so run them together with Promise.all([...]) and destructure the results when you need individual values.',
+  );
 });
 
 ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
@@ -442,7 +459,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return true;
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(2)],
       output: `
       async function cleanUpReferences(params, ref) {
         await Promise.all([
@@ -464,7 +481,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return true;
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(2)],
       output: `
       async function methodChaining() {
         await Promise.all([
@@ -487,7 +504,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return true;
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(2)],
       output: `
       async function withComments() {
         // First operation
@@ -510,7 +527,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return true;
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(3)],
       output: `
       async function threeSequentialAwaits() {
         await Promise.all([
@@ -532,7 +549,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return result;
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(2)],
       output: `
       async function mixedAwaitStyles() {
         const [, result] = await Promise.all([
@@ -553,7 +570,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return true;
       };
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(2)],
       output: `
       const arrowFunction = async () => {
         await Promise.all([
@@ -576,7 +593,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         }
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(2)],
       output: `
       class MyClass {
         async classMethod() {
@@ -600,7 +617,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return 'done';
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(3)],
       output: `
       async function simpleSequentialAwaits() {
         await Promise.all([
@@ -622,7 +639,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return { data1, data2 };
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(2)],
       output: `
       async function independentVariableAssignments() {
         const [data1, data2] = await Promise.all([
@@ -644,7 +661,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return true;
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(3)],
       output: `
       async function methodCallAwaits() {
         await Promise.all([
@@ -666,7 +683,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return true;
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(2)],
       output: `
       async function complexExpressionAwaits() {
         await Promise.all([
@@ -688,7 +705,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return 'processed';
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(3)],
       output: `
       async function functionCallAwaits() {
         await Promise.all([
@@ -711,7 +728,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return 'mixed';
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(3)],
       output: `
       async function mixedCallTypes() {
         await Promise.all([
@@ -733,7 +750,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         await operation2();
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(2)],
       output: `
       async function awaitsAtEnd() {
         const setup = doSomeSetup();
@@ -757,7 +774,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return true;
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(2)],
       output: `
       async function withWhitespace() {
 
@@ -780,7 +797,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return 'fetched';
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(2)],
       output: `
       async function withTemplateLiterals() {
         await Promise.all([
@@ -803,7 +820,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return true;
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(2)],
       output: `
       async function nestedBlock() {
         if (condition) {
@@ -826,7 +843,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return data;
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(2)],
       output: `
       async function complexExpressions() {
         const [data, ] = await Promise.all([
@@ -849,7 +866,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return true;
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(4)],
       output: `
       async function fourSequentialAwaits() {
         await Promise.all([
@@ -873,7 +890,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return { a, b, c };
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(3)],
       output: `
       async function independentAssignments() {
         const [a, b, c] = await Promise.all([
@@ -896,7 +913,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return data;
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(3)],
       output: `
       async function mixedStyles() {
         const [, data, ] = await Promise.all([
@@ -919,7 +936,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return 'initialized';
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(3)],
       output: `
       async function objectMethodCalls() {
         await Promise.all([
@@ -942,7 +959,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return 'fetched';
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(3)],
       output: `
       async function chainedMethodCalls() {
         await Promise.all([
@@ -965,7 +982,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return 'completed';
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(3)],
       output: `
       async function computedPropertyAccess() {
         await Promise.all([
@@ -987,7 +1004,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return 'done';
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(2)],
       output: `
       async function functionExpressions() {
         await Promise.all([
@@ -1008,7 +1025,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return 'fetched';
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(2)],
       output: `
       async function conditionalExpressions() {
         await Promise.all([
@@ -1029,7 +1046,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return 'processed';
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(2)],
       output: `
       async function logicalExpressions() {
         await Promise.all([
@@ -1050,7 +1067,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return 'delayed';
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(2)],
       output: `
       async function newExpressions() {
         await Promise.all([
@@ -1071,7 +1088,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return 'queried';
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(2)],
       output: `
       async function taggedTemplateLiterals() {
         await Promise.all([
@@ -1093,7 +1110,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return 'executed';
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(3)],
       output: `
       async function arrayAccess() {
         await Promise.all([
@@ -1118,7 +1135,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         }
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(3)],
       output: `
       class AsyncClass {
         async sequentialMethods() {
@@ -1144,7 +1161,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         }
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(2)],
       output: `
       class ChildClass extends ParentClass {
         async sequentialSuper() {
@@ -1167,7 +1184,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         yield 'done';
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(2)],
       output: `
       async function* asyncGenerator() {
         await Promise.all([
@@ -1189,7 +1206,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return x + y + z;
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(3)],
       output: `
       async function assignmentPatterns() {
         const [x, y, z] = await Promise.all([
@@ -1211,7 +1228,7 @@ ruleTesterTs.run('parallelize-async-operations', parallelizeAsyncOperations, {
         return 'calculated';
       }
       `,
-      errors: [{ messageId: 'parallelizeAsyncOperations' }],
+      errors: [error(2)],
       output: `
       async function unaryExpressions() {
         await Promise.all([

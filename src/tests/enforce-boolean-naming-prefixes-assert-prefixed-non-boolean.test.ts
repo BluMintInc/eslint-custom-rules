@@ -93,6 +93,27 @@ ruleTesterTs.run(
         ],
       },
 
+      // Boolean-returning assert used within logical AND should still be treated as boolean
+      {
+        code: `
+        function assertsValid(x: unknown): boolean { return typeof x === 'string'; }
+        const isFlag = Math.random() > 0.5;
+        const value = isFlag && assertsValid(bar);
+        `,
+        errors: [
+          {
+            messageId: 'missingBooleanPrefix',
+            data: {
+              type: 'variable',
+              name: 'value',
+              capitalizedName: 'Value',
+              prefixes:
+                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
+            },
+          },
+        ],
+      },
+
       // Logical OR that is boolean on the right
       {
         code: `
