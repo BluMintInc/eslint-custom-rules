@@ -19,7 +19,12 @@ type DestructuringGroup = {
   baseName: string | null;
 };
 
-const HOOK_NAMES = new Set(['useEffect', 'useMemo', 'useCallback', 'useLayoutEffect']);
+const HOOK_NAMES = new Set([
+  'useEffect',
+  'useMemo',
+  'useCallback',
+  'useLayoutEffect',
+]);
 
 type ParenthesizedExpressionLike = TSESTree.Expression & {
   type: 'ParenthesizedExpression';
@@ -32,7 +37,9 @@ function isParenthesizedExpression(
   return (expression as { type: string }).type === 'ParenthesizedExpression';
 }
 
-function unwrapTsExpression(expression: TSESTree.Expression): TSESTree.Expression {
+function unwrapTsExpression(
+  expression: TSESTree.Expression,
+): TSESTree.Expression {
   let current: TSESTree.Expression = expression;
   // Loop to peel off TS/paren wrappers that do not change the underlying value.
   // The explicit loop keeps TypeScript aware that `current` always has an
@@ -78,7 +85,9 @@ function isAllowedInit(init: TSESTree.Expression): boolean {
   if (unwrapped.type === AST_NODE_TYPES.Identifier) return true;
   if (unwrapped.type === AST_NODE_TYPES.MemberExpression) return true;
   if (unwrapped.type === AST_NODE_TYPES.ChainExpression) {
-    const inner = unwrapTsExpression(unwrapped.expression as TSESTree.Expression);
+    const inner = unwrapTsExpression(
+      unwrapped.expression as TSESTree.Expression,
+    );
     return inner.type === AST_NODE_TYPES.MemberExpression;
   }
   return false;
@@ -241,12 +250,18 @@ function collectBindingNamesFromBindingName(
 }
 
 function collectBindingNamesFromParamLike(
-  node: TSESTree.BindingName | TSESTree.AssignmentPattern | TSESTree.RestElement,
+  node:
+    | TSESTree.BindingName
+    | TSESTree.AssignmentPattern
+    | TSESTree.RestElement,
   names: Set<string>,
 ): void {
   if (node.type === AST_NODE_TYPES.AssignmentPattern) {
     collectBindingNamesFromParamLike(
-      node.left as TSESTree.BindingName | TSESTree.AssignmentPattern | TSESTree.RestElement,
+      node.left as
+        | TSESTree.BindingName
+        | TSESTree.AssignmentPattern
+        | TSESTree.RestElement,
       names,
     );
     return;
@@ -270,7 +285,10 @@ function collectExistingBindings(
   for (const param of callback.params) {
     if (param) {
       collectBindingNamesFromParamLike(
-        param as TSESTree.BindingName | TSESTree.AssignmentPattern | TSESTree.RestElement,
+        param as
+          | TSESTree.BindingName
+          | TSESTree.AssignmentPattern
+          | TSESTree.RestElement,
         names,
       );
     }
@@ -306,16 +324,35 @@ function collectExistingBindings(
 
 function collectBindingsInScope(scope: TSESLint.Scope.Scope): Set<string> {
   const names = new Set<string>();
-  for (const variable of scope.variables) {
-    if (
-      variable.identifiers.length === 0 &&
-      (variable.name === 'arguments' || variable.name === 'this')
-    ) {
-      continue;
+  let current: TSESLint.Scope.Scope | null = scope;
+  while (current) {
+    for (const variable of current.variables) {
+      if (variable.identifiers.length === 0) {
+        continue;
+      }
+      names.add(variable.name);
     }
-    names.add(variable.name);
+    current = current.upper ?? null;
   }
   return names;
+}
+
+function findInsertionStatement(
+  node: TSESTree.Node,
+): TSESTree.Statement | null {
+  let current: TSESTree.Node | undefined = node;
+  while (current) {
+    const parent = current.parent as TSESTree.Node | undefined;
+    if (!parent) return null;
+    if (
+      parent.type === AST_NODE_TYPES.BlockStatement &&
+      parent.body.includes(current as TSESTree.Statement)
+    ) {
+      return current as TSESTree.Statement;
+    }
+    current = parent;
+  }
+  return null;
 }
 
 function collectProperties(
@@ -448,7 +485,9 @@ function renderPropertyWithAssignment(
     left.type === AST_NODE_TYPES.Identifier &&
     property.key.name === left.name
   ) {
-    return `${sourceCode.getText(property.key)} = ${sourceCode.getText(value.right)}`;
+    return `${sourceCode.getText(property.key)} = ${sourceCode.getText(
+      value.right,
+    )}`;
   }
 
   const leftText = renderPatternLeft(left, sourceCode);
@@ -543,7 +582,10 @@ function callbackUsesBaseIdentifier(
       continue;
     }
 
-    if (current.type === AST_NODE_TYPES.Identifier && current.name === baseName) {
+    if (
+      current.type === AST_NODE_TYPES.Identifier &&
+      current.name === baseName
+    ) {
       return true;
     }
 
@@ -585,7 +627,9 @@ function testContainsObjectMember(
         while (base.type === AST_NODE_TYPES.MemberExpression) {
           base = base.object;
         }
-        return base.type === AST_NODE_TYPES.Identifier && base.name === objectName;
+        return (
+          base.type === AST_NODE_TYPES.Identifier && base.name === objectName
+        );
       })()
     ) {
       found = true;
@@ -624,7 +668,9 @@ function isTypeNarrowingContext(
   visitorKeys: Record<string, string[]>,
 ): boolean {
   if (!baseName) return false;
-  let current: TSESTree.Node | undefined = node.parent as TSESTree.Node | undefined;
+  let current: TSESTree.Node | undefined = node.parent as
+    | TSESTree.Node
+    | undefined;
 
   while (current && current.type !== AST_NODE_TYPES.Program) {
     if (current.type === AST_NODE_TYPES.IfStatement && current.test) {
@@ -688,7 +734,9 @@ function shouldSkipNestedFunction(
   return isAnyFunctionLikeNode(candidateNode) && candidateNode !== callback;
 }
 
-function hasCrossGroupNameCollision(groups: Map<string, DestructuringGroup>): boolean {
+function hasCrossGroupNameCollision(
+  groups: Map<string, DestructuringGroup>,
+): boolean {
   const nameToObjects = new Map<string, Set<string>>();
   for (const group of groups.values()) {
     for (const name of group.names) {
@@ -749,11 +797,15 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
       (context as unknown as { sourceCode?: TSESLint.SourceCode }).sourceCode ??
       context.getSourceCode();
     const visitorKeys =
-      (sourceCode as unknown as { visitorKeys?: Record<string, string[]> }).visitorKeys ??
+      (sourceCode as unknown as { visitorKeys?: Record<string, string[]> })
+        .visitorKeys ??
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (context as any).visitorKeys ??
       {};
-    const reservedNamesByScope = new WeakMap<TSESLint.Scope.Scope, Set<string>>();
+    const reservedNamesByScope = new WeakMap<
+      TSESLint.Scope.Scope,
+      Set<string>
+    >();
 
     return {
       CallExpression(node) {
@@ -761,7 +813,11 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
         if (!hookName) return;
 
         const callback = node.arguments[0];
-        if (!callback || !isFunctionNode(callback) || callback.body.type !== AST_NODE_TYPES.BlockStatement) {
+        if (
+          !callback ||
+          !isFunctionNode(callback) ||
+          callback.body.type !== AST_NODE_TYPES.BlockStatement
+        ) {
           return;
         }
 
@@ -895,7 +951,12 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
               return null;
             }
 
-            const indent = getIndentation(node, sourceCode);
+            const insertionStatement = findInsertionStatement(node);
+            if (!insertionStatement) {
+              return null;
+            }
+
+            const indent = getIndentation(insertionStatement, sourceCode);
 
             const hoistedLines: string[] = [];
             const declarationsToRemove = new Set<TSESTree.Node>();
@@ -903,13 +964,19 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
             const baseUsageByObject = new Map<string, boolean>();
 
             for (const group of groups.values()) {
-              group.declarations.forEach((decl) => declarationsToRemove.add(decl));
+              group.declarations.forEach((decl) =>
+                declarationsToRemove.add(decl),
+              );
               group.inits.forEach((init) => initsToIgnore.add(init));
             }
 
-            const existingBindings = collectExistingBindings(callback, declarationsToRemove);
+            const existingBindings = collectExistingBindings(
+              callback,
+              declarationsToRemove,
+            );
             const scopeDeclaredNames = collectBindingsInScope(scope);
-            const reservedNames = reservedNamesByScope.get(scope) ?? new Set<string>();
+            const reservedNames =
+              reservedNamesByScope.get(scope) ?? new Set<string>();
             const scopeNameCollisions = new Set<string>([
               ...scopeDeclaredNames,
               ...reservedNames,
@@ -960,11 +1027,15 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
               const sortedProps = Array.from(group.properties.values()).sort(
                 (a, b) => a.order - b.order,
               );
-              const pattern = `{ ${sortedProps.map((p) => p.text).join(', ')} }`;
+              const pattern = `{ ${sortedProps
+                .map((p) => p.text)
+                .join(', ')} }`;
               hoistedLines.push(
                 `${indent}const ${pattern} = (${group.objectText}) ?? {};`,
               );
-              group.declarations.forEach((decl) => declarationsToRemove.add(decl));
+              group.declarations.forEach((decl) =>
+                declarationsToRemove.add(decl),
+              );
             }
 
             const newDepSet = new Set(newDepTexts);
@@ -975,20 +1046,20 @@ export const enforceEarlyDestructuring = createRule<[], MessageIds>({
               }
             }
 
-            const lineStart =
-              sourceCode.getText().lastIndexOf('\n', node.range![0]) + 1;
+            const insertAt =
+              sourceCode
+                .getText()
+                .lastIndexOf('\n', insertionStatement.range![0]) + 1;
             const fixes = [
               fixer.insertTextBeforeRange(
-                [lineStart, lineStart],
+                [insertAt, insertAt],
                 `${hoistedLines.join('\n')}\n`,
               ),
               fixer.replaceText(depsArray, `[${newDepTexts.join(', ')}]`),
             ];
 
             for (const decl of declarationsToRemove) {
-              fixes.push(
-                fixer.removeRange(removalRange(decl, sourceCode)),
-              );
+              fixes.push(fixer.removeRange(removalRange(decl, sourceCode)));
             }
 
             return fixes;

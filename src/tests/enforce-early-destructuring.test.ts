@@ -1,13 +1,10 @@
 import { ruleTesterJsx } from '../utils/ruleTester';
 import { enforceEarlyDestructuring } from '../rules/enforce-early-destructuring';
 
-ruleTesterJsx.run(
-  'enforce-early-destructuring',
-  enforceEarlyDestructuring,
-  {
-    valid: [
-      {
-        code: `
+ruleTesterJsx.run('enforce-early-destructuring', enforceEarlyDestructuring, {
+  valid: [
+    {
+      code: `
           const MyComponent = () => {
             const audioPlayback = useAudioPlayback();
             const { canPlayAudio, startAudio } = audioPlayback ?? {};
@@ -18,9 +15,9 @@ ruleTesterJsx.run(
             }, [canPlayAudio, startAudio]);
           };
         `,
-      },
-      {
-        code: `
+    },
+    {
+      code: `
           const MyComponent = ({ response }) => {
             useEffect(async () => {
               if (!response) return;
@@ -29,9 +26,9 @@ ruleTesterJsx.run(
             }, [response]);
           };
         `,
-      },
-      {
-        code: `
+    },
+    {
+      code: `
           const MyComponent = ({ response }) => {
             useEffect(() => {
               const fetchData = async () => {
@@ -42,9 +39,9 @@ ruleTesterJsx.run(
             }, [response]);
           };
         `,
-      },
-      {
-        code: `
+    },
+    {
+      code: `
           const MyComponent = ({ value }) => {
             const { current } = value ?? {};
             useLayoutEffect(() => {
@@ -52,16 +49,16 @@ ruleTesterJsx.run(
             }, [current]);
           };
         `,
-      },
-      {
-        code: `
+    },
+    {
+      code: `
           const MyComponent = ({ response }) => {
             useEffect(() => doSomething(response), [response]);
           };
         `,
-      },
-      {
-        code: `
+    },
+    {
+      code: `
           const MyComponent = ({ response }) => {
             useEffect(() => {
               const { data } = response || {};
@@ -69,9 +66,9 @@ ruleTesterJsx.run(
             });
           };
         `,
-      },
-      {
-        code: `
+    },
+    {
+      code: `
           const MyComponent = ({ response }) => {
             const { data } = response ?? {};
             useEffect(() => {
@@ -79,9 +76,9 @@ ruleTesterJsx.run(
             }, [data]);
           };
         `,
-      },
-      {
-        code: `
+    },
+    {
+      code: `
           const MyComponent = ({ response }) => {
             useEffect(() => {
               const { data } = { data: response };
@@ -89,9 +86,9 @@ ruleTesterJsx.run(
             }, [response]);
           };
         `,
-      },
-      {
-        code: `
+    },
+    {
+      code: `
           const MyComponent = ({ response }) => {
             useEffect(() => {
               if (response.type === 'success') {
@@ -101,18 +98,18 @@ ruleTesterJsx.run(
             }, [response]);
           };
         `,
-      },
-      {
-        code: `
+    },
+    {
+      code: `
           const MyComponent = ({ response }) => {
             const { data } = response ?? {};
             const { items = [] } = data ?? {};
             useMemo(() => items.length, [items]);
           };
         `,
-      },
-      {
-        code: `
+    },
+    {
+      code: `
           const MyComponent = ({ response }) => {
             useEffect(() => {
               if (!response) return;
@@ -121,9 +118,9 @@ ruleTesterJsx.run(
             }, [response]);
           };
         `,
-      },
-      {
-        code: `
+    },
+    {
+      code: `
           const MyComponent = ({ user }) => {
             useEffect(() => {
               function helper() {
@@ -134,11 +131,11 @@ ruleTesterJsx.run(
             }, [user]);
           };
         `,
-      },
-    ],
-    invalid: [
-      {
-        code: `
+    },
+  ],
+  invalid: [
+    {
+      code: `
           const MyComponent = () => {
             const audioPlayback = useAudioPlayback();
 
@@ -149,7 +146,7 @@ ruleTesterJsx.run(
             }, [audioPlayback]);
           };
         `,
-        output: `
+      output: `
           const MyComponent = () => {
             const audioPlayback = useAudioPlayback();
 
@@ -160,10 +157,10 @@ ruleTesterJsx.run(
             }, [canPlayAudio, startAudio]);
           };
         `,
-        errors: [{ messageId: 'hoistDestructuring' }],
-      },
-      {
-        code: `
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
           const MyComponent = ({ value }) => {
             useLayoutEffect(() => {
               const { current } = value;
@@ -171,7 +168,7 @@ ruleTesterJsx.run(
             }, [value]);
           };
         `,
-        output: `
+      output: `
           const MyComponent = ({ value }) => {
             const { current } = (value) ?? {};
             useLayoutEffect(() => {
@@ -179,10 +176,10 @@ ruleTesterJsx.run(
             }, [current]);
           };
         `,
-        errors: [{ messageId: 'hoistDestructuring' }],
-      },
-      {
-        code: `
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
           const MyComponent = ({ response }) => {
             useMemo(() => {
               const { data: responseData } = response;
@@ -190,7 +187,7 @@ ruleTesterJsx.run(
             }, [response]);
           };
         `,
-        output: `
+      output: `
           const MyComponent = ({ response }) => {
             const { data: responseData } = (response) ?? {};
             useMemo(() => {
@@ -198,10 +195,10 @@ ruleTesterJsx.run(
             }, [responseData]);
           };
         `,
-        errors: [{ messageId: 'hoistDestructuring' }],
-      },
-      {
-        code: `
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
           const MyComponent = ({ config }) => {
             useCallback(() => {
               const { timeout = 1000 } = config;
@@ -209,7 +206,7 @@ ruleTesterJsx.run(
             }, [config]);
           };
         `,
-        output: `
+      output: `
           const MyComponent = ({ config }) => {
             const { timeout = 1000 } = (config) ?? {};
             useCallback(() => {
@@ -217,10 +214,10 @@ ruleTesterJsx.run(
             }, [timeout]);
           };
         `,
-        errors: [{ messageId: 'hoistDestructuring' }],
-      },
-      {
-        code: `
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
           const MyComponent = ({ user }) => {
             useEffect(() => {
               const { name } = user;
@@ -229,7 +226,7 @@ ruleTesterJsx.run(
             }, [user]);
           };
         `,
-        output: `
+      output: `
           const MyComponent = ({ user }) => {
             const { name, age } = (user) ?? {};
             useEffect(() => {
@@ -237,10 +234,10 @@ ruleTesterJsx.run(
             }, [name, age]);
           };
         `,
-        errors: [{ messageId: 'hoistDestructuring' }],
-      },
-      {
-        code: `
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
           const MyComponent = ({ user }) => {
             useEffect(() => {
               const { profile: { name, age } } = user;
@@ -248,7 +245,7 @@ ruleTesterJsx.run(
             }, [user]);
           };
         `,
-        output: `
+      output: `
           const MyComponent = ({ user }) => {
             const { profile: { name, age } = {} } = (user) ?? {};
             useEffect(() => {
@@ -256,10 +253,10 @@ ruleTesterJsx.run(
             }, [name, age]);
           };
         `,
-        errors: [{ messageId: 'hoistDestructuring' }],
-      },
-      {
-        code: `
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
           const MyComponent = ({ props }) => {
             useEffect(() => {
               const { canPlayAudio } = props.audioPlayback;
@@ -267,7 +264,7 @@ ruleTesterJsx.run(
             }, [props.audioPlayback]);
           };
         `,
-        output: `
+      output: `
           const MyComponent = ({ props }) => {
             const { canPlayAudio } = (props.audioPlayback) ?? {};
             useEffect(() => {
@@ -275,10 +272,10 @@ ruleTesterJsx.run(
             }, [canPlayAudio]);
           };
         `,
-        errors: [{ messageId: 'hoistDestructuring' }],
-      },
-      {
-        code: `
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
           const MyComponent = ({ response }) => {
             useEffect(() => {
               const { items: [first, second] } = response;
@@ -286,7 +283,7 @@ ruleTesterJsx.run(
             }, [response]);
           };
         `,
-        output: `
+      output: `
           const MyComponent = ({ response }) => {
             const { items: [first, second] = [] } = (response) ?? {};
             useEffect(() => {
@@ -294,10 +291,10 @@ ruleTesterJsx.run(
             }, [first, second]);
           };
         `,
-        errors: [{ messageId: 'hoistDestructuring' }],
-      },
-      {
-        code: `
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
           const MyComponent = ({ response }) => {
             useEffect(() => {
               const { items } = response?.data;
@@ -305,7 +302,7 @@ ruleTesterJsx.run(
             }, [response?.data]);
           };
         `,
-        output: `
+      output: `
           const MyComponent = ({ response }) => {
             const { items } = (response?.data) ?? {};
             useEffect(() => {
@@ -313,10 +310,10 @@ ruleTesterJsx.run(
             }, [items]);
           };
         `,
-        errors: [{ messageId: 'hoistDestructuring' }],
-      },
-      {
-        code: `
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
           const MyComponent = ({ config, offset }) => {
             useEffect(() => {
               const { value } = config;
@@ -324,7 +321,7 @@ ruleTesterJsx.run(
             }, [config, offset]);
           };
         `,
-        output: `
+      output: `
           const MyComponent = ({ config, offset }) => {
             const { value } = (config) ?? {};
             useEffect(() => {
@@ -332,10 +329,10 @@ ruleTesterJsx.run(
             }, [offset, value]);
           };
         `,
-        errors: [{ messageId: 'hoistDestructuring' }],
-      },
-      {
-        code: `
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
           const MyComponent = ({ user, extra }) => {
             const deps = useDeps();
             useEffect(() => {
@@ -344,7 +341,7 @@ ruleTesterJsx.run(
             }, [...deps, user, extra]);
           };
         `,
-        output: `
+      output: `
           const MyComponent = ({ user, extra }) => {
             const deps = useDeps();
             const { name } = (user) ?? {};
@@ -353,10 +350,10 @@ ruleTesterJsx.run(
             }, [...deps, extra, name]);
           };
         `,
-        errors: [{ messageId: 'hoistDestructuring' }],
-      },
-      {
-        code: `
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
           const MyComponent = ({ user }) => {
             useCallback(() => {
               const { name = 'Anonymous', age: userAge } = user;
@@ -364,7 +361,7 @@ ruleTesterJsx.run(
             }, [user]);
           };
         `,
-        output: `
+      output: `
           const MyComponent = ({ user }) => {
             const { name = 'Anonymous', age: userAge } = (user) ?? {};
             useCallback(() => {
@@ -372,10 +369,10 @@ ruleTesterJsx.run(
             }, [name, userAge]);
           };
         `,
-        errors: [{ messageId: 'hoistDestructuring' }],
-      },
-      {
-        code: `
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
           const MyComponent = ({ user }) => {
             useEffect(() => {
               const { name } = user;
@@ -387,7 +384,7 @@ ruleTesterJsx.run(
             }, [user]);
           };
         `,
-        output: `
+      output: `
           const MyComponent = ({ user }) => {
             const { name } = (user) ?? {};
             useEffect(() => {
@@ -399,10 +396,13 @@ ruleTesterJsx.run(
             }, [address]);
           };
         `,
-        errors: [{ messageId: 'hoistDestructuring' }, { messageId: 'hoistDestructuring' }],
-      },
-      {
-        code: `
+      errors: [
+        { messageId: 'hoistDestructuring' },
+        { messageId: 'hoistDestructuring' },
+      ],
+    },
+    {
+      code: `
           const MyComponent = ({ user }) => {
             useEffect(() => {
               const { name } = user;
@@ -412,7 +412,7 @@ ruleTesterJsx.run(
             }, [user]);
           };
         `,
-        output: `
+      output: `
           const MyComponent = ({ user }) => {
             const { name } = (user) ?? {};
             useEffect(() => {
@@ -422,10 +422,10 @@ ruleTesterJsx.run(
             }, [user, name]);
           };
         `,
-        errors: [{ messageId: 'hoistDestructuring' }],
-      },
-      {
-        code: `
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
           const MyComponent = ({ user }) => {
             useEffect(() => {
               const { name } = user as User;
@@ -433,7 +433,7 @@ ruleTesterJsx.run(
             }, [user]);
           };
         `,
-        output: `
+      output: `
           const MyComponent = ({ user }) => {
             const { name } = (user as User) ?? {};
             useEffect(() => {
@@ -441,10 +441,10 @@ ruleTesterJsx.run(
             }, [name]);
           };
         `,
-        errors: [{ messageId: 'hoistDestructuring' }],
-      },
-      {
-        code: `
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
           const MyComponent = ({ obj1, obj2 }) => {
             useEffect(() => {
               if (conditionA) {
@@ -458,25 +458,25 @@ ruleTesterJsx.run(
             }, [obj1, obj2]);
           };
         `,
-        output: null,
-        errors: [{ messageId: 'hoistDestructuring' }],
-      },
-      {
-        code: `
+      output: null,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
           const MyComponent = ({ user }) => {
             useEffect(() => { const { name } = user; const extra = 1; log(name, extra); }, [user]);
           };
         `,
-        output: `
+      output: `
           const MyComponent = ({ user }) => {
             const { name } = (user) ?? {};
             useEffect(() => { const extra = 1; log(name, extra); }, [name]);
           };
         `,
-        errors: [{ messageId: 'hoistDestructuring' }],
-      },
-      {
-        code: `
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
           const MyComponent = ({ user }) => {
             const { name } = user ?? {};
             useEffect(() => {
@@ -485,11 +485,11 @@ ruleTesterJsx.run(
             }, [user.profile]);
           };
         `,
-        output: null,
-        errors: [{ messageId: 'hoistDestructuring' }],
-      },
-      {
-        code: `
+      output: null,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
           const MyComponent = ({ user }) => {
             useEffect(() => {
               const { name } = user;
@@ -501,7 +501,7 @@ ruleTesterJsx.run(
             }, [user]);
           };
         `,
-        output: `
+      output: `
           const MyComponent = ({ user }) => {
             const { name } = (user) ?? {};
             useEffect(() => {
@@ -513,8 +513,51 @@ ruleTesterJsx.run(
             }, [user]);
           };
         `,
-        errors: [{ messageId: 'hoistDestructuring' }, { messageId: 'hoistDestructuring' }],
-      },
-    ],
-  },
-);
+      errors: [
+        { messageId: 'hoistDestructuring' },
+        { messageId: 'hoistDestructuring' },
+      ],
+    },
+    {
+      code: `
+          const MyComponent = ({ user }) => {
+            const name = 'outer';
+            if (condition) {
+              useEffect(() => {
+                const { name } = user;
+                log(name);
+              }, [user]);
+              log(name);
+            }
+          };
+        `,
+      output: null,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+    {
+      code: `
+          const MyComponent = ({ response }) => {
+            const stuff = {
+              computed: useMemo(() => {
+                const { data } = response;
+                return data;
+              }, [response]),
+            };
+            return stuff;
+          };
+        `,
+      output: `
+          const MyComponent = ({ response }) => {
+            const { data } = (response) ?? {};
+            const stuff = {
+              computed: useMemo(() => {
+                return data;
+              }, [data]),
+            };
+            return stuff;
+          };
+        `,
+      errors: [{ messageId: 'hoistDestructuring' }],
+    },
+  ],
+});
