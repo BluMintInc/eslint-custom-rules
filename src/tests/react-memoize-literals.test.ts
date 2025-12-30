@@ -764,4 +764,3 @@ function Component() {
     },
   ],
 });
-

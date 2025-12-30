@@ -204,6 +204,97 @@ function collectLocalFunctions(
   return functions;
 }
 
+/** Type guard for ParenthesizedExpression (non-standard node type in some parsers). */
+function isParenthesizedExpression(node: TSESTree.Node): boolean {
+  return (node as any).type === 'ParenthesizedExpression';
+}
+
+function callExpressionReturnsJSX(
+  expression: TSESTree.CallExpression,
+  knownFunctions: Map<string, FunctionLike>,
+  cache: WeakMap<FunctionLike, JsxReturnCacheState>,
+  factoryContext: JsxFactoryContext,
+): boolean {
+  const { callee } = expression;
+  const firstNonSpreadArgument = expression.arguments.find(
+    (arg) => arg.type !== AST_NODE_TYPES.SpreadElement,
+  ) as TSESTree.Expression | undefined;
+
+  if (callee.type === AST_NODE_TYPES.Identifier) {
+    if (factoryContext.reactCreateElementIdentifiers.has(callee.name)) {
+      return true;
+    }
+
+    const targetFn = knownFunctions.get(callee.name);
+    if (
+      targetFn &&
+      functionReturnsJSX(targetFn, knownFunctions, cache, factoryContext)
+    ) {
+      return true;
+    }
+
+    if (
+      factoryContext.reactMemoIdentifiers.has(callee.name) &&
+      firstNonSpreadArgument &&
+      expressionReturnsJSX(
+        firstNonSpreadArgument,
+        knownFunctions,
+        cache,
+        factoryContext,
+      )
+    ) {
+      return true;
+    }
+  }
+
+  if (
+    callee.type === AST_NODE_TYPES.MemberExpression &&
+    !callee.computed &&
+    callee.property.type === AST_NODE_TYPES.Identifier
+  ) {
+    const propertyName = callee.property.name;
+
+    /** Treat React.createElement style calls as JSX-producing. */
+    if (
+      propertyName === 'createElement' &&
+      callee.object.type === AST_NODE_TYPES.Identifier &&
+      factoryContext.reactNamespaceIdentifiers.has(callee.object.name)
+    ) {
+      return true;
+    }
+
+    if (
+      propertyName === 'memo' &&
+      callee.object.type === AST_NODE_TYPES.Identifier &&
+      factoryContext.reactNamespaceIdentifiers.has(callee.object.name) &&
+      firstNonSpreadArgument &&
+      expressionReturnsJSX(
+        firstNonSpreadArgument,
+        knownFunctions,
+        cache,
+        factoryContext,
+      )
+    ) {
+      return true;
+    }
+
+    if (
+      (propertyName === 'call' || propertyName === 'apply') &&
+      callee.object.type === AST_NODE_TYPES.Identifier
+    ) {
+      const targetFn = knownFunctions.get(callee.object.name);
+      if (
+        targetFn &&
+        functionReturnsJSX(targetFn, knownFunctions, cache, factoryContext)
+      ) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 function expressionReturnsJSX(
   expression: TSESTree.Expression | null | undefined,
   knownFunctions: Map<string, FunctionLike>,
@@ -212,12 +303,9 @@ function expressionReturnsJSX(
 ): boolean {
   if (!expression) return false;
 
-  if (
-    (expression as { type?: string }).type === 'ParenthesizedExpression' &&
-    (expression as { expression?: TSESTree.Expression }).expression
-  ) {
+  if (isParenthesizedExpression(expression)) {
     return expressionReturnsJSX(
-      (expression as { expression: TSESTree.Expression }).expression,
+      (expression as any).expression,
       knownFunctions,
       cache,
       factoryContext,
@@ -249,87 +337,13 @@ function expressionReturnsJSX(
       return false;
     }
 
-    case AST_NODE_TYPES.CallExpression: {
-      const { callee } = expression;
-      const firstNonSpreadArgument = expression.arguments.find(
-        (arg) => arg.type !== AST_NODE_TYPES.SpreadElement,
-      ) as TSESTree.Expression | undefined;
-
-      if (callee.type === AST_NODE_TYPES.Identifier) {
-        if (factoryContext.reactCreateElementIdentifiers.has(callee.name)) {
-          return true;
-        }
-
-        const targetFn = knownFunctions.get(callee.name);
-        if (
-          targetFn &&
-          functionReturnsJSX(targetFn, knownFunctions, cache, factoryContext)
-        ) {
-          return true;
-        }
-
-        if (
-          factoryContext.reactMemoIdentifiers.has(callee.name) &&
-          firstNonSpreadArgument &&
-          expressionReturnsJSX(
-            firstNonSpreadArgument,
-            knownFunctions,
-            cache,
-            factoryContext,
-          )
-        ) {
-          return true;
-        }
-      }
-
-      if (
-        callee.type === AST_NODE_TYPES.MemberExpression &&
-        !callee.computed &&
-        callee.property.type === AST_NODE_TYPES.Identifier
-      ) {
-        const propertyName = callee.property.name;
-
-        /** Treat React.createElement style calls as JSX-producing. */
-        if (
-          propertyName === 'createElement' &&
-          callee.object.type === AST_NODE_TYPES.Identifier &&
-          factoryContext.reactNamespaceIdentifiers.has(callee.object.name)
-        ) {
-          return true;
-        }
-
-        if (
-          propertyName === 'memo' &&
-          callee.object.type === AST_NODE_TYPES.Identifier &&
-          factoryContext.reactNamespaceIdentifiers.has(callee.object.name) &&
-          firstNonSpreadArgument &&
-          expressionReturnsJSX(
-            firstNonSpreadArgument,
-            knownFunctions,
-            cache,
-            factoryContext,
-          )
-        ) {
-          return true;
-        }
-
-        if (
-          (propertyName === 'call' || propertyName === 'apply') &&
-          callee.object.type === AST_NODE_TYPES.Identifier
-        ) {
-          const targetFn = knownFunctions.get(callee.object.name);
-          if (
-            targetFn &&
-            functionReturnsJSX(targetFn, knownFunctions, cache, factoryContext)
-          ) {
-            return true;
-          }
-        }
-        return false;
-      }
-
-      return false;
-    }
+    case AST_NODE_TYPES.CallExpression:
+      return callExpressionReturnsJSX(
+        expression,
+        knownFunctions,
+        cache,
+        factoryContext,
+      );
 
     case AST_NODE_TYPES.ConditionalExpression:
       return (
@@ -445,7 +459,12 @@ function statementReturnsJSX(
       );
     case AST_NODE_TYPES.TryStatement:
       if (
-        statementReturnsJSX(statement.block, knownFunctions, cache, factoryContext)
+        statementReturnsJSX(
+          statement.block,
+          knownFunctions,
+          cache,
+          factoryContext,
+        )
       ) {
         return true;
       }
@@ -506,7 +525,6 @@ function functionReturnsJSX(
 
   cache.set(fn, 'pending');
 
-  const extendedFunctions = new Map(knownFunctions);
   if (
     fn.type !== AST_NODE_TYPES.FunctionDeclaration &&
     fn.type !== AST_NODE_TYPES.FunctionExpression &&
@@ -516,10 +534,14 @@ function functionReturnsJSX(
     return false;
   }
 
+  let extendedFunctions = knownFunctions;
   if (fn.body && fn.body.type === AST_NODE_TYPES.BlockStatement) {
     const nested = collectLocalFunctions(fn.body);
-    for (const [name, nestedFn] of nested.entries()) {
-      extendedFunctions.set(name, nestedFn);
+    if (nested.size > 0) {
+      extendedFunctions = new Map(knownFunctions);
+      for (const [name, nestedFn] of nested.entries()) {
+        extendedFunctions.set(name, nestedFn);
+      }
     }
   }
 
@@ -593,6 +615,7 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
           node.specifiers.forEach((specifier) => {
             if (
               specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+              specifier.imported.type === AST_NODE_TYPES.Identifier &&
               specifier.imported.name === 'memo'
             ) {
               reactMemoIdentifiers.add(
@@ -600,12 +623,15 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
               );
             } else if (
               specifier.type === AST_NODE_TYPES.ImportSpecifier &&
+              specifier.imported.type === AST_NODE_TYPES.Identifier &&
               specifier.imported.name === 'createElement'
             ) {
               reactCreateElementIdentifiers.add(
                 specifier.local?.name ?? specifier.imported.name,
               );
-            } else if (specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
+            } else if (
+              specifier.type === AST_NODE_TYPES.ImportDefaultSpecifier
+            ) {
               reactNamespaceIdentifiers.add(specifier.local.name);
             } else if (
               specifier.type === AST_NODE_TYPES.ImportNamespaceSpecifier
@@ -621,7 +647,10 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
 
         for (const specifier of node.specifiers) {
           if (specifier.type === AST_NODE_TYPES.ImportSpecifier) {
-            if (specifier.imported.name === 'Memoize') {
+            if (
+              specifier.imported.type === AST_NODE_TYPES.Identifier &&
+              specifier.imported.name === 'Memoize'
+            ) {
               hasMemoizeImport = true;
               memoizeAlias = specifier.local?.name ?? memoizeAlias;
             }
