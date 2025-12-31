@@ -1984,7 +1984,7 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<
     type: 'suggestion',
     docs: {
       description:
-        'Encourages grouping related statements in top-to-bottom order so readers see guards, side effects, and dependent declarations together.',
+        'Enforce logical top-to-bottom grouping of related statements',
       recommended: 'error',
     },
     fixable: 'code',

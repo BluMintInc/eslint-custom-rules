@@ -1,6 +1,8 @@
-# Memoize object, array, and function literals created inside React components or hooks so renders do not recreate references and trigger avoidable work (`@blumintinc/blumint/react-memoize-literals`)
+# Detect object, array, and function literals created in React components or hooks that create new references every render. Prefer memoized values (useMemo/useCallback) or module-level constants to keep referential stability (`@blumintinc/blumint/react-memoize-literals`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
+
+💡 This rule is manually fixable by [editor suggestions](https://eslint.org/docs/latest/use/core-concepts#rule-suggestions).
 
 <!-- end auto-generated rule header -->
 

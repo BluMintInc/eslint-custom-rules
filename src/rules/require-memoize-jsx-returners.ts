@@ -728,7 +728,7 @@ export const requireMemoizeJsxReturners = createRule<Options, MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Enforce @Memoize() on instance getters and methods that return JSX or JSX-producing factories to avoid recreating component instances on every call.',
+        'Require @Memoize() decorator on instance members that return JSX or JSX factories',
       recommended: 'error',
     },
     fixable: 'code',

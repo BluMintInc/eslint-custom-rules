@@ -1,4 +1,4 @@
-# Logical top-to-bottom grouping (`@blumintinc/blumint/logical-top-to-bottom-grouping`)
+# Enforce logical top-to-bottom grouping of related statements (`@blumintinc/blumint/logical-top-to-bottom-grouping`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

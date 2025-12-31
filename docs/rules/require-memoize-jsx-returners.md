@@ -1,4 +1,4 @@
-# Require @Memoize() for JSX-returning getters and methods (`@blumintinc/blumint/require-memoize-jsx-returners`)
+# Require @Memoize() decorator on instance members that return JSX or JSX factories (`@blumintinc/blumint/require-memoize-jsx-returners`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

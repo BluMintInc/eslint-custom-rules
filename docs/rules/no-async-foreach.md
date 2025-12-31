@@ -1,4 +1,4 @@
-# Disallow Array.forEach with async callbacks because forEach ignores returned promises, leading to parallel execution and unhandled rejections. Use a for...of loop when you need to await each iteration or map with Promise.all when concurrency is intended (`@blumintinc/blumint/no-async-foreach`)
+# Disallow async callbacks to Array.forEach (`@blumintinc/blumint/no-async-foreach`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

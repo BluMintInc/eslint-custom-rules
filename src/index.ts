@@ -163,6 +163,7 @@ import { enforceTransformMemoization } from './rules/enforce-transform-memoizati
 import { verticallyGroupRelatedFunctions } from './rules/vertically-group-related-functions';
 import { default as noStaticConstantsInDynamicFiles } from './rules/no-static-constants-in-dynamic-files';
 import { testFileLocationEnforcement } from './rules/test-file-location-enforcement';
+import { preventChildrenClobber } from './rules/prevent-children-clobber';
 
 const NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_MESSAGE =
   'Backend Cloud Functions (.f.ts under functions/) must not import frontend modules from the repo root src/**. Frontend code can depend on browser-only APIs and bundling it into Cloud Functions breaks server execution; move shared logic into functions/src or a shared package.';
@@ -331,6 +332,7 @@ module.exports = {
         '@blumintinc/blumint/no-unnecessary-destructuring': 'error',
         '@blumintinc/blumint/no-unnecessary-destructuring-rename': 'error',
         '@blumintinc/blumint/enforce-singular-type-names': 'error',
+        '@blumintinc/blumint/prevent-children-clobber': 'error',
         '@blumintinc/blumint/enforce-css-media-queries': 'error',
         '@blumintinc/blumint/omit-index-html': 'error',
         '@blumintinc/blumint/enforce-id-capitalization': 'error',
@@ -590,6 +592,7 @@ module.exports = {
     'no-unnecessary-destructuring': noUnnecessaryDestructuring,
     'no-unnecessary-destructuring-rename': noUnnecessaryDestructuringRename,
     'enforce-singular-type-names': enforceSingularTypeNames,
+    'prevent-children-clobber': preventChildrenClobber,
     'enforce-css-media-queries': enforceCssMediaQueries,
     'omit-index-html': omitIndexHtml,
     'enforce-id-capitalization': enforceIdCapitalization,

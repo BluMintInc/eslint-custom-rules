@@ -1,10 +1,10 @@
-# Suggest compareDeeply for memoized components that receive object/array props so memo does not shallow-compare unstable references (`@blumintinc/blumint/memo-compare-deeply-complex-props`)
+# Suggest compareDeeply for memoized components that receive object/array props to avoid shallow comparison re-renders (`@blumintinc/blumint/memo-compare-deeply-complex-props`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
 🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
 
-💭 This rule requires [type information](https://typescript-eslint.io/linting/typed-linting). Configure `parserOptions.project` so the rule can inspect prop types.
+💭 This rule requires [type information](https://typescript-eslint.io/linting/typed-linting).
 
 <!-- end auto-generated rule header -->
 
