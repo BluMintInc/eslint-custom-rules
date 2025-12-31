@@ -1,6 +1,26 @@
-import { TSESTree } from '@typescript-eslint/utils';
+import { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { Graph } from './graph/ClassGraphBuilder';
 export class ASTHelpers {
+  /**
+   * Finds a variable by name in the scope chain starting from the given scope.
+   */
+  public static findVariableInScope(
+    scope: TSESLint.Scope.Scope,
+    name: string,
+  ): TSESLint.Scope.Variable | null {
+    let current: TSESLint.Scope.Scope | null = scope;
+    while (current) {
+      const variable =
+        current.set?.get(name) ??
+        current.variables.find((v) => v.name === name);
+      if (variable) {
+        return variable;
+      }
+      current = current.upper;
+    }
+    return null;
+  }
+
   public static blockIncludesIdentifier(
     block: TSESTree.BlockStatement,
   ): boolean {
@@ -586,5 +606,26 @@ export class ASTHelpers {
       | TSESTree.FunctionDeclaration,
   ): boolean {
     return node.params && node.params.length > 0;
+  }
+
+  /**
+   * Helper to get ancestors of a node in a way that is compatible with both ESLint v8 and v9.
+   * In ESLint v9, context.getAncestors() is deprecated and moved to context.sourceCode.getAncestors(node).
+   */
+  public static getAncestors(
+    context: {
+      sourceCode?: unknown;
+      getAncestors?: () => TSESTree.Node[];
+    },
+    node: TSESTree.Node,
+  ): TSESTree.Node[] {
+    const sourceCode = context.sourceCode as
+      | { getAncestors?: (node: TSESTree.Node) => TSESTree.Node[] }
+      | null
+      | undefined;
+    return (
+      sourceCode?.getAncestors?.(node) ??
+      (context.getAncestors ? context.getAncestors() : [])
+    );
   }
 }

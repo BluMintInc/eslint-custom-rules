@@ -5,13 +5,28 @@ type MessageIds = 'missingLanguageSpecifier';
 
 const FENCE = '```';
 
-function isFenceLine(text: string, fenceIndex: number, indent: string): boolean {
+function isFenceLine(
+  text: string,
+  fenceIndex: number,
+  indent: string,
+): boolean {
   const lineEnd = text.indexOf('\n', fenceIndex);
-  const afterFence = lineEnd === -1 ? text.slice(fenceIndex + FENCE.length) : text.slice(fenceIndex + FENCE.length, lineEnd);
-  return afterFence.trim().length === 0 && text.slice(text.lastIndexOf('\n', fenceIndex - 1) + 1, fenceIndex) === indent;
+  const afterFence =
+    lineEnd === -1
+      ? text.slice(fenceIndex + FENCE.length)
+      : text.slice(fenceIndex + FENCE.length, lineEnd);
+  return (
+    afterFence.trim().length === 0 &&
+    text.slice(text.lastIndexOf('\n', fenceIndex - 1) + 1, fenceIndex) ===
+      indent
+  );
 }
 
-function findClosingFence(text: string, startIndex: number, indent: string): number | null {
+function findClosingFence(
+  text: string,
+  startIndex: number,
+  indent: string,
+): number | null {
   let searchIndex = startIndex;
 
   while (searchIndex < text.length) {
@@ -34,7 +49,10 @@ function isIndentOnly(value: string): boolean {
   return /^[\t ]*$/.test(value);
 }
 
-export const enforceTypescriptMarkdownCodeBlocks = createRule<Options, MessageIds>({
+export const enforceTypescriptMarkdownCodeBlocks = createRule<
+  Options,
+  MessageIds
+>({
   name: 'enforce-typescript-markdown-code-blocks',
   meta: {
     type: 'suggestion',
@@ -59,7 +77,7 @@ export const enforceTypescriptMarkdownCodeBlocks = createRule<Options, MessageId
 
     return {
       Program() {
-        const sourceCode = context.getSourceCode();
+        const sourceCode = context.sourceCode;
         const text = sourceCode.getText();
 
         let index = 0;
