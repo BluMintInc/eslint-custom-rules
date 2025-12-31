@@ -1,10 +1,10 @@
-# Prevent JSX spreads from silently discarding incoming props.children when explicit children are also provided in the element's body (`@blumintinc/blumint/prevent-children-clobber`)
+# Prevent JSX spreads from silently discarding props.children (`@blumintinc/blumint/prevent-children-clobber`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
 <!-- end auto-generated rule header -->
 
-Prevent JSX spreads from silently discarding `props.children` when explicit children are also provided in the element body. Spreading a props object that still contains `children` and then supplying JSX children overwrites the incoming children without any runtime warning.
+Prevent JSX spreads from silently discarding `props.children` when explicit children are also provided in the element body. Spreading a props object that still contains `children` and then supplying JSX children overwrites the incoming children without any runtime warning. The rule uses TypeScript type analysis when available to avoid false positives (e.g., when the props type already excludes children via `Omit<..., 'children'>`).
 
 ## Rule Details
 
@@ -16,6 +16,8 @@ The rule reports when:
 - A JSX element spreads a props/rest identifier that may include `children`.
 - The element also has explicit JSX children (elements, text, or expressions).
 - The spread source has not explicitly removed `children` (via destructuring or `Omit<..., 'children'>`).
+
+The rule only flags spreads of identifiers introduced as rest-objects in the current function scope (e.g., `...rest` in a parameter list), not re-exported identifiers from outer scopes.
 
 ## Examples
 

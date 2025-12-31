@@ -1,8 +1,8 @@
-# Prevent defining React components inside useCallback/useDeepCompareCallback (`@blumintinc/blumint/memo-nested-react-components`)
+# Prevent defining React components inside useCallback/useDeepCompareCallback; memoize them with useMemo/useDeepCompareMemo and memo() to avoid unnecessary remounts (`@blumintinc/blumint/memo-nested-react-components`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix) when `memo` and the replacement hook are already in scope, either as named imports or via a namespace like `React.useMemo`/`React.useDeepCompareMemo`.
+🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
 
 <!-- end auto-generated rule header -->
 

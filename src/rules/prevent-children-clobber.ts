@@ -30,7 +30,7 @@ type FunctionContext = {
   propsLikeIdentifiers: Set<string>;
 };
 
-function getFunctionName(node: FunctionLike): string | null {
+function resolveFunctionName(node: FunctionLike): string | null {
   if ('id' in node && node.id?.name) {
     return node.id.name;
   }
@@ -55,7 +55,7 @@ function getFunctionName(node: FunctionLike): string | null {
 }
 
 function isComponentLike(node: FunctionLike): boolean {
-  const name = getFunctionName(node);
+  const name = resolveFunctionName(node);
   if (name && /^[A-Z]/.test(name)) {
     return true;
   }
@@ -438,8 +438,7 @@ export const preventChildrenClobber = createRule<Options, MessageIds>({
   meta: {
     type: 'problem',
     docs: {
-      description:
-        "Prevent JSX spreads from silently discarding incoming props.children when explicit children are also provided in the element's body.",
+      description: 'Prevent JSX spreads from silently discarding props.children',
       recommended: 'error',
       requiresTypeChecking: false,
     },
@@ -564,11 +563,10 @@ export const preventChildrenClobber = createRule<Options, MessageIds>({
           return;
         }
 
-        const uniqueNames = Array.from(new Set(offendingNames));
         context.report({
           node: node.openingElement,
           messageId: 'childrenClobbered',
-          data: { spreadNames: uniqueNames.join(', ') },
+          data: { spreadNames: offendingNames.join(', ') },
         });
       },
     };

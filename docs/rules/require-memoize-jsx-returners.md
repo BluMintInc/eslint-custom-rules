@@ -1,4 +1,4 @@
-# Require @Memoize() for JSX-returning getters and methods (`@blumintinc/blumint/require-memoize-jsx-returners`)
+# Enforce @Memoize() on instance getters and methods that return JSX or JSX-producing factories to avoid recreating component instances on every call (`@blumintinc/blumint/require-memoize-jsx-returners`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

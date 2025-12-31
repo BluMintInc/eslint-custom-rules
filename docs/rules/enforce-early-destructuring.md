@@ -1,4 +1,4 @@
-# Hoist object destructuring out of React hooks so dependency arrays track the specific fields used instead of the entire object. This prevents unnecessary re-renders triggered by unrelated object changes and keeps hook deps aligned to the values read (`@blumintinc/blumint/enforce-early-destructuring`)
+# Hoist object destructuring out of React hooks so dependency arrays track the fields in use instead of the entire object (`@blumintinc/blumint/enforce-early-destructuring`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

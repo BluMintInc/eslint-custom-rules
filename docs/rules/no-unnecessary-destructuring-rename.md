@@ -1,4 +1,4 @@
-# Avoid destructuring renames that only write back to the original key (`@blumintinc/blumint/no-unnecessary-destructuring-rename`)
+# Disallow destructuring renames that are only used to assign back to the original property name (`@blumintinc/blumint/no-unnecessary-destructuring-rename`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

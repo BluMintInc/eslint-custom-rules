@@ -1,4 +1,4 @@
-# Logical top-to-bottom grouping (`@blumintinc/blumint/logical-top-to-bottom-grouping`)
+# Encourages grouping related statements in top-to-bottom order so readers see guards, side effects, and dependent declarations together (`@blumintinc/blumint/logical-top-to-bottom-grouping`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
