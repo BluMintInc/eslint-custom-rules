@@ -21,7 +21,7 @@ The rule only flags spreads of identifiers introduced as rest-objects in the cur
 
 ## Examples
 
-Bad:
+**Bad examples** – The following patterns spread a props object that may contain `children` while also providing explicit JSX children in the element body. The spread overwrites any incoming `children`, silently discarding them:
 
 ```tsx
 type AlertDialogProps = DialogProps;
@@ -41,9 +41,29 @@ const Wrapper = (props: DialogProps) => (
 );
 ```
 
-Good:
+```tsx
+const FragmentWrapper = (props: DialogProps) => (
+  <Dialog {...props}>
+    <>
+      <Header />
+      <Content />
+    </>
+  </Dialog>
+);
+```
 
 ```tsx
+const ConditionalWrapper = (props: DialogProps) => (
+  <Dialog {...props}>
+    {condition && <Fallback />}
+  </Dialog>
+);
+```
+
+**Good examples** – These patterns avoid the issue by either destructuring and rendering children explicitly, or by excluding children from the props type:
+
+```tsx
+// Safe: children are destructured separately and rendered explicitly.
 const AlertDialog = ({ title, children, ...props }: DialogProps) => (
   <Dialog {...props}>
     <AlertStandard message={title} />
@@ -73,4 +93,6 @@ const Passthrough = (props: DialogProps) => (
 
 ## When Not To Use It
 
-- If a component intentionally ignores children and the type already omits them, this rule will not report. Otherwise, add an inline disable with justification for rare cases where you deliberately discard `children`.
+- **Self-closing elements:** The rule does not report for self-closing JSX elements (e.g., `<Input {...props} />`), as they cannot have children.
+- **Type already excludes children:** If the props type explicitly excludes `children` (e.g., `Omit<DialogProps, 'children'>` or `children?: never`), the rule will not report, even if the element spreads props and has children. TypeScript type analysis helps avoid false positives here.
+- **Rare intentional discarding:** For edge cases where you deliberately discard incoming `children`, add an inline ESLint disable (`// eslint-disable-next-line @blumintinc/blumint/prevent-children-clobber`) with a clear comment explaining the intent.
