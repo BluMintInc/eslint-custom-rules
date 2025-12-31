@@ -15,6 +15,7 @@ type BindingInfo = {
   identifier: TSESTree.Identifier;
   childrenExcluded: boolean;
   typeAnnotationExcludesProperty: boolean;
+  childrenSourceId: string;
 };
 
 type MinimalParserServices = {
@@ -28,6 +29,7 @@ type FunctionContext = {
   isComponent: boolean;
   bindings: Map<string, BindingInfo>;
   propsLikeIdentifiers: Set<string>;
+  childrenValueSourceIds: Map<string, string>;
 };
 
 function resolveFunctionName(node: FunctionLike): string | null {
@@ -174,6 +176,7 @@ function collectRestBindingsFromPattern(
   ctx: FunctionContext,
   annotation: TSESTree.TSTypeAnnotation | null | undefined,
   aliasMap?: Map<string, TSESTree.TypeNode>,
+  sourceChildrenSourceId?: string,
 ): void {
   const childrenPresent = patternHasChildrenProperty(pattern);
   for (const prop of pattern.properties) {
@@ -190,12 +193,47 @@ function collectRestBindingsFromPattern(
           'children',
           aliasMap,
         ),
+        childrenSourceId: sourceChildrenSourceId ?? prop.argument.name,
       });
     } else if (
       prop.type === AST_NODE_TYPES.Property &&
       prop.value.type === AST_NODE_TYPES.ObjectPattern
     ) {
       collectRestBindingsFromPattern(prop.value, ctx, null, aliasMap);
+    }
+  }
+}
+
+function recordChildrenValueBindingsFromPattern(
+  pattern: TSESTree.ObjectPattern,
+  ctx: FunctionContext,
+  sourceChildrenSourceId: string,
+): void {
+  for (const prop of pattern.properties) {
+    if (prop.type !== AST_NODE_TYPES.Property) continue;
+    if (prop.computed) continue;
+
+    const key = prop.key;
+    const keyName =
+      key.type === AST_NODE_TYPES.Identifier
+        ? key.name
+        : key.type === AST_NODE_TYPES.Literal && typeof key.value === 'string'
+          ? key.value
+          : null;
+
+    if (keyName !== 'children') continue;
+
+    const value = prop.value;
+    if (value.type === AST_NODE_TYPES.Identifier) {
+      ctx.childrenValueSourceIds.set(value.name, sourceChildrenSourceId);
+      continue;
+    }
+
+    if (
+      value.type === AST_NODE_TYPES.AssignmentPattern &&
+      value.left.type === AST_NODE_TYPES.Identifier
+    ) {
+      ctx.childrenValueSourceIds.set(value.left.name, sourceChildrenSourceId);
     }
   }
 }
@@ -215,6 +253,7 @@ function recordParamBindings(
         'children',
         aliasMap,
       ),
+      childrenSourceId: param.name,
     });
     return;
   }
@@ -232,6 +271,7 @@ function recordParamBindings(
         'children',
         aliasMap,
       ),
+      childrenSourceId: param.left.name,
     });
     return;
   }
@@ -270,6 +310,17 @@ function findBinding(
   for (let i = stack.length - 1; i >= 0; i -= 1) {
     const binding = stack[i].bindings.get(name);
     if (binding) return binding;
+  }
+  return undefined;
+}
+
+function findChildrenValueSourceId(
+  name: string,
+  stack: FunctionContext[],
+): string | undefined {
+  for (let i = stack.length - 1; i >= 0; i -= 1) {
+    const sourceId = stack[i].childrenValueSourceIds.get(name);
+    if (sourceId) return sourceId;
   }
   return undefined;
 }
@@ -368,20 +419,21 @@ function hasExplicitChildren(element: TSESTree.JSXElement): boolean {
 
 function nodeReferencesChildren(
   node: TSESTree.Node,
-  spreadNames: Set<string>,
+  propsObjectNames: Set<string>,
+  childrenValueNames: Set<string>,
 ): boolean {
   const stack: TSESTree.Node[] = [node];
   while (stack.length) {
     const current = stack.pop()!;
     if (current.type === AST_NODE_TYPES.Identifier) {
-      if (current.name === 'children') return true;
+      if (childrenValueNames.has(current.name)) return true;
     } else if (current.type === AST_NODE_TYPES.MemberExpression) {
       if (
         !current.computed &&
         current.property.type === AST_NODE_TYPES.Identifier &&
         current.property.name === 'children' &&
         current.object.type === AST_NODE_TYPES.Identifier &&
-        spreadNames.has(current.object.name)
+        propsObjectNames.has(current.object.name)
       ) {
         return true;
       }
@@ -411,11 +463,12 @@ function nodeReferencesChildren(
 
 function childrenRenderSpreadChildren(
   children: TSESTree.JSXChild[],
-  spreadNames: Set<string>,
+  propsObjectNames: Set<string>,
+  childrenValueNames: Set<string>,
 ): boolean {
   for (const child of children) {
     if (child.type === AST_NODE_TYPES.JSXExpressionContainer) {
-      if (nodeReferencesChildren(child.expression, spreadNames)) {
+      if (nodeReferencesChildren(child.expression, propsObjectNames, childrenValueNames)) {
         return true;
       }
     } else if (
@@ -423,7 +476,7 @@ function childrenRenderSpreadChildren(
       child.type === AST_NODE_TYPES.JSXFragment ||
       child.type === AST_NODE_TYPES.JSXSpreadChild
     ) {
-      if (nodeReferencesChildren(child, spreadNames)) {
+      if (nodeReferencesChildren(child, propsObjectNames, childrenValueNames)) {
         return true;
       }
     } else if (child.type === AST_NODE_TYPES.JSXText) {
@@ -431,6 +484,36 @@ function childrenRenderSpreadChildren(
     }
   }
   return false;
+}
+
+function collectPropsObjectNamesForChildrenSourceIds(
+  sourceIds: Set<string>,
+  stack: FunctionContext[],
+): Set<string> {
+  const names = new Set<string>();
+  for (const ctx of stack) {
+    for (const [name, binding] of ctx.bindings) {
+      if (sourceIds.has(binding.childrenSourceId)) {
+        names.add(name);
+      }
+    }
+  }
+  return names;
+}
+
+function collectChildrenValueNamesForChildrenSourceIds(
+  sourceIds: Set<string>,
+  stack: FunctionContext[],
+): Set<string> {
+  const names = new Set<string>();
+  for (const ctx of stack) {
+    for (const [name, sourceId] of ctx.childrenValueSourceIds) {
+      if (sourceIds.has(sourceId)) {
+        names.add(name);
+      }
+    }
+  }
+  return names;
 }
 
 export const preventChildrenClobber = createRule<Options, MessageIds>({
@@ -468,6 +551,7 @@ export const preventChildrenClobber = createRule<Options, MessageIds>({
           isComponent: isComponentLike(node),
           bindings: new Map(),
           propsLikeIdentifiers: new Set(),
+          childrenValueSourceIds: new Map(),
         };
 
         if (ctx.isComponent) {
@@ -504,28 +588,71 @@ export const preventChildrenClobber = createRule<Options, MessageIds>({
               childrenExcluded: sourceBinding.childrenExcluded,
               typeAnnotationExcludesProperty:
                 sourceBinding.typeAnnotationExcludesProperty || typeExcludes,
+              childrenSourceId: sourceBinding.childrenSourceId,
             });
           } else if (isPropsLike(init.name, functionStack)) {
+            const propsLikeBinding = findBinding(init.name, functionStack);
             componentCtx.bindings.set(id.name, {
               identifier: id,
               childrenExcluded: false,
               typeAnnotationExcludesProperty: typeExcludes,
+              childrenSourceId: propsLikeBinding?.childrenSourceId ?? init.name,
             });
           }
 
           if (isPropsLike(init.name, functionStack)) {
             componentCtx.propsLikeIdentifiers.add(id.name);
           }
+
+          const childSourceId = findChildrenValueSourceId(init.name, functionStack);
+          if (childSourceId) {
+            componentCtx.childrenValueSourceIds.set(id.name, childSourceId);
+          }
+        } else if (
+          id.type === AST_NODE_TYPES.Identifier &&
+          init &&
+          (init.type === AST_NODE_TYPES.MemberExpression ||
+            init.type === AST_NODE_TYPES.ChainExpression)
+        ) {
+          const member =
+            init.type === AST_NODE_TYPES.ChainExpression
+              ? (init.expression as TSESTree.Expression)
+              : init;
+
+          if (
+            member.type === AST_NODE_TYPES.MemberExpression &&
+            !member.computed &&
+            member.property.type === AST_NODE_TYPES.Identifier &&
+            member.property.name === 'children' &&
+            member.object.type === AST_NODE_TYPES.Identifier
+          ) {
+            const sourceBinding = findBinding(member.object.name, functionStack);
+            if (sourceBinding) {
+              componentCtx.childrenValueSourceIds.set(
+                id.name,
+                sourceBinding.childrenSourceId,
+              );
+            }
+          }
         } else if (
           id.type === AST_NODE_TYPES.ObjectPattern &&
           init?.type === AST_NODE_TYPES.Identifier &&
           isPropsLike(init.name, functionStack)
         ) {
+          const initBinding = findBinding(init.name, functionStack);
+          const sourceChildrenSourceId = initBinding?.childrenSourceId ?? init.name;
+
+          recordChildrenValueBindingsFromPattern(
+            id,
+            componentCtx,
+            sourceChildrenSourceId,
+          );
           collectRestBindingsFromPattern(
             id,
             componentCtx,
             id.typeAnnotation ?? null,
             aliasMap,
+            sourceChildrenSourceId,
           );
         }
       },
@@ -534,39 +661,55 @@ export const preventChildrenClobber = createRule<Options, MessageIds>({
         if (!componentCtx) return;
         if (!hasExplicitChildren(node)) return;
 
-        const spreadNames = new Set<string>();
+        const spreadNamesInOrder: string[] = [];
         for (const attr of node.openingElement.attributes) {
           if (
             attr.type === AST_NODE_TYPES.JSXSpreadAttribute &&
             attr.argument.type === AST_NODE_TYPES.Identifier
           ) {
-            spreadNames.add(attr.argument.name);
+            spreadNamesInOrder.push(attr.argument.name);
           }
         }
 
-        if (spreadNames.size === 0) return;
+        if (spreadNamesInOrder.length === 0) return;
 
-        const offendingNames: string[] = [];
-        for (const name of spreadNames) {
+        const offendingSpreads: Array<{ name: string; childrenSourceId: string }> =
+          [];
+        for (const name of spreadNamesInOrder) {
           const binding = findBinding(name, functionStack);
           if (!binding) continue;
           if (!bindingMayContainChildren(binding, context)) {
             continue;
           }
-          offendingNames.push(name);
+          offendingSpreads.push({ name, childrenSourceId: binding.childrenSourceId });
         }
 
-        if (offendingNames.length === 0) return;
+        if (offendingSpreads.length === 0) return;
 
-        const offendingSet = new Set(offendingNames);
-        if (childrenRenderSpreadChildren(node.children, offendingSet)) {
+        const lastOffendingChildrenSourceId =
+          offendingSpreads[offendingSpreads.length - 1].childrenSourceId;
+        const lastSourceIds = new Set([lastOffendingChildrenSourceId]);
+        const propsObjectNames =
+          collectPropsObjectNamesForChildrenSourceIds(lastSourceIds, functionStack);
+        const childrenValueNames =
+          collectChildrenValueNamesForChildrenSourceIds(lastSourceIds, functionStack);
+        if (
+          childrenRenderSpreadChildren(node.children, propsObjectNames, childrenValueNames)
+        ) {
           return;
         }
 
+        const clobberedNames = Array.from(
+          new Set(
+            offendingSpreads
+              .filter((spread) => spread.childrenSourceId === lastOffendingChildrenSourceId)
+              .map((spread) => spread.name),
+          ),
+        );
         context.report({
           node: node.openingElement,
           messageId: 'childrenClobbered',
-          data: { spreadNames: offendingNames.join(', ') },
+          data: { spreadNames: clobberedNames.join(', ') },
         });
       },
     };

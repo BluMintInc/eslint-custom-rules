@@ -1,4 +1,4 @@
-# Prevent defining React components inside useCallback/useDeepCompareCallback; memoize them with useMemo/useDeepCompareMemo and memo() to avoid unnecessary remounts (`@blumintinc/blumint/memo-nested-react-components`)
+# Disallow React components defined in useCallback/useDeepCompareCallback (`@blumintinc/blumint/memo-nested-react-components`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

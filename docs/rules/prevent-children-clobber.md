@@ -91,6 +91,13 @@ const Passthrough = (props: DialogProps) => (
 );
 ```
 
+```tsx
+const PassthroughAliased = (props: DialogProps) => {
+  const content = props.children;
+  return <Dialog {...props}>{content}</Dialog>;
+};
+```
+
 ## When Not To Use It
 
 - **Self-closing elements:** The rule does not report for self-closing JSX elements (e.g., `<Input {...props} />`), as they cannot have children.

@@ -407,7 +407,7 @@ export const memoNestedReactComponents = createRule<Options, MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Prevent defining React components inside useCallback/useDeepCompareCallback; memoize them with useMemo/useDeepCompareMemo and memo() to avoid unnecessary remounts',
+        'Disallow React components defined in useCallback/useDeepCompareCallback',
       recommended: 'error',
     },
     fixable: 'code',
