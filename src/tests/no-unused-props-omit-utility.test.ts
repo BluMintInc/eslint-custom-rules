@@ -78,6 +78,27 @@ ruleTesterTs.run('no-unused-props with Omit utility type', noUnusedProps, {
         sourceType: 'module',
       },
     },
+    {
+      code: `
+        type BaseProps = { keep: string; omit: number };
+        type Props = Omit<BaseProps & { extra: boolean }, 'omit'>;
+
+        const Component = ({ keep, extra }: Props) => {
+          return (
+            <div>
+              {keep}
+              {extra ? 'y' : 'n'}
+            </div>
+          );
+        };
+      `,
+      filename: 'test.tsx',
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        ecmaVersion: 2018,
+        sourceType: 'module',
+      },
+    },
   ],
   invalid: [
     {

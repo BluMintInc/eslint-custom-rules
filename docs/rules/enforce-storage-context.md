@@ -1,4 +1,4 @@
-# Require storage access through context providers instead of direct browser APIs (`@blumintinc/blumint/enforce-storage-context`)
+# Require storage access to go through the LocalStorage and SessionStorage context providers instead of direct browser APIs (`@blumintinc/blumint/enforce-storage-context`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

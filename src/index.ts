@@ -7,6 +7,7 @@ import { dynamicHttpsErrors } from './rules/dynamic-https-errors';
 import { enforceEmptyObjectCheck } from './rules/enforce-empty-object-check';
 import { enforceIdentifiableFirestoreType } from './rules/enforce-identifiable-firestore-type';
 import { default as enforceCallbackMemo } from './rules/enforce-callback-memo';
+import { reactMemoizeLiterals } from './rules/react-memoize-literals';
 import { enforceCallableTypes } from './rules/enforce-callable-types';
 import { enforceConsoleError } from './rules/enforce-console-error';
 import { enforceFirebaseImports } from './rules/enforce-dynamic-firebase-imports';
@@ -35,6 +36,7 @@ import { preferTypeOverInterface } from './rules/prefer-type-over-interface';
 import { preferTypeAliasOverTypeofConstant } from './rules/prefer-type-alias-over-typeof-constant';
 import { preferMemoizedProps } from './rules/prefer-memoized-props';
 import { requireMemo } from './rules/require-memo';
+import { requireMemoizeJsxReturners } from './rules/require-memoize-jsx-returners';
 import { noJsxWhitespaceLiteral } from './rules/no-jsx-whitespace-literal';
 import { default as requireDynamicFirebaseImports } from './rules/require-dynamic-firebase-imports';
 import { default as requireHttpsError } from './rules/require-https-error';
@@ -53,6 +55,7 @@ import { semanticFunctionPrefixes } from './rules/semantic-function-prefixes';
 import { enforceFirestoreMock } from './rules/enforce-mock-firestore';
 import { preferSettingsObject } from './rules/prefer-settings-object';
 import { enforceFirestoreSetMerge } from './rules/enforce-firestore-set-merge';
+import { enforceEarlyDestructuring } from './rules/enforce-early-destructuring';
 import { enforceVerbNounNaming } from './rules/enforce-verb-noun-naming';
 import { noExplicitReturnType } from './rules/no-explicit-return-type';
 import { useCustomMemo } from './rules/use-custom-memo';
@@ -117,6 +120,7 @@ import { omitIndexHtml } from './rules/omit-index-html';
 import { enforceIdCapitalization } from './rules/enforce-id-capitalization';
 import { noUnusedUseState } from './rules/no-unused-usestate';
 import { noUuidv4Base62AsKey } from './rules/no-uuidv4-base62-as-key';
+import { logicalTopToBottomGrouping } from './rules/logical-top-to-bottom-grouping';
 import enforceDynamicFileNaming from './rules/enforce-dynamic-file-naming';
 import { default as preferUseCallbackOverUseMemoForFunctions } from './rules/prefer-usecallback-over-usememo-for-functions';
 import { noUsememoForPassByValue } from './rules/no-usememo-for-pass-by-value';
@@ -159,6 +163,7 @@ import { enforceTransformMemoization } from './rules/enforce-transform-memoizati
 import { verticallyGroupRelatedFunctions } from './rules/vertically-group-related-functions';
 import { default as noStaticConstantsInDynamicFiles } from './rules/no-static-constants-in-dynamic-files';
 import { testFileLocationEnforcement } from './rules/test-file-location-enforcement';
+import { preventChildrenClobber } from './rules/prevent-children-clobber';
 
 const NO_FRONTEND_IMPORTS_FROM_FUNCTIONS_MESSAGE =
   'Backend Cloud Functions (.f.ts under functions/) must not import frontend modules from the repo root src/**. Frontend code can depend on browser-only APIs and bundling it into Cloud Functions breaks server execution; move shared logic into functions/src or a shared package.';
@@ -205,6 +210,7 @@ module.exports = {
         '@blumintinc/blumint/prefer-nullish-coalescing-override': 'error',
         '@blumintinc/blumint/prefer-block-comments-for-declarations': 'error',
         '@blumintinc/blumint/key-only-outermost-element': 'error',
+        '@blumintinc/blumint/logical-top-to-bottom-grouping': 'error',
         '@blumintinc/blumint/parallelize-async-operations': 'error',
         '@blumintinc/blumint/avoid-utils-directory': 'error',
         '@blumintinc/blumint/enforce-firestore-path-utils': 'error',
@@ -218,6 +224,7 @@ module.exports = {
         '@blumintinc/blumint/enforce-mui-rounded-icons': 'error',
         '@blumintinc/blumint/enforce-identifiable-firestore-type': 'error',
         '@blumintinc/blumint/enforce-callback-memo': 'error',
+        '@blumintinc/blumint/react-memoize-literals': 'error',
         '@blumintinc/blumint/enforce-callable-types': 'error',
         '@blumintinc/blumint/enforce-console-error': 'error',
         '@blumintinc/blumint/enforce-dynamic-firebase-imports': 'error',
@@ -248,6 +255,7 @@ module.exports = {
         '@blumintinc/blumint/prefer-type-over-interface': 'error',
         '@blumintinc/blumint/prefer-type-alias-over-typeof-constant': 'error',
         '@blumintinc/blumint/require-memo': 'error',
+        '@blumintinc/blumint/require-memoize-jsx-returners': 'error',
         '@blumintinc/blumint/no-unmemoized-memo-without-props': 'error',
         '@blumintinc/blumint/require-dynamic-firebase-imports': 'error',
         '@blumintinc/blumint/require-https-error': 'error',
@@ -257,6 +265,7 @@ module.exports = {
         '@blumintinc/blumint/require-usememo-object-literals': 'error',
         '@blumintinc/blumint/memoize-root-level-hocs': 'error',
         '@blumintinc/blumint/enforce-safe-stringify': 'error',
+        '@blumintinc/blumint/enforce-early-destructuring': 'error',
         '@blumintinc/blumint/enforce-storage-context': 'error',
         '@blumintinc/blumint/no-entire-object-hook-deps': 'error',
         '@blumintinc/blumint/no-compositing-layer-props': 'error',
@@ -323,6 +332,7 @@ module.exports = {
         '@blumintinc/blumint/no-unnecessary-destructuring': 'error',
         '@blumintinc/blumint/no-unnecessary-destructuring-rename': 'error',
         '@blumintinc/blumint/enforce-singular-type-names': 'error',
+        '@blumintinc/blumint/prevent-children-clobber': 'error',
         '@blumintinc/blumint/enforce-css-media-queries': 'error',
         '@blumintinc/blumint/omit-index-html': 'error',
         '@blumintinc/blumint/enforce-id-capitalization': 'error',
@@ -460,6 +470,7 @@ module.exports = {
     'prefer-block-comments-for-declarations':
       preferBlockCommentsForDeclarations,
     'key-only-outermost-element': keyOnlyOutermostElement,
+    'logical-top-to-bottom-grouping': logicalTopToBottomGrouping,
     'array-methods-this-context': arrayMethodsThisContext,
     'class-methods-read-top-to-bottom': classMethodsReadTopToBottom,
     'consistent-callback-naming': consistentCallbackNaming,
@@ -468,6 +479,7 @@ module.exports = {
     'enforce-empty-object-check': enforceEmptyObjectCheck,
     'enforce-identifiable-firestore-type': enforceIdentifiableFirestoreType,
     'enforce-callback-memo': enforceCallbackMemo,
+    'react-memoize-literals': reactMemoizeLiterals,
     'enforce-react-type-naming': enforceReactTypeNaming,
     'enforce-firestore-rules-get-access': enforceFirestoreRulesGetAccess,
     'enforce-callable-types': enforceCallableTypes,
@@ -497,6 +509,7 @@ module.exports = {
     'prefer-type-over-interface': preferTypeOverInterface,
     'prefer-type-alias-over-typeof-constant': preferTypeAliasOverTypeofConstant,
     'require-memo': requireMemo,
+    'require-memoize-jsx-returners': requireMemoizeJsxReturners,
     'no-unmemoized-memo-without-props': noUnmemoizedMemoWithoutProps,
     'no-jsx-whitespace-literal': noJsxWhitespaceLiteral,
     'require-dynamic-firebase-imports': requireDynamicFirebaseImports,
@@ -507,6 +520,7 @@ module.exports = {
     'require-usememo-object-literals': requireUseMemoObjectLiterals,
     'memoize-root-level-hocs': memoizeRootLevelHocs,
     'enforce-safe-stringify': enforceStableStringify,
+    'enforce-early-destructuring': enforceEarlyDestructuring,
     'enforce-storage-context': enforceStorageContext,
     'avoid-utils-directory': avoidUtilsDirectory,
     'no-entire-object-hook-deps': noEntireObjectHookDeps,
@@ -578,6 +592,7 @@ module.exports = {
     'no-unnecessary-destructuring': noUnnecessaryDestructuring,
     'no-unnecessary-destructuring-rename': noUnnecessaryDestructuringRename,
     'enforce-singular-type-names': enforceSingularTypeNames,
+    'prevent-children-clobber': preventChildrenClobber,
     'enforce-css-media-queries': enforceCssMediaQueries,
     'omit-index-html': omitIndexHtml,
     'enforce-id-capitalization': enforceIdCapitalization,

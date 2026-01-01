@@ -19,8 +19,12 @@ jest.mock('typescript', () => {
       checker.getTypeAtLocation = ((node: import('typescript').Node) => {
         const type = originalGetTypeAtLocation(node);
         if (node.getSourceFile().fileName.includes(callSignatureMissingFile)) {
-          const clonedType = Object.assign(Object.create(Object.getPrototypeOf(type)), type);
-          delete (clonedType as { getCallSignatures?: unknown }).getCallSignatures;
+          const clonedType = Object.assign(
+            Object.create(Object.getPrototypeOf(type)),
+            type,
+          );
+          delete (clonedType as { getCallSignatures?: unknown })
+            .getCallSignatures;
           return clonedType as import('typescript').Type;
         }
         return type;
@@ -283,7 +287,10 @@ const Named = ({ beta, alpha }: Props) => <div>{beta.value}{alpha.value}</div>;
 export const WrappedNamed = memo(Named, compareDeeply('alpha', 'beta'));
 export const WrappedInline = memo(({ beta, alpha }: Props) => <section>{beta.value}{alpha.value}</section>, compareDeeply('alpha', 'beta'));
 `,
-        errors: [{ messageId: 'useCompareDeeply' }, { messageId: 'useCompareDeeply' }],
+        errors: [
+          { messageId: 'useCompareDeeply' },
+          { messageId: 'useCompareDeeply' },
+        ],
       },
       {
         filename: 'src/components/TypeArgsAny.tsx',
@@ -755,7 +762,10 @@ const Second = ({ config }: Props) => <span>{config.theme}</span>;
 export const Wrapped = memo(First, compareDeeply('config'));
 export const WrappedAgain = memo(Second, compareDeeply('config'));
 `,
-        errors: [{ messageId: 'useCompareDeeply' }, { messageId: 'useCompareDeeply' }],
+        errors: [
+          { messageId: 'useCompareDeeply' },
+          { messageId: 'useCompareDeeply' },
+        ],
       },
       {
         filename: 'src/components/MultipleCallsWithShadow.tsx',
@@ -784,7 +794,10 @@ function makeWrapper() {
 }
 export const WrappedTwo = makeWrapper();
 `,
-        errors: [{ messageId: 'useCompareDeeply' }, { messageId: 'useCompareDeeply' }],
+        errors: [
+          { messageId: 'useCompareDeeply' },
+          { messageId: 'useCompareDeeply' },
+        ],
       },
       {
         filename: callSignatureMissingFile,

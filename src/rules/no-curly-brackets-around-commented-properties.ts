@@ -114,7 +114,9 @@ function getSiblingIndent(
   current: TSESTree.BlockStatement,
 ): string | null {
   const container =
-    parent && 'body' in parent && Array.isArray((parent as TSESTree.Program).body)
+    parent &&
+    'body' in parent &&
+    Array.isArray((parent as TSESTree.Program).body)
       ? (parent as TSESTree.Program | TSESTree.TSModuleBlock).body
       : null;
 

@@ -172,8 +172,8 @@ const isMemoCall = (
 const filterPresentResults = (
   results: Array<ComponentDetectionResult | null>,
 ): ComponentDetectionResult[] => {
-  return results.filter(
-    (result): result is ComponentDetectionResult => Boolean(result),
+  return results.filter((result): result is ComponentDetectionResult =>
+    Boolean(result),
   );
 };
 
@@ -254,7 +254,10 @@ const expressionCreatesComponent = (
       return null;
     }
     case AST_NODE_TYPES.ConditionalExpression: {
-      const cons = expressionCreatesComponent(unwrapped.consequent, reactImports);
+      const cons = expressionCreatesComponent(
+        unwrapped.consequent,
+        reactImports,
+      );
       const alt = expressionCreatesComponent(unwrapped.alternate, reactImports);
       return mergeComponentResults(cons, alt);
     }
@@ -404,7 +407,7 @@ export const memoNestedReactComponents = createRule<Options, MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Prevent defining React components inside useCallback/useDeepCompareCallback; memoize them with useMemo/useDeepCompareMemo and memo() to avoid unnecessary remounts',
+        'Disallow React components defined in useCallback/useDeepCompareCallback',
       recommended: 'error',
     },
     fixable: 'code',
@@ -422,8 +425,7 @@ export const memoNestedReactComponents = createRule<Options, MessageIds>({
       },
     ],
     messages: {
-      memoizeNestedComponent:
-      `What's wrong: React component "{{componentName}}" is created inside {{hookName}}.
+      memoizeNestedComponent: `What's wrong: React component "{{componentName}}" is created inside {{hookName}}.
 Why it matters: Components defined inside callbacks get new identities when the callback changes, causing React to remount them and drop their state and effects.
 How to fix: Create the component via {{replacementHook}} and wrap it in memo() so its identity stays stable across renders.`,
     },

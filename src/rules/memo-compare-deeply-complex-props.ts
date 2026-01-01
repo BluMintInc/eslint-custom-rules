@@ -1,5 +1,10 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
-import type { IntersectionType, Type, TypeChecker, UnionType } from 'typescript';
+import type {
+  IntersectionType,
+  Type,
+  TypeChecker,
+  UnionType,
+} from 'typescript';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'useCompareDeeply';
@@ -25,7 +30,10 @@ type ComponentInitializerTracker = {
     node: TSESTree.VariableDeclarator,
     scope: TSESLint.Scope.Scope,
   ) => void;
-  getInitializer: (name: string, scope: TSESLint.Scope.Scope) => TSESTree.Expression | null;
+  getInitializer: (
+    name: string,
+    scope: TSESLint.Scope.Scope,
+  ) => TSESTree.Expression | null;
 };
 
 type ComponentTypeAnalysis = {
@@ -47,7 +55,9 @@ function isUtilMemoModulePath(path: string): boolean {
   return /(?:^|\/|\\)util\/memo$/.test(path);
 }
 
-function unwrapExpression(expression: TSESTree.Expression): TSESTree.Expression {
+function unwrapExpression(
+  expression: TSESTree.Expression,
+): TSESTree.Expression {
   let node: TSESTree.Expression = expression;
   // Unwrap harmless wrappers so detection treats casted/parenthesized expressions the same.
   while (
@@ -130,7 +140,10 @@ function isNullishComparatorArgument(
     return true;
   }
 
-  if (node.type === AST_NODE_TYPES.UnaryExpression && node.operator === 'void') {
+  if (
+    node.type === AST_NODE_TYPES.UnaryExpression &&
+    node.operator === 'void'
+  ) {
     return true;
   }
 
@@ -159,7 +172,10 @@ function rangeWithParentheses(
 }
 
 function addBindingNames(
-  pattern: TSESTree.BindingName | TSESTree.AssignmentPattern | TSESTree.RestElement,
+  pattern:
+    | TSESTree.BindingName
+    | TSESTree.AssignmentPattern
+    | TSESTree.RestElement,
   target: Set<string>,
 ): void {
   switch (pattern.type) {
@@ -214,7 +230,9 @@ function addBindingNames(
   }
 }
 
-function isTopLevelDeclaration(node: TSESTree.Node | null): node is TopLevelDeclaration {
+function isTopLevelDeclaration(
+  node: TSESTree.Node | null,
+): node is TopLevelDeclaration {
   if (!node) return false;
   return (
     node.type === AST_NODE_TYPES.FunctionDeclaration ||
@@ -378,7 +396,9 @@ function ensureCompareDeeplyImportFixes(
       ),
   );
   const fallbackImportWithNamed = memoImports.find((memoImport) =>
-    memoImport.specifiers.some((spec) => spec.type === AST_NODE_TYPES.ImportSpecifier),
+    memoImport.specifiers.some(
+      (spec) => spec.type === AST_NODE_TYPES.ImportSpecifier,
+    ),
   );
   const namedImportTarget = importWithNamed ?? fallbackImportWithNamed;
   if (namedImportTarget) {
@@ -390,7 +410,10 @@ function ensureCompareDeeplyImportFixes(
       namedSpecifiers[namedSpecifiers.length - 1] ?? namedSpecifiers[0];
     return {
       fixes: [
-        fixer.insertTextAfter(lastNamedSpecifier, `, ${compareDeeplySpecifierText}`),
+        fixer.insertTextAfter(
+          lastNamedSpecifier,
+          `, ${compareDeeplySpecifierText}`,
+        ),
       ],
       localName: preferredLocalName,
     };
@@ -419,7 +442,10 @@ function ensureCompareDeeplyImportFixes(
     if (defaultSpecifier) {
       return {
         fixes: [
-          fixer.insertTextAfter(defaultSpecifier, `, { ${compareDeeplySpecifierText} }`),
+          fixer.insertTextAfter(
+            defaultSpecifier,
+            `, { ${compareDeeplySpecifierText} }`,
+          ),
         ],
         localName: preferredLocalName,
       };
@@ -427,8 +453,9 @@ function ensureCompareDeeplyImportFixes(
   }
 
   const importForInsertion =
-    memoImports.find((memoImport) => memoImport.source.value === importSource) ??
-    memoImports[0];
+    memoImports.find(
+      (memoImport) => memoImport.source.value === importSource,
+    ) ?? memoImports[0];
   if (importForInsertion) {
     return {
       fixes: [
@@ -441,7 +468,9 @@ function ensureCompareDeeplyImportFixes(
     };
   }
 
-  const firstImport = program.body.find((node) => node.type === AST_NODE_TYPES.ImportDeclaration);
+  const firstImport = program.body.find(
+    (node) => node.type === AST_NODE_TYPES.ImportDeclaration,
+  );
   const importText = `import { ${compareDeeplySpecifierText} } from '${importSource}';\n`;
 
   if (firstImport) {
@@ -481,7 +510,12 @@ function isComplexTypeInternal(
   }
 
   if (isIntersectionType(ts, flags)) {
-    return checkIntersectionType(ts, type as IntersectionType, checker, visited);
+    return checkIntersectionType(
+      ts,
+      type as IntersectionType,
+      checker,
+      visited,
+    );
   }
 
   if (isPrimitiveType(ts, flags)) {
@@ -517,10 +551,15 @@ function checkUnionType(
   checker: TypeChecker,
   visited: Set<Type>,
 ): boolean {
-  return unionType.types.some((t) => isComplexTypeInternal(ts, t, checker, visited));
+  return unionType.types.some((t) =>
+    isComplexTypeInternal(ts, t, checker, visited),
+  );
 }
 
-function isIntersectionType(ts: typeof import('typescript'), flags: number): boolean {
+function isIntersectionType(
+  ts: typeof import('typescript'),
+  flags: number,
+): boolean {
   return (flags & ts.TypeFlags.Intersection) !== 0;
 }
 
@@ -530,10 +569,15 @@ function checkIntersectionType(
   checker: TypeChecker,
   visited: Set<Type>,
 ): boolean {
-  return intersectionType.types.some((t) => isComplexTypeInternal(ts, t, checker, visited));
+  return intersectionType.types.some((t) =>
+    isComplexTypeInternal(ts, t, checker, visited),
+  );
 }
 
-function isPrimitiveType(ts: typeof import('typescript'), flags: number): boolean {
+function isPrimitiveType(
+  ts: typeof import('typescript'),
+  flags: number,
+): boolean {
   return (
     (flags &
       (ts.TypeFlags.StringLike |
@@ -550,7 +594,10 @@ function isPrimitiveType(ts: typeof import('typescript'), flags: number): boolea
   );
 }
 
-function isTypeParameter(ts: typeof import('typescript'), flags: number): boolean {
+function isTypeParameter(
+  ts: typeof import('typescript'),
+  flags: number,
+): boolean {
   return (flags & ts.TypeFlags.TypeParameter) !== 0;
 }
 
@@ -561,7 +608,9 @@ function checkTypeParameter(
   visited: Set<Type>,
 ): boolean {
   const constraint = type.getConstraint?.();
-  return constraint ? isComplexTypeInternal(ts, constraint, checker, visited) : false;
+  return constraint
+    ? isComplexTypeInternal(ts, constraint, checker, visited)
+    : false;
 }
 
 function hasCallSignatures(type: Type): boolean {
@@ -592,8 +641,10 @@ function getTypeFromSymbol(
 function extractPropertyDeclaration(
   prop: import('typescript').Symbol,
 ): import('typescript').Declaration | undefined {
-  return prop.valueDeclaration ??
-    (prop.declarations?.[0] as import('typescript').Declaration | undefined);
+  return (
+    prop.valueDeclaration ??
+    (prop.declarations?.[0] as import('typescript').Declaration | undefined)
+  );
 }
 
 function extractAnnotationType(
@@ -639,7 +690,13 @@ function isPropertyComplex(
     return true;
   }
 
-  return shouldTreatAnyAsComplex(prop, propType, ts, treatAnyAsComplex, parentTypeFlags);
+  return shouldTreatAnyAsComplex(
+    prop,
+    propType,
+    ts,
+    treatAnyAsComplex,
+    parentTypeFlags,
+  );
 }
 
 function getComplexPropertiesFromType(
@@ -657,7 +714,14 @@ function getComplexPropertiesFromType(
     if (prop.name === 'children') continue;
 
     if (
-      isPropertyComplex(prop, checker, tsNode, ts, treatAnyAsComplex, parentTypeFlags)
+      isPropertyComplex(
+        prop,
+        checker,
+        tsNode,
+        ts,
+        treatAnyAsComplex,
+        parentTypeFlags,
+      )
     ) {
       complexProps.push(prop.name);
     }
@@ -728,7 +792,11 @@ function extractPropsFromFunctionParam(
 
   const paramType = checker.getTypeAtLocation(paramTsNode);
   if (paramType.flags & ts.TypeFlags.Any) {
-    const propsFromTypeArgs = extractPropsFromTypeArguments(paramTsNode, checker, ts);
+    const propsFromTypeArgs = extractPropsFromTypeArguments(
+      paramTsNode,
+      checker,
+      ts,
+    );
     if (propsFromTypeArgs.length > 0) {
       return normalizePropsOrder(propsFromTypeArgs);
     }
@@ -757,7 +825,12 @@ function extractPropsFromComponentSignatures(
   const complexProps = new Set<string>();
 
   for (const signature of signatures) {
-    const propsFromSignature = extractComplexPropsFromSignature(signature, checker, tsNode, ts);
+    const propsFromSignature = extractComplexPropsFromSignature(
+      signature,
+      checker,
+      tsNode,
+      ts,
+    );
     propsFromSignature.forEach((prop) => complexProps.add(prop));
   }
 
@@ -778,7 +851,9 @@ function toComponentTsNode(
 
 function isFunctionComponentWithProps(
   componentExpr: TSESTree.Expression,
-): componentExpr is TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression {
+): componentExpr is
+  | TSESTree.FunctionExpression
+  | TSESTree.ArrowFunctionExpression {
   return (
     (componentExpr.type === AST_NODE_TYPES.FunctionExpression ||
       componentExpr.type === AST_NODE_TYPES.ArrowFunctionExpression) &&
@@ -863,7 +938,9 @@ function findComponentAnalysisTargets(
     unwrappedInitializer.type === AST_NODE_TYPES.CallExpression &&
     unwrappedInitializer.arguments.length > 0 &&
     unwrappedInitializer.arguments[0]?.type !== AST_NODE_TYPES.SpreadElement
-      ? unwrapExpression(unwrappedInitializer.arguments[0] as TSESTree.Expression)
+      ? unwrapExpression(
+          unwrappedInitializer.arguments[0] as TSESTree.Expression,
+        )
       : null;
   const wrappedInnerCandidate =
     unwrappedComponent.type === AST_NODE_TYPES.CallExpression &&
@@ -872,7 +949,8 @@ function findComponentAnalysisTargets(
       ? unwrapExpression(unwrappedComponent.arguments[0] as TSESTree.Expression)
       : null;
   const analysisTarget =
-    (initializerWrappedCandidate && isComponentExpression(initializerWrappedCandidate)
+    (initializerWrappedCandidate &&
+    isComponentExpression(initializerWrappedCandidate)
       ? initializerWrappedCandidate
       : null) ??
     (unwrappedInitializer && isComponentExpression(unwrappedInitializer)
@@ -884,7 +962,8 @@ function findComponentAnalysisTargets(
       : null);
   if (!analysisTarget) return null;
 
-  const preferredAnalysisTarget = initializerWrappedCandidate ?? wrappedInnerCandidate ?? analysisTarget;
+  const preferredAnalysisTarget =
+    initializerWrappedCandidate ?? wrappedInnerCandidate ?? analysisTarget;
 
   return {
     unwrappedComponent,
@@ -901,7 +980,10 @@ function collectComplexPropsForTargets(
   getComplexProps: (expr: TSESTree.Expression) => string[],
 ): string[] {
   let complexProps = getComplexProps(targets.preferredAnalysisTarget);
-  if (complexProps.length === 0 && targets.preferredAnalysisTarget !== targets.analysisTarget) {
+  if (
+    complexProps.length === 0 &&
+    targets.preferredAnalysisTarget !== targets.analysisTarget
+  ) {
     complexProps = getComplexProps(targets.analysisTarget);
   }
   if (
@@ -926,7 +1008,9 @@ function resolveComponentName(
       ? componentDisplayName(targets.unwrappedInitializer)
       : null) ??
     componentDisplayName(targets.unwrappedComponent) ??
-    (targets.wrappedInnerCandidate ? componentDisplayName(targets.wrappedInnerCandidate) : null) ??
+    (targets.wrappedInnerCandidate
+      ? componentDisplayName(targets.wrappedInnerCandidate)
+      : null) ??
     componentDisplayName(componentArg) ??
     'component'
   );
@@ -1052,7 +1136,10 @@ function createMemoImportTracking(): MemoImportTracking & {
 }
 
 function createComponentInitializerTracker(): ComponentInitializerTracker {
-  const componentInitializers = new WeakMap<TSESLint.Scope.Scope, Map<string, TSESTree.Expression>>();
+  const componentInitializers = new WeakMap<
+    TSESLint.Scope.Scope,
+    Map<string, TSESTree.Expression>
+  >();
 
   function recordComponentInitializer(
     node: TSESTree.VariableDeclarator,
@@ -1060,19 +1147,27 @@ function createComponentInitializerTracker(): ComponentInitializerTracker {
   ): void {
     if (node.id.type !== AST_NODE_TYPES.Identifier || !node.init) return;
     const currentScopeInitializers =
-      componentInitializers.get(scope) ?? new Map<string, TSESTree.Expression>();
-    currentScopeInitializers.set(node.id.name, node.init as TSESTree.Expression);
+      componentInitializers.get(scope) ??
+      new Map<string, TSESTree.Expression>();
+    currentScopeInitializers.set(
+      node.id.name,
+      node.init as TSESTree.Expression,
+    );
     componentInitializers.set(scope, currentScopeInitializers);
   }
 
-  function getInitializer(name: string, scope: TSESLint.Scope.Scope): TSESTree.Expression | null {
+  function getInitializer(
+    name: string,
+    scope: TSESLint.Scope.Scope,
+  ): TSESTree.Expression | null {
     let currentScope: TSESLint.Scope.Scope | null = scope;
     while (currentScope) {
       const initializerMap = componentInitializers.get(currentScope);
       if (initializerMap?.has(name)) {
         return initializerMap.get(name) ?? null;
       }
-      currentScope = (currentScope.upper as TSESLint.Scope.Scope | null) ?? null;
+      currentScope =
+        (currentScope.upper as TSESLint.Scope.Scope | null) ?? null;
     }
     return null;
   }
@@ -1097,7 +1192,7 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
     schema: [],
     messages: {
       useCompareDeeply:
-        "What's wrong: Memoized component \"{{componentName}}\" receives complex prop(s) {{propsList}} but memo still uses shallow reference comparison → Why it matters: Objects/arrays are often recreated on each render, so shallow comparison treats them as \"changed\" and triggers avoidable re-renders → How to fix: Pass compareDeeply({{propsCall}}) as memo's second argument to compare those props by value.",
+        'What\'s wrong: Memoized component "{{componentName}}" receives complex prop(s) {{propsList}} but memo still uses shallow reference comparison → Why it matters: Objects/arrays are often recreated on each render, so shallow comparison treats them as "changed" and triggers avoidable re-renders → How to fix: Pass compareDeeply({{propsCall}}) as memo\'s second argument to compare those props by value.',
     },
   },
   defaultOptions: [],
@@ -1117,7 +1212,12 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
         return { fixes: [], localName: cachedCompareDeeplyImportLocalName };
       }
 
-      const result = ensureCompareDeeplyImportFixes(sourceCode, fixer, usedNames, memoSource);
+      const result = ensureCompareDeeplyImportFixes(
+        sourceCode,
+        fixer,
+        usedNames,
+        memoSource,
+      );
       cachedCompareDeeplyImportLocalName = result.localName;
       return result;
     }
@@ -1128,7 +1228,8 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
       if (node.arguments.length === 0 || node.arguments.length > 2) return null;
 
       const componentArg = node.arguments[0];
-      if (!componentArg || componentArg.type === AST_NODE_TYPES.SpreadElement) return null;
+      if (!componentArg || componentArg.type === AST_NODE_TYPES.SpreadElement)
+        return null;
 
       const comparatorArg = node.arguments[1];
       return { memoCall, componentArg, comparatorArg };
@@ -1139,19 +1240,24 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
       comparatorArg: TSESTree.CallExpressionArgument | undefined,
       currentScope: TSESLint.Scope.Scope,
     ) {
-      const componentTargets = findComponentAnalysisTargets(componentArg, (name) =>
-        initializerTracking.getInitializer(name, currentScope),
+      const componentTargets = findComponentAnalysisTargets(
+        componentArg,
+        (name) => initializerTracking.getInitializer(name, currentScope),
       );
       if (!componentTargets) return null;
 
       if (isComparatorProvided(comparatorArg, currentScope)) return null;
 
-      const complexProps = collectComplexPropsForTargets(componentTargets, (expr) =>
-        collectComplexProps(expr, sourceCode, complexPropsCache),
+      const complexProps = collectComplexPropsForTargets(
+        componentTargets,
+        (expr) => collectComplexProps(expr, sourceCode, complexPropsCache),
       );
       if (complexProps.length === 0) return null;
 
-      const componentName = resolveComponentName(componentTargets, componentArg);
+      const componentName = resolveComponentName(
+        componentTargets,
+        componentArg,
+      );
       return { complexProps, componentName };
     }
 
@@ -1167,7 +1273,10 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
     return {
       ImportDeclaration: memoImportTracking.recordImport,
       VariableDeclarator(node) {
-        initializerTracking.recordComponentInitializer(node, context.getScope());
+        initializerTracking.recordComponentInitializer(
+          node,
+          context.getScope(),
+        );
       },
       CallExpression(node) {
         const validationResult = validateMemoCall(node);
@@ -1175,11 +1284,18 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
 
         const { memoCall, componentArg, comparatorArg } = validationResult;
         const currentScope = context.getScope();
-        const analysisResult = analyzeComponentAndProps(componentArg, comparatorArg, currentScope);
+        const analysisResult = analyzeComponentAndProps(
+          componentArg,
+          comparatorArg,
+          currentScope,
+        );
         if (!analysisResult) return;
 
         const { complexProps, componentName } = analysisResult;
-        const { propsList, propsCall } = generateReportData(complexProps, componentName);
+        const { propsList, propsCall } = generateReportData(
+          complexProps,
+          componentName,
+        );
 
         context.report({
           node,

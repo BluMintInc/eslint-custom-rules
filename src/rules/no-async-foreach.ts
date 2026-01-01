@@ -381,8 +381,7 @@ export const noAsyncForEach: TSESLint.RuleModule<'noAsyncForEach', []> = {
   meta: {
     type: 'problem',
     docs: {
-      description:
-        'Disallow Array.forEach with async callbacks because forEach ignores returned promises, leading to parallel execution and unhandled rejections. Use a for...of loop when you need to await each iteration or map with Promise.all when concurrency is intended.',
+      description: 'Disallow async callbacks to Array.forEach',
       recommended: 'error',
     },
     messages: {

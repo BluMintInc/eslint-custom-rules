@@ -842,9 +842,9 @@ const createScopeListeners = (
   storageAliases: AliasStack,
 ): TSESLint.RuleListener => ({
   Program: aliases.reset,
-  BlockStatement: (_node: TSESTree.BlockStatement) => aliases.pushScope(),
+  BlockStatement: () => aliases.pushScope(),
   'BlockStatement:exit': aliases.popScope,
-  TSModuleBlock: (_node: TSESTree.TSModuleBlock) => aliases.pushScope(),
+  TSModuleBlock: () => aliases.pushScope(),
   'TSModuleBlock:exit': aliases.popScope,
   ClassBody: (node: TSESTree.ClassBody) => {
     const parent = node.parent;
@@ -871,17 +871,17 @@ const createScopeListeners = (
     }
   },
   'ClassBody:exit': aliases.popScope,
-  StaticBlock: (_node: TSESTree.StaticBlock) => aliases.pushScope(),
+  StaticBlock: () => aliases.pushScope(),
   'StaticBlock:exit': aliases.popScope,
-  SwitchStatement: (_node: TSESTree.SwitchStatement) => aliases.pushScope(),
+  SwitchStatement: () => aliases.pushScope(),
   'SwitchStatement:exit': aliases.popScope,
-  ForStatement: (_node: TSESTree.ForStatement) => aliases.pushScope(),
+  ForStatement: () => aliases.pushScope(),
   'ForStatement:exit': aliases.popScope,
-  ForInStatement: (_node: TSESTree.ForInStatement) => aliases.pushScope(),
+  ForInStatement: () => aliases.pushScope(),
   'ForInStatement:exit': aliases.popScope,
-  ForOfStatement: (_node: TSESTree.ForOfStatement) => aliases.pushScope(),
+  ForOfStatement: () => aliases.pushScope(),
   'ForOfStatement:exit': aliases.popScope,
-  CatchClause: (_node: TSESTree.CatchClause) => aliases.pushScope(),
+  CatchClause: () => aliases.pushScope(),
   'CatchClause:exit': aliases.popScope,
   FunctionDeclaration: (node: TSESTree.FunctionDeclaration) => {
     if (node.id) {
@@ -897,11 +897,9 @@ const createScopeListeners = (
     aliases.pushScope('function');
   },
   'FunctionDeclaration:exit': aliases.popScope,
-  FunctionExpression: (_node: TSESTree.FunctionExpression) =>
-    aliases.pushScope('function'),
+  FunctionExpression: () => aliases.pushScope('function'),
   'FunctionExpression:exit': aliases.popScope,
-  ArrowFunctionExpression: (_node: TSESTree.ArrowFunctionExpression) =>
-    aliases.pushScope('function'),
+  ArrowFunctionExpression: () => aliases.pushScope('function'),
   'ArrowFunctionExpression:exit': aliases.popScope,
 });
 
