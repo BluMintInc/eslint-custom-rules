@@ -8,22 +8,7 @@ export const noUndefinedNullPassthrough: TSESLint.RuleModule<
   create(context) {
     return {
       FunctionDeclaration(node) {
-        // Skip functions with no parameters
-        if (node.params.length === 0) {
-          return;
-        }
-
-        // Skip functions with any parameter typed as 'unknown'
-        if (node.params.some(isUnknownParameter)) {
-          return;
-        }
-
-        // Skip React hooks (functions starting with 'use')
-        if (
-          node.id &&
-          node.id.type === 'Identifier' &&
-          node.id.name.startsWith('use')
-        ) {
+        if (shouldSkipFunction(node)) {
           return;
         }
 
@@ -36,24 +21,7 @@ export const noUndefinedNullPassthrough: TSESLint.RuleModule<
         }
       },
       ArrowFunctionExpression(node) {
-        // Skip functions with no parameters
-        if (node.params.length === 0) {
-          return;
-        }
-
-        // Skip functions with any parameter typed as 'unknown'
-        if (node.params.some(isUnknownParameter)) {
-          return;
-        }
-
-        // Skip if the function is part of a variable declaration that starts with 'use' (React hook)
-        const parent = node.parent;
-        if (
-          parent &&
-          parent.type === 'VariableDeclarator' &&
-          parent.id.type === 'Identifier' &&
-          parent.id.name.startsWith('use')
-        ) {
+        if (shouldSkipFunction(node)) {
           return;
         }
 
@@ -71,24 +39,7 @@ export const noUndefinedNullPassthrough: TSESLint.RuleModule<
         }
       },
       FunctionExpression(node) {
-        // Skip functions with no parameters
-        if (node.params.length === 0) {
-          return;
-        }
-
-        // Skip functions with any parameter typed as 'unknown'
-        if (node.params.some(isUnknownParameter)) {
-          return;
-        }
-
-        // Skip if the function is part of a variable declaration that starts with 'use' (React hook)
-        const parent = node.parent;
-        if (
-          parent &&
-          parent.type === 'VariableDeclarator' &&
-          parent.id.type === 'Identifier' &&
-          parent.id.name.startsWith('use')
-        ) {
+        if (shouldSkipFunction(node)) {
           return;
         }
 
@@ -531,8 +482,51 @@ function checkFunctionBodyForEarlyReturns(
   }
 }
 
+function shouldSkipFunction(
+  node:
+    | TSESTree.FunctionDeclaration
+    | TSESTree.ArrowFunctionExpression
+    | TSESTree.FunctionExpression,
+): boolean {
+  // Skip functions with no parameters
+  if (node.params.length === 0) {
+    return true;
+  }
+
+  // Skip functions with any parameter typed as 'unknown'
+  if (node.params.some(isUnknownParameter)) {
+    return true;
+  }
+
+  // Skip React hooks (functions starting with 'use')
+  let name: string | undefined;
+  if (node.type === AST_NODE_TYPES.FunctionDeclaration) {
+    name = node.id?.name;
+  } else {
+    const parent = node.parent;
+    if (
+      parent &&
+      parent.type === AST_NODE_TYPES.VariableDeclarator &&
+      parent.id.type === AST_NODE_TYPES.Identifier
+    ) {
+      name = parent.id.name;
+    }
+  }
+
+  if (name?.startsWith('use')) {
+    return true;
+  }
+
+  return false;
+}
+
 /**
- * Check if a parameter is explicitly typed as unknown
+ * Exempts type-narrowing functions from the rule by checking for 'unknown' parameters.
+ * These functions often narrow from 'unknown' and return null/undefined for invalid types,
+ * which is a valid pattern.
+ *
+ * TODO: Handle edge cases like rest parameters (...args: unknown[]),
+ * destructured parameters ({ x }: unknown), and array patterns ([a]: unknown).
  */
 function isUnknownParameter(param: TSESTree.Parameter): boolean {
   if (param.type === AST_NODE_TYPES.Identifier) {
