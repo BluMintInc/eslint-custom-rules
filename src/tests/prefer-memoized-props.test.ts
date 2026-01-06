@@ -130,6 +130,26 @@ ruleTesterJsx.run('prefer-memoized-props', preferMemoizedProps, {
         return <Button />;
       }
     `,
+    `
+      import { memo } from 'react';
+      function Section({ title }) {
+        const style = { color: 'red' };
+        return <Header style={style} title={title} />;
+      }
+      const MemoSection = memo(Section);
+    `,
+    `
+      import { memo } from 'react';
+      const Comp = memo(() => <div sx={{ color: 'red' }} />);
+    `,
+    `
+      import { memo } from 'react';
+      const Comp = memo(() => <div containerSx={{ margin: 10 }} />);
+    `,
+    `
+      import { memo } from 'react';
+      const Comp = memo(() => <div wrapperStyle={{ padding: 20 }} />);
+    `,
   ],
   invalid: [
     {
@@ -213,17 +233,6 @@ ruleTesterJsx.run('prefer-memoized-props', preferMemoizedProps, {
         });
       `,
       errors: [{ messageId: 'avoidPrimitiveMemo' }],
-    },
-    {
-      code: `
-        import { memo } from 'react';
-        function Section({ title }) {
-          const style = { color: 'red' };
-          return <Header style={style} title={title} />;
-        }
-        const MemoSection = memo(Section);
-      `,
-      errors: [{ messageId: 'memoizeReferenceProp' }],
     },
     {
       code: `

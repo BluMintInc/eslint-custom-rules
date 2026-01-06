@@ -26,11 +26,14 @@ export const requireUseMemoObjectLiterals = createRule({
           return;
         }
 
-        // Skip if the prop name is 'sx' or ends with 'Sx'
+        // Skip if the prop name is 'sx' or ends with 'Sx', or 'style' or ends with 'Style'
         const propName = node.name.name;
         if (
           typeof propName === 'string' &&
-          (propName === 'sx' || propName.endsWith('Sx'))
+          (propName === 'sx' ||
+            propName.endsWith('Sx') ||
+            propName === 'style' ||
+            propName.endsWith('Style'))
         ) {
           return;
         }

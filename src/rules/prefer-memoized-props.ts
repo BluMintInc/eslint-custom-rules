@@ -27,7 +27,7 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
     schema: [],
     messages: {
       memoizeReferenceProp:
-        'Prop "{{propName}}" in a React.memo component receives a {{kind}} that is recreated every render, so memoized children lose referential equality and re-render. Memoize this {{kind}} with useMemo/useCallback or hoist a stable constant so the prop reference stays stable.',
+        'Prop "{{propName}}" in a React.memo component receives a {{kind}} that is recreated every render, so memoized children lose referential equality and re-render. Memoize this {{kind}} with useMemo/useCallback or hoist a stable constant so the prop reference stays stable. If this component uses a custom areEqual function that performs deep equality for this prop, you may safely ignore this warning with // eslint-disable.',
       avoidPrimitiveMemo:
         'useMemo around "{{value}}" only wraps a pass-through value. Primitives already compare by value, and wrapping existing references without creating new objects does not improve stability. Return the value directly instead of adding memoization noise.',
     },
@@ -513,6 +513,15 @@ export const preferMemoizedProps = createRule<[], MessageIds>({
 
       const expression = unwrapExpression(rawExpression);
       const propName = getAttributeName(node.name);
+
+      if (
+        propName === 'sx' ||
+        propName.endsWith('Sx') ||
+        propName === 'style' ||
+        propName.endsWith('Style')
+      ) {
+        return;
+      }
 
       if (expression.type === AST_NODE_TYPES.ObjectExpression) {
         reportReference(expression, propName, 'object');
