@@ -1,4 +1,5 @@
 import { TSESLint } from '@typescript-eslint/utils';
+type MessageIds = 'noExplicitReturnTypeInferable' | 'noExplicitReturnTypeNonInferable';
 type Options = [
     {
         allowRecursiveFunctions?: boolean;
@@ -9,5 +10,5 @@ type Options = [
         allowFirestoreFunctionFiles?: boolean;
     }
 ];
-export declare const noExplicitReturnType: TSESLint.RuleModule<'noExplicitReturnType', Options>;
+export declare const noExplicitReturnType: TSESLint.RuleModule<MessageIds, Options>;
 export {};

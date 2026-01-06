@@ -1,8 +1,9 @@
+import { TSESLint } from '@typescript-eslint/utils';
 type Options = [
     {
         object?: boolean;
         enforceForRenamedProperties?: boolean;
     }
 ];
-export declare const preferDestructuringNoClass: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"preferDestructuring", Options, import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;
+export declare const preferDestructuringNoClass: TSESLint.RuleModule<"preferDestructuring", Options, TSESLint.RuleListener>;
 export {};

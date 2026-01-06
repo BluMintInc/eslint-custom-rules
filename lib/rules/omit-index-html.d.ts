@@ -1,7 +1,8 @@
+import { TSESLint } from '@typescript-eslint/utils';
 type Options = [
     {
         allowWithQueryOrHash?: boolean;
     }
 ];
-export declare const omitIndexHtml: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"omitIndexHtml", Options, import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleListener>;
+export declare const omitIndexHtml: TSESLint.RuleModule<"omitIndexHtml", Options, TSESLint.RuleListener>;
 export {};

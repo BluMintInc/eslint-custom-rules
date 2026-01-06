@@ -1,5 +1,5 @@
-import { TSESTree } from '@typescript-eslint/utils';
-export declare const noUnusedProps: import("@typescript-eslint/utils/dist/ts-eslint/Rule").RuleModule<"unusedProp", never[], {
+import { TSESLint, TSESTree } from '@typescript-eslint/utils';
+export declare const noUnusedProps: TSESLint.RuleModule<"unusedProp", never[], {
     TSTypeAliasDeclaration(node: TSESTree.TSTypeAliasDeclaration): void;
     VariableDeclaration(node: TSESTree.VariableDeclaration): void;
     'VariableDeclaration:exit'(node: never): void;
