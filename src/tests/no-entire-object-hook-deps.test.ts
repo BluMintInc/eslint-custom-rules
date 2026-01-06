@@ -753,7 +753,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
-    // Object not used at all - should be removed
+    // Object used in binary expression should be considered used (Type A)
     {
       code: `
         const MyComponent = ({ unusedObject, usedValue }) => {
@@ -763,7 +763,7 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
           return <div>{result}</div>;
         };
       `,
-      errors: [removeUnused('unusedObject'), removeUnused('usedValue')],
+      errors: [removeUnused('unusedObject')],
       output: `
         const MyComponent = ({ unusedObject, usedValue }) => {
           const result = useMemo(() => {

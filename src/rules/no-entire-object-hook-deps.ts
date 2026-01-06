@@ -84,6 +84,7 @@ function getObjectUsagesInHook(
   const usages = new Map<string, number>(); // Track usage and its position
   const visited = new Set<TSESTree.Node>();
   let needsEntireObject = false;
+  let isUsed = false;
 
   // Built-in array methods that indicate usage of the entire array
   const ARRAY_METHODS = new Set([
@@ -271,6 +272,53 @@ function getObjectUsagesInHook(
   function visit(node: TSESTree.Node): void {
     if (!node || visited.has(node)) return;
     visited.add(node);
+
+    // Direct usage of the identifier
+    if (node.type === AST_NODE_TYPES.Identifier && node.name === objectName) {
+      const parent = node.parent;
+
+      // Check if this is a property name in a non-computed member expression (e.g., other.objectName)
+      const isMemberProperty =
+        parent?.type === AST_NODE_TYPES.MemberExpression &&
+        parent.property === node &&
+        !parent.computed;
+
+      // Check if this is the object of a member expression (e.g., objectName.prop)
+      // These are handled by the MemberExpression block to allow for specific field tracking
+      const isMemberObject =
+        parent?.type === AST_NODE_TYPES.MemberExpression &&
+        parent.object === node;
+
+      // Check if it's a key in an object literal (e.g., { objectName: 1 })
+      // but not a shorthand property (e.g., { objectName })
+      const isPropertyKey =
+        parent?.type === AST_NODE_TYPES.Property &&
+        parent.key === node &&
+        !parent.computed &&
+        !parent.shorthand;
+
+      if (!isMemberProperty && !isMemberObject && !isPropertyKey) {
+        isUsed = true;
+
+        // Certain usages mean we definitely need the entire object
+        const isTypeAUsage =
+          parent?.type === AST_NODE_TYPES.ReturnStatement ||
+          parent?.type === AST_NODE_TYPES.ArrayExpression ||
+          (parent?.type === AST_NODE_TYPES.Property &&
+            (parent.value === node || parent.shorthand)) ||
+          parent?.type === AST_NODE_TYPES.TemplateLiteral ||
+          parent?.type === AST_NODE_TYPES.VariableDeclarator ||
+          parent?.type === AST_NODE_TYPES.AssignmentExpression ||
+          parent?.type === AST_NODE_TYPES.JSXExpressionContainer ||
+          parent?.type === AST_NODE_TYPES.JSXSpreadAttribute ||
+          parent?.type === AST_NODE_TYPES.SpreadElement ||
+          parent?.type === AST_NODE_TYPES.CallExpression;
+
+        if (isTypeAUsage) {
+          needsEntireObject = true;
+        }
+      }
+    }
 
     if (node.type === AST_NODE_TYPES.CallExpression) {
       // Check if the object is being called as a function
@@ -513,7 +561,7 @@ function getObjectUsagesInHook(
   });
 
   const filteredUsages = new Set(sortedPaths);
-  const notUsed = !needsEntireObject && filteredUsages.size === 0;
+  const notUsed = !needsEntireObject && !isUsed && filteredUsages.size === 0;
 
   return {
     usages: filteredUsages,
