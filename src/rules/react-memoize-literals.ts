@@ -585,11 +585,77 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
   create(context) {
     const sourceCode = context.getSourceCode();
 
+    const getDeclaredVariables = (node: TSESTree.Node) => {
+      const sourceCodeWithDeclaredVariables =
+        sourceCode as unknown as {
+          getDeclaredVariables?: (
+            targetNode: TSESTree.Node,
+          ) => readonly TSESLint.Scope.Variable[];
+        };
+
+      if (
+        typeof sourceCodeWithDeclaredVariables.getDeclaredVariables ===
+        'function'
+      ) {
+        return sourceCodeWithDeclaredVariables.getDeclaredVariables(node);
+      }
+
+      return context.getDeclaredVariables(node);
+    };
+
+    /**
+     * Checks whether a literal is destined to be thrown, making referential
+     * stability irrelevant.
+     */
+    function isTerminalUsage(node: TSESTree.Node): boolean {
+      let current: TSESTree.Node | null = node.parent as TSESTree.Node | null;
+      while (current) {
+        if (current.type === AST_NODE_TYPES.ThrowStatement) {
+          return true;
+        }
+
+        if (
+          current.type === AST_NODE_TYPES.VariableDeclarator &&
+          current.id.type === AST_NODE_TYPES.Identifier
+        ) {
+          const variables = getDeclaredVariables(current);
+          if (variables.length > 0) {
+            const variable = variables[0];
+            const isThrown = variable.references.some((ref) => {
+              let refParent: TSESTree.Node | null = ref.identifier
+                .parent as TSESTree.Node | null;
+              while (refParent && refParent !== current) {
+                if (refParent.type === AST_NODE_TYPES.ThrowStatement) {
+                  return true;
+                }
+                refParent = refParent.parent as TSESTree.Node | null;
+              }
+              return false;
+            });
+            if (isThrown) return true;
+          }
+        }
+
+        // Stop at function boundaries as throws across functions are not "terminal"
+        // in the same render cycle sense for the current component/hook.
+        if (isFunctionNode(current)) {
+          break;
+        }
+
+        current = current.parent as TSESTree.Node | null;
+      }
+      return false;
+    }
+
     function reportLiteral(node: TSESTree.Node) {
       const descriptor = getLiteralDescriptor(node);
       if (!descriptor) return;
 
       if (isInsideAllowedHookCallback(node)) {
+        return;
+      }
+
+      if (isTerminalUsage(node)) {
         return;
       }
 

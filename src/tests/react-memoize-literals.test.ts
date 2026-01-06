@@ -177,6 +177,62 @@ function Component({ onClick }) {
 }
       `,
     },
+    // Direct throw of object literal
+    {
+      code: `
+function MyComponent({ isError }) {
+  if (isError) {
+    throw { message: 'Something went wrong', code: 'INTERNAL' };
+  }
+  return <div>Success</div>;
+}
+      `,
+    },
+    // Literal assigned to variable and then thrown
+    {
+      code: `
+import { HttpsError } from '../../functions/src/util/errors/HttpsError';
+import useLatestCallback from 'use-latest-callback';
+
+export const useUserTransaction = () => {
+  const fromPath = undefined;
+
+  const getValidatedFromPath = useLatestCallback(() => {
+    if (!fromPath) {
+      const authError = new HttpsError({
+        code: 'unauthenticated',
+        message: 'User must be authenticated to create a transaction.',
+        details: { userUid: 'guest' },
+      });
+      throw authError;
+    }
+    return fromPath;
+  });
+};
+      `,
+    },
+    // Array literal thrown
+    {
+      code: `
+function MyComponent({ isError }) {
+  if (isError) {
+    throw ['error1', 'error2'];
+  }
+  return <div>Success</div>;
+}
+      `,
+    },
+    // Inline function thrown
+    {
+      code: `
+function MyComponent({ isError }) {
+  if (isError) {
+    throw () => new Error('thrown function');
+  }
+  return <div>Success</div>;
+}
+      `,
+    },
   ],
   invalid: [
     // Component-level object literal
