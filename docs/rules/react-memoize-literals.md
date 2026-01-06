@@ -94,10 +94,6 @@ const options = useMemo(
 
 This placeholder must be replaced before committing.
 
-## Options
-
-This rule does not have any options.
-
 ## When Not To Use It
 
 - Components that intentionally regenerate literals on every render (e.g., to force recalculation) and where the cost is acceptable.

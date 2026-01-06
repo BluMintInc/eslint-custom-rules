@@ -25,6 +25,7 @@ export const noExcessiveParentChain = createRule<Options, MessageIds>({
         'Discourage excessive use of the ref.parent property chain in Firestore and RealtimeDB change handlers',
       recommended: 'error',
     },
+    fixable: 'code',
     schema: [
       {
         type: 'object',
@@ -345,6 +346,9 @@ export const noExcessiveParentChain = createRule<Options, MessageIds>({
           suggest: [
             {
               messageId: 'excessiveParentChain',
+              data: {
+                count: parentCount,
+              },
               fix(fixer) {
                 return fixer.replaceText(node, 'event.params');
               },
