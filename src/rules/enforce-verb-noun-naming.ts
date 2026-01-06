@@ -4522,6 +4522,34 @@ const VERBS_SET = new Set([
   'zap',
   'zip',
   'zoom',
+  'upsert',
+  'debit',
+  'lookup',
+  'mint',
+  'cleanup',
+  'cleanUp',
+  'dedupe',
+  'lowercase',
+  'unpluck',
+  'union',
+  'triage',
+  'unban',
+  'calc',
+  'cache',
+  'destructure',
+  'first',
+  'stable',
+  'sequential',
+  'only',
+  'cartesian',
+  'uuidv4',
+  'blumint',
+  'electron',
+  'memo',
+  'options',
+  'middleware',
+  'callable',
+  'recursive',
 ]);
 
 export const enforceVerbNounNaming = createRule<[], MessageIds>({
@@ -4623,99 +4651,6 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
       return false;
     }
 
-    function bodyContainsJsx(node: TSESTree.Node): boolean {
-      const stack: TSESTree.Node[] = [node];
-      while (stack.length) {
-        const current = stack.pop()!;
-        if (
-          current.type === AST_NODE_TYPES.JSXElement ||
-          current.type === AST_NODE_TYPES.JSXFragment
-        ) {
-          return true;
-        }
-
-        for (const key of Object.keys(current) as (keyof typeof current)[]) {
-          if (key === 'parent') continue;
-          const value = (current as any)[key];
-          if (Array.isArray(value)) {
-            for (const child of value) {
-              if (child && typeof child.type === 'string') {
-                stack.push(child);
-              }
-            }
-          } else if (value && typeof value.type === 'string') {
-            stack.push(value);
-          }
-        }
-      }
-      return false;
-    }
-
-    function hasJsxReturn(node: TSESTree.Node): boolean {
-      /**
-       * Recursively checks if an expression looks like JSX
-       */
-      function isJsxExpression(expr: TSESTree.Node | null): boolean {
-        if (!expr) return false;
-
-        // Handle parenthesized expressions
-        if ((expr as any).type === 'ParenthesizedExpression') {
-          return isJsxExpression((expr as any).expression);
-        }
-
-        switch (expr.type) {
-          case AST_NODE_TYPES.JSXElement:
-          case AST_NODE_TYPES.JSXFragment:
-            return true;
-
-          case AST_NODE_TYPES.ConditionalExpression:
-            return (
-              isJsxExpression(expr.consequent) ||
-              isJsxExpression(expr.alternate)
-            );
-
-          case AST_NODE_TYPES.LogicalExpression:
-            // e.g. condition && <div />
-            return isJsxExpression(expr.right);
-
-          default:
-            return false;
-        }
-      }
-
-      /**
-       * Recursively checks if a statement/body returns JSX
-       */
-      function checkBodyForJsx(body: TSESTree.Node): boolean {
-        if (body.type === AST_NODE_TYPES.BlockStatement) {
-          for (const stmt of body.body) {
-            if (stmt.type === AST_NODE_TYPES.ReturnStatement) {
-              if (isJsxExpression(stmt.argument)) return true;
-            } else if (stmt.type === AST_NODE_TYPES.IfStatement) {
-              if (checkBodyForJsx(stmt.consequent)) return true;
-              if (stmt.alternate && checkBodyForJsx(stmt.alternate))
-                return true;
-            }
-            // We could traverse more (try/catch, switch), but this covers most idiomatic React
-          }
-        } else {
-          // Implicit return (arrow function expression body)
-          return isJsxExpression(body);
-        }
-        return false;
-      }
-
-      if (
-        node.type === AST_NODE_TYPES.FunctionDeclaration ||
-        node.type === AST_NODE_TYPES.FunctionExpression ||
-        node.type === AST_NODE_TYPES.ArrowFunctionExpression
-      ) {
-        return checkBodyForJsx(node.body);
-      }
-
-      return false;
-    }
-
     function isReactComponent(node: TSESTree.Node): boolean {
       if (
         node.type !== AST_NODE_TYPES.FunctionDeclaration &&
@@ -4742,60 +4677,43 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
         }
       }
 
-      // Check for React component indicators
-      const indicators = [
-        // 1. PascalCase naming
-        functionName && isPascalCase(functionName),
+      // If the function has a PascalCase name, it's very likely a React component.
+      // In the BluMint codebase, we follow the convention that PascalCase functions
+      // are either components or layout components.
+      if (functionName && isPascalCase(functionName)) {
+        return true;
+      }
 
-        // 2. Props parameter
-        hasPropsParameter(node),
+      // Check for other React component indicators for non-PascalCase functions
+      // (though these are rare and should generally be avoided)
+      const hasProps = hasPropsParameter(node);
+      const isUnmemoized = !!functionName && functionName.endsWith('Unmemoized');
 
-        // 3. JSX return
-        hasJsxReturn(node),
-
-        // 4. React type annotations
-        (() => {
-          if (node.type === AST_NODE_TYPES.ArrowFunctionExpression) {
-            const parent = node.parent;
-            if (parent?.type === AST_NODE_TYPES.VariableDeclarator) {
-              const id = parent.id;
-              if (
-                id.type === AST_NODE_TYPES.Identifier &&
-                id.typeAnnotation?.type === AST_NODE_TYPES.TSTypeAnnotation
-              ) {
-                const typeText = context.sourceCode.getText(
-                  id.typeAnnotation.typeAnnotation,
-                );
-                return (
-                  typeText.includes('React.') ||
-                  typeText.includes('FC') ||
-                  typeText.includes('FunctionComponent')
-                );
-              }
+      // Check for React type annotations
+      const hasReactType = (() => {
+        if (node.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+          const parent = node.parent;
+          if (parent?.type === AST_NODE_TYPES.VariableDeclarator) {
+            const id = parent.id;
+            if (
+              id.type === AST_NODE_TYPES.Identifier &&
+              id.typeAnnotation?.type === AST_NODE_TYPES.TSTypeAnnotation
+            ) {
+              const typeText = context.sourceCode.getText(
+                id.typeAnnotation.typeAnnotation,
+              );
+              return (
+                typeText.includes('React.') ||
+                typeText.includes('FC') ||
+                typeText.includes('FunctionComponent')
+              );
             }
           }
-          return false;
-        })(),
+        }
+        return false;
+      })();
 
-        // 5. Component name ends with "Unmemoized" (common React pattern)
-        functionName && functionName.endsWith('Unmemoized'),
-      ];
-
-      // If the function has a PascalCase name AND returns JSX, it's definitely a React component
-      if (functionName && isPascalCase(functionName) && hasJsxReturn(node)) {
-        return true;
-      }
-
-      if (functionName && isPascalCase(functionName) && bodyContainsJsx(node)) {
-        return true;
-      }
-
-      // Consider it a React component if it matches at least 2 indicators
-      // OR if it has the Unmemoized suffix (strong indicator of a React component)
-      return (
-        indicators.filter(Boolean).length >= 2 ||
-        (!!functionName && functionName.endsWith('Unmemoized'))
-      );
+      return hasProps || isUnmemoized || hasReactType;
     }
     return {
       FunctionDeclaration(node) {

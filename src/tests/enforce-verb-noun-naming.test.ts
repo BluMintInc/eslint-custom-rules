@@ -189,6 +189,41 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
         ecmaFeatures: { jsx: true },
       },
     },
+
+    // Regression tests for Issue #1101
+    `async function upsertMetadata() {}`,
+    `async function debit() {}`,
+    `async function lookupIpData() {}`,
+    `async function mintMore() {}`,
+    `function dedupeSnaps() {}`,
+    `function lowercaseFirstLetter() {}`,
+    `function unpluck() {}`,
+    `function triage() {}`,
+    `function calcMinAge() {}`,
+    `function cleanup() {}`,
+    `function cacheTransactionStatus() {}`,
+    `function destructureAdminDirectory() {}`,
+    `function firstExists() {}`,
+    `const stableHash = () => {}`,
+    `const sequentialDocumentWritten = () => {}`,
+    `const onlyEvery = () => {}`,
+    `const cartesianCombine = () => {}`,
+    `const uuidv4Base62 = () => {}`,
+    `const blumintAreEqual = () => {}`,
+    `const callableFactory = () => {}`,
+    `const recursive = () => {}`,
+    {
+      code: `function UnauthorizedPage() { return <div />; }`,
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+      },
+    },
+    {
+      code: `const ElectronTitleBar = () => { return <div />; }`,
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+      },
+    },
   ],
   invalid: [
     // Invalid function names (not verb phrases)
