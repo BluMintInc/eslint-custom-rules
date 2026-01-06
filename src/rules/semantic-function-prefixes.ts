@@ -67,7 +67,6 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
         'Require semantic function prefixes instead of generic verbs so callers know whether a function fetches data, transforms input, or mutates state',
       recommended: 'error',
     },
-    fixable: 'code',
     schema: [],
     messages: {
       avoidGenericPrefix:

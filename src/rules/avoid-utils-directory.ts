@@ -12,7 +12,6 @@ export const avoidUtilsDirectory = createRule<[], MessageIds>({
       description: 'Enforce using util/ instead of utils/ directory',
       recommended: 'error',
     },
-    fixable: 'code',
     schema: [],
     messages: {
       avoidUtils:
@@ -42,10 +41,6 @@ export const avoidUtilsDirectory = createRule<[], MessageIds>({
             messageId: 'avoidUtils',
             data: {
               path: relativePath,
-            },
-            fix() {
-              // We can't provide an auto-fix since directory renaming is beyond ESLint's scope
-              return null;
             },
           });
         }

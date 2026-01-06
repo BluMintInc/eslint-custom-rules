@@ -159,7 +159,6 @@ export const noHandlerSuffix = createRule<Options, MessageIds>({
         'Disallow the generic "handler" suffix in callback names so names explain the action they perform',
       recommended: 'error',
     },
-    fixable: 'code',
     schema: [
       {
         type: 'object',

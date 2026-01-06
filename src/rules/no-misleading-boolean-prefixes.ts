@@ -255,7 +255,6 @@ export const noMisleadingBooleanPrefixes = createRule<Options, MessageIds>({
         'Reserve boolean-style prefixes (is/has/should) for functions that actually return boolean values to avoid misleading call sites.',
       recommended: 'error',
     },
-    fixable: 'code',
     schema: [
       {
         type: 'object',

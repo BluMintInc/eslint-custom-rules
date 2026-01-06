@@ -81,7 +81,6 @@ export const preferDocumentFlattening = createRule<[], MessageIds>({
         'Enforce using the shouldFlatten option when setting deeply nested objects in Firestore documents',
       recommended: 'error',
     },
-    fixable: 'code',
     schema: [],
     messages: {
       preferDocumentFlattening:
