@@ -5,7 +5,8 @@ name: Research Existing ESLint Rules
     types: [labeled, reopened]
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
   issues: write
 
 env:
