@@ -117,7 +117,7 @@ When the agent attempts to stop, the stop hook (`scripts/cursor-hooks/agent-chec
   - The agent cannot stop until all comments are resolved.
 - If no comments remain, allows the agent to proceed to build/lint/test checks.
 
-**Execution Order**: PR review comment check → build → linting → tests → rule structure validation → check-your-work. This prioritizes completing all reviewer feedback before enforcing code quality checks.
+**Execution Order**: merge conflicts → PR review comment check → build → linting → tests → rule structure validation → check-your-work. Merge conflicts run first because they block compilation entirely; review feedback runs before quality checks to keep the agent focused on reviewer intent.
 
 ## How to Use the System
 

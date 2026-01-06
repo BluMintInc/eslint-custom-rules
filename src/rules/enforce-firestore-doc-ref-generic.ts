@@ -27,10 +27,20 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
     },
     schema: [],
     messages: {
-      missingGeneric:
-        '{{ type }} must specify a generic type argument for type safety. Instead of `const docRef = doc(collection)`, use `const docRef = doc<YourType>(collection)`.',
-      invalidGeneric:
-        '{{ type }} must not use "any" or "{}" as generic type argument. Define a proper interface/type for your document: `interface UserDoc { name: string; age: number; }` and use it: `const docRef = doc<UserDoc>(collection)`.',
+      missingGeneric: [
+        "What's wrong: {{ type }} is missing its document schema generic (the document data type).",
+        '',
+        'Why it matters: Without the generic, Firestore references fall back to loose DocumentData, so TypeScript cannot catch field typos or missing required properties before they reach Firestore.',
+        '',
+        'How to fix: Add the document interface/type as the generic (e.g., const ref: {{ type }}<UserDoc> = ... or doc<UserDoc>(collection)).',
+      ].join('\n'),
+      invalidGeneric: [
+        'What\'s wrong: {{ type }} uses "any" or an empty object ({}) in its schema generic.',
+        '',
+        'Why it matters: This erases the document schema and disables TypeScript checks on Firestore reads and writes, so malformed payloads and missing fields can pass silently.',
+        '',
+        'How to fix: Define a concrete interface/type for the document (e.g., interface UserDoc { name: string }) and use it as the generic instead of "any" or {}.',
+      ].join('\n'),
     },
   },
   defaultOptions: [],
@@ -69,7 +79,7 @@ export const enforceFirestoreDocRefGeneric = createRule<[], MessageIds>({
             }
             // Prevent infinite recursion
             typeCache.set(typeName, false);
-            const program = context.getSourceCode().ast;
+            const program = context.sourceCode.ast;
             const interfaceDecl = program.body.find(
               (n): n is TSESTree.TSInterfaceDeclaration =>
                 n.type === AST_NODE_TYPES.TSInterfaceDeclaration &&

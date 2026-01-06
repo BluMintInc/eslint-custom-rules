@@ -1,4 +1,4 @@
-# Test files must live next to the code they cover (`@blumintinc/blumint/test-file-location-enforcement`)
+# Enforce colocating *.test.ts or *.test.tsx files with the code they cover (`@blumintinc/blumint/test-file-location-enforcement`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
@@ -6,7 +6,7 @@
 
 ## Why this rule exists
 
-Scattering tests into separate `tests/` directories hides which code they protect and makes refactors brittle. When a test file is not colocated with its subject, engineers and AI tools miss it during moves or renames, leaving features untested. Keeping `.test.ts(x)` files beside the implementation ensures refactors move code and coverage together and makes it obvious which behaviors are exercised.
+Scattering tests into separate `tests/` directories hides which code they protect and makes refactors brittle. When a test file is not colocated with its subject, engineers and AI tools miss it during moves or renames, leaving features untested. Keeping `*.test.ts` or `*.test.tsx` files beside the implementation ensures refactors move code and coverage together and makes it obvious which behaviors are exercised.
 
 ## What the rule checks
 

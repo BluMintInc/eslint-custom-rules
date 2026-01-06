@@ -15,7 +15,7 @@ export const testFileLocationEnforcement = createRule<[], MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Enforce colocating *.test.ts(x) files with the code they cover.',
+        'Enforce colocating *.test.ts or *.test.tsx files with the code they cover.',
       recommended: 'error',
     },
     schema: [],

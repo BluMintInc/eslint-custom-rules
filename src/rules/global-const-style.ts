@@ -18,8 +18,10 @@ export default createRule<[], MessageIds>({
     fixable: 'code',
     schema: [],
     messages: {
-      upperSnakeCase: 'Global constants should be in UPPER_SNAKE_CASE',
-      asConst: 'Global constants should use "as const"',
+      upperSnakeCase:
+        'Global constant "{{name}}" should be written in UPPER_SNAKE_CASE (e.g., "{{suggestedName}}") so it reads as a module-level configuration value that never changes; rename it to make its immutability obvious.',
+      asConst:
+        'Global constant "{{name}}" is initialized with {{valueKind}} but lacks `as const`, so TypeScript widens the type and code can mutate it accidentally; append `as const` to freeze the value and preserve literal types.',
     },
   },
   defaultOptions: [],
@@ -28,6 +30,32 @@ export default createRule<[], MessageIds>({
     const isTypeScript =
       context.getFilename().endsWith('.ts') ||
       context.getFilename().endsWith('.tsx');
+
+    const unwrapAssertions = (node: TSESTree.Node): TSESTree.Node => {
+      let target = node;
+      while (
+        target.type === AST_NODE_TYPES.TSTypeAssertion ||
+        target.type === AST_NODE_TYPES.TSAsExpression
+      ) {
+        target = target.expression;
+      }
+      return target;
+    };
+
+    const describeValueKind = (node: TSESTree.Node): string => {
+      const target = unwrapAssertions(node);
+
+      if (target.type === AST_NODE_TYPES.ArrayExpression) {
+        return 'an array literal';
+      }
+      if (target.type === AST_NODE_TYPES.ObjectExpression) {
+        return 'an object literal';
+      }
+      if (target.type === AST_NODE_TYPES.Literal) {
+        return 'a literal value';
+      }
+      return 'a value';
+    };
 
     return {
       VariableDeclaration(node) {
@@ -115,7 +143,7 @@ export default createRule<[], MessageIds>({
             return;
           }
 
-          const sourceCode = context.getSourceCode();
+          const sourceCode = context.sourceCode;
           const initText = sourceCode.getText(init);
           const typeAnnotation = declaration.id.typeAnnotation;
           const typeText = typeAnnotation
@@ -124,31 +152,35 @@ export default createRule<[], MessageIds>({
 
           // Only check for as const in TypeScript files
           if (isTypeScript) {
-            const isAsConstExpression = (node: TSESTree.Node): boolean => {
-              if (node.type === AST_NODE_TYPES.TSAsExpression) {
-                return (
-                  node.typeAnnotation?.type ===
-                    AST_NODE_TYPES.TSTypeReference &&
-                  (node.typeAnnotation?.typeName as TSESTree.Identifier)
-                    ?.name === 'const'
-                );
+            const hasAsConstAssertion = (node: TSESTree.Node): boolean => {
+              let current: TSESTree.Node | undefined = node;
+
+              while (
+                current &&
+                (current.type === AST_NODE_TYPES.TSAsExpression ||
+                  current.type === AST_NODE_TYPES.TSTypeAssertion)
+              ) {
+                const { typeAnnotation } = current;
+                if (
+                  typeAnnotation?.type === AST_NODE_TYPES.TSTypeReference &&
+                  typeAnnotation.typeName.type === AST_NODE_TYPES.Identifier &&
+                  typeAnnotation.typeName.name === 'const'
+                ) {
+                  return true;
+                }
+                current = current.expression;
               }
+
               return false;
             };
 
             const shouldHaveAsConst = (node: TSESTree.Node): boolean => {
               // Skip if it's already an as const expression
-              if (isAsConstExpression(node)) {
+              if (hasAsConstAssertion(node)) {
                 return false;
               }
 
-              // Handle type assertions
-              if (
-                node.type === AST_NODE_TYPES.TSTypeAssertion ||
-                node.type === AST_NODE_TYPES.TSAsExpression
-              ) {
-                return shouldHaveAsConst(node.expression);
-              }
+              const target = unwrapAssertions(node);
 
               // Skip if there's an explicit type annotation
               if (declaration.id.typeAnnotation) {
@@ -157,13 +189,13 @@ export default createRule<[], MessageIds>({
 
               // Check if it's a literal, array, or object that should have as const
               // Skip regular expressions as they are already immutable
-              if (node.type === AST_NODE_TYPES.Literal && 'regex' in node) {
+              if (target.type === AST_NODE_TYPES.Literal && 'regex' in target) {
                 return false;
               }
               return (
-                node.type === AST_NODE_TYPES.Literal ||
-                node.type === AST_NODE_TYPES.ArrayExpression ||
-                node.type === AST_NODE_TYPES.ObjectExpression
+                target.type === AST_NODE_TYPES.Literal ||
+                target.type === AST_NODE_TYPES.ArrayExpression ||
+                target.type === AST_NODE_TYPES.ObjectExpression
               );
             };
 
@@ -171,6 +203,10 @@ export default createRule<[], MessageIds>({
               context.report({
                 node: declaration,
                 messageId: 'asConst',
+                data: {
+                  name,
+                  valueKind: describeValueKind(init),
+                },
                 fix(fixer) {
                   return fixer.replaceText(init, `${initText} as const`);
                 },
@@ -188,6 +224,10 @@ export default createRule<[], MessageIds>({
             context.report({
               node: declaration,
               messageId: 'upperSnakeCase',
+              data: {
+                name,
+                suggestedName: newName,
+              },
               fix(fixer) {
                 if (typeAnnotation) {
                   return fixer.replaceText(

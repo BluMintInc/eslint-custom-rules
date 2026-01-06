@@ -118,7 +118,7 @@ function checkFunction(
         fix:
           results[2] || results[1]
             ? function fix(fixer) {
-                const sourceCode = context.getSourceCode();
+                const sourceCode = context.sourceCode;
                 let importFix: TSESLint.RuleFix | null = null;
 
                 // Search for memo import statement

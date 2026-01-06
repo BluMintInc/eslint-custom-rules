@@ -1,0 +1,328 @@
+name: Launch Cursor Agent on Merge Conflicts
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        required: true
+        type: number
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  statuses: write
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  detect_merge_conflicts:
+    runs-on: ubuntu-latest
+    outputs:
+      pr_number: ${{ steps.detect.outputs.pr_number }}
+      pr_url: ${{ steps.detect.outputs.pr_url }}
+      base_ref: ${{ steps.detect.outputs.base_ref }}
+      head_ref: ${{ steps.detect.outputs.head_ref }}
+      head_sha: ${{ steps.detect.outputs.head_sha }}
+      mergeable_state: ${{ steps.detect.outputs.mergeable_state }}
+      has_conflicts: ${{ steps.detect.outputs.has_conflicts }}
+    steps:
+      - name: Install jq
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y jq
+          fi
+
+      - name: Detect PR mergeability
+        id: detect
+        run: |
+          set -euo pipefail
+
+          EVENT_NAME="${{ github.event_name }}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            PR_NUMBER="${{ github.event.inputs.pr }}"
+          else
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+          fi
+
+          echo "Checking mergeability for PR #$PR_NUMBER"
+
+          # GitHub computes mergeable_state asynchronously; poll briefly to avoid "unknown".
+          MERGEABLE_STATE="unknown"
+          PR_JSON=""
+          for _ in $(seq 1 30); do
+            PR_JSON=$(gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/pulls/$PR_NUMBER")
+            MERGEABLE_STATE=$(echo "$PR_JSON" | jq -r '.mergeable_state // "unknown"')
+            if [ "$MERGEABLE_STATE" != "unknown" ] && [ "$MERGEABLE_STATE" != "null" ]; then
+              break
+            fi
+            sleep 2
+          done
+
+          if [ -z "$PR_JSON" ]; then
+            echo "::error::Failed to fetch PR metadata"
+            exit 1
+          fi
+
+          BASE_REF=$(echo "$PR_JSON" | jq -r '.base.ref')
+          HEAD_REF=$(echo "$PR_JSON" | jq -r '.head.ref')
+          HEAD_SHA=$(echo "$PR_JSON" | jq -r '.head.sha')
+          PR_URL=$(echo "$PR_JSON" | jq -r '.html_url')
+
+          HAS_CONFLICTS="false"
+          if [ "$MERGEABLE_STATE" = "dirty" ]; then
+            HAS_CONFLICTS="true"
+          fi
+
+          echo "PR URL: $PR_URL"
+          echo "Base ref: $BASE_REF"
+          echo "Head ref: $HEAD_REF"
+          echo "Head SHA: $HEAD_SHA"
+          echo "mergeable_state: $MERGEABLE_STATE"
+          echo "has_conflicts: $HAS_CONFLICTS"
+
+          {
+            echo "pr_number=$PR_NUMBER"
+            echo "pr_url=$PR_URL"
+            echo "base_ref=$BASE_REF"
+            echo "head_ref=$HEAD_REF"
+            echo "head_sha=$HEAD_SHA"
+            echo "mergeable_state=$MERGEABLE_STATE"
+            echo "has_conflicts=$HAS_CONFLICTS"
+          } >> "$GITHUB_OUTPUT"
+
+  merge_conflict_check:
+    name: Merge conflict check
+    runs-on: ubuntu-latest
+    needs: detect_merge_conflicts
+    steps:
+      - name: Assert PR is mergeable
+        run: |
+          set -euo pipefail
+
+          PR_NUMBER='${{ needs.detect_merge_conflicts.outputs.pr_number }}'
+          MERGEABLE_STATE='${{ needs.detect_merge_conflicts.outputs.mergeable_state }}'
+          HAS_CONFLICTS='${{ needs.detect_merge_conflicts.outputs.has_conflicts }}'
+
+          if [ "$HAS_CONFLICTS" != "true" ]; then
+            echo "✅ No merge conflicts detected for PR #$PR_NUMBER (mergeable_state=$MERGEABLE_STATE)."
+            exit 0
+          fi
+
+          echo "::error::PR #$PR_NUMBER has merge conflicts (mergeable_state=$MERGEABLE_STATE). Resolve conflicts before bot review automation can proceed."
+          exit 1
+
+  launch_merge_conflict_agent:
+    runs-on: ubuntu-latest
+    needs: detect_merge_conflicts
+    if: needs.detect_merge_conflicts.outputs.has_conflicts == 'true'
+    concurrency:
+      group: cursor-merge-conflicts-${{ needs.detect_merge_conflicts.outputs.head_sha }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955  # v4
+        with:
+          ref: ${{ needs.detect_merge_conflicts.outputs.head_ref }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install jq
+        run: |
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update && sudo apt-get install -y jq
+          fi
+
+      - name: Check for existing agent launch on this commit
+        id: idempotency
+        run: |
+          set -euo pipefail
+          PR='${{ needs.detect_merge_conflicts.outputs.pr_number }}'
+          HEAD_SHA='${{ needs.detect_merge_conflicts.outputs.head_sha }}'
+
+          echo "Checking for prior merge-conflict agent launch on PR #$PR for commit $HEAD_SHA"
+          HAS_STATUS=$(
+            gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/commits/$HEAD_SHA/status" 2>/dev/null \
+              | jq 'any(.statuses[]?; .context == "cursor-merge-conflict-agent" and (.state == "success" or .state == "neutral"))' \
+              || echo "false"
+          )
+
+          MARKER="<!-- cursor-merge-conflict-agent:${HEAD_SHA} -->"
+          HAS_COMMENT="false"
+          if [ "$HAS_STATUS" != "true" ]; then
+            for PAGE in $(seq 1 10); do
+              COMMENTS_PAGE=$(gh api -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/issues/$PR/comments?per_page=100&page=$PAGE" 2>/dev/null || echo "[]")
+              FOUND=$(echo "$COMMENTS_PAGE" | jq --arg marker "$MARKER" 'any(.[]?.body; contains($marker))')
+              if [ "$FOUND" = "true" ]; then
+                HAS_COMMENT="true"
+                break
+              fi
+              COUNT=$(echo "$COMMENTS_PAGE" | jq 'length')
+              if [ "$COUNT" -lt 100 ]; then
+                break
+              fi
+            done
+          fi
+
+          if [ "$HAS_STATUS" = "true" ] || [ "$HAS_COMMENT" = "true" ]; then
+            echo "Agent already launched for this commit; skipping."
+            echo "already_launched=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No prior launch detected for this commit."
+            echo "already_launched=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Exit if already launched
+        if: steps.idempotency.outputs.already_launched == 'true'
+        run: echo "Merge-conflict agent already launched for this commit; skipping."
+
+      - name: Build merge-conflict prompt context
+        id: prompt
+        if: steps.idempotency.outputs.already_launched != 'true'
+        run: |
+          set -euo pipefail
+
+          PR_NUMBER='${{ needs.detect_merge_conflicts.outputs.pr_number }}'
+          PR_URL='${{ needs.detect_merge_conflicts.outputs.pr_url }}'
+          BASE_REF='${{ needs.detect_merge_conflicts.outputs.base_ref }}'
+          HEAD_REF='${{ needs.detect_merge_conflicts.outputs.head_ref }}'
+
+          echo "Preparing merge-conflict prompt context by attempting a local merge of origin/$BASE_REF into $HEAD_REF"
+
+          git fetch origin "$BASE_REF" --prune
+          git merge --no-commit --no-ff "origin/$BASE_REF" || true
+
+          if ! git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
+            echo "::warning::Expected a merge conflict state but MERGE_HEAD is missing. Merge conflicts may have been resolved already; skipping agent launch."
+            echo "no_prompt=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          npx tsx ./.github/scripts/address-merge-conflicts.ts >/dev/null 2>&1 || true
+
+          if [ ! -f ".cursor/tmp/merge-conflict-prompt.md" ]; then
+            echo "::error::.cursor/tmp/merge-conflict-prompt.md was not generated."
+            exit 1
+          fi
+
+          cat > /tmp/merge-conflict-agent-prompt.txt <<EOF
+          You are a Cursor Background Agent launched automatically because this PR cannot be merged cleanly.
+
+          ## Context
+          - PR: #$PR_NUMBER ($PR_URL)
+          - Base branch (THEIRS): $BASE_REF
+          - PR branch (OURS): $HEAD_REF
+
+          ## Goal
+          Make this PR mergeable by resolving its merge conflicts.
+
+          ## Required workflow
+          1. Work directly on the PR branch ($HEAD_REF). Do NOT create a new PR.
+          2. Ensure you are in a merge conflict state. If you are not already, run:
+             - git fetch origin "$BASE_REF"
+             - git merge "origin/$BASE_REF"
+          3. Resolve conflicts, stage files, and complete the merge with a commit.
+          4. Push the result back to the same PR branch ($HEAD_REF).
+          5. Do not stop until the repository's Cursor Hooks allow you to stop (they will block until conflicts are resolved).
+
+          ---
+          EOF
+
+          cat ".cursor/tmp/merge-conflict-prompt.md" >> /tmp/merge-conflict-agent-prompt.txt
+
+          {
+            echo "no_prompt=false"
+            echo "prompt_path=/tmp/merge-conflict-agent-prompt.txt"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Exit if prompt could not be built
+        if: steps.idempotency.outputs.already_launched != 'true' && steps.prompt.outputs.no_prompt == 'true'
+        run: echo "No merge-conflict prompt built; skipping agent launch."
+
+      - name: Launch Cursor Background Agent for merge conflicts
+        id: launch
+        if: steps.idempotency.outputs.already_launched != 'true' && steps.prompt.outputs.no_prompt != 'true'
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          CURSOR_WEBHOOK_SECRET: ${{ secrets.CURSOR_WEBHOOK_SECRET }}
+          CURSOR_WEBHOOK_URL: ${{ secrets.CURSOR_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CURSOR_API_KEY}" ]; then
+            echo "::warning::CURSOR_API_KEY is not available. Skipping agent launch."
+            echo "launched=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "::add-mask::${CURSOR_API_KEY}"
+
+          JSON_PAYLOAD=$(jq -n \
+            --rawfile prompt_text "/tmp/merge-conflict-agent-prompt.txt" \
+            --arg repository "https://github.com/${{ github.repository }}" \
+            --arg source_ref "${{ needs.detect_merge_conflicts.outputs.head_ref }}" \
+            --arg target_branch "${{ needs.detect_merge_conflicts.outputs.head_ref }}" \
+            --arg webhook_url "${CURSOR_WEBHOOK_URL}" \
+            --arg webhook_secret "${CURSOR_WEBHOOK_SECRET}" \
+            --arg model "gemini-3-flash" \
+            '{
+              model: $model,
+              prompt: { text: $prompt_text },
+              source: { repository: $repository, ref: $source_ref },
+              target: { branchName: $target_branch, autoCreatePr: false, skipReviewerRequest: true }
+            } + (if $webhook_url != "" then { webhook: { url: $webhook_url, secret: $webhook_secret } } else {} end)')
+
+          HTTP_RESPONSE=$(curl --silent --show-error --write-out "HTTPSTATUS:%{http_code}" \
+            --request POST \
+            --url https://api.cursor.com/v0/agents \
+            --header "Authorization: Bearer ${CURSOR_API_KEY}" \
+            --header "Content-Type: application/json" \
+            --data "$JSON_PAYLOAD")
+
+          HTTP_STATUS="${HTTP_RESPONSE##*HTTPSTATUS:}"
+          HTTP_BODY="${HTTP_RESPONSE%HTTPSTATUS:*}"
+
+          echo "Cursor API HTTP status: $HTTP_STATUS"
+          if [[ "$HTTP_STATUS" =~ ^2 ]]; then
+            AGENT_URL=$(echo "$HTTP_BODY" | jq -r '.target.url // empty')
+            echo "agent_url=$AGENT_URL" >> "$GITHUB_OUTPUT"
+            echo "launched=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Cursor API returned status $HTTP_STATUS; merge-conflict agent was not launched."
+            echo "agent_url=" >> "$GITHUB_OUTPUT"
+            echo "launched=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mark agent launch in commit status (idempotency marker)
+        if: steps.launch.outputs.launched == 'true'
+        run: |
+          set -euo pipefail
+          HEAD_SHA='${{ needs.detect_merge_conflicts.outputs.head_sha }}'
+          URL='${{ steps.launch.outputs.agent_url }}'
+          gh api -X POST -H "Accept: application/vnd.github+json" "/repos/${{ github.repository }}/statuses/$HEAD_SHA" \
+            -f state=success \
+            -f context="cursor-merge-conflict-agent" \
+            -f target_url="$URL" \
+            -f description="Cursor agent launched to resolve merge conflicts" \
+            >/dev/null || echo "::warning::Failed to set commit status marker for $HEAD_SHA; idempotency relies on the PR comment marker."
+
+      - name: Comment on PR with agent link
+        if: steps.launch.outputs.launched == 'true'
+        run: |
+          set -euo pipefail
+          URL='${{ steps.launch.outputs.agent_url }}'
+          PR='${{ needs.detect_merge_conflicts.outputs.pr_number }}'
+          HEAD_SHA='${{ needs.detect_merge_conflicts.outputs.head_sha }}'
+          gh pr comment "$PR" --body "⚠️ This PR has merge conflicts. Launched Cursor agent to resolve conflicts for commit $HEAD_SHA: $URL. The agent pushes fixes directly to this PR branch. <!-- cursor-merge-conflict-agent:$HEAD_SHA -->"
