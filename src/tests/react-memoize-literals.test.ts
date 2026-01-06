@@ -177,6 +177,21 @@ function Component({ onClick }) {
 }
       `,
     },
+    // JSX props 'sx' and 'style' (and variations) are deep-compared and allowed
+    {
+      code: `
+function Component() {
+  return (
+    <div
+      sx={{ color: 'blue' }}
+      style={{ padding: '10px' }}
+      containerSx={{ margin: '10px' }}
+      innerStyle={{ display: 'flex' }}
+    />
+  );
+}
+      `,
+    },
   ],
   invalid: [
     // Component-level object literal

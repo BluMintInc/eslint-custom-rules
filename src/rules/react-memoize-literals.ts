@@ -372,6 +372,40 @@ function unwrapNestedExpressions(node: TSESTree.Node): TSESTree.Node {
 }
 
 /**
+ * Checks whether a node is a JSX attribute that is deep-compared by blumintAreEqual.
+ * These attributes include 'sx', 'style', and any ending in 'Sx' or 'Style'.
+ * @param node Node to inspect.
+ * @returns True when the node is a deep-compared JSX attribute.
+ */
+function isDeepComparedJSXAttribute(node: TSESTree.Node): boolean {
+  let current = node.parent;
+
+  // Handle JSX expression containers: <Component sx={{ ... }} />
+  // The ObjectExpression's parent is the JSXExpressionContainer.
+  if (current?.type === AST_NODE_TYPES.JSXExpressionContainer) {
+    current = current.parent;
+  }
+
+  if (current?.type === AST_NODE_TYPES.JSXAttribute) {
+    const attributeName =
+      current.name.type === AST_NODE_TYPES.JSXIdentifier
+        ? current.name.name
+        : null;
+
+    if (attributeName) {
+      return (
+        attributeName === 'sx' ||
+        attributeName.endsWith('Sx') ||
+        attributeName === 'style' ||
+        attributeName.endsWith('Style')
+      );
+    }
+  }
+
+  return false;
+}
+
+/**
  * Finds the nearest enclosing hook call for a literal and whether the literal
  * is passed directly as an argument (versus nested inside another expression).
  */
@@ -589,7 +623,7 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
       const descriptor = getLiteralDescriptor(node);
       if (!descriptor) return;
 
-      if (isInsideAllowedHookCallback(node)) {
+      if (isInsideAllowedHookCallback(node) || isDeepComparedJSXAttribute(node)) {
         return;
       }
 
