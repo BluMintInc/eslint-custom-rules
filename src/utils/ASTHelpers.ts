@@ -69,10 +69,40 @@ export class ASTHelpers {
           this.declarationIncludesIdentifier(node.right)
         );
       case 'BlockStatement':
-        return node.body.some(
-          (statement) =>
-            statement.type === 'BlockStatement' &&
-            ASTHelpers.blockIncludesIdentifier(statement),
+        return node.body.some((statement) =>
+          this.declarationIncludesIdentifier(statement),
+        );
+      case 'ExpressionStatement':
+        return this.declarationIncludesIdentifier(node.expression);
+      case 'TryStatement':
+        return (
+          this.declarationIncludesIdentifier(node.block) ||
+          this.declarationIncludesIdentifier(node.handler) ||
+          this.declarationIncludesIdentifier(node.finalizer)
+        );
+      case 'CatchClause':
+        return (
+          this.declarationIncludesIdentifier(node.param) ||
+          this.declarationIncludesIdentifier(node.body)
+        );
+      case 'ReturnStatement':
+      case 'ThrowStatement':
+        return this.declarationIncludesIdentifier(node.argument);
+      case 'VariableDeclaration':
+        return node.declarations.some((decl) =>
+          this.declarationIncludesIdentifier(decl),
+        );
+      case 'VariableDeclarator':
+        return (
+          this.declarationIncludesIdentifier(node.id) ||
+          this.declarationIncludesIdentifier(node.init)
+        );
+      case 'FunctionDeclaration':
+      case 'FunctionExpression':
+      case 'ArrowFunctionExpression':
+        return (
+          node.params.some((param) => this.declarationIncludesIdentifier(param)) ||
+          this.declarationIncludesIdentifier(node.body)
         );
       case 'IfStatement':
         return (
