@@ -1323,6 +1323,36 @@ function trackDeclaredNames(
   declared.forEach((name) => declaredIndices.set(name, index));
 }
 
+function isMutatedInLoopAndUsedAfter(
+  body: TSESTree.Statement[],
+  usageIndex: number,
+  nameSet: Set<string>,
+): boolean {
+  const firstUsage = body[usageIndex];
+  const isLoop =
+    firstUsage.type === AST_NODE_TYPES.ForStatement ||
+    firstUsage.type === AST_NODE_TYPES.ForInStatement ||
+    firstUsage.type === AST_NODE_TYPES.ForOfStatement ||
+    firstUsage.type === AST_NODE_TYPES.WhileStatement ||
+    firstUsage.type === AST_NODE_TYPES.DoWhileStatement;
+
+  if (!isLoop) {
+    return false;
+  }
+
+  if (!statementMutatesAny(firstUsage, nameSet)) {
+    return false;
+  }
+
+  for (let i = usageIndex + 1; i < body.length; i += 1) {
+    if (statementReferencesAny(body[i], nameSet)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function handleLateDeclarations(
   ruleContext: RuleExecutionContext,
   body: TSESTree.Statement[],
@@ -1362,6 +1392,10 @@ function handleLateDeclarations(
     }
 
     if (usageIndex === -1 || usageIndex <= index + 1) {
+      return;
+    }
+
+    if (isMutatedInLoopAndUsedAfter(body, usageIndex, nameSet)) {
       return;
     }
 
