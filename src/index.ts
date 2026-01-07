@@ -34,7 +34,6 @@ import { preferFragmentShorthand } from './rules/prefer-fragment-shorthand';
 import { preferGetterOverParameterlessMethod } from './rules/prefer-getter-over-parameterless-method';
 import { preferTypeOverInterface } from './rules/prefer-type-over-interface';
 import { preferTypeAliasOverTypeofConstant } from './rules/prefer-type-alias-over-typeof-constant';
-import { preferMemoizedProps } from './rules/prefer-memoized-props';
 import { requireMemo } from './rules/require-memo';
 import { requireMemoizeJsxReturners } from './rules/require-memoize-jsx-returners';
 import { noJsxWhitespaceLiteral } from './rules/no-jsx-whitespace-literal';
@@ -43,7 +42,6 @@ import { default as requireHttpsError } from './rules/require-https-error';
 import { requireHttpsErrorCause } from './rules/require-https-error-cause';
 import { useCustomRouter } from './rules/use-custom-router';
 import { default as requireImageOptimized } from './rules/require-image-optimized';
-import { requireUseMemoObjectLiterals } from './rules/require-usememo-object-literals';
 import { enforceStableStringify } from './rules/enforce-safe-stringify';
 import { enforceStorageContext } from './rules/enforce-storage-context';
 import { avoidUtilsDirectory } from './rules/avoid-utils-directory';
@@ -131,7 +129,6 @@ import { preferBlockCommentsForDeclarations } from './rules/prefer-block-comment
 import { noUndefinedNullPassthrough } from './rules/no-undefined-null-passthrough';
 import { firestoreTransactionReadsBeforeWrites } from './rules/firestore-transaction-reads-before-writes';
 import { enforceTypescriptMarkdownCodeBlocks } from './rules/enforce-typescript-markdown-code-blocks';
-import { preferNullishCoalescingOverride } from './rules/prefer-nullish-coalescing-override';
 import { preferNullishCoalescingBooleanProps } from './rules/prefer-nullish-coalescing-boolean-props';
 import { noRestrictedPropertiesFix } from './rules/no-restricted-properties-fix';
 import { noExcessiveParentChain } from './rules/no-excessive-parent-chain';
@@ -207,7 +204,6 @@ module.exports = {
           'error',
         // Override the @typescript-eslint/prefer-nullish-coalescing rule
         '@typescript-eslint/prefer-nullish-coalescing': 'off',
-        '@blumintinc/blumint/prefer-nullish-coalescing-override': 'error',
         '@blumintinc/blumint/prefer-block-comments-for-declarations': 'error',
         '@blumintinc/blumint/key-only-outermost-element': 'error',
         '@blumintinc/blumint/logical-top-to-bottom-grouping': 'error',
@@ -262,7 +258,6 @@ module.exports = {
         '@blumintinc/blumint/require-https-error-cause': 'error',
         '@blumintinc/blumint/use-custom-router': 'error',
         '@blumintinc/blumint/require-image-optimized': 'error',
-        '@blumintinc/blumint/require-usememo-object-literals': 'error',
         '@blumintinc/blumint/memoize-root-level-hocs': 'error',
         '@blumintinc/blumint/enforce-safe-stringify': 'error',
         '@blumintinc/blumint/enforce-early-destructuring': 'error',
@@ -325,7 +320,6 @@ module.exports = {
         '@blumintinc/blumint/enforce-props-naming-consistency': 'error',
         '@blumintinc/blumint/prefer-global-router-state-key': 'error',
         '@blumintinc/blumint/prefer-usememo-over-useeffect-usestate': 'error',
-        '@blumintinc/blumint/prefer-memoized-props': 'error',
         '@blumintinc/blumint/enforce-dynamic-imports': 'error',
         '@blumintinc/blumint/ensure-pointer-events-none': 'error',
         '@blumintinc/blumint/no-object-values-on-strings': 'error',
@@ -463,7 +457,6 @@ module.exports = {
   rules: {
     'firestore-transaction-reads-before-writes':
       firestoreTransactionReadsBeforeWrites,
-    'prefer-nullish-coalescing-override': preferNullishCoalescingOverride,
     'no-restricted-properties-fix': noRestrictedPropertiesFix,
     'no-excessive-parent-chain': noExcessiveParentChain,
     'prefer-document-flattening': preferDocumentFlattening,
@@ -517,7 +510,6 @@ module.exports = {
     'require-https-error-cause': requireHttpsErrorCause,
     'use-custom-router': useCustomRouter,
     'require-image-optimized': requireImageOptimized,
-    'require-usememo-object-literals': requireUseMemoObjectLiterals,
     'memoize-root-level-hocs': memoizeRootLevelHocs,
     'enforce-safe-stringify': enforceStableStringify,
     'enforce-early-destructuring': enforceEarlyDestructuring,
@@ -624,7 +616,6 @@ module.exports = {
     'no-redundant-usecallback-wrapper': noRedundantUseCallbackWrapper,
     'no-res-error-status-in-onrequest': requireHttpsErrorInOnRequestHandlers,
     'no-array-length-in-deps': noArrayLengthInDeps,
-    'prefer-memoized-props': preferMemoizedProps,
     'prefer-use-deep-compare-memo': preferUseDeepCompareMemo,
     'memo-nested-react-components': memoNestedReactComponents,
     'memo-compare-deeply-complex-props': memoCompareDeeplyComplexProps,
