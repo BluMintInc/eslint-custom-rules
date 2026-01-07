@@ -129,7 +129,6 @@ import { preferBlockCommentsForDeclarations } from './rules/prefer-block-comment
 import { noUndefinedNullPassthrough } from './rules/no-undefined-null-passthrough';
 import { firestoreTransactionReadsBeforeWrites } from './rules/firestore-transaction-reads-before-writes';
 import { enforceTypescriptMarkdownCodeBlocks } from './rules/enforce-typescript-markdown-code-blocks';
-import { preferNullishCoalescingOverride } from './rules/prefer-nullish-coalescing-override';
 import { preferNullishCoalescingBooleanProps } from './rules/prefer-nullish-coalescing-boolean-props';
 import { noRestrictedPropertiesFix } from './rules/no-restricted-properties-fix';
 import { noExcessiveParentChain } from './rules/no-excessive-parent-chain';
@@ -205,7 +204,6 @@ module.exports = {
           'error',
         // Override the @typescript-eslint/prefer-nullish-coalescing rule
         '@typescript-eslint/prefer-nullish-coalescing': 'off',
-        '@blumintinc/blumint/prefer-nullish-coalescing-override': 'error',
         '@blumintinc/blumint/prefer-block-comments-for-declarations': 'error',
         '@blumintinc/blumint/key-only-outermost-element': 'error',
         '@blumintinc/blumint/logical-top-to-bottom-grouping': 'error',
@@ -459,7 +457,6 @@ module.exports = {
   rules: {
     'firestore-transaction-reads-before-writes':
       firestoreTransactionReadsBeforeWrites,
-    'prefer-nullish-coalescing-override': preferNullishCoalescingOverride,
     'no-restricted-properties-fix': noRestrictedPropertiesFix,
     'no-excessive-parent-chain': noExcessiveParentChain,
     'prefer-document-flattening': preferDocumentFlattening,
