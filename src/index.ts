@@ -8,6 +8,8 @@ import { enforceEmptyObjectCheck } from './rules/enforce-empty-object-check';
 import { enforceIdentifiableFirestoreType } from './rules/enforce-identifiable-firestore-type';
 import { default as enforceCallbackMemo } from './rules/enforce-callback-memo';
 import { reactMemoizeLiterals } from './rules/react-memoize-literals';
+import { preferMemoizedProps } from './rules/prefer-memoized-props';
+import { requireUseMemoObjectLiterals } from './rules/require-usememo-object-literals';
 import { enforceCallableTypes } from './rules/enforce-callable-types';
 import { enforceConsoleError } from './rules/enforce-console-error';
 import { enforceFirebaseImports } from './rules/enforce-dynamic-firebase-imports';
@@ -221,6 +223,8 @@ module.exports = {
         '@blumintinc/blumint/enforce-identifiable-firestore-type': 'error',
         '@blumintinc/blumint/enforce-callback-memo': 'error',
         '@blumintinc/blumint/react-memoize-literals': 'error',
+        '@blumintinc/blumint/prefer-memoized-props': 'error',
+        '@blumintinc/blumint/require-usememo-object-literals': 'error',
         '@blumintinc/blumint/enforce-callable-types': 'error',
         '@blumintinc/blumint/enforce-console-error': 'error',
         '@blumintinc/blumint/enforce-dynamic-firebase-imports': 'error',
@@ -473,6 +477,8 @@ module.exports = {
     'enforce-identifiable-firestore-type': enforceIdentifiableFirestoreType,
     'enforce-callback-memo': enforceCallbackMemo,
     'react-memoize-literals': reactMemoizeLiterals,
+    'prefer-memoized-props': preferMemoizedProps,
+    'require-usememo-object-literals': requireUseMemoObjectLiterals,
     'enforce-react-type-naming': enforceReactTypeNaming,
     'enforce-firestore-rules-get-access': enforceFirestoreRulesGetAccess,
     'enforce-callable-types': enforceCallableTypes,

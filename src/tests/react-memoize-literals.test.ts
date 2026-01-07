@@ -177,6 +177,21 @@ function Component({ onClick }) {
 }
       `,
     },
+    // Exempt MUI-style props
+    {
+      code: `
+function Component() {
+  return (
+    <Box
+      sx={{ p: 2 }}
+      headerSx={{ p: 1 }}
+      style={{ color: 'red' }}
+      contentStyle={{ margin: 0 }}
+    />
+  );
+}
+      `,
+    },
   ],
   invalid: [
     // Component-level object literal

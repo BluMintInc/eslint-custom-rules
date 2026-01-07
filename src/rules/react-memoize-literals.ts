@@ -337,6 +337,44 @@ function isInsideAllowedHookCallback(node: TSESTree.Node): boolean {
 }
 
 /**
+ * Checks whether a node is assigned to a JSX attribute that is exempt from
+ * memoization requirements (e.g. MUI "sx" or "style" props).
+ * @param node Candidate literal node.
+ * @returns True when the literal is passed to an exempt prop.
+ */
+function isExemptJsxAttribute(node: TSESTree.Node): boolean {
+  let current: TSESTree.Node | null = node.parent as TSESTree.Node | null;
+
+  while (current && isExpressionWrapper(current)) {
+    current = current.parent as TSESTree.Node | null;
+  }
+
+  if (current && (current.type as any) === AST_NODE_TYPES.JSXExpressionContainer) {
+    const parent = (current as any).parent;
+    if (parent && (parent.type as any) === AST_NODE_TYPES.JSXAttribute) {
+      const nameNode = parent.name;
+      const propName =
+        nameNode.type === AST_NODE_TYPES.JSXIdentifier
+          ? nameNode.name
+          : nameNode.type === AST_NODE_TYPES.JSXNamespacedName
+            ? nameNode.name.name
+            : null;
+
+      if (
+        propName === 'sx' ||
+        propName?.endsWith('Sx') ||
+        propName === 'style' ||
+        propName?.endsWith('Style')
+      ) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
  * Type guard for nodes that wrap an underlying expression (e.g. assertions,
  * parentheses, optional chaining wrappers).
  */
@@ -590,6 +628,10 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
       if (!descriptor) return;
 
       if (isInsideAllowedHookCallback(node)) {
+        return;
+      }
+
+      if (isExemptJsxAttribute(node)) {
         return;
       }
 
