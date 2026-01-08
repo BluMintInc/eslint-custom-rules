@@ -159,12 +159,15 @@ function getOriginalName(
       return imported.name;
     }
     // Handle Literal imports (string-named imports in ESLint 8+)
-    const importedNode = imported as unknown as {
+    const importedNode = imported as {
       type: AST_NODE_TYPES;
       value?: unknown;
     };
-    if (importedNode.type === AST_NODE_TYPES.Literal) {
-      return String(importedNode.value);
+    if (
+      importedNode.type === AST_NODE_TYPES.Literal &&
+      typeof importedNode.value === 'string'
+    ) {
+      return importedNode.value;
     }
   }
 
@@ -237,13 +240,7 @@ export const enforceFExtensionForEntryPoints = createRule<
     }
 
     // Exclude test files and declaration files
-    if (
-      fileName.endsWith('.test.ts') ||
-      fileName.endsWith('.spec.ts') ||
-      fileName.endsWith('.test.tsx') ||
-      fileName.endsWith('.spec.tsx') ||
-      fileName.endsWith('.d.ts')
-    ) {
+    if (/\.(test|spec)\.tsx?$|\.d\.ts$/.test(fileName)) {
       return {};
     }
 
