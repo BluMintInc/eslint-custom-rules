@@ -202,7 +202,6 @@ function analyzeReturnedObject(
           nestedPath,
           flattenedPath: `${keyName}.${nestedPath}`,
         },
-        fix: () => null,
       });
     }
   }
@@ -220,7 +219,6 @@ export const preferFieldPathsInTransforms = createRule<
         'Flatten aggregation updates inside transformEach so diff-based deletes remove only the intended fields instead of wiping sibling data.',
       recommended: 'warn',
     },
-    fixable: 'code',
     schema: [
       {
         type: 'object',

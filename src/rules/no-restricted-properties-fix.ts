@@ -28,7 +28,6 @@ export const noRestrictedPropertiesFix = createRule<
         'Disallow certain properties on certain objects, with special handling for Object.keys() and Object.values()',
       recommended: 'error',
     },
-    fixable: 'code',
     schema: [
       {
         type: 'array',
@@ -155,7 +154,6 @@ export const noRestrictedPropertiesFix = createRule<
                   restrictedProp.message,
                 ),
               },
-              fix: () => null,
             });
           }
           // If only property is restricted (for any object)
@@ -188,7 +186,6 @@ export const noRestrictedPropertiesFix = createRule<
                   restrictedProp.message,
                 ),
               },
-              fix: () => null,
             });
           }
           // If only object is restricted (any property)
@@ -214,7 +211,6 @@ export const noRestrictedPropertiesFix = createRule<
                   restrictedProp.message,
                 ),
               },
-              fix: () => null,
             });
           }
         }

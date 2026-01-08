@@ -1,7 +1,5 @@
 # Disallow certain properties on certain objects, with special handling for Object.keys() and Object.values() (`@blumintinc/blumint/no-restricted-properties-fix`)
 
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
-
 <!-- end auto-generated rule header -->
 
 > Disallow certain properties on certain objects, with special handling for Object.keys() and Object.values()
