@@ -173,6 +173,16 @@ ruleTesterTs.run(
       };
       `,
 
+      // Object literals with mixed naming (now all ignored)
+      `
+      const config_mixed = {
+        active: true,
+        _isEnabled: false,
+        visible: true,
+        _hasFeature: true,
+      };
+      `,
+
       // Variable declarations with underscore-prefixed boolean values
       `
       const _isDebugMode: boolean = true;
@@ -557,40 +567,6 @@ ruleTesterTs.run(
               type: 'variable',
               name: 'enabled',
               capitalizedName: 'Enabled',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
-        ],
-      },
-
-      // Object literals with mixed naming (underscore should be valid, others flagged)
-      {
-        code: `
-        const config = {
-          active: true, // Should be flagged
-          _isEnabled: false, // Should be valid
-          visible: true, // Should be flagged
-          _hasFeature: true, // Should be valid
-        };
-        `,
-        errors: [
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'active',
-              capitalizedName: 'Active',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'visible',
-              capitalizedName: 'Visible',
               prefixes:
                 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
