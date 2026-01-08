@@ -3,7 +3,7 @@ import { createRule } from '../utils/createRule';
 import path from 'path';
 import { ASTHelpers } from '../utils/ASTHelpers';
 
-type MessageIds = 'requireFExtension';
+type EntryPointExtensionMessageIds = 'requireFExtension';
 
 type EnforceFExtensionOptions = [
   {
@@ -57,7 +57,13 @@ function isTopLevel(node: TSESTree.Node): boolean {
 }
 
 /**
- * Checks if a node is defining an entry point, either as a function or variable.
+ * Checks if a node directly defines an entry point as a function or variable declaration.
+ * This exempts wrapper implementation files (e.g., functions/src/v2/) but intentionally
+ * excludes re-exports or aliasing (e.g., `const myCall = onCall; export { myCall }`),
+ * which must still follow the .f.ts naming convention.
+ *
+ * This function specifically checks AST node types FunctionDeclaration and
+ * VariableDeclaration but does not catch ExportSpecifiers used in re-exports.
  */
 function isNodeDefiningEntryPoint(
   node: TSESTree.Node,
@@ -88,7 +94,7 @@ function isNodeDefiningEntryPoint(
  * Obtains the scope for a node in an ESLint 9+ compatible way.
  */
 function getScopeForNode(
-  context: TSESLint.RuleContext<MessageIds, EnforceFExtensionOptions>,
+  context: TSESLint.RuleContext<EntryPointExtensionMessageIds, EnforceFExtensionOptions>,
   node: TSESTree.Node,
 ): TSESLint.Scope.Scope {
   const sourceCode = context.sourceCode ?? context.getSourceCode();
@@ -105,7 +111,7 @@ function getScopeForNode(
  * Gets the import definition for a given name in the current scope.
  */
 function getImportDef(
-  context: TSESLint.RuleContext<MessageIds, EnforceFExtensionOptions>,
+  context: TSESLint.RuleContext<EntryPointExtensionMessageIds, EnforceFExtensionOptions>,
   calleeName: string,
   node: TSESTree.Node,
 ): TSESLint.Scope.Definition | null {
@@ -180,7 +186,9 @@ function getOriginalName(
     const importDeclaration = importDef.parent as TSESTree.ImportDeclaration;
     const modulePath = importDeclaration.source.value;
 
-    // For default/namespace imports, extract the module path's last segment and check if it's an entry point module
+    // For default/namespace imports, extract the module name from the path.
+    // Example: '../../v2/https/onCall' -> 'onCall'. This is safe because
+    // isFromAllowedSource has already validated the import source.
     const match = modulePath.match(/[/\\]([^/\\]+)$/);
     const segment = (match ? match[1] : modulePath).replace(/\.[jt]sx?$/, '');
     if (entryPoints.has(segment)) {
@@ -193,7 +201,7 @@ function getOriginalName(
 
 export const enforceFExtensionForEntryPoints = createRule<
   EnforceFExtensionOptions,
-  MessageIds
+  EntryPointExtensionMessageIds
 >({
   name: 'enforce-f-extension-for-entry-points',
   meta: {
@@ -228,7 +236,9 @@ export const enforceFExtensionForEntryPoints = createRule<
       (context as unknown as { filename?: string }).filename ??
       context.getFilename();
     const fileName = path.basename(filePath);
-    const entryPoints = new Set(options.entryPoints || DEFAULT_ENTRY_POINTS);
+    const entryPoints = new Set(
+      options.entryPoints?.length ? options.entryPoints : DEFAULT_ENTRY_POINTS,
+    );
 
     // Only apply to files under functions/src/
     const normalizedPath = filePath.replace(/\\/g, '/');
@@ -244,8 +254,11 @@ export const enforceFExtensionForEntryPoints = createRule<
       return {};
     }
 
-    // Only apply to .ts and .tsx files (not .f.ts or .f.tsx)
-    if (!/\.tsx?$/.test(fileName) || /\.f\.tsx?$/.test(fileName)) {
+    // Only apply to .ts and .tsx files, but not files already using .f.ts or .f.tsx
+    const isTsOrTsx = /\.tsx?$/.test(fileName);
+    const isFExtension = /\.f\.tsx?$/.test(fileName);
+
+    if (!isTsOrTsx || isFExtension) {
       return {};
     }
 

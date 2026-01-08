@@ -146,6 +146,12 @@ ruleTesterTs.run(
         code: `import { onCall } from '../../v2/https/onCall'; declare const call: typeof onCall;`,
         filename: '/workspace/functions/src/callable/user/types.d.ts',
       },
+      // 24. Empty entryPoints array should fall back to defaults (valid if no entry points are used)
+      {
+        code: `import { somethingElse } from '../../v2/https/onCall'; somethingElse();`,
+        filename: '/workspace/functions/src/callable/user/emptyOptions.ts',
+        options: [{ entryPoints: [] }],
+      },
     ],
 
     invalid: [
@@ -372,6 +378,22 @@ ruleTesterTs.run(
               fileName: 'defaultWithExt.ts',
               entryPoint: 'onCall',
               suggestedName: 'defaultWithExt.f.ts',
+            },
+          },
+        ],
+      },
+      // 16. Empty entryPoints array should fall back to defaults (invalid if onCall is used)
+      {
+        code: `import { onCall } from '../../v2/https/onCall'; onCall();`,
+        filename: '/workspace/functions/src/callable/user/emptyOptionsInvalid.ts',
+        options: [{ entryPoints: [] }],
+        errors: [
+          {
+            messageId: 'requireFExtension',
+            data: {
+              fileName: 'emptyOptionsInvalid.ts',
+              entryPoint: 'onCall',
+              suggestedName: 'emptyOptionsInvalid.f.ts',
             },
           },
         ],
