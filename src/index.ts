@@ -11,7 +11,7 @@ import { default as enforceCallbackMemo } from './rules/enforce-callback-memo';
 import { reactMemoizeLiterals } from './rules/react-memoize-literals';
 import { enforceCallableTypes } from './rules/enforce-callable-types';
 import { enforceConsoleError } from './rules/enforce-console-error';
-import { enforceFirebaseImports } from './rules/enforce-dynamic-firebase-imports';
+import enforceFirebaseImports from './rules/enforce-dynamic-firebase-imports';
 import { enforceMuiRoundedIcons } from './rules/enforce-mui-rounded-icons';
 import { enforceQueryKeyTs } from './rules/enforce-querykey-ts';
 import { enforceReactTypeNaming } from './rules/enforce-react-type-naming';
