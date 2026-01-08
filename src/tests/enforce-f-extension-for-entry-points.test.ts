@@ -1,0 +1,233 @@
+import { ruleTesterTs } from '../utils/ruleTester';
+import { enforceFExtensionForEntryPoints } from '../rules/enforce-f-extension-for-entry-points';
+
+ruleTesterTs.run(
+  'enforce-f-extension-for-entry-points',
+  enforceFExtensionForEntryPoints,
+  {
+    valid: [
+      // 1. Correct extension (.f.ts)
+      {
+        code: `import { onCall } from '../../v2/https/onCall'; export default onCall(() => {});`,
+        filename: '/workspace/functions/src/callable/user/deleteUser.f.ts',
+      },
+      // 2. Not in functions/src/
+      {
+        code: `import { onCall } from '../../v2/https/onCall'; export default onCall(() => {});`,
+        filename: '/workspace/src/other/deleteUser.ts',
+      },
+      // 3. Test file (.test.ts)
+      {
+        code: `import { onCall } from '../../v2/https/onCall'; export default onCall(() => {});`,
+        filename: '/workspace/functions/src/callable/user/deleteUser.test.ts',
+      },
+      // 4. Spec file (.spec.ts)
+      {
+        code: `import { onCall } from '../../v2/https/onCall'; export default onCall(() => {});`,
+        filename: '/workspace/functions/src/callable/user/deleteUser.spec.ts',
+      },
+      // 5. Defining the wrapper (FunctionDeclaration)
+      {
+        code: `export function onCall() {}`,
+        filename: '/workspace/functions/src/v2/https/onCall.ts',
+      },
+      // 6. Defining the wrapper (VariableDeclaration)
+      {
+        code: `export const onCall = () => {}`,
+        filename: '/workspace/functions/src/v2/https/onCall.ts',
+      },
+      // 7. Locally defined function with same name (not imported)
+      {
+        code: `function onCall() {} onCall();`,
+        filename: '/workspace/functions/src/util/myFunc.ts',
+      },
+      // 8. Not top-level call (inside another function)
+      {
+        code: `import { onCall } from '../../v2/https/onCall'; function setup() { onCall(() => {}); }`,
+        filename: '/workspace/functions/src/util/myFunc.ts',
+      },
+      // 9. Call to a function that is NOT an entry point
+      {
+        code: `import { otherFunc } from './other'; otherFunc();`,
+        filename: '/workspace/functions/src/util/myFunc.ts',
+      },
+      // 10. Call to a function that is an import but not an entry point wrapper
+      {
+        code: `import { onCall } from './localOnCall'; onCall();`,
+        filename: '/workspace/functions/src/util/myFunc.ts',
+      },
+      // 11. JSX file with .f.tsx extension
+      {
+        code: `import { onCall } from '../../v2/https/onCall'; export default onCall(() => <div />);`,
+        filename: '/workspace/functions/src/callable/user/Component.f.tsx',
+      },
+      // 12. Multiple entry points in one .f.ts file
+      {
+        code: `import { onCall } from '../../v2/https/onCall'; export const a = onCall(() => {}); export const b = onCall(() => {});`,
+        filename: '/workspace/functions/src/callable/user/auth.f.ts',
+      },
+      // 13. Export default function definition exemption
+      {
+        code: `export default function onCall() {}`,
+        filename: '/workspace/functions/src/v2/https/onCall.ts',
+      },
+      // 14. MemberExpression call exemption
+      {
+        code: `import * as functions from 'firebase-functions'; functions.https.onCall(() => {});`,
+        filename: '/workspace/functions/src/util/legacy.ts',
+      },
+    ],
+    invalid: [
+      // 1. Basic violation (.ts calling onCall)
+      {
+        code: `import { onCall } from '../../v2/https/onCall'; export default onCall(() => {});`,
+        filename: '/workspace/functions/src/callable/user/deleteUser.ts',
+        errors: [
+          {
+            messageId: 'requireFExtension',
+            data: {
+              fileName: 'deleteUser.ts',
+              entryPoint: 'onCall',
+              suggestedName: 'deleteUser.f.ts',
+            },
+          },
+        ],
+      },
+      // 2. violation with onCallVaripotent
+      {
+        code: `import { onCallVaripotent } from '../../v2/https/onCall'; export default onCallVaripotent(() => {});`,
+        filename: '/workspace/functions/src/callable/scripts/upsert.ts',
+        errors: [
+          {
+            messageId: 'requireFExtension',
+            data: {
+              fileName: 'upsert.ts',
+              entryPoint: 'onCallVaripotent',
+              suggestedName: 'upsert.f.ts',
+            },
+          },
+        ],
+      },
+      // 3. violation with onRequest
+      {
+        code: `import { onRequest } from '../../v2/https/onRequest'; export default onRequest(() => {});`,
+        filename: '/workspace/functions/src/queues/tasks/sync.ts',
+        errors: [
+          {
+            messageId: 'requireFExtension',
+            data: {
+              fileName: 'sync.ts',
+              entryPoint: 'onRequest',
+              suggestedName: 'sync.f.ts',
+            },
+          },
+        ],
+      },
+      // 4. violation with sequentialDocumentWritten
+      {
+        code: `import { sequentialDocumentWritten } from '../../v2/firestore/sequentialDocumentWritten'; export default sequentialDocumentWritten({}, []);`,
+        filename: '/workspace/functions/src/firestore/Membership/onWrite.ts',
+        errors: [
+          {
+            messageId: 'requireFExtension',
+            data: {
+              fileName: 'onWrite.ts',
+              entryPoint: 'sequentialDocumentWritten',
+              suggestedName: 'onWrite.f.ts',
+            },
+          },
+        ],
+      },
+      // 5. Aliased import violation
+      {
+        code: `import { onCall as firebaseOnCall } from '../../v2/https/onCall'; export default firebaseOnCall(() => {});`,
+        filename: '/workspace/functions/src/callable/myFunction.ts',
+        errors: [
+          {
+            messageId: 'requireFExtension',
+            data: {
+              fileName: 'myFunction.ts',
+              entryPoint: 'firebaseOnCall',
+              suggestedName: 'myFunction.f.ts',
+            },
+          },
+        ],
+      },
+      // 6. Direct variable assignment
+      {
+        code: `import { onWebhook } from '../util/webhook/onWebhook'; const handler = onWebhook({}); export default handler;`,
+        filename: '/workspace/functions/src/webhooks/mux.ts',
+        errors: [
+          {
+            messageId: 'requireFExtension',
+            data: {
+              fileName: 'mux.ts',
+              entryPoint: 'onWebhook',
+              suggestedName: 'mux.f.ts',
+            },
+          },
+        ],
+      },
+      // 7. Multiple violations (only first one reported because of 'reported' flag)
+      {
+        code: `import { onCall } from '../../v2/https/onCall'; export const a = onCall(() => {}); export const b = onCall(() => {});`,
+        filename: '/workspace/functions/src/callable/user/auth.ts',
+        errors: [
+          {
+            messageId: 'requireFExtension',
+            data: {
+              fileName: 'auth.ts',
+              entryPoint: 'onCall',
+              suggestedName: 'auth.f.ts',
+            },
+          },
+        ],
+      },
+      // 8. .tsx file violation
+      {
+        code: `import { onCall } from '../../v2/https/onCall'; export default onCall(() => <div />);`,
+        filename: '/workspace/functions/src/callable/user/Component.tsx',
+        errors: [
+          {
+            messageId: 'requireFExtension',
+            data: {
+              fileName: 'Component.tsx',
+              entryPoint: 'onCall',
+              suggestedName: 'Component.f.tsx',
+            },
+          },
+        ],
+      },
+      // 9. onSchedule violation
+      {
+        code: `import { onSchedule } from 'firebase-functions/v2/scheduler'; onSchedule('every 5 minutes', () => {});`,
+        filename: '/workspace/functions/src/schedulers/cleanup.ts',
+        errors: [
+          {
+            messageId: 'requireFExtension',
+            data: {
+              fileName: 'cleanup.ts',
+              entryPoint: 'onSchedule',
+              suggestedName: 'cleanup.f.ts',
+            },
+          },
+        ],
+      },
+      // 10. onDocumentCreated violation
+      {
+        code: `import { onDocumentCreated } from 'firebase-functions/v2/firestore'; onDocumentCreated('path', () => {});`,
+        filename: '/workspace/functions/src/firestore/onCreated.ts',
+        errors: [
+          {
+            messageId: 'requireFExtension',
+            data: {
+              fileName: 'onCreated.ts',
+              entryPoint: 'onDocumentCreated',
+              suggestedName: 'onCreated.f.ts',
+            },
+          },
+        ],
+      },
+    ],
+  },
+);

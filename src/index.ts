@@ -1,3 +1,4 @@
+import { enforceFExtensionForEntryPoints } from './rules/enforce-f-extension-for-entry-points';
 import { arrayMethodsThisContext } from './rules/array-methods-this-context';
 import { classMethodsReadTopToBottom } from './rules/class-methods-read-top-to-bottom';
 import { default as consistentCallbackNaming } from './rules/consistent-callback-naming';
@@ -200,6 +201,7 @@ module.exports = {
     recommended: {
       plugins: ['@blumintinc/blumint'],
       rules: {
+        '@blumintinc/blumint/enforce-f-extension-for-entry-points': 'error',
         '@blumintinc/blumint/firestore-transaction-reads-before-writes':
           'error',
         // Override the @typescript-eslint/prefer-nullish-coalescing rule
@@ -455,6 +457,7 @@ module.exports = {
   },
 
   rules: {
+    'enforce-f-extension-for-entry-points': enforceFExtensionForEntryPoints,
     'firestore-transaction-reads-before-writes':
       firestoreTransactionReadsBeforeWrites,
     'no-restricted-properties-fix': noRestrictedPropertiesFix,
