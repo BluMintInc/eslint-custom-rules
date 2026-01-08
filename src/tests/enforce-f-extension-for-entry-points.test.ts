@@ -307,7 +307,8 @@ ruleTesterTs.run(
       // 12. default import with non-matching local name violation
       {
         code: `import myHandler from '../../v2/https/onCall'; export default myHandler(() => {});`,
-        filename: '/workspace/functions/src/callable/user/nonMatchingDefault.ts',
+        filename:
+          '/workspace/functions/src/callable/user/nonMatchingDefault.ts',
         errors: [
           {
             messageId: 'requireFExtension',
@@ -322,7 +323,8 @@ ruleTesterTs.run(
       // 13. default import with non-matching local name violation (onRequest)
       {
         code: `import reqHandler from '../../v2/https/onRequest'; export default reqHandler(() => {});`,
-        filename: '/workspace/functions/src/callable/user/nonMatchingRequest.ts',
+        filename:
+          '/workspace/functions/src/callable/user/nonMatchingRequest.ts',
         errors: [
           {
             messageId: 'requireFExtension',
@@ -365,6 +367,5 @@ ruleTesterTs.run(
         ],
       },
     ],
-
   },
 );

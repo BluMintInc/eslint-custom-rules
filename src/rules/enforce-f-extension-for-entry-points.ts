@@ -300,7 +300,11 @@ export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
         }
 
         // Entry point checking
-        const originalName = getOriginalName(importDef, calleeName, entryPoints);
+        const originalName = getOriginalName(
+          importDef,
+          calleeName,
+          entryPoints,
+        );
         if (!entryPoints.has(originalName)) {
           return;
         }
