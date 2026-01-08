@@ -131,10 +131,15 @@ ruleTesterTs.run(
         code: `import onCall from '../../v2/https/onCall.ts'; onCall();`,
         filename: '/workspace/functions/src/callable/user/myFunc.f.ts',
       },
-      // 20. Variable not from import
+      // 21. Import with no slashes in path
+      {
+        code: `import onCall from 'onCall'; onCall();`,
+        filename: '/workspace/functions/src/callable/user/noSlash.f.ts',
+      },
+      // 22. Not an ImportBinding (should be covered by case 20, but let's be explicit)
       {
         code: `const onCall = () => {}; onCall();`,
-        filename: '/workspace/functions/src/callable/user/myFunc.ts',
+        filename: '/workspace/functions/src/callable/user/localConst.ts',
       },
     ],
 

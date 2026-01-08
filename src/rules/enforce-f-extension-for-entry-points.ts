@@ -1,6 +1,7 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import path from 'path';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds = 'requireFExtension';
 
@@ -89,12 +90,10 @@ function getScopeForNode(
   node: TSESTree.Node,
 ): TSESLint.Scope.Scope {
   const sourceCode = context.sourceCode ?? context.getSourceCode();
-  const extendedSourceCode = sourceCode as unknown as {
-    getScope?: (currentNode: TSESTree.Node) => TSESLint.Scope.Scope;
-  };
 
-  if (typeof extendedSourceCode.getScope === 'function') {
-    return extendedSourceCode.getScope(node);
+  // In ESLint 9+, sourceCode.getScope(node) is the preferred way to get the scope for a node.
+  if (typeof (sourceCode as any).getScope === 'function') {
+    return (sourceCode as any).getScope(node);
   }
 
   return context.getScope();
@@ -109,17 +108,11 @@ function getImportDef(
   node: TSESTree.Node,
 ): TSESLint.Scope.Definition | null {
   const scope = getScopeForNode(context, node);
-  let currentScope: TSESLint.Scope.Scope | null = scope;
-
-  while (currentScope) {
-    const variable = currentScope.set.get(calleeName);
-    if (variable) {
-      return variable.defs.find((def) => def.type === 'ImportBinding') ?? null;
-    }
-    currentScope = currentScope.upper;
+  const variable = ASTHelpers.findVariableInScope(scope, calleeName);
+  if (!variable) {
+    return null;
   }
-
-  return null;
+  return variable.defs.find((def) => def.type === 'ImportBinding') ?? null;
 }
 
 /**
