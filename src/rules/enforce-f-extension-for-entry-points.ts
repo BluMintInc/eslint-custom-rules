@@ -54,6 +54,34 @@ function isTopLevel(node: TSESTree.Node): boolean {
 }
 
 /**
+ * Checks if a node is defining an entry point, either as a function or variable.
+ */
+function isNodeDefiningEntryPoint(
+  node: TSESTree.Node,
+  entryPoints: Set<string>,
+): boolean {
+  // Handle function declaration: export function onCall() {}
+  if (
+    node.type === AST_NODE_TYPES.FunctionDeclaration &&
+    node.id &&
+    entryPoints.has(node.id.name)
+  ) {
+    return true;
+  }
+
+  // Handle variable declaration: export const onCall = ...
+  if (node.type === AST_NODE_TYPES.VariableDeclaration) {
+    return node.declarations.some(
+      (decl) =>
+        decl.id.type === AST_NODE_TYPES.Identifier &&
+        entryPoints.has(decl.id.name),
+    );
+  }
+
+  return false;
+}
+
+/**
  * Obtains the scope for a node in an ESLint 9+ compatible way.
  */
 function getScopeForNode(
@@ -82,21 +110,16 @@ function getImportDef(
 ): TSESLint.Scope.Definition | null {
   const scope = getScopeForNode(context, node);
   let currentScope: TSESLint.Scope.Scope | null = scope;
-  let variable: TSESLint.Scope.Variable | undefined;
 
   while (currentScope) {
-    variable = currentScope.set.get(calleeName);
+    const variable = currentScope.set.get(calleeName);
     if (variable) {
-      break;
+      return variable.defs.find((def) => def.type === 'ImportBinding') ?? null;
     }
     currentScope = currentScope.upper;
   }
 
-  if (!variable) {
-    return null;
-  }
-
-  return variable.defs.find((def) => def.type === 'ImportBinding') ?? null;
+  return null;
 }
 
 /**
@@ -147,13 +170,15 @@ function getOriginalName(
   }
 
   // Handle default imports: import onCall from '../../v2/https/onCall'
-  // or even: import myHandler from '../../v2/https/onCall'
-  if (importDef.node.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
+  // or namespace imports: import * as onCall from '../../v2/https/onCall'
+  if (
+    importDef.node.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
+    importDef.node.type === AST_NODE_TYPES.ImportNamespaceSpecifier
+  ) {
     const importDeclaration = importDef.parent as TSESTree.ImportDeclaration;
     const modulePath = importDeclaration.source.value;
 
-    // For default imports, extract the module path's last segment and check if it's an entry point module
-    // We match both / segment and \ segment (for Windows paths in sources, though uncommon)
+    // For default/namespace imports, extract the module path's last segment and check if it's an entry point module
     const match = modulePath.match(/[/\\]([^/\\]+)$/);
     const segment = match ? match[1] : modulePath;
     if (entryPoints.has(segment)) {
@@ -234,27 +259,8 @@ export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
           return;
         }
 
-        // Handle function declaration: export function onCall() {}
-        if (
-          node.declaration.type === AST_NODE_TYPES.FunctionDeclaration &&
-          node.declaration.id &&
-          entryPoints.has(node.declaration.id.name)
-        ) {
+        if (isNodeDefiningEntryPoint(node.declaration, entryPoints)) {
           isDefiningEntryPoint = true;
-          return;
-        }
-
-        // Handle variable declaration: export const onCall = ...
-        if (node.declaration.type === AST_NODE_TYPES.VariableDeclaration) {
-          for (const decl of node.declaration.declarations) {
-            if (
-              decl.id.type === AST_NODE_TYPES.Identifier &&
-              entryPoints.has(decl.id.name)
-            ) {
-              isDefiningEntryPoint = true;
-              break;
-            }
-          }
         }
       },
       ExportDefaultDeclaration(node) {
@@ -262,11 +268,7 @@ export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
           return;
         }
 
-        if (
-          node.declaration.type === AST_NODE_TYPES.FunctionDeclaration &&
-          node.declaration.id &&
-          entryPoints.has(node.declaration.id.name)
-        ) {
+        if (isNodeDefiningEntryPoint(node.declaration, entryPoints)) {
           isDefiningEntryPoint = true;
         }
       },

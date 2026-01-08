@@ -26,6 +26,7 @@ The rule is robust against different import styles:
 - **Aliased Imports**: `import { onCall as myCall } from ...`
 - **Default Imports**: `import onCall from '../../v2/https/onCall'`
 - **Default Imports with custom names**: `import myHandler from '../../v2/https/onCall'` (detected by analyzing the module path)
+- **Namespace Imports**: `import * as onCall from '../../v2/https/onCall'` (where the namespace itself is called)
 
 Only imports from `firebase-functions` or our internal `v2/` / `util/webhook/` wrappers are considered entry points. Local functions or third-party libraries with matching names are ignored.
 

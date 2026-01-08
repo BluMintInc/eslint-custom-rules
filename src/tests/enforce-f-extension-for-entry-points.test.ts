@@ -121,7 +121,13 @@ ruleTesterTs.run(
         code: `export const onCall = () => {}; export default function onCall() {};`,
         filename: '/workspace/functions/src/v2/https/onCall.ts',
       },
+      // 18. Namespace import from an allowed source
+      {
+        code: `import * as onCall from '../../v2/https/onCall'; onCall();`,
+        filename: '/workspace/functions/src/callable/user/myFunc.f.ts',
+      },
     ],
+
     invalid: [
       // 1. Basic violation (.ts calling onCall)
       {
@@ -318,6 +324,22 @@ ruleTesterTs.run(
           },
         ],
       },
+      // 14. Namespace import violation
+      {
+        code: `import * as onCall from '../../v2/https/onCall'; onCall();`,
+        filename: '/workspace/functions/src/callable/user/namespaceImport.ts',
+        errors: [
+          {
+            messageId: 'requireFExtension',
+            data: {
+              fileName: 'namespaceImport.ts',
+              entryPoint: 'onCall',
+              suggestedName: 'namespaceImport.f.ts',
+            },
+          },
+        ],
+      },
     ],
+
   },
 );
