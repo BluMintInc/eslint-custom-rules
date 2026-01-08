@@ -93,19 +93,42 @@ function isNodeDefiningEntryPoint(
 
 /**
  * Obtains the scope for a node in an ESLint 9+ compatible way.
+ *
+ * Note: In ESLint 8, falls back to context.getScope() which returns the scope
+ * of the currently visited node—only call this from within visitor handlers
+ * for the target node.
  */
 function getScopeForNode(
-  context: TSESLint.RuleContext<EntryPointExtensionMessageIds, EnforceFExtensionOptions>,
+  context: TSESLint.RuleContext<
+    EntryPointExtensionMessageIds,
+    EnforceFExtensionOptions
+  >,
   node: TSESTree.Node,
 ): TSESLint.Scope.Scope {
   const sourceCode = context.sourceCode ?? context.getSourceCode();
 
-  // In ESLint 9+, sourceCode.getScope(node) is the preferred way to get the scope for a node.
-  if (typeof (sourceCode as any).getScope === 'function') {
-    return (sourceCode as any).getScope(node);
+  if (isEslint9OrLater(sourceCode)) {
+    return getEslint9Scope(sourceCode, node);
   }
 
   return context.getScope();
+}
+
+/**
+ * Checks if the current environment is ESLint 9 or later.
+ */
+function isEslint9OrLater(sourceCode: TSESLint.SourceCode): boolean {
+  return typeof (sourceCode as any).getScope === 'function';
+}
+
+/**
+ * Gets the scope for a node using the ESLint 9+ SourceCode.getScope() method.
+ */
+function getEslint9Scope(
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.Node,
+): TSESLint.Scope.Scope {
+  return (sourceCode as any).getScope(node);
 }
 
 /**
@@ -346,7 +369,10 @@ export const enforceFExtensionForEntryPoints = createRule<
           messageId: 'requireFExtension',
           data: {
             fileName,
-            entryPoint: calleeName,
+            entryPoint:
+              calleeName === originalName
+                ? calleeName
+                : `${calleeName} (${originalName})`,
             suggestedName,
           },
         });

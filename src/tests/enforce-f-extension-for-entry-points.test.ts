@@ -224,7 +224,7 @@ ruleTesterTs.run(
             messageId: 'requireFExtension',
             data: {
               fileName: 'myFunction.ts',
-              entryPoint: 'firebaseOnCall',
+              entryPoint: 'firebaseOnCall (onCall)',
               suggestedName: 'myFunction.f.ts',
             },
           },
@@ -330,7 +330,7 @@ ruleTesterTs.run(
             messageId: 'requireFExtension',
             data: {
               fileName: 'nonMatchingDefault.ts',
-              entryPoint: 'myHandler',
+              entryPoint: 'myHandler (onCall)',
               suggestedName: 'nonMatchingDefault.f.ts',
             },
           },
@@ -346,7 +346,7 @@ ruleTesterTs.run(
             messageId: 'requireFExtension',
             data: {
               fileName: 'nonMatchingRequest.ts',
-              entryPoint: 'reqHandler',
+              entryPoint: 'reqHandler (onRequest)',
               suggestedName: 'nonMatchingRequest.f.ts',
             },
           },
