@@ -1,5 +1,7 @@
 # Enforce .f.ts extension for entry points (`@blumintinc/blumint/enforce-f-extension-for-entry-points`)
 
+💼 This rule is enabled in the ✅ `recommended` config.
+
 <!-- end auto-generated rule header -->
 
 This rule enforces a naming convention for files that contain Firebase Cloud Function entry points. Specifically, any file that invokes entry point wrappers such as `onCall`, `onCallVaripotent`, `onRequest`, `onQueueTask`, `onWebhook`, or any of the `onDocument*` / `sequentialDocument*` triggers must have a filename ending in `.f.ts` (or `.f.tsx`).
@@ -16,6 +18,16 @@ This convention serves as a visual signal in the file explorer and code reviews,
 ## Rule Details
 
 The rule applies to any `.ts` or `.tsx` file under `functions/src/`. It flags files that invoke one of the protected entry point wrappers but do not have the `.f.ts` or `.f.tsx` extension.
+
+### Import Handling
+
+The rule is robust against different import styles:
+- **Named Imports**: `import { onCall } from ...`
+- **Aliased Imports**: `import { onCall as myCall } from ...`
+- **Default Imports**: `import onCall from '../../v2/https/onCall'`
+- **Default Imports with custom names**: `import myHandler from '../../v2/https/onCall'` (detected by analyzing the module path)
+
+Only imports from `firebase-functions` or our internal `v2/` / `util/webhook/` wrappers are considered entry points. Local functions or third-party libraries with matching names are ignored.
 
 ### Entry Point Wrappers (Default):
 

@@ -106,6 +106,16 @@ ruleTesterTs.run(
         code: `import * as functions from 'firebase-functions'; functions.https.onCall(() => {});`,
         filename: '/workspace/functions/src/util/legacy.ts',
       },
+      // 15. non-identifier callee (should be ignored)
+      {
+        code: `import { onCall } from '../../v2/https/onCall'; const getCall = () => onCall; getCall()(() => {});`,
+        filename: '/workspace/functions/src/callable/user/nonIdentifier.ts',
+      },
+      // 16. multiple exports, hitting isDefiningEntryPoint
+      {
+        code: `export const onCall = () => {}; export const other = onCall(() => {});`,
+        filename: '/workspace/functions/src/v2/https/onCall.ts',
+      },
     ],
     invalid: [
       // 1. Basic violation (.ts calling onCall)
@@ -269,6 +279,36 @@ ruleTesterTs.run(
               fileName: 'defaultImport.ts',
               entryPoint: 'onCall',
               suggestedName: 'defaultImport.f.ts',
+            },
+          },
+        ],
+      },
+      // 12. default import with non-matching local name violation
+      {
+        code: `import myHandler from '../../v2/https/onCall'; export default myHandler(() => {});`,
+        filename: '/workspace/functions/src/callable/user/nonMatchingDefault.ts',
+        errors: [
+          {
+            messageId: 'requireFExtension',
+            data: {
+              fileName: 'nonMatchingDefault.ts',
+              entryPoint: 'myHandler',
+              suggestedName: 'nonMatchingDefault.f.ts',
+            },
+          },
+        ],
+      },
+      // 13. default import with non-matching local name violation (onRequest)
+      {
+        code: `import reqHandler from '../../v2/https/onRequest'; export default reqHandler(() => {});`,
+        filename: '/workspace/functions/src/callable/user/nonMatchingRequest.ts',
+        errors: [
+          {
+            messageId: 'requireFExtension',
+            data: {
+              fileName: 'nonMatchingRequest.ts',
+              entryPoint: 'reqHandler',
+              suggestedName: 'nonMatchingRequest.f.ts',
             },
           },
         ],

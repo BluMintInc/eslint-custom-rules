@@ -32,6 +32,9 @@ const DEFAULT_ENTRY_POINTS = [
   'sequentialValueDeleted',
 ];
 
+/**
+ * Checks if a node is at the top level of the file (not nested inside functions or classes).
+ */
 function isTopLevel(node: TSESTree.Node): boolean {
   let current: TSESTree.Node | undefined = node.parent;
   while (current) {
@@ -50,6 +53,9 @@ function isTopLevel(node: TSESTree.Node): boolean {
   return true;
 }
 
+/**
+ * Obtains the scope for a node in an ESLint 9+ compatible way.
+ */
 function getScopeForNode(
   context: TSESLint.RuleContext<MessageIds, Options>,
   node: TSESTree.Node,
@@ -130,6 +136,9 @@ export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
     let isDefiningEntryPoint = false;
     let reported = false;
 
+    /**
+     * Gets the import definition for a given name in the current scope.
+     */
     function getImportDef(
       calleeName: string,
       node: TSESTree.Node,
@@ -151,14 +160,18 @@ export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
       );
     }
 
+    /**
+     * Checks if the import comes from an allowed Firebase or internal wrapper source.
+     */
     function isFromAllowedSource(
       importDef: TSESLint.Scope.Definition | null,
     ): boolean {
       if (!importDef || !importDef.parent) return false;
 
       const importDeclaration = importDef.parent as TSESTree.ImportDeclaration;
-      if (importDeclaration.type !== AST_NODE_TYPES.ImportDeclaration)
+      if (importDeclaration.type !== AST_NODE_TYPES.ImportDeclaration) {
         return false;
+      }
 
       const source = importDeclaration.source.value;
       return (
@@ -168,12 +181,18 @@ export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
       );
     }
 
+    /**
+     * Resolves the original name of the imported function, handling aliases and default imports.
+     */
     function getOriginalName(
       importDef: TSESLint.Scope.Definition | null,
       calleeName: string,
     ): string {
-      if (!importDef || !importDef.node) return calleeName;
+      if (!importDef || !importDef.node) {
+        return calleeName;
+      }
 
+      // Handle named imports: import { onCall as myCall } from ...
       if (importDef.node.type === AST_NODE_TYPES.ImportSpecifier) {
         const { imported } = importDef.node;
         if (imported.type === AST_NODE_TYPES.Identifier) {
@@ -185,36 +204,58 @@ export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
         }
       }
 
+      // Handle default imports: import onCall from '../../v2/https/onCall'
+      // or even: import myHandler from '../../v2/https/onCall'
+      if (importDef.node.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
+        const importDeclaration = importDef.parent as TSESTree.ImportDeclaration;
+        const modulePath = importDeclaration.source.value;
+
+        // For default imports, extract the module path's last segment and check if it's an entry point module
+        // We match both / segment and \ segment (for Windows paths in sources, though uncommon)
+        const match = modulePath.match(/[/\\]([^/\\]+)$/);
+        const segment = match ? match[1] : modulePath;
+        if (entryPoints.has(segment)) {
+          return segment;
+        }
+      }
+
       return calleeName;
     }
 
     return {
       ExportNamedDeclaration(node) {
-        if (isDefiningEntryPoint) return;
-        if (node.declaration) {
-          if (
-            node.declaration.type === AST_NODE_TYPES.FunctionDeclaration &&
-            node.declaration.id &&
-            entryPoints.has(node.declaration.id.name)
-          ) {
-            isDefiningEntryPoint = true;
-          } else if (
-            node.declaration.type === AST_NODE_TYPES.VariableDeclaration
-          ) {
-            for (const decl of node.declaration.declarations) {
-              if (
-                decl.id.type === AST_NODE_TYPES.Identifier &&
-                entryPoints.has(decl.id.name)
-              ) {
-                isDefiningEntryPoint = true;
-                break;
-              }
+        if (isDefiningEntryPoint || !node.declaration) {
+          return;
+        }
+
+        // Handle function declaration: export function onCall() {}
+        if (
+          node.declaration.type === AST_NODE_TYPES.FunctionDeclaration &&
+          node.declaration.id &&
+          entryPoints.has(node.declaration.id.name)
+        ) {
+          isDefiningEntryPoint = true;
+          return;
+        }
+
+        // Handle variable declaration: export const onCall = ...
+        if (node.declaration.type === AST_NODE_TYPES.VariableDeclaration) {
+          for (const decl of node.declaration.declarations) {
+            if (
+              decl.id.type === AST_NODE_TYPES.Identifier &&
+              entryPoints.has(decl.id.name)
+            ) {
+              isDefiningEntryPoint = true;
+              break;
             }
           }
         }
       },
       ExportDefaultDeclaration(node) {
-        if (isDefiningEntryPoint) return;
+        if (isDefiningEntryPoint) {
+          return;
+        }
+
         if (
           node.declaration.type === AST_NODE_TYPES.FunctionDeclaration &&
           node.declaration.id &&
@@ -224,7 +265,9 @@ export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
         }
       },
       CallExpression(node) {
-        if (reported || isDefiningEntryPoint) return;
+        if (reported || isDefiningEntryPoint) {
+          return;
+        }
 
         // We only care about simple identifier calls (e.g., onCall())
         if (node.callee.type !== AST_NODE_TYPES.Identifier) {
