@@ -148,6 +148,46 @@ function isFromAllowedSource(
 }
 
 /**
+ * Helper function to extract name from import specifier.
+ */
+function getNameFromImportSpecifier(
+  node: TSESTree.ImportSpecifier,
+): string | undefined {
+  const { imported } = node;
+  if (imported.type === AST_NODE_TYPES.Identifier) {
+    return imported.name;
+  }
+  // Handle Literal imports (string-named imports in ESLint 8+)
+  const importedNode = imported as {
+    type: AST_NODE_TYPES;
+    value?: unknown;
+  };
+  if (
+    importedNode.type === AST_NODE_TYPES.Literal &&
+    typeof importedNode.value === 'string'
+  ) {
+    return importedNode.value;
+  }
+  return undefined;
+}
+
+/**
+ * Helper function to extract name from module path.
+ */
+function getNameFromModulePath(
+  importDeclaration: TSESTree.ImportDeclaration,
+  entryPoints: Set<string>,
+): string | undefined {
+  const modulePath = importDeclaration.source.value;
+
+  // Extract the module name from the path.
+  // Example: '../../v2/https/onCall' -> 'onCall'
+  const match = modulePath.match(/[/\\]([^/\\]+)$/);
+  const segment = (match ? match[1] : modulePath).replace(/\.[jt]sx?$/, '');
+  return entryPoints.has(segment) ? segment : undefined;
+}
+
+/**
  * Resolves the original name of the imported function, handling aliases and default imports.
  */
 function getOriginalName(
@@ -161,21 +201,7 @@ function getOriginalName(
 
   // Handle named imports: import { onCall as myCall } from ...
   if (importDef.node.type === AST_NODE_TYPES.ImportSpecifier) {
-    const { imported } = importDef.node;
-    if (imported.type === AST_NODE_TYPES.Identifier) {
-      return imported.name;
-    }
-    // Handle Literal imports (string-named imports in ESLint 8+)
-    const importedNode = imported as {
-      type: AST_NODE_TYPES;
-      value?: unknown;
-    };
-    if (
-      importedNode.type === AST_NODE_TYPES.Literal &&
-      typeof importedNode.value === 'string'
-    ) {
-      return importedNode.value;
-    }
+    return getNameFromImportSpecifier(importDef.node) ?? calleeName;
   }
 
   // Handle default imports: import onCall from '../../v2/https/onCall'
@@ -184,17 +210,12 @@ function getOriginalName(
     importDef.node.type === AST_NODE_TYPES.ImportDefaultSpecifier ||
     importDef.node.type === AST_NODE_TYPES.ImportNamespaceSpecifier
   ) {
-    const importDeclaration = importDef.parent as TSESTree.ImportDeclaration;
-    const modulePath = importDeclaration.source.value;
-
-    // For default/namespace imports, extract the module name from the path.
-    // Example: '../../v2/https/onCall' -> 'onCall'. This is safe because
-    // isFromAllowedSource has already validated the import source.
-    const match = modulePath.match(/[/\\]([^/\\]+)$/);
-    const segment = (match ? match[1] : modulePath).replace(/\.[jt]sx?$/, '');
-    if (entryPoints.has(segment)) {
-      return segment;
-    }
+    return (
+      getNameFromModulePath(
+        importDef.parent as TSESTree.ImportDeclaration,
+        entryPoints,
+      ) ?? calleeName
+    );
   }
 
   return calleeName;
