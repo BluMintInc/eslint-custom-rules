@@ -163,9 +163,13 @@ function getOriginalName(
     if (imported.type === AST_NODE_TYPES.Identifier) {
       return imported.name;
     }
-    // In ESLint 8+, imported can be a Literal. We handle it at runtime.
-    if ((imported as any).type === AST_NODE_TYPES.Literal) {
-      return String((imported as any).value);
+    // Handle Literal imports (string-named imports in ESLint 8+)
+    const importedNode = imported as unknown as {
+      type: AST_NODE_TYPES;
+      value?: unknown;
+    };
+    if (importedNode.type === AST_NODE_TYPES.Literal) {
+      return String(importedNode.value);
     }
   }
 
