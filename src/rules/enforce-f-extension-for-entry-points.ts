@@ -89,12 +89,12 @@ function getScopeForNode(
   node: TSESTree.Node,
 ): TSESLint.Scope.Scope {
   const sourceCode = context.sourceCode ?? context.getSourceCode();
-  const sourceCodeWithScope = sourceCode as unknown as {
+  const extendedSourceCode = sourceCode as unknown as {
     getScope?: (currentNode: TSESTree.Node) => TSESLint.Scope.Scope;
   };
 
-  if (typeof sourceCodeWithScope.getScope === 'function') {
-    return sourceCodeWithScope.getScope(node);
+  if (typeof extendedSourceCode.getScope === 'function') {
+    return extendedSourceCode.getScope(node);
   }
 
   return context.getScope();
