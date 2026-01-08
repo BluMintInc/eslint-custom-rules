@@ -347,6 +347,22 @@ ruleTesterTs.run(
       // ===== DESTRUCTURING WITH BOOLEAN LOGIC =====
       `const { isValid = loading || hasDefault } = props;`,
       `const [ready, setReady] = useState(initialReady || defaultReady);`,
+
+      // ===== REGRESSION TESTS FOR ISSUE #1125 =====
+      {
+        code: `
+        const eitherEqual = (a: boolean, b: boolean) => {
+          return a || b; 
+        };
+        `,
+      },
+      {
+        code: `
+        const eitherEqual = (a: boolean, b: boolean): boolean => {
+          return a || b; 
+        };
+        `,
+      },
     ],
     invalid: [
       // ===== BASIC CASES WHERE NULLISH COALESCING SHOULD BE PREFERRED =====
