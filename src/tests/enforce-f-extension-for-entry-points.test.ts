@@ -141,6 +141,11 @@ ruleTesterTs.run(
         code: `const onCall = () => {}; onCall();`,
         filename: '/workspace/functions/src/callable/user/localConst.ts',
       },
+      // 23. Declaration file (.d.ts) should be ignored
+      {
+        code: `import { onCall } from '../../v2/https/onCall'; declare const call: typeof onCall;`,
+        filename: '/workspace/functions/src/callable/user/types.d.ts',
+      },
     ],
 
     invalid: [

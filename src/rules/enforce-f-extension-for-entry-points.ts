@@ -5,7 +5,7 @@ import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds = 'requireFExtension';
 
-type Options = [
+type EnforceFExtensionOptions = [
   {
     entryPoints?: string[];
   },
@@ -34,7 +34,9 @@ const DEFAULT_ENTRY_POINTS = [
 ];
 
 /**
- * Checks if a node is at the top level of the file (not nested inside functions or classes).
+ * Entry points must be defined at the top level because Firebase deployment
+ * discovers and registers them by evaluating the module scope. Nested definitions
+ * inside functions or classes won't be discovered during the deployment process.
  */
 function isTopLevel(node: TSESTree.Node): boolean {
   let current: TSESTree.Node | undefined = node.parent;
@@ -86,7 +88,7 @@ function isNodeDefiningEntryPoint(
  * Obtains the scope for a node in an ESLint 9+ compatible way.
  */
 function getScopeForNode(
-  context: TSESLint.RuleContext<MessageIds, Options>,
+  context: TSESLint.RuleContext<MessageIds, EnforceFExtensionOptions>,
   node: TSESTree.Node,
 ): TSESLint.Scope.Scope {
   const sourceCode = context.sourceCode ?? context.getSourceCode();
@@ -103,7 +105,7 @@ function getScopeForNode(
  * Gets the import definition for a given name in the current scope.
  */
 function getImportDef(
-  context: TSESLint.RuleContext<MessageIds, Options>,
+  context: TSESLint.RuleContext<MessageIds, EnforceFExtensionOptions>,
   calleeName: string,
   node: TSESTree.Node,
 ): TSESLint.Scope.Definition | null {
@@ -186,10 +188,13 @@ function getOriginalName(
   return calleeName;
 }
 
-export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
+export const enforceFExtensionForEntryPoints = createRule<
+  EnforceFExtensionOptions,
+  MessageIds
+>({
   name: 'enforce-f-extension-for-entry-points',
   meta: {
-    type: 'suggestion',
+    type: 'problem',
     docs: {
       description: 'Enforce .f.ts extension for entry points',
       recommended: 'error',
@@ -216,7 +221,9 @@ export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
   },
   defaultOptions: [{ entryPoints: DEFAULT_ENTRY_POINTS }],
   create(context, [options]) {
-    const filePath = context.getFilename();
+    const filePath =
+      (context as unknown as { filename?: string }).filename ??
+      context.getFilename();
     const fileName = path.basename(filePath);
     const entryPoints = new Set(options.entryPoints || DEFAULT_ENTRY_POINTS);
 
@@ -229,12 +236,13 @@ export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
       return {};
     }
 
-    // Exclude test files
+    // Exclude test files and declaration files
     if (
       fileName.endsWith('.test.ts') ||
       fileName.endsWith('.spec.ts') ||
       fileName.endsWith('.test.tsx') ||
-      fileName.endsWith('.spec.tsx')
+      fileName.endsWith('.spec.tsx') ||
+      fileName.endsWith('.d.ts')
     ) {
       return {};
     }
