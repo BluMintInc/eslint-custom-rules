@@ -26,6 +26,36 @@ ruleTesterTs.run(
         code: `import { onCall } from '../../v2/https/onCall'; export default onCall(() => {});`,
         filename: '/workspace/functions/src/callable/user/deleteUser.spec.ts',
       },
+      // 15. Test file (.test.tsx)
+      {
+        code: `import { onCall } from '../../v2/https/onCall'; export default onCall(() => <div />);`,
+        filename: '/workspace/functions/src/callable/user/deleteUser.test.tsx',
+      },
+      // 16. Spec file (.spec.tsx)
+      {
+        code: `import { onCall } from '../../v2/https/onCall'; export default onCall(() => <div />);`,
+        filename: '/workspace/functions/src/callable/user/deleteUser.spec.tsx',
+      },
+      // 17. Default import from a local file (should be ignored)
+      {
+        code: `import onCall from './localHelper'; onCall();`,
+        filename: '/workspace/functions/src/util/myFunc.ts',
+      },
+      // 18. Default import from an allowed source (should be checked)
+      {
+        code: `import onCall from '../../v2/https/onCall'; onCall();`,
+        filename: '/workspace/functions/src/callable/user/myFunc.f.ts',
+      },
+      // 19. Precision path check (should ignore if functions/src/ is just a substring)
+      {
+        code: `import { onCall } from '../../v2/https/onCall'; onCall();`,
+        filename: '/workspace/myfunctions/src/deleteUser.ts',
+      },
+      // 20. Precision path check (should match if it starts with functions/src/)
+      {
+        code: `import { onCall } from '../../v2/https/onCall'; onCall();`,
+        filename: 'functions/src/deleteUser.f.ts',
+      },
       // 5. Defining the wrapper (FunctionDeclaration)
       {
         code: `export function onCall() {}`,
@@ -224,6 +254,21 @@ ruleTesterTs.run(
               fileName: 'onCreated.ts',
               entryPoint: 'onDocumentCreated',
               suggestedName: 'onCreated.f.ts',
+            },
+          },
+        ],
+      },
+      // 11. default import violation
+      {
+        code: `import onCall from '../../v2/https/onCall'; export default onCall(() => {});`,
+        filename: '/workspace/functions/src/callable/user/defaultImport.ts',
+        errors: [
+          {
+            messageId: 'requireFExtension',
+            data: {
+              fileName: 'defaultImport.ts',
+              entryPoint: 'onCall',
+              suggestedName: 'defaultImport.f.ts',
             },
           },
         ],

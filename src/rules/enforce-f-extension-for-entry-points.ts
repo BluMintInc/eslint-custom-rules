@@ -65,12 +65,21 @@ export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
     const entryPoints = new Set(options.entryPoints || DEFAULT_ENTRY_POINTS);
 
     // Only apply to files under functions/src/
-    if (!filePath.includes('functions/src/')) {
+    const normalizedPath = filePath.replace(/\\/g, '/');
+    if (
+      !normalizedPath.includes('/functions/src/') &&
+      !normalizedPath.startsWith('functions/src/')
+    ) {
       return {};
     }
 
     // Exclude test files
-    if (fileName.endsWith('.test.ts') || fileName.endsWith('.spec.ts')) {
+    if (
+      fileName.endsWith('.test.ts') ||
+      fileName.endsWith('.spec.ts') ||
+      fileName.endsWith('.test.tsx') ||
+      fileName.endsWith('.spec.tsx')
+    ) {
       return {};
     }
 
@@ -101,6 +110,49 @@ export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
         current = current.parent;
       }
       return true;
+    }
+
+    function getImportDef(calleeName: string): any {
+      const scope = context.getScope();
+      let currentScope = scope;
+      let variable = currentScope.set.get(calleeName);
+
+      while (!variable && currentScope.upper) {
+        currentScope = currentScope.upper;
+        variable = currentScope.set.get(calleeName);
+      }
+
+      if (!variable) return null;
+
+      return variable.defs.find((def) => def.type === 'ImportBinding');
+    }
+
+    function isFromAllowedSource(importDef: any): boolean {
+      if (!importDef || !importDef.parent) return false;
+
+      const importDeclaration = importDef.parent as TSESTree.ImportDeclaration;
+      if (importDeclaration.type !== AST_NODE_TYPES.ImportDeclaration)
+        return false;
+
+      const source = importDeclaration.source.value;
+      return (
+        source.startsWith('firebase-functions') ||
+        source.includes('v2/') ||
+        source.includes('util/webhook/')
+      );
+    }
+
+    function getOriginalName(importDef: any, calleeName: string): string {
+      if (!importDef || !importDef.node) return calleeName;
+
+      if (importDef.node.type === AST_NODE_TYPES.ImportSpecifier) {
+        return importDef.node.imported.name;
+      }
+
+      // For Default imports or Namespace imports, we use the local name as the "original" name
+      // because we can't easily know what it was exported as without more complex analysis.
+      // However, if it's a default import from a local file, it won't pass isFromAllowedSource.
+      return calleeName;
     }
 
     return {
@@ -141,90 +193,43 @@ export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
       CallExpression(node) {
         if (reported || isDefiningEntryPoint) return;
 
-        let calleeName: string | undefined;
-
-        if (node.callee.type === AST_NODE_TYPES.Identifier) {
-          calleeName = node.callee.name;
-        } else if (
-          node.callee.type === AST_NODE_TYPES.MemberExpression &&
-          node.callee.property.type === AST_NODE_TYPES.Identifier
-        ) {
-          // Primary focus is on internal wrappers, but namespaced calls can be checked if they match entry points
-          // However, the requirement says "Primary focus is on our internal wrappers (in functions/src/v2/), donot worry about legacy code / external libraries using namespaced calls."
-          // So we skip MemberExpression for now as per instructions.
+        // We only care about simple identifier calls (e.g., onCall())
+        // per instructions: "Primary focus is on our internal wrappers... donot worry about legacy code / external libraries using namespaced calls."
+        if (node.callee.type !== AST_NODE_TYPES.Identifier) {
           return;
         }
 
-        if (calleeName) {
-          const scope = context.getScope();
-          let variable = scope.set.get(calleeName);
-          let currentScope = scope;
-          while (!variable && currentScope.upper) {
-            currentScope = currentScope.upper;
-            variable = currentScope.set.get(calleeName);
-          }
+        const calleeName = node.callee.name;
+        const importDef = getImportDef(calleeName);
 
-          if (variable) {
-            const isImport = variable.defs.some(
-              (def) => def.type === 'ImportBinding',
-            );
-
-            if (!isImport) {
-              return;
-            }
-
-            const importDef = variable.defs.find(
-              (def) => def.type === 'ImportBinding',
-            ) as any;
-            if (
-              importDef &&
-              importDef.node.type === AST_NODE_TYPES.ImportSpecifier
-            ) {
-              const importDeclaration =
-                importDef.parent as TSESTree.ImportDeclaration;
-              const source = importDeclaration.source.value;
-
-              // Check if the source is from firebase-functions or our internal v2/util wrappers
-              const isFromFirebaseFunctions =
-                source.startsWith('firebase-functions');
-              const isFromInternalWrappers =
-                source.includes('v2/') || source.includes('util/webhook/');
-
-              if (!isFromFirebaseFunctions && !isFromInternalWrappers) {
-                return;
-              }
-            }
-
-            let originalName = calleeName;
-            if (
-              importDef &&
-              importDef.node.type === AST_NODE_TYPES.ImportSpecifier
-            ) {
-              originalName = importDef.node.imported.name;
-            }
-
-            if (!entryPoints.has(originalName)) {
-              return;
-            }
-          } else {
-            // If it's not found in scope, it might be a global or just not imported.
-            return;
-          }
-
-          if (isTopLevel(node)) {
-            reported = true;
-            const suggestedName = fileName.replace(/\.tsx?$/, '.f$&');
-            context.report({
-              node,
-              messageId: 'requireFExtension',
-              data: {
-                fileName,
-                entryPoint: calleeName,
-                suggestedName,
-              },
-            });
-          }
+        if (!importDef) {
+          return;
         }
+
+        if (!isFromAllowedSource(importDef)) {
+          return;
+        }
+
+        const originalName = getOriginalName(importDef, calleeName);
+        if (!entryPoints.has(originalName)) {
+          return;
+        }
+
+        if (!isTopLevel(node)) {
+          return;
+        }
+
+        reported = true;
+        const suggestedName = fileName.replace(/\.tsx?$/, '.f$&');
+        context.report({
+          node,
+          messageId: 'requireFExtension',
+          data: {
+            fileName,
+            entryPoint: calleeName,
+            suggestedName,
+          },
+        });
       },
     };
   },
