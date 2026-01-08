@@ -59,8 +59,9 @@ function isTopLevel(node: TSESTree.Node): boolean {
 /**
  * Checks if a node directly defines an entry point as a function or variable declaration.
  * This exempts wrapper implementation files (e.g., functions/src/v2/) but intentionally
- * excludes re-exports or aliasing (e.g., `const myCall = onCall; export { myCall }`),
- * which must still follow the .f.ts naming convention.
+ * does not exempt re-export files (e.g., `const myCall = onCall; export { myCall }`).
+ * Re-export files that also invoke entry points must still follow the .f.ts naming convention
+ * and will be flagged by the CallExpression handler.
  *
  * This function specifically checks AST node types FunctionDeclaration and
  * VariableDeclaration but does not catch ExportSpecifiers used in re-exports.
