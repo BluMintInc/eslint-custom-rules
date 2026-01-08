@@ -295,6 +295,23 @@ const obj = {
 
 obj.call();
     `,
+    // Issue #1121: False Positive with related let declarations used in same statement
+    `
+    const wrapped = (...args: readonly any[]) => {
+      let resolve!: (
+        value: Awaited<ReturnType<TFunc>> | GuardCancellation,
+      ) => void;
+      let reject!: (error: unknown) => void;
+      const promise = new Promise<
+        Awaited<ReturnType<TFunc>> | GuardCancellation
+      >(
+        (res, rej) => {
+          resolve = res;
+          reject = rej;
+        },
+      );
+    };
+    `,
   ],
   invalid: [
     {
@@ -458,6 +475,24 @@ const other = 2;
 use(other);
       `,
       errors: [{ messageId: 'moveSideEffect' }],
+    },
+    // Issue #1121: Indentation should be preserved when moving declarations
+    {
+      code: `
+    function test() {
+      const a = 1;
+      if (true) return;
+      use(a);
+    }
+      `,
+      output: `
+    function test() {
+      if (true) return;
+      const a = 1;
+      use(a);
+    }
+      `,
+      errors: [{ messageId: 'moveGuardUp' }],
     },
   ],
 });

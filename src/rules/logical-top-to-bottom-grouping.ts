@@ -998,10 +998,14 @@ function getStartWithComments(
   sourceCode: TSESLint.SourceCode,
 ): number {
   const comments = sourceCode.getCommentsBefore(statement);
-  if (comments.length === 0) {
-    return statement.range[0];
+  const start =
+    comments.length === 0 ? statement.range[0] : comments[0].range[0];
+  const text = sourceCode.getText();
+  let cursor = start - 1;
+  while (cursor >= 0 && (text[cursor] === ' ' || text[cursor] === '\t')) {
+    cursor -= 1;
   }
-  return comments[0].range[0];
+  return cursor + 1;
 }
 
 function getNextStart(
@@ -1323,6 +1327,22 @@ function trackDeclaredNames(
   declared.forEach((name) => declaredIndices.set(name, index));
 }
 
+function isLateDeclarationCandidate(statement: TSESTree.Statement): boolean {
+  if (
+    statement.type !== AST_NODE_TYPES.VariableDeclaration ||
+    statement.declarations.length !== 1
+  ) {
+    return false;
+  }
+  const [declarator] = statement.declarations;
+  return (
+    declarator.id.type === AST_NODE_TYPES.Identifier &&
+    (!declarator.init ||
+      declarator.init.type === AST_NODE_TYPES.Identifier ||
+      declarator.init.type === AST_NODE_TYPES.Literal)
+  );
+}
+
 function handleLateDeclarations(
   ruleContext: RuleExecutionContext,
   body: TSESTree.Statement[],
@@ -1331,22 +1351,12 @@ function handleLateDeclarations(
   const { sourceCode } = ruleContext;
 
   body.forEach((statement, index) => {
-    if (
-      statement.type !== AST_NODE_TYPES.VariableDeclaration ||
-      statement.declarations.length !== 1
-    ) {
+    if (!isLateDeclarationCandidate(statement)) {
       return;
     }
-    const [declarator] = statement.declarations;
-    if (
-      declarator.id.type !== AST_NODE_TYPES.Identifier ||
-      (declarator.init &&
-        declarator.init.type !== AST_NODE_TYPES.Identifier &&
-        declarator.init.type !== AST_NODE_TYPES.Literal)
-    ) {
-      return;
-    }
-    const name = declarator.id.name;
+    const [declarator] = (statement as TSESTree.VariableDeclaration)
+      .declarations;
+    const name = (declarator.id as TSESTree.Identifier).name;
     const dependencies = new Set<string>();
     if (declarator.init && declarator.init.type === AST_NODE_TYPES.Identifier) {
       dependencies.add(declarator.init.name);
@@ -1367,10 +1377,35 @@ function handleLateDeclarations(
 
     const intervening = body.slice(index + 1, usageIndex);
     // Only move across pure declarations that do not mention the placeholder or its initializer dependencies to avoid changing closure timing or TDZ behavior.
-    const crossesImpureOrTracked = intervening.some((stmt) => {
+    const crossesImpureOrTracked = intervening.some((stmt, i) => {
       if (!isPureDeclaration(stmt, { allowHooks: false })) {
         return true;
       }
+
+      // Do not hop over another declaration that is used at the same index or earlier
+      // if it is also a candidate for being moved.
+      // This prevents circular swapping of related declarations (like resolve/reject pairs).
+      if (isLateDeclarationCandidate(stmt)) {
+        const declaredNames = getDeclaredNames(stmt);
+        let firstUsageOfIntervening = -1;
+        for (
+          let cursor = index + 1 + i + 1;
+          cursor < body.length;
+          cursor += 1
+        ) {
+          if (statementReferencesAny(body[cursor], declaredNames)) {
+            firstUsageOfIntervening = cursor;
+            break;
+          }
+        }
+        if (
+          firstUsageOfIntervening !== -1 &&
+          firstUsageOfIntervening <= usageIndex
+        ) {
+          return true;
+        }
+      }
+
       if (
         statementDeclaresAny(stmt, nameSet) ||
         statementMutatesAny(stmt, nameSet)
