@@ -57,6 +57,31 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
           .map((id) => id.name),
       );
 
+      // Identify all parameters that have a "Props" type
+      const propsParams = allParams
+        .map((param) => {
+          const id = getIdFromParam(param);
+          if (id && id.typeAnnotation && id.typeAnnotation.typeAnnotation) {
+            const paramTypeName = getTypeName(
+              id.typeAnnotation.typeAnnotation,
+            );
+            if (paramTypeName && endsWithProps(paramTypeName)) {
+              return { id, typeName: paramTypeName };
+            }
+          }
+          return null;
+        })
+        .filter((p): p is { id: TSESTree.Identifier; typeName: string } => !!p);
+
+      // If multiple parameters have the exact same Props type, allow the current names.
+      // This handles cases like (prevProps: TProps, nextProps: TProps) where
+      // forcing a single name based on the type would cause a collision or
+      // break descriptive naming.
+      const sameTypeParams = propsParams.filter((p) => p.typeName === typeName);
+      if (sameTypeParams.length > 1) {
+        return currentName ?? '';
+      }
+
       if (typeName === 'Props') {
         let candidate = 'props';
         let suffix = 2;
@@ -66,22 +91,7 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
         return candidate;
       }
 
-      // Count how many parameters have Props types
-      const propsParams = allParams.filter((param) => {
-        if (
-          param.type === AST_NODE_TYPES.Identifier &&
-          param.typeAnnotation &&
-          param.typeAnnotation.typeAnnotation
-        ) {
-          const paramTypeName = getTypeName(
-            param.typeAnnotation.typeAnnotation,
-          );
-          return paramTypeName && endsWithProps(paramTypeName);
-        }
-        return false;
-      });
-
-      // If there's only one Props parameter, suggest "props"
+      // If there's only one Props parameter (regardless of type name), suggest "props"
       if (propsParams.length <= 1) {
         let candidate = 'props';
         let suffix = 2;
@@ -91,8 +101,8 @@ export const enforcePropsArgumentName = createRule<Options, MessageIds>({
         return candidate;
       }
 
-      // If there are multiple Props parameters, use prefixed names
-      // For types like "UserProps", suggest "userProps"
+      // If there are multiple Props parameters with different types, use prefixed names.
+      // For types like "UserProps", suggest "userProps".
       const baseName = typeName.slice(0, -5); // Remove "Props"
       const camelCaseBase =
         baseName.charAt(0).toLowerCase() + baseName.slice(1);
