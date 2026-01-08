@@ -126,6 +126,16 @@ ruleTesterTs.run(
         code: `import * as onCall from '../../v2/https/onCall'; onCall();`,
         filename: '/workspace/functions/src/callable/user/myFunc.f.ts',
       },
+      // 19. Default import with extension
+      {
+        code: `import onCall from '../../v2/https/onCall.ts'; onCall();`,
+        filename: '/workspace/functions/src/callable/user/myFunc.f.ts',
+      },
+      // 20. Variable not from import
+      {
+        code: `const onCall = () => {}; onCall();`,
+        filename: '/workspace/functions/src/callable/user/myFunc.ts',
+      },
     ],
 
     invalid: [
@@ -335,6 +345,21 @@ ruleTesterTs.run(
               fileName: 'namespaceImport.ts',
               entryPoint: 'onCall',
               suggestedName: 'namespaceImport.f.ts',
+            },
+          },
+        ],
+      },
+      // 15. Default import with extension violation
+      {
+        code: `import onCall from '../../v2/https/onCall.ts'; onCall();`,
+        filename: '/workspace/functions/src/callable/user/defaultWithExt.ts',
+        errors: [
+          {
+            messageId: 'requireFExtension',
+            data: {
+              fileName: 'defaultWithExt.ts',
+              entryPoint: 'onCall',
+              suggestedName: 'defaultWithExt.f.ts',
             },
           },
         ],

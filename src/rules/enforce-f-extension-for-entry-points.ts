@@ -140,8 +140,8 @@ function isFromAllowedSource(
   const source = importDeclaration.source.value;
   return (
     source.startsWith('firebase-functions') ||
-    source.includes('v2/') ||
-    source.includes('util/webhook/')
+    /(^|\/)v2(\/|$)/.test(source) ||
+    /(^|\/)util\/webhook(\/|$)/.test(source)
   );
 }
 
@@ -180,7 +180,7 @@ function getOriginalName(
 
     // For default/namespace imports, extract the module path's last segment and check if it's an entry point module
     const match = modulePath.match(/[/\\]([^/\\]+)$/);
-    const segment = match ? match[1] : modulePath;
+    const segment = (match ? match[1] : modulePath).replace(/\.[jt]sx?$/, '');
     if (entryPoints.has(segment)) {
       return segment;
     }
