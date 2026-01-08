@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 import path from 'path';
 
@@ -32,6 +32,40 @@ const DEFAULT_ENTRY_POINTS = [
   'sequentialValueDeleted',
 ];
 
+function isTopLevel(node: TSESTree.Node): boolean {
+  let current: TSESTree.Node | undefined = node.parent;
+  while (current) {
+    if (
+      current.type === AST_NODE_TYPES.FunctionDeclaration ||
+      current.type === AST_NODE_TYPES.FunctionExpression ||
+      current.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+      current.type === AST_NODE_TYPES.ClassDeclaration ||
+      current.type === AST_NODE_TYPES.ClassExpression ||
+      current.type === AST_NODE_TYPES.MethodDefinition
+    ) {
+      return false;
+    }
+    current = current.parent;
+  }
+  return true;
+}
+
+function getScopeForNode(
+  context: TSESLint.RuleContext<MessageIds, Options>,
+  node: TSESTree.Node,
+): TSESLint.Scope.Scope {
+  const sourceCode = context.getSourceCode();
+  const sourceCodeWithScope = sourceCode as unknown as {
+    getScope?: (currentNode?: TSESTree.Node) => TSESLint.Scope.Scope | null;
+  };
+
+  if (typeof sourceCodeWithScope.getScope === 'function') {
+    return sourceCodeWithScope.getScope(node) ?? context.getScope();
+  }
+
+  return context.getScope();
+}
+
 export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
   name: 'enforce-f-extension-for-entry-points',
   meta: {
@@ -55,7 +89,9 @@ export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
     messages: {
       requireFExtension:
         'File "{{fileName}}" contains a Firebase Cloud Function entry point "{{entryPoint}}" but lacks the ".f.ts" extension. ' +
-        'Rename this file to "{{suggestedName}}" to clearly identify it as a public entry point and distinguish it from implementation logic.',
+        'Entry points must use ".f.ts" to clearly mark the public function surface to avoid accidental export/name collisions, ' +
+        'unintended exposure of internal implementation during deployment, confusion during imports/tests, and maintenance bugs. ' +
+        'Rename this file to "{{suggestedName}}" to mark it as a public entry point.',
     },
   },
   defaultOptions: [{ entryPoints: DEFAULT_ENTRY_POINTS }],
@@ -94,40 +130,30 @@ export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
     let isDefiningEntryPoint = false;
     let reported = false;
 
-    function isTopLevel(node: TSESTree.Node): boolean {
-      let current: TSESTree.Node | undefined = node.parent;
-      while (current) {
-        if (
-          current.type === AST_NODE_TYPES.FunctionDeclaration ||
-          current.type === AST_NODE_TYPES.FunctionExpression ||
-          current.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-          current.type === AST_NODE_TYPES.ClassDeclaration ||
-          current.type === AST_NODE_TYPES.ClassExpression ||
-          current.type === AST_NODE_TYPES.MethodDefinition
-        ) {
-          return false;
-        }
-        current = current.parent;
-      }
-      return true;
-    }
+    function getImportDef(
+      calleeName: string,
+      node: TSESTree.Node,
+    ): TSESLint.Scope.Definition | null {
+      const scope = getScopeForNode(context, node);
+      let currentScope: TSESLint.Scope.Scope | null = scope;
+      let variable: TSESLint.Scope.Variable | undefined;
 
-    function getImportDef(calleeName: string): any {
-      const scope = context.getScope();
-      let currentScope = scope;
-      let variable = currentScope.set.get(calleeName);
-
-      while (!variable && currentScope.upper) {
-        currentScope = currentScope.upper;
+      while (currentScope) {
         variable = currentScope.set.get(calleeName);
+        if (variable) break;
+        currentScope = currentScope.upper;
       }
 
       if (!variable) return null;
 
-      return variable.defs.find((def) => def.type === 'ImportBinding');
+      return (
+        variable.defs.find((def) => def.type === 'ImportBinding') ?? null
+      );
     }
 
-    function isFromAllowedSource(importDef: any): boolean {
+    function isFromAllowedSource(
+      importDef: TSESLint.Scope.Definition | null,
+    ): boolean {
       if (!importDef || !importDef.parent) return false;
 
       const importDeclaration = importDef.parent as TSESTree.ImportDeclaration;
@@ -142,16 +168,16 @@ export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
       );
     }
 
-    function getOriginalName(importDef: any, calleeName: string): string {
+    function getOriginalName(
+      importDef: TSESLint.Scope.Definition | null,
+      calleeName: string,
+    ): string {
       if (!importDef || !importDef.node) return calleeName;
 
       if (importDef.node.type === AST_NODE_TYPES.ImportSpecifier) {
         return importDef.node.imported.name;
       }
 
-      // For Default imports or Namespace imports, we use the local name as the "original" name
-      // because we can't easily know what it was exported as without more complex analysis.
-      // However, if it's a default import from a local file, it won't pass isFromAllowedSource.
       return calleeName;
     }
 
@@ -200,22 +226,14 @@ export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
         }
 
         const calleeName = node.callee.name;
-        const importDef = getImportDef(calleeName);
+        const importDef = getImportDef(calleeName, node);
 
-        if (!importDef) {
-          return;
-        }
-
-        if (!isFromAllowedSource(importDef)) {
+        if (!importDef || !isFromAllowedSource(importDef)) {
           return;
         }
 
         const originalName = getOriginalName(importDef, calleeName);
-        if (!entryPoints.has(originalName)) {
-          return;
-        }
-
-        if (!isTopLevel(node)) {
+        if (!entryPoints.has(originalName) || !isTopLevel(node)) {
           return;
         }
 
