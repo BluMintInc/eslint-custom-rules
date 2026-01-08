@@ -1,4 +1,3 @@
-//stop conflicting
 # @blumintinc/eslint-plugin-blumint
 
 Custom eslint rules for use at BluMint
