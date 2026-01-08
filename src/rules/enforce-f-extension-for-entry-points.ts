@@ -54,13 +54,13 @@ function getScopeForNode(
   context: TSESLint.RuleContext<MessageIds, Options>,
   node: TSESTree.Node,
 ): TSESLint.Scope.Scope {
-  const sourceCode = context.getSourceCode();
+  const sourceCode = context.sourceCode ?? context.getSourceCode();
   const sourceCodeWithScope = sourceCode as unknown as {
-    getScope?: (currentNode?: TSESTree.Node) => TSESLint.Scope.Scope | null;
+    getScope?: (currentNode: TSESTree.Node) => TSESLint.Scope.Scope;
   };
 
   if (typeof sourceCodeWithScope.getScope === 'function') {
-    return sourceCodeWithScope.getScope(node) ?? context.getScope();
+    return sourceCodeWithScope.getScope(node);
   }
 
   return context.getScope();
@@ -175,7 +175,14 @@ export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
       if (!importDef || !importDef.node) return calleeName;
 
       if (importDef.node.type === AST_NODE_TYPES.ImportSpecifier) {
-        return importDef.node.imported.name;
+        const { imported } = importDef.node;
+        if (imported.type === AST_NODE_TYPES.Identifier) {
+          return imported.name;
+        }
+        // In ESLint 8+, imported can be a Literal. We handle it at runtime.
+        if ((imported as any).type === AST_NODE_TYPES.Literal) {
+          return String((imported as any).value);
+        }
       }
 
       return calleeName;
@@ -220,20 +227,24 @@ export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
         if (reported || isDefiningEntryPoint) return;
 
         // We only care about simple identifier calls (e.g., onCall())
-        // per instructions: "Primary focus is on our internal wrappers... donot worry about legacy code / external libraries using namespaced calls."
         if (node.callee.type !== AST_NODE_TYPES.Identifier) {
           return;
         }
 
         const calleeName = node.callee.name;
-        const importDef = getImportDef(calleeName, node);
 
+        // Optimization: Early return if it's not a top-level call
+        if (!isTopLevel(node)) {
+          return;
+        }
+
+        const importDef = getImportDef(calleeName, node);
         if (!importDef || !isFromAllowedSource(importDef)) {
           return;
         }
 
         const originalName = getOriginalName(importDef, calleeName);
-        if (!entryPoints.has(originalName) || !isTopLevel(node)) {
+        if (!entryPoints.has(originalName)) {
           return;
         }
 
