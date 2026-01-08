@@ -116,6 +116,11 @@ ruleTesterTs.run(
         code: `export const onCall = () => {}; export const other = onCall(() => {});`,
         filename: '/workspace/functions/src/v2/https/onCall.ts',
       },
+      // 17. ExportDefaultDeclaration hit (should be ignored if in correct file)
+      {
+        code: `export const onCall = () => {}; export default function onCall() {};`,
+        filename: '/workspace/functions/src/v2/https/onCall.ts',
+      },
     ],
     invalid: [
       // 1. Basic violation (.ts calling onCall)

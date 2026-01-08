@@ -72,6 +72,98 @@ function getScopeForNode(
   return context.getScope();
 }
 
+/**
+ * Gets the import definition for a given name in the current scope.
+ */
+function getImportDef(
+  context: TSESLint.RuleContext<MessageIds, Options>,
+  calleeName: string,
+  node: TSESTree.Node,
+): TSESLint.Scope.Definition | null {
+  const scope = getScopeForNode(context, node);
+  let currentScope: TSESLint.Scope.Scope | null = scope;
+  let variable: TSESLint.Scope.Variable | undefined;
+
+  while (currentScope) {
+    variable = currentScope.set.get(calleeName);
+    if (variable) {
+      break;
+    }
+    currentScope = currentScope.upper;
+  }
+
+  if (!variable) {
+    return null;
+  }
+
+  return variable.defs.find((def) => def.type === 'ImportBinding') ?? null;
+}
+
+/**
+ * Checks if the import comes from an allowed Firebase or internal wrapper source.
+ */
+function isFromAllowedSource(
+  importDef: TSESLint.Scope.Definition | null,
+): boolean {
+  if (!importDef || !importDef.parent) {
+    return false;
+  }
+
+  const importDeclaration = importDef.parent as TSESTree.ImportDeclaration;
+  if (importDeclaration.type !== AST_NODE_TYPES.ImportDeclaration) {
+    return false;
+  }
+
+  const source = importDeclaration.source.value;
+  return (
+    source.startsWith('firebase-functions') ||
+    source.includes('v2/') ||
+    source.includes('util/webhook/')
+  );
+}
+
+/**
+ * Resolves the original name of the imported function, handling aliases and default imports.
+ */
+function getOriginalName(
+  importDef: TSESLint.Scope.Definition | null,
+  calleeName: string,
+  entryPoints: Set<string>,
+): string {
+  if (!importDef || !importDef.node) {
+    return calleeName;
+  }
+
+  // Handle named imports: import { onCall as myCall } from ...
+  if (importDef.node.type === AST_NODE_TYPES.ImportSpecifier) {
+    const { imported } = importDef.node;
+    if (imported.type === AST_NODE_TYPES.Identifier) {
+      return imported.name;
+    }
+    // In ESLint 8+, imported can be a Literal. We handle it at runtime.
+    if ((imported as any).type === AST_NODE_TYPES.Literal) {
+      return String((imported as any).value);
+    }
+  }
+
+  // Handle default imports: import onCall from '../../v2/https/onCall'
+  // or even: import myHandler from '../../v2/https/onCall'
+  if (importDef.node.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
+    const importDeclaration = importDef.parent as TSESTree.ImportDeclaration;
+    const modulePath = importDeclaration.source.value;
+
+    // For default imports, extract the module path's last segment and check if it's an entry point module
+    // We match both / segment and \ segment (for Windows paths in sources, though uncommon)
+    const match = modulePath.match(/[/\\]([^/\\]+)$/);
+    const segment = match ? match[1] : modulePath;
+    if (entryPoints.has(segment)) {
+      return segment;
+    }
+  }
+
+  return calleeName;
+}
+
 export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
   name: 'enforce-f-extension-for-entry-points',
   meta: {
@@ -136,90 +228,6 @@ export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
     let isDefiningEntryPoint = false;
     let reported = false;
 
-    /**
-     * Gets the import definition for a given name in the current scope.
-     */
-    function getImportDef(
-      calleeName: string,
-      node: TSESTree.Node,
-    ): TSESLint.Scope.Definition | null {
-      const scope = getScopeForNode(context, node);
-      let currentScope: TSESLint.Scope.Scope | null = scope;
-      let variable: TSESLint.Scope.Variable | undefined;
-
-      while (currentScope) {
-        variable = currentScope.set.get(calleeName);
-        if (variable) break;
-        currentScope = currentScope.upper;
-      }
-
-      if (!variable) return null;
-
-      return variable.defs.find((def) => def.type === 'ImportBinding') ?? null;
-    }
-
-    /**
-     * Checks if the import comes from an allowed Firebase or internal wrapper source.
-     */
-    function isFromAllowedSource(
-      importDef: TSESLint.Scope.Definition | null,
-    ): boolean {
-      if (!importDef || !importDef.parent) return false;
-
-      const importDeclaration = importDef.parent as TSESTree.ImportDeclaration;
-      if (importDeclaration.type !== AST_NODE_TYPES.ImportDeclaration) {
-        return false;
-      }
-
-      const source = importDeclaration.source.value;
-      return (
-        source.startsWith('firebase-functions') ||
-        source.includes('v2/') ||
-        source.includes('util/webhook/')
-      );
-    }
-
-    /**
-     * Resolves the original name of the imported function, handling aliases and default imports.
-     */
-    function getOriginalName(
-      importDef: TSESLint.Scope.Definition | null,
-      calleeName: string,
-    ): string {
-      if (!importDef || !importDef.node) {
-        return calleeName;
-      }
-
-      // Handle named imports: import { onCall as myCall } from ...
-      if (importDef.node.type === AST_NODE_TYPES.ImportSpecifier) {
-        const { imported } = importDef.node;
-        if (imported.type === AST_NODE_TYPES.Identifier) {
-          return imported.name;
-        }
-        // In ESLint 8+, imported can be a Literal. We handle it at runtime.
-        if ((imported as any).type === AST_NODE_TYPES.Literal) {
-          return String((imported as any).value);
-        }
-      }
-
-      // Handle default imports: import onCall from '../../v2/https/onCall'
-      // or even: import myHandler from '../../v2/https/onCall'
-      if (importDef.node.type === AST_NODE_TYPES.ImportDefaultSpecifier) {
-        const importDeclaration = importDef.parent as TSESTree.ImportDeclaration;
-        const modulePath = importDeclaration.source.value;
-
-        // For default imports, extract the module path's last segment and check if it's an entry point module
-        // We match both / segment and \ segment (for Windows paths in sources, though uncommon)
-        const match = modulePath.match(/[/\\]([^/\\]+)$/);
-        const segment = match ? match[1] : modulePath;
-        if (entryPoints.has(segment)) {
-          return segment;
-        }
-      }
-
-      return calleeName;
-    }
-
     return {
       ExportNamedDeclaration(node) {
         if (isDefiningEntryPoint || !node.declaration) {
@@ -280,13 +288,13 @@ export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
         }
 
         // Variable lookup logic and import source validation
-        const importDef = getImportDef(calleeName, node);
+        const importDef = getImportDef(context, calleeName, node);
         if (!importDef || !isFromAllowedSource(importDef)) {
           return;
         }
 
         // Entry point checking
-        const originalName = getOriginalName(importDef, calleeName);
+        const originalName = getOriginalName(importDef, calleeName, entryPoints);
         if (!entryPoints.has(originalName)) {
           return;
         }
