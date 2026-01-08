@@ -1,6 +1,6 @@
 import type { TSESLint } from '@typescript-eslint/utils';
 import { ruleTesterTs } from '../utils/ruleTester';
-import { enforceFirebaseImports } from '../rules/enforce-dynamic-firebase-imports';
+import enforceFirebaseImports from '../rules/enforce-dynamic-firebase-imports';
 
 const ruleTester = ruleTesterTs;
 
