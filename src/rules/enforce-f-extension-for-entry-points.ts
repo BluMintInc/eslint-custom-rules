@@ -245,10 +245,7 @@ export const enforceFExtensionForEntryPoints = createRule<
     }
 
     // Only apply to .ts and .tsx files (not .f.ts or .f.tsx)
-    if (
-      (!fileName.endsWith('.ts') && !fileName.endsWith('.tsx')) ||
-      /\.f\.tsx?$/.test(fileName)
-    ) {
+    if (!/\.tsx?$/.test(fileName) || /\.f\.tsx?$/.test(fileName)) {
       return {};
     }
 
