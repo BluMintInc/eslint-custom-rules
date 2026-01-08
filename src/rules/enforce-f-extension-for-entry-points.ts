@@ -155,9 +155,7 @@ export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
 
       if (!variable) return null;
 
-      return (
-        variable.defs.find((def) => def.type === 'ImportBinding') ?? null
-      );
+      return variable.defs.find((def) => def.type === 'ImportBinding') ?? null;
     }
 
     /**
@@ -281,11 +279,13 @@ export const enforceFExtensionForEntryPoints = createRule<Options, MessageIds>({
           return;
         }
 
+        // Variable lookup logic and import source validation
         const importDef = getImportDef(calleeName, node);
         if (!importDef || !isFromAllowedSource(importDef)) {
           return;
         }
 
+        // Entry point checking
         const originalName = getOriginalName(importDef, calleeName);
         if (!entryPoints.has(originalName)) {
           return;
