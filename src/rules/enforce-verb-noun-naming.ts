@@ -4552,6 +4552,10 @@ const ALLOWED_LEADING_WORDS = new Set([
   'middleware',
   'callable',
   'recursive',
+  'is',
+  'has',
+  'can',
+  'should',
 ]);
 
 export const enforceVerbNounNaming = createRule<[], MessageIds>({

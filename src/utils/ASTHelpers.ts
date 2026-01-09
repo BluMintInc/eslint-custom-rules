@@ -1,4 +1,4 @@
-import { TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { Graph } from './graph/ClassGraphBuilder';
 export class ASTHelpers {
   /**
@@ -598,7 +598,6 @@ export class ASTHelpers {
     }
 
     if (
-      node.type === 'TryStatement' ||
       node.type === 'WhileStatement' ||
       node.type === 'DoWhileStatement' ||
       node.type === 'ForStatement' ||
@@ -609,16 +608,22 @@ export class ASTHelpers {
       return ASTHelpers.returnsJSX((node as any).body);
     }
 
+    if (node.type === AST_NODE_TYPES.LogicalExpression) {
+      return ASTHelpers.returnsJSX(node.right);
+    }
+
+    if (node.type === 'TryStatement') {
+      return (
+        ASTHelpers.returnsJSX(node.block) ||
+        ASTHelpers.returnsJSX(node.handler?.body) ||
+        ASTHelpers.returnsJSX(node.finalizer)
+      );
+    }
+
     if (node.type === 'ConditionalExpression') {
       return (
         ASTHelpers.returnsJSX(node.consequent) ||
         ASTHelpers.returnsJSX(node.alternate)
-      );
-    }
-
-    if (node.type === 'LogicalExpression') {
-      return (
-        ASTHelpers.returnsJSX(node.left) || ASTHelpers.returnsJSX(node.right)
       );
     }
 
