@@ -129,6 +129,9 @@ function checkFunction(
         fix:
           results[2] || results[1]
             ? function fix(fixer) {
+                if (node.async || (node as any).generator) {
+                  return null;
+                }
                 const sourceCode = context.sourceCode;
                 let importFix: TSESLint.RuleFix | null = null;
 
@@ -200,7 +203,7 @@ function checkFunction(
                   ),
                   fixer.insertTextAfterRange(
                     [node.range[1], node.range[1]],
-                    ')',
+                    ');',
                   ),
                   fixer.replaceTextRange(
                     [node.id!.range[0] - 1, node.id!.range[1]],

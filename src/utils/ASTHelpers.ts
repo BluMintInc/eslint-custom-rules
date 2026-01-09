@@ -9,7 +9,7 @@ export class ASTHelpers {
    *
    * This "any-cast boundary" is confined to helper functions in this module.
    * Correctness is enforced by the runtime type-guard helpers in this file
-   * and the comprehensive unit tests that validate AST shapes. If (node as any)
+   * and unit tests that cover known AST shapes. If (node as any)
    * usage is broadened, ensure that these guards and tests are updated to
    * prevent accidental behavioral changes.
    */
@@ -711,19 +711,27 @@ export class ASTHelpers {
       const arg = (node as any).argument;
       if (arg?.type === AST_NODE_TYPES.Identifier && context) {
         // Resolve variable to its initializer if possible
-        const sourceCode = context.sourceCode as any;
-        const scope = (sourceCode.getScope
-          ? sourceCode.getScope(node)
-          : (context as any).getScope()) as TSESLint.Scope.Scope;
-        const variable = ASTHelpers.findVariableInScope(scope, arg.name);
-        if (variable && variable.defs.length === 1) {
-          const def = variable.defs[0];
-          if (
-            def.type === 'Variable' &&
-            def.node.type === AST_NODE_TYPES.VariableDeclarator &&
-            def.node.init
-          ) {
-            return ASTHelpers.returnsJSX(def.node.init, context);
+        let scope: TSESLint.Scope.Scope | null = null;
+        try {
+          const sourceCode = context.sourceCode as any;
+          scope = (sourceCode?.getScope
+            ? sourceCode.getScope(node)
+            : (context as any)?.getScope?.()) as TSESLint.Scope.Scope;
+        } catch {
+          scope = null;
+        }
+
+        if (scope) {
+          const variable = ASTHelpers.findVariableInScope(scope, arg.name);
+          if (variable && variable.defs.length === 1) {
+            const def = variable.defs[0];
+            if (
+              def.type === 'Variable' &&
+              def.node.type === AST_NODE_TYPES.VariableDeclarator &&
+              def.node.init
+            ) {
+              return ASTHelpers.returnsJSX(def.node.init, context);
+            }
           }
         }
       }
