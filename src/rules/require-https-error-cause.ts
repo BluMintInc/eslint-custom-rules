@@ -80,7 +80,7 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
         };
 
         if (typeof sourceCodeWithScope.getScope === 'function') {
-          return sourceCodeWithScope.getScope(node);
+          return sourceCodeWithScope.getScope(node) ?? context.getScope();
         }
 
         return context.getScope();

@@ -262,6 +262,8 @@ function findVariableInScopes(
   };
   let scope: TSESLint.Scope.Scope | null = null;
   try {
+    // Tolerate ESLint API variations across versions/configurations.
+    // Some contexts may not provide getScope or may throw unexpectedly.
     scope = sourceCode.getScope?.(identifier) ?? context.getScope();
   } catch {
     scope = null;

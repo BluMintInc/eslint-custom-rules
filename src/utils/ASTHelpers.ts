@@ -715,7 +715,7 @@ export class ASTHelpers {
         try {
           const sourceCode = context.sourceCode as any;
           scope = (sourceCode?.getScope
-            ? sourceCode.getScope(node)
+            ? sourceCode.getScope(node) ?? (context as any)?.getScope?.()
             : (context as any)?.getScope?.()) as TSESLint.Scope.Scope;
         } catch {
           scope = null;

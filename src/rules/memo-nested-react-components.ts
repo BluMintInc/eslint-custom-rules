@@ -496,7 +496,7 @@ How to fix: Create the component via {{replacementHook}} and wrap it in memo() s
     try {
       scope =
         typeof sourceCodeWithScope.getScope === 'function'
-          ? sourceCodeWithScope.getScope(node)
+          ? sourceCodeWithScope.getScope(node) ?? context.getScope()
           : context.getScope();
     } catch {
       scope = null;
