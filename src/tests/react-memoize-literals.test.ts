@@ -229,10 +229,10 @@ export const useReproduction = () => {
     {
       code: `
 const MyComponent = () => {
-  const handleAsync = async () => {
+  const handleAsync = useCallback(async () => {
     const data = { key: 'value' };
     await doSomething(data);
-  };
+  }, []);
   return <button onClick={handleAsync}>Click</button>;
 };
       `,
@@ -970,6 +970,27 @@ function Component() {
           data: {
             literalType: 'object literal',
             hookName: 'useQuery',
+          },
+        },
+      ],
+    },
+    // Unmemoized async function in component
+    {
+      code: `
+const MyComponent = () => {
+  const handleAsync = async () => {
+    console.log('async');
+  };
+  return <button onClick={handleAsync}>Click</button>;
+};
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'component "MyComponent"',
+            memoHook: 'useCallback',
           },
         },
       ],

@@ -317,7 +317,7 @@ function isInsideAllowedHookCallback(node: TSESTree.Node): boolean {
   let current: TSESTree.Node | null = node;
   while (current) {
     if (isFunctionNode(current)) {
-      if (current.async) {
+      if (current.async && current !== node) {
         return true;
       }
 
@@ -327,6 +327,8 @@ function isInsideAllowedHookCallback(node: TSESTree.Node): boolean {
       ) {
         let parent: TSESTree.Node | null = current.parent as TSESTree.Node | null;
 
+        // Skip through TypeScript type assertions and parentheses to find
+        // the actual CallExpression that invokes the hook.
         while (parent && isExpressionWrapper(parent)) {
           parent = parent.parent as TSESTree.Node | null;
         }
