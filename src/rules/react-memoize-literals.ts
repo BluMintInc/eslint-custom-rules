@@ -593,7 +593,10 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
     function isVariableAlwaysThrown(
       declarator: TSESTree.VariableDeclarator,
     ): boolean {
-      const variables = ASTHelpers.getDeclaredVariables(context, declarator);
+      const variables = ASTHelpers.getDeclaredVariables(
+        context as unknown as TSESLint.RuleContext<string, readonly unknown[]>,
+        declarator,
+      );
       if (variables.length === 0) {
         return false;
       }
