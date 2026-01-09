@@ -251,6 +251,32 @@ function MyComponent({ isError }) {
         }
       `,
     },
+    // Conditional expression in throw path
+    {
+      code: `
+        function Component({ condition }) {
+          const error = condition ? { message: 'A' } : { message: 'B' };
+          throw error;
+        }
+      `,
+    },
+    // Logical expression in throw path
+    {
+      code: `
+        function Component({ condition }) {
+          const error = condition || { message: 'Fallback' };
+          throw error;
+        }
+      `,
+    },
+    // Direct throw with conditional expression
+    {
+      code: `
+        function Component({ condition }) {
+          throw condition ? { message: 'A' } : { message: 'B' };
+        }
+      `,
+    },
   ],
   invalid: [
     // Variable with no usages (dead code) - should still be reported as unmemoized

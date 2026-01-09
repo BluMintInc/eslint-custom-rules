@@ -699,6 +699,8 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
           current.type !== AST_NODE_TYPES.Property &&
           current.type !== AST_NODE_TYPES.ArrayExpression &&
           current.type !== AST_NODE_TYPES.NewExpression &&
+          current.type !== AST_NODE_TYPES.ConditionalExpression &&
+          current.type !== AST_NODE_TYPES.LogicalExpression &&
           !isExpressionWrapper(current)
         ) {
           hasPassedForbiddenNode = true;

@@ -623,7 +623,8 @@ export class ASTHelpers {
     };
 
     const fn =
-      typeof sourceCodeWithDeclaredVariables.getDeclaredVariables === 'function'
+      typeof sourceCodeWithDeclaredVariables?.getDeclaredVariables ===
+      'function'
         ? sourceCodeWithDeclaredVariables.getDeclaredVariables.bind(
             sourceCodeWithDeclaredVariables,
           )
