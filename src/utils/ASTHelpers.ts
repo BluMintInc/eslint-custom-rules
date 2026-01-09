@@ -28,6 +28,25 @@ export class ASTHelpers {
     return null;
   }
 
+  /**
+   * Compatibility wrapper for getting the scope of a node across ESLint versions.
+   * ESLint 9 moves getScope onto sourceCode; ESLint 8 exposes context.getScope().
+   */
+  public static getScope(
+    context: Readonly<TSESLint.RuleContext<string, readonly unknown[]>>,
+    node: TSESTree.Node,
+  ): TSESLint.Scope.Scope {
+    try {
+      const sourceCode = context.sourceCode as any;
+      if (typeof sourceCode?.getScope === 'function') {
+        return sourceCode.getScope(node);
+      }
+      return (context as any).getScope();
+    } catch {
+      return (context as any).getScope();
+    }
+  }
+
   public static blockIncludesIdentifier(
     block: TSESTree.BlockStatement,
   ): boolean {
@@ -705,15 +724,7 @@ export class ASTHelpers {
       const arg = (node as any).argument;
       if (arg?.type === AST_NODE_TYPES.Identifier && context) {
         // Resolve variable to its initializer if possible
-        let scope: TSESLint.Scope.Scope | null = null;
-        try {
-          const sourceCode = context.sourceCode as any;
-          scope = (sourceCode?.getScope
-            ? sourceCode.getScope(node)
-            : (context as any)?.getScope?.()) as TSESLint.Scope.Scope;
-        } catch {
-          scope = null;
-        }
+        const scope = ASTHelpers.getScope(context, node);
 
         if (scope) {
           const variable = ASTHelpers.findVariableInScope(scope, arg.name);

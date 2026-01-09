@@ -163,6 +163,20 @@ class UsesJsxArgumentOnly {
     },
     {
       filename: 'file.tsx',
+      code: `class MultipleDefinitionsValid {
+  get component() {
+    let make;
+    if (Math.random() > 0.5) {
+      make = () => <div />;
+    } else {
+      make = () => null;
+    }
+    return make;
+  }
+}`,
+    },
+    {
+      filename: 'file.tsx',
       code: `class FunctionMethodCall {
   render() {
     const makeComponent = () => () => <div />;
@@ -174,21 +188,21 @@ class UsesJsxArgumentOnly {
   invalid: [
     {
       filename: 'file.tsx',
-      code: `class ReassignedVariable {
+      code: `class ConditionalJsx {
   get component() {
-    let make = () => <div />;
-    make = () => null;
-    return make;
+    const make = () => <div />;
+    const alt = () => null;
+    return condition ? make : alt;
   }
 }`,
       errors: [{ messageId: 'requireMemoizeJsxReturner' }],
       output: `import { Memoize } from '@blumintinc/typescript-memoize';
-class ReassignedVariable {
+class ConditionalJsx {
   @Memoize()
   get component() {
-    let make = () => <div />;
-    make = () => null;
-    return make;
+    const make = () => <div />;
+    const alt = () => null;
+    return condition ? make : alt;
   }
 }`,
     },
@@ -197,7 +211,7 @@ class ReassignedVariable {
       code: `class ReassignedVariable {
   get component() {
     let make = () => <div />;
-    make = () => null;
+    make = () => <span>Actually Jsx</span>;
     return make;
   }
 }`,
@@ -207,7 +221,7 @@ class ReassignedVariable {
   @Memoize()
   get component() {
     let make = () => <div />;
-    make = () => null;
+    make = () => <span>Actually Jsx</span>;
     return make;
   }
 }`,
