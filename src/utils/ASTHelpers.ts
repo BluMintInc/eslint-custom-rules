@@ -724,20 +724,23 @@ export class ASTHelpers {
       const arg = (node as any).argument;
       if (arg?.type === AST_NODE_TYPES.Identifier && context) {
         // Resolve variable to its initializer if possible
-        const scope = ASTHelpers.getScope(context, node);
+        const scope = ASTHelpers.getScope(context, arg);
 
         if (scope) {
           const variable = ASTHelpers.findVariableInScope(scope, arg.name);
           if (variable && variable.defs.length === 1) {
+            const def = variable.defs[0];
+
             // Check if the variable is reassigned after initialization.
             // We only follow variables that are defined once and never reassigned
             // to ensure we're following a deterministic JSX-returning value.
-            const isReassigned = variable.references.some((ref) => ref.isWrite());
+            const isReassigned = variable.references.some(
+              (ref) => ref.isWrite() && ref.identifier !== def.name,
+            );
             if (isReassigned) {
               return ASTHelpers.returnsJSXValue(arg);
             }
 
-            const def = variable.defs[0];
             if (
               def.type === 'Variable' &&
               def.node.type === AST_NODE_TYPES.VariableDeclarator &&
