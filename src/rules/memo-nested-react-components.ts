@@ -492,11 +492,17 @@ How to fix: Create the component via {{replacementHook}} and wrap it in memo() s
             const sourceCodeWithScope = sourceCode as unknown as {
               getScope?: (node: TSESTree.Node) => TSESLint.Scope.Scope;
             };
-            const scope =
-              typeof sourceCodeWithScope.getScope === 'function'
-                ? sourceCodeWithScope.getScope(node)
-                : context.getScope();
-            const replacementIdentifierAvailable =
+    let scope: TSESLint.Scope.Scope | null = null;
+    try {
+      scope =
+        typeof sourceCodeWithScope.getScope === 'function'
+          ? sourceCodeWithScope.getScope(node)
+          : context.getScope();
+    } catch {
+      scope = null;
+    }
+    if (!scope) return null;
+    const replacementIdentifierAvailable =
               hook.name === 'useCallback'
                 ? hasIdentifierInScope(HOOK_REPLACEMENT.useCallback, scope)
                 : hasIdentifierInScope(

@@ -260,8 +260,12 @@ function findVariableInScopes(
   const sourceCode = context.sourceCode as TSESLint.SourceCode & {
     getScope?: (node: TSESTree.Node) => TSESLint.Scope.Scope | null;
   };
-  let scope: TSESLint.Scope.Scope | null =
-    sourceCode.getScope?.(identifier) ?? context.getScope();
+  let scope: TSESLint.Scope.Scope | null = null;
+  try {
+    scope = sourceCode.getScope?.(identifier) ?? context.getScope();
+  } catch {
+    scope = null;
+  }
   while (scope) {
     const variable = scope.variables.find((v) => v.name === identifier.name);
     if (variable) return variable;

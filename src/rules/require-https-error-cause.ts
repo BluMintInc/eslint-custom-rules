@@ -74,15 +74,19 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
     // ESLint 9 moves getScope onto sourceCode; ESLint 8 exposes context.getScope().
     // This shim keeps the rule compatible until the codebase drops ESLint 8 support.
     const getScopeForNode = (node: TSESTree.Node) => {
-      const sourceCodeWithScope = sourceCode as unknown as {
-        getScope?: (currentNode?: TSESTree.Node) => TSESLint.Scope.Scope | null;
-      };
+      try {
+        const sourceCodeWithScope = sourceCode as unknown as {
+          getScope?: (currentNode?: TSESTree.Node) => TSESLint.Scope.Scope | null;
+        };
 
-      if (typeof sourceCodeWithScope.getScope === 'function') {
-        return sourceCodeWithScope.getScope(node);
+        if (typeof sourceCodeWithScope.getScope === 'function') {
+          return sourceCodeWithScope.getScope(node);
+        }
+
+        return context.getScope();
+      } catch {
+        return context.getScope();
       }
-
-      return context.getScope();
     };
 
     const reportMissingCause = (

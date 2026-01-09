@@ -111,16 +111,20 @@ const getScopeForNode = (
   context: TSESLint.RuleContext<MessageIds, Options>,
   node: TSESTree.Node,
 ): TSESLint.Scope.Scope => {
-  const sourceCode = context.getSourceCode();
-  const sourceCodeWithScope = sourceCode as unknown as {
-    getScope?: (currentNode?: TSESTree.Node) => TSESLint.Scope.Scope | null;
-  };
+  try {
+    const sourceCode = context.getSourceCode();
+    const sourceCodeWithScope = sourceCode as unknown as {
+      getScope?: (currentNode?: TSESTree.Node) => TSESLint.Scope.Scope | null;
+    };
 
-  if (typeof sourceCodeWithScope.getScope === 'function') {
-    return sourceCodeWithScope.getScope(node) ?? context.getScope();
+    if (typeof sourceCodeWithScope.getScope === 'function') {
+      return sourceCodeWithScope.getScope(node) ?? context.getScope();
+    }
+
+    return context.getScope();
+  } catch {
+    return context.getScope();
   }
-
-  return context.getScope();
 };
 
 const getDeclaredVariablesForNode = (
