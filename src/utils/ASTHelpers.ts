@@ -710,6 +710,12 @@ export class ASTHelpers {
       return ASTHelpers.returnsJSXValue((node as any).argument);
     }
 
+    if (node.type === AST_NODE_TYPES.VariableDeclaration) {
+      return (node as any).declarations.some((decl: any) =>
+        ASTHelpers.returnsJSXValue(decl.init),
+      );
+    }
+
     if (node.type === AST_NODE_TYPES.BlockStatement) {
       return (node as any).body.some((stmt: any) =>
         ASTHelpers.returnsJSXFromStatement(stmt),
@@ -787,6 +793,10 @@ export class ASTHelpers {
       return (node as any).declarations.some((decl: any) =>
         ASTHelpers.returnsJSX(decl.init),
       );
+    }
+
+    if (node.type === AST_NODE_TYPES.VariableDeclarator) {
+      return ASTHelpers.returnsJSX((node as any).init);
     }
 
     // Treat remaining nodes as statement-path or value checks.
