@@ -242,8 +242,28 @@ function MyComponent({ isError }) {
         }
       `,
     },
+    // Dead code variable (no usages before throw)
+    {
+      code: `
+        function Component() {
+          const err = { message: 'error' };
+          throw err;
+        }
+      `,
+    },
   ],
   invalid: [
+    // Variable with multiple usages where only some are terminal (should NOT be exempt)
+    {
+      code: `
+        function Component() {
+          const err = { code: 'ERR' };
+          useEffect(() => console.log(err), [err]);
+          throw err;
+        }
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
     // Literal nested in an expression that is assigned and thrown (should NOT be exempt)
     {
       code: `

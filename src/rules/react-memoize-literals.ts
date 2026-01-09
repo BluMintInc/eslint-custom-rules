@@ -615,6 +615,9 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
      */
     function isTerminalUsage(node: TSESTree.Node): boolean {
       let current: TSESTree.Node | null = node.parent as TSESTree.Node | null;
+      // Tracks whether the literal passed through a node that represents non-container usage.
+      // Once true, any throw we encounter won't count as "terminal" because the literal
+      // is already used in an expression that might need memoization.
       let hasPassedForbiddenNode = false;
 
       while (current) {
@@ -633,8 +636,8 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
               const variable = variables[0];
               const usages = variable.references.filter((ref) => !ref.init);
 
-              // If there are no usages, it's not "terminal" in a way that
-              // bypasses memoization (though it might be dead code).
+              // Variables with no usages (dead code) don't bypass memoization checks
+              // because we can't prove the literal is thrown.
               if (usages.length > 0) {
                 const owningFunction = findOwningFunction(current);
 
@@ -644,23 +647,24 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
 
                   while (refParent) {
                     if (isFunctionNode(refParent)) {
-                      // If we hit a function node, we stop. If it's a nested function
-                      // boundary, any throw inside it does not abort the outer
-                      // component's render cycle.
+                      // Stop at function boundaries: throws inside nested functions don't
+                      // abort the outer render cycle, so they don't make the literal terminal
+                      // from the perspective of the declaring function.
                       return false;
                     }
 
                     if (refParent.type === AST_NODE_TYPES.ThrowStatement) {
-                      // Found a throw! Since we haven't hit a function node yet,
-                      // this throw is in the same function scope as the usage.
-                      // We now check if that function scope matches the one
-                      // where the variable was declared.
-                      let throwCheckParent: TSESTree.Node | null = refParent.parent as TSESTree.Node | null;
+                      // Found a throw in the same lexical scope as the usage.
+                      // Verify the throw is in the same function where the variable was declared
+                      // to ensure the throw terminates the render before memoization matters.
+                      let throwCheckParent: TSESTree.Node | null =
+                        refParent.parent as TSESTree.Node | null;
                       while (throwCheckParent) {
                         if (isFunctionNode(throwCheckParent)) {
                           return throwCheckParent === owningFunction;
                         }
-                        throwCheckParent = throwCheckParent.parent as TSESTree.Node | null;
+                        throwCheckParent =
+                          throwCheckParent.parent as TSESTree.Node | null;
                       }
                       return owningFunction === null;
                     }
@@ -688,8 +692,14 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
           break;
         }
 
-        // If we pass through a node that isn't a simple container or error-wrapper,
-        // it counts as an "usage" within an expression that might be memoizable.
+        // We distinguish between "containers" (nodes that build up an error value
+        // or wrap an expression) and "usages" (nodes where the value is consumed
+        // in a way that might benefit from memoization).
+        //
+        // Containers (NewExpression for errors, wrappers, or object/array builders)
+        // are allowed because they are part of the path to a 'throw'.
+        // Other nodes (like function calls or being a prop) mark the literal as
+        // having a non-terminal usage.
         if (
           current.type !== AST_NODE_TYPES.ObjectExpression &&
           current.type !== AST_NODE_TYPES.Property &&
