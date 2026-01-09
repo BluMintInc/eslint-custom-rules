@@ -475,6 +475,40 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
         };
       `,
     },
+    // Using object in conditional should be valid as it requires truthiness check of the entire object
+    {
+      code: `
+        const MyComponent = ({ config }: { config: { value: string } }) => {
+          const value = useMemo(() => {
+            return config ? config.value : null;
+          }, [config]);
+          return <div>{value}</div>;
+        };
+      `,
+    },
+    // Using object in logical expression should be valid as it requires truthiness check
+    {
+      code: `
+        const MyComponent = ({ settings }: { settings: { enabled: boolean } }) => {
+          const isEnabled = useMemo(() => {
+            return settings && settings.enabled;
+          }, [settings]);
+          return <div>{isEnabled}</div>;
+        };
+      `,
+    },
+    // Using object in comparison should be valid
+    {
+      code: `
+        const MyComponent = ({ userData }) => {
+          useEffect(() => {
+            if (userData === null) return;
+            console.log(userData.id);
+          }, [userData]);
+          return null;
+        };
+      `,
+    },
   ],
   invalid: [
     // Optional chaining case
@@ -610,46 +644,6 @@ ruleTesterJsx.run('no-entire-object-hook-deps', noEntireObjectHookDeps, {
             syncChannelGroup();
           }, [channelGroupIdRouter, findByChannelGroupId]);
           return null;
-        };
-      `,
-    },
-    // Object used in conditional but only specific property needed
-    {
-      code: `
-        const MyComponent = ({ config }: { config: { value: string } }) => {
-          const value = useMemo(() => {
-            return config ? config.value : null;
-          }, [config]);
-          return <div>{value}</div>;
-        };
-      `,
-      errors: [avoid('config', 'config.value')],
-      output: `
-        const MyComponent = ({ config }: { config: { value: string } }) => {
-          const value = useMemo(() => {
-            return config ? config.value : null;
-          }, [config.value]);
-          return <div>{value}</div>;
-        };
-      `,
-    },
-    // Object used in logical AND but only specific property needed
-    {
-      code: `
-        const MyComponent = ({ settings }: { settings: { enabled: boolean } }) => {
-          const isEnabled = useMemo(() => {
-            return settings && settings.enabled;
-          }, [settings]);
-          return <div>{isEnabled}</div>;
-        };
-      `,
-      errors: [avoid('settings', 'settings.enabled')],
-      output: `
-        const MyComponent = ({ settings }: { settings: { enabled: boolean } }) => {
-          const isEnabled = useMemo(() => {
-            return settings && settings.enabled;
-          }, [settings.enabled]);
-          return <div>{isEnabled}</div>;
         };
       `,
     },

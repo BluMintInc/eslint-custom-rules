@@ -273,24 +273,26 @@ function getObjectUsagesInHook(
     if (!node || visited.has(node)) return;
     visited.add(node);
 
-    // Direct usage of the identifier
+    // Direct usage of the target identifier to distinguish between:
+    // 1. Never used (not even present) → suggest removal
+    // 2. Used in ways requiring entire object → no suggestion
+    // 3. Used only via specific fields → suggest replacing with fields
     if (node.type === AST_NODE_TYPES.Identifier && node.name === objectName) {
       const parent = node.parent;
 
-      // Check if this is a property name in a non-computed member expression (e.g., other.objectName)
+      // Exclude: property name in `other.objectName` (not our target object)
       const isMemberProperty =
         parent?.type === AST_NODE_TYPES.MemberExpression &&
         parent.property === node &&
         !parent.computed;
 
-      // Check if this is the object of a member expression (e.g., objectName.prop)
-      // These are handled by the MemberExpression block to allow for specific field tracking
+      // Exclude: object in `objectName.prop` (handled by MemberExpression visitor for field tracking)
       const isMemberObject =
         parent?.type === AST_NODE_TYPES.MemberExpression &&
         parent.object === node;
 
-      // Check if it's a key in an object literal (e.g., { objectName: 1 })
-      // but not a shorthand property (e.g., { objectName })
+      // Exclude: key in `{ objectName: value }` (not usage, just a label)
+      // Include: shorthand `{ objectName }` (actual usage)
       const isPropertyKey =
         parent?.type === AST_NODE_TYPES.Property &&
         parent.key === node &&
@@ -300,10 +302,14 @@ function getObjectUsagesInHook(
       if (!isMemberProperty && !isMemberObject && !isPropertyKey) {
         isUsed = true;
 
-        // Certain usages mean we definitely need the entire object
+        // Patterns that require the entire object (cannot refactor to specific fields)
         const isTypeAUsage =
           parent?.type === AST_NODE_TYPES.ReturnStatement ||
           parent?.type === AST_NODE_TYPES.ArrayExpression ||
+          parent?.type === AST_NODE_TYPES.BinaryExpression ||
+          parent?.type === AST_NODE_TYPES.LogicalExpression ||
+          parent?.type === AST_NODE_TYPES.ConditionalExpression ||
+          parent?.type === AST_NODE_TYPES.UnaryExpression ||
           (parent?.type === AST_NODE_TYPES.Property &&
             (parent.value === node || parent.shorthand)) ||
           parent?.type === AST_NODE_TYPES.TemplateLiteral ||
