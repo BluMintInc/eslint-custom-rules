@@ -559,19 +559,54 @@ export class ASTHelpers {
     return false;
   }
 
-  public static returnsJSX(node: TSESTree.Node): boolean {
+  public static returnsJSX(node: TSESTree.Node | null | undefined): boolean {
+    if (!node) {
+      return false;
+    }
+
     if (node.type === 'JSXElement' || node.type === 'JSXFragment') {
       return true;
     }
 
     if (node.type === 'BlockStatement') {
       for (const statement of node.body) {
-        if (statement.type === 'ReturnStatement' && statement.argument) {
-          if (ASTHelpers.returnsJSX(statement.argument)) {
+        if (ASTHelpers.returnsJSX(statement)) {
+          return true;
+        }
+      }
+    }
+
+    if (node.type === 'ReturnStatement' && node.argument) {
+      return ASTHelpers.returnsJSX(node.argument);
+    }
+
+    if (node.type === 'IfStatement') {
+      return (
+        ASTHelpers.returnsJSX(node.consequent) ||
+        ASTHelpers.returnsJSX(node.alternate)
+      );
+    }
+
+    if (node.type === 'SwitchStatement') {
+      for (const switchCase of node.cases) {
+        for (const statement of switchCase.consequent) {
+          if (ASTHelpers.returnsJSX(statement)) {
             return true;
           }
         }
       }
+    }
+
+    if (
+      node.type === 'TryStatement' ||
+      node.type === 'WhileStatement' ||
+      node.type === 'DoWhileStatement' ||
+      node.type === 'ForStatement' ||
+      node.type === 'ForInStatement' ||
+      node.type === 'ForOfStatement' ||
+      node.type === 'LabeledStatement'
+    ) {
+      return ASTHelpers.returnsJSX((node as any).body);
     }
 
     if (node.type === 'ConditionalExpression') {
@@ -585,6 +620,19 @@ export class ASTHelpers {
       return (
         ASTHelpers.returnsJSX(node.left) || ASTHelpers.returnsJSX(node.right)
       );
+    }
+
+    if (
+      node.type === 'TSAsExpression' ||
+      node.type === 'TSSatisfiesExpression' ||
+      node.type === 'TSTypeAssertion' ||
+      node.type === 'TSNonNullExpression'
+    ) {
+      return ASTHelpers.returnsJSX(node.expression);
+    }
+
+    if ((node as any).type === 'ParenthesizedExpression') {
+      return ASTHelpers.returnsJSX((node as any).expression);
     }
 
     return false;
