@@ -609,7 +609,9 @@ export class ASTHelpers {
     }
 
     if (node.type === AST_NODE_TYPES.LogicalExpression) {
-      return ASTHelpers.returnsJSX(node.right);
+      return (
+        ASTHelpers.returnsJSX(node.left) || ASTHelpers.returnsJSX(node.right)
+      );
     }
 
     if (node.type === 'TryStatement') {
