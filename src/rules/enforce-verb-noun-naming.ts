@@ -3968,10 +3968,7 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
         return true;
       }
 
-      return (
-        (hasProps && returnsJsx) ||
-        (isUnmemoized && returnsJsx)
-      );
+      return (hasProps && returnsJsx) || (isUnmemoized && returnsJsx);
     }
     return {
       FunctionDeclaration(node) {

@@ -714,9 +714,11 @@ export class ASTHelpers {
         let scope: TSESLint.Scope.Scope | null = null;
         try {
           const sourceCode = context.sourceCode as any;
-          scope = (sourceCode?.getScope
-            ? sourceCode.getScope(node) ?? (context as any)?.getScope?.()
-            : (context as any)?.getScope?.()) as TSESLint.Scope.Scope;
+          scope = (
+            sourceCode?.getScope
+              ? sourceCode.getScope(node) ?? (context as any)?.getScope?.()
+              : (context as any)?.getScope?.()
+          ) as TSESLint.Scope.Scope;
         } catch {
           scope = null;
         }
@@ -767,7 +769,10 @@ export class ASTHelpers {
     if (node.type === AST_NODE_TYPES.TryStatement) {
       return (
         ASTHelpers.returnsJSXFromStatement((node as any).block, context) ||
-        ASTHelpers.returnsJSXFromStatement((node as any).handler?.body, context) ||
+        ASTHelpers.returnsJSXFromStatement(
+          (node as any).handler?.body,
+          context,
+        ) ||
         ASTHelpers.returnsJSXFromStatement((node as any).finalizer, context)
       );
     }

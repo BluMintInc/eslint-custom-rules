@@ -135,7 +135,10 @@ function getEslint9Scope(
  * Gets the import definition for a given name in the current scope.
  */
 function getImportDef(
-  context: TSESLint.RuleContext<EntryPointExtensionMessageIds, EnforceFExtensionOptions>,
+  context: TSESLint.RuleContext<
+    EntryPointExtensionMessageIds,
+    EnforceFExtensionOptions
+  >,
   calleeName: string,
   node: TSESTree.Node,
 ): TSESLint.Scope.Definition | null {

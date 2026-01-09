@@ -76,7 +76,9 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
     const getScopeForNode = (node: TSESTree.Node) => {
       try {
         const sourceCodeWithScope = sourceCode as unknown as {
-          getScope?: (currentNode?: TSESTree.Node) => TSESLint.Scope.Scope | null;
+          getScope?: (
+            currentNode?: TSESTree.Node,
+          ) => TSESLint.Scope.Scope | null;
         };
 
         if (typeof sourceCodeWithScope.getScope === 'function') {

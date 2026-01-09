@@ -503,7 +503,10 @@ export const noInlineComponentProp = createRule<Options, MessageIds>({
         defNode.init,
         member.property.name,
       );
-      if (fnNode && isComponentLikeFunction(fnNode, context, member.property.name)) {
+      if (
+        fnNode &&
+        isComponentLikeFunction(fnNode, context, member.property.name)
+      ) {
         report(member, propName, member.property.name);
       }
     }
