@@ -42,10 +42,6 @@ export const avoidUtilsDirectory = createRule<[], MessageIds>({
             data: {
               path: relativePath,
             },
-            fix() {
-              // We can't provide an auto-fix since directory renaming is beyond ESLint's scope
-              return null;
-            },
           });
         }
       },
