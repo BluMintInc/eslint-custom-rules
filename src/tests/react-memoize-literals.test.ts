@@ -242,7 +242,7 @@ function MyComponent({ isError }) {
         }
       `,
     },
-    // Dead code variable (no usages before throw)
+    // Variable used only in a throw (terminal usage)
     {
       code: `
         function Component() {
@@ -253,6 +253,15 @@ function MyComponent({ isError }) {
     },
   ],
   invalid: [
+    // Variable with no usages (dead code) - should still be reported as unmemoized
+    {
+      code: `
+        function Component() {
+          const err = { message: 'unused' };
+        }
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
     // Variable with multiple usages where only some are terminal (should NOT be exempt)
     {
       code: `

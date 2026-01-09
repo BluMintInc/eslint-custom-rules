@@ -700,6 +700,11 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
         // are allowed because they are part of the path to a 'throw'.
         // Other nodes (like function calls or being a prop) mark the literal as
         // having a non-terminal usage.
+        //
+        // Note: AST_NODE_TYPES.CallExpression is intentionally excluded from allowed
+        // containers. Passing a literal into a CallExpression allows the callee to
+        // observe or store the reference, making its identity relevant even if
+        // the result is eventually thrown (e.g., const err = fn({ ... }); throw err;).
         if (
           current.type !== AST_NODE_TYPES.ObjectExpression &&
           current.type !== AST_NODE_TYPES.Property &&
