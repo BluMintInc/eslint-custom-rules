@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 import nlp from 'compromise';
 
 type MessageIds = 'functionVerbPhrase';
@@ -4703,9 +4704,8 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
                 id.typeAnnotation.typeAnnotation,
               );
               return (
-                typeText.includes('React.') ||
-                typeText.includes('FC') ||
-                typeText.includes('FunctionComponent')
+                /\bReact\.(FC|FunctionComponent)\b/.test(typeText) ||
+                /\b(FC|FunctionComponent)\b/.test(typeText)
               );
             }
           }
@@ -4713,7 +4713,7 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
         return false;
       })();
 
-      return hasProps || isUnmemoized || hasReactType;
+      return (hasProps && ASTHelpers.returnsJSX(node)) || isUnmemoized || hasReactType;
     }
     return {
       FunctionDeclaration(node) {

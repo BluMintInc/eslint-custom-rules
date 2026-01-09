@@ -232,6 +232,26 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
       errors: [verbNounError('userData')],
     },
 
+    // Regression tests for destructured parameters false positive
+    {
+      code: `function userDataDestructured({ id, name }) { return { id, name }; }`,
+      errors: [verbNounError('userDataDestructured')],
+    },
+    {
+      code: `const configHandler = ({ config }) => { return config; };`,
+      errors: [verbNounError('configHandler')],
+    },
+
+    // Regression tests for React type annotation false positive (FC/FunctionComponent substring matching)
+    {
+      code: `const myFC: RFC3339Date = (date) => { return date; };`,
+      errors: [verbNounError('myFC')],
+    },
+    {
+      code: `const configParser: IETFConfig = ({ config }) => { return config; };`,
+      errors: [verbNounError('configParser')],
+    },
+
     // Invalid arrow function names (not verb phrases)
     {
       code: `const data = () => null;`,
