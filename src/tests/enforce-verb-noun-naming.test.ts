@@ -253,6 +253,16 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
     },
   ],
   invalid: [
+    {
+      code: `function NonComponentHelper() { return 123; }`,
+      filename: 'helpers.ts',
+      errors: [verbNounError('NonComponentHelper')],
+    },
+    {
+      code: `const HelperFunction = () => { doWork(); }`,
+      filename: 'utils.tsx',
+      errors: [verbNounError('HelperFunction')],
+    },
     // Invalid function names (not verb phrases)
     {
       code: `function userData() { return null; }`,
