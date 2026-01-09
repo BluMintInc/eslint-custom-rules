@@ -157,7 +157,10 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
 
       const catchName = activeCatch.paramName;
 
-      // Handle single object argument signature (e.g., new HttpsError({ code: '...', cause: error }))
+      // HttpsError accepts both positional and object-based constructors. This signature
+      // is supported for compatibility with HttpsError overloads, ensuring the rule
+      // can validate the 'cause' property within a settings object to preserve
+      // error chaining for better diagnostics.
       if (
         node.arguments.length === 1 &&
         node.arguments[0].type === AST_NODE_TYPES.ObjectExpression
@@ -167,8 +170,10 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
           (prop): prop is TSESTree.Property =>
             prop.type === AST_NODE_TYPES.Property &&
             !prop.computed &&
-            prop.key.type === AST_NODE_TYPES.Identifier &&
-            prop.key.name === 'cause',
+            ((prop.key.type === AST_NODE_TYPES.Identifier &&
+              prop.key.name === 'cause') ||
+              (prop.key.type === AST_NODE_TYPES.Literal &&
+                prop.key.value === 'cause')),
         );
 
         if (!causeProp) {

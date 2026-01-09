@@ -89,3 +89,8 @@ try {
 
 - You are working in contexts where `HttpsError` is not available or you intentionally want to construct errors outside a `catch` block (those calls are out of scope for this rule).
 - You deliberately do not want to preserve the original error stack (not recommended for production error monitoring).
+
+### Known Limitations
+
+- **Spread Syntax**: The rule does not currently inspect properties introduced via spread syntax in the settings object (e.g., `new HttpsError({ ...config, cause: error })` where `cause` is inside `config`). The `cause` must be explicitly present as a property in the object literal for the rule to detect it.
+- **Computed Properties**: Computed property keys for `cause` (e.g., `new HttpsError({ [computedKey]: error })`) are not supported and will be reported as a missing cause.

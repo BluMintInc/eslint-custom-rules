@@ -104,11 +104,37 @@ ruleTesterTs.run('require-https-error-cause', requireHttpsErrorCause, {
       try {
         await doWork();
       } catch (err) {
-        throw new HttpsError({ cause: err });
+        throw new HttpsError({ 'cause': err });
+      }
+    `,
+    `
+      try {
+        await doWork();
+      } catch (err) {
+        throw new HttpsError({ "cause": err });
+      }
+    `,
+    `
+      try {
+        await doWork();
+      } catch (err) {
+        const cfg = { code: 'internal' };
+        throw new HttpsError({ ...cfg, cause: err });
       }
     `,
   ],
   invalid: [
+    {
+      code: `
+        try {
+          await doWork();
+        } catch (error) {
+          const cfg = { cause: error };
+          throw new HttpsError({ ...cfg });
+        }
+      `,
+      errors: [{ messageId: 'missingCause' }],
+    },
     {
       code: `
         try {
