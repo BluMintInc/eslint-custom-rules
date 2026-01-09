@@ -3867,6 +3867,68 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
       return false;
     }
 
+    function getFunctionName(node: TSESTree.Node): string {
+      if (node.type === AST_NODE_TYPES.FunctionDeclaration && node.id) {
+        return node.id.name;
+      }
+      if (
+        node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+        node.type === AST_NODE_TYPES.FunctionExpression
+      ) {
+        const parent = node.parent;
+        if (
+          parent?.type === AST_NODE_TYPES.VariableDeclarator &&
+          parent.id.type === AST_NODE_TYPES.Identifier
+        ) {
+          return parent.id.name;
+        }
+      }
+      return '';
+    }
+
+    function hasReactTypeAnnotation(
+      node:
+        | TSESTree.FunctionDeclaration
+        | TSESTree.ArrowFunctionExpression
+        | TSESTree.FunctionExpression,
+    ): boolean {
+      // Handle ArrowFunctionExpression: const Foo: React.FC = () => ...
+      if (node.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+        const parent = node.parent;
+        if (parent?.type === AST_NODE_TYPES.VariableDeclarator) {
+          const id = parent.id;
+          if (
+            id.type === AST_NODE_TYPES.Identifier &&
+            id.typeAnnotation?.type === AST_NODE_TYPES.TSTypeAnnotation
+          ) {
+            const typeText = context.sourceCode.getText(
+              id.typeAnnotation.typeAnnotation,
+            );
+            if (
+              /\bReact\.(FC|FunctionComponent)\b/.test(typeText) ||
+              /\b(FC|FunctionComponent)\b/.test(typeText)
+            ) {
+              return true;
+            }
+          }
+        }
+      }
+
+      // Handle FunctionDeclaration/FunctionExpression/ArrowFunction return type: function Foo(): React.JSX.Element { ... }
+      if (node.returnType?.type === AST_NODE_TYPES.TSTypeAnnotation) {
+        const typeText = context.sourceCode.getText(
+          node.returnType.typeAnnotation,
+        );
+        return (
+          /\bReact\.(FC|FunctionComponent|JSX\.Element|ReactElement)\b/.test(
+            typeText,
+          ) || /\b(FC|FunctionComponent|JSX\.Element|ReactElement)\b/.test(typeText)
+        );
+      }
+
+      return false;
+    }
+
     function isReactComponent(node: TSESTree.Node): boolean {
       if (
         node.type !== AST_NODE_TYPES.FunctionDeclaration &&
@@ -3876,74 +3938,12 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
         return false;
       }
 
-      // Get the function name
-      let functionName = '';
-      if (node.type === AST_NODE_TYPES.FunctionDeclaration && node.id) {
-        functionName = node.id.name;
-      } else if (
-        node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-        node.type === AST_NODE_TYPES.FunctionExpression
-      ) {
-        const parent = node.parent;
-        if (
-          parent?.type === AST_NODE_TYPES.VariableDeclarator &&
-          parent.id.type === AST_NODE_TYPES.Identifier
-        ) {
-          functionName = parent.id.name;
-        }
-      }
-
+      const functionName = getFunctionName(node);
       const returnsJsx = ASTHelpers.returnsJSX(node.body, context);
       const hasProps = hasPropsParameter(node);
+      const hasReactType = hasReactTypeAnnotation(node);
       const isUnmemoized =
         !!functionName && functionName.endsWith('Unmemoized');
-
-      // Check for React type annotations
-      const hasReactType = (() => {
-        // Handle ArrowFunctionExpression: const Foo: React.FC = () => ...
-        if (node.type === AST_NODE_TYPES.ArrowFunctionExpression) {
-          const parent = node.parent;
-          if (parent?.type === AST_NODE_TYPES.VariableDeclarator) {
-            const id = parent.id;
-            if (
-              id.type === AST_NODE_TYPES.Identifier &&
-              id.typeAnnotation?.type === AST_NODE_TYPES.TSTypeAnnotation
-            ) {
-              const typeText = context.sourceCode.getText(
-                id.typeAnnotation.typeAnnotation,
-              );
-              if (
-                /\bReact\.(FC|FunctionComponent)\b/.test(typeText) ||
-                /\b(FC|FunctionComponent)\b/.test(typeText)
-              ) {
-                return true;
-              }
-            }
-          }
-        }
-
-        // Handle FunctionDeclaration/FunctionExpression return type: function Foo(): React.JSX.Element { ... }
-        if (
-          node.type === AST_NODE_TYPES.FunctionDeclaration ||
-          node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-          node.type === AST_NODE_TYPES.FunctionExpression
-        ) {
-          if (node.returnType?.type === AST_NODE_TYPES.TSTypeAnnotation) {
-            const typeText = context.sourceCode.getText(
-              node.returnType.typeAnnotation,
-            );
-            return (
-              /\bReact\.(FC|FunctionComponent|JSX\.Element|ReactElement)\b/.test(
-                typeText,
-              ) ||
-              /\b(FC|FunctionComponent|JSX\.Element|ReactElement)\b/.test(
-                typeText,
-              )
-            );
-          }
-        }
-        return false;
-      })();
 
       // If the function has a PascalCase name, it's very likely a React component.
       // In the BluMint codebase, we follow the convention that PascalCase functions
@@ -3951,7 +3951,7 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
       if (functionName && isPascalCase(functionName)) {
         const filename = context.getFilename();
         const isJsxFile = /\.(tsx|jsx)$/.test(filename);
-        // Treat as component if it returns JSX or has a React type.
+        // Treat as component if it's a JSX/TSX file, returns JSX, or has a React type.
         // In JSX/TSX files, we're more lenient and treat any PascalCase as a component
         // to avoid false positives for components that don't return JSX directly (e.g. return null).
         // In .ts files, we require more evidence (returns JSX or React type) to avoid
@@ -3966,6 +3966,7 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
         return true;
       }
 
+      // Fallback for components that might not be PascalCase (rare) but have other indicators.
       return (hasProps && returnsJsx) || (isUnmemoized && returnsJsx);
     }
     return {

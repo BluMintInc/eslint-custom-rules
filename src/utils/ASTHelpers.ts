@@ -735,7 +735,7 @@ export class ASTHelpers {
             // We only follow variables that are defined once and never reassigned
             // to ensure we're following a deterministic JSX-returning value.
             const isReassigned = variable.references.some(
-              (ref) => ref.isWrite() && ref.identifier !== def.name,
+              (ref) => ref.isWrite() && !(ref as any).init,
             );
             if (isReassigned) {
               return ASTHelpers.returnsJSXValue(arg);
@@ -835,7 +835,7 @@ export class ASTHelpers {
     }
 
     if (node.type === AST_NODE_TYPES.VariableDeclaration) {
-      // Detect VariableDeclaration initialized with a JSX-returning function
+      // Detects `const Component = () => <div />`-style declarations.
       return (node as any).declarations.some((decl: any) =>
         ASTHelpers.returnsJSX(decl.init, context),
       );
