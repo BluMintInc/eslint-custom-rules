@@ -6,6 +6,12 @@ export class ASTHelpers {
    * across ESLint/typescript-eslint versions without requiring strict
    * type unions for every node kind. This provides a pragmatic compatibility
    * workaround while preserving runtime behavior.
+   *
+   * This "any-cast boundary" is confined to helper functions in this module.
+   * Correctness is enforced by the runtime type-guard helpers in this file
+   * and the comprehensive unit tests that validate AST shapes. If (node as any)
+   * usage is broadened, ensure that these guards and tests are updated to
+   * prevent accidental behavioral changes.
    */
 
   /**
@@ -62,7 +68,7 @@ export class ASTHelpers {
         );
       case 'ObjectPattern':
         return (node as any).properties.some((property: any) =>
-          this.declarationIncludesIdentifier(property.value || null),
+          this.declarationIncludesIdentifier(property),
         );
       case 'AssignmentPattern':
         return this.declarationIncludesIdentifier((node as any).left);
@@ -267,11 +273,7 @@ export class ASTHelpers {
       case 'ObjectPattern':
         return (node as any).properties
           .map((property: any) =>
-            ASTHelpers.classMethodDependenciesOf(
-              property.value || null,
-              graph,
-              className,
-            ),
+            ASTHelpers.classMethodDependenciesOf(property, graph, className),
           )
           .flat();
       case 'AssignmentPattern':
@@ -652,6 +654,98 @@ export class ASTHelpers {
     return (node as any)?.type === 'ParenthesizedExpression';
   }
 
+  private static returnsJSXValue(
+    node: TSESTree.Node | null | undefined,
+  ): boolean {
+    if (!node) {
+      return false;
+    }
+
+    if (
+      node.type === AST_NODE_TYPES.JSXElement ||
+      node.type === AST_NODE_TYPES.JSXFragment
+    ) {
+      return true;
+    }
+
+    if (node.type === AST_NODE_TYPES.LogicalExpression) {
+      return (
+        ASTHelpers.returnsJSXValue((node as any).left) ||
+        ASTHelpers.returnsJSXValue((node as any).right)
+      );
+    }
+
+    if (node.type === AST_NODE_TYPES.ConditionalExpression) {
+      return (
+        ASTHelpers.returnsJSXValue((node as any).consequent) ||
+        ASTHelpers.returnsJSXValue((node as any).alternate)
+      );
+    }
+
+    if (
+      node.type === AST_NODE_TYPES.TSAsExpression ||
+      node.type === AST_NODE_TYPES.TSSatisfiesExpression ||
+      node.type === AST_NODE_TYPES.TSTypeAssertion ||
+      node.type === AST_NODE_TYPES.TSNonNullExpression
+    ) {
+      return ASTHelpers.returnsJSXValue((node as any).expression);
+    }
+
+    if (ASTHelpers.isParenthesizedExpression(node)) {
+      return ASTHelpers.returnsJSXValue((node as any).expression);
+    }
+
+    // Function/class values are not JSX values.
+    return false;
+  }
+
+  private static returnsJSXFromStatement(
+    node: TSESTree.Node | null | undefined,
+  ): boolean {
+    if (!node) {
+      return false;
+    }
+
+    if (node.type === AST_NODE_TYPES.ReturnStatement) {
+      return ASTHelpers.returnsJSXValue((node as any).argument);
+    }
+
+    if (node.type === AST_NODE_TYPES.BlockStatement) {
+      return (node as any).body.some((stmt: any) =>
+        ASTHelpers.returnsJSXFromStatement(stmt),
+      );
+    }
+
+    if (node.type === AST_NODE_TYPES.IfStatement) {
+      return (
+        ASTHelpers.returnsJSXFromStatement((node as any).consequent) ||
+        ASTHelpers.returnsJSXFromStatement((node as any).alternate)
+      );
+    }
+
+    if (node.type === AST_NODE_TYPES.SwitchStatement) {
+      return (node as any).cases.some((c: any) =>
+        c.consequent.some((stmt: any) =>
+          ASTHelpers.returnsJSXFromStatement(stmt),
+        ),
+      );
+    }
+
+    if (node.type === AST_NODE_TYPES.TryStatement) {
+      return (
+        ASTHelpers.returnsJSXFromStatement((node as any).block) ||
+        ASTHelpers.returnsJSXFromStatement((node as any).handler?.body) ||
+        ASTHelpers.returnsJSXFromStatement((node as any).finalizer)
+      );
+    }
+
+    if (ASTHelpers.isLoopOrLabeledStatement(node)) {
+      return ASTHelpers.returnsJSXFromStatement((node as any).body);
+    }
+
+    return false;
+  }
+
   public static returnsJSX(node: TSESTree.Node | null | undefined): boolean {
     if (!node) {
       return false;
@@ -669,7 +763,13 @@ export class ASTHelpers {
       node.type === AST_NODE_TYPES.FunctionExpression ||
       node.type === AST_NODE_TYPES.FunctionDeclaration
     ) {
-      return ASTHelpers.returnsJSX(node.body);
+      const func = node as any;
+      if (node.type === AST_NODE_TYPES.ArrowFunctionExpression) {
+        return func.body.type === AST_NODE_TYPES.BlockStatement
+          ? ASTHelpers.returnsJSXFromStatement(func.body)
+          : ASTHelpers.returnsJSXValue(func.body);
+      }
+      return ASTHelpers.returnsJSXFromStatement(func.body);
     }
 
     if (
@@ -680,79 +780,19 @@ export class ASTHelpers {
     }
 
     if (node.type === AST_NODE_TYPES.VariableDeclaration) {
-      return node.declarations.some((decl) => ASTHelpers.returnsJSX(decl.init));
-    }
-
-    if (node.type === AST_NODE_TYPES.BlockStatement) {
-      for (const statement of node.body) {
-        if (ASTHelpers.returnsJSX(statement)) {
-          return true;
-        }
-      }
-      return false;
-    }
-
-    if (node.type === AST_NODE_TYPES.ReturnStatement && node.argument) {
-      return ASTHelpers.returnsJSX(node.argument);
-    }
-
-    if (node.type === AST_NODE_TYPES.IfStatement) {
-      return (
-        ASTHelpers.returnsJSX(node.consequent) ||
-        ASTHelpers.returnsJSX(node.alternate)
+      // Used for `const Component = () => <div />`-style detection.
+      // Note: We only check if the variable IS initialized to a JSX-returning function,
+      // not if the function containing this declaration returns JSX.
+      // This is primarily for the top-level detection in VariableDeclarator.
+      return (node as any).declarations.some((decl: any) =>
+        ASTHelpers.returnsJSX(decl.init),
       );
     }
 
-    if (node.type === AST_NODE_TYPES.SwitchStatement) {
-      for (const switchCase of node.cases) {
-        for (const statement of switchCase.consequent) {
-          if (ASTHelpers.returnsJSX(statement)) {
-            return true;
-          }
-        }
-      }
-      return false;
-    }
-
-    if (ASTHelpers.isLoopOrLabeledStatement(node)) {
-      return ASTHelpers.returnsJSX(node.body);
-    }
-
-    if (node.type === AST_NODE_TYPES.LogicalExpression) {
-      return (
-        ASTHelpers.returnsJSX(node.right) || ASTHelpers.returnsJSX(node.left)
-      );
-    }
-
-    if (node.type === AST_NODE_TYPES.TryStatement) {
-      return (
-        ASTHelpers.returnsJSX(node.block) ||
-        ASTHelpers.returnsJSX(node.handler?.body) ||
-        ASTHelpers.returnsJSX(node.finalizer)
-      );
-    }
-
-    if (node.type === AST_NODE_TYPES.ConditionalExpression) {
-      return (
-        ASTHelpers.returnsJSX(node.consequent) ||
-        ASTHelpers.returnsJSX(node.alternate)
-      );
-    }
-
-    if (
-      node.type === AST_NODE_TYPES.TSAsExpression ||
-      node.type === AST_NODE_TYPES.TSSatisfiesExpression ||
-      node.type === AST_NODE_TYPES.TSTypeAssertion ||
-      node.type === AST_NODE_TYPES.TSNonNullExpression
-    ) {
-      return ASTHelpers.returnsJSX((node as any).expression);
-    }
-
-    if (node.type === ('ParenthesizedExpression' as any)) {
-      return ASTHelpers.returnsJSX((node as any).expression);
-    }
-
-    return false;
+    // Treat remaining nodes as statement-path or value checks.
+    return (
+      ASTHelpers.returnsJSXFromStatement(node) || ASTHelpers.returnsJSXValue(node)
+    );
   }
 
   public static hasParameters(
