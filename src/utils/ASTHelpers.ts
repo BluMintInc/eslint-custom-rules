@@ -580,7 +580,7 @@ export class ASTHelpers {
 
   private static isParenthesizedExpression(
     node: TSESTree.Node | null | undefined,
-  ): boolean {
+  ): node is TSESTree.Node & { type: 'ParenthesizedExpression'; expression: TSESTree.Node } {
     return (node as any)?.type === 'ParenthesizedExpression';
   }
 
@@ -631,7 +631,7 @@ export class ASTHelpers {
 
     if (node.type === AST_NODE_TYPES.LogicalExpression) {
       return (
-        ASTHelpers.returnsJSX(node.left) || ASTHelpers.returnsJSX(node.right)
+        ASTHelpers.returnsJSX(node.right) || ASTHelpers.returnsJSX(node.left)
       );
     }
 

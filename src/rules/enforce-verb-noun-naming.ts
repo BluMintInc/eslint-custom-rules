@@ -3891,6 +3891,7 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
 
       // Check for React type annotations
       const hasReactType = (() => {
+        // Handle ArrowFunctionExpression: const Foo: React.FC = () => ...
         if (node.type === AST_NODE_TYPES.ArrowFunctionExpression) {
           const parent = node.parent;
           if (parent?.type === AST_NODE_TYPES.VariableDeclarator) {
@@ -3907,6 +3908,24 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
                 /\b(FC|FunctionComponent)\b/.test(typeText)
               );
             }
+          }
+        }
+
+        // Handle FunctionDeclaration/FunctionExpression return type: function Foo(): React.JSX.Element { ... }
+        if (
+          node.type === AST_NODE_TYPES.FunctionDeclaration ||
+          node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
+          node.type === AST_NODE_TYPES.FunctionExpression
+        ) {
+          if (node.returnType?.type === AST_NODE_TYPES.TSTypeAnnotation) {
+            const typeText = context.sourceCode.getText(
+              node.returnType.typeAnnotation,
+            );
+            return (
+              /\bReact\.(FC|FunctionComponent|JSX\.Element|Element)\b/.test(
+                typeText,
+              ) || /\b(FC|FunctionComponent|JSX\.Element|Element)\b/.test(typeText)
+            );
           }
         }
         return false;
