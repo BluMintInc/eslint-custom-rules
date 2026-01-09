@@ -7,9 +7,20 @@ type MessageIds = 'functionVerbPhrase';
 
 const PREPOSITIONS = new Set(['to', 'from', 'with', 'by', 'at', 'of']);
 
-// Verbs, adjectives, and allowed domain-specific prefixes for O(1) lookup.
-// This set intentionally includes non-verbs (e.g., 'stable', 'uuidv4', 'middleware')
-// to reduce false positives for utility, platform-specific, and common helper functions.
+// Domain-specific tokens and utility prefixes that are allowed to start a function name.
+// These are not necessarily verbs but are common in the BluMint codebase.
+const DOMAIN_TOKENS = new Set([
+  'ai',
+  'blumint',
+  'middleware',
+  'noop',
+  'nth',
+  'sequential',
+  'stable',
+  'uuidv4',
+]);
+
+// Verbs and adjectives for O(1) lookup.
 const ALLOWED_LEADING_WORDS = new Set([
   'abandon',
   'abate',
@@ -88,7 +99,6 @@ const ALLOWED_LEADING_WORDS = new Set([
   'aggregate',
   'agonize',
   'agree',
-  'ai',
   'aid',
   'aim',
   'air',
@@ -324,7 +334,6 @@ const ALLOWED_LEADING_WORDS = new Set([
   'blot',
   'blow',
   'bludgeon',
-  'blumint',
   'blunder',
   'blunt',
   'blur',
@@ -1991,7 +2000,6 @@ const ALLOWED_LEADING_WORDS = new Set([
   'method',
   'methuselah',
   'mew',
-  'middleware',
   'migrate',
   'militate',
   'milk',
@@ -2094,7 +2102,6 @@ const ALLOWED_LEADING_WORDS = new Set([
   'no',
   'nod',
   'nominate',
-  'noop',
   'normalize',
   'northrop',
   'nose',
@@ -2105,7 +2112,6 @@ const ALLOWED_LEADING_WORDS = new Set([
   'notify',
   'nourish',
   'now',
-  'nth',
   'nudge',
   'nullify',
   'number',
@@ -2957,7 +2963,6 @@ const ALLOWED_LEADING_WORDS = new Set([
   'sensitize',
   'sentimentalize',
   'separate',
-  'sequential',
   'sequester',
   'serialize',
   'serve',
@@ -3174,7 +3179,6 @@ const ALLOWED_LEADING_WORDS = new Set([
   'squeal',
   'squeeze',
   'stabilize',
-  'stable',
   'stack',
   'staff',
   'stage',
@@ -3599,7 +3603,6 @@ const ALLOWED_LEADING_WORDS = new Set([
   'utilize',
   'utter',
   'uttuh',
-  'uuidv4',
   'vacate',
   'vacillate',
   'vacuum',
@@ -3804,6 +3807,11 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
         return true;
       }
 
+      // Check for domain tokens and utility prefixes first
+      if (DOMAIN_TOKENS.has(firstWordLower)) {
+        return true;
+      }
+
       // Check against our comprehensive verbs list first
       if (ALLOWED_LEADING_WORDS.has(firstWordLower)) {
         return true;
@@ -3876,18 +3884,23 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
         }
       }
 
+      const returnsJsx = ASTHelpers.returnsJSX(node.body);
+
       // If the function has a PascalCase name, it's very likely a React component.
       // In the BluMint codebase, we follow the convention that PascalCase functions
       // are either components or layout components.
       if (functionName && isPascalCase(functionName)) {
-        return true;
+        const filename = context.getFilename();
+        const isJsxFile = /\.(tsx|jsx)$/.test(filename);
+        if (isJsxFile || returnsJsx) {
+          return true;
+        }
       }
 
       // Check for other React component indicators for non-PascalCase functions
       // (though these are rare and should generally be avoided)
       const hasProps = hasPropsParameter(node);
       const isUnmemoized = !!functionName && functionName.endsWith('Unmemoized');
-      const returnsJsx = ASTHelpers.returnsJSX(node.body);
 
       // Check for React type annotations
       const hasReactType = (() => {
@@ -3903,10 +3916,12 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
               const typeText = context.sourceCode.getText(
                 id.typeAnnotation.typeAnnotation,
               );
-              return (
+              if (
                 /\bReact\.(FC|FunctionComponent)\b/.test(typeText) ||
                 /\b(FC|FunctionComponent)\b/.test(typeText)
-              );
+              ) {
+                return true;
+              }
             }
           }
         }

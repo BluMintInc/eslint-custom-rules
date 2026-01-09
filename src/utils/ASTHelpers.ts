@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { Graph } from './graph/ClassGraphBuilder';
 export class ASTHelpers {
   /**
@@ -41,63 +41,63 @@ export class ASTHelpers {
 
     // Gracefully handle ParenthesizedExpression without widening AST node types
     if (ASTHelpers.isParenthesizedExpression(node)) {
-      return this.declarationIncludesIdentifier((node as any).expression);
+      return this.declarationIncludesIdentifier(node.expression);
     }
 
-    switch (node.type) {
+    switch (node.type as any) {
       case 'TSNonNullExpression':
-        return this.declarationIncludesIdentifier(node.expression);
+        return this.declarationIncludesIdentifier((node as any).expression);
       case 'TSSatisfiesExpression':
-        return this.declarationIncludesIdentifier(node.expression);
+        return this.declarationIncludesIdentifier((node as any).expression);
       case 'ArrayPattern':
-        return node.elements.some((element) =>
+        return (node as any).elements.some((element: any) =>
           ASTHelpers.declarationIncludesIdentifier(element),
         );
       case 'ObjectPattern':
-        return node.properties.some((property) =>
+        return (node as any).properties.some((property: any) =>
           this.declarationIncludesIdentifier(property.value || null),
         );
       case 'AssignmentPattern':
-        return this.declarationIncludesIdentifier(node.left);
+        return this.declarationIncludesIdentifier((node as any).left);
       case 'RestElement':
-        return this.declarationIncludesIdentifier(node.argument);
+        return this.declarationIncludesIdentifier((node as any).argument);
       case 'AwaitExpression':
-        return this.declarationIncludesIdentifier(node.argument);
+        return this.declarationIncludesIdentifier((node as any).argument);
       case 'AssignmentExpression':
         return (
-          this.declarationIncludesIdentifier(node.left) ||
-          this.declarationIncludesIdentifier(node.right)
+          this.declarationIncludesIdentifier((node as any).left) ||
+          this.declarationIncludesIdentifier((node as any).right)
         );
       case 'BlockStatement':
-        return node.body.some(
-          (statement) =>
+        return (node as any).body.some(
+          (statement: any) =>
             statement.type === 'BlockStatement' &&
             ASTHelpers.blockIncludesIdentifier(statement),
         );
       case 'IfStatement':
         return (
-          this.declarationIncludesIdentifier(node.test) ||
-          this.declarationIncludesIdentifier(node.consequent) ||
-          this.declarationIncludesIdentifier(node.alternate)
+          this.declarationIncludesIdentifier((node as any).test) ||
+          this.declarationIncludesIdentifier((node as any).consequent) ||
+          this.declarationIncludesIdentifier((node as any).alternate)
         );
       case 'TSTypeAssertion':
-        return this.declarationIncludesIdentifier(node.expression);
+        return this.declarationIncludesIdentifier((node as any).expression);
       case 'Identifier':
         return true;
       case 'SpreadElement':
-        return ASTHelpers.declarationIncludesIdentifier(node.argument);
+        return ASTHelpers.declarationIncludesIdentifier((node as any).argument);
       case 'ChainExpression':
-        return ASTHelpers.declarationIncludesIdentifier(node.expression);
+        return ASTHelpers.declarationIncludesIdentifier((node as any).expression);
       case 'ArrayExpression':
-        return node.elements.some(
-          (element) =>
+        return (node as any).elements.some(
+          (element: any) =>
             element &&
             (element.type === 'SpreadElement'
               ? ASTHelpers.declarationIncludesIdentifier(element.argument)
               : ASTHelpers.declarationIncludesIdentifier(element)),
         );
       case 'ObjectExpression':
-        return node.properties.some((property) => {
+        return (node as any).properties.some((property: any) => {
           if (property.type === 'Property') {
             return ASTHelpers.declarationIncludesIdentifier(property.value);
           } else if (property.type === 'SpreadElement') {
@@ -107,25 +107,25 @@ export class ASTHelpers {
         });
 
       case 'Property':
-        return this.declarationIncludesIdentifier(node.value);
+        return this.declarationIncludesIdentifier((node as any).value);
 
       case 'BinaryExpression':
       case 'LogicalExpression':
         return (
-          this.declarationIncludesIdentifier(node.left) ||
-          this.declarationIncludesIdentifier(node.right)
+          this.declarationIncludesIdentifier((node as any).left) ||
+          this.declarationIncludesIdentifier((node as any).right)
         );
 
       case 'UnaryExpression':
       case 'UpdateExpression':
-        return this.declarationIncludesIdentifier(node.argument);
+        return this.declarationIncludesIdentifier((node as any).argument);
       case 'MemberExpression':
-        if (node.object.type === 'ThisExpression') {
+        if ((node as any).object.type === 'ThisExpression') {
           return true;
         }
         return (
-          this.declarationIncludesIdentifier(node.object) ||
-          this.declarationIncludesIdentifier(node.property)
+          this.declarationIncludesIdentifier((node as any).object) ||
+          this.declarationIncludesIdentifier((node as any).property)
         );
 
       case 'ImportExpression':
@@ -135,22 +135,22 @@ export class ASTHelpers {
       case 'NewExpression':
         // For function and constructor calls, we care about both the callee and the arguments.
         return (
-          this.declarationIncludesIdentifier(node.callee) ||
-          node.arguments.some((arg) => this.declarationIncludesIdentifier(arg))
+          this.declarationIncludesIdentifier((node as any).callee) ||
+          (node as any).arguments.some((arg: any) => this.declarationIncludesIdentifier(arg))
         );
 
       case 'ConditionalExpression':
         return (
-          this.declarationIncludesIdentifier(node.test) ||
-          this.declarationIncludesIdentifier(node.consequent) ||
-          this.declarationIncludesIdentifier(node.alternate)
+          this.declarationIncludesIdentifier((node as any).test) ||
+          this.declarationIncludesIdentifier((node as any).consequent) ||
+          this.declarationIncludesIdentifier((node as any).alternate)
         );
       case 'TemplateLiteral':
-        return node.expressions.some((expr) =>
+        return (node as any).expressions.some((expr: any) =>
           this.declarationIncludesIdentifier(expr),
         );
       case 'TSAsExpression':
-        return this.declarationIncludesIdentifier(node.expression);
+        return this.declarationIncludesIdentifier((node as any).expression);
 
       case 'TSTypeReference':
         // Handle type references (e.g., T in generic types)
@@ -189,50 +189,51 @@ export class ASTHelpers {
     // Gracefully handle ParenthesizedExpression without widening AST node types
     if (ASTHelpers.isParenthesizedExpression(node)) {
       return ASTHelpers.classMethodDependenciesOf(
-        (node as any).expression,
+        node.expression,
         graph,
         className,
       );
     }
 
-    switch (node.type) {
+    switch (node.type as any) {
       case 'MethodDefinition':
-        const functionBody = node.value.body;
+        const functionBody = (node as any).value.body;
         return (functionBody?.body || [])
-          .map((statement) =>
+          .map((statement: any) =>
             ASTHelpers.classMethodDependenciesOf(statement, graph, className),
           )
           .flat();
 
       case 'Identifier':
-        dependencies.push(node.name);
+        dependencies.push((node as any).name);
         break;
 
       case 'ExpressionStatement':
         return ASTHelpers.classMethodDependenciesOf(
-          node.expression,
+          (node as any).expression,
           graph,
           className,
         );
 
       case 'MemberExpression':
+        const memberExpr = node as any;
         if (
-          (node.object.type === 'ThisExpression' &&
-            node.property.type === 'Identifier') ||
-          (node.object.type === 'Identifier' &&
-            node.object.name === className &&
-            node.property.type === 'Identifier')
+          (memberExpr.object.type === 'ThisExpression' &&
+            memberExpr.property.type === 'Identifier') ||
+          (memberExpr.object.type === 'Identifier' &&
+            memberExpr.object.name === className &&
+            memberExpr.property.type === 'Identifier')
         ) {
-          dependencies.push(node.property.name);
+          dependencies.push(memberExpr.property.name);
         } else {
           return [
             ...ASTHelpers.classMethodDependenciesOf(
-              node.object,
+              memberExpr.object,
               graph,
               className,
             ),
             ...ASTHelpers.classMethodDependenciesOf(
-              node.property,
+              memberExpr.property,
               graph,
               className,
             ),
@@ -242,19 +243,19 @@ export class ASTHelpers {
 
       case 'TSNonNullExpression':
         return ASTHelpers.classMethodDependenciesOf(
-          node.expression,
+          (node as any).expression,
           graph,
           className,
         );
       case 'ArrayPattern':
-        return node.elements
-          .map((element) =>
+        return (node as any).elements
+          .map((element: any) =>
             ASTHelpers.classMethodDependenciesOf(element, graph, className),
           )
           .flat();
       case 'ObjectPattern':
-        return node.properties
-          .map((property) =>
+        return (node as any).properties
+          .map((property: any) =>
             ASTHelpers.classMethodDependenciesOf(
               property.value || null,
               graph,
@@ -264,51 +265,53 @@ export class ASTHelpers {
           .flat();
       case 'AssignmentPattern':
         return ASTHelpers.classMethodDependenciesOf(
-          node.left,
+          (node as any).left,
           graph,
           className,
         );
       case 'RestElement':
         return ASTHelpers.classMethodDependenciesOf(
-          node.argument,
+          (node as any).argument,
           graph,
           className,
         );
       case 'AwaitExpression':
         return ASTHelpers.classMethodDependenciesOf(
-          node.argument,
+          (node as any).argument,
           graph,
           className,
         );
       case 'AssignmentExpression':
+        const assignExpr = node as any;
         return [
-          ...ASTHelpers.classMethodDependenciesOf(node.left, graph, className),
-          ...ASTHelpers.classMethodDependenciesOf(node.right, graph, className),
+          ...ASTHelpers.classMethodDependenciesOf(assignExpr.left, graph, className),
+          ...ASTHelpers.classMethodDependenciesOf(assignExpr.right, graph, className),
         ];
       case 'BlockStatement':
-        return node.body
-          .map((statement) =>
+        return (node as any).body
+          .map((statement: any) =>
             ASTHelpers.classMethodDependenciesOf(statement, graph, className),
           )
           .flat()
           .filter(Boolean) as string[];
       case 'IfStatement':
+        const ifStmt = node as any;
         return [
-          ...ASTHelpers.classMethodDependenciesOf(node.test, graph, className),
+          ...ASTHelpers.classMethodDependenciesOf(ifStmt.test, graph, className),
           ...ASTHelpers.classMethodDependenciesOf(
-            node.consequent,
+            ifStmt.consequent,
             graph,
             className,
           ),
           ...ASTHelpers.classMethodDependenciesOf(
-            node.alternate,
+            ifStmt.alternate,
             graph,
             className,
           ),
         ];
       case 'TSTypeAssertion':
         return ASTHelpers.classMethodDependenciesOf(
-          node.expression,
+          (node as any).expression,
           graph,
           className,
         );
@@ -316,20 +319,20 @@ export class ASTHelpers {
         return dependencies;
       case 'SpreadElement':
         return ASTHelpers.classMethodDependenciesOf(
-          node.argument,
+          (node as any).argument,
           graph,
           className,
         );
       case 'ChainExpression':
         return ASTHelpers.classMethodDependenciesOf(
-          node.expression,
+          (node as any).expression,
           graph,
           className,
         );
       case 'ArrayExpression':
-        return node.elements
+        return (node as any).elements
           .map(
-            (element) =>
+            (element: any) =>
               element &&
               (element.type === 'SpreadElement'
                 ? ASTHelpers.classMethodDependenciesOf(
@@ -346,8 +349,8 @@ export class ASTHelpers {
           .flat()
           .filter(Boolean) as string[];
       case 'ObjectExpression':
-        return node.properties
-          .map((property) => {
+        return (node as any).properties
+          .map((property: any) => {
             if (property.type === 'Property') {
               return ASTHelpers.classMethodDependenciesOf(
                 property.value,
@@ -368,111 +371,116 @@ export class ASTHelpers {
 
       case 'Property':
         return ASTHelpers.classMethodDependenciesOf(
-          node.value,
+          (node as any).value,
           graph,
           className,
         );
 
       case 'BinaryExpression':
       case 'LogicalExpression':
+        const binLogExpr = node as any;
         return [
-          ...ASTHelpers.classMethodDependenciesOf(node.left, graph, className),
-          ...ASTHelpers.classMethodDependenciesOf(node.right, graph, className),
+          ...ASTHelpers.classMethodDependenciesOf(binLogExpr.left, graph, className),
+          ...ASTHelpers.classMethodDependenciesOf(binLogExpr.right, graph, className),
         ];
 
       case 'UnaryExpression':
       case 'UpdateExpression':
         return ASTHelpers.classMethodDependenciesOf(
-          node.argument,
+          (node as any).argument,
           graph,
           className,
         );
       case 'CallExpression':
       case 'NewExpression':
         // For function and constructor calls, we care about both the callee and the arguments.
-
+        const callNewExpr = node as any;
         return [
           ...ASTHelpers.classMethodDependenciesOf(
-            node.callee,
+            callNewExpr.callee,
             graph,
             className,
           ),
-          ...node.arguments
-            .map((arg) =>
+          ...callNewExpr.arguments
+            .map((arg: any) =>
               ASTHelpers.classMethodDependenciesOf(arg, graph, className),
             )
             .flat(),
         ];
 
       case 'ConditionalExpression':
+        const condExpr = node as any;
         return [
-          ...ASTHelpers.classMethodDependenciesOf(node.test, graph, className),
+          ...ASTHelpers.classMethodDependenciesOf(condExpr.test, graph, className),
           ...ASTHelpers.classMethodDependenciesOf(
-            node.consequent,
+            condExpr.consequent,
             graph,
             className,
           ),
           ...ASTHelpers.classMethodDependenciesOf(
-            node.alternate,
+            condExpr.alternate,
             graph,
             className,
           ),
         ];
       case 'TSAsExpression':
         return ASTHelpers.classMethodDependenciesOf(
-          node.expression,
+          (node as any).expression,
           graph,
           className,
         );
       case 'VariableDeclaration':
-        return node.declarations
-          .map((declaration) =>
+        return (node as any).declarations
+          .map((declaration: any) =>
             ASTHelpers.classMethodDependenciesOf(declaration, graph, className),
           )
           .flat()
           .filter(Boolean);
       case 'VariableDeclarator':
         return ASTHelpers.classMethodDependenciesOf(
-          node.init,
+          (node as any).init,
           graph,
           className,
         );
       case 'ForOfStatement':
+        const forOfStmt = node as any;
         return [
-          ...ASTHelpers.classMethodDependenciesOf(node.left, graph, className),
-          ...ASTHelpers.classMethodDependenciesOf(node.body, graph, className),
-          ...ASTHelpers.classMethodDependenciesOf(node.right, graph, className),
+          ...ASTHelpers.classMethodDependenciesOf(forOfStmt.left, graph, className),
+          ...ASTHelpers.classMethodDependenciesOf(forOfStmt.body, graph, className),
+          ...ASTHelpers.classMethodDependenciesOf(forOfStmt.right, graph, className),
         ];
       case 'ForStatement':
-        return [node.body, node.init, node.test, node.update]
-          .map((node) =>
+        const forStmt = node as any;
+        return [forStmt.body, forStmt.init, forStmt.test, forStmt.update]
+          .map((node: any) =>
             ASTHelpers.classMethodDependenciesOf(node, graph, className),
           )
           .flat();
       case 'ThrowStatement':
         return ASTHelpers.classMethodDependenciesOf(
-          node.argument,
+          (node as any).argument,
           graph,
           className,
         );
       case 'TemplateLiteral':
-        return node.expressions
-          .map((expression) =>
+        return (node as any).expressions
+          .map((expression: any) =>
             ASTHelpers.classMethodDependenciesOf(expression, graph, className),
           )
           .flat();
       case 'ReturnStatement':
         return ASTHelpers.classMethodDependenciesOf(
-          node.argument,
+          (node as any).argument,
           graph,
           className,
         );
       case 'ArrowFunctionExpression':
+        const arrowFunc = node as any;
         return [
-          ...node.params.flatMap((param) =>
+          ...(arrowFunc.params || []).flatMap((param: any) =>
             ASTHelpers.classMethodDependenciesOf(param, graph, className),
           ),
-          ...ASTHelpers.classMethodDependenciesOf(node.body, graph, className),
+          ...ASTHelpers.classMethodDependenciesOf(arrowFunc.body, graph, className),
         ];
       default:
         break;
@@ -497,19 +505,21 @@ export class ASTHelpers {
   }
 
   public static hasReturnStatement(node: TSESTree.Node): boolean {
-    if (node.type === 'ReturnStatement') {
+    if (node.type === ('ReturnStatement' as any)) {
       return true;
     }
-    if (node.type === 'IfStatement') {
+    if (node.type === ('IfStatement' as any)) {
+      const ifStmt = node as any;
       const consequentHasReturn = ASTHelpers.hasReturnStatement(
-        node.consequent,
+        ifStmt.consequent,
       );
       const alternateHasReturn =
-        !!node.alternate && ASTHelpers.hasReturnStatement(node.alternate);
+        !!ifStmt.alternate && ASTHelpers.hasReturnStatement(ifStmt.alternate);
       return consequentHasReturn && alternateHasReturn;
     }
-    if (node.type === 'BlockStatement') {
-      for (const statement of node.body) {
+    if (node.type === ('BlockStatement' as any)) {
+      const blockStmt = node as any;
+      for (const statement of blockStmt.body) {
         if (ASTHelpers.hasReturnStatement(statement)) {
           return true;
         }
@@ -533,7 +543,7 @@ export class ASTHelpers {
 
   public static isNodeExported(node: TSESTree.Node) {
     // Checking if the node is exported as a named export.
-    if (node.parent && node.parent.type === 'ExportNamedDeclaration') {
+    if (node.parent && node.parent.type === ('ExportNamedDeclaration' as any)) {
       return true;
     }
 
@@ -541,7 +551,7 @@ export class ASTHelpers {
     if (
       node.parent &&
       node.parent.parent &&
-      node.parent.parent.type === 'ExportDefaultDeclaration'
+      node.parent.parent.type === ('ExportDefaultDeclaration' as any)
     ) {
       return true;
     }
@@ -550,8 +560,8 @@ export class ASTHelpers {
     if (
       node.parent &&
       node.parent.parent &&
-      node.parent.parent.type === 'ExportSpecifier' &&
-      node.parent.parent.exported.name === (node as TSESTree.Identifier).name
+      node.parent.parent.type === ('ExportSpecifier' as any) &&
+      (node.parent.parent as any).exported.name === (node as TSESTree.Identifier).name
     ) {
       return true;
     }
@@ -568,19 +578,20 @@ export class ASTHelpers {
     | TSESTree.ForInStatement
     | TSESTree.ForOfStatement
     | TSESTree.LabeledStatement {
+    const type = node.type as any;
     return (
-      node.type === AST_NODE_TYPES.WhileStatement ||
-      node.type === AST_NODE_TYPES.DoWhileStatement ||
-      node.type === AST_NODE_TYPES.ForStatement ||
-      node.type === AST_NODE_TYPES.ForInStatement ||
-      node.type === AST_NODE_TYPES.ForOfStatement ||
-      node.type === AST_NODE_TYPES.LabeledStatement
+      type === 'WhileStatement' ||
+      type === 'DoWhileStatement' ||
+      type === 'ForStatement' ||
+      type === 'ForInStatement' ||
+      type === 'ForOfStatement' ||
+      type === 'LabeledStatement'
     );
   }
 
   private static isParenthesizedExpression(
     node: TSESTree.Node | null | undefined,
-  ): node is TSESTree.Node & { type: 'ParenthesizedExpression'; expression: TSESTree.Node } {
+  ): node is TSESTree.Node & { expression: TSESTree.Node } {
     return (node as any)?.type === 'ParenthesizedExpression';
   }
 
@@ -589,34 +600,38 @@ export class ASTHelpers {
       return false;
     }
 
+    const type = node.type as any;
+
     if (
-      node.type === AST_NODE_TYPES.JSXElement ||
-      node.type === AST_NODE_TYPES.JSXFragment
+      type === 'JSXElement' ||
+      type === 'JSXFragment'
     ) {
       return true;
     }
 
-    if (node.type === AST_NODE_TYPES.BlockStatement) {
-      for (const statement of node.body) {
+    if (type === 'BlockStatement') {
+      for (const statement of (node as any).body) {
         if (ASTHelpers.returnsJSX(statement)) {
           return true;
         }
       }
     }
 
-    if (node.type === AST_NODE_TYPES.ReturnStatement && node.argument) {
-      return ASTHelpers.returnsJSX(node.argument);
+    if (type === 'ReturnStatement' && (node as any).argument) {
+      return ASTHelpers.returnsJSX((node as any).argument);
     }
 
-    if (node.type === AST_NODE_TYPES.IfStatement) {
+    if (type === 'IfStatement') {
+      const ifStmt = node as any;
       return (
-        ASTHelpers.returnsJSX(node.consequent) ||
-        ASTHelpers.returnsJSX(node.alternate)
+        ASTHelpers.returnsJSX(ifStmt.consequent) ||
+        ASTHelpers.returnsJSX(ifStmt.alternate)
       );
     }
 
-    if (node.type === AST_NODE_TYPES.SwitchStatement) {
-      for (const switchCase of node.cases) {
+    if (type === 'SwitchStatement') {
+      const switchStmt = node as any;
+      for (const switchCase of switchStmt.cases) {
         for (const statement of switchCase.consequent) {
           if (ASTHelpers.returnsJSX(statement)) {
             return true;
@@ -626,41 +641,44 @@ export class ASTHelpers {
     }
 
     if (ASTHelpers.isLoopOrLabeledStatement(node)) {
-      return ASTHelpers.returnsJSX(node.body);
+      return ASTHelpers.returnsJSX((node as any).body);
     }
 
-    if (node.type === AST_NODE_TYPES.LogicalExpression) {
+    if (type === 'LogicalExpression') {
+      const logExpr = node as any;
       return (
-        ASTHelpers.returnsJSX(node.right) || ASTHelpers.returnsJSX(node.left)
+        ASTHelpers.returnsJSX(logExpr.right) || ASTHelpers.returnsJSX(logExpr.left)
       );
     }
 
-    if (node.type === AST_NODE_TYPES.TryStatement) {
+    if (type === 'TryStatement') {
+      const tryStmt = node as any;
       return (
-        ASTHelpers.returnsJSX(node.block) ||
-        ASTHelpers.returnsJSX(node.handler?.body) ||
-        ASTHelpers.returnsJSX(node.finalizer)
+        ASTHelpers.returnsJSX(tryStmt.block) ||
+        ASTHelpers.returnsJSX(tryStmt.handler?.body) ||
+        ASTHelpers.returnsJSX(tryStmt.finalizer)
       );
     }
 
-    if (node.type === AST_NODE_TYPES.ConditionalExpression) {
+    if (type === 'ConditionalExpression') {
+      const condExpr = node as any;
       return (
-        ASTHelpers.returnsJSX(node.consequent) ||
-        ASTHelpers.returnsJSX(node.alternate)
+        ASTHelpers.returnsJSX(condExpr.consequent) ||
+        ASTHelpers.returnsJSX(condExpr.alternate)
       );
     }
 
     if (
-      node.type === AST_NODE_TYPES.TSAsExpression ||
-      node.type === AST_NODE_TYPES.TSSatisfiesExpression ||
-      node.type === AST_NODE_TYPES.TSTypeAssertion ||
-      node.type === AST_NODE_TYPES.TSNonNullExpression
+      type === 'TSAsExpression' ||
+      type === 'TSSatisfiesExpression' ||
+      type === 'TSTypeAssertion' ||
+      type === 'TSNonNullExpression'
     ) {
-      return ASTHelpers.returnsJSX(node.expression);
+      return ASTHelpers.returnsJSX((node as any).expression);
     }
 
     if (ASTHelpers.isParenthesizedExpression(node)) {
-      return ASTHelpers.returnsJSX((node as any).expression);
+      return ASTHelpers.returnsJSX(node.expression);
     }
 
     return false;
@@ -672,7 +690,7 @@ export class ASTHelpers {
       | TSESTree.FunctionExpression
       | TSESTree.FunctionDeclaration,
   ): boolean {
-    return node.params && node.params.length > 0;
+    return (node as any).params && (node as any).params.length > 0;
   }
 
   /**
@@ -695,8 +713,8 @@ export class ASTHelpers {
         ? sourceCodeWithDeclaredVariables.getDeclaredVariables.bind(
             sourceCodeWithDeclaredVariables,
           )
-        : typeof context.getDeclaredVariables === 'function'
-          ? context.getDeclaredVariables.bind(context)
+        : typeof (context as any).getDeclaredVariables === 'function'
+          ? (context as any).getDeclaredVariables.bind(context)
           : null;
 
     if (!fn) {
