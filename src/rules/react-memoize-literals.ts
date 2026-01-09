@@ -605,66 +605,68 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
      */
     function isTerminalUsage(node: TSESTree.Node): boolean {
       let current: TSESTree.Node | null = node.parent as TSESTree.Node | null;
+      let hasPassedForbiddenNode = false;
+
       while (current) {
         if (current.type === AST_NODE_TYPES.ThrowStatement) {
-          return true;
+          return !hasPassedForbiddenNode;
         }
 
         if (
           current.type === AST_NODE_TYPES.VariableDeclarator &&
           current.id.type === AST_NODE_TYPES.Identifier
         ) {
-          const variables = getDeclaredVariables(current);
-          if (variables.length > 0) {
-            const variable = variables[0];
-            const usages = variable.references.filter((ref) => !ref.init);
+          if (!hasPassedForbiddenNode) {
+            const variables = getDeclaredVariables(current);
+            if (variables.length > 0) {
+              const variable = variables[0];
+              const usages = variable.references.filter((ref) => !ref.init);
 
-            // If there are no usages, it's not "terminal" in a way that
-            // bypasses memoization (though it might be dead code).
-            if (usages.length === 0) {
-              return false;
-            }
+              // If there are no usages, it's not "terminal" in a way that
+              // bypasses memoization (though it might be dead code).
+              if (usages.length > 0) {
+                const owningFunction = findOwningFunction(current);
 
-            const owningFunction = findOwningFunction(current);
+                const allUsagesAreThrown = usages.every((ref) => {
+                  let refParent: TSESTree.Node | null = ref.identifier
+                    .parent as TSESTree.Node | null;
 
-            const allUsagesAreThrown = usages.every((ref) => {
-              let refParent: TSESTree.Node | null = ref.identifier
-                .parent as TSESTree.Node | null;
-
-              while (refParent) {
-                if (isFunctionNode(refParent)) {
-                  // If we hit a function node, we stop. If it's a nested function
-                  // boundary, any throw inside it does not abort the outer
-                  // component's render cycle.
-                  return false;
-                }
-
-                if (refParent.type === AST_NODE_TYPES.ThrowStatement) {
-                  // Found a throw! Since we haven't hit a function node yet,
-                  // this throw is in the same function scope as the usage.
-                  // We now check if that function scope matches the one
-                  // where the variable was declared.
-                  let throwCheckParent: TSESTree.Node | null = refParent.parent as TSESTree.Node | null;
-                  while (throwCheckParent) {
-                    if (isFunctionNode(throwCheckParent)) {
-                      return throwCheckParent === owningFunction;
+                  while (refParent) {
+                    if (isFunctionNode(refParent)) {
+                      // If we hit a function node, we stop. If it's a nested function
+                      // boundary, any throw inside it does not abort the outer
+                      // component's render cycle.
+                      return false;
                     }
-                    throwCheckParent = throwCheckParent.parent as TSESTree.Node | null;
+
+                    if (refParent.type === AST_NODE_TYPES.ThrowStatement) {
+                      // Found a throw! Since we haven't hit a function node yet,
+                      // this throw is in the same function scope as the usage.
+                      // We now check if that function scope matches the one
+                      // where the variable was declared.
+                      let throwCheckParent: TSESTree.Node | null = refParent.parent as TSESTree.Node | null;
+                      while (throwCheckParent) {
+                        if (isFunctionNode(throwCheckParent)) {
+                          return throwCheckParent === owningFunction;
+                        }
+                        throwCheckParent = throwCheckParent.parent as TSESTree.Node | null;
+                      }
+                      return owningFunction === null;
+                    }
+
+                    if (refParent === current) {
+                      break;
+                    }
+
+                    refParent = refParent.parent as TSESTree.Node | null;
                   }
-                  return owningFunction === null;
-                }
+                  return false;
+                });
 
-                if (refParent === current) {
-                  break;
+                if (allUsagesAreThrown) {
+                  return true;
                 }
-
-                refParent = refParent.parent as TSESTree.Node | null;
               }
-              return false;
-            });
-
-            if (allUsagesAreThrown) {
-              return true;
             }
           }
         }
@@ -673,6 +675,18 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
         // in the same render cycle sense for the current component/hook.
         if (isFunctionNode(current)) {
           break;
+        }
+
+        // If we pass through a node that isn't a simple container or error-wrapper,
+        // it counts as an "usage" within an expression that might be memoizable.
+        if (
+          current.type !== AST_NODE_TYPES.ObjectExpression &&
+          current.type !== AST_NODE_TYPES.Property &&
+          current.type !== AST_NODE_TYPES.ArrayExpression &&
+          current.type !== AST_NODE_TYPES.NewExpression &&
+          !isExpressionWrapper(current)
+        ) {
+          hasPassedForbiddenNode = true;
         }
 
         current = current.parent as TSESTree.Node | null;

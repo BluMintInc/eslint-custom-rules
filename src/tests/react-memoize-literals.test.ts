@@ -244,6 +244,22 @@ function MyComponent({ isError }) {
     },
   ],
   invalid: [
+    // Literal nested in an expression that is assigned and thrown (should NOT be exempt)
+    {
+      code: `
+        function Component() {
+          const x = [
+            { a: 1 }
+          ].map(i => i);
+          throw x;
+        }
+      `,
+      errors: [
+        { messageId: 'componentLiteral' },
+        { messageId: 'componentLiteral' },
+        { messageId: 'componentLiteral' },
+      ],
+    },
     // Literal thrown inside nested function is NOT terminal for component
     {
       code: `
