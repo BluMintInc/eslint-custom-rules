@@ -174,6 +174,46 @@ class UsesJsxArgumentOnly {
   invalid: [
     {
       filename: 'file.tsx',
+      code: `class ReassignedVariable {
+  get component() {
+    let make = () => <div />;
+    make = () => null;
+    return make;
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `import { Memoize } from '@blumintinc/typescript-memoize';
+class ReassignedVariable {
+  @Memoize()
+  get component() {
+    let make = () => <div />;
+    make = () => null;
+    return make;
+  }
+}`,
+    },
+    {
+      filename: 'file.tsx',
+      code: `class ReassignedVariable {
+  get component() {
+    let make = () => <div />;
+    make = () => null;
+    return make;
+  }
+}`,
+      errors: [{ messageId: 'requireMemoizeJsxReturner' }],
+      output: `import { Memoize } from '@blumintinc/typescript-memoize';
+class ReassignedVariable {
+  @Memoize()
+  get component() {
+    let make = () => <div />;
+    make = () => null;
+    return make;
+  }
+}`,
+    },
+    {
+      filename: 'file.tsx',
       code: `class ExampleProvider {
   public get Component() {
     return () => <div>Expensive Component</div>;

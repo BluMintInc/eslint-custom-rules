@@ -26,7 +26,12 @@ function getEslint9Scope(
   sourceCode: TSESLint.SourceCode,
   node: TSESTree.Node,
 ): TSESLint.Scope.Scope {
-  return (sourceCode as any).getScope(node);
+  try {
+    return (sourceCode as any).getScope(node);
+  } catch {
+    // Fallback to null (handled by caller) if the ESLint 9 API throws.
+    return null as any;
+  }
 }
 
 /**
@@ -37,16 +42,12 @@ function getScopeForNode(
   node: TSESTree.Node,
 ): TSESLint.Scope.Scope {
   const sourceCode = context.sourceCode ?? (context as any).getSourceCode();
-  try {
-    if (isEslint9OrLater(sourceCode)) {
-      return getEslint9Scope(sourceCode, node);
-    }
-    return (context as any).getScope();
-  } catch {
-    // Fallback to context.getScope() for robustness if ESLint 9 API throws.
-    // This keeps the rule compatible with both ESLint 8 and 9.
-    return (context as any).getScope();
+
+  if (isEslint9OrLater(sourceCode)) {
+    return getEslint9Scope(sourceCode, node) ?? (context as any).getScope();
   }
+
+  return (context as any).getScope();
 }
 
 const isHttpsErrorCallee = (
