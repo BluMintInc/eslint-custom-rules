@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds =
   | 'componentLiteral'
@@ -585,29 +586,65 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
   create(context) {
     const sourceCode = context.getSourceCode();
 
-    // Compatibility wrapper for getting declared variables across ESLint versions.
-    const sourceCodeWithDeclaredVariables = sourceCode as unknown as {
-      getDeclaredVariables?: (
-        targetNode: TSESTree.Node,
-      ) => readonly TSESLint.Scope.Variable[];
-    };
+    /**
+     * Checks whether a VariableDeclarator's sole usage is being thrown
+     * in the same function scope.
+     */
+    function isVariableAlwaysThrown(
+      declarator: TSESTree.VariableDeclarator,
+    ): boolean {
+      const variables = ASTHelpers.getDeclaredVariables(context, declarator);
+      if (variables.length === 0) {
+        return false;
+      }
 
-    const getDeclaredVariablesInternal =
-      typeof sourceCodeWithDeclaredVariables.getDeclaredVariables === 'function'
-        ? sourceCodeWithDeclaredVariables.getDeclaredVariables.bind(
-            sourceCodeWithDeclaredVariables,
-          )
-        : typeof context.getDeclaredVariables === 'function'
-          ? context.getDeclaredVariables.bind(context)
-          : null;
+      const variable = variables[0];
+      const usages = variable.references.filter((ref) => !ref.init);
 
-    if (!getDeclaredVariablesInternal) {
-      throw new Error(
-        'react-memoize-literals: getDeclaredVariables is not available in this ESLint version.',
-      );
+      // Variables with no usages (dead code) don't bypass memoization checks
+      // because we can't prove the literal is thrown.
+      if (usages.length === 0) {
+        return false;
+      }
+
+      const owningFunction = findOwningFunction(declarator);
+
+      return usages.every((ref) => {
+        let refParent: TSESTree.Node | null = ref.identifier
+          .parent as TSESTree.Node | null;
+
+        while (refParent) {
+          if (isFunctionNode(refParent)) {
+            // Stop at function boundaries: throws inside nested functions don't
+            // abort the outer render cycle, so they don't make the literal terminal
+            // from the perspective of the declaring function.
+            return false;
+          }
+
+          if (refParent.type === AST_NODE_TYPES.ThrowStatement) {
+            // Found a throw in the same lexical scope as the usage.
+            // Verify the throw is in the same function where the variable was declared
+            // to ensure the throw terminates the render before memoization matters.
+            let throwCheckParent: TSESTree.Node | null =
+              refParent.parent as TSESTree.Node | null;
+            while (throwCheckParent) {
+              if (isFunctionNode(throwCheckParent)) {
+                return throwCheckParent === owningFunction;
+              }
+              throwCheckParent = throwCheckParent.parent as TSESTree.Node | null;
+            }
+            return owningFunction === null;
+          }
+
+          if (refParent === declarator) {
+            break;
+          }
+
+          refParent = refParent.parent as TSESTree.Node | null;
+        }
+        return false;
+      });
     }
-
-    const getDeclaredVariables = getDeclaredVariablesInternal;
 
     /**
      * Checks whether a literal is destined to be thrown, making referential
@@ -630,59 +667,8 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
           current.id.type === AST_NODE_TYPES.Identifier &&
           current.init
         ) {
-          if (!hasPassedForbiddenNode) {
-            const variables = getDeclaredVariables(current);
-            if (variables.length > 0) {
-              const variable = variables[0];
-              const usages = variable.references.filter((ref) => !ref.init);
-
-              // Variables with no usages (dead code) don't bypass memoization checks
-              // because we can't prove the literal is thrown.
-              if (usages.length > 0) {
-                const owningFunction = findOwningFunction(current);
-
-                const allUsagesAreThrown = usages.every((ref) => {
-                  let refParent: TSESTree.Node | null = ref.identifier
-                    .parent as TSESTree.Node | null;
-
-                  while (refParent) {
-                    if (isFunctionNode(refParent)) {
-                      // Stop at function boundaries: throws inside nested functions don't
-                      // abort the outer render cycle, so they don't make the literal terminal
-                      // from the perspective of the declaring function.
-                      return false;
-                    }
-
-                    if (refParent.type === AST_NODE_TYPES.ThrowStatement) {
-                      // Found a throw in the same lexical scope as the usage.
-                      // Verify the throw is in the same function where the variable was declared
-                      // to ensure the throw terminates the render before memoization matters.
-                      let throwCheckParent: TSESTree.Node | null =
-                        refParent.parent as TSESTree.Node | null;
-                      while (throwCheckParent) {
-                        if (isFunctionNode(throwCheckParent)) {
-                          return throwCheckParent === owningFunction;
-                        }
-                        throwCheckParent =
-                          throwCheckParent.parent as TSESTree.Node | null;
-                      }
-                      return owningFunction === null;
-                    }
-
-                    if (refParent === current) {
-                      break;
-                    }
-
-                    refParent = refParent.parent as TSESTree.Node | null;
-                  }
-                  return false;
-                });
-
-                if (allUsagesAreThrown) {
-                  return true;
-                }
-              }
-            }
+          if (!hasPassedForbiddenNode && isVariableAlwaysThrown(current)) {
+            return true;
           }
         }
 
