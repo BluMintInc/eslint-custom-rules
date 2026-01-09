@@ -443,6 +443,38 @@ ruleTesterTs.run('no-passthrough-getters', noPassthroughGetters, {
       }
     }
     `,
+
+    // Getters that satisfy an interface (Issue #1132)
+    `
+    interface GitHubIssueRequest {
+      id: string;
+    }
+
+    class DatadogGitHubIssue implements GitHubIssueRequest {
+      constructor(private readonly payload: { issue: { id: string } }) {}
+
+      // Should NOT be flagged as a passthrough getter because it satisfies GitHubIssueRequest
+      public get id() {
+        return this.payload.issue.id;
+      }
+    }
+    `,
+
+    // Getters that override a base class member (Issue #1132)
+    `
+    abstract class BaseIssue {
+      abstract get id(): string;
+    }
+
+    class SpecificIssue extends BaseIssue {
+      constructor(private readonly payload: { id: string }) {}
+
+      // Should NOT be flagged as it overrides base class abstract getter
+      public get id() {
+        return this.payload.id;
+      }
+    }
+    `,
   ],
   invalid: [
     // Simple passthrough getter
