@@ -2,6 +2,13 @@ import { TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { Graph } from './graph/ClassGraphBuilder';
 export class ASTHelpers {
   /**
+   * Uses (node as any) casts throughout to support varying AST shapes
+   * across ESLint/typescript-eslint versions without requiring strict
+   * type unions for every node kind. This provides a pragmatic compatibility
+   * workaround while preserving runtime behavior.
+   */
+
+  /**
    * Finds a variable by name in the scope chain starting from the given scope.
    */
   public static findVariableInScope(
@@ -198,13 +205,14 @@ export class ASTHelpers {
     }
 
     switch (node.type as any) {
-      case 'MethodDefinition':
+      case 'MethodDefinition': {
         const functionBody = (node as any).value.body;
         return (functionBody?.body || [])
           .map((statement: any) =>
             ASTHelpers.classMethodDependenciesOf(statement, graph, className),
           )
           .flat();
+      }
 
       case 'Identifier':
         dependencies.push((node as any).name);
@@ -217,7 +225,7 @@ export class ASTHelpers {
           className,
         );
 
-      case 'MemberExpression':
+      case 'MemberExpression': {
         const memberExpr = node as any;
         if (
           (memberExpr.object.type === 'ThisExpression' &&
@@ -242,6 +250,7 @@ export class ASTHelpers {
           ];
         }
         break;
+      }
 
       case 'TSNonNullExpression':
         return ASTHelpers.classMethodDependenciesOf(
@@ -283,7 +292,7 @@ export class ASTHelpers {
           graph,
           className,
         );
-      case 'AssignmentExpression':
+      case 'AssignmentExpression': {
         const assignExpr = node as any;
         return [
           ...ASTHelpers.classMethodDependenciesOf(
@@ -297,6 +306,7 @@ export class ASTHelpers {
             className,
           ),
         ];
+      }
       case 'BlockStatement':
         return (node as any).body
           .map((statement: any) =>
@@ -304,7 +314,7 @@ export class ASTHelpers {
           )
           .flat()
           .filter(Boolean) as string[];
-      case 'IfStatement':
+      case 'IfStatement': {
         const ifStmt = node as any;
         return [
           ...ASTHelpers.classMethodDependenciesOf(
@@ -323,14 +333,13 @@ export class ASTHelpers {
             className,
           ),
         ];
+      }
       case 'TSTypeAssertion':
         return ASTHelpers.classMethodDependenciesOf(
           (node as any).expression,
           graph,
           className,
         );
-      case 'Identifier':
-        return dependencies;
       case 'SpreadElement':
         return ASTHelpers.classMethodDependenciesOf(
           (node as any).argument,
@@ -391,7 +400,7 @@ export class ASTHelpers {
         );
 
       case 'BinaryExpression':
-      case 'LogicalExpression':
+      case 'LogicalExpression': {
         const binLogExpr = node as any;
         return [
           ...ASTHelpers.classMethodDependenciesOf(
@@ -405,6 +414,7 @@ export class ASTHelpers {
             className,
           ),
         ];
+      }
 
       case 'UnaryExpression':
       case 'UpdateExpression':
@@ -414,7 +424,7 @@ export class ASTHelpers {
           className,
         );
       case 'CallExpression':
-      case 'NewExpression':
+      case 'NewExpression': {
         // For function and constructor calls, we care about both the callee and the arguments.
         const callNewExpr = node as any;
         return [
@@ -429,8 +439,9 @@ export class ASTHelpers {
             )
             .flat(),
         ];
+      }
 
-      case 'ConditionalExpression':
+      case 'ConditionalExpression': {
         const condExpr = node as any;
         return [
           ...ASTHelpers.classMethodDependenciesOf(
@@ -449,6 +460,7 @@ export class ASTHelpers {
             className,
           ),
         ];
+      }
       case 'TSAsExpression':
         return ASTHelpers.classMethodDependenciesOf(
           (node as any).expression,
@@ -468,7 +480,7 @@ export class ASTHelpers {
           graph,
           className,
         );
-      case 'ForOfStatement':
+      case 'ForOfStatement': {
         const forOfStmt = node as any;
         return [
           ...ASTHelpers.classMethodDependenciesOf(
@@ -487,13 +499,15 @@ export class ASTHelpers {
             className,
           ),
         ];
-      case 'ForStatement':
+      }
+      case 'ForStatement': {
         const forStmt = node as any;
         return [forStmt.body, forStmt.init, forStmt.test, forStmt.update]
           .map((node: any) =>
             ASTHelpers.classMethodDependenciesOf(node, graph, className),
           )
           .flat();
+      }
       case 'ThrowStatement':
         return ASTHelpers.classMethodDependenciesOf(
           (node as any).argument,
@@ -512,7 +526,7 @@ export class ASTHelpers {
           graph,
           className,
         );
-      case 'ArrowFunctionExpression':
+      case 'ArrowFunctionExpression': {
         const arrowFunc = node as any;
         return [
           ...(arrowFunc.params || []).flatMap((param: any) =>
@@ -524,6 +538,7 @@ export class ASTHelpers {
             className,
           ),
         ];
+      }
       default:
         break;
     }
@@ -646,7 +661,12 @@ export class ASTHelpers {
     const type = node.type as any;
 
     if (type === 'ExpressionStatement') {
-      return ASTHelpers.returnsJSX((node as any).expression);
+      const expr = (node as any).expression;
+      if (expr.type === 'JSXElement' || expr.type === 'JSXFragment') {
+        // standalone JSX in a block doesn't mean the block returns JSX
+        return false;
+      }
+      return ASTHelpers.returnsJSX(expr);
     }
 
     if (
@@ -667,6 +687,7 @@ export class ASTHelpers {
           return true;
         }
       }
+      return false;
     }
 
     if (type === 'ReturnStatement' && (node as any).argument) {
