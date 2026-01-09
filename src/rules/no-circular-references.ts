@@ -1,4 +1,4 @@
-import { AST_NODE_TYPES, TSESTree } from '@typescript-eslint/utils';
+import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
 type MessageIds = 'circularReference';
@@ -61,7 +61,7 @@ export const noCircularReferences = createRule<[], MessageIds>({
       return node.type === AST_NODE_TYPES.ThisExpression;
     }
 
-    function getScopeId(scope: any): string {
+    function getScopeId(scope: TSESLint.Scope.Scope): string {
       return `${scope.type}:${scope.block.range[0]}:${scope.block.range[1]}`;
     }
 
@@ -144,10 +144,12 @@ export const noCircularReferences = createRule<[], MessageIds>({
       );
     }
 
-    function getVariable(name: string): any {
-      let scope: any = context.getScope();
+    function getVariable(
+      name: string,
+    ): TSESLint.Scope.Variable | null {
+      let scope: TSESLint.Scope.Scope | null = context.getScope();
       while (scope) {
-        const variable = scope.variables.find((v: any) => v.name === name);
+        const variable = scope.variables.find((v) => v.name === name);
         if (variable) {
           return variable;
         }
