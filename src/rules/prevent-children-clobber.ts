@@ -56,13 +56,16 @@ function resolveFunctionName(node: FunctionLike): string | null {
   return null;
 }
 
-function isComponentLike(node: FunctionLike): boolean {
+function isComponentLike(
+  node: FunctionLike,
+  context: Readonly<TSESLint.RuleContext<MessageIds, Options>>,
+): boolean {
   const name = resolveFunctionName(node);
   if (name && /^[A-Z]/.test(name)) {
     return true;
   }
 
-  return ASTHelpers.returnsJSX(node.body);
+  return ASTHelpers.returnsJSX(node.body, context);
 }
 
 function patternHasChildrenProperty(pattern: TSESTree.ObjectPattern): boolean {
@@ -556,7 +559,7 @@ export const preventChildrenClobber = createRule<Options, MessageIds>({
     return {
       ':function'(node: FunctionLike) {
         const ctx: FunctionContext = {
-          isComponent: isComponentLike(node),
+          isComponent: isComponentLike(node, context),
           bindings: new Map(),
           propsLikeIdentifiers: new Set(),
           childrenValueSourceIds: new Map(),

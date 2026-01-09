@@ -3893,7 +3893,7 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
         }
       }
 
-      const returnsJsx = ASTHelpers.returnsJSX(node.body);
+      const returnsJsx = ASTHelpers.returnsJSX(node.body, context);
       const hasProps = hasPropsParameter(node);
       const isUnmemoized =
         !!functionName && functionName.endsWith('Unmemoized');
@@ -3951,8 +3951,12 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
       if (functionName && isPascalCase(functionName)) {
         const filename = context.getFilename();
         const isJsxFile = /\.(tsx|jsx)$/.test(filename);
-        // Only treat PascalCase in TSX/JSX as a component if it also returns JSX or has a React type
-        if ((isJsxFile || returnsJsx) && (returnsJsx || hasReactType)) {
+        // Treat as component if it returns JSX or has a React type.
+        // In JSX/TSX files, we're more lenient and treat any PascalCase as a component
+        // to avoid false positives for components that don't return JSX directly (e.g. return null).
+        // In .ts files, we require more evidence (returns JSX or React type) to avoid
+        // false positives for classes or helper functions that might use PascalCase.
+        if (isJsxFile || returnsJsx || hasReactType) {
           return true;
         }
       }

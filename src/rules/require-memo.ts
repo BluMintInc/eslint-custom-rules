@@ -27,12 +27,15 @@ function isFunction(
   );
 }
 
-function isHigherOrderFunctionReturningJSX(node: TSESTree.Node): boolean {
+function isHigherOrderFunctionReturningJSX(
+  node: TSESTree.Node,
+  context: Readonly<RuleContext<'requireMemo', []>>,
+): boolean {
   if (isFunction(node)) {
     if (node.body && node.body.type === 'BlockStatement') {
       for (const statement of node.body.body) {
         if (statement.type === 'ReturnStatement' && statement.argument) {
-          const returnsJSX = ASTHelpers.returnsJSX(statement.argument);
+          const returnsJSX = ASTHelpers.returnsJSX(statement.argument, context);
           const returnsFunction = isFunction(statement.argument);
 
           return returnsFunction && returnsJSX;
@@ -40,7 +43,7 @@ function isHigherOrderFunctionReturningJSX(node: TSESTree.Node): boolean {
       }
     } else if (node.body && isFunction(node.body)) {
       // Shorthand arrow function: (Comp) => (props) => <Comp {...props} />
-      return ASTHelpers.returnsJSX(node.body);
+      return ASTHelpers.returnsJSX(node.body, context);
     }
   }
   return false;
@@ -91,7 +94,7 @@ function checkFunction(
   if (!fileName.endsWith('.tsx')) {
     return;
   }
-  if (isHigherOrderFunctionReturningJSX(node)) {
+  if (isHigherOrderFunctionReturningJSX(node, context)) {
     return;
   }
   const parentNode = node.parent;
@@ -99,7 +102,10 @@ function checkFunction(
     return;
   }
 
-  if (ASTHelpers.returnsJSX(node.body) && ASTHelpers.hasParameters(node)) {
+  if (
+    ASTHelpers.returnsJSX(node.body, context) &&
+    ASTHelpers.hasParameters(node)
+  ) {
     const results = [
       isUnmemoizedArrowFunction,
       isUnmemoizedFunctionComponent,

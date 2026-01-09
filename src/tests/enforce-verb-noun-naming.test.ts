@@ -260,7 +260,7 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
     },
     {
       code: `const HelperFunction = () => { doWork(); }`,
-      filename: 'utils.tsx',
+      filename: 'utils.ts',
       errors: [verbNounError('HelperFunction')],
     },
     // Invalid function names (not verb phrases)

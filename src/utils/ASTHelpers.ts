@@ -701,58 +701,81 @@ export class ASTHelpers {
 
   private static returnsJSXFromStatement(
     node: TSESTree.Node | null | undefined,
+    context?: Readonly<TSESLint.RuleContext<string, readonly unknown[]>>,
   ): boolean {
     if (!node) {
       return false;
     }
 
     if (node.type === AST_NODE_TYPES.ReturnStatement) {
-      return ASTHelpers.returnsJSXValue((node as any).argument);
+      const arg = (node as any).argument;
+      if (arg?.type === AST_NODE_TYPES.Identifier && context) {
+        // Resolve variable to its initializer if possible
+        const sourceCode = context.sourceCode as any;
+        const scope = (sourceCode.getScope
+          ? sourceCode.getScope(node)
+          : (context as any).getScope()) as TSESLint.Scope.Scope;
+        const variable = ASTHelpers.findVariableInScope(scope, arg.name);
+        if (variable && variable.defs.length === 1) {
+          const def = variable.defs[0];
+          if (
+            def.type === 'Variable' &&
+            def.node.type === AST_NODE_TYPES.VariableDeclarator &&
+            def.node.init
+          ) {
+            return ASTHelpers.returnsJSX(def.node.init, context);
+          }
+        }
+      }
+      return ASTHelpers.returnsJSXValue(arg);
     }
 
     if (node.type === AST_NODE_TYPES.VariableDeclaration) {
-      return (node as any).declarations.some((decl: any) =>
-        ASTHelpers.returnsJSXValue(decl.init),
-      );
+      // ExpressionStatement wraps expressions that are used as statements.
+      // By definition, these don't return values from the function.
+      return false;
     }
 
     if (node.type === AST_NODE_TYPES.BlockStatement) {
       return (node as any).body.some((stmt: any) =>
-        ASTHelpers.returnsJSXFromStatement(stmt),
+        ASTHelpers.returnsJSXFromStatement(stmt, context),
       );
     }
 
     if (node.type === AST_NODE_TYPES.IfStatement) {
       return (
-        ASTHelpers.returnsJSXFromStatement((node as any).consequent) ||
-        ASTHelpers.returnsJSXFromStatement((node as any).alternate)
+        ASTHelpers.returnsJSXFromStatement((node as any).consequent, context) ||
+        ASTHelpers.returnsJSXFromStatement((node as any).alternate, context)
       );
     }
 
     if (node.type === AST_NODE_TYPES.SwitchStatement) {
       return (node as any).cases.some((c: any) =>
         c.consequent.some((stmt: any) =>
-          ASTHelpers.returnsJSXFromStatement(stmt),
+          ASTHelpers.returnsJSXFromStatement(stmt, context),
         ),
       );
     }
 
     if (node.type === AST_NODE_TYPES.TryStatement) {
       return (
-        ASTHelpers.returnsJSXFromStatement((node as any).block) ||
-        ASTHelpers.returnsJSXFromStatement((node as any).handler?.body) ||
-        ASTHelpers.returnsJSXFromStatement((node as any).finalizer)
+        ASTHelpers.returnsJSXFromStatement((node as any).block, context) ||
+        ASTHelpers.returnsJSXFromStatement((node as any).handler?.body, context) ||
+        ASTHelpers.returnsJSXFromStatement((node as any).finalizer, context)
       );
     }
 
     if (ASTHelpers.isLoopOrLabeledStatement(node)) {
-      return ASTHelpers.returnsJSXFromStatement((node as any).body);
+      return ASTHelpers.returnsJSXFromStatement((node as any).body, context);
     }
 
     return false;
   }
 
-  public static returnsJSX(node: TSESTree.Node | null | undefined): boolean {
+  public static returnsJSX(
+    node: TSESTree.Node | null | undefined,
+    context?: Readonly<TSESLint.RuleContext<string, readonly unknown[]>>,
+  ): boolean {
     if (!node) {
       return false;
     }
@@ -772,10 +795,10 @@ export class ASTHelpers {
       const func = node as any;
       if (node.type === AST_NODE_TYPES.ArrowFunctionExpression) {
         return func.body.type === AST_NODE_TYPES.BlockStatement
-          ? ASTHelpers.returnsJSXFromStatement(func.body)
+          ? ASTHelpers.returnsJSXFromStatement(func.body, context)
           : ASTHelpers.returnsJSXValue(func.body);
       }
-      return ASTHelpers.returnsJSXFromStatement(func.body);
+      return ASTHelpers.returnsJSXFromStatement(func.body, context);
     }
 
     if (
@@ -791,17 +814,18 @@ export class ASTHelpers {
       // not if the function containing this declaration returns JSX.
       // This is primarily for the top-level detection in VariableDeclarator.
       return (node as any).declarations.some((decl: any) =>
-        ASTHelpers.returnsJSX(decl.init),
+        ASTHelpers.returnsJSX(decl.init, context),
       );
     }
 
     if (node.type === AST_NODE_TYPES.VariableDeclarator) {
-      return ASTHelpers.returnsJSX((node as any).init);
+      return ASTHelpers.returnsJSX((node as any).init, context);
     }
 
     // Treat remaining nodes as statement-path or value checks.
     return (
-      ASTHelpers.returnsJSXFromStatement(node) || ASTHelpers.returnsJSXValue(node)
+      ASTHelpers.returnsJSXFromStatement(node, context) ||
+      ASTHelpers.returnsJSXValue(node)
     );
   }
 
