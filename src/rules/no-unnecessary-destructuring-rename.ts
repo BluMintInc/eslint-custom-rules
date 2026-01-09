@@ -172,13 +172,22 @@ export const noUnnecessaryDestructuringRename = createRule<[], MessageIds>({
         ) => TSESLint.Scope.Variable[];
       };
 
-      if (
+      const fn =
         typeof sourceCodeWithDeclarations.getDeclaredVariables === 'function'
-      ) {
-        return sourceCodeWithDeclarations.getDeclaredVariables(node);
+          ? sourceCodeWithDeclarations.getDeclaredVariables.bind(
+              sourceCodeWithDeclarations,
+            )
+          : typeof context.getDeclaredVariables === 'function'
+            ? context.getDeclaredVariables.bind(context)
+            : null;
+
+      if (!fn) {
+        throw new Error(
+          'no-unnecessary-destructuring-rename: getDeclaredVariables is not available in this ESLint version.',
+        );
       }
 
-      return context.getDeclaredVariables(node);
+      return fn(node);
     };
 
     function collectDeclaredVariablesUpTree(

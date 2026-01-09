@@ -592,12 +592,22 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
       ) => readonly TSESLint.Scope.Variable[];
     };
 
-    const getDeclaredVariables =
+    const getDeclaredVariablesInternal =
       typeof sourceCodeWithDeclaredVariables.getDeclaredVariables === 'function'
         ? sourceCodeWithDeclaredVariables.getDeclaredVariables.bind(
             sourceCodeWithDeclaredVariables,
           )
-        : context.getDeclaredVariables.bind(context);
+        : typeof context.getDeclaredVariables === 'function'
+          ? context.getDeclaredVariables.bind(context)
+          : null;
+
+    if (!getDeclaredVariablesInternal) {
+      throw new Error(
+        'react-memoize-literals: getDeclaredVariables is not available in this ESLint version.',
+      );
+    }
+
+    const getDeclaredVariables = getDeclaredVariablesInternal;
 
     /**
      * Checks whether a literal is destined to be thrown, making referential
@@ -614,7 +624,8 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
 
         if (
           current.type === AST_NODE_TYPES.VariableDeclarator &&
-          current.id.type === AST_NODE_TYPES.Identifier
+          current.id.type === AST_NODE_TYPES.Identifier &&
+          current.init
         ) {
           if (!hasPassedForbiddenNode) {
             const variables = getDeclaredVariables(current);
@@ -698,6 +709,9 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
       const descriptor = getLiteralDescriptor(node);
       if (!descriptor) return;
 
+      const owner = findEnclosingComponentOrHook(node);
+      if (!owner) return;
+
       if (isInsideAllowedHookCallback(node)) {
         return;
       }
@@ -705,9 +719,6 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
       if (isTerminalUsage(node)) {
         return;
       }
-
-      const owner = findEnclosingComponentOrHook(node);
-      if (!owner) return;
 
       const hookCall = findEnclosingHookCall(node);
       if (hookCall) {

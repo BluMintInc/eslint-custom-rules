@@ -133,13 +133,22 @@ const getDeclaredVariablesForNode = (
       ) => readonly TSESLint.Scope.Variable[];
     };
 
-  if (
+  const fn =
     typeof sourceCodeWithDeclaredVariables.getDeclaredVariables === 'function'
-  ) {
-    return sourceCodeWithDeclaredVariables.getDeclaredVariables(node);
+      ? sourceCodeWithDeclaredVariables.getDeclaredVariables.bind(
+          sourceCodeWithDeclaredVariables,
+        )
+      : typeof context.getDeclaredVariables === 'function'
+        ? context.getDeclaredVariables.bind(context)
+        : null;
+
+  if (!fn) {
+    throw new Error(
+      'no-console-error: getDeclaredVariables is not available in this ESLint version.',
+    );
   }
 
-  return context.getDeclaredVariables(node);
+  return fn(node);
 };
 
 const isErrorKey = (
