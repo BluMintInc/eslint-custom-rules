@@ -13,6 +13,7 @@ React re-runs your component and hook bodies on every render. Inline object, arr
 - Reports object, array, and inline function literals created inside React components or custom hooks.
 - Flags nested literals inside hook argument objects/arrays (e.g., `useQuery({ options: { cache: {...} } })`) while allowing the top-level argument itself.
 - Detects custom hooks that return object/array/function literals directly, since callers receive a fresh reference each render.
+- Skips literals that are destined to be thrown (e.g., `throw { message: 'error' }` or a variable where every usage is in a `throw` statement), as throwing aborts the render cycle and referential stability is irrelevant.
 - Skips literals already inside callbacks passed to stable built-in React hooks (`useMemo`, `useCallback`, `useEffect`, `useLayoutEffect`, `useInsertionEffect`, `useImperativeHandle`, `useState`, `useReducer`, `useRef`, `useSyncExternalStore`, `useDeferredValue`, `useTransition`, `useId`) and module-level constants.
 - Offers suggestions to wrap component-level literals in `useMemo`/`useCallback` for a stable reference and injects a `__TODO_MEMOIZATION_DEPENDENCIES__` placeholder so callers must supply real dependencies instead of accidentally shipping an empty array.
 

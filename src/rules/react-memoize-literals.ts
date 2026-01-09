@@ -585,23 +585,19 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
   create(context) {
     const sourceCode = context.getSourceCode();
 
-    const getDeclaredVariables = (node: TSESTree.Node) => {
-      const sourceCodeWithDeclaredVariables =
-        sourceCode as unknown as {
-          getDeclaredVariables?: (
-            targetNode: TSESTree.Node,
-          ) => readonly TSESLint.Scope.Variable[];
-        };
-
-      if (
-        typeof sourceCodeWithDeclaredVariables.getDeclaredVariables ===
-        'function'
-      ) {
-        return sourceCodeWithDeclaredVariables.getDeclaredVariables(node);
-      }
-
-      return context.getDeclaredVariables(node);
+    // Compatibility wrapper for getting declared variables across ESLint versions.
+    const sourceCodeWithDeclaredVariables = sourceCode as unknown as {
+      getDeclaredVariables?: (
+        targetNode: TSESTree.Node,
+      ) => readonly TSESLint.Scope.Variable[];
     };
+
+    const getDeclaredVariables =
+      typeof sourceCodeWithDeclaredVariables.getDeclaredVariables === 'function'
+        ? sourceCodeWithDeclaredVariables.getDeclaredVariables.bind(
+            sourceCodeWithDeclaredVariables,
+          )
+        : context.getDeclaredVariables.bind(context);
 
     /**
      * Checks whether a literal is destined to be thrown, making referential
@@ -621,10 +617,24 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
           const variables = getDeclaredVariables(current);
           if (variables.length > 0) {
             const variable = variables[0];
-            const isThrown = variable.references.some((ref) => {
+            const usages = variable.references.filter((ref) => !ref.init);
+
+            // If there are no usages, it's not "terminal" in a way that
+            // bypasses memoization (though it might be dead code).
+            if (usages.length === 0) {
+              return false;
+            }
+
+            const allUsagesAreThrown = usages.every((ref) => {
               let refParent: TSESTree.Node | null = ref.identifier
                 .parent as TSESTree.Node | null;
               while (refParent && refParent !== current) {
+                // Throws inside nested functions do not abort the current
+                // render cycle of the component where the literal was created.
+                if (isFunctionNode(refParent)) {
+                  return false;
+                }
+
                 if (refParent.type === AST_NODE_TYPES.ThrowStatement) {
                   return true;
                 }
@@ -632,7 +642,10 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
               }
               return false;
             });
-            if (isThrown) return true;
+
+            if (allUsagesAreThrown) {
+              return true;
+            }
           }
         }
 
