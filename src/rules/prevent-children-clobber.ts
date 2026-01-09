@@ -218,8 +218,8 @@ function recordChildrenValueBindingsFromPattern(
       key.type === AST_NODE_TYPES.Identifier
         ? key.name
         : key.type === AST_NODE_TYPES.Literal && typeof key.value === 'string'
-          ? key.value
-          : null;
+        ? key.value
+        : null;
 
     if (keyName !== 'children') continue;
 
@@ -385,7 +385,8 @@ function bindingMayContainChildren(
       context as unknown as {
         sourceCode?: { parserServices?: MinimalParserServices };
       }
-    ).sourceCode?.parserServices ?? (context.parserServices as MinimalParserServices);
+    ).sourceCode?.parserServices ??
+    (context.parserServices as MinimalParserServices);
   if (!services?.program || !services?.esTreeNodeToTSNodeMap) {
     return true;
   }
@@ -468,7 +469,13 @@ function childrenRenderSpreadChildren(
 ): boolean {
   for (const child of children) {
     if (child.type === AST_NODE_TYPES.JSXExpressionContainer) {
-      if (nodeReferencesChildren(child.expression, propsObjectNames, childrenValueNames)) {
+      if (
+        nodeReferencesChildren(
+          child.expression,
+          propsObjectNames,
+          childrenValueNames,
+        )
+      ) {
         return true;
       }
     } else if (
@@ -521,7 +528,8 @@ export const preventChildrenClobber = createRule<Options, MessageIds>({
   meta: {
     type: 'problem',
     docs: {
-      description: 'Prevent JSX spreads from silently discarding props.children',
+      description:
+        'Prevent JSX spreads from silently discarding props.children',
       recommended: 'error',
       requiresTypeChecking: false,
     },
@@ -604,7 +612,10 @@ export const preventChildrenClobber = createRule<Options, MessageIds>({
             componentCtx.propsLikeIdentifiers.add(id.name);
           }
 
-          const childSourceId = findChildrenValueSourceId(init.name, functionStack);
+          const childSourceId = findChildrenValueSourceId(
+            init.name,
+            functionStack,
+          );
           if (childSourceId) {
             componentCtx.childrenValueSourceIds.set(id.name, childSourceId);
           }
@@ -626,7 +637,10 @@ export const preventChildrenClobber = createRule<Options, MessageIds>({
             member.property.name === 'children' &&
             member.object.type === AST_NODE_TYPES.Identifier
           ) {
-            const sourceBinding = findBinding(member.object.name, functionStack);
+            const sourceBinding = findBinding(
+              member.object.name,
+              functionStack,
+            );
             if (sourceBinding) {
               componentCtx.childrenValueSourceIds.set(
                 id.name,
@@ -640,7 +654,8 @@ export const preventChildrenClobber = createRule<Options, MessageIds>({
           isPropsLike(init.name, functionStack)
         ) {
           const initBinding = findBinding(init.name, functionStack);
-          const sourceChildrenSourceId = initBinding?.childrenSourceId ?? init.name;
+          const sourceChildrenSourceId =
+            initBinding?.childrenSourceId ?? init.name;
 
           recordChildrenValueBindingsFromPattern(
             id,
@@ -673,15 +688,20 @@ export const preventChildrenClobber = createRule<Options, MessageIds>({
 
         if (spreadNamesInOrder.length === 0) return;
 
-        const offendingSpreads: Array<{ name: string; childrenSourceId: string }> =
-          [];
+        const offendingSpreads: Array<{
+          name: string;
+          childrenSourceId: string;
+        }> = [];
         for (const name of spreadNamesInOrder) {
           const binding = findBinding(name, functionStack);
           if (!binding) continue;
           if (!bindingMayContainChildren(binding, context)) {
             continue;
           }
-          offendingSpreads.push({ name, childrenSourceId: binding.childrenSourceId });
+          offendingSpreads.push({
+            name,
+            childrenSourceId: binding.childrenSourceId,
+          });
         }
 
         if (offendingSpreads.length === 0) return;
@@ -689,12 +709,21 @@ export const preventChildrenClobber = createRule<Options, MessageIds>({
         const lastOffendingChildrenSourceId =
           offendingSpreads[offendingSpreads.length - 1].childrenSourceId;
         const lastSourceIds = new Set([lastOffendingChildrenSourceId]);
-        const propsObjectNames =
-          collectPropsObjectNamesForChildrenSourceIds(lastSourceIds, functionStack);
+        const propsObjectNames = collectPropsObjectNamesForChildrenSourceIds(
+          lastSourceIds,
+          functionStack,
+        );
         const childrenValueNames =
-          collectChildrenValueNamesForChildrenSourceIds(lastSourceIds, functionStack);
+          collectChildrenValueNamesForChildrenSourceIds(
+            lastSourceIds,
+            functionStack,
+          );
         if (
-          childrenRenderSpreadChildren(node.children, propsObjectNames, childrenValueNames)
+          childrenRenderSpreadChildren(
+            node.children,
+            propsObjectNames,
+            childrenValueNames,
+          )
         ) {
           return;
         }
@@ -702,7 +731,10 @@ export const preventChildrenClobber = createRule<Options, MessageIds>({
         const clobberedNames = Array.from(
           new Set(
             offendingSpreads
-              .filter((spread) => spread.childrenSourceId === lastOffendingChildrenSourceId)
+              .filter(
+                (spread) =>
+                  spread.childrenSourceId === lastOffendingChildrenSourceId,
+              )
               .map((spread) => spread.name),
           ),
         );

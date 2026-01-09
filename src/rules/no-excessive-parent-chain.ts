@@ -345,6 +345,9 @@ export const noExcessiveParentChain = createRule<Options, MessageIds>({
           suggest: [
             {
               messageId: 'excessiveParentChain',
+              data: {
+                count: parentCount,
+              },
               fix(fixer) {
                 return fixer.replaceText(node, 'event.params');
               },
