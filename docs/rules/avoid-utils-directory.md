@@ -32,7 +32,3 @@ Generic `utils/` directories attract unrelated helpers, which turns them into du
 /src/components/util/date/format.ts
 /src/util/string/capitalize.ts
 ```
-
-## Options
-
-This rule has no options.

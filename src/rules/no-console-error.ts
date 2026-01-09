@@ -1,6 +1,7 @@
 import { minimatch } from 'minimatch';
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type Options = [
   {
@@ -126,20 +127,10 @@ const getDeclaredVariablesForNode = (
   context: TSESLint.RuleContext<MessageIds, Options>,
   node: TSESTree.Node,
 ) => {
-  const sourceCodeWithDeclaredVariables =
-    context.getSourceCode() as unknown as {
-      getDeclaredVariables?: (
-        targetNode: TSESTree.Node,
-      ) => readonly TSESLint.Scope.Variable[];
-    };
-
-  if (
-    typeof sourceCodeWithDeclaredVariables.getDeclaredVariables === 'function'
-  ) {
-    return sourceCodeWithDeclaredVariables.getDeclaredVariables(node);
-  }
-
-  return context.getDeclaredVariables(node);
+  return ASTHelpers.getDeclaredVariables(
+    context as unknown as TSESLint.RuleContext<string, readonly unknown[]>,
+    node,
+  );
 };
 
 const isErrorKey = (
