@@ -3961,8 +3961,6 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
         }
       }
 
-      // Check for other React component indicators for non-PascalCase functions
-      // (though these are rare and should generally be avoided).
       // If we have explicit React type, still treat it as a component to avoid false naming violations.
       if (hasReactType) {
         return true;

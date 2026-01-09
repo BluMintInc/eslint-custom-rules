@@ -577,10 +577,10 @@ export class ASTHelpers {
   }
 
   public static hasReturnStatement(node: TSESTree.Node): boolean {
-    if (node.type === ('ReturnStatement' as any)) {
+    if (node.type === AST_NODE_TYPES.ReturnStatement) {
       return true;
     }
-    if (node.type === ('IfStatement' as any)) {
+    if (node.type === AST_NODE_TYPES.IfStatement) {
       const ifStmt = node as any;
       const consequentHasReturn = ASTHelpers.hasReturnStatement(
         ifStmt.consequent,
@@ -589,7 +589,7 @@ export class ASTHelpers {
         !!ifStmt.alternate && ASTHelpers.hasReturnStatement(ifStmt.alternate);
       return consequentHasReturn && alternateHasReturn;
     }
-    if (node.type === ('BlockStatement' as any)) {
+    if (node.type === AST_NODE_TYPES.BlockStatement) {
       const blockStmt = node as any;
       for (const statement of blockStmt.body) {
         if (ASTHelpers.hasReturnStatement(statement)) {
@@ -615,7 +615,7 @@ export class ASTHelpers {
 
   public static isNodeExported(node: TSESTree.Node) {
     // Checking if the node is exported as a named export.
-    if (node.parent && node.parent.type === ('ExportNamedDeclaration' as any)) {
+    if (node.parent && node.parent.type === AST_NODE_TYPES.ExportNamedDeclaration) {
       return true;
     }
 
@@ -623,7 +623,7 @@ export class ASTHelpers {
     if (
       node.parent &&
       node.parent.parent &&
-      node.parent.parent.type === ('ExportDefaultDeclaration' as any)
+      node.parent.parent.type === AST_NODE_TYPES.ExportDefaultDeclaration
     ) {
       return true;
     }
@@ -632,8 +632,8 @@ export class ASTHelpers {
     if (
       node.parent &&
       node.parent.parent &&
-      node.parent.parent.type === ('ExportSpecifier' as any) &&
-      (node.parent.parent as any).exported.name ===
+      node.parent.parent.type === AST_NODE_TYPES.ExportSpecifier &&
+      (node.parent.parent as any).exported?.name ===
         (node as TSESTree.Identifier).name
     ) {
       return true;

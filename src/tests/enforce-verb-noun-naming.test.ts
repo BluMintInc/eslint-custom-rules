@@ -77,15 +77,35 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
       }`,
     },
 
-    // Functions starting with "to" or "with"
+    // React component detection for PascalCase functions (isJsxFile=false)
     {
-      code: `function toNumber(value) { return +value; }`,
+      code: `const MyComponent: React.FC = () => null;`,
+      filename: 'src/components/MyComponent.ts',
     },
     {
-      code: `const withLogging = (fn) => (...args) => { console.log(...args); return fn(...args); }`,
+      code: `function MyComponent(): React.JSX.Element { return null; }`,
+      filename: 'src/components/MyComponent.ts',
     },
     {
-      code: `class Converter { toString() { return ''; } }`,
+      code: `const MyComponent: FC<Props> = (props) => { return null; };`,
+      filename: 'src/components/MyComponent.ts',
+    },
+    {
+      code: `export const MyComponent: FunctionComponent = () => null;`,
+      filename: 'src/components/MyComponent.ts',
+    },
+    {
+      code: `const MyComponent: React.FunctionComponent = () => null;`,
+      filename: 'src/components/MyComponent.ts',
+    },
+    // PascalCase in TSX files should be treated as components even without JSX return (e.g. returns null)
+    {
+      code: `const MyComponent = () => null;`,
+      filename: 'src/components/MyComponent.tsx',
+    },
+    {
+      code: `function MyComponent() { return null; }`,
+      filename: 'src/components/MyComponent.tsx',
     },
 
     // Data types with noun phrases
