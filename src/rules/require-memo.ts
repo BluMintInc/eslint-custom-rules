@@ -42,7 +42,8 @@ function isHigherOrderFunctionReturningJSX(
         }
       }
     } else if (node.body && isFunction(node.body)) {
-      // Shorthand arrow function: (Comp) => (props) => <Comp {...props} />
+      // Shorthand arrow HOC: (Comp) => (props) => <Comp {...props} />
+      // Here node.body is the inner function; check if it returns JSX.
       return ASTHelpers.returnsJSX(node.body, context);
     }
   }

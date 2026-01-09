@@ -731,8 +731,7 @@ export class ASTHelpers {
     }
 
     if (node.type === AST_NODE_TYPES.VariableDeclaration) {
-      // ExpressionStatement wraps expressions that are used as statements.
-      // By definition, these don't return values from the function.
+      // Variable declarations don't return values from the enclosing function.
       return false;
     }
 

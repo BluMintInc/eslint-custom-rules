@@ -3962,10 +3962,16 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
       }
 
       // Check for other React component indicators for non-PascalCase functions
-      // (though these are rare and should generally be avoided)
+      // (though these are rare and should generally be avoided).
+      // If we have explicit React type but don't return JSX (e.g. return null), 
+      // still treat it as a component to avoid false naming violations.
+      if (hasReactType) {
+        return true;
+      }
+
       return (
         (hasProps && returnsJsx) ||
-        ((isUnmemoized || hasReactType) && returnsJsx)
+        (isUnmemoized && returnsJsx)
       );
     }
     return {
