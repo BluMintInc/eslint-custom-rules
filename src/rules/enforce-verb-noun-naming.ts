@@ -3956,6 +3956,11 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
         // to avoid false positives for components that don't return JSX directly (e.g. return null).
         // In .ts files, we require more evidence (returns JSX or React type) to avoid
         // false positives for classes or helper functions that might use PascalCase.
+        // Treat as component if it returns JSX or has a React type.
+        // In JSX/TSX files, we're more lenient and treat any PascalCase as a component
+        // to avoid false positives for components that don't return JSX directly (e.g. return null).
+        // In .ts files, we require more evidence (returns JSX or React type) to avoid
+        // false positives for classes or helper functions that might use PascalCase.
         if (isJsxFile || returnsJsx || hasReactType) {
           return true;
         }

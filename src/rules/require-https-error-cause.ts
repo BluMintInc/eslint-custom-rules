@@ -98,6 +98,8 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
         }
         return context.getScope();
       } catch {
+        // Fallback to context.getScope() for robustness if ESLint 9 API throws.
+        // This keeps the rule compatible with both ESLint 8 and 9.
         return context.getScope();
       }
     };

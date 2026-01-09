@@ -141,15 +141,23 @@ class UsesJsxArgumentOnly {
     },
     {
       filename: 'file.tsx',
-      code: `class MutuallyRecursiveLocals {
-  get handler() {
-    function a() {
-      return b();
+      code: `class ShadowedVariable {
+  get component() {
+    const make = () => <div />;
+    {
+      const make = () => null;
+      return make;
     }
-    function b() {
-      return a();
-    }
-    return a;
+  }
+}`,
+    },
+    {
+      filename: 'file.tsx',
+      code: `class MultipleDeclarations {
+  get component() {
+    var make = () => <div />;
+    var make = () => null;
+    return make;
   }
 }`,
     },

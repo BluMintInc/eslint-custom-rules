@@ -729,6 +729,8 @@ export class ASTHelpers {
               return ASTHelpers.returnsJSX(def.node.init, context);
             }
           }
+        } else {
+          return ASTHelpers.returnsJSXValue(arg);
         }
       }
       return ASTHelpers.returnsJSXValue(arg);
@@ -787,9 +789,7 @@ export class ASTHelpers {
     }
 
     if (node.type === AST_NODE_TYPES.ExpressionStatement) {
-      // ExpressionStatement wraps expressions that are used as statements.
-      // By definition, these don't return values from the function.
-      // Standalone JSX in a block (e.g., () => { <div />; }) returns undefined.
+      // ExpressionStatement does not produce a return value for the surrounding function, so treat as non-returning.
       return false;
     }
 
