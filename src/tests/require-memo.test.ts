@@ -90,6 +90,9 @@ ruleTesterJsx.run('requireMemo', requireMemo, {
           `,
     },
     {
+      code: `const shorthandHOC = (Component) => (props) => <Component {...props} />;`,
+    },
+    {
       code: `function useComponent() {
             return function HookComponent() {
               return <div>From Hook</div>;

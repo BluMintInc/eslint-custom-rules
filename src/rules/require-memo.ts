@@ -16,27 +16,31 @@ const isComponentExplicitlyUnmemoized = (componentName: string) =>
 
 function isFunction(
   node: TSESTree.Node,
-): node is TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression {
+): node is
+  | TSESTree.FunctionExpression
+  | TSESTree.ArrowFunctionExpression
+  | TSESTree.FunctionDeclaration {
   return (
     node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-    node.type === AST_NODE_TYPES.FunctionExpression
+    node.type === AST_NODE_TYPES.FunctionExpression ||
+    node.type === AST_NODE_TYPES.FunctionDeclaration
   );
 }
 
 function isHigherOrderFunctionReturningJSX(node: TSESTree.Node): boolean {
   if (isFunction(node)) {
-    // Check if function takes another function as an argument
-    const hasFunctionParam = 'params' in node && node.params.some(isFunction);
-
     if (node.body && node.body.type === 'BlockStatement') {
       for (const statement of node.body.body) {
         if (statement.type === 'ReturnStatement' && statement.argument) {
           const returnsJSX = ASTHelpers.returnsJSX(statement.argument);
           const returnsFunction = isFunction(statement.argument);
 
-          return (hasFunctionParam || returnsFunction) && returnsJSX;
+          return returnsFunction && returnsJSX;
         }
       }
+    } else if (node.body && isFunction(node.body)) {
+      // Shorthand arrow function: (Comp) => (props) => <Comp {...props} />
+      return ASTHelpers.returnsJSX(node.body);
     }
   }
   return false;
