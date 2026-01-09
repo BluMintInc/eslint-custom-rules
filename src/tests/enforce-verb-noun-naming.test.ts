@@ -251,6 +251,18 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
         ecmaFeatures: { jsx: true },
       },
     },
+    // React component detection tests
+    {
+      filename: 'MyComponent.tsx',
+      code: `function MyComponent() { return <div />; }`,
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+      },
+    },
+    {
+      filename: 'MyComponent.ts',
+      code: `function MyComponent(): React.FC { return null; }`,
+    },
   ],
   invalid: [
     {
@@ -301,6 +313,26 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
         data() { }
       }`,
       errors: [verbNounError('data')],
+    },
+    {
+      filename: 'UserData.ts',
+      code: `function UserData() {
+        let make = () => { return null; };
+        make = () => { return 1; };
+        return make;
+      }`,
+      errors: [verbNounError('UserData')],
+    },
+    {
+      filename: 'StatusData.ts',
+      code: `function StatusData() {
+        const make = () => { return null; };
+        {
+          const make = () => { return 1; };
+          return make;
+        }
+      }`,
+      errors: [verbNounError('StatusData')],
     },
   ],
 });

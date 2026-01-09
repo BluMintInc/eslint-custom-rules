@@ -720,6 +720,14 @@ export class ASTHelpers {
         if (scope) {
           const variable = ASTHelpers.findVariableInScope(scope, arg.name);
           if (variable && variable.defs.length === 1) {
+            // Check if the variable is reassigned after initialization.
+            // We only follow variables that are defined once and never reassigned
+            // to ensure we're following a deterministic JSX-returning value.
+            const isReassigned = variable.references.some((ref) => ref.isWrite());
+            if (isReassigned) {
+              return ASTHelpers.returnsJSXValue(arg);
+            }
+
             const def = variable.defs[0];
             if (
               def.type === 'Variable' &&
@@ -815,10 +823,7 @@ export class ASTHelpers {
     }
 
     if (node.type === AST_NODE_TYPES.VariableDeclaration) {
-      // Used for `const Component = () => <div />`-style detection.
-      // Note: We only check if the variable IS initialized to a JSX-returning function,
-      // not if the function containing this declaration returns JSX.
-      // This is primarily for the top-level detection in VariableDeclarator.
+      // Detect VariableDeclaration initialized with a JSX-returning function
       return (node as any).declarations.some((decl: any) =>
         ASTHelpers.returnsJSX(decl.init, context),
       );

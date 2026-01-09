@@ -12,6 +12,43 @@ type CatchFrame = {
   node: TSESTree.CatchClause;
 };
 
+/**
+ * Checks if the current environment is ESLint 9 or later.
+ */
+function isEslint9OrLater(sourceCode: TSESLint.SourceCode): boolean {
+  return typeof (sourceCode as any).getScope === 'function';
+}
+
+/**
+ * Gets the scope for a node using the ESLint 9+ SourceCode.getScope() method.
+ */
+function getEslint9Scope(
+  sourceCode: TSESLint.SourceCode,
+  node: TSESTree.Node,
+): TSESLint.Scope.Scope {
+  return (sourceCode as any).getScope(node);
+}
+
+/**
+ * Obtains the scope for a node in an ESLint 9+ compatible way.
+ */
+function getScopeForNode(
+  context: Readonly<TSESLint.RuleContext<MessageIds, Options>>,
+  node: TSESTree.Node,
+): TSESLint.Scope.Scope {
+  const sourceCode = context.sourceCode ?? (context as any).getSourceCode();
+  try {
+    if (isEslint9OrLater(sourceCode)) {
+      return getEslint9Scope(sourceCode, node);
+    }
+    return (context as any).getScope();
+  } catch {
+    // Fallback to context.getScope() for robustness if ESLint 9 API throws.
+    // This keeps the rule compatible with both ESLint 8 and 9.
+    return (context as any).getScope();
+  }
+}
+
 const isHttpsErrorCallee = (
   callee: TSESTree.LeftHandSideExpression,
 ): boolean => {
@@ -68,41 +105,8 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.sourceCode ?? context.getSourceCode();
+    const sourceCode = context.sourceCode ?? (context as any).getSourceCode();
     const catchStack: CatchFrame[] = [];
-
-    /**
-     * Checks if the current environment is ESLint 9 or later.
-     */
-    const isEslint9OrLater = (sc: TSESLint.SourceCode): boolean => {
-      return typeof (sc as any).getScope === 'function';
-    };
-
-    /**
-     * Gets the scope for a node using the ESLint 9+ SourceCode.getScope() method.
-     */
-    const getEslint9Scope = (
-      sc: TSESLint.SourceCode,
-      node: TSESTree.Node,
-    ): TSESLint.Scope.Scope => {
-      return (sc as any).getScope(node);
-    };
-
-    /**
-     * Obtains the scope for a node in an ESLint 9+ compatible way.
-     */
-    const getScopeForNode = (node: TSESTree.Node): TSESLint.Scope.Scope => {
-      try {
-        if (isEslint9OrLater(sourceCode)) {
-          return getEslint9Scope(sourceCode, node);
-        }
-        return context.getScope();
-      } catch {
-        // Fallback to context.getScope() for robustness if ESLint 9 API throws.
-        // This keeps the rule compatible with both ESLint 8 and 9.
-        return context.getScope();
-      }
-    };
 
     const reportMissingCause = (
       node: TSESTree.NewExpression | TSESTree.CallExpression,
@@ -141,7 +145,7 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
       }
 
       const variable = findVariableInScopeChain(
-        getScopeForNode(identifier),
+        getScopeForNode(context, identifier),
         identifier.name,
       );
 
