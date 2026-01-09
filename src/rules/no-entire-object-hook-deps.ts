@@ -311,13 +311,17 @@ function getObjectUsagesInHook(
           parent?.type === AST_NODE_TYPES.ConditionalExpression ||
           parent?.type === AST_NODE_TYPES.UnaryExpression ||
           (parent?.type === AST_NODE_TYPES.Property &&
-            (parent.value === node || parent.shorthand)) ||
+            (parent.value === node ||
+              parent.shorthand ||
+              (parent.key === node && parent.computed))) ||
           parent?.type === AST_NODE_TYPES.TemplateLiteral ||
           parent?.type === AST_NODE_TYPES.VariableDeclarator ||
           parent?.type === AST_NODE_TYPES.AssignmentExpression ||
           parent?.type === AST_NODE_TYPES.JSXExpressionContainer ||
           parent?.type === AST_NODE_TYPES.JSXSpreadAttribute ||
           parent?.type === AST_NODE_TYPES.SpreadElement ||
+          parent?.type === AST_NODE_TYPES.ForInStatement ||
+          parent?.type === AST_NODE_TYPES.ForOfStatement ||
           parent?.type === AST_NODE_TYPES.CallExpression;
 
         if (isTypeAUsage) {
