@@ -177,6 +177,66 @@ function Component({ onClick }) {
 }
       `,
     },
+    // useLatestCallback with nested literals
+    {
+      code: `
+import useLatestCallback from 'use-latest-callback';
+export const useReproduction = () => {
+  const address = '0x123';
+  const offchainTransfer = useLatestCallback(
+    async () => {
+      const offchainTokens = [
+        {
+          chainId: 'offchain',
+          address,
+        },
+      ];
+      throw new Error('test');
+    }
+  );
+  return offchainTransfer;
+};
+      `,
+    },
+    // useDeepCompare hooks with literals
+    {
+      code: `
+import { useDeepCompareMemo, useDeepCompareCallback, useDeepCompareEffect } from '@blumintinc/use-deep-compare';
+const MyComponent = ({ params }) => {
+  const result = useDeepCompareMemo(() => {
+    return { data: params };
+  }, [params]);
+  const cb = useDeepCompareCallback(() => {
+    console.log({ data: params });
+  }, [params]);
+  useDeepCompareEffect(() => {
+    console.log({ data: params });
+  }, [params]);
+};
+      `,
+    },
+    // useProgressionCallback with literals
+    {
+      code: `
+export const useReproduction = () => {
+  const cb = useProgressionCallback(() => {
+    return { status: 'success' };
+  }, []);
+};
+      `,
+    },
+    // async function boundaries
+    {
+      code: `
+const MyComponent = () => {
+  const handleAsync = useCallback(async () => {
+    const data = { key: 'value' };
+    await doSomething(data);
+  }, []);
+  return <button onClick={handleAsync}>Click</button>;
+};
+      `,
+    },
     // Direct throw of object literal
     {
       code: `
@@ -910,6 +970,27 @@ function Component() {
           data: {
             literalType: 'object literal',
             hookName: 'useQuery',
+          },
+        },
+      ],
+    },
+    // Unmemoized async function in component
+    {
+      code: `
+const MyComponent = () => {
+  const handleAsync = async () => {
+    console.log('async');
+  };
+  return <button onClick={handleAsync}>Click</button>;
+};
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'component "MyComponent"',
+            memoHook: 'useCallback',
           },
         },
       ],

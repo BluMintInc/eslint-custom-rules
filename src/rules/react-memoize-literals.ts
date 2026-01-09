@@ -52,6 +52,11 @@ const SAFE_HOOK_ARGUMENTS = new Set([
   'useDeferredValue',
   'useTransition',
   'useId',
+  'useLatestCallback',
+  'useDeepCompareMemo',
+  'useDeepCompareCallback',
+  'useDeepCompareEffect',
+  'useProgressionCallback',
 ]);
 
 const MEMOIZATION_DEPS_TODO_PLACEHOLDER = '__TODO_MEMOIZATION_DEPENDENCIES__';
@@ -311,24 +316,32 @@ function findEnclosingComponentOrHook(node: TSESTree.Node) {
 function isInsideAllowedHookCallback(node: TSESTree.Node): boolean {
   let current: TSESTree.Node | null = node;
   while (current) {
-    if (
-      current.type === AST_NODE_TYPES.FunctionExpression ||
-      current.type === AST_NODE_TYPES.ArrowFunctionExpression
-    ) {
-      let parent: TSESTree.Node | null = current.parent as TSESTree.Node | null;
-
-      while (parent && isExpressionWrapper(parent)) {
-        parent = parent.parent as TSESTree.Node | null;
+    if (isFunctionNode(current)) {
+      if (current.async && current !== node) {
+        return true;
       }
 
-      if (parent?.type === AST_NODE_TYPES.CallExpression) {
-        const hookName = getHookNameFromCallee(parent.callee);
-        const matchesCallback = parent.arguments.some(
-          (arg) => unwrapNestedExpressions(arg as TSESTree.Node) === current,
-        );
+      if (
+        current.type === AST_NODE_TYPES.FunctionExpression ||
+        current.type === AST_NODE_TYPES.ArrowFunctionExpression
+      ) {
+        let parent: TSESTree.Node | null = current.parent as TSESTree.Node | null;
 
-        if (hookName && SAFE_HOOK_ARGUMENTS.has(hookName) && matchesCallback) {
-          return true;
+        // Skip through TypeScript type assertions and parentheses to find
+        // the actual CallExpression that invokes the hook.
+        while (parent && isExpressionWrapper(parent)) {
+          parent = parent.parent as TSESTree.Node | null;
+        }
+
+        if (parent?.type === AST_NODE_TYPES.CallExpression) {
+          const hookName = getHookNameFromCallee(parent.callee);
+          const matchesCallback = parent.arguments.some(
+            (arg) => unwrapNestedExpressions(arg as TSESTree.Node) === current,
+          );
+
+          if (hookName && SAFE_HOOK_ARGUMENTS.has(hookName) && matchesCallback) {
+            return true;
+          }
         }
       }
     }
