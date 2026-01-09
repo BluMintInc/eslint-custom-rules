@@ -609,6 +609,39 @@ export class ASTHelpers {
   }
 
   /**
+   * Compatibility wrapper for getting declared variables across ESLint versions.
+   */
+  public static getDeclaredVariables(
+    context: Readonly<TSESLint.RuleContext<string, readonly unknown[]>>,
+    node: TSESTree.Node,
+  ): readonly TSESLint.Scope.Variable[] {
+    const sourceCode = context.sourceCode;
+    const sourceCodeWithDeclaredVariables = sourceCode as unknown as {
+      getDeclaredVariables?: (
+        targetNode: TSESTree.Node,
+      ) => readonly TSESLint.Scope.Variable[];
+    };
+
+    const fn =
+      typeof sourceCodeWithDeclaredVariables?.getDeclaredVariables ===
+      'function'
+        ? sourceCodeWithDeclaredVariables.getDeclaredVariables.bind(
+            sourceCodeWithDeclaredVariables,
+          )
+        : typeof context.getDeclaredVariables === 'function'
+          ? context.getDeclaredVariables.bind(context)
+          : null;
+
+    if (!fn) {
+      throw new Error(
+        'getDeclaredVariables is not available in this ESLint version.',
+      );
+    }
+
+    return fn(node);
+  }
+
+  /**
    * Helper to get ancestors of a node in a way that is compatible with both ESLint v8 and v9.
    * In ESLint v9, context.getAncestors() is deprecated and moved to context.sourceCode.getAncestors(node).
    */
