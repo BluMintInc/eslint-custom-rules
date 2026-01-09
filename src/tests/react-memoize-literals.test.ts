@@ -233,8 +233,33 @@ function MyComponent({ isError }) {
 }
       `,
     },
+    // Literal thrown in a terminal way from component body
+    {
+      code: `
+        function Component() {
+          const error = { message: 'error' };
+          throw error;
+        }
+      `,
+    },
   ],
   invalid: [
+    // Literal thrown inside nested function is NOT terminal for component
+    {
+      code: `
+        function Component() {
+          const error = { message: 'error' };
+          const callback = () => {
+            throw error;
+          };
+          return <button onClick={callback}>Throw</button>;
+        }
+      `,
+      errors: [
+        { messageId: 'componentLiteral' },
+        { messageId: 'componentLiteral' },
+      ],
+    },
     // Component-level object literal
     {
       code: `

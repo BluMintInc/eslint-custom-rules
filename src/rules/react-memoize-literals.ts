@@ -625,19 +625,39 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
               return false;
             }
 
+            const owningFunction = findOwningFunction(current);
+
             const allUsagesAreThrown = usages.every((ref) => {
               let refParent: TSESTree.Node | null = ref.identifier
                 .parent as TSESTree.Node | null;
-              while (refParent && refParent !== current) {
-                // Throws inside nested functions do not abort the current
-                // render cycle of the component where the literal was created.
+
+              while (refParent) {
                 if (isFunctionNode(refParent)) {
+                  // If we hit a function node, we stop. If it's a nested function
+                  // boundary, any throw inside it does not abort the outer
+                  // component's render cycle.
                   return false;
                 }
 
                 if (refParent.type === AST_NODE_TYPES.ThrowStatement) {
-                  return true;
+                  // Found a throw! Since we haven't hit a function node yet,
+                  // this throw is in the same function scope as the usage.
+                  // We now check if that function scope matches the one
+                  // where the variable was declared.
+                  let throwCheckParent: TSESTree.Node | null = refParent.parent as TSESTree.Node | null;
+                  while (throwCheckParent) {
+                    if (isFunctionNode(throwCheckParent)) {
+                      return throwCheckParent === owningFunction;
+                    }
+                    throwCheckParent = throwCheckParent.parent as TSESTree.Node | null;
+                  }
+                  return owningFunction === null;
                 }
+
+                if (refParent === current) {
+                  break;
+                }
+
                 refParent = refParent.parent as TSESTree.Node | null;
               }
               return false;
