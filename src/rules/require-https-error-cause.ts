@@ -68,23 +68,34 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode ?? context.getSourceCode();
     const catchStack: CatchFrame[] = [];
 
-    // ESLint 9 moves getScope onto sourceCode; ESLint 8 exposes context.getScope().
-    // This shim keeps the rule compatible until the codebase drops ESLint 8 support.
-    const getScopeForNode = (node: TSESTree.Node) => {
+    /**
+     * Checks if the current environment is ESLint 9 or later.
+     */
+    const isEslint9OrLater = (sc: TSESLint.SourceCode): boolean => {
+      return typeof (sc as any).getScope === 'function';
+    };
+
+    /**
+     * Gets the scope for a node using the ESLint 9+ SourceCode.getScope() method.
+     */
+    const getEslint9Scope = (
+      sc: TSESLint.SourceCode,
+      node: TSESTree.Node,
+    ): TSESLint.Scope.Scope => {
+      return (sc as any).getScope(node);
+    };
+
+    /**
+     * Obtains the scope for a node in an ESLint 9+ compatible way.
+     */
+    const getScopeForNode = (node: TSESTree.Node): TSESLint.Scope.Scope => {
       try {
-        const sourceCodeWithScope = sourceCode as unknown as {
-          getScope?: (
-            currentNode?: TSESTree.Node,
-          ) => TSESLint.Scope.Scope | null;
-        };
-
-        if (typeof sourceCodeWithScope.getScope === 'function') {
-          return sourceCodeWithScope.getScope(node) ?? context.getScope();
+        if (isEslint9OrLater(sourceCode)) {
+          return getEslint9Scope(sourceCode, node);
         }
-
         return context.getScope();
       } catch {
         return context.getScope();

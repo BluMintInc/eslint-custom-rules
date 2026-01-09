@@ -2,16 +2,10 @@ import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { Graph } from './graph/ClassGraphBuilder';
 export class ASTHelpers {
   /**
-   * Uses (node as any) casts throughout to support varying AST shapes
-   * across ESLint/typescript-eslint versions without requiring strict
-   * type unions for every node kind. This provides a pragmatic compatibility
-   * workaround while preserving runtime behavior.
-   *
-   * This "any-cast boundary" is confined to helper functions in this module.
-   * Correctness is enforced by the runtime type-guard helpers in this file
-   * and unit tests that cover known AST shapes. If (node as any)
-   * usage is broadened, ensure that these guards and tests are updated to
-   * prevent accidental behavioral changes.
+   * Uses (node as any) casts to tolerate AST shape variations across
+   * ESLint/typescript-eslint versions. Runtime correctness relies on
+   * type guards (isParenthesizedExpression, isLoopOrLabeledStatement)
+   * and comprehensive test coverage.
    */
 
   /**
