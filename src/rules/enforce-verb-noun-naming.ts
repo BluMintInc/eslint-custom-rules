@@ -3887,6 +3887,7 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
       // (though these are rare and should generally be avoided)
       const hasProps = hasPropsParameter(node);
       const isUnmemoized = !!functionName && functionName.endsWith('Unmemoized');
+      const returnsJsx = ASTHelpers.returnsJSX(node.body);
 
       // Check for React type annotations
       const hasReactType = (() => {
@@ -3911,7 +3912,10 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
         return false;
       })();
 
-      return (hasProps && ASTHelpers.returnsJSX(node.body)) || isUnmemoized || hasReactType;
+      return (
+        (hasProps && returnsJsx) ||
+        ((isUnmemoized || hasReactType) && returnsJsx)
+      );
     }
     return {
       FunctionDeclaration(node) {
