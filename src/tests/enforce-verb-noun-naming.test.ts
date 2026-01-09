@@ -224,6 +224,33 @@ ruleTesterTs.run('enforce-verb-noun-naming', enforceVerbNounNaming, {
         ecmaFeatures: { jsx: true },
       },
     },
+    {
+      code: `/** @jsx jsx */
+      const conditionalComponent = (props) => {
+        return props.isVisible && <div>Visible</div>;
+      }`,
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+      },
+    },
+    {
+      code: `/** @jsx jsx */
+      function logicalFunction(props) {
+        return props.data || <div />;
+      }`,
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+      },
+    },
+    {
+      code: `/** @jsx jsx */
+      const conditionalReturn = (props) => {
+        return props.isVisible ? <div>Visible</div> : null;
+      }`,
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+      },
+    },
   ],
   invalid: [
     // Invalid function names (not verb phrases)

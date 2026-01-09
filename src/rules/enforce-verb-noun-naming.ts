@@ -7,8 +7,10 @@ type MessageIds = 'functionVerbPhrase';
 
 const PREPOSITIONS = new Set(['to', 'from', 'with', 'by', 'at', 'of']);
 
-// Create a Set from the verbs list for O(1) lookup
-const VERBS_SET = new Set([
+// Verbs and allowed prefixes for O(1) lookup.
+// Includes domain-specific prefixes (e.g., 'electron', 'blumint', 'uuidv4')
+// to reduce false positives for utility and platform-specific functions.
+const ALLOWED_LEADING_WORDS = new Set([
   'clean',
   'abbreviate',
   'abort',
@@ -4528,7 +4530,6 @@ const VERBS_SET = new Set([
   'lookup',
   'mint',
   'cleanup',
-  'cleanUp',
   'dedupe',
   'lowercase',
   'unpluck',
@@ -4607,7 +4608,7 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
       }
 
       // Check against our comprehensive verbs list first
-      if (VERBS_SET.has(firstWordLower)) {
+      if (ALLOWED_LEADING_WORDS.has(firstWordLower)) {
         return true;
       }
 
@@ -4713,7 +4714,7 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
         return false;
       })();
 
-      return (hasProps && ASTHelpers.returnsJSX(node)) || isUnmemoized || hasReactType;
+      return (hasProps && ASTHelpers.returnsJSX(node.body)) || isUnmemoized || hasReactType;
     }
     return {
       FunctionDeclaration(node) {

@@ -566,23 +566,8 @@ export class ASTHelpers {
 
     if (node.type === 'BlockStatement') {
       for (const statement of node.body) {
-        if (
-          statement.type === 'ReturnStatement' &&
-          (statement.argument?.type === 'JSXElement' ||
-            statement.argument?.type === 'JSXFragment')
-        ) {
-          return true;
-        }
-        // Handle conditional returns
-        if (
-          statement.type === 'ReturnStatement' &&
-          statement.argument?.type === 'ConditionalExpression'
-        ) {
-          const conditionalExpr = statement.argument;
-          if (
-            ASTHelpers.returnsJSX(conditionalExpr.consequent) ||
-            ASTHelpers.returnsJSX(conditionalExpr.alternate)
-          ) {
+        if (statement.type === 'ReturnStatement' && statement.argument) {
+          if (ASTHelpers.returnsJSX(statement.argument)) {
             return true;
           }
         }
@@ -593,6 +578,12 @@ export class ASTHelpers {
       return (
         ASTHelpers.returnsJSX(node.consequent) ||
         ASTHelpers.returnsJSX(node.alternate)
+      );
+    }
+
+    if (node.type === 'LogicalExpression') {
+      return (
+        ASTHelpers.returnsJSX(node.left) || ASTHelpers.returnsJSX(node.right)
       );
     }
 
