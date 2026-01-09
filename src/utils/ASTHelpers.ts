@@ -661,12 +661,7 @@ export class ASTHelpers {
     const type = node.type as any;
 
     if (type === 'ExpressionStatement') {
-      const expr = (node as any).expression;
-      if (expr.type === 'JSXElement' || expr.type === 'JSXFragment') {
-        // standalone JSX in a block doesn't mean the block returns JSX
-        return false;
-      }
-      return ASTHelpers.returnsJSX(expr);
+      return false;
     }
 
     if (
@@ -711,6 +706,7 @@ export class ASTHelpers {
           }
         }
       }
+      return false;
     }
 
     if (ASTHelpers.isLoopOrLabeledStatement(node)) {
