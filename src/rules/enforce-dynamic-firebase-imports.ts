@@ -1,7 +1,7 @@
 import { TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
 
-export const enforceFirebaseImports = createRule({
+const enforceFirebaseImports = createRule({
   name: 'enforce-dynamic-firebase-imports',
   meta: {
     type: 'problem',
@@ -168,6 +168,7 @@ export const enforceFirebaseImports = createRule({
           suggest: [
             {
               messageId: 'noDynamicImport',
+              data: { importPath },
               fix(fixer) {
                 const replacement = buildReplacement({
                   allowSideEffectFix: true,
@@ -183,3 +184,5 @@ export const enforceFirebaseImports = createRule({
     };
   },
 });
+
+export default enforceFirebaseImports;

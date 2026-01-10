@@ -165,11 +165,15 @@ const getScope = (
   sourceCode: TSESLint.SourceCode,
   node: TSESTree.Node,
 ): TSESLint.Scope.Scope | null => {
-  const typedSourceCode = sourceCode as TSESLint.SourceCode & {
-    getScope?: (scopedNode: TSESTree.Node) => TSESLint.Scope.Scope | null;
-  };
+  try {
+    const typedSourceCode = sourceCode as TSESLint.SourceCode & {
+      getScope?: (scopedNode: TSESTree.Node) => TSESLint.Scope.Scope | null;
+    };
 
-  return typedSourceCode.getScope?.(node) ?? context.getScope?.() ?? null;
+    return typedSourceCode.getScope?.(node) ?? context.getScope?.() ?? null;
+  } catch {
+    return context.getScope?.() ?? null;
+  }
 };
 
 const analyzeInlineCallback = (

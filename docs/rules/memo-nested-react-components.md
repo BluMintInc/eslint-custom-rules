@@ -1,21 +1,21 @@
-# Disallow React components defined in useCallback/useDeepCompareCallback (`@blumintinc/blumint/memo-nested-react-components`)
+# Disallow React components defined in render bodies, hooks, or passed as props (`@blumintinc/blumint/memo-nested-react-components`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
-🔧 This rule is automatically fixable by the [`--fix` CLI option](https://eslint.org/docs/latest/user-guide/command-line-interface#--fix).
-
 <!-- end auto-generated rule header -->
 
-Creating React components inside `useCallback` or `useDeepCompareCallback` hides a component behind a callback hook. When the hook dependencies change, the callback reference changes and React treats the new function as a brand-new component type, forcing a remount that drops local state and causes flicker. Components should be memoized with `memo()` and created through `useMemo`/`useDeepCompareMemo` so their identities stay stable across renders.
+React components should never be created dynamically inside render bodies, hooks, or any context where they can receive a new identity on re-render. This includes inline components in `useCallback` / `useMemo`, components created in render bodies, and components passed to component-type props (e.g., `CatalogWrapper`, `*Wrapper`, `*Component`).
+
+When a component function reference changes, React treats it as a **different component type**, causing a full unmount/remount of the component and all its children. This leads to loss of state and effects, replaying of animations, and visible UI flashes.
 
 ## Rule Details
 
-- **Why**: Component identity matters to React. Wrapping a component in `useCallback` does not give React a stable component type—dependency changes create a new function and trigger a remount, resetting state and effects. Using `useMemo`/`useDeepCompareMemo` with `memo()` preserves component identity while keeping props-based updates predictable.
+- **Why**: Component identity stability is critical for React. Inline components often receive a new identity when their containing scope re-renders, causing React to unmount and remount them. Wrapping with `memo()` does NOT fix this—`memo()` only prevents re-renders when props change, not when the component identity itself changes. `useCallback` and `useMemo` can produce stable references when dependencies don't change, but inline component definitions remain fragile and can easily become unstable or stale if dependencies are incorrectly managed.
 - **What it checks**:
-  - Flags callbacks passed to `useCallback` or `useDeepCompareCallback` when they return JSX, a `React.createElement` call, or return another function that returns JSX (higher-order component factories).
-  - Detects component wrappers such as `forwardRef` or `memo` returned from these callback hooks.
-  - Skips files that match configured `ignorePatterns`.
-- **Fix behavior**: When `memo` and the replacement hook (`useMemo` or `useDeepCompareMemo`) are already available in scope (either as named imports or as a namespace reference such as `React.useMemo`/`React.useDeepCompareMemo`), the fixer rewrites `useCallback`/`useDeepCompareCallback` calls to the memo variant and wraps the original callback in `memo(...)`. Fixes are skipped when required identifiers are missing to avoid producing invalid code. The fixer also skips callbacks that return another function which returns JSX (component factories) because those require a manual refactor.
+  - Flags components created inside `useCallback`, `useMemo`, `useDeepCompareCallback`, or `useDeepCompareMemo`.
+  - Flags components (Uppercase identifiers) defined inside render bodies.
+  - Flags inline function components passed to component-type props (`*Wrapper`, `*Component`, `*Template`, `*Header`, `*Footer`).
+- **Fix behavior**: This rule does not provide an auto-fix because the correct solution usually involves moving the component definition to the module scope and using React Context or props to provide dynamic data.
 
 ### Options
 
@@ -29,47 +29,82 @@ Creating React components inside `useCallback` or `useDeepCompareCallback` hides
 
 ## Examples
 
-Bad:
+### Inline Component in Hook (Bad)
 
 ```tsx
-import { useCallback } from 'react';
-
-const CustomButton = useCallback(({ onClick, children }) => {
-  return <button onClick={onClick}>{children}</button>;
-}, []);
-```
-
-Good:
-
-```tsx
-import { useMemo, memo } from 'react';
-
-const CustomButton = useMemo(
-  () => memo(({ onClick, children }) => <button onClick={onClick}>{children}</button>),
-  [],
+// BAD: Component created inside useCallback
+const LoadingWrapperInternal = useCallback<FC<Props>>(
+  (props) => {
+    return <LoadingWrapper isLoading={isLoading} {...props} />;
+  },
+  [isLoading], // When isLoading changes → new component identity → remount
 );
 ```
 
-### Edge Cases
+### Component-Type Prop (Bad)
 
-- Higher-order factories that return a function producing JSX are flagged (e.g., `() => (props) => <div {...props} />`). The fixer leaves these cases untouched; refactor manually to memoize the component factory:
+```tsx
+// BAD: CatalogWrapper changes identity when header or gridProps change.
+// Using the rest object 'gridProps' in dependencies causes unnecessary churn
+// as rest objects are unstable across renders.
+const ContentVerticalCarouselGrid = ({ header, ...gridProps }) => {
+  const { someStableProp } = gridProps;
 
-  ```tsx
-  // Reported but not auto-fixed
-  const makeCard = useCallback(() => (props: Props) => <Card {...props} />, []);
-
-  // Manual fix
-  const makeCard = useMemo(
-    () => memo((props: Props) => <Card {...props} />),
-    [],
+  const CatalogWrapper = useCallback(
+    (props) => {
+      return (
+        <ContentCarouselWrapper
+          {...props}
+          {...gridProps}
+          header={header}
+        />
+      );
+    },
+    [someStableProp, header], // Destructure stable primitives or use useMemo
   );
-  ```
 
-- `forwardRef` wrappers returned from `useCallback` are flagged because they still create a component inside a callback.
-- Event handlers or callbacks that do not return JSX are allowed.
-- Components already built with `useMemo`/`useDeepCompareMemo` and `memo()` are unaffected.
-- The fixer requires both the replacement hook and `memo` to be in scope; otherwise, it reports without auto-fixing.
+  return <AlgoliaLayout CatalogWrapper={CatalogWrapper} />;
+};
+```
+
+### Correct Solution
+
+1. Define the component at **module scope** in its own file, wrapped with `memo()`.
+2. Use **React Context** and/or directly provide props to supply any dynamic data the component needs.
+3. Pass the stable, imported component reference to props like `CatalogWrapper`.
+
+```tsx
+import { createContext, useContext, memo, ReactNode } from 'react';
+
+// Step 1: Create a context for the dynamic header
+export const ContentGridHeaderContext = createContext<ReactNode | null>(null);
+
+export const useContentGridHeader = () => useContext(ContentGridHeaderContext);
+
+// Step 2: Wrapper consumes header from context
+// Component defined at module scope and memoized
+const ContentCarouselWrapperUnmemoized = (props: any) => {
+  const headerFromContext = useContentGridHeader();
+  return <VerticalCarouselGrid header={headerFromContext} {...props} />;
+};
+export const ContentCarouselWrapper = memo(ContentCarouselWrapperUnmemoized);
+
+// Step 3: Wrap with provider and pass stable reference
+const MyPage = () => {
+  return (
+    <ContentGridHeaderContext.Provider value={<ContentSearch />}>
+      <AlgoliaLayout CatalogWrapper={ContentCarouselWrapper} />
+    </ContentGridHeaderContext.Provider>
+  );
+};
+```
+
+## Edge Cases
+
+- **Render-prop callbacks** (e.g., `render={...}`) are fine; this rule targets component-type props only.
+- **JSX elements** passed directly to props are fine (e.g., `header={<TitleSelect />}`).
 
 ## Version
 
 - Introduced in v1.12.6
+- Updated in v1.12.7 to include render bodies and component-type props.

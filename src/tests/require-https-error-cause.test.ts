@@ -88,8 +88,53 @@ ruleTesterTs.run('require-https-error-cause', requireHttpsErrorCause, {
         throw HttpsError('internal', 'Operation failed', undefined, error);
       }
     `,
+    `
+      try {
+        await doWork();
+      } catch (error) {
+        throw new HttpsError({
+          code: 'internal',
+          message: 'Operation failed',
+          details: { foo: 'bar' },
+          cause: error,
+        });
+      }
+    `,
+    `
+      try {
+        await doWork();
+      } catch (err) {
+        throw new HttpsError({ 'cause': err });
+      }
+    `,
+    `
+      try {
+        await doWork();
+      } catch (err) {
+        throw new HttpsError({ "cause": err });
+      }
+    `,
+    `
+      try {
+        await doWork();
+      } catch (err) {
+        const cfg = { code: 'internal' };
+        throw new HttpsError({ ...cfg, cause: err });
+      }
+    `,
   ],
   invalid: [
+    {
+      code: `
+        try {
+          await doWork();
+        } catch (error) {
+          const cfg = { cause: error };
+          throw new HttpsError({ ...cfg });
+        }
+      `,
+      errors: [{ messageId: 'missingCause' }],
+    },
     {
       code: `
         try {
@@ -99,6 +144,56 @@ ruleTesterTs.run('require-https-error-cause', requireHttpsErrorCause, {
         }
       `,
       errors: [{ messageId: 'missingCause' }],
+    },
+    {
+      code: `
+        try {
+          await doWork();
+        } catch (error) {
+          throw new HttpsError({
+            code: 'internal',
+            message: 'Operation failed',
+          });
+        }
+      `,
+      errors: [{ messageId: 'missingCause' }],
+    },
+    {
+      code: `
+        try {
+          await doWork();
+        } catch (error) {
+          throw new HttpsError({
+            cause: new Error('other'),
+          });
+        }
+      `,
+      errors: [{ messageId: 'causeNotCatchBinding' }],
+    },
+    {
+      code: `
+        try {
+          await doWork();
+        } catch (error) {
+          throw new HttpsError({
+            cause: 'not-an-identifier',
+          });
+        }
+      `,
+      errors: [{ messageId: 'causeNotCatchBinding' }],
+    },
+    {
+      code: `
+        try {
+          await doWork();
+        } catch (error) {
+          const otherError = new Error('other');
+          throw new HttpsError({
+            cause: otherError,
+          });
+        }
+      `,
+      errors: [{ messageId: 'causeNotCatchBinding' }],
     },
     {
       code: `

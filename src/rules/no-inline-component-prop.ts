@@ -232,11 +232,12 @@ function isComponentLikeFunction(
     | TSESTree.ArrowFunctionExpression
     | TSESTree.FunctionExpression
     | TSESTree.FunctionDeclaration,
+  context: Readonly<TSESLint.RuleContext<MessageIds, Options>>,
   displayName?: string,
 ): boolean {
   const body = fn.body;
   const hasJSX =
-    !!body && ASTHelpers.returnsJSX(body as unknown as TSESTree.Node);
+    !!body && ASTHelpers.returnsJSX(body as unknown as TSESTree.Node, context);
 
   const expressionBody =
     fn.type === AST_NODE_TYPES.ArrowFunctionExpression &&
@@ -259,8 +260,14 @@ function findVariableInScopes(
   const sourceCode = context.sourceCode as TSESLint.SourceCode & {
     getScope?: (node: TSESTree.Node) => TSESLint.Scope.Scope | null;
   };
-  let scope: TSESLint.Scope.Scope | null =
-    sourceCode.getScope?.(identifier) ?? context.getScope();
+  let scope: TSESLint.Scope.Scope | null = null;
+  try {
+    // Tolerate ESLint API variations across versions/configurations.
+    // Some contexts may not provide getScope or may throw unexpectedly.
+    scope = sourceCode.getScope?.(identifier) ?? context.getScope();
+  } catch {
+    scope = null;
+  }
   while (scope) {
     const variable = scope.variables.find((v) => v.name === identifier.name);
     if (variable) return variable;
@@ -420,7 +427,7 @@ export const noInlineComponentProp = createRule<Options, MessageIds>({
       }
 
       if (!fnNode) return false;
-      return isComponentLikeFunction(fnNode, displayName);
+      return isComponentLikeFunction(fnNode, context, displayName);
     }
 
     function report(
@@ -496,7 +503,10 @@ export const noInlineComponentProp = createRule<Options, MessageIds>({
         defNode.init,
         member.property.name,
       );
-      if (fnNode && isComponentLikeFunction(fnNode, member.property.name)) {
+      if (
+        fnNode &&
+        isComponentLikeFunction(fnNode, context, member.property.name)
+      ) {
         report(member, propName, member.property.name);
       }
     }
@@ -510,7 +520,7 @@ export const noInlineComponentProp = createRule<Options, MessageIds>({
     ): void {
       const explicitName =
         fn.type === AST_NODE_TYPES.FunctionExpression ? fn.id?.name : undefined;
-      if (!isComponentLikeFunction(fn, explicitName)) {
+      if (!isComponentLikeFunction(fn, context, explicitName)) {
         return;
       }
       const displayName =
@@ -525,7 +535,7 @@ export const noInlineComponentProp = createRule<Options, MessageIds>({
     ): void {
       const fnNode = getFunctionFromCall(call);
       if (!fnNode) return;
-      if (isComponentLikeFunction(fnNode)) {
+      if (isComponentLikeFunction(fnNode, context)) {
         report(call, propName, INLINE_COMPONENT_NAME);
       }
     }
