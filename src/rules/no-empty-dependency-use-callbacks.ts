@@ -689,7 +689,7 @@ export const noEmptyDependencyUseCallbacks = createRule<Options, MessageIds>({
       const callback = getCallbackArg(callExpression);
       if (!callback) return;
 
-      if (ASTHelpers.returnsJSX(callback.body)) return;
+      if (ASTHelpers.returnsJSX(callback.body, context)) return;
 
       const extraTypeRoots: TSESTree.Node[] = [];
       if (

@@ -1,6 +1,7 @@
 import { minimatch } from 'minimatch';
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type Options = [
   {
@@ -110,36 +111,30 @@ const getScopeForNode = (
   context: TSESLint.RuleContext<MessageIds, Options>,
   node: TSESTree.Node,
 ): TSESLint.Scope.Scope => {
-  const sourceCode = context.getSourceCode();
-  const sourceCodeWithScope = sourceCode as unknown as {
-    getScope?: (currentNode?: TSESTree.Node) => TSESLint.Scope.Scope | null;
-  };
+  try {
+    const sourceCode = context.getSourceCode();
+    const sourceCodeWithScope = sourceCode as unknown as {
+      getScope?: (currentNode?: TSESTree.Node) => TSESLint.Scope.Scope | null;
+    };
 
-  if (typeof sourceCodeWithScope.getScope === 'function') {
-    return sourceCodeWithScope.getScope(node) ?? context.getScope();
+    if (typeof sourceCodeWithScope.getScope === 'function') {
+      return sourceCodeWithScope.getScope(node) ?? context.getScope();
+    }
+
+    return context.getScope();
+  } catch {
+    return context.getScope();
   }
-
-  return context.getScope();
 };
 
 const getDeclaredVariablesForNode = (
   context: TSESLint.RuleContext<MessageIds, Options>,
   node: TSESTree.Node,
 ) => {
-  const sourceCodeWithDeclaredVariables =
-    context.getSourceCode() as unknown as {
-      getDeclaredVariables?: (
-        targetNode: TSESTree.Node,
-      ) => readonly TSESLint.Scope.Variable[];
-    };
-
-  if (
-    typeof sourceCodeWithDeclaredVariables.getDeclaredVariables === 'function'
-  ) {
-    return sourceCodeWithDeclaredVariables.getDeclaredVariables(node);
-  }
-
-  return context.getDeclaredVariables(node);
+  return ASTHelpers.getDeclaredVariables(
+    context as unknown as TSESLint.RuleContext<string, readonly unknown[]>,
+    node,
+  );
 };
 
 const isErrorKey = (
