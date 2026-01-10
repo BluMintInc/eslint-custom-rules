@@ -16,27 +16,35 @@ const isComponentExplicitlyUnmemoized = (componentName: string) =>
 
 function isFunction(
   node: TSESTree.Node,
-): node is TSESTree.FunctionExpression | TSESTree.ArrowFunctionExpression {
+): node is
+  | TSESTree.FunctionExpression
+  | TSESTree.ArrowFunctionExpression
+  | TSESTree.FunctionDeclaration {
   return (
     node.type === AST_NODE_TYPES.ArrowFunctionExpression ||
-    node.type === AST_NODE_TYPES.FunctionExpression
+    node.type === AST_NODE_TYPES.FunctionExpression ||
+    node.type === AST_NODE_TYPES.FunctionDeclaration
   );
 }
 
-function isHigherOrderFunctionReturningJSX(node: TSESTree.Node): boolean {
+function isHigherOrderFunctionReturningJSX(
+  node: TSESTree.Node,
+  context: Readonly<RuleContext<'requireMemo', []>>,
+): boolean {
   if (isFunction(node)) {
-    // Check if function takes another function as an argument
-    const hasFunctionParam = 'params' in node && node.params.some(isFunction);
-
     if (node.body && node.body.type === 'BlockStatement') {
       for (const statement of node.body.body) {
         if (statement.type === 'ReturnStatement' && statement.argument) {
-          const returnsJSX = ASTHelpers.returnsJSX(statement.argument);
+          const returnsJSX = ASTHelpers.returnsJSX(statement.argument, context);
           const returnsFunction = isFunction(statement.argument);
 
-          return (hasFunctionParam || returnsFunction) && returnsJSX;
+          return returnsFunction && returnsJSX;
         }
       }
+    } else if (node.body && isFunction(node.body)) {
+      // Shorthand arrow HOC: (Comp) => (props) => <Comp {...props} />
+      // Here node.body is the inner function; check if it returns JSX.
+      return ASTHelpers.returnsJSX(node.body, context);
     }
   }
   return false;
@@ -87,7 +95,7 @@ function checkFunction(
   if (!fileName.endsWith('.tsx')) {
     return;
   }
-  if (isHigherOrderFunctionReturningJSX(node)) {
+  if (isHigherOrderFunctionReturningJSX(node, context)) {
     return;
   }
   const parentNode = node.parent;
@@ -95,7 +103,10 @@ function checkFunction(
     return;
   }
 
-  if (ASTHelpers.returnsJSX(node.body) && ASTHelpers.hasParameters(node)) {
+  if (
+    ASTHelpers.returnsJSX(node.body, context) &&
+    ASTHelpers.hasParameters(node)
+  ) {
     const results = [
       isUnmemoizedArrowFunction,
       isUnmemoizedFunctionComponent,
@@ -118,6 +129,9 @@ function checkFunction(
         fix:
           results[2] || results[1]
             ? function fix(fixer) {
+                if (node.async || (node as any).generator) {
+                  return null;
+                }
                 const sourceCode = context.sourceCode;
                 let importFix: TSESLint.RuleFix | null = null;
 
@@ -189,7 +203,7 @@ function checkFunction(
                   ),
                   fixer.insertTextAfterRange(
                     [node.range[1], node.range[1]],
-                    ')',
+                    ');',
                   ),
                   fixer.replaceTextRange(
                     [node.id!.range[0] - 1, node.id!.range[1]],

@@ -1,4 +1,5 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
 
 type MessageIds =
@@ -68,22 +69,8 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode ?? (context as any).getSourceCode();
     const catchStack: CatchFrame[] = [];
-
-    // ESLint 9 moves getScope onto sourceCode; ESLint 8 exposes context.getScope().
-    // This shim keeps the rule compatible until the codebase drops ESLint 8 support.
-    const getScopeForNode = (node: TSESTree.Node) => {
-      const sourceCodeWithScope = sourceCode as unknown as {
-        getScope?: (currentNode?: TSESTree.Node) => TSESLint.Scope.Scope | null;
-      };
-
-      if (typeof sourceCodeWithScope.getScope === 'function') {
-        return sourceCodeWithScope.getScope(node);
-      }
-
-      return context.getScope();
-    };
 
     const reportMissingCause = (
       node: TSESTree.NewExpression | TSESTree.CallExpression,
@@ -122,7 +109,7 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
       }
 
       const variable = findVariableInScopeChain(
-        getScopeForNode(identifier),
+        ASTHelpers.getScope(context, identifier),
         identifier.name,
       );
 

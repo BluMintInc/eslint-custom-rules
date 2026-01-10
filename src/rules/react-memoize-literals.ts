@@ -325,7 +325,8 @@ function isInsideAllowedHookCallback(node: TSESTree.Node): boolean {
         current.type === AST_NODE_TYPES.FunctionExpression ||
         current.type === AST_NODE_TYPES.ArrowFunctionExpression
       ) {
-        let parent: TSESTree.Node | null = current.parent as TSESTree.Node | null;
+        let parent: TSESTree.Node | null =
+          current.parent as TSESTree.Node | null;
 
         // Skip through TypeScript type assertions and parentheses to find
         // the actual CallExpression that invokes the hook.
@@ -339,7 +340,11 @@ function isInsideAllowedHookCallback(node: TSESTree.Node): boolean {
             (arg) => unwrapNestedExpressions(arg as TSESTree.Node) === current,
           );
 
-          if (hookName && SAFE_HOOK_ARGUMENTS.has(hookName) && matchesCallback) {
+          if (
+            hookName &&
+            SAFE_HOOK_ARGUMENTS.has(hookName) &&
+            matchesCallback
+          ) {
             return true;
           }
         }
@@ -647,7 +652,8 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
               if (isFunctionNode(throwCheckParent)) {
                 return throwCheckParent === owningFunction;
               }
-              throwCheckParent = throwCheckParent.parent as TSESTree.Node | null;
+              throwCheckParent =
+                throwCheckParent.parent as TSESTree.Node | null;
             }
             return owningFunction === null;
           }

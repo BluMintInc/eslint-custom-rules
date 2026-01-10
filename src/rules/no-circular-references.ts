@@ -144,9 +144,7 @@ export const noCircularReferences = createRule<[], MessageIds>({
       );
     }
 
-    function getVariable(
-      name: string,
-    ): TSESLint.Scope.Variable | null {
+    function getVariable(name: string): TSESLint.Scope.Variable | null {
       let scope: TSESLint.Scope.Scope | null = context.getScope();
       while (scope) {
         const variable = scope.variables.find((v) => v.name === name);
