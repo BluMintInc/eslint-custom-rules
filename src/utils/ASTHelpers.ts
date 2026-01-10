@@ -2,10 +2,18 @@ import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { Graph } from './graph/ClassGraphBuilder';
 export class ASTHelpers {
   /**
-   * Uses (node as any) casts to tolerate AST shape variations across
-   * ESLint/typescript-eslint versions. Runtime correctness relies on
-   * type guards (isParenthesizedExpression, isLoopOrLabeledStatement)
-   * and comprehensive test coverage.
+   * AST node shapes vary across ESLint/typescript-eslint versions, with some
+   * node types (ParenthesizedExpression, TSSatisfiesExpression) not consistently
+   * available in type definitions. Type guards and runtime checks ensure correctness
+   * despite these discrepancies, trading compile-time safety for cross-version
+   * compatibility until type definitions stabilize.
+   *
+   * Semantics Contract:
+   * - Helpers like getScope and returnsJSX must be invoked from the active
+   *   visitor traversal context (ESLint 8 compatible).
+   * - returnsJSX is a heuristic and does not perform a full control-flow proof.
+   * - Reliance on runtime type guards (isParenthesizedExpression,
+   *   isLoopOrLabeledStatement) is intentional.
    */
 
   /**
@@ -36,15 +44,23 @@ export class ASTHelpers {
     context: Readonly<TSESLint.RuleContext<string, readonly unknown[]>>,
     node: TSESTree.Node,
   ): TSESLint.Scope.Scope {
-    try {
-      const sourceCode = context.sourceCode as any;
-      if (typeof sourceCode?.getScope === 'function') {
-        return sourceCode.getScope(node);
+    const sourceCode = (context as any).sourceCode as any;
+    const sourceGetScope = sourceCode?.getScope;
+    const contextGetScope = (context as any).getScope;
+
+    if (typeof sourceGetScope === 'function') {
+      try {
+        return sourceGetScope.call(sourceCode, node);
+      } catch {
+        // Fall through to context.getScope
       }
-      return (context as any).getScope();
-    } catch {
-      return (context as any).getScope();
     }
+
+    if (typeof contextGetScope === 'function') {
+      return contextGetScope.call(context);
+    }
+
+    throw new Error('getScope is not available in this ESLint version.');
   }
 
   public static blockIncludesIdentifier(
@@ -664,6 +680,8 @@ export class ASTHelpers {
   private static isParenthesizedExpression(
     node: TSESTree.Node | null | undefined,
   ): node is TSESTree.Node & { expression: TSESTree.Node } {
+    // ParenthesizedExpression is not in AST_NODE_TYPES across all ESLint versions
+    // so we check the string literal directly for cross-version compatibility.
     return (node as any)?.type === 'ParenthesizedExpression';
   }
 
@@ -734,6 +752,8 @@ export class ASTHelpers {
             // Check if the variable is reassigned after initialization.
             // We only follow variables that are defined once and never reassigned
             // to ensure we're following a deterministic JSX-returning value.
+            // This is intentionally conservative to avoid ambiguous multi-write cases,
+            // which affects React component detection accuracy.
             const isReassigned = variable.references.some(
               (ref) => ref.isWrite() && !(ref as any).init,
             );
@@ -746,7 +766,8 @@ export class ASTHelpers {
               def.node.type === AST_NODE_TYPES.VariableDeclarator &&
               def.node.init
             ) {
-              return ASTHelpers.returnsJSX(def.node.init, context);
+              // ReturnStatement returns a value; treat function/class initializers as non-JSX values.
+              return ASTHelpers.returnsJSXValue(def.node.init);
             }
           }
         } else {

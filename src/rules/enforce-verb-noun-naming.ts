@@ -3922,7 +3922,8 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
         return (
           /\bReact\.(FC|FunctionComponent|JSX\.Element|ReactElement)\b/.test(
             typeText,
-          ) || /\b(FC|FunctionComponent|JSX\.Element|ReactElement)\b/.test(typeText)
+          ) ||
+          /\b(FC|FunctionComponent|JSX\.Element|ReactElement)\b/.test(typeText)
         );
       }
 
