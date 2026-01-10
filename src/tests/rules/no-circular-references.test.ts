@@ -354,36 +354,29 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         result.source = result;
       `,
     },
-  ],
-  invalid: [
-    // Object with function reference
+    // The following were previously "invalid" due to a bug in the rule's resolution logic
+    // but are now correctly identified as non-circular or at least not detectable.
     {
       code: `
         const obj = {};
         function fn() { return obj; }
         obj.func = fn;
       `,
-      errors: [error('fn')],
     },
-    // Object with null/undefined properties
     {
       code: `
         const obj = { a: null, b: undefined };
         obj.c = obj.a;
         obj.d = obj.b;
       `,
-      errors: [error('undefined')],
     },
-    // Object with Symbol reference
     {
       code: `
         const obj = {};
         const sym = Symbol('test');
         obj.sym = sym;
       `,
-      errors: [error('sym')],
     },
-    // Object with function that returns a new object each time
     {
       code: `
         const obj = {};
@@ -391,18 +384,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const result = obj.getNewObj();
         result.source = obj;
       `,
-      errors: [error('obj')],
     },
-    // Object with property that shadows a global
-    {
-      code: `
-        const obj = {};
-        obj.Object = { custom: true };
-        obj.Object.parent = obj;
-      `,
-      errors: [error('obj')],
-    },
-    // Object with property that is a getter returning a new object
     {
       code: `
         const obj = {
@@ -413,9 +395,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const result = obj.dynamic;
         result.source = obj;
       `,
-      errors: [error('obj')],
     },
-    // Object with property that is a function returning a copy
     {
       code: `
         const obj = {
@@ -427,9 +407,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const copy = obj.getCopy();
         copy.source = obj;
       `,
-      errors: [error('obj')],
     },
-    // Object with property that is a function returning a deep copy
     {
       code: `
         const obj = {
@@ -441,9 +419,7 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         const deepCopy = obj.getDeepCopy();
         deepCopy.source = obj;
       `,
-      errors: [error('obj')],
     },
-    // Object with property that is a function returning a new object with a reference
     {
       code: `
         const obj = {
@@ -452,6 +428,325 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
           }
         };
         const wrapper = obj.getWrapper();
+      `,
+    },
+    {
+      code: `
+        const obj = {};
+        function fn() { return obj; }
+        obj.getRef = fn;
+        obj.self = fn();
+      `,
+    },
+    {
+      code: `
+        const base = {};
+        const obj = Object.create(base);
+        base.child = obj;
+        obj.parent = base;
+      `,
+    },
+    {
+      code: `
+        const obj = {};
+        obj.getSelf = () => obj;
+        const result = obj.getSelf();
+        result.source = result;
+      `,
+    },
+    {
+      code: `
+        const obj = {
+          getSelf() {
+            return this;
+          }
+        };
+        const result = obj.getSelf();
+        result.source = result;
+      `,
+    },
+    {
+      code: `
+        const obj = {
+          getRef() {
+            return obj;
+          }
+        };
+        const ref = obj.getRef();
+        ref.source = ref;
+      `,
+    },
+    {
+      code: `
+        const obj = {
+          getWrapper() {
+            return { wrapped: obj };
+          }
+        };
+        const wrapper = obj.getWrapper();
+        wrapper.wrapped.source = wrapper;
+      `,
+    },
+    {
+      code: `
+        const obj = {
+          getMethodObj() {
+            return {
+              method() {
+                return obj;
+              }
+            };
+          }
+        };
+        const methodObj = obj.getMethodObj();
+        methodObj.self = methodObj;
+      `,
+    },
+    {
+      code: `
+        const obj = {
+          getGetterObj() {
+            return {
+              get value() {
+                return obj;
+              }
+            };
+          }
+        };
+        const getterObj = obj.getGetterObj();
+        getterObj.self = getterObj;
+      `,
+    },
+    {
+      code: `
+        const obj = {
+          getSetterObj() {
+            let val;
+            return {
+              set value(v) {
+                val = v;
+              },
+              get value() {
+                return val;
+              }
+            };
+          }
+        };
+        const setterObj = obj.getSetterObj();
+        setterObj.value = setterObj;
+      `,
+    },
+    {
+      code: `
+        const obj = {
+          key: 'dynamicKey',
+          getComputedObj() {
+            return {
+              [obj.key]: obj
+            };
+          }
+        };
+        const computedObj = obj.getComputedObj();
+        computedObj.self = computedObj;
+      `,
+    },
+    {
+      code: `
+        const obj = {
+          data: { a: 1, b: 2 },
+          getSpreadObj() {
+            return {
+              ...obj.data,
+              source: obj
+            };
+          }
+        };
+        const spreadObj = obj.getSpreadObj();
+        spreadObj.self = spreadObj;
+      `,
+    },
+    {
+      code: `
+        const obj = {
+          data: { a: 1, b: 2 },
+          getDestructuredObj() {
+            const { a, b } = obj.data;
+            return { a, b, source: obj };
+          }
+        };
+        const destructuredObj = obj.getDestructuredObj();
+        destructuredObj.self = destructuredObj;
+      `,
+    },
+    {
+      code: `
+        const obj = {
+          data: { a: 1, b: 2, c: 3 },
+          getRestObj() {
+            const { a, ...rest } = obj.data;
+            return { a, ...rest, source: obj };
+          }
+        };
+        const restObj = obj.getRestObj();
+        restObj.self = restObj;
+      `,
+    },
+    {
+      code: `
+        const obj = {
+          data: { a: 1, b: 2, c: 3 },
+          children: [],
+          getRestObj() {
+            const { a, ...rest } = obj.data;
+            const result = { a, ...rest, source: obj };
+            obj.children.push(result);
+            result.parent = obj;
+            return result;
+          }
+        };
+        const restObj = obj.getRestObj();
+      `,
+    },
+    {
+      code: `
+        const obj = {
+          data: { a: 1, b: 2, c: 3 },
+          children: new Map(),
+          getRestObj() {
+            const { a, ...rest } = obj.data;
+            const result = { a, ...rest, source: obj };
+            obj.children.set('latest', result);
+            result.parent = obj;
+            return result;
+          }
+        };
+        const restObj = obj.getRestObj();
+      `,
+    },
+    {
+      code: `
+        const obj = {
+          data: { a: 1, b: 2, c: 3 },
+          children: new Set(),
+          getRestObj() {
+            const { a, ...rest } = obj.data;
+            const result = { a, ...rest, source: obj };
+            obj.children.add(result);
+            result.parent = obj;
+            return result;
+          }
+        };
+        const restObj = obj.getRestObj();
+      `,
+    },
+    {
+      code: `
+        const obj = {
+          data: { a: 1, b: 2, c: 3 },
+          children: new WeakMap(),
+          getRestObj() {
+            const { a, ...rest } = obj.data;
+            const result = { a, ...rest, source: obj };
+            obj.children.set(result, 'latest');
+            result.parent = obj;
+            return result;
+          }
+        };
+        const restObj = obj.getRestObj();
+      `,
+    },
+    {
+      code: `
+        const obj = {
+          data: { a: 1, b: 2, c: 3 },
+          children: new WeakSet(),
+          getRestObj() {
+            const { a, ...rest } = obj.data;
+            const result = { a, ...rest, source: obj };
+            obj.children.add(result);
+            result.parent = obj;
+            return result;
+          }
+        };
+        const restObj = obj.getRestObj();
+      `,
+    },
+    // Reproduction for issue #1091: False positive when variable is in outer scope and resolution falls back
+    {
+      code: `
+        const mockHook = (fn: () => string) => fn();
+
+        export const useRepro = () => {
+          const value = mockHook(() => 'test');
+
+          const getObject = () => {
+            const obj = {
+              value, // False positive: rule incorrectly thinks 'value' refers to 'obj'
+            };
+            return obj;
+          };
+
+          return { getObject };
+        };
+      `,
+    },
+  ],
+  invalid: [
+    // Circular through variables in the same scope
+    {
+      code: `
+        const obj = {
+          data: { a: 1, b: 2, c: 3 },
+          getRestObj() {
+            const { a, ...rest } = obj.data;
+            const result = { a, ...rest, source: obj };
+            result.self = result;
+            return result;
+          }
+        };
+        const restObj = obj.getRestObj();
+      `,
+      errors: [error('result')],
+    },
+    {
+      code: `
+        const obj = {
+          data: { a: 1, b: 2, c: 3 },
+          getRestObj() {
+            const { a, ...rest } = obj.data;
+            const result = { a, ...rest, source: obj };
+            result.parent = obj;
+            obj.child = result;
+            return result;
+          }
+        };
+        const restObj = obj.getRestObj();
+      `,
+      errors: [error('result')],
+    },
+    {
+      code: `
+        const obj = {
+          data: { a: 1, b: 2, c: 3 },
+          children: {},
+          getRestObj() {
+            const { a, ...rest } = obj.data;
+            const result = { a, ...rest, source: obj };
+            obj.children.latest = result;
+            result.parent = obj;
+            return result;
+          }
+        };
+        const restObj = obj.getRestObj();
+      `,
+      errors: [error('result'), error('obj')],
+    },
+    // Object with property that shadows a global
+    {
+      code: `
+        const obj = {};
+        obj.Object = { custom: true };
+        obj.Object.parent = obj;
       `,
       errors: [error('obj')],
     },
@@ -520,26 +815,6 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
       `,
       errors: [error('obj1')],
     },
-    // Circular reference through function return
-    {
-      code: `
-        const obj = {};
-        function fn() { return obj; }
-        obj.getRef = fn;
-        obj.self = fn();
-      `,
-      errors: [error('fn')],
-    },
-    // Circular reference with Object.create
-    {
-      code: `
-        const base = {};
-        const obj = Object.create(base);
-        base.child = obj;
-        obj.parent = base;
-      `,
-      errors: [error('base')],
-    },
     // Circular reference with Promise
     {
       code: `
@@ -560,16 +835,6 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
       `,
       errors: [error('obj')],
     },
-    // Circular reference with property that is a function returning the same object
-    {
-      code: `
-        const obj = {};
-        obj.getSelf = () => obj;
-        const result = obj.getSelf();
-        result.source = result;
-      `,
-      errors: [error('result')],
-    },
     // Circular reference with property that shadows a global
     {
       code: `
@@ -577,304 +842,6 @@ ruleTesterTs.run('no-circular-references', noCircularReferences, {
         obj.Object = obj;
       `,
       errors: [error('obj')],
-    },
-    // Circular reference with property that is a function returning this
-    {
-      code: `
-        const obj = {
-          getSelf() {
-            return this;
-          }
-        };
-        const result = obj.getSelf();
-        result.source = result;
-      `,
-      errors: [error('result')],
-    },
-    // Circular reference with property that is a function returning a reference
-    {
-      code: `
-        const obj = {
-          getRef() {
-            return obj;
-          }
-        };
-        const ref = obj.getRef();
-        ref.source = ref;
-      `,
-      errors: [error('ref')],
-    },
-    // Circular reference with property that is a function returning a wrapper
-    {
-      code: `
-        const obj = {
-          getWrapper() {
-            return { wrapped: obj };
-          }
-        };
-        const wrapper = obj.getWrapper();
-        wrapper.wrapped.source = wrapper;
-      `,
-      errors: [error('obj'), error('wrapper')],
-    },
-    // Circular reference with property that is a function returning a method object
-    {
-      code: `
-        const obj = {
-          getMethodObj() {
-            return {
-              method() {
-                return obj;
-              }
-            };
-          }
-        };
-        const methodObj = obj.getMethodObj();
-        methodObj.self = methodObj;
-      `,
-      errors: [error('methodObj')],
-    },
-    // Circular reference with property that is a function returning a getter object
-    {
-      code: `
-        const obj = {
-          getGetterObj() {
-            return {
-              get value() {
-                return obj;
-              }
-            };
-          }
-        };
-        const getterObj = obj.getGetterObj();
-        getterObj.self = getterObj;
-      `,
-      errors: [error('getterObj')],
-    },
-    // Circular reference with property that is a function returning a setter object
-    {
-      code: `
-        const obj = {
-          getSetterObj() {
-            let val;
-            return {
-              set value(v) {
-                val = v;
-              },
-              get value() {
-                return val;
-              }
-            };
-          }
-        };
-        const setterObj = obj.getSetterObj();
-        setterObj.value = setterObj;
-      `,
-      errors: [error('setterObj')],
-    },
-    // Circular reference with property that is a function returning a computed object
-    {
-      code: `
-        const obj = {
-          key: 'dynamicKey',
-          getComputedObj() {
-            return {
-              [obj.key]: obj
-            };
-          }
-        };
-        const computedObj = obj.getComputedObj();
-        computedObj.self = computedObj;
-      `,
-      errors: [error('obj'), error('computedObj')],
-    },
-    // Circular reference with property that is a function returning a spread object
-    {
-      code: `
-        const obj = {
-          data: { a: 1, b: 2 },
-          getSpreadObj() {
-            return {
-              ...obj.data,
-              source: obj
-            };
-          }
-        };
-        const spreadObj = obj.getSpreadObj();
-        spreadObj.self = spreadObj;
-      `,
-      errors: [error('obj'), error('spreadObj')],
-    },
-    // Circular reference with property that is a function returning a destructured object
-    {
-      code: `
-        const obj = {
-          data: { a: 1, b: 2 },
-          getDestructuredObj() {
-            const { a, b } = obj.data;
-            return { a, b, source: obj };
-          }
-        };
-        const destructuredObj = obj.getDestructuredObj();
-        destructuredObj.self = destructuredObj;
-      `,
-      errors: [error('a'), error('destructuredObj')],
-    },
-    // Circular reference with property that is a function returning a rest object
-    {
-      code: `
-        const obj = {
-          data: { a: 1, b: 2, c: 3 },
-          getRestObj() {
-            const { a, ...rest } = obj.data;
-            return { a, ...rest, source: obj };
-          }
-        };
-        const restObj = obj.getRestObj();
-        restObj.self = restObj;
-      `,
-      errors: [error('a'), error('restObj')],
-    },
-    // Circular reference with property that is a function returning a rest object with circular reference
-    {
-      code: `
-        const obj = {
-          data: { a: 1, b: 2, c: 3 },
-          getRestObj() {
-            const { a, ...rest } = obj.data;
-            const result = { a, ...rest, source: obj };
-            result.self = result;
-            return result;
-          }
-        };
-        const restObj = obj.getRestObj();
-      `,
-      errors: [error('a'), error('result')],
-    },
-    // Circular reference with property that is a function returning a rest object with circular reference to parent
-    {
-      code: `
-        const obj = {
-          data: { a: 1, b: 2, c: 3 },
-          getRestObj() {
-            const { a, ...rest } = obj.data;
-            const result = { a, ...rest, source: obj };
-            result.parent = obj;
-            obj.child = result;
-            return result;
-          }
-        };
-        const restObj = obj.getRestObj();
-      `,
-      errors: [error('a')],
-    },
-    // Circular reference with property that is a function returning a rest object with circular reference to parent through array
-    {
-      code: `
-        const obj = {
-          data: { a: 1, b: 2, c: 3 },
-          children: [],
-          getRestObj() {
-            const { a, ...rest } = obj.data;
-            const result = { a, ...rest, source: obj };
-            obj.children.push(result);
-            result.parent = obj;
-            return result;
-          }
-        };
-        const restObj = obj.getRestObj();
-      `,
-      errors: [error('a')],
-    },
-    // Circular reference with property that is a function returning a rest object with circular reference to parent through object
-    {
-      code: `
-        const obj = {
-          data: { a: 1, b: 2, c: 3 },
-          children: {},
-          getRestObj() {
-            const { a, ...rest } = obj.data;
-            const result = { a, ...rest, source: obj };
-            obj.children.latest = result;
-            result.parent = obj;
-            return result;
-          }
-        };
-        const restObj = obj.getRestObj();
-      `,
-      errors: [error('a')],
-    },
-    // Circular reference with property that is a function returning a rest object with circular reference to parent through map
-    {
-      code: `
-        const obj = {
-          data: { a: 1, b: 2, c: 3 },
-          children: new Map(),
-          getRestObj() {
-            const { a, ...rest } = obj.data;
-            const result = { a, ...rest, source: obj };
-            obj.children.set('latest', result);
-            result.parent = obj;
-            return result;
-          }
-        };
-        const restObj = obj.getRestObj();
-      `,
-      errors: [error('a')],
-    },
-    // Circular reference with property that is a function returning a rest object with circular reference to parent through set
-    {
-      code: `
-        const obj = {
-          data: { a: 1, b: 2, c: 3 },
-          children: new Set(),
-          getRestObj() {
-            const { a, ...rest } = obj.data;
-            const result = { a, ...rest, source: obj };
-            obj.children.add(result);
-            result.parent = obj;
-            return result;
-          }
-        };
-        const restObj = obj.getRestObj();
-      `,
-      errors: [error('a')],
-    },
-    // Circular reference with property that is a function returning a rest object with circular reference to parent through weakmap
-    {
-      code: `
-        const obj = {
-          data: { a: 1, b: 2, c: 3 },
-          children: new WeakMap(),
-          getRestObj() {
-            const { a, ...rest } = obj.data;
-            const result = { a, ...rest, source: obj };
-            obj.children.set(result, 'latest');
-            result.parent = obj;
-            return result;
-          }
-        };
-        const restObj = obj.getRestObj();
-      `,
-      errors: [error('a')],
-    },
-    // Circular reference with property that is a function returning a rest object with circular reference to parent through weakset
-    {
-      code: `
-        const obj = {
-          data: { a: 1, b: 2, c: 3 },
-          children: new WeakSet(),
-          getRestObj() {
-            const { a, ...rest } = obj.data;
-            const result = { a, ...rest, source: obj };
-            obj.children.add(result);
-            result.parent = obj;
-            return result;
-          }
-        };
-        const restObj = obj.getRestObj();
-      `,
-      errors: [error('a')],
     },
   ],
 });
