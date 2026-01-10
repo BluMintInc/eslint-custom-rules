@@ -192,8 +192,220 @@ function Component() {
 }
       `,
     },
+    // useLatestCallback with nested literals
+    {
+      code: `
+import useLatestCallback from 'use-latest-callback';
+export const useReproduction = () => {
+  const address = '0x123';
+  const offchainTransfer = useLatestCallback(
+    async () => {
+      const offchainTokens = [
+        {
+          chainId: 'offchain',
+          address,
+        },
+      ];
+      throw new Error('test');
+    }
+  );
+  return offchainTransfer;
+};
+      `,
+    },
+    // useDeepCompare hooks with literals
+    {
+      code: `
+import { useDeepCompareMemo, useDeepCompareCallback, useDeepCompareEffect } from '@blumintinc/use-deep-compare';
+const MyComponent = ({ params }) => {
+  const result = useDeepCompareMemo(() => {
+    return { data: params };
+  }, [params]);
+  const cb = useDeepCompareCallback(() => {
+    console.log({ data: params });
+  }, [params]);
+  useDeepCompareEffect(() => {
+    console.log({ data: params });
+  }, [params]);
+};
+      `,
+    },
+    // useProgressionCallback with literals
+    {
+      code: `
+export const useReproduction = () => {
+  const cb = useProgressionCallback(() => {
+    return { status: 'success' };
+  }, []);
+};
+      `,
+    },
+    // async function boundaries
+    {
+      code: `
+const MyComponent = () => {
+  const handleAsync = useCallback(async () => {
+    const data = { key: 'value' };
+    await doSomething(data);
+  }, []);
+  return <button onClick={handleAsync}>Click</button>;
+};
+      `,
+    },
+    // Direct throw of object literal
+    {
+      code: `
+function MyComponent({ isError }) {
+  if (isError) {
+    throw { message: 'Something went wrong', code: 'INTERNAL' };
+  }
+  return <div>Success</div>;
+}
+      `,
+    },
+    // Literal assigned to variable and then thrown
+    {
+      code: `
+import { HttpsError } from '../../functions/src/util/errors/HttpsError';
+import useLatestCallback from 'use-latest-callback';
+
+export const useUserTransaction = () => {
+  const fromPath = undefined;
+
+  const getValidatedFromPath = useLatestCallback(() => {
+    if (!fromPath) {
+      const authError = new HttpsError({
+        code: 'unauthenticated',
+        message: 'User must be authenticated to create a transaction.',
+        details: { userUid: 'guest' },
+      });
+      throw authError;
+    }
+    return fromPath;
+  });
+};
+      `,
+    },
+    // Array literal thrown
+    {
+      code: `
+function MyComponent({ isError }) {
+  if (isError) {
+    throw ['error1', 'error2'];
+  }
+  return <div>Success</div>;
+}
+      `,
+    },
+    // Inline function thrown
+    {
+      code: `
+function MyComponent({ isError }) {
+  if (isError) {
+    throw () => new Error('thrown function');
+  }
+  return <div>Success</div>;
+}
+      `,
+    },
+    // Literal thrown in a terminal way from component body
+    {
+      code: `
+        function Component() {
+          const error = { message: 'error' };
+          throw error;
+        }
+      `,
+    },
+    // Variable used only in a throw (terminal usage)
+    {
+      code: `
+        function Component() {
+          const err = { message: 'error' };
+          throw err;
+        }
+      `,
+    },
+    // Conditional expression in throw path
+    {
+      code: `
+        function Component({ condition }) {
+          const error = condition ? { message: 'A' } : { message: 'B' };
+          throw error;
+        }
+      `,
+    },
+    // Logical expression in throw path
+    {
+      code: `
+        function Component({ condition }) {
+          const error = condition || { message: 'Fallback' };
+          throw error;
+        }
+      `,
+    },
+    // Direct throw with conditional expression
+    {
+      code: `
+        function Component({ condition }) {
+          throw condition ? { message: 'A' } : { message: 'B' };
+        }
+      `,
+    },
   ],
   invalid: [
+    // Variable with no usages (dead code) - should still be reported as unmemoized
+    {
+      code: `
+        function Component() {
+          const err = { message: 'unused' };
+        }
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
+    // Variable with multiple usages where only some are terminal (should NOT be exempt)
+    {
+      code: `
+        function Component() {
+          const err = { code: 'ERR' };
+          useEffect(() => console.log(err), [err]);
+          throw err;
+        }
+      `,
+      errors: [{ messageId: 'componentLiteral' }],
+    },
+    // Literal nested in an expression that is assigned and thrown (should NOT be exempt)
+    {
+      code: `
+        function Component() {
+          const x = [
+            { a: 1 }
+          ].map(i => i);
+          throw x;
+        }
+      `,
+      errors: [
+        { messageId: 'componentLiteral' },
+        { messageId: 'componentLiteral' },
+        { messageId: 'componentLiteral' },
+      ],
+    },
+    // Literal thrown inside nested function is NOT terminal for component
+    {
+      code: `
+        function Component() {
+          const error = { message: 'error' };
+          const callback = () => {
+            throw error;
+          };
+          return <button onClick={callback}>Throw</button>;
+        }
+      `,
+      errors: [
+        { messageId: 'componentLiteral' },
+        { messageId: 'componentLiteral' },
+      ],
+    },
     // Component-level object literal
     {
       code: `
@@ -773,6 +985,27 @@ function Component() {
           data: {
             literalType: 'object literal',
             hookName: 'useQuery',
+          },
+        },
+      ],
+    },
+    // Unmemoized async function in component
+    {
+      code: `
+const MyComponent = () => {
+  const handleAsync = async () => {
+    console.log('async');
+  };
+  return <button onClick={handleAsync}>Click</button>;
+};
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'component "MyComponent"',
+            memoHook: 'useCallback',
           },
         },
       ],

@@ -19,6 +19,16 @@ Firestore and RealtimeDB triggers already surface typed path segments through `e
 The rule allows up to two `.parent` hops for simple relative navigation; anything longer triggers a message explaining why the chain is risky and how to replace it with params-based access. The message template is:
 `Found {{count}} consecutive ref.parent hops in this handler. Long parent chains break when Firestore/RealtimeDB paths change and bypass the typed params the trigger already provides. Read path components from event.params (for example, params.userId) instead of walking ref.parent repeatedly.`
 
+## Options
+
+- `max` (integer): Maximum number of consecutive `.parent` hops allowed before warning. Defaults to `2`.
+
+```json
+{
+  "@blumintinc/blumint/no-excessive-parent-chain": ["error", { "max": 2 }]
+}
+```
+
 ## Why this rule matters
 
 - **Path drift creates runtime bugs**: A collection rename or nesting change invalidates every `ref.parent.parent.parent` chain and fails at runtime.

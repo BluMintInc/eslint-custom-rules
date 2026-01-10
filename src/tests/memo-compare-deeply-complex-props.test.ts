@@ -176,8 +176,56 @@ const Comp = ({ config }: Props) => <div>{config.theme}</div>;
 export const Wrapped = memo(Comp);
 `,
       },
+      {
+        filename: 'src/components/SxStyleOnly.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+
+type MyComponentProps = {
+  name: string;
+  sx?: { color: string };
+  style?: { margin: number };
+  containerSx?: { padding: number };
+  wrapperStyle?: { border: string };
+};
+
+export const MyComponent = memo(({ name, sx, style, containerSx, wrapperStyle }: MyComponentProps) => {
+  return <div style={style}>{name}</div>;
+});
+`,
+      },
     ],
     invalid: [
+      {
+        filename: 'src/components/MixedComplexProps.tsx',
+        code: `
+import { memo } from 'src/util/memo';
+
+type MixedProps = {
+  name: string;
+  sx?: { color: string };
+  otherComplex: { foo: string };
+};
+
+export const MyComponent = memo(({ name, sx, otherComplex }: MixedProps) => {
+  return <div sx={sx}>{name}</div>;
+});
+`,
+        output: `
+import { memo, compareDeeply } from 'src/util/memo';
+
+type MixedProps = {
+  name: string;
+  sx?: { color: string };
+  otherComplex: { foo: string };
+};
+
+export const MyComponent = memo(({ name, sx, otherComplex }: MixedProps) => {
+  return <div sx={sx}>{name}</div>;
+}, compareDeeply('otherComplex'));
+`,
+        errors: [{ messageId: 'useCompareDeeply' }],
+      },
       {
         filename: 'src/components/UserProfileCard.tsx',
         code: `
