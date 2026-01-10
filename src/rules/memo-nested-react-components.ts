@@ -451,7 +451,7 @@ See: https://react.dev/learn/your-first-component#nesting-and-organizing-compone
     const sourceCode = context.sourceCode ?? context.getSourceCode();
     const reactImports = collectReactImports(sourceCode);
 
-    const report = (
+    const reportNestedComponentViolation = (
       node: TSESTree.Node,
       componentName: string,
       locationDescription: string,
@@ -502,7 +502,7 @@ See: https://react.dev/learn/your-first-component#nesting-and-organizing-compone
             ? callback.id.name
             : 'component');
 
-        report(node, componentName, `${hook.name}()`);
+        reportNestedComponentViolation(node, componentName, `${hook.name}()`);
       },
 
       VariableDeclarator(node) {
@@ -526,7 +526,10 @@ See: https://react.dev/learn/your-first-component#nesting-and-organizing-compone
         );
         if (!componentMatch) return;
 
-        report(node, node.id.name, 'a render body');
+        // JSX elements assigned to variables are fine, only report function definitions
+        if (componentMatch.componentIsCallback) return;
+
+        reportNestedComponentViolation(node, node.id.name, 'a render body');
       },
 
       FunctionDeclaration(node) {
@@ -536,7 +539,7 @@ See: https://react.dev/learn/your-first-component#nesting-and-organizing-compone
         const componentMatch = functionCreatesComponent(node, reactImports);
         if (!componentMatch) return;
 
-        report(node.id, node.id.name, 'a render body');
+        reportNestedComponentViolation(node.id, node.id.name, 'a render body');
       },
 
       JSXAttribute(node) {
@@ -570,7 +573,7 @@ See: https://react.dev/learn/your-first-component#nesting-and-organizing-compone
           return;
         }
 
-        report(node, attrName, `the "${attrName}" prop`);
+        reportNestedComponentViolation(node, attrName, `the "${attrName}" prop`);
       },
     };
   },

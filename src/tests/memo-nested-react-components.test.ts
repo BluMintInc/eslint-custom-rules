@@ -111,6 +111,14 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
     {
       code: `
         const MyPage = () => {
+          const MyElement = <div />;
+          return <div>{MyElement}</div>;
+        };
+      `,
+    },
+    {
+      code: `
+        const MyPage = () => {
           return <Layout Header={/* comment */} />;
         };
       `,

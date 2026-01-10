@@ -4,13 +4,13 @@
 
 <!-- end auto-generated rule header -->
 
-React components should never be created dynamically inside render bodies, hooks, or any context where they receive a new identity on re-render. This includes inline components in `useCallback` / `useMemo`, components created in render bodies, and components passed to component-type props (e.g., `CatalogWrapper`, `*Wrapper`, `*Component`).
+React components should never be created dynamically inside render bodies, hooks, or any context where they can receive a new identity on re-render. This includes inline components in `useCallback` / `useMemo`, components created in render bodies, and components passed to component-type props (e.g., `CatalogWrapper`, `*Wrapper`, `*Component`).
 
 When a component function reference changes, React treats it as a **different component type**, causing a full unmount/remount of the component and all its children. This leads to loss of state and effects, replaying of animations, and visible UI flashes.
 
 ## Rule Details
 
-- **Why**: Component identity stability is critical for React. Inline components get new identities when their containing scope re-renders, causing React to unmount and remount them. Wrapping with `memo()` does NOT fix this—`memo()` only prevents re-renders when props change, not when the component identity itself changes.
+- **Why**: Component identity stability is critical for React. Inline components often receive a new identity when their containing scope re-renders, causing React to unmount and remount them. Wrapping with `memo()` does NOT fix this—`memo()` only prevents re-renders when props change, not when the component identity itself changes. `useCallback` and `useMemo` can produce stable references when dependencies don't change, but inline component definitions remain fragile and can easily become unstable or stale if dependencies are incorrectly managed.
 - **What it checks**:
   - Flags components created inside `useCallback`, `useMemo`, `useDeepCompareCallback`, or `useDeepCompareMemo`.
   - Flags components (Uppercase identifiers) defined inside render bodies.
@@ -44,11 +44,24 @@ const LoadingWrapperInternal = useCallback<FC<Props>>(
 ### Component-Type Prop (Bad)
 
 ```tsx
-// BAD: CatalogWrapper changes identity when header or gridProps change
+// BAD: CatalogWrapper changes identity when header or gridProps change.
+// Using the rest object 'gridProps' in dependencies causes unnecessary churn
+// as rest objects are unstable across renders.
 const ContentVerticalCarouselGrid = ({ header, ...gridProps }) => {
-  const CatalogWrapper = useCallback((props) => {
-    return <ContentCarouselWrapper {...props} {...gridProps} header={header} />;
-  }, [gridProps, header]);
+  const { someStableProp } = gridProps;
+
+  const CatalogWrapper = useCallback(
+    (props) => {
+      return (
+        <ContentCarouselWrapper
+          {...props}
+          {...gridProps}
+          header={header}
+        />
+      );
+    },
+    [someStableProp, header], // Destructure stable primitives or use useMemo
+  );
 
   return <AlgoliaLayout CatalogWrapper={CatalogWrapper} />;
 };
@@ -61,20 +74,29 @@ const ContentVerticalCarouselGrid = ({ header, ...gridProps }) => {
 3. Pass the stable, imported component reference to props like `CatalogWrapper`.
 
 ```tsx
+import { createContext, useContext, memo, ReactNode } from 'react';
+
 // Step 1: Create a context for the dynamic header
 export const ContentGridHeaderContext = createContext<ReactNode | null>(null);
 
+export const useContentGridHeader = () => useContext(ContentGridHeaderContext);
+
 // Step 2: Wrapper consumes header from context
-const ContentCarouselWrapperUnmemoized = ({ ...props }) => {
+// Component defined at module scope and memoized
+const ContentCarouselWrapperUnmemoized = (props: any) => {
   const headerFromContext = useContentGridHeader();
   return <VerticalCarouselGrid header={headerFromContext} {...props} />;
 };
 export const ContentCarouselWrapper = memo(ContentCarouselWrapperUnmemoized);
 
 // Step 3: Wrap with provider and pass stable reference
-<ContentGridHeaderProvider header={<ContentSearch />}>
-  <AlgoliaLayout CatalogWrapper={ContentCarouselWrapper} />
-</ContentGridHeaderProvider>
+const MyPage = () => {
+  return (
+    <ContentGridHeaderContext.Provider value={<ContentSearch />}>
+      <AlgoliaLayout CatalogWrapper={ContentCarouselWrapper} />
+    </ContentGridHeaderContext.Provider>
+  );
+};
 ```
 
 ## Edge Cases
