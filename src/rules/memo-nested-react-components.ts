@@ -573,7 +573,11 @@ See: https://react.dev/learn/your-first-component#nesting-and-organizing-compone
           return;
         }
 
-        reportNestedComponentViolation(node, attrName, `the "${attrName}" prop`);
+        reportNestedComponentViolation(
+          node,
+          attrName,
+          `the "${attrName}" prop`,
+        );
       },
     };
   },

@@ -800,7 +800,10 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
       const owner = findEnclosingComponentOrHook(node);
       if (!owner) return;
 
-      if (isInsideAllowedHookCallback(node) || isDeepComparedJSXAttribute(node)) {
+      if (
+        isInsideAllowedHookCallback(node) ||
+        isDeepComparedJSXAttribute(node)
+      ) {
         return;
       }
 

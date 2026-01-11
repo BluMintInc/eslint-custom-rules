@@ -412,7 +412,7 @@ if (triggered) {
 }
     `,
     // Negative case: Variable only read in loop (SHOULD still report)
-    // We expect this NOT to be in valid if it's far from use, 
+    // We expect this NOT to be in valid if it's far from use,
     // but here we just want to ensure isMutatedInLoopAndUsedAfter returns false.
     // If it's far from use, it should be in invalid.
   ],
