@@ -10,6 +10,8 @@ Parallelizing independent awaits keeps total latency bounded by the slowest call
 
 **Note: This rule is intended to be a suggestion and is only correct some of the time. It is likely that operations cannot be parallelized if they have hidden side effects or specific ordering requirements.**
 
+**Note: This rule is intended to be a suggestion and is only correct some of the time. It is likely that operations cannot be parallelized if they have hidden side effects or specific ordering requirements.**
+
 ## Rule Details
 
 Serializing independent async work stretches response time and wastes compute billed per millisecond. Running the calls together lets the runtime issue network or I/O requests concurrently while you preserve clarity by destructuring the results.
