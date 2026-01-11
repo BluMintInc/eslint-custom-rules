@@ -21,16 +21,13 @@ export const classMethodsReadTopToBottom: TSESLint.RuleModule<
     type: 'suggestion',
     docs: {
       description:
-        'Enforces a top-to-bottom class layout so callers lead into the helpers they rely on.',
+        'Suggest a top-to-bottom class layout so callers lead into the helpers they rely on.',
       recommended: 'warn',
     },
     schema: [],
     messages: {
-      classMethodsReadTopToBottom: [
-        "What's wrong: In {{className}}, {{actualMember}} appears before {{expectedMember}}.",
-        'Why it matters: Top-down flow enables local reasoning: you can verify each caller without scrolling back. Upward jumps make code reviews harder (must verify call chains in reverse), obscure which fields a helper assumes are initialized, and increase the risk of calling helpers before state is ready (leading to null reference errors or accessing uninitialized fields).',
-        'How to fix: Move {{expectedMember}} above {{actualMember}} so the class reads top-to-bottom (fields to constructor to callers to helpers).',
-      ].join('\n'),
+      classMethodsReadTopToBottom:
+        'In {{className}}, {{actualMember}} appears before {{expectedMember}}. This rule suggests a top-to-bottom class layout for better readability. Architectural preference for member ordering can vary. If this layout is intentional, please use an // eslint-disable-next-line @blumintinc/blumint/class-methods-read-top-to-bottom comment. Otherwise, consider moving {{expectedMember}} above {{actualMember}}.',
     },
     fixable: 'code', // To allow ESLint to autofix issues.
   },

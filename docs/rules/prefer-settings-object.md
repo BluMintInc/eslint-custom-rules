@@ -6,19 +6,17 @@
 
 <!-- end auto-generated rule header -->
 
-## Rule details
+Functions with long lists of positional parameters are hard to read and easy to mis-call. This rule suggests replacing them with a single settings object so each argument is labeled at the call site.
 
-Positional argument lists stop conveying meaning once they grow or repeat types. Swapping two values of the same type compiles but produces subtle bugs, and long lists force callers to remember the exact order instead of naming what each value represents. Passing a single settings object keeps call sites self-documenting, allows optional fields, and makes it safer to evolve a function signature without breaking every usage.
+## Why this rule?
 
-The rule reports when a function:
-- Exceeds the configured parameter limit (defaults to 3).
-- Accepts multiple parameters of the same type, which encourages accidental swaps.
+- Positional arguments hide intent (what does `true, false, null` mean?).
+- Callers can easily swap arguments of the same type without a type error.
+- Adding or removing parameters is safer with a settings object.
 
-Use a settings object so each argument is labeled and harder to mis-order.
+## Examples
 
-### Examples
-
-#### ❌ Incorrect
+### ❌ Incorrect
 
 ```ts
 function createUser(name: string, age: number, isAdmin: boolean) {
@@ -30,17 +28,32 @@ function sendEmail(to: string, from: string) {
 }
 ```
 
-#### ✅ Correct
+Example message:
+
+```text
+Function accepts 3 positional parameters (limit 3). This rule suggests using a settings object for better readability and to prevent mis-ordered arguments. If positional arguments are clearer for this specific utility, please use an // eslint-disable-next-line @blumintinc/blumint/prefer-settings-object comment. Otherwise, consider a single settings object.
+```
+
+### ✅ Correct
 
 ```ts
-type CreateUserOptions = { name: string; age: number; isAdmin: boolean };
-function createUser({ name, age, isAdmin }: CreateUserOptions) {
+type UserSettings = { name: string; age: number; isAdmin: boolean };
+function createUser({ name, age, isAdmin }: UserSettings) {
   return { name, age, isAdmin };
 }
 
-type SendEmailOptions = { to: string; from: string };
-function sendEmail({ to, from }: SendEmailOptions) {
+type EmailParams = { to: string; from: string };
+function sendEmail({ to, from }: EmailParams) {
   return mailer.send({ to, from });
+}
+```
+
+### ✅ Correct (With disable comment if positional is clearer)
+
+```ts
+// eslint-disable-next-line @blumintinc/blumint/prefer-settings-object
+function point(x: number, y: number, z: number) {
+  return { x, y, z };
 }
 ```
 
@@ -48,30 +61,16 @@ function sendEmail({ to, from }: SendEmailOptions) {
 
 This rule accepts an options object:
 
-```ts
-{
-  /**
-   * Minimum number of parameters before requiring a settings object.
-   * Defaults to 3 and must be at least 2.
-   */
-  minimumParameters?: number;
+- `minimumParameters`: (Default: `3`) Minimum number of parameters before triggering the rule.
+- `checkSameTypeParameters`: (Default: `true`) Whether to flag functions with multiple parameters of the same type even if they are below the minimum count.
+- `ignoreBoundMethods`: (Default: `true`) Whether to ignore methods that are likely part of a framework (e.g., Express handlers).
+- `ignoreVariadicFunctions`: (Default: `true`) Whether to ignore functions with rest parameters.
 
-  /**
-   * When true (default), flag functions that accept multiple parameters
-   * of the same type because those call sites are easy to swap.
-   */
-  checkSameTypeParameters?: boolean;
+## When Not To Use It
 
-  /**
-   * When true (default), ignore bound methods such as Express handlers
-   * where the signature is dictated by the framework.
-   */
-  ignoreBoundMethods?: boolean;
+Disable this rule for simple mathematical or geometric utilities where positional arguments are the standard convention. Use an `// eslint-disable-next-line @blumintinc/blumint/prefer-settings-object` comment for local exceptions.
 
-  /**
-   * When true (default), ignore variadic functions that legitimately
-   * accept flexible argument counts.
-   */
-  ignoreVariadicFunctions?: boolean;
-}
-```
+## Further Reading
+
+- [Clean Code: Function Arguments](https://learning.oreilly.com/library/view/clean-code/9780136083238/chapter03.html#ch3lev1sec4)
+- [Refactoring: Parameter Object](https://refactoring.guru/introduce-parameter-object)

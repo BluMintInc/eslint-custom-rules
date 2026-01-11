@@ -927,13 +927,13 @@ export const enforcePositiveNaming = createRule<[], MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Enforce positive naming for boolean variables and avoid negations',
+        'Suggest positive naming for boolean variables and avoid negations',
       recommended: 'error',
     },
     schema: [],
     messages: {
       avoidNegativeNaming:
-        'Avoid negative naming "{{name}}". Consider using a positive alternative like: {{alternatives}}',
+        'Variable "{{name}}" uses negative naming, which can make logic harder to follow (e.g., "if (!isNotReady)"). This rule is a suggestion; some concepts are naturally negative (like "isUnauthorized"). If this name is the clearest choice, please use an // eslint-disable-next-line @blumintinc/blumint/enforce-positive-naming comment. Otherwise, consider a positive alternative like {{alternatives}}.',
     },
   },
   defaultOptions: [],

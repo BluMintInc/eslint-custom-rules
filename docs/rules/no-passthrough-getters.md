@@ -4,119 +4,67 @@
 
 <!-- end auto-generated rule header -->
 
-## Rule Details
+Creating getters that only forward nested properties from objects provided via the constructor adds unnecessary indirection and expands the class API without adding value. This rule suggests reading the injected object directly or adding behavior to the getter.
 
-This rule flags getters that only forward a constructor-injected object property (for example `this.settings.uid`) without adding logic. These passthrough getters expand the public API without adding behavior, hide where state actually lives, and create extra names developers must keep in sync. Prefer direct property access or add meaningful logic (validation, memoization, fallbacks, transformation) that justifies the getter.
+## Why this rule?
 
-### Why it matters
-
-- A passthrough getter hides the real state location (`this.settings.uid`) behind another name, which slows down debugging and code navigation.
-- Every extra getter increases the class surface area; callers must learn both `otherResults` and `settings.otherResults` even though only one is real data.
-- Indirection invites drift: if invariants change on the constructor parameter, the passthrough getter can mask that the data source changed.
-
-### How to fix
-
-- Access the constructor parameter directly where you use it.
-- If indirection is valuable, add logic that earns the getter: memoization, validation, transformations, or defensive defaults.
+- Direct property access is clearer and faster than a passthrough getter.
+- Indirection hides the real source of state, making it harder to trace data flow.
+- A proliferation of passthrough getters bloats the class interface.
 
 ## Examples
 
 ### ❌ Incorrect
 
-```typescript
+```ts
 export class MatchAdmin {
   constructor(private readonly settings: MatchAdminProps) {}
 
-  // Unnecessary getter that just returns a property from settings
+  // Passthrough getter adds no behavior
   private get otherResults() {
     return this.settings.otherResults;
   }
-
-  // Another unnecessary getter
-  private get uid() {
-    return this.settings.uid;
-  }
-
-  public doSomething() {
-    // Using the getter
-    const results = this.otherResults;
-    // ...
-  }
 }
+```
+
+Example message:
+
+```text
+Getter "otherResults" only forwards "this.settings.otherResults" from a constructor-injected object. This rule is a suggestion; simple delegation can sometimes be a valid design choice for API stability or internal readability. If this passthrough is intentional, please use an // eslint-disable-next-line @blumintinc/blumint/no-passthrough-getters comment. Otherwise, consider reading the injected object directly or adding behavior to this getter.
 ```
 
 ### ✅ Correct
 
-```typescript
+```ts
 export class MatchAdmin {
   constructor(private readonly settings: MatchAdminProps) {}
 
-  public doSomething() {
-    // Directly accessing the property
-    const results = this.settings.otherResults;
-    // ...
-  }
-}
-```
-
-### ✅ Correct (Valid getter use cases)
-
-```typescript
-export class MatchAdmin {
-  constructor(private readonly settings: MatchAdminProps) {}
-
-  // Getter with memoization decorator - allowed
-  @Memoize()
-  private get computedResults() {
+  // Getter with calculation adds value
+  private get calculatedResults() {
     return this.settings.otherResults.filter(result => result.isValid);
   }
 
-  // Getter with null/undefined handling - allowed
-  private get safeResults() {
-    return this.settings.otherResults || [];
-  }
-
-  // Getter with type assertion - allowed (provides a safer, narrowed API surface)
-  private get typedResults(): ValidResult[] {
-    return this.settings.otherResults as ValidResult[];
-  }
-
-  // Getter accessing parent class property - allowed
-  // (override for access control or to normalize/validate parent value)
-  private get parentProperty() {
-    return super.parentProperty;
-  }
-
-  // Getter with conditional logic - allowed
-  private get processedResults() {
-    return this.settings.otherResults?.length > 0
-      ? this.settings.otherResults
-      : this.getDefaultResults();
+  // Using decorator for memoization justifies the getter
+  @Memoize()
+  private get otherResults() {
+    return this.settings.otherResults;
   }
 }
 ```
 
-## When to Use Getters
+### ✅ Correct (With disable comment if passthrough is intentional)
 
-Use a getter only when it adds behavior beyond simple property access, for example:
+```ts
+export class MatchAdmin {
+  constructor(private readonly settings: MatchAdminProps) {}
 
-1. **Perform calculations or transformations**
-2. **Apply conditional logic**
-3. **Provide memoization** (with `@Memoize` decorator)
-4. **Encapsulate more complex property access**
-5. **Handle null/undefined values**
-6. **Include type assertions or casting**
-7. **Access parent class properties** (using `super`)
+  // eslint-disable-next-line @blumintinc/blumint/no-passthrough-getters
+  get publicAlias() {
+    return this.settings.internalProperty;
+  }
+}
+```
 
-Simple property access alone does not justify a getter.
+## When Not To Use It
 
-## Edge Cases the Rule Ignores
-
-The rule intentionally allows getters that already add meaningful handling:
-
-- Decorated getters (for memoization or other behaviors)
-- Null/undefined handling with logical operators or conditional expressions
-- Type assertions or casting
-- Access to parent class properties via `super`
-- Optional chaining
-- Any getter whose body contains anything besides a single bare `return` statement
+Disable this rule if you are intentionally using passthrough getters to maintain API compatibility, hide internal object structures, or follow a specific architectural pattern that requires getters. Use an `// eslint-disable-next-line @blumintinc/blumint/no-passthrough-getters` comment for local exceptions.

@@ -654,11 +654,11 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
     schema: [],
     messages: {
       componentLiteral:
-        'New {{literalType}} inside {{context}} is created on every render → Breaks referential stability for hooks/props and can re-run effects or re-render children → Hoist it to a module-level constant or wrap it in {{memoHook}} with the right dependencies.',
+        'New {{literalType}} inside {{context}} is created on every render, which might break referential stability. This rule is a suggestion; small or static literals often do not justify the overhead of {{memoHook}}. If this reference change is acceptable or intentional, please use an // eslint-disable-next-line @blumintinc/blumint/react-memoize-literals comment. Otherwise, consider hoisting it to a constant or wrapping it in {{memoHook}} with the right dependencies.',
       nestedHookLiteral:
-        'Nested {{literalType}} inside {{hookName}} arguments is recreated on every render → Dependency/reference comparisons change each time and defeat memoization/caching → Extract it into a memoized value (useMemo/useCallback) or hoist it to a module constant before passing it to {{hookName}}.',
+        'Nested {{literalType}} inside {{hookName}} is recreated on every render, which might defeat memoization. This rule is a suggestion. If this literal is small or referential stability is not required here, please use an // eslint-disable-next-line @blumintinc/blumint/react-memoize-literals comment. Otherwise, consider extracting it into a memoized value (useMemo/useCallback) or hoisting it to a module constant before passing it to {{hookName}}.',
       hookReturnLiteral:
-        '{{hookName}} returns a {{literalType}} literal on each render → Callers receive a fresh reference and may re-render or re-run effects → Memoize the returned value with useMemo/useCallback or return pre-memoized pieces so callers see stable references.',
+        '{{hookName}} returns a new {{literalType}} on each render, which might cause unnecessary re-renders for callers. This rule is a suggestion. If this fresh reference is intentional, please use an // eslint-disable-next-line @blumintinc/blumint/react-memoize-literals comment. Otherwise, consider memoizing the returned value with useMemo/useCallback or returning pre-memoized pieces so callers see stable references.',
       memoizeLiteralSuggestion:
         'This {{literalType}} is created inline → It produces a new reference each render → Wrap it in {{memoHook}} and include every closed-over value in the dependency array.',
     },

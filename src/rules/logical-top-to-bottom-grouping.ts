@@ -2077,16 +2077,20 @@ export const logicalTopToBottomGrouping: TSESLint.RuleModule<
     type: 'suggestion',
     docs: {
       description:
-        'Enforce logical top-to-bottom grouping of related statements',
+        'Suggest logical top-to-bottom grouping of related statements',
       recommended: 'error',
     },
     fixable: 'code',
     schema: [],
     messages: {
-      moveGuardUp: `What's wrong: the guard "{{guard}}" appears after setup it can skip. Why it matters: readers miss the early-exit path and unnecessary work may execute; unsafe reordering can also introduce TDZ errors when guards reference values declared below. How to fix: place the guard immediately before the setup it protects.`,
-      groupDerived: `What's wrong: "{{name}}" depends on "{{dependency}}" but is separated by unrelated statements. Why it matters: scattered dependencies make the input→output flow harder to follow and increase cognitive load; grouping them clarifies the logical relationship. How to fix: move "{{name}}" next to "{{dependency}}" so they form a cohesive unit.`,
-      moveDeclarationCloser: `What's wrong: "{{name}}" is declared far from its first use. Why it matters: distant declarations scatter the flow and make the execution order harder to follow; readers must mentally track when the variable becomes available. How to fix: move "{{name}}" next to its first usage.`,
-      moveSideEffect: `What's wrong: the side effect "{{effect}}" is buried after unrelated setup. Why it matters: chronological flow becomes unclear and readers may assume the effect happens later than it actually does. How to fix: emit observable effects before unrelated initialization to keep the temporal order obvious.`,
+      moveGuardUp:
+        'The guard "{{guard}}" appears after setup it can skip. This rule is a suggestion; grouping logic is subjective and evaluation order might be intentional. If this order is correct, please use an // eslint-disable-next-line @blumintinc/blumint/logical-top-to-bottom-grouping comment. Otherwise, consider placing the guard before the setup it protects.',
+      groupDerived:
+        'Value "{{name}}" depends on "{{dependency}}" but is separated by unrelated statements. This rule is a suggestion for logical grouping. If this arrangement is clearer for your mental model, please use an // eslint-disable-next-line @blumintinc/blumint/logical-top-to-bottom-grouping comment. Otherwise, consider grouping "{{name}}" next to "{{dependency}}" so they form a cohesive unit.',
+      moveDeclarationCloser:
+        'Variable "{{name}}" is declared far from its first use. This rule is a suggestion to keep related logic adjacent. If this declaration placement is intentional, please use an // eslint-disable-next-line @blumintinc/blumint/logical-top-to-bottom-grouping comment. Otherwise, consider moving it next to its first usage.',
+      moveSideEffect:
+        'The side effect "{{effect}}" is buried after unrelated setup. This rule is a suggestion for chronological flow. If this order is intentional, please use an // eslint-disable-next-line @blumintinc/blumint/logical-top-to-bottom-grouping comment. Otherwise, consider emitting observable effects before unrelated initialization to keep the temporal order obvious.',
     },
   },
   defaultOptions: [],
