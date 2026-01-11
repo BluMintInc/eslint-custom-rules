@@ -397,6 +397,10 @@ function unwrapNestedExpressions(node: TSESTree.Node): TSESTree.Node {
  * @returns True when the node is a deep-compared JSX attribute.
  */
 function isDeepComparedJSXAttribute(node: TSESTree.Node): boolean {
+  if (isFunctionNode(node)) {
+    return false;
+  }
+
   let current: TSESTree.Node | null = node.parent as TSESTree.Node | null;
 
   while (current) {
@@ -413,6 +417,7 @@ function isDeepComparedJSXAttribute(node: TSESTree.Node): boolean {
       isExpressionWrapper(current) ||
       current.type === AST_NODE_TYPES.ConditionalExpression ||
       current.type === AST_NODE_TYPES.LogicalExpression ||
+      current.type === AST_NODE_TYPES.SpreadElement ||
       // Property, ObjectExpression, and ArrayExpression allow detection of nested
       // literals within deep-compared attributes (e.g., sx={{ nested: { a: 1 } }}
       // or sx={[{ margin: 1 }]}). Since deep equality checks compare nested
