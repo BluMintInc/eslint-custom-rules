@@ -1333,7 +1333,11 @@ function trackDeclaredNames(
  * change execution order when moved closer to their usage. More complex initializers are
  * excluded to maintain temporal safety.
  */
-function isLateDeclarationCandidate(statement: TSESTree.Statement): boolean {
+function isLateDeclarationCandidate(
+  statement: TSESTree.Statement,
+): statement is TSESTree.VariableDeclaration & {
+  declarations: [TSESTree.VariableDeclarator & { id: TSESTree.Identifier }];
+} {
   if (
     statement.type !== AST_NODE_TYPES.VariableDeclaration ||
     statement.declarations.length !== 1
@@ -1397,9 +1401,8 @@ function handleLateDeclarations(
     if (!isLateDeclarationCandidate(statement)) {
       return;
     }
-    const [declarator] = (statement as TSESTree.VariableDeclaration)
-      .declarations;
-    const name = (declarator.id as TSESTree.Identifier).name;
+    const [declarator] = statement.declarations;
+    const name = declarator.id.name;
     const dependencies = new Set<string>();
     if (declarator.init && declarator.init.type === AST_NODE_TYPES.Identifier) {
       dependencies.add(declarator.init.name);
