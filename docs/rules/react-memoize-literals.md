@@ -49,6 +49,8 @@ function useUserSettings() {
 
 #### Memoization and Hoisting
 
+#### Memoization and Hoisting
+
 These examples show how you keep references stable by memoizing values with the right dependencies (or hoisting constants).
 
 ```tsx
