@@ -1110,6 +1110,40 @@ function Component() {
     {
       code: `
 function Component() {
+  return <div sx={{ onClick: () => console.log('test') }} />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'component "Component"',
+            memoHook: 'useCallback',
+          },
+        },
+      ],
+    },
+    {
+      code: `
+function Component() {
+  return <div sx={[{ margin: 1 }, () => console.log('test')]} />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'component "Component"',
+            memoHook: 'useCallback',
+          },
+        },
+      ],
+    },
+    {
+      code: `
+function Component() {
   return <div containerSx={() => console.log('test')} />;
 }
       `,
