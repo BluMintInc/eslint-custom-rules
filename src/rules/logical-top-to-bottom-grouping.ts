@@ -592,6 +592,23 @@ function statementReferencesAny(
   return false;
 }
 
+/**
+ * Find the index of the first statement that references any of the given names,
+ * searching forward from afterIndex.
+ */
+function findFirstUsageIndex(
+  body: TSESTree.Statement[],
+  names: Set<string>,
+  afterIndex: number,
+): number {
+  for (let cursor = afterIndex; cursor < body.length; cursor += 1) {
+    if (statementReferencesAny(body[cursor], names)) {
+      return cursor;
+    }
+  }
+  return -1;
+}
+
 function collectAssignedNamesFromPattern(
   target: TSESTree.Node,
   names: Set<string>,
@@ -1409,13 +1426,7 @@ function handleLateDeclarations(
     }
 
     const nameSet = new Set([name]);
-    let usageIndex = -1;
-    for (let cursor = index + 1; cursor < body.length; cursor += 1) {
-      if (statementReferencesAny(body[cursor], nameSet)) {
-        usageIndex = cursor;
-        break;
-      }
-    }
+    const usageIndex = findFirstUsageIndex(body, nameSet, index + 1);
 
     if (usageIndex === -1 || usageIndex <= index + 1) {
       return;
@@ -1440,17 +1451,11 @@ function handleLateDeclarations(
       // This prevents circular swapping of related declarations (like resolve/reject pairs).
       if (isLateDeclarationCandidate(stmt)) {
         const declaredNames = getDeclaredNames(stmt);
-        let firstUsageOfIntervening = -1;
-        for (
-          let cursor = index + 1 + i + 1;
-          cursor < body.length;
-          cursor += 1
-        ) {
-          if (statementReferencesAny(body[cursor], declaredNames)) {
-            firstUsageOfIntervening = cursor;
-            break;
-          }
-        }
+        const firstUsageOfIntervening = findFirstUsageIndex(
+          body,
+          declaredNames,
+          index + 1 + i + 1,
+        );
         if (
           firstUsageOfIntervening !== -1 &&
           firstUsageOfIntervening <= usageIndex
