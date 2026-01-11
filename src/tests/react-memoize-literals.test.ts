@@ -1045,6 +1045,57 @@ function Component() {
         },
       ],
     },
+    {
+      code: `
+function Component() {
+  return <div style={() => console.log('test')} />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'component "Component"',
+            memoHook: 'useCallback',
+          },
+        },
+      ],
+    },
+    {
+      code: `
+function Component() {
+  return <div containerSx={() => console.log('test')} />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'component "Component"',
+            memoHook: 'useCallback',
+          },
+        },
+      ],
+    },
+    {
+      code: `
+function Component() {
+  return <div innerStyle={() => console.log('test')} />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'component "Component"',
+            memoHook: 'useCallback',
+          },
+        },
+      ],
+    },
     // AssignmentExpression for component name
     {
       code: `
