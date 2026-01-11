@@ -592,6 +592,23 @@ function statementReferencesAny(
   return false;
 }
 
+/**
+ * Find the index of the first statement that references any of the given names,
+ * searching forward from afterIndex.
+ */
+function findFirstUsageIndex(
+  body: TSESTree.Statement[],
+  names: Set<string>,
+  afterIndex: number,
+): number {
+  for (let cursor = afterIndex; cursor < body.length; cursor += 1) {
+    if (statementReferencesAny(body[cursor], names)) {
+      return cursor;
+    }
+  }
+  return -1;
+}
+
 function collectAssignedNamesFromPattern(
   target: TSESTree.Node,
   names: Set<string>,
@@ -998,10 +1015,14 @@ function getStartWithComments(
   sourceCode: TSESLint.SourceCode,
 ): number {
   const comments = sourceCode.getCommentsBefore(statement);
-  if (comments.length === 0) {
-    return statement.range[0];
+  const start =
+    comments.length === 0 ? statement.range[0] : comments[0].range[0];
+  const text = sourceCode.getText();
+  let cursor = start - 1;
+  while (cursor >= 0 && (text[cursor] === ' ' || text[cursor] === '\t')) {
+    cursor -= 1;
   }
-  return comments[0].range[0];
+  return cursor + 1;
 }
 
 function getNextStart(
@@ -1324,6 +1345,32 @@ function trackDeclaredNames(
 }
 
 /**
+ * Restrict late-declaration candidates to simple variables with at most an Identifier or
+ * Literal initializer. This ensures they are pure values that do not have side effects or
+ * change execution order when moved closer to their usage. More complex initializers are
+ * excluded to maintain temporal safety.
+ */
+function isLateDeclarationCandidate(
+  statement: TSESTree.Statement,
+): statement is TSESTree.VariableDeclaration & {
+  declarations: [TSESTree.VariableDeclarator & { id: TSESTree.Identifier }];
+} {
+  if (
+    statement.type !== AST_NODE_TYPES.VariableDeclaration ||
+    statement.declarations.length !== 1
+  ) {
+    return false;
+  }
+  const [declarator] = statement.declarations;
+  return (
+    declarator.id.type === AST_NODE_TYPES.Identifier &&
+    (!declarator.init ||
+      declarator.init.type === AST_NODE_TYPES.Identifier ||
+      declarator.init.type === AST_NODE_TYPES.Literal)
+  );
+}
+
+/**
  * Treat a loop as an ordering barrier for late-declaration moves when it both mutates a
  * tracked name and that name is used again after the loop.
  */
@@ -1368,21 +1415,10 @@ function handleLateDeclarations(
   const { sourceCode } = ruleContext;
 
   body.forEach((statement, index) => {
-    if (
-      statement.type !== AST_NODE_TYPES.VariableDeclaration ||
-      statement.declarations.length !== 1
-    ) {
+    if (!isLateDeclarationCandidate(statement)) {
       return;
     }
     const [declarator] = statement.declarations;
-    if (
-      declarator.id.type !== AST_NODE_TYPES.Identifier ||
-      (declarator.init &&
-        declarator.init.type !== AST_NODE_TYPES.Identifier &&
-        declarator.init.type !== AST_NODE_TYPES.Literal)
-    ) {
-      return;
-    }
     const name = declarator.id.name;
     const dependencies = new Set<string>();
     if (declarator.init && declarator.init.type === AST_NODE_TYPES.Identifier) {
@@ -1390,13 +1426,7 @@ function handleLateDeclarations(
     }
 
     const nameSet = new Set([name]);
-    let usageIndex = -1;
-    for (let cursor = index + 1; cursor < body.length; cursor += 1) {
-      if (statementReferencesAny(body[cursor], nameSet)) {
-        usageIndex = cursor;
-        break;
-      }
-    }
+    const usageIndex = findFirstUsageIndex(body, nameSet, index + 1);
 
     if (usageIndex === -1 || usageIndex <= index + 1) {
       return;
@@ -1411,10 +1441,29 @@ function handleLateDeclarations(
 
     const intervening = body.slice(index + 1, usageIndex);
     // Only move across pure declarations that do not mention the placeholder or its initializer dependencies to avoid changing closure timing or TDZ behavior.
-    const crossesImpureOrTracked = intervening.some((stmt) => {
+    const crossesImpureOrTracked = intervening.some((stmt, i) => {
       if (!isPureDeclaration(stmt, { allowHooks: false })) {
         return true;
       }
+
+      // Do not hop over another declaration that is used at the same index or earlier
+      // if it is also a candidate for being moved.
+      // This prevents circular swapping of related declarations (like resolve/reject pairs).
+      if (isLateDeclarationCandidate(stmt)) {
+        const declaredNames = getDeclaredNames(stmt);
+        const firstUsageOfIntervening = findFirstUsageIndex(
+          body,
+          declaredNames,
+          index + 1 + i + 1,
+        );
+        if (
+          firstUsageOfIntervening !== -1 &&
+          firstUsageOfIntervening <= usageIndex
+        ) {
+          return true;
+        }
+      }
+
       if (
         statementDeclaresAny(stmt, nameSet) ||
         statementMutatesAny(stmt, nameSet)

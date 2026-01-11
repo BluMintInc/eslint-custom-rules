@@ -295,6 +295,23 @@ const obj = {
 
 obj.call();
     `,
+    // Issue #1121: False Positive with related let declarations used in same statement
+    `
+    const wrapped = (...args: readonly any[]) => {
+      let resolve!: (
+        value: Awaited<ReturnType<TFunc>> | GuardCancellation,
+      ) => void;
+      let reject!: (error: unknown) => void;
+      const promise = new Promise<
+        Awaited<ReturnType<TFunc>> | GuardCancellation
+      >(
+        (res, rej) => {
+          resolve = res;
+          reject = rej;
+        },
+      );
+    };
+    `,
     // Variable mutated in ForStatement and used after
     `
 let x = 0;
@@ -411,10 +428,6 @@ if (triggered) {
   doWork();
 }
     `,
-    // Negative case: Variable only read in loop (SHOULD still report)
-    // We expect this NOT to be in valid if it's far from use,
-    // but here we just want to ensure isMutatedInLoopAndUsedAfter returns false.
-    // If it's far from use, it should be in invalid.
   ],
   invalid: [
     {
@@ -578,6 +591,24 @@ const other = 2;
 use(other);
       `,
       errors: [{ messageId: 'moveSideEffect' }],
+    },
+    // Issue #1121: Indentation should be preserved when moving declarations
+    {
+      code: `
+    function test() {
+      const a = 1;
+      if (true) return;
+      use(a);
+    }
+      `,
+      output: `
+    function test() {
+      if (true) return;
+      const a = 1;
+      use(a);
+    }
+      `,
+      errors: [{ messageId: 'moveGuardUp' }],
     },
     {
       code: `
