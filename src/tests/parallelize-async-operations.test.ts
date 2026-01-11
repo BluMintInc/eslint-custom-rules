@@ -19,7 +19,7 @@ test('parallelize-async-operations rule exists', () => {
 
 test('parallelize-async-operations message explains why and how to fix', () => {
   expect(formatMessage(2)).toBe(
-    'Awaiting 2 independent async operations sequentially makes their network and I/O latency add up, which slows responses and wastes compute. These awaits have no data dependency or per-call error handling, so run them together with Promise.all([...]) and destructure the results when you need individual values.',
+    'Awaiting 2 independent async operations sequentially might be adding unnecessary latency. This rule is intended to be a suggestion and is only correct some of the time; it is likely that these operations cannot be parallelized if they have hidden side effects or ordering requirements. If so, please use an // eslint-disable-next-line @blumintinc/blumint/parallelize-async-operations comment to disable this rule. Otherwise, consider Promise.all([...]) to improve performance.',
   );
 });
 
