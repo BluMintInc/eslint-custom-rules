@@ -413,8 +413,14 @@ function isDeepComparedJSXAttribute(node: TSESTree.Node): boolean {
       isExpressionWrapper(current) ||
       current.type === AST_NODE_TYPES.ConditionalExpression ||
       current.type === AST_NODE_TYPES.LogicalExpression ||
+      // Property, ObjectExpression, and ArrayExpression allow detection of nested
+      // literals within deep-compared attributes (e.g., sx={{ nested: { a: 1 } }}
+      // or sx={[{ margin: 1 }]}). Since deep equality checks compare nested
+      // structures recursively, nested literals are also exempt from triggering
+      // the memoization rule.
       current.type === AST_NODE_TYPES.Property ||
-      current.type === AST_NODE_TYPES.ObjectExpression
+      current.type === AST_NODE_TYPES.ObjectExpression ||
+      current.type === AST_NODE_TYPES.ArrayExpression
     ) {
       current = current.parent as TSESTree.Node | null;
       continue;

@@ -187,6 +187,7 @@ function Component() {
       style={{ padding: '10px' }}
       containerSx={{ margin: '10px' }}
       innerStyle={{ display: 'flex' }}
+      nestedSx={[{ color: 'red' }, { margin: '5px' }]}
     />
   );
 }
