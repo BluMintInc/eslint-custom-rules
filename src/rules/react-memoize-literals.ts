@@ -1,5 +1,6 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
 import { createRule } from '../utils/createRule';
+import { ASTHelpers } from '../utils/ASTHelpers';
 
 type MessageIds =
   | 'componentLiteral'
@@ -51,6 +52,11 @@ const SAFE_HOOK_ARGUMENTS = new Set([
   'useDeferredValue',
   'useTransition',
   'useId',
+  'useLatestCallback',
+  'useDeepCompareMemo',
+  'useDeepCompareCallback',
+  'useDeepCompareEffect',
+  'useProgressionCallback',
 ]);
 
 const MEMOIZATION_DEPS_TODO_PLACEHOLDER = '__TODO_MEMOIZATION_DEPENDENCIES__';
@@ -310,24 +316,37 @@ function findEnclosingComponentOrHook(node: TSESTree.Node) {
 function isInsideAllowedHookCallback(node: TSESTree.Node): boolean {
   let current: TSESTree.Node | null = node;
   while (current) {
-    if (
-      current.type === AST_NODE_TYPES.FunctionExpression ||
-      current.type === AST_NODE_TYPES.ArrowFunctionExpression
-    ) {
-      let parent: TSESTree.Node | null = current.parent as TSESTree.Node | null;
-
-      while (parent && isExpressionWrapper(parent)) {
-        parent = parent.parent as TSESTree.Node | null;
+    if (isFunctionNode(current)) {
+      if (current.async && current !== node) {
+        return true;
       }
 
-      if (parent?.type === AST_NODE_TYPES.CallExpression) {
-        const hookName = getHookNameFromCallee(parent.callee);
-        const matchesCallback = parent.arguments.some(
-          (arg) => unwrapNestedExpressions(arg as TSESTree.Node) === current,
-        );
+      if (
+        current.type === AST_NODE_TYPES.FunctionExpression ||
+        current.type === AST_NODE_TYPES.ArrowFunctionExpression
+      ) {
+        let parent: TSESTree.Node | null =
+          current.parent as TSESTree.Node | null;
 
-        if (hookName && SAFE_HOOK_ARGUMENTS.has(hookName) && matchesCallback) {
-          return true;
+        // Skip through TypeScript type assertions and parentheses to find
+        // the actual CallExpression that invokes the hook.
+        while (parent && isExpressionWrapper(parent)) {
+          parent = parent.parent as TSESTree.Node | null;
+        }
+
+        if (parent?.type === AST_NODE_TYPES.CallExpression) {
+          const hookName = getHookNameFromCallee(parent.callee);
+          const matchesCallback = parent.arguments.some(
+            (arg) => unwrapNestedExpressions(arg as TSESTree.Node) === current,
+          );
+
+          if (
+            hookName &&
+            SAFE_HOOK_ARGUMENTS.has(hookName) &&
+            matchesCallback
+          ) {
+            return true;
+          }
         }
       }
     }
@@ -369,6 +388,69 @@ function unwrapNestedExpressions(node: TSESTree.Node): TSESTree.Node {
     current = current.expression;
   }
   return current;
+}
+
+/**
+ * Checks whether a node is a JSX attribute that is deep-compared by blumintAreEqual.
+ * These attributes include 'sx', 'style', and any ending in 'Sx' or 'Style'.
+ * @param node Node to inspect.
+ * @returns True when the node is a deep-compared JSX attribute.
+ */
+function isDeepComparedJSXAttribute(node: TSESTree.Node): boolean {
+  if (isFunctionNode(node)) {
+    return false;
+  }
+
+  let current: TSESTree.Node | null = node.parent as TSESTree.Node | null;
+
+  while (current) {
+    if (isFunctionNode(current)) {
+      return false;
+    }
+
+    if (current.type === AST_NODE_TYPES.JSXExpressionContainer) {
+      current = current.parent as TSESTree.Node | null;
+      break;
+    }
+
+    if (
+      isExpressionWrapper(current) ||
+      current.type === AST_NODE_TYPES.ConditionalExpression ||
+      current.type === AST_NODE_TYPES.LogicalExpression ||
+      current.type === AST_NODE_TYPES.SpreadElement ||
+      // Property, ObjectExpression, and ArrayExpression allow detection of nested
+      // literals within deep-compared attributes (e.g., sx={{ nested: { a: 1 } }}
+      // or sx={[{ margin: 1 }]}). Since deep equality checks compare nested
+      // structures recursively, nested literals are also exempt from triggering
+      // the memoization rule.
+      current.type === AST_NODE_TYPES.Property ||
+      current.type === AST_NODE_TYPES.ObjectExpression ||
+      current.type === AST_NODE_TYPES.ArrayExpression
+    ) {
+      current = current.parent as TSESTree.Node | null;
+      continue;
+    }
+
+    break;
+  }
+
+  if (current?.type === AST_NODE_TYPES.JSXAttribute) {
+    const attributeName =
+      current.name.type === AST_NODE_TYPES.JSXIdentifier
+        ? current.name.name
+        : null;
+
+    if (attributeName) {
+      return (
+        attributeName === 'sx' ||
+        attributeName.endsWith('Sx') ||
+        attributeName === 'style' ||
+        attributeName.endsWith('Style')
+      );
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -585,16 +667,149 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
   create(context) {
     const sourceCode = context.getSourceCode();
 
+    /**
+     * Checks whether a VariableDeclarator's sole usage is being thrown
+     * in the same function scope.
+     */
+    function isVariableAlwaysThrown(
+      declarator: TSESTree.VariableDeclarator,
+    ): boolean {
+      const variables = ASTHelpers.getDeclaredVariables(
+        context as unknown as TSESLint.RuleContext<string, readonly unknown[]>,
+        declarator,
+      );
+      if (variables.length === 0) {
+        return false;
+      }
+
+      const variable = variables[0];
+      const usages = variable.references.filter((ref) => !ref.init);
+
+      // Variables with no usages (dead code) don't bypass memoization checks
+      // because we can't prove the literal is thrown.
+      if (usages.length === 0) {
+        return false;
+      }
+
+      const owningFunction = findOwningFunction(declarator);
+
+      return usages.every((ref) => {
+        let refParent: TSESTree.Node | null = ref.identifier
+          .parent as TSESTree.Node | null;
+
+        while (refParent) {
+          if (isFunctionNode(refParent)) {
+            // Stop at function boundaries: throws inside nested functions don't
+            // abort the outer render cycle, so they don't make the literal terminal
+            // from the perspective of the declaring function.
+            return false;
+          }
+
+          if (refParent.type === AST_NODE_TYPES.ThrowStatement) {
+            // Found a throw in the same lexical scope as the usage.
+            // Verify the throw is in the same function where the variable was declared
+            // to ensure the throw terminates the render before memoization matters.
+            let throwCheckParent: TSESTree.Node | null =
+              refParent.parent as TSESTree.Node | null;
+            while (throwCheckParent) {
+              if (isFunctionNode(throwCheckParent)) {
+                return throwCheckParent === owningFunction;
+              }
+              throwCheckParent =
+                throwCheckParent.parent as TSESTree.Node | null;
+            }
+            return owningFunction === null;
+          }
+
+          if (refParent === declarator) {
+            break;
+          }
+
+          refParent = refParent.parent as TSESTree.Node | null;
+        }
+        return false;
+      });
+    }
+
+    /**
+     * Checks whether a literal is destined to be thrown, making referential
+     * stability irrelevant.
+     */
+    function isTerminalUsage(node: TSESTree.Node): boolean {
+      let current: TSESTree.Node | null = node.parent as TSESTree.Node | null;
+      // Tracks whether the literal passed through a node that represents non-container usage.
+      // Once true, any throw we encounter won't count as "terminal" because the literal
+      // is already used in an expression that might need memoization.
+      let hasPassedForbiddenNode = false;
+
+      while (current) {
+        if (current.type === AST_NODE_TYPES.ThrowStatement) {
+          return !hasPassedForbiddenNode;
+        }
+
+        if (
+          current.type === AST_NODE_TYPES.VariableDeclarator &&
+          current.id.type === AST_NODE_TYPES.Identifier &&
+          current.init
+        ) {
+          if (!hasPassedForbiddenNode && isVariableAlwaysThrown(current)) {
+            return true;
+          }
+        }
+
+        // Stop at function boundaries as throws across functions are not "terminal"
+        // in the same render cycle sense for the current component/hook.
+        if (isFunctionNode(current)) {
+          break;
+        }
+
+        // We distinguish between "containers" (nodes that build up an error value
+        // or wrap an expression) and "usages" (nodes where the value is consumed
+        // in a way that might benefit from memoization).
+        //
+        // Containers (NewExpression for errors, wrappers, or object/array builders)
+        // are allowed because they are part of the path to a 'throw'.
+        // Other nodes (like function calls or being a prop) mark the literal as
+        // having a non-terminal usage.
+        //
+        // Note: AST_NODE_TYPES.CallExpression is intentionally excluded from allowed
+        // containers. Passing a literal into a CallExpression allows the callee to
+        // observe or store the reference, making its identity relevant even if
+        // the result is eventually thrown (e.g., const err = fn({ ... }); throw err;).
+        if (
+          current.type !== AST_NODE_TYPES.ObjectExpression &&
+          current.type !== AST_NODE_TYPES.Property &&
+          current.type !== AST_NODE_TYPES.ArrayExpression &&
+          current.type !== AST_NODE_TYPES.NewExpression &&
+          current.type !== AST_NODE_TYPES.ConditionalExpression &&
+          current.type !== AST_NODE_TYPES.LogicalExpression &&
+          !isExpressionWrapper(current)
+        ) {
+          hasPassedForbiddenNode = true;
+        }
+
+        current = current.parent as TSESTree.Node | null;
+      }
+      return false;
+    }
+
     function reportLiteral(node: TSESTree.Node) {
       const descriptor = getLiteralDescriptor(node);
       if (!descriptor) return;
 
-      if (isInsideAllowedHookCallback(node)) {
+      const owner = findEnclosingComponentOrHook(node);
+      if (!owner) return;
+
+      if (
+        isInsideAllowedHookCallback(node) ||
+        isDeepComparedJSXAttribute(node)
+      ) {
         return;
       }
 
-      const owner = findEnclosingComponentOrHook(node);
-      if (!owner) return;
+      if (isTerminalUsage(node)) {
+        return;
+      }
 
       const hookCall = findEnclosingHookCall(node);
       if (hookCall) {

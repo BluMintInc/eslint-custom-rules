@@ -1343,6 +1343,43 @@ function isLateDeclarationCandidate(statement: TSESTree.Statement): boolean {
   );
 }
 
+/**
+ * Treat a loop as an ordering barrier for late-declaration moves when it both mutates a
+ * tracked name and that name is used again after the loop.
+ */
+function isMutatedInLoopAndUsedAfter(
+  body: TSESTree.Statement[],
+  usageIndex: number,
+  nameSet: Set<string>,
+): boolean {
+  const firstUsage = body[usageIndex];
+  if (!firstUsage) {
+    return false;
+  }
+  const isLoop =
+    firstUsage.type === AST_NODE_TYPES.ForStatement ||
+    firstUsage.type === AST_NODE_TYPES.ForInStatement ||
+    firstUsage.type === AST_NODE_TYPES.ForOfStatement ||
+    firstUsage.type === AST_NODE_TYPES.WhileStatement ||
+    firstUsage.type === AST_NODE_TYPES.DoWhileStatement;
+
+  if (!isLoop) {
+    return false;
+  }
+
+  if (!statementMutatesAny(firstUsage, nameSet)) {
+    return false;
+  }
+
+  for (let i = usageIndex + 1; i < body.length; i += 1) {
+    if (statementReferencesAny(body[i], nameSet)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function handleLateDeclarations(
   ruleContext: RuleExecutionContext,
   body: TSESTree.Statement[],
@@ -1372,6 +1409,13 @@ function handleLateDeclarations(
     }
 
     if (usageIndex === -1 || usageIndex <= index + 1) {
+      return;
+    }
+
+    // Loop mutations create a dependency barrier: declarations that precede loops and are
+    // mutated inside them cannot be safely moved, as the declaration must be visible across
+    // all iterations. Prevent false positives for this pattern.
+    if (isMutatedInLoopAndUsedAfter(body, usageIndex, nameSet)) {
       return;
     }
 
