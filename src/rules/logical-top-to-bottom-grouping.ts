@@ -1324,10 +1324,23 @@ function trackDeclaredNames(
 }
 
 /**
- * Loop mutations create a dependency barrier that prevents safe reordering. When a variable
- * is declared before a loop, mutated inside the loop body, and used after the loop, moving
- * the declaration closer to the loop would change semantics or create invalid code. The
- * declaration must remain before the loop to be visible across all iterations.
+ * Detects a dependency barrier where a variable is declared before a loop, mutated inside
+ * the loop, and then used after the loop.
+ *
+ * This pattern requires special handling because moving the declaration closer to the
+ * first usage (the loop) would be correct for the first iteration but might be invalid
+ * if the declaration needs to persist across iterations or if its value after the loop
+ * depends on the mutations within.
+ *
+ * This function specifically:
+ * 1. Checks if the first usage is a loop (For, ForIn, ForOf, While, DoWhile).
+ * 2. Verifies the loop mutates any variable in the nameSet (via statementMutatesAny).
+ * 3. Verifies there is a subsequent usage after the loop (via statementReferencesAny).
+ *
+ * Assumptions:
+ * - nameSet contains the name(s) being tracked for late declaration.
+ * - body is the array of statements in the current block.
+ * - usageIndex is the index of the first usage of the variable(s) in the body.
  */
 function isMutatedInLoopAndUsedAfter(
   body: TSESTree.Statement[],

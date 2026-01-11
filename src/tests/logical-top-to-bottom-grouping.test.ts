@@ -372,6 +372,45 @@ for (const [first, second] of data) {
 }
 console.log(x, y);
     `,
+    // Variable mutated in ForStatement update and used after
+    `
+let i = 0;
+const step = 1;
+for (let j = 0; j < 10; i += step) {
+  console.log(j);
+  j++;
+}
+use(i);
+    `,
+    // Variable mutated in WhileStatement test and used after
+    `
+let count = 0;
+const limit = 10;
+while ((count += 1) < limit) {
+  process();
+}
+use(count);
+    `,
+    // Variable mutated via property access in loop and used after
+    `
+let state = { count: 0 };
+const delta = 1;
+for (const item of items) {
+  state.count += delta;
+}
+use(state);
+    `,
+    // Variable mutated in nested function within loop and used after
+    `
+let triggered = false;
+for (const item of items) {
+  const cb = () => { triggered = true; };
+  cb();
+}
+if (triggered) {
+  doWork();
+}
+    `,
     // Negative case: Variable only read in loop (SHOULD still report)
     // We expect this NOT to be in valid if it's far from use, 
     // but here we just want to ensure isMutatedInLoopAndUsedAfter returns false.
@@ -570,6 +609,44 @@ const a = 1;
 let x = 0;
 for (const item of items) {
   x = item;
+}
+      `,
+      errors: [{ messageId: 'moveDeclarationCloser' }],
+    },
+    {
+      // Variable read in loop and used after, but NOT mutated in loop
+      code: `
+let x = 0;
+const a = 1;
+for (const item of items) {
+  console.log(x);
+}
+console.log(x);
+      `,
+      output: `
+const a = 1;
+let x = 0;
+for (const item of items) {
+  console.log(x);
+}
+console.log(x);
+      `,
+      errors: [{ messageId: 'moveDeclarationCloser' }],
+    },
+    {
+      // Variable mutated in loop via compound assignment but NOT used after
+      code: `
+let x = 0;
+const a = 1;
+while (x < 10) {
+  x += 1;
+}
+      `,
+      output: `
+const a = 1;
+let x = 0;
+while (x < 10) {
+  x += 1;
 }
       `,
       errors: [{ messageId: 'moveDeclarationCloser' }],
