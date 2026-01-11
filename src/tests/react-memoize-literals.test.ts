@@ -140,6 +140,22 @@ function Component() {
 }
       `,
     },
+    // JSX props 'sx' and 'style' (and variations) are deep-compared and allowed for literals
+    {
+      code: `
+function Component() {
+  return (
+    <div
+      sx={{ color: 'blue' }}
+      style={{ padding: '10px' }}
+      containerSx={{ margin: '10px' }}
+      innerStyle={{ display: 'flex' }}
+      nestedSx={[{ color: 'red' }, { margin: '5px' }]}
+    />
+  );
+}
+      `,
+    },
     // Hook argument uses identifiers only
     {
       code: `
@@ -1007,6 +1023,112 @@ const MyComponent = () => {
             literalType: 'inline function',
             context: 'component "MyComponent"',
             memoHook: 'useCallback',
+          },
+        },
+      ],
+    },
+    // Inline function in deep-compared JSX attribute should still be reported
+    {
+      code: `
+function Component() {
+  return <div sx={() => console.log('test')} />;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'component "Component"',
+            memoHook: 'useCallback',
+          },
+        },
+      ],
+    },
+    // AssignmentExpression for component name
+    {
+      code: `
+let AssignedComponent;
+AssignedComponent = () => {
+  const x = {};
+  return <div />;
+};
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'object literal',
+            context: 'component "AssignedComponent"',
+            memoHook: 'useMemo',
+          },
+        },
+      ],
+    },
+    // Property for component name
+    {
+      code: `
+const components = {
+  PropertyComponent: () => {
+    const x = {};
+    return <div />;
+  }
+};
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'object literal',
+            context: 'component "PropertyComponent"',
+            memoHook: 'useMemo',
+          },
+        },
+      ],
+    },
+    // Computed member expression for hook call (hits line 271)
+    {
+      code: `
+function Component() {
+  const name = 'useEffect';
+  React[name](() => {}, []);
+  return null;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'inline function',
+            context: 'component "Component"',
+            memoHook: 'useCallback',
+          },
+        },
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'array literal',
+            context: 'component "Component"',
+            memoHook: 'useMemo',
+          },
+        },
+      ],
+    },
+    // Literal not returned from hook (hits line 563)
+    {
+      code: `
+function useMyHook() {
+  const x = {};
+  return 'not-x';
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'object literal',
+            context: 'hook "useMyHook"',
+            memoHook: 'useMemo',
           },
         },
       ],
