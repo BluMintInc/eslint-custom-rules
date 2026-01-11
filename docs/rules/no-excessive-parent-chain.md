@@ -13,6 +13,16 @@ Walking the `ref.parent` chain repeatedly in Firestore or RealtimeDB change hand
 - **Intent is clearer**: `params.userId` communicates which path component is being read, while a long parent chain hides intent.
 - **Consistent handler pattern**: Using params yields the same readable approach across all triggers.
 
+## Options
+
+- `max` (integer): Maximum number of consecutive `.parent` hops allowed before warning. Defaults to `2`.
+
+```json
+{
+  "@blumintinc/blumint/no-excessive-parent-chain": ["error", { "max": 2 }]
+}
+```
+
 ## Examples
 
 ### ❌ Incorrect
