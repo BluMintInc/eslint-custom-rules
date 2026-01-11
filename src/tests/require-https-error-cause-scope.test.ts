@@ -7,8 +7,11 @@ import { requireHttpsErrorCause } from '../rules/require-https-error-cause';
 
 describe('require-https-error-cause scope shim', () => {
   it('should use sourceCode.getScope in ESLint 9+', () => {
-    const mockScope = { variables: [], upper: null } as unknown as TSESLint.Scope.Scope;
-    
+    const mockScope = {
+      variables: [],
+      upper: null,
+    } as unknown as TSESLint.Scope.Scope;
+
     const mockSourceCode = {
       getScope: jest.fn().mockReturnValue(mockScope),
       getText: jest.fn().mockReturnValue('error'),
@@ -23,14 +26,14 @@ describe('require-https-error-cause scope shim', () => {
     } as unknown as TSESLint.RuleContext<any, any>;
 
     const rule = requireHttpsErrorCause.create(mockContext);
-    
+
     // Trigger CatchClause to set up state
     const catchNode = {
       type: 'CatchClause',
       param: { type: 'Identifier', name: 'error' },
       body: { type: 'BlockStatement', body: [] },
     } as unknown as TSESTree.CatchClause;
-    
+
     (rule as any).CatchClause(catchNode);
 
     // Trigger NewExpression which calls getScopeForNode via isCatchBindingReference
@@ -47,13 +50,18 @@ describe('require-https-error-cause scope shim', () => {
 
     (rule as any).NewExpression(httpsErrorNode);
 
-    expect(mockSourceCode.getScope).toHaveBeenCalledWith(expect.objectContaining({ name: 'error' }));
+    expect(mockSourceCode.getScope).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'error' }),
+    );
     expect(mockContext.getScope).not.toHaveBeenCalled();
   });
 
   it('should fallback to context.getScope in ESLint 8', () => {
-    const mockScope = { variables: [], upper: null } as unknown as TSESLint.Scope.Scope;
-    
+    const mockScope = {
+      variables: [],
+      upper: null,
+    } as unknown as TSESLint.Scope.Scope;
+
     const mockSourceCode = {
       // No getScope method
       getText: jest.fn().mockReturnValue('error'),
@@ -68,14 +76,14 @@ describe('require-https-error-cause scope shim', () => {
     } as unknown as TSESLint.RuleContext<any, any>;
 
     const rule = requireHttpsErrorCause.create(mockContext);
-    
+
     // Trigger CatchClause
     const catchNode = {
       type: 'CatchClause',
       param: { type: 'Identifier', name: 'error' },
       body: { type: 'BlockStatement', body: [] },
     } as unknown as TSESTree.CatchClause;
-    
+
     (rule as any).CatchClause(catchNode);
 
     // Trigger NewExpression

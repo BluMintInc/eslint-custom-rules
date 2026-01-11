@@ -295,6 +295,126 @@ const obj = {
 
 obj.call();
     `,
+    // Variable mutated in ForStatement and used after
+    `
+let x = 0;
+const a = 1;
+for (let i = 0; i < 10; i++) {
+  x += i;
+}
+console.log(x);
+    `,
+    // Variable mutated in ForInStatement and used after
+    `
+let keys = '';
+const prefix = 'key:';
+for (const key in obj) {
+  keys += prefix + key;
+}
+use(keys);
+    `,
+    // Variable mutated in ForOfStatement and used after
+    `
+let total = 0;
+const factor = 2;
+for (const val of values) {
+  total += val * factor;
+}
+log(total);
+    `,
+    // Variable mutated in WhileStatement and used after
+    `
+let count = 0;
+const limit = 10;
+while (count < limit) {
+  count++;
+}
+console.log(count);
+    `,
+    // Variable mutated in DoWhileStatement and used after
+    `
+let i = 0;
+const max = 5;
+do {
+  i++;
+} while (i < max);
+use(i);
+    `,
+    // Variable mutated in nested loops and used after
+    `
+let sum = 0;
+const weight = 1.5;
+for (const row of matrix) {
+  for (const val of row) {
+    sum += val * weight;
+  }
+}
+process(sum);
+    `,
+    // Multiple variables mutated in loop and used after
+    `
+let a = 0;
+let b = 0;
+const step = 1;
+for (let i = 0; i < 10; i++) {
+  a += step;
+  b -= step;
+}
+use(a, b);
+    `,
+    // Destructuring assignment in loop and used after
+    `
+let x = 0;
+let y = 0;
+const data = [[1, 2], [3, 4]];
+for (const [first, second] of data) {
+  [x, y] = [first, second];
+}
+console.log(x, y);
+    `,
+    // Variable mutated in ForStatement update and used after
+    `
+let i = 0;
+const step = 1;
+for (let j = 0; j < 10; i += step) {
+  console.log(j);
+  j++;
+}
+use(i);
+    `,
+    // Variable mutated in WhileStatement test and used after
+    `
+let count = 0;
+const limit = 10;
+while ((count += 1) < limit) {
+  process();
+}
+use(count);
+    `,
+    // Variable mutated via property access in loop and used after
+    `
+let state = { count: 0 };
+const delta = 1;
+for (const item of items) {
+  state.count += delta;
+}
+use(state);
+    `,
+    // Variable mutated in nested function within loop and used after
+    `
+let triggered = false;
+for (const item of items) {
+  const cb = () => { triggered = true; };
+  cb();
+}
+if (triggered) {
+  doWork();
+}
+    `,
+    // Negative case: Variable only read in loop (SHOULD still report)
+    // We expect this NOT to be in valid if it's far from use,
+    // but here we just want to ensure isMutatedInLoopAndUsedAfter returns false.
+    // If it's far from use, it should be in invalid.
   ],
   invalid: [
     {
@@ -458,6 +578,78 @@ const other = 2;
 use(other);
       `,
       errors: [{ messageId: 'moveSideEffect' }],
+    },
+    {
+      code: `
+let x = 0;
+const a = 1;
+for (const item of items) {
+  console.log(x, item);
+}
+      `,
+      output: `
+const a = 1;
+let x = 0;
+for (const item of items) {
+  console.log(x, item);
+}
+      `,
+      errors: [{ messageId: 'moveDeclarationCloser' }],
+    },
+    {
+      code: `
+let x = 0;
+const a = 1;
+for (const item of items) {
+  x = item;
+}
+      `,
+      output: `
+const a = 1;
+let x = 0;
+for (const item of items) {
+  x = item;
+}
+      `,
+      errors: [{ messageId: 'moveDeclarationCloser' }],
+    },
+    {
+      // Variable read in loop and used after, but NOT mutated in loop
+      code: `
+let x = 0;
+const a = 1;
+for (const item of items) {
+  console.log(x);
+}
+console.log(x);
+      `,
+      output: `
+const a = 1;
+let x = 0;
+for (const item of items) {
+  console.log(x);
+}
+console.log(x);
+      `,
+      errors: [{ messageId: 'moveDeclarationCloser' }],
+    },
+    {
+      // Variable mutated in loop via compound assignment but NOT used after
+      code: `
+let x = 0;
+const a = 1;
+while (x < 10) {
+  x += 1;
+}
+      `,
+      output: `
+const a = 1;
+let x = 0;
+while (x < 10) {
+  x += 1;
+}
+      `,
+      errors: [{ messageId: 'moveDeclarationCloser' }],
     },
   ],
 });
