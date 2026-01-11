@@ -49,6 +49,8 @@ New object literal inside component "UserProfile" is created on every render, wh
 
 ### ✅ Correct
 
+#### Memoization and Hoisting
+
 These examples show how you keep references stable by memoizing values with the right dependencies (or hoisting constants).
 
 ```tsx
@@ -91,7 +93,9 @@ function UserCard({ name }) {
 }
 ```
 
-### ✅ Correct (With disable comment if stability is not required)
+#### Intentional Reference Changes
+
+Disable the rule if stability is not required:
 
 ```tsx
 function Component() {
