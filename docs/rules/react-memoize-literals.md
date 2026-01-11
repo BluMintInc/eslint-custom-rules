@@ -49,6 +49,8 @@ New object literal inside component "UserProfile" is created on every render, wh
 
 ### ✅ Correct
 
+These examples show how you keep references stable by memoizing values with the right dependencies (or hoisting constants).
+
 ```tsx
 const DEFAULT_CONFIG = { enabled: true };
 
@@ -59,25 +61,6 @@ function UserProfile({ userId }) {
   return <Child config={config} onClick={handleClick} />;
 }
 ```
-
-#### Deep-compared JSX attributes
-
-Inline functions passed to deep-compared attributes still require memoization because they cannot be reliably compared by value:
-
-```tsx
-// ❌ Invalid: inline functions still require memoization
-function UserCard({ onUpdate }) {
-  return (
-    <Box sx={() => console.log('render')}>
-      <Button onClick={() => onUpdate()}>Update</Button>
-    </Box>
-  );
-}
-```
-
-### Examples of correct code
-
-These examples show how you keep references stable by memoizing values with the right dependencies (or hoisting constants).
 
 ```tsx
 function useUserSettings() {

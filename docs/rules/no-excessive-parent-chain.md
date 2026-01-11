@@ -15,7 +15,9 @@ Walking the `ref.parent` chain repeatedly in Firestore or RealtimeDB change hand
 
 ## Options
 
-- `max` (integer): Maximum number of consecutive `.parent` hops allowed before warning. Defaults to `2`.
+This rule accepts an options object:
+
+- `max`: (Default: `2`) Maximum number of consecutive `.parent` calls allowed before warning.
 
 ```json
 {
@@ -59,12 +61,6 @@ export const myHandler: DocumentChangeHandler<User> = async (event) => {
   const rootId = change.after.ref.parent.parent.parent.id;
 };
 ```
-
-## Options
-
-This rule accepts an options object:
-
-- `max`: (Default: `2`) Maximum number of consecutive `.parent` calls allowed before warning.
 
 ## When Not To Use It
 
