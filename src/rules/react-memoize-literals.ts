@@ -397,12 +397,30 @@ function unwrapNestedExpressions(node: TSESTree.Node): TSESTree.Node {
  * @returns True when the node is a deep-compared JSX attribute.
  */
 function isDeepComparedJSXAttribute(node: TSESTree.Node): boolean {
-  let current = node.parent;
+  let current: TSESTree.Node | null = node.parent as TSESTree.Node | null;
 
-  // Handle JSX expression containers: <Component sx={{ ... }} />
-  // The ObjectExpression's parent is the JSXExpressionContainer.
-  if (current?.type === AST_NODE_TYPES.JSXExpressionContainer) {
-    current = current.parent;
+  while (current) {
+    if (isFunctionNode(current)) {
+      return false;
+    }
+
+    if (current.type === AST_NODE_TYPES.JSXExpressionContainer) {
+      current = current.parent as TSESTree.Node | null;
+      break;
+    }
+
+    if (
+      isExpressionWrapper(current) ||
+      current.type === AST_NODE_TYPES.ConditionalExpression ||
+      current.type === AST_NODE_TYPES.LogicalExpression ||
+      current.type === AST_NODE_TYPES.Property ||
+      current.type === AST_NODE_TYPES.ObjectExpression
+    ) {
+      current = current.parent as TSESTree.Node | null;
+      continue;
+    }
+
+    break;
   }
 
   if (current?.type === AST_NODE_TYPES.JSXAttribute) {
