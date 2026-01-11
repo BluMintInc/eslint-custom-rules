@@ -772,6 +772,51 @@ function useValue() {
         },
       ],
     },
+    // Literal inside an array in a return statement is not the return value itself (hits line 563)
+    {
+      code: `
+function useHook() {
+  return [{}];
+}
+      `,
+      errors: [
+        {
+          messageId: 'hookReturnLiteral',
+          data: {
+            literalType: 'array literal',
+            hookName: 'useHook',
+          },
+        },
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'object literal',
+            context: 'hook "useHook"',
+            memoHook: 'useMemo',
+          },
+        },
+      ],
+    },
+    // Return statement without argument (hits line 556 - though hard to trigger literal check there)
+    {
+      code: `
+function useHook() {
+  const x = {};
+  if (true) return;
+  return x;
+}
+      `,
+      errors: [
+        {
+          messageId: 'componentLiteral',
+          data: {
+            literalType: 'object literal',
+            context: 'hook "useHook"',
+            memoHook: 'useMemo',
+          },
+        },
+      ],
+    },
     // Named function expression component passed to HOC should be detected
     {
       code: `

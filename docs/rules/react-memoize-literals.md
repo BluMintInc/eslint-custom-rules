@@ -46,6 +46,21 @@ function useUserSettings() {
 }
 ```
 
+#### Deep-compared JSX attributes
+
+Inline functions passed to deep-compared attributes still require memoization because they cannot be reliably compared by value:
+
+```tsx
+// ❌ Invalid: inline functions still require memoization
+function UserCard({ onUpdate }) {
+  return (
+    <Box sx={() => console.log('render')}>
+      <Button onClick={() => onUpdate()}>Update</Button>
+    </Box>
+  );
+}
+```
+
 ### Examples of correct code
 
 These examples show how you keep references stable by memoizing values with the right dependencies (or hoisting constants).
@@ -80,6 +95,22 @@ function useUserSettings() {
       onChange,
     }),
     [onChange],
+  );
+}
+```
+
+#### Deep-compared JSX attributes
+
+Object and array literals passed to deep-compared attributes (sx, style, or any attribute ending in Sx or Style) are exempt from memoization requirements:
+
+```tsx
+// ✅ Valid: object literals in deep-compared attributes
+function UserCard({ name }) {
+  return (
+    <Box sx={{ padding: 2, margin: 1 }}>
+      <Typography style={{ fontWeight: 'bold' }}>{name}</Typography>
+      <Container containerSx={{ display: 'flex' }}>Content</Container>
+    </Box>
   );
 }
 ```
