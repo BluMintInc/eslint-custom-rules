@@ -1323,6 +1323,12 @@ function trackDeclaredNames(
   declared.forEach((name) => declaredIndices.set(name, index));
 }
 
+/**
+ * Loop mutations create a dependency barrier that prevents safe reordering. When a variable
+ * is declared before a loop, mutated inside the loop body, and used after the loop, moving
+ * the declaration closer to the loop would change semantics or create invalid code. The
+ * declaration must remain before the loop to be visible across all iterations.
+ */
 function isMutatedInLoopAndUsedAfter(
   body: TSESTree.Statement[],
   usageIndex: number,
@@ -1395,6 +1401,9 @@ function handleLateDeclarations(
       return;
     }
 
+    // Loop mutations create a dependency barrier: declarations that precede loops and are
+    // mutated inside them cannot be safely moved, as the declaration must be visible across
+    // all iterations. Prevent false positives for this pattern.
     if (isMutatedInLoopAndUsedAfter(body, usageIndex, nameSet)) {
       return;
     }
