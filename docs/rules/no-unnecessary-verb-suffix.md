@@ -6,11 +6,11 @@
 
 <!-- end auto-generated rule header -->
 
-Discourages verb-preposition suffixes in function and method names when the suffix does not add meaning beyond the parameters. These endings make the action harder to spot and bloat call sites with redundant phrasing.
+Discourages verb-preposition suffixes in function and method names when the suffix might not add meaning beyond the parameters. These endings can make the action harder to spot and bloat call sites with redundant phrasing.
 
 ## Rule Details
 
-This rule keeps names action-oriented by removing trailing verb-preposition suffixes (e.g., `From`, `For`, `With`, `To`, `By`, `In`, `On`). The suffix rarely carries new information because the parameters already express the relationship. Redundant endings make call sites harder to scan, obscure the primary verb, and create noisy diffs when the relationship changes. Rename the function to the verb phrase and let arguments communicate the context.
+This rule keeps names action-oriented by suggesting the removal of trailing verb-preposition suffixes (e.g., `From`, `For`, `With`, `To`, `By`, `In`, `On`). Often, the suffix repeats information already conveyed by the parameters. Redundant endings can make call sites harder to scan and obscure the primary verb. Consider renaming the function to the verb phrase and let arguments communicate the context.
 
 Examples of **incorrect** code:
 
@@ -36,6 +36,12 @@ const transformDataWith = (options) => {};
 const prepareStateFor = (component) => {};
 const validateBy = (rules) => {};
 const searchIn = (scope) => {};
+```
+
+Example message:
+
+```text
+Function "createMatchFor" ends with the suffix "For", which might be redundant if the arguments already express the relationship. This rule is suggestive and might flag suffixes that are critical for clarity in your specific domain. If "For" is necessary, please use an // eslint-disable-next-line @blumintinc/blumint/no-unnecessary-verb-suffix comment. Otherwise, consider renaming to "createMatch" to keep the name focused on the primary action.
 ```
 
 Examples of **correct** code:
@@ -66,21 +72,15 @@ const validate = (rules) => {};
 const search = (scope) => {};
 
 // When the suffix carries essential domain context, allow it explicitly
-/* eslint-disable @blumintinc/blumint/no-unnecessary-verb-suffix */
+// eslint-disable-next-line @blumintinc/blumint/no-unnecessary-verb-suffix
 function migrateDataFromLegacy(data) {}        // Source system is material
+// eslint-disable-next-line @blumintinc/blumint/no-unnecessary-verb-suffix
 function mergeConfigWithDefaults(config) {}    // The combination rule matters
-function convertTemperatureToCelsius(temp) {}  // Destination scale matters
-function sortUsersByRank(users) {}             // Ranking dimension matters
-function searchProductsInCategory(category) {} // Category scoping matters
-function validateInputAgainstSchema(input) {}  // Validation target matters
-function processEventsUntilTimeout(events) {}  // Time boundary matters
-function computeScoreViaAlgorithm(data) {}     // Algorithm choice matters
-/* eslint-enable @blumintinc/blumint/no-unnecessary-verb-suffix */
 ```
 
 ## When Not To Use It
 
-You can disable this rule when the suffix carries domain meaning that parameters alone cannot convey (e.g., security mode, data partition, migration origin). Prefer targeted disables near the affected declarations so the exception stays visible to readers.
+You should disable this rule when the suffix carries domain meaning that parameters alone cannot convey (e.g., security mode, data partition, migration origin). Use an `// eslint-disable-next-line @blumintinc/blumint/no-unnecessary-verb-suffix` comment near the affected declarations.
 
 ## Further Reading
 

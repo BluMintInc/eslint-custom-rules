@@ -1,4 +1,4 @@
-# Prefer handler params for parent IDs instead of traversing ref.parent.id so Firebase triggers stay aligned with path templates and type-safe (`@blumintinc/blumint/prefer-params-over-parent-id`)
+# Prefer handler params for parent IDs instead of traversing ref.parent.id (`@blumintinc/blumint/prefer-params-over-parent-id`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
@@ -6,195 +6,53 @@
 
 <!-- end auto-generated rule header -->
 
-## Rule Details
+Walking the `ref.parent` chain to read an ID in Firebase change handlers makes the code brittle. This rule suggests using the typed `params` provided by the trigger instead.
 
-In Firestore and Realtime Database change handlers, you already get trigger path variables through `event.params`. Reconstructing those IDs with `ref.parent.id`:
+## Why this rule?
 
-- drifts as soon as collection nesting changes, so handlers silently read the wrong parent
-- bypasses the type-safe params object, hiding typos behind optional chaining or `undefined`
-- makes intent harder to scan because readers must mentally follow the reference chain
-
-The rule targets handlers typed as `DocumentChangeHandler`, `DocumentChangeHandlerTransaction`, `RealtimeDbChangeHandler`, or `RealtimeDbChangeHandlerTransaction` and reports any `ref.parent...id` access inside them.
-
-## Setup Example
-
-This rule is enabled by default in the recommended config. To configure it explicitly:
-
-```json
-{
-  "rules": {
-    "@blumintinc/blumint/prefer-params-over-parent-id": "error"
-  }
-}
-```
-
-## Auto-fix
-
-When `params` is already available, the fixer replaces `ref.parent.id` with `event.params.userId` (or `event?.params?.userId` if optional chaining is present). For deeper `parent.parent` traversals it maps to the specific path parameter (for example, `tournamentId`) so IDs still come from the trigger params rather than the reference chain.
+- Path traversal via `ref.parent` assumes a fixed path depth; if the collection layout changes, the code breaks or reads the wrong segment.
+- `event.params` provides named, typed segments that stay aligned with your trigger's path template.
+- Using `params` makes the code self-documenting (e.g., `params.userId` vs `ref.parent.id`).
 
 ## Examples
 
 ### ❌ Incorrect
 
-```typescript
-export const updateRelatedDocuments: DocumentChangeHandler<
-  OverwolfUpdate,
-  OverwolfUpdatePath
-> = async (event) => {
-  const { data: change } = event;
-
-  // Brittle way to access the parent document ID
-  const userId = change.after.ref.parent.id;
-
-  // Using the parent ID to query or update other documents
-  const userProfile = await db.doc(`UserProfile/${userId}`).get();
+```ts
+export const myHandler: DocumentChangeHandler<User> = async (event) => {
+  // Reads ID via ref.parent traversal
+  const userId = event.data.after.ref.parent.id;
 };
 ```
 
-```typescript
-export const handleUpdate: DocumentChangeHandler<
-  UserData,
-  UserPath
-> = async (event) => {
-  const { data: change } = event;
+Example message:
 
-  // Direct usage in expressions
-  const userProfile = await db.doc(`UserProfile/${change.after.ref.parent.id}`).get();
-};
-```
+```text
+This code reads an ID via ref.parent...id instead of using the trigger's params.
 
-```typescript
-export const optionalChaining: DocumentChangeHandler<
-  UserData,
-  UserPath
-> = async (event) => {
-  const { data: change } = event;
-
-  // Optional chaining usage
-  const userId = change.after?.ref?.parent?.id; // ❌ Brittle: derives IDs from refs
-  // ✅ Prefer: const { params: { userId } } = event;
-};
-```
-
-```typescript
-export const grandparentAccess: DocumentChangeHandler<
-  UserData,
-  UserPath
-> = async (event) => {
-  const { data: change } = event;
-
-  // Multiple parent levels (grandparent)
-  const grandparentId = change.after.ref.parent.parent.id;
-};
+This rule is a suggestion; deep database paths sometimes require multiple hops if parameters are not available in the trigger event. If these hops are necessary, please use an // eslint-disable-next-line @blumintinc/blumint/prefer-params-over-parent-id comment. Otherwise, consider reading the ID from params.userId to make the code more resilient to path changes.
 ```
 
 ### ✅ Correct
 
-```typescript
-export const updateRelatedDocuments: DocumentChangeHandler<
-  OverwolfUpdate,
-  OverwolfUpdatePath
-> = async (event) => {
-  const {
-    data: change,
-    params: { userId } // Access parent ID directly from params
-  } = event;
-
-  // Using the parent ID from params to query or update other documents
-  const userProfile = await db.doc(`UserProfile/${userId}`).get();
-};
-```
-
-```typescript
-export const handleUpdate: DocumentChangeHandler<
-  UserData,
-  UserPath
-> = async (event) => {
+```ts
+export const myHandler: DocumentChangeHandler<User, { userId: string }> = async (event) => {
   const { params: { userId } } = event;
-
-  // Direct usage with params
-  const userProfile = await db.doc(`UserProfile/${userId}`).get();
+  // Access named parameter
 };
 ```
 
-```typescript
-export const nestedPathHandler: DocumentChangeHandler<
-  GameData,
-  GamePath
-> = async (event) => {
-  const {
-    params: { gameId, tournamentId, roundId }
-  } = event;
+### ✅ Correct (With disable comment if traversal is necessary)
 
-  const path = `Game/${gameId}/Tournament/${tournamentId}/Round/${roundId}`;
-  await db.doc(path).get();
-};
+```ts
+// eslint-disable-next-line @blumintinc/blumint/prefer-params-over-parent-id
+const parentId = ref.parent.id;
 ```
 
-## Edge Cases Handled
+## Options
 
-### 1. Multi-Level Path Parameters
-
-For paths like `/Game/{gameId}/Tournament/{tournamentId}/Round/{roundId}`, the rule maps each `ref.parent[.parent].id` access to the corresponding named parameter in `event.params` (for example, `gameId`, `tournamentId`, or `roundId`) instead of a generic `parentId`.
-
-### 2. Variable Assignment and Reuse
-
-The rule detects variable assignment patterns:
-
-```typescript
-// ❌ Incorrect
-const parentId = change.after.ref.parent.id;
-
-// ✅ Correct
-const { params: { userId } } = event;
-```
-
-### 3. Complex Reference Chains
-
-The rule handles various patterns of parent reference access:
-
-```typescript
-// ❌ Incorrect
-const grandparentId = change.after.ref.parent.parent.id;
-
-// ✅ Correct (use the specific parameter)
-const { params: { tournamentId } } = event;
-```
-
-### 4. Optional Chaining
-
-The rule detects optional chaining variants and preserves them in the fix:
-
-```typescript
-// ❌ Incorrect
-const maybeParentId = change.after?.ref?.parent?.id;
-
-// ✅ Fixed to
-const maybeParentId = event?.params?.userId;
-```
-
-## Benefits
-
-- Keeps handlers aligned with the trigger path template when collections move or nesting changes
-- Uses the typed `params` object instead of brittle reference traversal
-- Makes parent ID usage readable without re-deriving it from document references
-- Avoids redundant lookups on the reference chain
+This rule does not have any options.
 
 ## When Not To Use It
 
-Do not use this rule if:
-
-- You are not using Firebase change handlers.
-- The function is not typed as a supported handler.
-- You need reference properties other than the parent ID.
-
-## Related Rules
-
-- `enforce-firestore-doc-ref-generic`
-- `enforce-firestore-path-utils`
-
-## Further Reading
-
-- [Firebase Cloud Functions Documentation](https://firebase.google.com/docs/functions)
-- [Firestore Triggers](https://firebase.google.com/docs/functions/firestore-events)
-- [Realtime Database Triggers](https://firebase.google.com/docs/functions/database-events)
+Disable this rule if your trigger path does not capture the required segment as a parameter, or when working with legacy code where refactoring to use `params` is not feasible. Use an `// eslint-disable-next-line @blumintinc/blumint/prefer-params-over-parent-id` comment for local exceptions.

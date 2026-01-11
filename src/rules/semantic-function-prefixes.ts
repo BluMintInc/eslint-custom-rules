@@ -64,13 +64,13 @@ export const semanticFunctionPrefixes = createRule<[], MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Require semantic function prefixes instead of generic verbs so callers know whether a function fetches data, transforms input, or mutates state',
+        'Suggest semantic function prefixes instead of generic verbs so callers know whether a function fetches data, transforms input, or mutates state',
       recommended: 'error',
     },
     schema: [],
     messages: {
       avoidGenericPrefix:
-        'Function "{{functionName}}" starts with the generic prefix "{{prefix}}", which hides whether it fetches remote data, transforms input, or mutates state. Use a semantic verb such as {{alternatives}} to describe the operation and set caller expectations.',
+        'Function "{{functionName}}" uses the generic prefix "{{prefix}}", which might hide its intent. This rule is a suggestion and may flag prefixes that are appropriate for your specific context. If "{{prefix}}" is the most accurate verb, please use an // eslint-disable-next-line @blumintinc/blumint/semantic-function-prefixes comment. Otherwise, consider a more semantic alternative like {{alternatives}} to better describe if it fetches data, transforms input, or mutates state.',
     },
   },
   defaultOptions: [],

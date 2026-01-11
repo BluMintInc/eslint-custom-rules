@@ -2,7 +2,7 @@ import { ruleTesterTs } from '../utils/ruleTester';
 import { noExcessiveParentChain } from '../rules/no-excessive-parent-chain';
 
 const messageTemplate =
-  'Found {{count}} consecutive ref.parent hops in this handler. Long parent chains break when Firestore/RealtimeDB paths change and bypass the typed params the trigger already provides. Read path components from event.params (for example, params.userId) instead of walking ref.parent repeatedly.';
+  'Found {{count}} consecutive ref.parent hops in this handler. This rule is a suggestion; deep database paths sometimes require multiple hops if parameters are not available in the trigger event. If these hops are necessary, please use an // eslint-disable-next-line @blumintinc/blumint/no-excessive-parent-chain comment. Otherwise, consider reading path components from event.params to make the code more resilient to path changes.';
 
 const message = (count: number) =>
   messageTemplate.replace('{{count}}', String(count));
@@ -21,7 +21,7 @@ describe('no-excessive-parent-chain messages', () => {
 
   it('renders the count placeholder for reported chains', () => {
     expect(message(3)).toBe(
-      'Found 3 consecutive ref.parent hops in this handler. Long parent chains break when Firestore/RealtimeDB paths change and bypass the typed params the trigger already provides. Read path components from event.params (for example, params.userId) instead of walking ref.parent repeatedly.',
+      'Found 3 consecutive ref.parent hops in this handler. This rule is a suggestion; deep database paths sometimes require multiple hops if parameters are not available in the trigger event. If these hops are necessary, please use an // eslint-disable-next-line @blumintinc/blumint/no-excessive-parent-chain comment. Otherwise, consider reading path components from event.params to make the code more resilient to path changes.',
     );
   });
 });

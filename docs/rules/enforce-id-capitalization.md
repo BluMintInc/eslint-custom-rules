@@ -6,52 +6,53 @@
 
 <!-- end auto-generated rule header -->
 
-This rule ensures consistency in user-facing text by enforcing the use of "ID" instead of "id" when referring to identifiers in UI labels, instructions, error messages, and other visible strings.
+This rule ensures consistency in user-facing text by suggesting the use of "ID" instead of "id" when referring to identifiers in UI labels, instructions, error messages, and other visible strings.
 
-Using "ID" (uppercase) improves readability and maintains a professional standard across all user interactions.
+## Why this rule?
 
-## Rule Details
+- "ID" is the standard capitalization for "identifier".
+- Consistent capitalization improves the professional look and feel of the UI.
+- Standalone "id" in text can look like a typo or technical jargon.
 
-This rule aims to enforce consistent capitalization of "ID" in user-facing text. It specifically excludes code-level identifiers such as variable names, property names, and type definitions, focusing only on strings that will be displayed to users.
+## Examples
 
-Examples of **incorrect** code for this rule:
+### ❌ Incorrect
 
-```js
+```tsx
 const message = "Please enter your in-game id.";
 const label = "User id:";
-const error = "Invalid id format";
 <div>Please enter your id</div>
-<Button>Submit id</Button>
-const message = `Your id is ${userId}`;
-t("user.profile.id");
 ```
 
-Examples of **correct** code for this rule:
+Example message:
 
-```js
+```text
+Use "ID" instead of "id" in user-facing text for better readability. This rule is a suggestion; if "id" is intentional (e.g., a specific technical term), please use an // eslint-disable-next-line @blumintinc/blumint/enforce-id-capitalization comment. Otherwise, consider "ID" for visible labels and messages.
+```
+
+### ✅ Correct
+
+```tsx
 const message = "Please enter your in-game ID.";
 const label = "User ID:";
-const error = "Invalid ID format";
 <div>Please enter your ID</div>
-<Button>Submit ID</Button>
-const message = `Your ID is ${userId}`;
-t("user.profile.ID");
 
-// The following are not affected by this rule:
-const userId = 12345; // Variable names
-function getUserId() { return 123; } // Function names
-interface User { id: string; } // Interface properties
-type UserData = { id: number; } // Type properties
-export type CallerRequestButtonsProps = Pick<CallerCardBaseProps, 'status' | 'id'>; // Type definitions with Pick utility
-type UserSummary = Pick<User, 'id' | 'name'>; // Type utility with property names
-const message = "This grid system is flexible."; // "id" as part of another word
-const message = "Rapid development"; // "id" as part of another word
+// technical contexts are ignored
+const userId = 12345;
+interface User { id: string; }
 ```
+
+### ✅ Correct (With disable comment if "id" is intentional)
+
+```tsx
+// eslint-disable-next-line @blumintinc/blumint/enforce-id-capitalization
+const technicalTerm = "element id";
+```
+
+## Options
+
+This rule does not have any options.
 
 ## When Not To Use It
 
-If your codebase has a different convention for referring to identifiers, or if you don't need to enforce this level of consistency in user-facing text, you can disable this rule.
-
-## Further Reading
-
-- [UI Text Guidelines](https://material.io/design/communication/writing.html)
+Disable this rule if you are working in a technical context where lowercase "id" is required (e.g., documenting an HTML attribute or a specific API response field). Use an `// eslint-disable-next-line @blumintinc/blumint/enforce-id-capitalization` comment for local exceptions.

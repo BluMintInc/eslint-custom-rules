@@ -6,11 +6,9 @@ type PreferParamsError = TSESLint.TestCaseError<'preferParams'>;
 
 const preferParamsMessage = (paramName = 'userId') =>
   [
-    "What's wrong: This code reads an ID via `ref.parent...id` instead of using the trigger's params.",
+    'This code reads an ID via `ref.parent...id` instead of using the trigger\'s params.',
     '',
-    'Why it matters: Walking `ref.parent` ties the handler to the current path depth; when collections change, it can yield the wrong ID (or a collection name) and bypasses the typed params the trigger provides.',
-    '',
-    `How to fix: Read the ID from \`params.${paramName}\` (or destructure \`const { params } = event\` and then access \`params.${paramName}\`).`,
+    `This rule is a suggestion; deep database paths sometimes require multiple hops if parameters are not available in the trigger event. If these hops are necessary, please use an // eslint-disable-next-line @blumintinc/blumint/prefer-params-over-parent-id comment. Otherwise, consider reading the ID from \`params.${paramName}\` to make the code more resilient to path changes.`,
   ].join('\n');
 
 const paramError = (paramName = 'userId'): PreferParamsError =>
@@ -491,7 +489,7 @@ ruleTesterTs.run('prefer-params-over-parent-id', preferParamsOverParentId, {
       code: `
         function processHandler<T extends DocumentChangeHandler<any, any>>(handler: T) {
           const someDoc = { ref: { parent: { id: 'test' } } };
-          return someDoc.ref.parent.id;
+          return someDoc.ref.parent.id; // This should not trigger
         }
       `,
     },

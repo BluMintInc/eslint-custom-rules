@@ -4529,7 +4529,7 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description: 'Enforce verb phrases for functions and methods',
+      description: 'Suggest verb phrases for functions and methods',
       recommended: 'error',
       requiresTypeChecking: false,
       extendsBaseRule: false,
@@ -4537,7 +4537,7 @@ export const enforceVerbNounNaming = createRule<[], MessageIds>({
     schema: [],
     messages: {
       functionVerbPhrase:
-        'Function "{{name}}" should start with an action verb followed by the thing it acts on. Verb-first names tell readers this symbol performs work instead of representing data, which keeps APIs predictable and prevents accidental misuse. Rename "{{name}}" to a verb-noun phrase such as "fetchUsers" or "processRequest".',
+        'Function "{{name}}" might need a verb-noun phrase (like "fetchUsers" or "processRequest"). This rule is a suggestion based on NLP heuristics and might misidentify verbs or miss domain-specific patterns. If "{{name}}" is already descriptive or follows a specific convention, please use an // eslint-disable-next-line @blumintinc/blumint/enforce-verb-noun-naming comment. Otherwise, consider a verb-first name to clarify that this symbol performs work.',
     },
   },
   defaultOptions: [],

@@ -21,13 +21,13 @@ export const enforceTransformMemoization = createRule<[], MessageIds>({
     schema: [],
     messages: {
       memoizeTransformValue:
-        'transformValue is recreated on every render. Wrap it in useMemo (or reference a memoized helper) so adaptValue passes a stable transformer and avoids rerendering the adapted component.',
+        'transformValue might need memoization. This rule is a suggestion to keep adaptValue handlers stable. If this reference change is acceptable, please use an // eslint-disable-next-line @blumintinc/blumint/enforce-transform-memoization comment. Otherwise, consider wrapping it in useMemo.',
       memoizeTransformOnChange:
-        'transformOnChange handler is recreated on every render. Wrap it in useCallback (or another memoized helper) so adaptValue passes a stable onChange and prevents extra renders and stale closures.',
+        'transformOnChange might need memoization. This rule is a suggestion to keep adaptValue handlers stable and prevent stale closures. If this reference change is acceptable, please use an // eslint-disable-next-line @blumintinc/blumint/enforce-transform-memoization comment. Otherwise, consider wrapping it in useCallback.',
       useCorrectHook:
-        '{{propName}} should be memoized with {{expectedHook}}. {{actualHook}} recreates a new transform on every render and hides intent; wrap the transform with {{expectedHook}} so React preserves its identity and avoids churn.',
+        '{{propName}} might be better memoized with {{expectedHook}}. This rule suggests the most appropriate hook for this transform. If {{actualHook}} is preferred, please use an // eslint-disable-next-line @blumintinc/blumint/enforce-transform-memoization comment.',
       missingDependencies:
-        '{{hook}} for {{propName}} is missing {{deps}} in its dependency array. Include every external value the transform closes over so the memoized function stays in sync and does not capture stale data.',
+        '{{hook}} for {{propName}} might be missing {{deps}} in its dependency array. This rule suggests including all external values to avoid stale data. If these dependencies are intentionally omitted, please use an // eslint-disable-next-line @blumintinc/blumint/enforce-transform-memoization comment.',
     },
   },
   defaultOptions: [],
