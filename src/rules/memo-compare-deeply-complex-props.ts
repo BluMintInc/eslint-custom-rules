@@ -55,6 +55,19 @@ function isUtilMemoModulePath(path: string): boolean {
   return /(?:^|\/|\\)util\/memo$/.test(path);
 }
 
+/**
+ * Checks if a property name is handled by the default deep equality logic
+ * in our custom memo implementation (blumintAreEqual).
+ */
+function isDefaultDeepCompareProp(name: string): boolean {
+  return (
+    name === 'sx' ||
+    name.endsWith('Sx') ||
+    name === 'style' ||
+    name.endsWith('Style')
+  );
+}
+
 function unwrapExpression(
   expression: TSESTree.Expression,
 ): TSESTree.Expression {
@@ -1239,6 +1252,7 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
       componentArg: TSESTree.Expression,
       comparatorArg: TSESTree.CallExpressionArgument | undefined,
       currentScope: TSESLint.Scope.Scope,
+      memoSource: string,
     ) {
       const componentTargets = findComponentAnalysisTargets(
         componentArg,
@@ -1248,10 +1262,17 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
 
       if (isComparatorProvided(comparatorArg, currentScope)) return null;
 
-      const complexProps = collectComplexPropsForTargets(
+      let complexProps = collectComplexPropsForTargets(
         componentTargets,
         (expr) => collectComplexProps(expr, sourceCode, complexPropsCache),
       );
+
+      if (isUtilMemoModulePath(memoSource)) {
+        complexProps = complexProps.filter(
+          (prop) => !isDefaultDeepCompareProp(prop),
+        );
+      }
+
       if (complexProps.length === 0) return null;
 
       const componentName = resolveComponentName(
@@ -1288,6 +1309,7 @@ export const memoCompareDeeplyComplexProps = createRule<[], MessageIds>({
           componentArg,
           comparatorArg,
           currentScope,
+          memoCall.source,
         );
         if (!analysisResult) return;
 
