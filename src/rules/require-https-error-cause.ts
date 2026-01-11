@@ -1,4 +1,5 @@
 import { AST_NODE_TYPES, TSESLint, TSESTree } from '@typescript-eslint/utils';
+import { ASTHelpers } from '../utils/ASTHelpers';
 import { createRule } from '../utils/createRule';
 
 type MessageIds =
@@ -68,22 +69,8 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
   },
   defaultOptions: [],
   create(context) {
-    const sourceCode = context.getSourceCode();
+    const sourceCode = context.sourceCode ?? (context as any).getSourceCode();
     const catchStack: CatchFrame[] = [];
-
-    // ESLint 9 moves getScope onto sourceCode; ESLint 8 exposes context.getScope().
-    // This shim keeps the rule compatible until the codebase drops ESLint 8 support.
-    const getScopeForNode = (node: TSESTree.Node) => {
-      const sourceCodeWithScope = sourceCode as unknown as {
-        getScope?: (currentNode?: TSESTree.Node) => TSESLint.Scope.Scope | null;
-      };
-
-      if (typeof sourceCodeWithScope.getScope === 'function') {
-        return sourceCodeWithScope.getScope(node);
-      }
-
-      return context.getScope();
-    };
 
     const reportMissingCause = (
       node: TSESTree.NewExpression | TSESTree.CallExpression,
@@ -122,7 +109,7 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
       }
 
       const variable = findVariableInScopeChain(
-        getScopeForNode(identifier),
+        ASTHelpers.getScope(context, identifier),
         identifier.name,
       );
 
@@ -156,6 +143,51 @@ export const requireHttpsErrorCause = createRule<Options, MessageIds>({
       }
 
       const catchName = activeCatch.paramName;
+
+      // HttpsError accepts both positional and object-based constructors. This signature
+      // is supported for compatibility with HttpsError overloads, ensuring the rule
+      // can validate the 'cause' property within a settings object to preserve
+      // error chaining for better diagnostics.
+      if (
+        node.arguments.length === 1 &&
+        node.arguments[0].type === AST_NODE_TYPES.ObjectExpression
+      ) {
+        const settingsObj = node.arguments[0];
+        const causeProp = settingsObj.properties.find(
+          (prop): prop is TSESTree.Property =>
+            prop.type === AST_NODE_TYPES.Property &&
+            !prop.computed &&
+            ((prop.key.type === AST_NODE_TYPES.Identifier &&
+              prop.key.name === 'cause') ||
+              (prop.key.type === AST_NODE_TYPES.Literal &&
+                prop.key.value === 'cause')),
+        );
+
+        if (!causeProp) {
+          reportMissingCause(node, catchName);
+          return;
+        }
+
+        const causeValue = causeProp.value;
+
+        if (causeValue.type !== AST_NODE_TYPES.Identifier) {
+          reportWrongCause(
+            causeValue,
+            catchName,
+            sourceCode.getText(causeValue),
+          );
+          return;
+        }
+
+        if (!isCatchBindingReference(causeValue, activeCatch)) {
+          reportWrongCause(
+            causeValue,
+            catchName,
+            sourceCode.getText(causeValue),
+          );
+        }
+        return;
+      }
 
       if (node.arguments.length < 4) {
         reportMissingCause(node, catchName);

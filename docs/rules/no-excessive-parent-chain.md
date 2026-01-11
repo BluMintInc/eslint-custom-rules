@@ -8,9 +8,10 @@ Walking the `ref.parent` chain repeatedly in Firestore or RealtimeDB change hand
 
 ## Why this rule?
 
-- Long parent chains break when database paths change, requiring manual updates to multiple hops.
-- Reading from `event.params` provides named, typed parameters that are more resilient to schema changes.
-- Parent chains bypass the structured path parameters that the trigger already provides.
+- **Path drift creates runtime bugs**: A collection rename or nesting change invalidates every `ref.parent.parent.parent` chain and fails at runtime.
+- **Params already hold the identifiers**: `event.params` is typed from the trigger path, so using it keeps handlers aligned with declared routes.
+- **Intent is clearer**: `params.userId` communicates which path component is being read, while a long parent chain hides intent.
+- **Consistent handler pattern**: Using params yields the same readable approach across all triggers.
 
 ## Examples
 

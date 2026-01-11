@@ -34,22 +34,6 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
     },
     {
       code: `
-        import { useMemo, memo } from 'react';
-
-        const Wrapped = useMemo(() => memo((props) => <div {...props} />), []);
-      `,
-    },
-    {
-      code: `
-        import React, { useCallback } from 'react';
-
-        const createHandler = useCallback(() => {
-          return (event: MouseEvent) => console.log(event.type);
-        }, []);
-      `,
-    },
-    {
-      code: `
         import { useCallback } from 'react';
 
         const noop = useCallback(() => {}, []);
@@ -64,16 +48,7 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
     },
     {
       code: `
-        import React from 'react';
-
-        const makeLogger = React.useCallback((label) => {
-          return () => console.log(label);
-        }, []);
-      `,
-    },
-    {
-      code: `
-        import { useCallback, memo } from 'react';
+        import { useCallback } from 'react';
 
         const ignoreTests = useCallback(() => {
           return <div>Should be ignored via pattern</div>;
@@ -81,16 +56,6 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
       `,
       filename: 'Component.test.tsx',
       options: [{ ignorePatterns: ['**/*.test.tsx'] }],
-    },
-    {
-      code: `
-        import { useMemo } from 'react';
-        import { memo } from '@blumintinc/util';
-
-        const GoodComponent = useMemo(() => memo(function Component(props) {
-          return <section {...props} />;
-        }), []);
-      `,
     },
     {
       code: `
@@ -104,489 +69,159 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
     },
     {
       code: `
-        import { useCallback } from 'react';
-        import { memo as memoize } from 'lodash';
-
-        const LodashMemo = useCallback(() => memoize((props) => <div {...props} />), []);
+        import { useMemo } from 'react';
+        const element = useMemo(() => <div>just an element</div>, []);
+      `,
+    },
+    {
+      code: `
+        const MyComponent = () => {
+          return <List render={(item) => <div>{item}</div>} />;
+        };
+      `,
+    },
+    {
+      code: `
+        const MyComponent = () => {
+          const handleClick = () => console.log('hi');
+          return <button onClick={handleClick} />;
+        };
+      `,
+    },
+    {
+      code: `
+        const MyComponent = () => {
+          const renderHeader = () => <div>Header</div>;
+          return <div>{renderHeader()}</div>;
+        };
+      `,
+    },
+    {
+      code: `
+        const MyPage = () => {
+          return <Layout Header={<header />} />; // JSX element, not a function
+        };
+      `,
+    },
+    {
+      code: `
+        const Comp = useCallback(...args);
+      `,
+    },
+    {
+      code: `
+        const MyPage = () => {
+          const MyElement = <div />;
+          return <div>{MyElement}</div>;
+        };
+      `,
+    },
+    {
+      code: `
+        const MyPage = () => {
+          return <Layout Header={/* comment */} />;
+        };
       `,
     },
   ],
   invalid: [
     {
       code: `
-        import React, { useCallback, useMemo, memo } from 'react';
+        import React, { useCallback } from 'react';
 
         const CustomButton = useCallback(({ onClick, children }) => <button onClick={onClick}>{children}</button>, []);
-      `,
-      output: `
-        import React, { useCallback, useMemo, memo } from 'react';
-
-        const CustomButton = useMemo(() => React.memo(({ onClick, children }) => <button onClick={onClick}>{children}</button>), []);
       `,
       errors: [
         {
           messageId: 'memoizeNestedComponent',
           data: {
             componentName: 'CustomButton',
-            hookName: 'useCallback()',
-            replacementHook: 'useMemo()',
+            locationDescription: 'useCallback()',
           },
         },
       ],
     },
     {
       code: `
-        import { useCallback, useMemo, memo } from 'react';
-
-        const MenuItem = useCallback((props) => <li {...props} />, []);
-      `,
-      output: `
-        import { useCallback, useMemo, memo } from 'react';
-
-        const MenuItem = useMemo(() => memo((props) => <li {...props} />), []);
+        import { useMemo } from 'react';
+        const NestedComp = useMemo(() => (props) => <div {...props} />, []);
       `,
       errors: [
         {
           messageId: 'memoizeNestedComponent',
           data: {
-            componentName: 'MenuItem',
-            hookName: 'useCallback()',
-            replacementHook: 'useMemo()',
+            componentName: 'NestedComp',
+            locationDescription: 'useMemo()',
           },
         },
       ],
     },
     {
       code: `
-        import { memo } from 'react';
-        import { useDeepCompareCallback, useDeepCompareMemo } from '@blumintinc/use-deep-compare';
-
-        const DeepComp = useDeepCompareCallback((props) => <div {...props} />, []);
-      `,
-      output: `
-        import { memo } from 'react';
-        import { useDeepCompareCallback, useDeepCompareMemo } from '@blumintinc/use-deep-compare';
-
-        const DeepComp = useDeepCompareMemo(() => memo((props) => <div {...props} />), []);
+        const Parent = () => {
+          const Child = () => <div />;
+          return <Child />;
+        };
       `,
       errors: [
         {
           messageId: 'memoizeNestedComponent',
           data: {
-            componentName: 'DeepComp',
-            hookName: 'useDeepCompareCallback()',
-            replacementHook: 'useDeepCompareMemo()',
+            componentName: 'Child',
+            locationDescription: 'a render body',
           },
         },
       ],
     },
     {
       code: `
-        import React from 'react';
-
-        const Inline = React.useCallback(() => {
-          return <span>inline</span>;
-        }, []);
-      `,
-      output: `
-        import React from 'react';
-
-        const Inline = React.useMemo(() => React.memo(() => {
-          return <span>inline</span>;
-        }), []);
+        const Parent = () => {
+          function Child() { return <div />; }
+          return <Child />;
+        };
       `,
       errors: [
         {
           messageId: 'memoizeNestedComponent',
           data: {
-            componentName: 'Inline',
-            hookName: 'useCallback()',
-            replacementHook: 'useMemo()',
+            componentName: 'Child',
+            locationDescription: 'a render body',
           },
         },
       ],
     },
     {
       code: `
-        import React, { useCallback } from 'react';
-        import { memo } from 'react';
+        const ContentVerticalCarouselGrid = ({ header, ...gridProps }) => {
+          const CatalogWrapper = useCallback((props) => {
+            return <ContentCarouselWrapper {...props} {...gridProps} header={header} />;
+          }, [gridProps, header]);
 
-        const Inline = React.useCallback(() => {
-          return <span>inline</span>;
-        }, []);
-      `,
-      output: `
-        import React, { useCallback } from 'react';
-        import { memo } from 'react';
-
-        const Inline = React.useMemo(() => React.memo(() => {
-          return <span>inline</span>;
-        }), []);
+          return <AlgoliaLayout CatalogWrapper={CatalogWrapper} />;
+        };
       `,
       errors: [
         {
           messageId: 'memoizeNestedComponent',
           data: {
-            componentName: 'Inline',
-            hookName: 'useCallback()',
-            replacementHook: 'useMemo()',
+            componentName: 'CatalogWrapper',
+            locationDescription: 'useCallback()',
           },
         },
       ],
     },
     {
       code: `
-        import { useCallback, useMemo, memo } from 'react';
-
-        const Conditional = useCallback((flag) => {
-          if (!flag) return null;
-          return <div>{flag}</div>;
-        }, []);
-      `,
-      output: `
-        import { useCallback, useMemo, memo } from 'react';
-
-        const Conditional = useMemo(() => memo((flag) => {
-          if (!flag) return null;
-          return <div>{flag}</div>;
-        }), []);
+        const MyComp = () => {
+          return <AlgoliaLayout CatalogWrapper={(props) => <div {...props} />} />;
+        };
       `,
       errors: [
         {
           messageId: 'memoizeNestedComponent',
           data: {
-            componentName: 'Conditional',
-            hookName: 'useCallback()',
-            replacementHook: 'useMemo()',
-          },
-        },
-      ],
-    },
-    {
-      code: `
-        import { useCallback } from 'react';
-
-        const Mixed = useCallback((flag) => {
-          return flag ? <div>rendered</div> : () => <span>factory</span>;
-        }, []);
-      `,
-      output: null,
-      errors: [
-        {
-          messageId: 'memoizeNestedComponent',
-          data: {
-            componentName: 'Mixed',
-            hookName: 'useCallback()',
-            replacementHook: 'useMemo()',
-          },
-        },
-      ],
-    },
-    {
-      code: `
-        import { useCallback } from 'react';
-
-        const Factory = useCallback(() => {
-          return (props) => <section {...props} />;
-        }, []);
-      `,
-      errors: [
-        {
-          messageId: 'memoizeNestedComponent',
-          data: {
-            componentName: 'Factory',
-            hookName: 'useCallback()',
-            replacementHook: 'useMemo()',
-          },
-        },
-      ],
-    },
-    {
-      code: `
-        import { useCallback } from 'react';
-        import { forwardRef } from 'react';
-
-        const WithRef = useCallback(
-          forwardRef((props, ref) => <input ref={ref} {...props} />),
-          [],
-        );
-      `,
-      errors: [
-        {
-          messageId: 'memoizeNestedComponent',
-          data: {
-            componentName: 'WithRef',
-            hookName: 'useCallback()',
-            replacementHook: 'useMemo()',
-          },
-        },
-      ],
-    },
-    {
-      code: `
-        import { useCallback, useMemo, memo } from 'react';
-
-        const FragmentComp = useCallback(() => (
-          <>
-            <h1>Title</h1>
-            <p>Copy</p>
-          </>
-        ), []);
-      `,
-      output: `
-        import { useCallback, useMemo, memo } from 'react';
-
-        const FragmentComp = useMemo(() => memo(() => (
-          <>
-            <h1>Title</h1>
-            <p>Copy</p>
-          </>
-        )), []);
-      `,
-      errors: [
-        {
-          messageId: 'memoizeNestedComponent',
-          data: {
-            componentName: 'FragmentComp',
-            hookName: 'useCallback()',
-            replacementHook: 'useMemo()',
-          },
-        },
-      ],
-    },
-    {
-      code: `
-        import { useCallback, useMemo, memo } from 'react';
-
-        const SwitchComp = useCallback((type) => {
-          switch (type) {
-            case 'a':
-              return <div>A</div>;
-            default:
-              return <div>Default</div>;
-          }
-        }, []);
-      `,
-      output: `
-        import { useCallback, useMemo, memo } from 'react';
-
-        const SwitchComp = useMemo(() => memo((type) => {
-          switch (type) {
-            case 'a':
-              return <div>A</div>;
-            default:
-              return <div>Default</div>;
-          }
-        }), []);
-      `,
-      errors: [
-        {
-          messageId: 'memoizeNestedComponent',
-          data: {
-            componentName: 'SwitchComp',
-            hookName: 'useCallback()',
-            replacementHook: 'useMemo()',
-          },
-        },
-      ],
-    },
-    {
-      code: `
-        import { useCallback } from 'react';
-
-        const MixedIf = useCallback((flag) => {
-          if (flag) {
-            return <div>rendered</div>;
-          } else {
-            return () => <span>factory</span>;
-          }
-        }, []);
-      `,
-      output: null,
-      errors: [
-        {
-          messageId: 'memoizeNestedComponent',
-          data: {
-            componentName: 'MixedIf',
-            hookName: 'useCallback()',
-            replacementHook: 'useMemo()',
-          },
-        },
-      ],
-    },
-    {
-      code: `
-        import { useCallback } from 'react';
-
-        const MixedBlock = useCallback((flag) => {
-          if (flag) {
-            return <div>rendered</div>;
-          }
-          return () => <span>factory</span>;
-        }, []);
-      `,
-      output: null,
-      errors: [
-        {
-          messageId: 'memoizeNestedComponent',
-          data: {
-            componentName: 'MixedBlock',
-            hookName: 'useCallback()',
-            replacementHook: 'useMemo()',
-          },
-        },
-      ],
-    },
-    {
-      code: `
-        import React, { useCallback, useMemo, memo } from 'react';
-
-        const CreateElement = useCallback(() => {
-          return React.createElement('div', null, 'text');
-        }, []);
-      `,
-      output: `
-        import React, { useCallback, useMemo, memo } from 'react';
-
-        const CreateElement = useMemo(() => React.memo(() => {
-          return React.createElement('div', null, 'text');
-        }), []);
-      `,
-      errors: [
-        {
-          messageId: 'memoizeNestedComponent',
-          data: {
-            componentName: 'CreateElement',
-            hookName: 'useCallback()',
-            replacementHook: 'useMemo()',
-          },
-        },
-      ],
-    },
-    {
-      code: `
-        import { useCallback, useMemo, memo } from 'react';
-
-        const List = useCallback((items) => {
-          for (const item of items) {
-            if (item.visible) {
-              return <li>{item.label}</li>;
-            }
-          }
-          return null;
-        }, []);
-      `,
-      output: `
-        import { useCallback, useMemo, memo } from 'react';
-
-        const List = useMemo(() => memo((items) => {
-          for (const item of items) {
-            if (item.visible) {
-              return <li>{item.label}</li>;
-            }
-          }
-          return null;
-        }), []);
-      `,
-      errors: [
-        {
-          messageId: 'memoizeNestedComponent',
-          data: {
-            componentName: 'List',
-            hookName: 'useCallback()',
-            replacementHook: 'useMemo()',
-          },
-        },
-      ],
-    },
-    {
-      code: `
-        import React, { useCallback, useMemo } from 'react';
-        import Other from 'other-lib';
-
-        const Inline = useCallback(() => {
-          return <span>inline</span>;
-        }, []);
-      `,
-      output: `
-        import React, { useCallback, useMemo } from 'react';
-        import Other from 'other-lib';
-
-        const Inline = useMemo(() => React.memo(() => {
-          return <span>inline</span>;
-        }), []);
-      `,
-      errors: [
-        {
-          messageId: 'memoizeNestedComponent',
-          data: {
-            componentName: 'Inline',
-            hookName: 'useCallback()',
-            replacementHook: 'useMemo()',
-          },
-        },
-      ],
-    },
-    {
-      code: `
-        import React, { useCallback, useMemo } from 'react';
-        import { memo as lodashMemo } from 'lodash';
-
-        const Inline = useCallback(() => {
-          return <span>inline</span>;
-        }, []);
-      `,
-      output: `
-        import React, { useCallback, useMemo } from 'react';
-        import { memo as lodashMemo } from 'lodash';
-
-        const Inline = useMemo(() => React.memo(() => {
-          return <span>inline</span>;
-        }), []);
-      `,
-      errors: [
-        {
-          messageId: 'memoizeNestedComponent',
-          data: {
-            componentName: 'Inline',
-            hookName: 'useCallback()',
-            replacementHook: 'useMemo()',
-          },
-        },
-      ],
-    },
-    {
-      code: `
-        import { useCallback } from 'react';
-
-        const GenericComp = useCallback(<T,>(props: { value: T }) => <div>{props.value}</div>, []);
-      `,
-      errors: [
-        {
-          messageId: 'memoizeNestedComponent',
-          data: {
-            componentName: 'GenericComp',
-            hookName: 'useCallback()',
-            replacementHook: 'useMemo()',
-          },
-        },
-      ],
-    },
-    {
-      code: `
-        import React, { useMemo, memo } from 'react';
-        import Hooks from '@other/hooks';
-
-        const NamespacedHook = Hooks.useCallback(() => <div>other</div>, []);
-      `,
-      output: null,
-      errors: [
-        {
-          messageId: 'memoizeNestedComponent',
-          data: {
-            componentName: 'NamespacedHook',
-            hookName: 'useCallback()',
-            replacementHook: 'useMemo()',
+            componentName: 'CatalogWrapper',
+            locationDescription: 'the "CatalogWrapper" prop',
           },
         },
       ],
@@ -594,42 +229,166 @@ ruleTesterJsx.run('memo-nested-react-components', memoNestedReactComponents, {
     {
       code: `
         import { useMemo, memo } from 'react';
-        import Hooks from '@other/hooks';
-
-        const NamespacedHookWithoutReactNamespace = Hooks.useCallback(
-          () => <div>other</div>,
-          [],
-        );
+        const Wrapped = useMemo(() => memo((props) => <div {...props} />), []);
       `,
-      output: null,
       errors: [
         {
           messageId: 'memoizeNestedComponent',
           data: {
-            componentName: 'NamespacedHookWithoutReactNamespace',
-            hookName: 'useCallback()',
-            replacementHook: 'useMemo()',
+            componentName: 'Wrapped',
+            locationDescription: 'useMemo()',
           },
         },
       ],
     },
     {
       code: `
-        import { useCallback } from 'react';
+        const TeamsUnmemoized = () => {
+          const TeamsCatalogWrapper = useCallback((props) => {
+            return (
+              <TeamKeyProvider teamKey={teamKey}>
+                <TeamsCarouselWrapper {...props} />
+              </TeamKeyProvider>
+            );
+          }, [teamKey]);
 
-        const AsyncCallbackComponent = useCallback(async () => <div>async</div>, []);
+          return <AlgoliaLayout CatalogWrapper={TeamsCatalogWrapper} />;
+        };
       `,
-      output: null,
       errors: [
         {
           messageId: 'memoizeNestedComponent',
           data: {
-            componentName: 'AsyncCallbackComponent',
-            hookName: 'useCallback()',
-            replacementHook: 'useMemo()',
+            componentName: 'TeamsCatalogWrapper',
+            locationDescription: 'useCallback()',
           },
         },
       ],
+    },
+    {
+      code: `
+        import { useDeepCompareCallback } from '@blumintinc/use-deep-compare';
+        const DeepComp = useDeepCompareCallback((props) => <div {...props} />, []);
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'DeepComp',
+            locationDescription: 'useDeepCompareCallback()',
+          },
+        },
+      ],
+    },
+    {
+      code: `
+        import { useDeepCompareMemo } from '@blumintinc/use-deep-compare';
+        const DeepMemo = useDeepCompareMemo(() => (props) => <div {...props} />, []);
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'DeepMemo',
+            locationDescription: 'useDeepCompareMemo()',
+          },
+        },
+      ],
+    },
+    {
+      code: `
+        const MyPage = () => {
+          return <Something SomethingComponent={() => <div />} />;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'SomethingComponent',
+            locationDescription: 'the "SomethingComponent" prop',
+          },
+        },
+      ],
+    },
+    {
+      code: `
+        const MyPage = () => {
+          return <Layout Header={() => <header />} />;
+        };
+      `,
+      errors: [
+        {
+          messageId: 'memoizeNestedComponent',
+          data: {
+            componentName: 'Header',
+            locationDescription: 'the "Header" prop',
+          },
+        },
+      ],
+    },
+    {
+      code: `
+        const Comp = useCallback((flag: boolean) => flag && <div />, []);
+      `,
+      errors: [{ messageId: 'memoizeNestedComponent' }],
+    },
+    {
+      code: `
+        const Comp = useCallback((flag: boolean) => {
+          if (flag) return <div />;
+          return null;
+        }, []);
+      `,
+      errors: [{ messageId: 'memoizeNestedComponent' }],
+    },
+    {
+      code: `
+        const Comp = useCallback((type: string) => {
+          switch (type) {
+            case 'a': return <div />;
+            default: return null;
+          }
+        }, []);
+      `,
+      errors: [{ messageId: 'memoizeNestedComponent' }],
+    },
+    {
+      code: `
+        const Comp = useCallback(() => {
+          try {
+            return <div />;
+          } catch {
+            return null;
+          }
+        }, []);
+      `,
+      errors: [{ messageId: 'memoizeNestedComponent' }],
+    },
+    {
+      code: `
+        const Comp = useCallback(() => {
+          for (let i = 0; i < 1; i++) {
+             return <div />;
+          }
+          return null;
+        }, []);
+      `,
+      errors: [{ messageId: 'memoizeNestedComponent' }],
+    },
+    {
+      code: `
+        import { forwardRef, useCallback } from 'react';
+        const RefComp = useCallback(forwardRef((props, ref) => <div ref={ref} />), []);
+      `,
+      errors: [{ messageId: 'memoizeNestedComponent' }],
+    },
+    {
+      code: `
+        import React, { useCallback } from 'react';
+        const Comp = useCallback(() => React.createElement('div'), []);
+      `,
+      errors: [{ messageId: 'memoizeNestedComponent' }],
     },
   ],
 });
