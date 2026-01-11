@@ -22,44 +22,19 @@ ruleTesterTs.run(
         });
       }
       `,
-    ],
-    invalid: [
-      // This should be invalid because localProps is not passed to an external component
-      {
-        code: `
-        function localFunction() {
-          const localProps = {
-            grow: true,  // This should be invalid as it's not passed to an external component
-            visible: false
-          };
+      // Now all object literals are ignored
+      `
+      function localFunction() {
+        const localProps = {
+          grow: true,
+          visible: false
+        };
 
-          return localProps;
-        }
-        `,
-        errors: [
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'grow',
-              capitalizedName: 'Grow',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'visible',
-              capitalizedName: 'Visible',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
-        ],
-      },
+        return localProps;
+      }
+      `,
     ],
+    invalid: [],
   },
 );
 
@@ -82,43 +57,18 @@ ruleTesterJsx.run(
         return <Thread additionalMessageInputProps={messageInputProps} />;
       }
       `,
-    ],
-    invalid: [
-      // This should be invalid because localProps is not passed to an external component
-      {
-        code: `
-        function localFunction() {
-          const localProps = {
-            grow: true,  // This should be invalid as it's not passed to an external component
-            visible: false
-          };
+      // Now all object literals are ignored
+      `
+      function localFunction_jsx() {
+        const localProps = {
+          grow: true,
+          visible: false
+        };
 
-          return <div>{localProps.grow}</div>;
-        }
-        `,
-        errors: [
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'grow',
-              capitalizedName: 'Grow',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'visible',
-              capitalizedName: 'Visible',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
-        ],
-      },
+        return <div>{localProps.grow}</div>;
+      }
+      `,
     ],
+    invalid: [],
   },
 );

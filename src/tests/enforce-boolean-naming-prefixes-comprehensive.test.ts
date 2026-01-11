@@ -320,125 +320,49 @@ ruleTesterTs.run(
       `const areAPIEndpointsReady: boolean = true;`,
       `const haveHTTPSCertificates: boolean = true;`,
       `const wereURLsValidated: boolean = true;`,
+
+      // Object literals with mixed naming (now all ignored)
+      `
+      function Component_mixed() {
+        const localConfig = {
+          active: true,
+          visible: false,
+        };
+
+        console.log(localConfig.active);
+        return null;
+      }
+      `,
+      `
+      import { useMemo } from 'react';
+
+      function Component_useMemo() {
+        const config = useMemo(() => ({
+          active: true,
+          visible: false,
+        }), []);
+
+        console.log(config.active);
+        return null;
+      }
+      `,
+      `
+      function localFunction(config: any) {
+        return config;
+      }
+
+      function Component_localFunction() {
+        const config = {
+          active: true,
+          visible: false,
+        };
+
+        return localFunction(config);
+      }
+      `,
     ],
     invalid: [
       // ===== EXTERNAL API FOCUSED TESTS (from HEAD - should be invalid) =====
-
-      // Should be invalid: Local usage without external API
-      {
-        code: `
-        function Component() {
-          const localConfig = {
-            active: true,
-            visible: false,
-          };
-
-          console.log(localConfig.active);
-          return null;
-        }
-        `,
-        errors: [
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'active',
-              capitalizedName: 'Active',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'visible',
-              capitalizedName: 'Visible',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
-        ],
-      },
-
-      // Should be invalid: useMemo not used with external API
-      {
-        code: `
-        import { useMemo } from 'react';
-
-        function Component() {
-          const config = useMemo(() => ({
-            active: true,
-            visible: false,
-          }), []);
-
-          console.log(config.active);
-          return null;
-        }
-        `,
-        errors: [
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'active',
-              capitalizedName: 'Active',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'visible',
-              capitalizedName: 'Visible',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
-        ],
-      },
-
-      // Should be invalid: Object passed to local function
-      {
-        code: `
-        function localFunction(config: any) {
-          return config;
-        }
-
-        function Component() {
-          const config = {
-            active: true,
-            visible: false,
-          };
-
-          return localFunction(config);
-        }
-        `,
-        errors: [
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'active',
-              capitalizedName: 'Active',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'visible',
-              capitalizedName: 'Visible',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
-        ],
-      },
 
       // ===== ENSURE NON-PREFIXED BOOLEANS ARE STILL FLAGGED =====
 

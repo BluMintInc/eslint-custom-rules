@@ -187,6 +187,19 @@ ruleTesterTs.run(
       }
     }
     `,
+
+      // Object literals with boolean properties (now ignored)
+      'const settings = { enabled: true, feature: false };',
+      `
+      const config = { enabled: true };
+      if (config && extraCondition) {
+        doSomething(config);
+      }
+      `,
+      `
+      const flags = { visible: true };
+      flags === otherConfig;
+      `,
     ],
     invalid: [
       // Variables without proper boolean prefixes
@@ -303,64 +316,6 @@ ruleTesterTs.run(
             capitalizedName: 'Subscription',
             prefixes: defaultPrefixes,
           }),
-        ],
-      },
-
-      // Object literal with boolean properties without approved prefixes
-      {
-        code: 'const settings = { enabled: true, feature: false };',
-        errors: [
-          buildError({
-            type: 'property',
-            name: 'enabled',
-            capitalizedName: 'Enabled',
-            prefixes: defaultPrefixes,
-          }),
-          buildError({
-            type: 'property',
-            name: 'feature',
-            capitalizedName: 'Feature',
-            prefixes: defaultPrefixes,
-          }),
-        ],
-      },
-      {
-        code: `
-        const config = { enabled: true };
-
-        if (config && extraCondition) {
-          doSomething(config);
-        }
-        `,
-        errors: [
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'enabled',
-              capitalizedName: 'Enabled',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
-        ],
-      },
-      {
-        code: `
-        const flags = { visible: true };
-        flags === otherConfig;
-        `,
-        errors: [
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'visible',
-              capitalizedName: 'Visible',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
         ],
       },
 

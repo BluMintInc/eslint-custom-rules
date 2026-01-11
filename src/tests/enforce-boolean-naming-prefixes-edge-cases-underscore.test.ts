@@ -341,6 +341,17 @@ ruleTesterTs.run(
         }));
       };
       `,
+
+      // Edge case: Object literals with mixed naming (now ignored)
+      `
+      const config_mixed = {
+        _isEnabled: true,
+        active: false,
+        _hasFeature: true,
+        visible: false,
+        name: 'test'
+      };
+      `,
     ],
     invalid: [
       // Edge case: Non-underscore properties should still be flagged
@@ -472,41 +483,6 @@ ruleTesterTs.run(
               type: 'variable',
               name: 'enabled',
               capitalizedName: 'Enabled',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
-        ],
-      },
-
-      // Edge case: Object literals with mixed naming
-      {
-        code: `
-        const config = {
-          _isEnabled: true, // Valid - starts with underscore
-          active: false, // Invalid - doesn't start with underscore or approved prefix
-          _hasFeature: true, // Valid - starts with underscore
-          visible: false, // Invalid - doesn't start with underscore or approved prefix
-          name: 'test' // Not boolean, so not checked
-        };
-        `,
-        errors: [
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'active',
-              capitalizedName: 'Active',
-              prefixes:
-                'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
-            },
-          },
-          {
-            messageId: 'missingBooleanPrefix',
-            data: {
-              type: 'property',
-              name: 'visible',
-              capitalizedName: 'Visible',
               prefixes:
                 'is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts',
             },
