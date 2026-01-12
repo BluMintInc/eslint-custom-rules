@@ -9,8 +9,7 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
   meta: {
     type: 'suggestion',
     docs: {
-      description:
-        'Enforce using global static constants instead of useMemo with empty dependency arrays for object literals, and extract inline destructuring defaults in React components/hooks to global constants',
+      description: 'Enforce global static constants for React components/hooks',
       recommended: 'error',
     },
     fixable: 'code',

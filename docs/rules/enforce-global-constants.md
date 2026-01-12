@@ -1,4 +1,4 @@
-# Enforce using global static constants instead of useMemo with empty dependency arrays for object literals, and extract inline destructuring defaults in React components/hooks to global constants (`@blumintinc/blumint/enforce-global-constants`)
+# Enforce global static constants for React components/hooks (`@blumintinc/blumint/enforce-global-constants`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
@@ -6,7 +6,7 @@
 
 <!-- end auto-generated rule header -->
 
-This rule identifies instances where `useMemo` hooks are used with empty dependency arrays to return object literals (`Record<string, unknown>`). Such usage is unnecessary and less performant than using global static constants.
+This rule identifies instances where `useMemo` hooks are used with empty dependency arrays to return object literals, and where inline destructuring defaults in React components or hooks use object/array literals. Such usage is unnecessary and less performant than using global static constants.
 
 ## Rule Details
 
