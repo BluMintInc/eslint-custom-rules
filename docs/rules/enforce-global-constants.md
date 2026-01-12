@@ -6,7 +6,7 @@
 
 <!-- end auto-generated rule header -->
 
-This rule identifies instances where `useMemo` hooks are used with empty dependency arrays to return object literals, and where inline destructuring defaults in React components or hooks use object/array literals. Such usage is unnecessary and less performant than using global static constants.
+This rule identifies instances where `useMemo` hooks are used with empty dependency arrays to return object literals, and where inline destructuring defaults in React components or hooks use object/array literals. Such usage is unnecessary and adds unnecessary runtime memoization overhead and repeated object allocations instead of using global static constants.
 
 ## Rule Details
 

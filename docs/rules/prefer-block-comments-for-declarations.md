@@ -75,7 +75,7 @@ function log() {
 You might consider disabling this rule if:
 
 1. Your team has a different commenting convention that doesn't rely on JSDoc-style block comments.
-1. You're working with a codebase that doesn't benefit from IDE tooltips and autocomplete features.
+1. Your development environment does not provide IDE tooltips or autocomplete features.
 1. You're working on a project where documentation is primarily maintained outside the code.
 
 ## Further Reading
