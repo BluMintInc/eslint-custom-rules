@@ -4,7 +4,7 @@
 
 <!-- end auto-generated rule header -->
 
-`adaptValue` relies on `transformValue` and `transformOnChange` to bridge editable components. Inline transforms recreate new functions every render, forcing unnecessary re-renders and risking stale closures. This rule ensures those transforms are memoized with the correct React hook and that dependency arrays list every captured value.
+`adaptValue` relies on `transformValue` and `transformOnChange` to bridge editable components. Inline transforms recreate functions every render, forcing unnecessary re-renders and risking stale closures. This rule ensures those transforms are memoized with the correct React hook and that dependency arrays list every captured value.
 
 ## Rule Details
 
@@ -32,13 +32,13 @@ adaptValue({
 ```js
 const Switch = () => null;
 function Component({ formatter }) {
-  // ❌ Wrong hook + missing dependency in array
+  // ❌ Wrong hook (should be useCallback) + missing dependency in array
   return adaptValue({
     valueKey: 'value',
     onChangeKey: 'onChange',
     transformOnChange: useMemo(
-      (event) => formatter(event.target.value),
-      [],
+      () => (event) => formatter(event.target.value),
+      [], // Missing formatter
     ),
   }, Switch);
 }
@@ -49,12 +49,14 @@ Examples of **correct** code for this rule:
 ```js
 import { useMemo, useCallback } from 'react';
 
-adaptValue({
-  valueKey: 'checked',
-  onChangeKey: 'onChange',
-  transformValue: useMemo(() => (value) => Boolean(value), []),
-  transformOnChange: useCallback((event) => event.target.checked, []),
-}, Switch);
+function Component() {
+  return adaptValue({
+    valueKey: 'checked',
+    onChangeKey: 'onChange',
+    transformValue: useMemo(() => (value) => Boolean(value), []),
+    transformOnChange: useCallback((event) => event.target.checked, []),
+  }, Switch);
+}
 ```
 
 ```js
