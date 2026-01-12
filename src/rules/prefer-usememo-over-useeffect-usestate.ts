@@ -12,7 +12,7 @@ export const preferUseMemoOverUseEffectUseState = createRule({
     },
     messages: {
       preferUseMemo:
-        'Derived state "{{stateName}}" is computed inside useEffect and copied into React state even though the value comes from a pure calculation. That extra render cycle and state indirection make components re-render more and risk stale snapshots when dependencies change. Compute the value with useMemo (or inline in render) and read it directly instead of mirroring it into state.',
+        'Use useMemo to compute derived state "{{stateName}}" instead of useEffect + useState to avoid extra render cycles and stale snapshots.',
     },
     schema: [],
   },

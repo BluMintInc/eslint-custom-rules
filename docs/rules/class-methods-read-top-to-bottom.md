@@ -21,13 +21,13 @@ class IncorrectlyOrdered {
   field1: string;
   field2: number;
 
-  methodA() {
+  methodA() { // ❌ methodA appears before constructor
     this.methodB();
   }
 
   constructor() {
     this.methodA();
-    this.methodC();
+    this.methodC(); // ℹ️ methodC is a helper defined later
   }
 
   methodB() {}

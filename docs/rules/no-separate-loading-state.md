@@ -6,7 +6,7 @@
 
 ## Rule Details
 
-This rule warns when a component introduces a _second_ `useState` pair such as **`[isXLoading, setIsXLoading]`** or **`[isLoadingX, setIsLoadingX]`** whose only job is to track whether **another** piece of state is still being fetched.
+This rule flags when a component introduces a _second_ `useState` pair such as **`[isXLoading, setIsXLoading]`** or **`[isLoadingX, setIsLoadingX]`** whose only job is to track whether **another** piece of state is still being fetched. Because the rule is configured as `recommended: 'error'`, it reports an error-level diagnostic when this pattern is detected.
 
 Separate loading booleans split the source of truth for fetching state. The flag can drift from the data (`false` before the data arrives, `true` after an error), and the extra toggles add renders without exposing the data's real lifecycle. Encode the loading phase inside the primary state instead (for example with a `'loading'` sentinel or a discriminated union) so every consumer reads a single authoritative value.
 
