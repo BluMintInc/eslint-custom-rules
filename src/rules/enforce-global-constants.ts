@@ -17,9 +17,9 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
     schema: [],
     messages: {
       useGlobalConstant:
-        'Use a global static constant instead of useMemo with an empty dependency array for object literals',
+        'Object literal returned from useMemo with empty dependencies creates a new reference every render without providing memoization benefits → this wastes memory and misleads readers into thinking the value is computed → move the object to a module-level constant (e.g., const OPTIONS = { ... } as const;).',
       extractDefaultToGlobalConstant:
-        'Extract inline default value to a module-level constant for stable reference',
+        'Inline default value in destructuring creates a new reference on every render → this causes unnecessary re-renders in child components due to unstable identity → extract the default to a module-level constant (e.g., const DEFAULT_OPTIONS = { ... } as const;).',
     },
   },
   defaultOptions: [],

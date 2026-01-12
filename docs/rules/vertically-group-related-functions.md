@@ -8,7 +8,7 @@
 
 Keep top-level functions together so readers can scan call chains from top to bottom without jumping around the file. The rule prefers grouping entry points (event handlers and exported functions) above the helpers they invoke and supports configurable grouping for exports, event handlers, and utilities.
 
-### Rule Details
+## Rule Details
 
 The rule looks at named, top-level function declarations and variable assignments whose initializer is an arrow/function expression. It ignores nested functions, inline callbacks, and methods defined inside object literals.
 
@@ -17,7 +17,7 @@ It reports when:
 - Event handlers or exported functions are separated from the related helpers.
 - Export placement does not match the configured preference (`top`/`bottom`).
 
-### Options
+## Options
 
 ```json
 {
@@ -34,7 +34,7 @@ It reports when:
 - `groupOrder` (default `["event-handlers", "other", "utilities"]`): preferred vertical grouping buckets.
 - `eventHandlerPattern` / `utilityPattern`: regex strings used to classify functions for grouping. Patterns longer than 200 characters or containing nested greedy quantifiers are rejected with a warning and fall back to the safe defaults to avoid ReDoS-prone configurations.
 
-### Examples of incorrect code for this rule
+## Examples of incorrect code for this rule
 
 ```typescript
 // Default configuration (callers-first, event handlers first)
@@ -61,7 +61,7 @@ export function makeRequest() {}
 function prepareRequest() {}
 ```
 
-### Examples of correct code for this rule
+## Examples of correct code for this rule
 
 ```typescript
 function handleClick() {

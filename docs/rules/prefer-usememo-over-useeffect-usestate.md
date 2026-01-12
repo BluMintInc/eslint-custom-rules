@@ -63,3 +63,11 @@ function Component({ initialValue }) {
   return <Input value={value} />;
 }
 ```
+
+## When not to use it
+
+Do not use this rule if:
+- The effect has side effects other than updating state (e.g., logging, network requests, DOM manipulation).
+- The state update is intended to be asynchronous or needs to wait for some other side effect.
+- The computation is impure and its results shouldn't be memoized based only on React dependencies.
+- You are intentionally using `useEffect` for state synchronization (e.g., updating local state when a prop changes).
