@@ -19,6 +19,9 @@ By identifying and refactoring these patterns, we can:
 
 ### Examples of incorrect code for this rule:
 
+> [!NOTE]
+> The examples use the TypeScript `as const` assertion. This narrows literal types to readonly tuples or objects so values are treated as exact literals rather than widened types. This assertion is orthogonal to the rule—it ensures type safety but does not justify the inline object/array patterns shown below.
+
 #### `useMemo` with empty dependency array
 
 ```tsx
