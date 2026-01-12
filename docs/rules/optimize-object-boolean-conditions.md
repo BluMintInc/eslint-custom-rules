@@ -95,8 +95,8 @@ const callback = useCallback(() => {
 ### How to fix when you see the lint message
 
 1. Move the boolean condition out of the dependency array into a clearly named variable.
-1. Use that variable inside the hook callback and in the dependency list.
-1. Prefer boolean prefixes (`has`, `is`, `should`) so the dependency communicates intent at a glance.
+2. Use that variable inside the hook callback and in the dependency list.
+3. Prefer boolean prefixes (`has`, `is`, `should`) so the dependency communicates intent at a glance.
 
 ### Suggested Variable Names
 

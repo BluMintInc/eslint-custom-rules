@@ -16,8 +16,8 @@ Within a `db.runTransaction()` callback or functions that receive a `FirebaseFir
 ### Why It Matters
 
 1.  **Atomicity**: Non-transactional operations happen outside the transaction's atomic scope.
-1.  **Consistency**: Mixing operations can violate Firestore's requirement that all reads must precede all writes in a transaction.
-1.  **Isolation**: Non-transactional reads might see partially applied changes from other concurrent transactions.
+2.  **Consistency**: Mixing operations can violate Firestore's requirement that all reads must precede all writes in a transaction.
+3.  **Isolation**: Non-transactional reads might see partially applied changes from other concurrent transactions.
 
 ## How to Fix
 

@@ -44,7 +44,7 @@ When `params` is available, the fixer replaces `ref.parent.id` with a correspond
    - If `params` is destructured and contains the default name (e.g., `const { params: { userId } } = event`), the fixer uses the local variable.
    - Otherwise, it uses `event.params.[defaultName]` (or `event?.params?.[defaultName]` if optional chaining was used in the original expression).
 
-This ensures that `ref.parent.id` becomes `event.params.userId` (or a local `userId` variable) and deeper traversals like `ref.parent.parent.id` map to `event.params.parentId` or `tournamentId` in accordance with common nesting patterns.
+This ensures that `ref.parent.id` becomes `event.params.userId` (or a local `userId` variable) and deeper traversals like `ref.parent.parent.id` map to `event.params.parentId` or `event.params.parent3Id` in accordance with common nesting patterns. Existing destructured names will only be used if they match these generic defaults.
 
 ## Examples
 
@@ -102,7 +102,7 @@ export const grandparentAccess: DocumentChangeHandler<
 };
 ```
 
-### ✅ Correct
+### ✅ Correct (Generic names)
 
 ```typescript
 export const updateRelatedDocuments: DocumentChangeHandler<
@@ -131,6 +131,10 @@ export const handleUpdate: DocumentChangeHandler<
 };
 ```
 
+### ✅ Correct (Domain-specific params - manual)
+
+Developers must manually name their parameters in the path template and destructure them if they want domain-specific names. The auto-fixer will not generate these names.
+
 ```typescript
 export const nestedPathHandler: DocumentChangeHandler<
   GameData,
@@ -149,7 +153,7 @@ export const nestedPathHandler: DocumentChangeHandler<
 
 ### 1. Multi-Level Path Parameters
 
-For paths like `/Game/{gameId}/Tournament/{tournamentId}/Round/{roundId}`, the rule maps each `ref.parent[.parent].id` access to the corresponding named parameter in `event.params` (for example, `gameId`, `tournamentId`, or `roundId`) instead of a generic `parentId`.
+The rule maps each `ref.parent[.parent].id` access to generic parameter names by depth (userId, parentId, parent3Id).
 
 ### 2. Variable Assignment and Reuse
 
@@ -165,14 +169,14 @@ const { params: { userId } } = event;
 
 ### 3. Complex Reference Chains
 
-The rule handles various patterns of parent reference access:
+The rule handles various patterns of parent reference access and always emits generic names by depth:
 
 ```typescript
 // ❌ Incorrect
 const grandparentId = change.after.ref.parent.parent.id;
 
 // ✅ Correct (use the specific parameter)
-const { params: { tournamentId } } = event;
+const { params: { parentId } } = event;
 ```
 
 ### 4. Optional Chaining
