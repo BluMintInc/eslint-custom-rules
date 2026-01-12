@@ -37,6 +37,7 @@ Found {{count}} consecutive ref.parent hops in this handler. Long parent chains 
 - Prefer `event.params` for path data (for example, `const { userId } = event.params;`).
 - Keep `ref.parent` usage to at most two hops when necessary (for example, walking to the immediate parent collection).
 - When you see the lint message, replace the chained `ref.parent` access with the equivalent `params` lookup from the handler arguments.
+- This rule provides editor suggestions to replace long parent chains with `event.params`. Apply the suggestion via your editor's quick-fix menu.
 
 ## Examples
 
@@ -88,7 +89,21 @@ export const regularFunction = async (docRef: DocumentReference) => {
 };
 ```
 
-This rule provides editor suggestions to replace long parent chains with `event.params`. Apply the suggestion via your editor's quick-fix menu.
+## When Not To Use It
+
+You might want to disable this rule if:
+
+1. You're working with legacy code that extensively uses parent chains and cannot be refactored immediately
+1. Your Firestore path structure is guaranteed never to change (rare)
+1. You're in a non-handler context where `event.params` is not available (though the rule already ignores non-handler functions)
+
+In these cases, you can disable the rule for specific files or lines:
+
+```typescript
+/* eslint-disable @blumintinc/blumint/no-excessive-parent-chain */
+```
+
+However, consider that leaving long parent chains unaddressed increases technical debt and fragility.
 
 ## Why This Rule Exists
 
