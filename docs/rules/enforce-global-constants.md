@@ -102,9 +102,9 @@ const useMyHook = (options = DEFAULT_OPTIONS) => {
 
 You might want to disable this rule if:
 
-1. You are working with **generated code** that cannot be easily refactored (e.g., codegen output producing object literals).
-2. You have **test utilities** that intentionally return fresh object instances each run for isolation.
-3. You are using specific **third-party framework patterns** that rely on `useMemo` with empty dependency arrays (e.g., certain legacy memoization techniques).
+1. Working with **generated code** that cannot be easily refactored (e.g., codegen output producing object literals).
+2. Using **test utilities** that intentionally return fresh object instances each run for isolation.
+3. Using specific **third-party framework patterns** that rely on `useMemo` with empty dependency arrays (e.g., certain legacy memoization techniques).
 4. You need to maintain **legacy compatibility** where hoisting constants is constrained by existing tooling or architecture.
 
 In most cases, however, you should prefer hoisting these literals to module-level constants to ensure stable references with zero runtime overhead.

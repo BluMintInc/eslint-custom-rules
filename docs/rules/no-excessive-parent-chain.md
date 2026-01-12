@@ -44,9 +44,9 @@ Found {{count}} consecutive ref.parent hops in this handler. Long parent chains 
 ### Incorrect
 
 ```typescript
-export const propagateOverwolfPlacement: DocumentChangeHandler<
-  OverwolfUpdate,
-  OverwolfUpdatePath
+export const myHandler: DocumentChangeHandler<
+  MyDataType,
+  MyDataPath
 > = async (event) => {
   const { data: change } = event;
 
@@ -54,7 +54,7 @@ export const propagateOverwolfPlacement: DocumentChangeHandler<
 };
 
 // Also catches when event data is extracted to variables
-export const anotherHandler: DocumentChangeHandler<SomeType, SomePath> = async (event) => {
+export const anotherHandler: DocumentChangeHandler<MyOtherDataType, MyOtherDataPath> = async (event) => {
   const change = event.data;
   const docId = change.after.ref.parent.parent.parent.id; // 3 parent calls - triggers warning
 };
@@ -63,9 +63,9 @@ export const anotherHandler: DocumentChangeHandler<SomeType, SomePath> = async (
 ### Correct
 
 ```typescript
-export const propagateOverwolfPlacement: DocumentChangeHandler<
-  OverwolfUpdate,
-  OverwolfUpdatePath
+export const myHandler: DocumentChangeHandler<
+  MyDataType,
+  MyDataPath
 > = async (event) => {
   const {
     data: change,
@@ -77,7 +77,7 @@ export const propagateOverwolfPlacement: DocumentChangeHandler<
 };
 
 // Short parent chains are allowed (up to 2 consecutive calls)
-export const validHandler: DocumentChangeHandler<SomeType, SomePath> = async (event) => {
+export const validHandler: DocumentChangeHandler<MyOtherDataType, MyOtherDataPath> = async (event) => {
   const { data: change } = event;
   const parentId = change.after.ref.parent.parent.id; // 2 parent calls - allowed
 };
@@ -106,16 +106,7 @@ However, consider that leaving long parent chains unaddressed increases technica
 
 ## Why This Rule Exists
 
-### Problems with Long Parent Chains
-
-1. **Path drift creates runtime bugs**: A collection rename or nesting change invalidates every `ref.parent.parent.parent` chain and fails at runtime.
-1. **Params already hold the identifiers**: `event.params` is typed from the trigger path, so using it keeps handlers aligned with declared routes.
-1. **Intent is clearer**: `params.userId` communicates which path component is being read, while a long parent chain hides intent.
-1. **Consistent handler pattern**: Using params yields the same readable approach across all triggers.
-
-### Benefits of Using Params
-
-1. **Type Safety**: The `params` object is automatically generated from the trigger path, ensuring type-safe access to path segments.
-1. **Resilience to Change**: Path changes only require updating the trigger's path pattern; handlers using `params` remain valid.
-1. **Explicit Intent**: `params.userId` clearly communicates which path component is being accessed, making the code self-documenting.
-1. **Consistent Patterns**: Using `params` establishes a uniform, readable approach for accessing data across all database triggers.
+1. **Type Safety & Resilience**: The `params` object is automatically generated from the trigger path, ensuring type-safe access. Path changes only require updating the trigger's path pattern; handlers using `params` remain valid, while long parent chains break at runtime.
+2. **Explicit Intent & Clarity**: `params.userId` clearly communicates which path component is being accessed, making the code self-documenting, while long parent chains hide intent.
+3. **Consistent Patterns**: Using `params` establishes a uniform, readable approach for accessing data across all database triggers.
+4. **Alignment with Trigger Design**: `event.params` is typed from the trigger path, so using it keeps handlers aligned with declared routes rather than assuming collection layout.
