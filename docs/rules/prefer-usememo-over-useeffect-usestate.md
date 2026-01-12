@@ -20,7 +20,9 @@ The rule does **not** report when:
 - The setter mirrors a prop/value for synchronization (same identifier as the initializer)
 - The computation is impure (awaits, assignments, or function calls with unknown side effects)
 
-### Incorrect
+### Incorrect examples
+
+The following pattern demonstrates an anti-pattern where derived state is computed in `useEffect` and mirrored into React state. This causes an extra render cycle and risks stale state because the `sum` is calculated after the component has already rendered with potentially outdated values. Instead, you should compute `sum` with `useMemo` or inline it in the component body.
 
 ```tsx
 function Component({ a, b }) {
@@ -39,7 +41,11 @@ function Component({ a, b }) {
 // in render) and read it directly instead of mirroring it into state.
 ```
 
-### Correct
+### Correct examples
+
+These examples demonstrate the preferred patterns for handling derived values and side effects correctly:
+
+1. **Using `useMemo` for derived values**: Compute the `sum` during the render pass to ensure it stays in sync and avoids extra renders.
 
 ```tsx
 function Component({ a, b }) {
@@ -47,6 +53,8 @@ function Component({ a, b }) {
   return <div>{sum}</div>;
 }
 ```
+
+2. **Legitimate side effects**: Using `useEffect` is correct when you perform asynchronous operations or other side effects, like fetching data.
 
 ```tsx
 function Component({ userId }) {
@@ -57,6 +65,8 @@ function Component({ userId }) {
   return <Profile user={user} />;
 }
 ```
+
+3. **Prop-to-state synchronization**: The rule allows direct synchronization of a prop to state, although React generally discourages this pattern.
 
 ```tsx
 function Component({ initialValue }) {
@@ -74,8 +84,9 @@ function Component({ initialValue }) {
 
 ## When not to use it
 
-Do not use this rule if:
-- The effect has side effects other than updating state (e.g., logging, network requests, DOM manipulation).
-- The state update is intended to be asynchronous or needs to wait for some other side effect.
-- The computation is impure and its results shouldn't be memoized based only on React dependencies.
+You should not use this rule if:
+
+- Your effect has side effects other than updating state (e.g., logging, network requests, DOM manipulation).
+- Your state update is intended to be asynchronous or needs to wait for some other side effect.
+- Your computation is impure and its results shouldn't be memoized based only on React dependencies.
 - You are intentionally using `useEffect` for state synchronization (e.g., updating local state when a prop changes).
