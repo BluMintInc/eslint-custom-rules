@@ -28,7 +28,7 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Suggest using Promise.all() for independent sequential awaits when it might reduce latency',
+        'Enforce the use of Promise.all() when multiple independent asynchronous operations are awaited sequentially',
       recommended: 'error',
     },
     fixable: 'code',
@@ -52,7 +52,7 @@ export const parallelizeAsyncOperations = createRule<Options, MessageIds>({
     ],
     messages: {
       parallelizeAsyncOperations:
-        'Awaiting {{awaitCount}} independent async operations sequentially might be adding unnecessary latency. This rule is intended to be a suggestion and is only correct some of the time; it is likely that these operations cannot be parallelized if they have hidden side effects or ordering requirements. If so, please use an // eslint-disable-next-line @blumintinc/blumint/parallelize-async-operations comment to disable this rule. Otherwise, consider Promise.all([...]) to improve performance.',
+        'Awaiting {{awaitCount}} independent async operations sequentially makes their network and I/O latency add up, which slows responses and wastes compute. These awaits have no data dependency or per-call error handling, so run them together with Promise.all([...]) and destructure the results when you need individual values.',
     },
   },
   defaultOptions,

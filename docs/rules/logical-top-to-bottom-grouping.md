@@ -6,19 +6,17 @@
 
 <!-- end auto-generated rule header -->
 
-Keeping related statements grouped together makes code easier to scan and helps readers follow the logical flow. This rule suggests grouping guard clauses, derived variables, and side effects so the execution order remains obvious.
+You keep related statements grouped in a logical, top-to-bottom order. You hoist guard clauses above skipped setup, place derived declarations next to their dependencies, keep placeholder declarations near their first use, and lift side effects (like logging) above unrelated initialization. Hook calls stay in place as boundaries so React's Rules of Hooks are preserved; you do not move non-hook statements across hook calls.
 
-## Why this rule?
+You only move placeholder declarations across pure declarations that do not reference the placeholder or its initializer, so closure timing and TDZ behavior remain unchanged.
 
-- Scattered dependencies increase cognitive load; you have to scroll to find where a value was declared or used.
-- Late guard clauses can lead to unnecessary work being performed.
-- Grouping related logic clarifies the input-to-output flow of a function or block.
+## Rule Details
 
-## Examples
+This rule rearranges statements inside a block to keep the execution flow readable and chronological.
 
-### ❌ Incorrect
+### Examples of incorrect code for this rule:
 
-```ts
+```typescript
 const { id } = props;
 const { a } = props.group;
 if (id == null) {
@@ -27,39 +25,52 @@ if (id == null) {
 const b = a;
 ```
 
-Example message for guard clause:
-
-```text
-The guard "id == null" appears after setup it can skip. This rule is a suggestion; grouping logic is subjective and evaluation order might be intentional. If this order is correct, please use an // eslint-disable-next-line @blumintinc/blumint/logical-top-to-bottom-grouping comment. Otherwise, consider placing the guard before the setup it protects.
+```typescript
+const group = useGroupDoc();
+const { groupTabState } = useGroupRouter();
+const extra = readExtra();
+const { id } = group || {};
 ```
 
-### ✅ Correct
+```typescript
+let results = [];
 
-```ts
+console.log('Processing started');
+
+for (const item of items) {
+  results.push(processItem(item));
+}
+```
+
+### Examples of correct code for this rule:
+
+```typescript
 const { id } = props;
 if (id == null) {
   return null;
 }
+
 const { a } = props.group;
 const b = a;
 ```
 
-### ✅ Correct (With disable comment if grouping is intentional)
+```typescript
+const group = useGroupDoc();
+const { groupTabState } = useGroupRouter();
+const { id } = group || {};
+const extra = readExtra();
+```
 
-```ts
-function process(data) {
-  setupWork();
-  // eslint-disable-next-line @blumintinc/blumint/logical-top-to-bottom-grouping
-  if (debugMode) log(data);
-  mainLogic(data);
+```typescript
+console.log('Processing started');
+
+let results = [];
+for (const item of items) {
+  results.push(processItem(item));
 }
 ```
 
 ## When Not To Use It
 
-Disable this rule if you prefer a different organizational style for your logic or if the rule's suggestions conflict with specific evaluation requirements. Use an `// eslint-disable-next-line @blumintinc/blumint/logical-top-to-bottom-grouping` comment for local exceptions.
+Disable this rule if you intentionally rely on non-linear ordering (e.g., staged startup logging for distributed tracing) or need to keep audit/compliance logging after initialization even when it breaks top-to-bottom grouping.
 
-## Further Reading
-
-- [Clean Code: Vertical Density](https://learning.oreilly.com/library/view/clean-code/9780136083238/chapter05.html#ch5lev1sec4)
-- [Refactoring: Slide Statements](https://refactoring.com/catalog/slideStatements.html)

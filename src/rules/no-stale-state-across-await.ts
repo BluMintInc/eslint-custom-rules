@@ -11,14 +11,14 @@ export const noStaleStateAcrossAwait = createRule<[], MessageIds>({
     type: 'problem',
     docs: {
       description:
-        'Discourage stale intermediate state by disallowing useState setter calls both before and after async boundaries (await, .then(), yield) within the same function',
+        'Prevent stale intermediate state by disallowing useState setter calls both before and after async boundaries (await, .then(), yield) within the same function',
       recommended: 'error',
     },
     fixable: undefined,
     schema: [],
     messages: {
       staleStateAcrossAwait:
-        'State setter "{{setterName}}" runs on both sides of {{boundaryType}}, which might lead to stale UI updates if the async work resolves out of order. This rule is a suggestion; patterns like optimistic UI or intentional sentinel updates before/after awaits are sometimes necessary. If this pattern is intentional, please use an // eslint-disable-next-line @blumintinc/blumint/no-stale-state-across-await comment. Otherwise, consider consolidating updates after the async boundary.',
+        'State setter "{{setterName}}" runs on both sides of {{boundaryType}}. Updates issued before the async boundary can resolve after later updates and overwrite fresher data, leaving the UI in a stale loading or placeholder state. Keep "{{setterName}}" updates on one side of the async boundary or consolidate into a single atomic update after the async work; if you intentionally use a sentinel value, document it with // eslint-disable-next-line @blumintinc/blumint/no-stale-state-across-await and a short comment explaining why.',
     },
   },
   defaultOptions: [],

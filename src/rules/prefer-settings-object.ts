@@ -24,7 +24,7 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Suggest using a settings object for functions with multiple parameters',
+        'Enforce using a settings object for functions with multiple parameters',
       recommended: 'error',
     },
     fixable: 'code',
@@ -51,9 +51,9 @@ export const preferSettingsObject = createRule<Options, MessageIds>({
     ],
     messages: {
       tooManyParams:
-        'Function accepts {{count}} positional parameters (limit {{minimum}}). This rule suggests using a settings object for better readability and to prevent mis-ordered arguments. If positional arguments are clearer for this specific utility, please use an // eslint-disable-next-line @blumintinc/blumint/prefer-settings-object comment. Otherwise, consider a single settings object.',
+        "Function accepts {{count}} positional parameters (limit {{minimum}}). Long positional lists hide each argument's meaning and make call sites easy to mis-order. Pass a single settings object so callers name each field and keep the call readable.",
       sameTypeParams:
-        'Function receives {{paramCount}} positional parameters including multiple "{{type}}" values. This rule suggests using a settings object to prevent accidental value swaps when multiple arguments have the same type. If positional arguments are preferred here, please use an // eslint-disable-next-line @blumintinc/blumint/prefer-settings-object comment. Otherwise, consider a settings object.',
+        'Function receives {{paramCount}} positional parameters including multiple "{{type}}" values. Repeated types in positional arguments invite swapped values and force callers to remember parameter order. Replace the positional list with a settings object so each value is labeled and self-documenting.',
     },
   },
   defaultOptions: [defaultOptions],

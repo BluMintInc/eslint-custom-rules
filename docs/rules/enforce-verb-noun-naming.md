@@ -4,7 +4,7 @@
 
 <!-- end auto-generated rule header -->
 
-Functions and methods are actions, so their names should ideally start with an action verb followed by the thing they act on. Verb-first naming keeps callable APIs predictable, separates behaviors from data holders, and prevents teams from shipping symbols whose purpose is unclear at the call site.
+Functions and methods are actions, so their names should start with an action verb followed by the thing they act on. Verb-first naming keeps callable APIs predictable, separates behaviors from data holders, and prevents teams from shipping symbols whose purpose is unclear at the call site.
 
 ## Why this rule?
 
@@ -38,7 +38,7 @@ class Repo {
 Example message:
 
 ```text
-Function "userData" might need a verb-noun phrase (like "fetchUsers" or "processRequest"). This rule is a suggestion based on NLP heuristics and might misidentify verbs or miss domain-specific patterns. If "userData" is already descriptive or follows a specific convention, please use an // eslint-disable-next-line @blumintinc/blumint/enforce-verb-noun-naming comment. Otherwise, consider a verb-first name to clarify that this symbol performs work.
+Function "userData" should start with an action verb followed by the thing it acts on. Verb-first names tell readers this symbol performs work instead of representing data, which keeps APIs predictable and prevents accidental misuse. Rename "userData" to a verb-noun phrase such as "fetchUsers" or "processRequest".
 ```
 
 ### ✅ Correct
@@ -60,19 +60,13 @@ const UserCard = ({ user }: { user: User }) => <Card>{user.name}</Card>;
 function toNumber(value) { return +value; } // converter pattern allowed
 ```
 
-### ✅ Correct (With disable comment if naming is intentional)
+## Options
 
-```ts
-// eslint-disable-next-line @blumintinc/blumint/enforce-verb-noun-naming
-function user(params) {
-  return db.ref(`users/${params.userId}`);
-}
-```
+This rule does not have any options.
 
 ## When not to use it
 
 - If your project intentionally names command functions with nouns or uses a different naming convention for functions and methods.
-- If the rule incorrectly flags a descriptive name due to NLP limitations.
 - Files that intentionally expose React components or values only—disable locally with ESLint directives when needed: use `/* eslint-disable @blumintinc/blumint/enforce-verb-noun-naming */` for a file or `/* eslint-disable-next-line @blumintinc/blumint/enforce-verb-noun-naming */` for a single line. Repository-wide exceptions can be added through `.eslintrc` overrides when entire paths should be exempt.
 
 ## Further reading

@@ -19,7 +19,7 @@ export const noSeparateLoadingState = createRule<Options, MessageIds>({
     type: 'suggestion',
     docs: {
       description:
-        'Discourage separate loading state variables that track the loading status of other state',
+        'Disallow separate loading state variables that track the loading status of other state',
       recommended: 'error',
     },
     fixable: undefined, // No autofix as mentioned in the spec
@@ -37,7 +37,7 @@ export const noSeparateLoadingState = createRule<Options, MessageIds>({
     ],
     messages: {
       separateLoadingState:
-        'Loading flag "{{stateName}}" might be splitting the source of truth for your data. This rule is a suggestion; complex UIs may legitimately require multiple loading flags. If this separate state is intentional, please use an // eslint-disable-next-line @blumintinc/blumint/no-separate-loading-state comment. Otherwise, consider encoding the loading phase inside the primary state (e.g., using a discriminated union or sentinel value) to prevent state drift.',
+        'Loading flag "{{stateName}}" splits the source of truth for data fetching. Boolean toggles drift from the actual data and add extra renders. Encode the loading phase inside the primary state instead (use a "loading" sentinel or discriminated union) so components read a single authoritative value.',
     },
   },
   defaultOptions: [{}],

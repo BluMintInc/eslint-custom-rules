@@ -518,7 +518,7 @@ export const verticallyGroupRelatedFunctions: TSESLint.RuleModule<
     ],
     messages: {
       misorderedFunction:
-        'Function "{{name}}" is out of order: {{reason}}. This rule is a suggestion for vertical grouping; what constitutes "related" logic is subjective. If this order is intentional, please use an // eslint-disable-next-line @blumintinc/blumint/vertically-group-related-functions comment. Otherwise, consider moving it {{placement}} to improve file scanability.',
+        'Function "{{name}}" is out of order: {{reason}}. Move it {{placement}} to keep related call chains grouped so readers can scan the file top-down.',
     },
   },
   defaultOptions: DEFAULT_OPTIONS_ARRAY,

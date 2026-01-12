@@ -4,14 +4,14 @@
 
 <!-- end auto-generated rule header -->
 
-Type names should ideally describe a single concept. Plural identifiers can imply that a declaration models a collection, which might mislead readers into treating single-instance types as arrays, maps, or lists. Keeping type aliases, interfaces, and enums singular makes it obvious when code works with one entity and reserves plural names for actual container shapes.
+Type names should describe a single concept. Plural identifiers imply the declaration models a collection, which misleads readers into treating single-instance types as arrays, maps, or lists. Keeping type aliases, interfaces, and enums singular makes it obvious when code works with one entity and reserves plural names for actual container shapes.
 
 ## Rule Details
 
-The rule checks TypeScript type aliases, interfaces, and enums. It uses `pluralize` to detect plural identifiers and suggests names that are singular. To avoid false positives on accepted conventions and mass nouns, the rule ignores names ending with `Props`, `Params`, `Options`, `Settings`, or `Data` (any casing).
+The rule checks TypeScript type aliases, interfaces, and enums. It uses `pluralize` to detect plural identifiers and reports names that are not singular. To avoid false positives on accepted conventions and mass nouns, the rule ignores names ending with `Props`, `Params`, `Options`, `Settings`, or `Data` (any casing).
 
 Why singular names matter:
-- Plural identifiers hide whether the symbol models one value or many, which can lead to misuse as a container type.
+- Plural identifiers hide whether the symbol models one value or many, which leads to misuse as a container type.
 - Singling out cardinality in the name keeps public APIs self-documenting and reduces accidental collection handling bugs.
 - Reserving plural names for arrays/maps keeps naming consistent across variable declarations and type definitions.
 
@@ -35,12 +35,8 @@ enum Colors {
   GREEN,
   BLUE
 }
-```
-
-Example message:
-
-```text
-Type name "Users" appears to be plural, which might suggest a collection instead of a single instance. This rule is a suggestion and its pluralization heuristics may have false positives for irregular words or domain jargon. If "Users" is intended to be plural or is a false positive, please use an // eslint-disable-next-line @blumintinc/blumint/enforce-singular-type-names comment. Otherwise, consider the singular form "User".
+// Reported message example:
+// Type name 'Users' is plural, which signals a collection and hides whether this alias, interface, or enum represents one value or many. Plural type identifiers push callers to misuse the symbol for arrays or maps. Rename it to a singular noun such as 'User' so the declaration clearly models a single instance and leaves plural names for container types.
 ```
 
 Examples of **correct** code for this rule:
@@ -71,16 +67,9 @@ type RequestOptions = { timeout: number };
 type UserData = { name: string; age: number };
 ```
 
-### ✅ Correct (With disable comment if naming is intentional)
-
-```ts
-// eslint-disable-next-line @blumintinc/blumint/enforce-singular-type-names
-type Criteria = string[];
-```
-
 ## When Not To Use It
 
-Disable this rule if your project intentionally names types after collections (e.g., a domain object that is inherently plural) or you prefer a different naming convention. If the rule incorrectly flags an irregular word, use an `// eslint-disable-next-line @blumintinc/blumint/enforce-singular-type-names` comment.
+Disable this rule if your project intentionally names types after collections (e.g., a domain object that is inherently plural) or you prefer a different naming convention. Otherwise, keep it enabled to preserve consistent, self-explanatory type names.
 
 ## Further Reading
 

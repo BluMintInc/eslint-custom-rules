@@ -14,11 +14,9 @@ type MessageArgs = {
 };
 
 const buildMessage = ({ type, name, capitalizedName, prefixes }: MessageArgs) =>
-  `Boolean ${type} "${name}" might need an approved prefix (like ${prefixes}). ` +
-  `Prefixes help signal that a value is a true/false predicate. ` +
-  `This rule is intended to be a suggestion and might flag domain-specific terms where a prefix feels unnatural. ` +
-  `If "${name}" is clear in its context, please use an // eslint-disable-next-line @blumintinc/blumint/enforce-boolean-naming-prefixes comment. ` +
-  `Otherwise, consider renaming to "<prefix>${capitalizedName}" to make the boolean contract more obvious.`;
+  `Boolean ${type} "${name}" is missing a common approved boolean prefix (${prefixes}). ` +
+  `Prefixes immediately communicate that the value is a true/false predicate; without one, checks like \`if (${name})\` read as generic truthiness guards and hide the boolean intent. ` +
+  `Rename by prepending any approved prefix so the name becomes \`<prefix>${capitalizedName}\`, making the boolean contract obvious at call sites and API boundaries.`;
 
 const buildError = (
   args: MessageArgs,

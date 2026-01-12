@@ -6,11 +6,11 @@
 
 <!-- end auto-generated rule header -->
 
-When you name a boolean without a clear prefix, it can read like a generic noun. In conditions, props, or configuration objects, readers cannot always tell that it is a true/false value and may treat it as a string or object. This rule suggests an approved boolean prefix so every boolean value advertises its contract at the call site.
+When you name a boolean without a clear prefix, it reads like a generic noun. In conditions, props, or configuration objects, readers cannot tell that it is a true/false value and may treat it as a string or object. This rule helps you require an approved boolean prefix so every boolean value advertises its contract at the call site.
 
 ## Rule Details
 
-This rule suggests that boolean-typed or boolean-valued identifiers should start with an approved prefix. Without one, checks like `if (user.active)` might read as generic truthiness guards; `if (user.isActive)` signals a boolean predicate and makes your intent obvious.
+This rule requires your boolean-typed or boolean-valued identifiers to start with an approved prefix. Without one, checks like `if (user.active)` read as generic truthiness guards; `if (user.isActive)` signals a boolean predicate and makes your intent obvious.
 
 ### Why this rule matters
 
@@ -96,12 +96,6 @@ class User {
 }
 ```
 
-Example message:
-
-```text
-Boolean variable "active" might need an approved prefix (like is, has, does, can, should, will, was, had, did, would, must, allows, supports, needs, asserts). Prefixes help signal that a value is a true/false predicate. This rule is intended to be a suggestion and might flag domain-specific terms where a prefix feels unnatural. If "active" is clear in its context, please use an // eslint-disable-next-line @blumintinc/blumint/enforce-boolean-naming-prefixes comment. Otherwise, consider renaming to "isActive" to make the boolean contract more obvious.
-```
-
 ### Examples of **correct** code for this rule
 
 ```ts
@@ -162,13 +156,6 @@ class User {
     return this.subscription?.tier === 'premium';
   }
 }
-```
-
-### ✅ Correct (With disable comment if naming is intentional)
-
-```ts
-// eslint-disable-next-line @blumintinc/blumint/enforce-boolean-naming-prefixes
-const authenticated = true;
 ```
 
 ### Special Cases
@@ -256,7 +243,6 @@ You might want to disable this rule if:
 1. Your project already has an established naming convention for booleans that doesn't align with this rule
 2. You prefer a different approach to boolean naming, such as suffixes instead of prefixes
 3. You don't want to enforce strict naming conventions for boolean values
-4. The rule incorrectly flags domain-specific terms.
 
 ## Further Reading
 

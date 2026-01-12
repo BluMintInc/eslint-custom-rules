@@ -391,69 +391,6 @@ function unwrapNestedExpressions(node: TSESTree.Node): TSESTree.Node {
 }
 
 /**
- * Checks whether a node is a JSX attribute that is deep-compared by blumintAreEqual.
- * These attributes include 'sx', 'style', and any ending in 'Sx' or 'Style'.
- * @param node Node to inspect.
- * @returns True when the node is a deep-compared JSX attribute.
- */
-function isDeepComparedJSXAttribute(node: TSESTree.Node): boolean {
-  if (isFunctionNode(node)) {
-    return false;
-  }
-
-  let current: TSESTree.Node | null = node.parent as TSESTree.Node | null;
-
-  while (current) {
-    if (isFunctionNode(current)) {
-      return false;
-    }
-
-    if (current.type === AST_NODE_TYPES.JSXExpressionContainer) {
-      current = current.parent as TSESTree.Node | null;
-      break;
-    }
-
-    if (
-      isExpressionWrapper(current) ||
-      current.type === AST_NODE_TYPES.ConditionalExpression ||
-      current.type === AST_NODE_TYPES.LogicalExpression ||
-      current.type === AST_NODE_TYPES.SpreadElement ||
-      // Property, ObjectExpression, and ArrayExpression allow detection of nested
-      // literals within deep-compared attributes (e.g., sx={{ nested: { a: 1 } }}
-      // or sx={[{ margin: 1 }]}). Since deep equality checks compare nested
-      // structures recursively, nested literals are also exempt from triggering
-      // the memoization rule.
-      current.type === AST_NODE_TYPES.Property ||
-      current.type === AST_NODE_TYPES.ObjectExpression ||
-      current.type === AST_NODE_TYPES.ArrayExpression
-    ) {
-      current = current.parent as TSESTree.Node | null;
-      continue;
-    }
-
-    break;
-  }
-
-  if (current?.type === AST_NODE_TYPES.JSXAttribute) {
-    const attributeName =
-      current.name.type === AST_NODE_TYPES.JSXIdentifier
-        ? current.name.name
-        : null;
-
-    if (attributeName) {
-      return (
-        attributeName === 'sx' ||
-        attributeName.endsWith('Sx') ||
-        attributeName === 'style' ||
-        attributeName.endsWith('Style')
-      );
-    }
-  }
-
-  return false;
-}
-
-/**
  * Finds the nearest enclosing hook call for a literal and whether the literal
  * is passed directly as an argument (versus nested inside another expression).
  */
@@ -654,11 +591,11 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
     schema: [],
     messages: {
       componentLiteral:
-        'New {{literalType}} inside {{context}} is created on every render, which might break referential stability. This rule is a suggestion; small or static literals often do not justify the overhead of {{memoHook}}. If this reference change is acceptable or intentional, please use an // eslint-disable-next-line @blumintinc/blumint/react-memoize-literals comment. Otherwise, consider hoisting it to a constant or wrapping it in {{memoHook}} with the right dependencies.',
+        'New {{literalType}} inside {{context}} is created on every render → Breaks referential stability for hooks/props and can re-run effects or re-render children → Hoist it to a module-level constant or wrap it in {{memoHook}} with the right dependencies.',
       nestedHookLiteral:
-        'Nested {{literalType}} inside {{hookName}} is recreated on every render, which might defeat memoization. This rule is a suggestion. If this literal is small or referential stability is not required here, please use an // eslint-disable-next-line @blumintinc/blumint/react-memoize-literals comment. Otherwise, consider extracting it into a memoized value (useMemo/useCallback) or hoisting it to a module constant before passing it to {{hookName}}.',
+        'Nested {{literalType}} inside {{hookName}} arguments is recreated on every render → Dependency/reference comparisons change each time and defeat memoization/caching → Extract it into a memoized value (useMemo/useCallback) or hoist it to a module constant before passing it to {{hookName}}.',
       hookReturnLiteral:
-        '{{hookName}} returns a new {{literalType}} on each render, which might cause unnecessary re-renders for callers. This rule is a suggestion. If this fresh reference is intentional, please use an // eslint-disable-next-line @blumintinc/blumint/react-memoize-literals comment. Otherwise, consider memoizing the returned value with useMemo/useCallback or returning pre-memoized pieces so callers see stable references.',
+        '{{hookName}} returns a {{literalType}} literal on each render → Callers receive a fresh reference and may re-render or re-run effects → Memoize the returned value with useMemo/useCallback or return pre-memoized pieces so callers see stable references.',
       memoizeLiteralSuggestion:
         'This {{literalType}} is created inline → It produces a new reference each render → Wrap it in {{memoHook}} and include every closed-over value in the dependency array.',
     },
@@ -800,10 +737,7 @@ export const reactMemoizeLiterals = createRule<[], MessageIds>({
       const owner = findEnclosingComponentOrHook(node);
       if (!owner) return;
 
-      if (
-        isInsideAllowedHookCallback(node) ||
-        isDeepComparedJSXAttribute(node)
-      ) {
+      if (isInsideAllowedHookCallback(node)) {
         return;
       }
 

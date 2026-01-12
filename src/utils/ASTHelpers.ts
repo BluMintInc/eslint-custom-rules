@@ -173,8 +173,7 @@ export class ASTHelpers {
         return (node as any).properties.some((property: any) => {
           if (property.type === 'Property') {
             return (
-              (property.computed &&
-                this.declarationIncludesIdentifier(property.key)) ||
+              (property.computed && this.declarationIncludesIdentifier(property.key)) ||
               this.declarationIncludesIdentifier(property.value)
             );
           } else if (property.type === 'SpreadElement') {
@@ -185,10 +184,10 @@ export class ASTHelpers {
 
       case 'Property':
         return (
-          ((node as any).computed &&
-            this.declarationIncludesIdentifier((node as any).key)) ||
+          ((node as any).computed && this.declarationIncludesIdentifier((node as any).key)) ||
           this.declarationIncludesIdentifier((node as any).value)
         );
+
 
       case 'BinaryExpression':
       case 'LogicalExpression':
@@ -403,8 +402,16 @@ export class ASTHelpers {
       case 'AssignmentExpression': {
         const assignExpr = node as any;
         return [
-          ...this.classMethodDependenciesOf(assignExpr.left, graph, className),
-          ...this.classMethodDependenciesOf(assignExpr.right, graph, className),
+          ...this.classMethodDependenciesOf(
+            assignExpr.left,
+            graph,
+            className,
+          ),
+          ...this.classMethodDependenciesOf(
+            assignExpr.right,
+            graph,
+            className,
+          ),
         ];
       }
       case 'BlockStatement':
@@ -417,13 +424,21 @@ export class ASTHelpers {
       case 'IfStatement': {
         const ifStmt = node as any;
         return [
-          ...this.classMethodDependenciesOf(ifStmt.test, graph, className),
+          ...this.classMethodDependenciesOf(
+            ifStmt.test,
+            graph,
+            className,
+          ),
           ...this.classMethodDependenciesOf(
             ifStmt.consequent,
             graph,
             className,
           ),
-          ...this.classMethodDependenciesOf(ifStmt.alternate, graph, className),
+          ...this.classMethodDependenciesOf(
+            ifStmt.alternate,
+            graph,
+            className,
+          ),
         ];
       }
       case 'TSTypeAssertion':
@@ -455,7 +470,11 @@ export class ASTHelpers {
                     graph,
                     className,
                   )
-                : this.classMethodDependenciesOf(element, graph, className)),
+                : this.classMethodDependenciesOf(
+                    element,
+                    graph,
+                    className,
+                  )),
           )
           .flat()
           .filter(Boolean) as string[];
@@ -491,8 +510,16 @@ export class ASTHelpers {
       case 'LogicalExpression': {
         const binLogExpr = node as any;
         return [
-          ...this.classMethodDependenciesOf(binLogExpr.left, graph, className),
-          ...this.classMethodDependenciesOf(binLogExpr.right, graph, className),
+          ...this.classMethodDependenciesOf(
+            binLogExpr.left,
+            graph,
+            className,
+          ),
+          ...this.classMethodDependenciesOf(
+            binLogExpr.right,
+            graph,
+            className,
+          ),
         ];
       }
 
@@ -524,7 +551,11 @@ export class ASTHelpers {
       case 'ConditionalExpression': {
         const condExpr = node as any;
         return [
-          ...this.classMethodDependenciesOf(condExpr.test, graph, className),
+          ...this.classMethodDependenciesOf(
+            condExpr.test,
+            graph,
+            className,
+          ),
           ...this.classMethodDependenciesOf(
             condExpr.consequent,
             graph,
@@ -559,9 +590,21 @@ export class ASTHelpers {
       case 'ForOfStatement': {
         const forOfStmt = node as any;
         return [
-          ...this.classMethodDependenciesOf(forOfStmt.left, graph, className),
-          ...this.classMethodDependenciesOf(forOfStmt.body, graph, className),
-          ...this.classMethodDependenciesOf(forOfStmt.right, graph, className),
+          ...this.classMethodDependenciesOf(
+            forOfStmt.left,
+            graph,
+            className,
+          ),
+          ...this.classMethodDependenciesOf(
+            forOfStmt.body,
+            graph,
+            className,
+          ),
+          ...this.classMethodDependenciesOf(
+            forOfStmt.right,
+            graph,
+            className,
+          ),
         ];
       }
       case 'ForStatement': {
@@ -596,7 +639,11 @@ export class ASTHelpers {
           ...(arrowFunc.params || []).flatMap((param: any) =>
             this.classMethodDependenciesOf(param, graph, className),
           ),
-          ...this.classMethodDependenciesOf(arrowFunc.body, graph, className),
+          ...this.classMethodDependenciesOf(
+            arrowFunc.body,
+            graph,
+            className,
+          ),
         ];
       }
       default:
@@ -627,7 +674,9 @@ export class ASTHelpers {
     }
     if (node.type === AST_NODE_TYPES.IfStatement) {
       const ifStmt = node as any;
-      const consequentHasReturn = this.hasReturnStatement(ifStmt.consequent);
+      const consequentHasReturn = this.hasReturnStatement(
+        ifStmt.consequent,
+      );
       const alternateHasReturn =
         !!ifStmt.alternate && this.hasReturnStatement(ifStmt.alternate);
       return consequentHasReturn && alternateHasReturn;
@@ -658,10 +707,7 @@ export class ASTHelpers {
 
   public static isNodeExported(node: TSESTree.Node) {
     // Checking if the node is exported as a named export.
-    if (
-      node.parent &&
-      node.parent.type === AST_NODE_TYPES.ExportNamedDeclaration
-    ) {
+    if (node.parent && node.parent.type === AST_NODE_TYPES.ExportNamedDeclaration) {
       return true;
     }
 
@@ -836,7 +882,10 @@ export class ASTHelpers {
     if (node.type === AST_NODE_TYPES.TryStatement) {
       return (
         this.returnsJSXFromStatement((node as any).block, context) ||
-        this.returnsJSXFromStatement((node as any).handler?.body, context) ||
+        this.returnsJSXFromStatement(
+          (node as any).handler?.body,
+          context,
+        ) ||
         this.returnsJSXFromStatement((node as any).finalizer, context)
       );
     }
@@ -895,7 +944,8 @@ export class ASTHelpers {
 
     // Treat remaining nodes as statement-path or value checks.
     return (
-      this.returnsJSXFromStatement(node, context) || this.returnsJSXValue(node)
+      this.returnsJSXFromStatement(node, context) ||
+      this.returnsJSXValue(node)
     );
   }
 

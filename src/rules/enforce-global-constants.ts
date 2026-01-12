@@ -17,9 +17,9 @@ export const enforceGlobalConstants = createRule<[], MessageIds>({
     schema: [],
     messages: {
       useGlobalConstant:
-        'Object literal in useMemo with empty dependencies might be better as a global static constant. This rule is a suggestion; small or frequently changed literals might not justify a global constant. If this inline literal is preferred, please use an // eslint-disable-next-line @blumintinc/blumint/enforce-global-constants comment. Otherwise, consider hoisting it to a module-level constant.',
+        'Use a global static constant instead of useMemo with an empty dependency array for object literals',
       extractDefaultToGlobalConstant:
-        'Inline default value might be better as a module-level constant for stable reference. This is a suggested practice for referential stability in React. If an inline default is clearer, please use an // eslint-disable-next-line @blumintinc/blumint/enforce-global-constants comment. Otherwise, consider extracting it to a constant.',
+        'Extract inline default value to a module-level constant for stable reference',
     },
   },
   defaultOptions: [],

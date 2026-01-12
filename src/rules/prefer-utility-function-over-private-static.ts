@@ -19,7 +19,7 @@ export const preferUtilityFunctionOverPrivateStatic = createRule<
     schema: [],
     messages: {
       preferUtilityFunctionOverPrivateStatic:
-        'Private static method "{{methodName}}" in class "{{className}}" does not use class state and might be better as a standalone utility function. This rule is a suggestion; architectural placement of logic can be subjective. If you prefer keeping this helper within the class, please use an // eslint-disable-next-line @blumintinc/blumint/prefer-utility-function-over-private-static comment. Otherwise, consider extracting it to a standalone utility function (module-level or shared) and import it where needed so it can be reused and unit tested independently.',
+        'Private static method "{{methodName}}" in class "{{className}}" does not use class state. Keeping class-agnostic helpers as private statics hides reusable logic and signals coupling that is not present. Extract this logic into a standalone utility function (module-level or shared) and import it where needed so it can be reused and unit tested independently.',
     },
   },
   defaultOptions: [],

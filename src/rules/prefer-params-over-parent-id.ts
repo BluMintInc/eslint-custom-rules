@@ -284,9 +284,11 @@ export const preferParamsOverParentId = createRule<[], MessageIds>({
     schema: [],
     messages: {
       preferParams: [
-        'This code reads an ID via `ref.parent...id` instead of using the trigger\'s params.',
+        "What's wrong: This code reads an ID via `ref.parent...id` instead of using the trigger's params.",
         '',
-        'This rule is a suggestion; deep database paths sometimes require multiple hops if parameters are not available in the trigger event. If these hops are necessary, please use an // eslint-disable-next-line @blumintinc/blumint/prefer-params-over-parent-id comment. Otherwise, consider reading the ID from `params.{{paramName}}` to make the code more resilient to path changes.',
+        'Why it matters: Walking `ref.parent` ties the handler to the current path depth; when collections change, it can yield the wrong ID (or a collection name) and bypasses the typed params the trigger provides.',
+        '',
+        'How to fix: Read the ID from `params.{{paramName}}` (or destructure `const { params } = event` and then access `params.{{paramName}}`).',
       ].join('\n'),
     },
   },

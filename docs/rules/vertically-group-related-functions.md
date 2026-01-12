@@ -6,77 +6,85 @@
 
 <!-- end auto-generated rule header -->
 
-Keeping related functions grouped vertically makes a file easier to scan and helps readers follow call chains top-down. This rule suggests grouping event handlers, main logic, and utilities so the file remains organized.
+Keep top-level functions together so readers can scan call chains from top to bottom without jumping around the file. The rule prefers grouping entry points (event handlers and exported functions) above the helpers they invoke and supports configurable grouping for exports, event handlers, and utilities.
 
-## Why this rule?
+### Rule Details
 
-- Scattering related logic makes it harder to trace how data flows through a file.
-- Grouping by category (e.g., event handlers first) provides a consistent structure across files.
-- A predictable function order speeds up code reviews and onboarding.
+The rule looks at named, top-level function declarations and variable assignments whose initializer is an arrow/function expression. It ignores nested functions, inline callbacks, and methods defined inside object literals.
 
-## Examples
+It reports when:
+- Callers appear below the helpers they invoke (default `callers-first` dependency direction).
+- Event handlers or exported functions are separated from the related helpers.
+- Export placement does not match the configured preference (`top`/`bottom`).
 
-### ❌ Incorrect
+### Options
 
-```ts
-function utilityHelper() { /* ... */ }
+```json
+{
+  "exportPlacement": "ignore | top | bottom",
+  "dependencyDirection": "callers-first | callees-first",
+  "groupOrder": ["event-handlers", "other", "utilities"],
+  "eventHandlerPattern": "^(handle[A-Z]|on[A-Z])",
+  "utilityPattern": "^(get|set|fetch|load|format|compute|transform|build|derive|prepare)"
+}
+```
+
+- `exportPlacement` (default `ignore`): keep exported functions at the top or bottom of the function block.
+- `dependencyDirection` (default `callers-first`): if set to `callees-first`, helpers may precede callers.
+- `groupOrder` (default `["event-handlers", "other", "utilities"]`): preferred vertical grouping buckets.
+- `eventHandlerPattern` / `utilityPattern`: regex strings used to classify functions for grouping. Patterns longer than 200 characters or containing nested greedy quantifiers are rejected with a warning and fall back to the safe defaults to avoid ReDoS-prone configurations.
+
+### Examples of incorrect code for this rule
+
+```typescript
+// Default configuration (callers-first, event handlers first)
+function fetchData() {
+  return api.get('/data');
+}
+
+function processUserInput(input: string) {
+  return sanitize(input);
+}
+
+function transformData(data: unknown[]) {
+  return data.map((item) => (item as any).value);
+}
 
 function handleClick() {
-  utilityHelper();
-}
-
-function anotherHelper() { /* ... */ }
-
-function onSubmit() {
-  anotherHelper();
+  processUserInput(userInput);
 }
 ```
 
-Example message:
-
-```text
-Function "utilityHelper" is out of order: utilities should follow the configured group order. This rule is a suggestion for vertical grouping; what constitutes "related" logic is subjective. If this order is intentional, please use an // eslint-disable-next-line @blumintinc/blumint/vertically-group-related-functions comment. Otherwise, consider moving it after "onSubmit" to improve file scanability.
+```typescript
+// exportPlacement: "bottom"
+export function makeRequest() {}
+function prepareRequest() {}
 ```
 
-### ✅ Correct
+### Examples of correct code for this rule
 
-```ts
-// Main entry/event handlers
+```typescript
 function handleClick() {
-  utilityHelper();
+  processUserInput(userInput);
 }
 
-function onSubmit() {
-  anotherHelper();
+function processUserInput(input: string) {
+  return sanitize(input);
 }
 
-// Helpers/utilities grouped together below
-function utilityHelper() { /* ... */ }
-function anotherHelper() { /* ... */ }
+function fetchData() {
+  return api.get('/data');
+}
+
+function transformData(data: unknown[]) {
+  return data.map((item) => (item as any).value);
+}
 ```
 
-### ✅ Correct (With disable comment if order is intentional)
-
-```ts
-// eslint-disable-next-line @blumintinc/blumint/vertically-group-related-functions
-function legacyUtility() { /* ... */ }
+```typescript
+// exportPlacement: "bottom"
+function prepareRequest() {}
+export function makeRequest() {
+  return prepareRequest();
+}
 ```
-
-## Options
-
-This rule accepts an options object:
-
-- `exportPlacement`: (`'top' | 'bottom' | 'ignore'`, Default: `'ignore'`) Whether to group exported functions together.
-- `dependencyDirection`: (`'callers-first' | 'callees-first'`, Default: `'callers-first'`) Whether helpers should appear above or below their callers.
-- `groupOrder`: (`['event-handlers' | 'utilities' | 'other'][]`, Default: `['event-handlers', 'other', 'utilities']`) The preferred order of function groups.
-- `eventHandlerPattern`: (Regex string) Pattern to identify event handlers.
-- `utilityPattern`: (Regex string) Pattern to identify utility functions.
-
-## When Not To Use It
-
-Disable this rule if you prefer a different organizational style or if the rule's suggestions conflict with your project's specific file layout conventions. Use an `// eslint-disable-next-line @blumintinc/blumint/vertically-group-related-functions` comment for local exceptions.
-
-## Further Reading
-
-- [Clean Code: Stepdown Rule](https://learning.oreilly.com/library/view/clean-code/9780136083238/chapter03.html#ch3lev1sec7)
-- [Refactoring: Reorder Functions](https://refactoring.guru/reorder-functions)

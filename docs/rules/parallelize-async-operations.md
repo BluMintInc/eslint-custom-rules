@@ -1,4 +1,4 @@
-# Suggest using Promise.all() for independent sequential awaits when it might reduce latency (`@blumintinc/blumint/parallelize-async-operations`)
+# Enforce the use of Promise.all() when multiple independent asynchronous operations are awaited sequentially (`@blumintinc/blumint/parallelize-async-operations`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
@@ -8,13 +8,9 @@
 
 Parallelizing independent awaits keeps total latency bounded by the slowest call instead of the sum of every call. This rule flags back-to-back awaits with no detected dependency, loop, or per-call error boundary and suggests `Promise.all` so network and I/O overlap.
 
-**Note: This rule is intended to be a suggestion and is only correct some of the time. It is likely that operations cannot be parallelized if they have hidden side effects or specific ordering requirements.**
-
 ## Rule Details
 
 Serializing independent async work stretches response time and wastes compute billed per millisecond. Running the calls together lets the runtime issue network or I/O requests concurrently while you preserve clarity by destructuring the results.
-
-However, because static analysis cannot always detect subtle dependencies or side effects, this rule may report false positives. When operations must stay ordered, please use an `// eslint-disable-next-line` comment.
 
 The rule reports when all of these are true:
 - Two or more awaits or await-based variable declarations appear consecutively.
@@ -22,7 +18,7 @@ The rule reports when all of these are true:
 - The awaits are not inside try blocks or loops, which signal intentional ordering or per-call error handling.
 - The calls do not match a small list of side-effect-heavy patterns (e.g., update/check counters) that should stay ordered.
 
-### ❌ Incorrect (Sequential Awaits)
+### ❌ Incorrect
 
 ```typescript
 async function cleanUpReferences(params, ref) {
@@ -31,7 +27,7 @@ async function cleanUpReferences(params, ref) {
 }
 ```
 
-### ✅ Correct (Parallelized)
+### ✅ Correct
 
 ```typescript
 async function cleanUpReferences(params, ref) {
@@ -42,17 +38,7 @@ async function cleanUpReferences(params, ref) {
 }
 ```
 
-### ✅ Correct (With disable comment if parallelization is unsafe)
-
-```typescript
-async function cleanUpReferences(params, ref) {
-  // eslint-disable-next-line @blumintinc/blumint/parallelize-async-operations
-  await realtimeDb.ref(buildPath(params)).remove();
-  await realtimeDb.ref(ref).remove();
-}
-```
-
-### ✅ Correct (With assignments)
+### ✅ Correct (with assignments)
 
 ```typescript
 async function loadProfiles(userIds) {
@@ -78,23 +64,6 @@ async function loadProfiles(userIds) {
 - Wrap the independent await targets in a single `Promise.all([...])`.
 - Destructure the array result when you need distinct variables.
 - Keep operations that require per-call error handling or deliberate ordering outside the combined array.
-
-## Options
-
-This rule accepts an options object:
-
-- `sideEffectPatterns`: (Default: `[]`) An array of strings or regular expressions matching method names that should be treated as having side effects, preventing parallelization.
-
-```json
-{
-  "@blumintinc/blumint/parallelize-async-operations": [
-    "error",
-    {
-      "sideEffectPatterns": ["updateCounter", "increment.*"]
-    }
-  ]
-}
-```
 
 ## When Not To Use It
 
