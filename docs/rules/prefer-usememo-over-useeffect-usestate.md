@@ -10,7 +10,7 @@
 - Copying derived values into state creates stale snapshots. Props change immediately, but state updates lag by a tick, so components and children can briefly read outdated data.
 - Derived objects and arrays lose referential stability when recreated in an effect, causing memoized children to re-render unnecessarily.
 
-## Rule details
+## Rule Details
 
 The rule flags `useEffect` callbacks that only call a `useState` setter with a value that looks pure (object/array literals, array map/filter/reduce, or calls to `compute*`, `calculate*`, `format*`, `transform*`, `convert*`, `get*`, `derive*`, `create*`).
 
@@ -20,7 +20,7 @@ The rule does **not** report when:
 - The setter mirrors a prop/value for synchronization (same identifier as the initializer)
 - The computation is impure (awaits, assignments, or function calls with unknown side effects)
 
-### Incorrect examples
+### Incorrect Examples
 
 The following pattern demonstrates an anti-pattern where derived state is computed in `useEffect` and mirrored into React state. This causes an extra render cycle and risks stale state because the `sum` is calculated after the component has already rendered with potentially outdated values. Instead, you should compute `sum` with `useMemo` or inline it in the component body.
 
@@ -34,14 +34,10 @@ function Component({ a, b }) {
 
   return <div>{sum}</div>;
 }
-// Lint: Derived state "sum" is computed inside useEffect and copied into React
-// state even though the value comes from a pure calculation. That extra render
-// cycle and state indirection make components re-render more and risk stale
-// snapshots when dependencies change. Compute the value with useMemo (or inline
-// in render) and read it directly instead of mirroring it into state.
+// Lint: Use useMemo to compute derived state "sum" instead of useEffect + useState to avoid extra render cycles and stale snapshots.
 ```
 
-### Correct examples
+### Correct Examples
 
 These examples demonstrate the preferred patterns for handling derived values and side effects correctly:
 
@@ -82,7 +78,7 @@ function Component({ initialValue }) {
 > While this pattern is allowed by the rule (it does not flag simple identifier-to-identifier synchronization), React generally discourages prop-to-state mirroring. Prefer using a [controlled component](https://react.dev/learn/sharing-state-between-components#controlled-and-uncontrolled-components), a [key-based reset](https://react.dev/learn/you-might-not-need-an-effect#resetting-all-state-when-a-prop-changes), or a guarded comparison if you must sync.
 
 
-## When not to use it
+## When Not to Use It
 
 You should not use this rule if:
 

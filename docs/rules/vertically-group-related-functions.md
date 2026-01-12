@@ -33,19 +33,24 @@ Patterns longer than 200 characters or containing nested greedy quantifiers are 
 
 ```typescript
 // Default configuration (callers-first, event handlers first)
+
+// Lint: vertically-group-related-functions - "processUserInput" should appear below its caller "handleClick"
 function processUserInput(input: string) {
   const sanitized = sanitizeInput(input);
   return validateInput(sanitized);
 }
 
+// Lint: vertically-group-related-functions - "sanitizeInput" should appear below its caller "processUserInput"
 function sanitizeInput(input: string) {
   return input.trim().toLowerCase();
 }
 
+// Lint: vertically-group-related-functions - "validateInput" should appear below its caller "processUserInput"
 function validateInput(input: string) {
   return input.length > 0;
 }
 
+// Lint: vertically-group-related-functions - "handleClick" (event handler) should appear at the top of the file
 function handleClick() {
   const input = "example input";
   processUserInput(input);
