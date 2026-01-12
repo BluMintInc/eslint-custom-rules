@@ -25,7 +25,8 @@ const MyComponent = () => {
   // but never recomputes the values because the dependency array is empty
   const roomOptions = useMemo(() => {
     return {
-      disconnectOnPageLeave: true,
+      roomA: { label: 'Room A', icon: 'room-icon' },
+      roomB: { label: 'Room B', icon: 'room-icon' },
     } as const;
   }, []);
 
@@ -43,7 +44,10 @@ const MyComponent = () => {
 
 ```tsx
 // Define once at module scope - never recreated during renders
-const ROOM_OPTIONS = { disconnectOnPageLeave: true } as const;
+const ROOM_OPTIONS = {
+  roomA: { label: 'Room A', icon: 'room-icon' },
+  roomB: { label: 'Room B', icon: 'room-icon' },
+} as const;
 
 const MyComponent = () => {
   return (

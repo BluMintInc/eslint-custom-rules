@@ -92,7 +92,7 @@ export const regularFunction = async (docRef: DocumentReference) => {
 };
 ```
 
-This rule is not auto-fixable; violations must be corrected manually.
+This rule provides editor suggestions to replace long parent chains with `event.params`. Apply the suggestion via your editor's quick-fix menu.
 
 ## Why This Rule Exists
 
