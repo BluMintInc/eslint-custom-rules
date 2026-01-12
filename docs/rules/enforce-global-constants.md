@@ -10,7 +10,7 @@ This rule identifies instances where `useMemo` hooks are used with empty depende
 
 ## Rule Details
 
-React's `useMemo` is intended for memoizing computationally expensive values that depend on props or state. When a `useMemo` has an empty dependency array and returns an object literal, it creates a new reference on each render but never recalculates the value. This pattern leads to unnecessary memory allocation and garbage collection without providing any benefit over a global static constant.
+React's `useMemo` is intended for memoizing computationally expensive values that depend on props or state. When a `useMemo` has an empty dependency array and returns an object literal, it unnecessarily invokes the memoization mechanism on every render to return the same cached reference. This pattern adds runtime overhead without providing any benefit over a module-level constant, which provides a stable reference with zero runtime cost.
 
 By identifying and refactoring these patterns, we can:
 1. Reduce runtime memory consumption
@@ -23,8 +23,8 @@ By identifying and refactoring these patterns, we can:
 
 ```tsx
 const MyComponent = () => {
-  // This useMemo creates a new object reference on every render
-  // but never recomputes the values because the dependency array is empty
+  // This useMemo unnecessarily invokes memoization logic on every render
+  // to return the same cached object because the dependency array is empty
   const roomOptions = useMemo(() => {
     return {
       roomA: { label: 'Room A', icon: 'room-icon' },
