@@ -1,4 +1,4 @@
-# Suggest useMemo over useEffect + useState for pure computations to avoid extra render cycles and stale derived state (`@blumintinc/blumint/prefer-usememo-over-useeffect-usestate`)
+# Prefer useMemo over useEffect + useState for pure computations to avoid extra render cycles and stale derived state (`@blumintinc/blumint/prefer-usememo-over-useeffect-usestate`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

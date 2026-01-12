@@ -1,4 +1,4 @@
-# Suggest using a settings object for functions with multiple parameters (`@blumintinc/blumint/prefer-settings-object`)
+# Enforce using a settings object for functions with multiple parameters (`@blumintinc/blumint/prefer-settings-object`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

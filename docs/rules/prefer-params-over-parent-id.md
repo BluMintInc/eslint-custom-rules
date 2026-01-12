@@ -1,4 +1,4 @@
-# Prefer handler params for parent IDs instead of traversing ref.parent.id so Firebase triggers stay aligned with path templates and type-safe (`@blumintinc/blumint/prefer-params-over-parent-id`)
+# Prefer handler params for parent IDs instead of traversing ref.parent.id (`@blumintinc/blumint/prefer-params-over-parent-id`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

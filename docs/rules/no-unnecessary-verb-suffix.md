@@ -1,4 +1,4 @@
-# Discourage unnecessary verb suffixes in function and method names (`@blumintinc/blumint/no-unnecessary-verb-suffix`)
+# Prevent unnecessary verb suffixes in function and method names (`@blumintinc/blumint/no-unnecessary-verb-suffix`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

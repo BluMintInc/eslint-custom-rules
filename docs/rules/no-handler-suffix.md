@@ -1,4 +1,4 @@
-# Discourage the generic "handler" suffix in callback names so names explain the action they perform (`@blumintinc/blumint/no-handler-suffix`)
+# Disallow the generic "handler" suffix in callback names so names explain the action they perform (`@blumintinc/blumint/no-handler-suffix`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

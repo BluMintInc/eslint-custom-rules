@@ -1,4 +1,4 @@
-# Suggest consistent naming conventions for callback props and functions (`@blumintinc/blumint/consistent-callback-naming`)
+# Enforce consistent naming conventions for callback props and functions (`@blumintinc/blumint/consistent-callback-naming`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
