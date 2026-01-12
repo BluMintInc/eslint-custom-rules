@@ -1,4 +1,4 @@
-# Prefer handler params for parent IDs instead of traversing ref.parent.id so Firebase triggers stay aligned with path templates and type-safe (`@blumintinc/blumint/prefer-params-over-parent-id`)
+# Prefer event.params over ref.parent.id for type-safe Firebase trigger paths (`@blumintinc/blumint/prefer-params-over-parent-id`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
@@ -7,6 +7,8 @@
 <!-- end auto-generated rule header -->
 
 ## Rule Details
+
+Prefer handler params for parent IDs instead of traversing `ref.parent.id` so Firebase triggers stay aligned with path templates and type-safe.
 
 In Firestore and Realtime Database change handlers, you already get trigger path variables through `event.params`. Reconstructing those IDs with `ref.parent.id`:
 
@@ -30,7 +32,19 @@ This rule is enabled by default in the recommended config. To configure it expli
 
 ## Auto-fix
 
-When `params` is already available, the fixer replaces `ref.parent.id` with `event.params.userId` (or `event?.params?.userId` if optional chaining is present). For deeper `parent.parent` traversals it maps to the specific path parameter (for example, `tournamentId`) so IDs still come from the trigger params rather than the reference chain.
+When `params` is available, the fixer replaces `ref.parent.id` with a corresponding path parameter. The resolution follows this algorithm:
+
+1. **Identify Depth**: The number of `.parent` traversals determines the target nesting level (e.g., `ref.parent.id` is depth 1, `ref.parent.parent.id` is depth 2).
+2. **Map to Default Name**: Each depth maps to a default parameter name:
+   - Depth 1 → `userId`
+   - Depth 2 → `parentId`
+   - Depth 3+ → `parentNId` (e.g., `parent3Id`)
+3. **Check Scope**: The rule looks for an existing `params` object (from `event.params` or destructured `const { params } = event`).
+4. **Resolve Identifier**:
+   - If `params` is destructured and contains the default name (e.g., `const { params: { userId } } = event`), the fixer uses the local variable.
+   - Otherwise, it uses `event.params.[defaultName]` (or `event?.params?.[defaultName]` if optional chaining was used in the original expression).
+
+This ensures that `ref.parent.id` becomes `event.params.userId` (or a local `userId` variable) and deeper traversals like `ref.parent.parent.id` map to `event.params.parentId` or `tournamentId` in accordance with common nesting patterns.
 
 ## Examples
 

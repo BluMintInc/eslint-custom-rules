@@ -50,20 +50,51 @@ async function loadProfiles(userIds) {
 }
 ```
 
-   When you still want concurrency but independent error paths, prefer:
+### ✅ Correct (with independent error handling)
 
-   ```typescript
-   const results = await Promise.allSettled([operation1(), operation2()]);
-   for (const r of results) {
-     if (r.status === 'rejected') handle(r.reason);
-   }
-   ```
+When you still want concurrency but independent error paths, prefer `Promise.allSettled`:
 
-3. **Operations with Side Effects**: When operations have side effects that affect other operations.
+```typescript
+const results = await Promise.allSettled([operation1(), operation2()]);
+for (const r of results) {
+  if (r.status === 'rejected') handle(r.reason);
+}
+```
+
+## How to fix a violation
 
 - Wrap the independent await targets in a single `Promise.all([...])`.
 - Destructure the array result when you need distinct variables.
 - Keep operations that require per-call error handling or deliberate ordering outside the combined array.
+
+## Options
+
+### `sideEffectPatterns`
+
+An array of string, glob, or regex patterns (type: `string[]`) that customizes which method or function call patterns are considered side effects. The rule will skip any calls that match these patterns to avoid parallelizing operations that might rely on a specific order.
+
+**Default values:**
+- `updatecounter`
+- `setcounter`
+- `incrementcounter`
+- `decrementcounter`
+- `updatethreshold`
+- `setthreshold`
+- `checkthreshold`
+
+**Example configuration:**
+```json
+{
+  "rules": {
+    "@blumintinc/blumint/parallelize-async-operations": [
+      "error",
+      {
+        "sideEffectPatterns": ["save.*", "commit.*"]
+      }
+    ]
+  }
+}
+```
 
 ## When Not To Use It
 
