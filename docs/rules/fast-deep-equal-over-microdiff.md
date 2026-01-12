@@ -134,8 +134,8 @@ function hasConfigChanged(oldConfig, newConfig) {
 You should not use this rule if:
 
 1. You deliberately want to rely on `microdiff` for both diffing and equality checks and accept the extra allocations.
-2. Your code path is not performance-sensitive and you prefer to avoid importing `fast-deep-equal`.
-3. You maintain compatibility with code that depends on `microdiff`’s change objects even when equality is all that is needed.
+1. Your code path is not performance-sensitive and you prefer to avoid importing `fast-deep-equal`.
+1. You maintain compatibility with code that depends on `microdiff`’s change objects even when equality is all that is needed.
 
 ## Further Reading
 

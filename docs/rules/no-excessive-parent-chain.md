@@ -99,13 +99,13 @@ This rule provides editor suggestions to replace long parent chains with `event.
 ### Problems with Long Parent Chains
 
 1. **Fragility**: Changes to the Firestore path structure can break multiple chained `.parent` calls.
-2. **Readability**: Long chains like `ref.parent.parent.parent.parent` are difficult to comprehend.
-3. **Type Safety**: Manual navigation doesn't provide compile-time guarantees about path structure.
-4. **Maintainability**: Refactoring path structures requires updating all hardcoded parent chains.
+1. **Readability**: Long chains like `ref.parent.parent.parent.parent` are difficult to comprehend.
+1. **Type Safety**: Manual navigation doesn't provide compile-time guarantees about path structure.
+1. **Maintainability**: Refactoring path structures requires updating all hardcoded parent chains.
 
 ### Benefits of Using Params
 
 1. **Type Safety**: The `params` object is automatically generated based on the path pattern and provides type-safe access
-2. **Maintainability**: Path changes only require updating the path pattern, not individual handlers
-3. **Clarity**: `params.userId` is much clearer than `ref.parent.parent.parent.id`
-4. **Consistency**: All handlers use the same pattern for accessing path components.
+1. **Maintainability**: Path changes only require updating the path pattern, not individual handlers
+1. **Clarity**: `params.userId` is much clearer than `ref.parent.parent.parent.id`
+1. **Consistency**: All handlers use the same pattern for accessing path components.

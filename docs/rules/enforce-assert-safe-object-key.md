@@ -49,8 +49,8 @@ const hasKey = assertSafe(id) in obj;
 You might consider disabling this rule if:
 
 1. You have a different validation mechanism for object keys
-2. You're working in a context where all object keys are guaranteed to be safe
-3. You have explicitly known safe identifiers that don't require validation
+1. You're working in a context where all object keys are guaranteed to be safe
+1. You have explicitly known safe identifiers that don't require validation
 
 ## Further Reading
 

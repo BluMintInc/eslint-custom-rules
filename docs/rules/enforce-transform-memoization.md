@@ -11,9 +11,9 @@
 This rule enforces:
 
 1. `transformValue` must be memoized with `useMemo` (or a clearly memoized helper).
-2. `transformOnChange` must be memoized with `useCallback` (or a memoized helper).
-3. When `useMemo`/`useCallback` is used, the dependency array must exist and include all outer-scope values referenced by the transform.
-4. Functions defined outside the component are treated as stable and are allowed directly.
+1. `transformOnChange` must be memoized with `useCallback` (or a memoized helper).
+1. When `useMemo`/`useCallback` is used, the dependency array must exist and include all outer-scope values referenced by the transform.
+1. Functions defined outside the component are treated as stable and are allowed directly.
 
 Examples of **incorrect** code for this rule:
 

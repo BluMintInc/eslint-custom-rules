@@ -7,7 +7,7 @@
 This rule keeps Firebase `HttpsError` messages stable for monitoring while preserving rich debugging details. It enforces two constraints:
 
 1. **Static messages in the second argument**: The message (second argument) is hashed to produce an error identifier. Dynamic content here fractures monitoring because every interpolation produces a different hash.
-2. **Context in the third argument**: Every `HttpsError` call must pass a third `"details"` argument so request-specific context is available without altering the hashed identifier.
+1. **Context in the third argument**: Every `HttpsError` call must pass a third `"details"` argument so request-specific context is available without altering the hashed identifier.
 
 ## Rule Details
 

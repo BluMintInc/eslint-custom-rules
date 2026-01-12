@@ -100,9 +100,9 @@ An array of string, glob, or regex patterns (type: `string[]`) that customizes w
 
 Skip or disable the rule if any of the following apply:
 1. Later operations truly depend on values produced by earlier awaits.
-2. Each await needs its own try/catch or error boundary.
-3. The operations rely on ordered side effects that must not overlap.
-4. The awaits sit inside a loop where batching or chunked parallelism would be safer.
+1. Each await needs its own try/catch or error boundary.
+1. The operations rely on ordered side effects that must not overlap.
+1. The awaits sit inside a loop where batching or chunked parallelism would be safer.
 
    ### ✅ Recommended in loops
 

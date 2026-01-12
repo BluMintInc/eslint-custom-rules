@@ -101,12 +101,12 @@ export class MatchAdmin {
 Use a getter only when it adds behavior beyond simple property access, for example:
 
 1. **Perform calculations or transformations**
-2. **Apply conditional logic**
-3. **Provide memoization** (with `@Memoize` decorator)
-4. **Encapsulate more complex property access**
-5. **Handle null/undefined values**
-6. **Include type assertions or casting**
-7. **Access parent class properties** (using `super`)
+1. **Apply conditional logic**
+1. **Provide memoization** (with `@Memoize` decorator)
+1. **Encapsulate more complex property access**
+1. **Handle null/undefined values**
+1. **Include type assertions or casting**
+1. **Access parent class properties** (using `super`)
 
 Simple property access alone does not justify a getter.
 

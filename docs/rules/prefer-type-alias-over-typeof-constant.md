@@ -15,7 +15,7 @@ Use named type aliases instead of `typeof` on same-file top-level constants, and
 The rule reports in two situations:
 
 1. You use `typeof CONST_NAME` on a same-file top-level `const` initialized with a constant-like value (literal, object literal, array literal, possibly with `as const`). Create a named alias (for example, `type StatusExceeding = 'exceeding'`) and reuse it instead of deriving the type from the value.
-2. A constant’s explicit type annotation points to an alias declared later in the file. Declare the alias first so the type is visible before the value that depends on it.
+1. A constant’s explicit type annotation points to an alias declared later in the file. Declare the alias first so the type is visible before the value that depends on it.
 
 ### Incorrect
 
