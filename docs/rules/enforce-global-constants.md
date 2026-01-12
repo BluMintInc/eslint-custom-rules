@@ -6,16 +6,16 @@
 
 <!-- end auto-generated rule header -->
 
-This rule identifies instances where `useMemo` hooks are used with empty dependency arrays to return object literals, and where inline destructuring defaults in React components or hooks use object/array literals. Such usage is unnecessary and adds unnecessary runtime memoization overhead and repeated object allocations instead of using global static constants.
+This rule helps you identify instances where you use `useMemo` hooks with empty dependency arrays to return object literals, and where you use object/array literals for inline destructuring defaults in React components or hooks. Such usage is unnecessary and adds runtime memoization overhead and repeated object allocations instead of using global static constants.
 
 ## Rule Details
 
-React's `useMemo` is intended for memoizing computationally expensive values that depend on props or state. When a `useMemo` has an empty dependency array and returns an object literal, it unnecessarily invokes the memoization mechanism on every render to return the same cached reference. This pattern adds runtime overhead without providing any benefit over a module-level constant, which provides a stable reference with zero runtime cost.
+React's `useMemo` is intended for memoizing computationally expensive values that depend on props or state. When you use `useMemo` with an empty dependency array to return an object literal, you unnecessarily invoke the memoization mechanism on every render to return the same cached reference. This pattern adds runtime overhead without providing any benefit over a module-level constant, which provides a stable reference with zero runtime cost.
 
-By identifying and refactoring these patterns, we can:
+By identifying and refactoring these patterns, you can:
 1. Reduce runtime memory consumption
-1. Improve code clarity and maintainability
-1. Encourage proper use of React hooks
+2. Improve code clarity and maintainability
+3. Encourage proper use of React hooks
 
 ### Examples of incorrect code for this rule:
 
@@ -100,7 +100,14 @@ const useMyHook = (options = DEFAULT_OPTIONS) => {
 
 ## When Not To Use It
 
-You might want to disable this rule if your codebase has a specific pattern or architecture that requires using `useMemo` with empty dependency arrays for object literals.
+You might want to disable this rule if:
+
+1. You are working with **generated code** that cannot be easily refactored (e.g., codegen output producing object literals).
+2. You have **test utilities** that intentionally return fresh object instances each run for isolation.
+3. You are using specific **third-party framework patterns** that rely on `useMemo` with empty dependency arrays (e.g., certain legacy memoization techniques).
+4. You need to maintain **legacy compatibility** where hoisting constants is constrained by existing tooling or architecture.
+
+In most cases, however, you should prefer hoisting these literals to module-level constants to ensure stable references with zero runtime overhead.
 
 ## Further Reading
 
