@@ -50,8 +50,7 @@ export const propagateOverwolfPlacement: DocumentChangeHandler<
 > = async (event) => {
   const { data: change } = event;
 
-  // Brittle navigation using multiple parent calls
-  const uid = change.after.ref.parent.parent.parent.parent.id;
+  const uid = change.after.ref.parent.parent.parent.parent.id; // 4 parent calls - triggers warning
 };
 
 // Also catches when event data is extracted to variables

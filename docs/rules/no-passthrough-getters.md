@@ -6,13 +6,13 @@
 
 ## Rule Details
 
-This rule flags getters that only forward a constructor-injected object property (for example `this.settings.uid`) without adding logic. These passthrough getters expand the public API without adding behavior, hide where state actually lives, and create extra names developers must keep in sync. Prefer direct property access or add meaningful logic (validation, memoization, fallbacks, transformation) that justifies the getter.
+This rule flags getters that only forward a constructor-injected object property (for example `this.settings.uid`) without adding logic. Passthrough getters expand your public API without adding behavior, hide where state actually lives, and force you to keep extra names in sync. You should prefer direct property access or add meaningful logic (validation, memoization, fallbacks, transformation) that justifies the getter.
 
 ### Why it matters
 
-- A passthrough getter hides the real state location (`this.settings.uid`) behind another name, which slows down debugging and code navigation.
-- Every extra getter increases the class surface area; callers must learn both `otherResults` and `settings.otherResults` even though only one is real data.
-- Indirection invites drift: if invariants change on the constructor parameter, the passthrough getter can mask that the data source changed.
+- A passthrough getter hides the real state location (`this.settings.uid`) behind another name, which slows down your debugging and code navigation.
+- Every extra getter increases your class surface area; you and your callers must learn both `otherResults` and `settings.otherResults` even though only one is real data.
+- Indirection invites drift: if invariants change on the constructor parameter, the passthrough getter can mask that your data source changed.
 
 ### How to fix
 
