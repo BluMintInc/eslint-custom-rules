@@ -70,8 +70,8 @@ const ContentVerticalCarouselGrid = ({ header, ...gridProps }) => {
 ### Correct Solution
 
 1. Define the component at **module scope** in its own file, wrapped with `memo()`.
-1. Use **React Context** and/or directly provide props to supply any dynamic data the component needs.
-1. Pass the stable, imported component reference to props like `CatalogWrapper`.
+2. Use **React Context** and/or directly provide props to supply any dynamic data the component needs.
+3. Pass the stable, imported component reference to props like `CatalogWrapper`.
 
 ```tsx
 import { createContext, useContext, memo, ReactNode } from 'react';
