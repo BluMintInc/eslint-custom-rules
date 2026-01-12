@@ -1,4 +1,4 @@
-# Enforce TypeScript type names to be singular (`@blumintinc/blumint/enforce-singular-type-names`)
+# Suggest TypeScript type names to be singular (`@blumintinc/blumint/enforce-singular-type-names`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 

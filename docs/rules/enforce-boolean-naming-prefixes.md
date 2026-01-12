@@ -1,4 +1,4 @@
-# Enforce consistent naming conventions for boolean values by requiring approved prefixes (`@blumintinc/blumint/enforce-boolean-naming-prefixes`)
+# Suggest consistent naming conventions for boolean values by requiring approved prefixes (`@blumintinc/blumint/enforce-boolean-naming-prefixes`)
 
 💼 This rule is enabled in the ✅ `recommended` config.
 
